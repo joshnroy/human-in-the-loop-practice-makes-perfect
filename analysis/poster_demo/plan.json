@@ -1,0 +1,9170 @@
+{
+ "practice": [
+  {
+   "cycle": 0,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 1,
+     "side": null,
+     "block": 2910,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 2,
+     "side": null,
+     "block": 3028,
+     "ticks": 105,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 3,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 4,
+     "side": null,
+     "block": 3134,
+     "ticks": 148,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 5,
+     "side": null,
+     "block": 3283,
+     "ticks": 56,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 6,
+     "side": null,
+     "block": 3340,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 7,
+     "side": null,
+     "block": 3467,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 8,
+     "side": null,
+     "block": 3533,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 9,
+     "side": null,
+     "block": 3650,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 10,
+     "side": null,
+     "block": 3704,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 11,
+     "side": null,
+     "block": 3839,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 12,
+     "side": null,
+     "block": 3910,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 13,
+     "side": null,
+     "block": 4022,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 14,
+     "side": null,
+     "block": 4083,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 15,
+     "side": null,
+     "block": 4210,
+     "ticks": 80,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 16,
+     "side": null,
+     "block": 4291,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 17,
+     "side": null,
+     "block": 4404,
+     "ticks": 86,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 18,
+     "side": null,
+     "block": 4491,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 19,
+     "side": null,
+     "block": 4603,
+     "ticks": 61,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 20,
+     "side": null,
+     "block": 4665,
+     "ticks": 136,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 1,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 21,
+     "side": null,
+     "block": 7145,
+     "ticks": 80,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 22,
+     "side": null,
+     "block": 7226,
+     "ticks": 154,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 23,
+     "side": null,
+     "block": 7381,
+     "ticks": 140,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 24,
+     "side": null,
+     "block": 7522,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 25,
+     "side": null,
+     "block": 7657,
+     "ticks": 111,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 26,
+     "side": null,
+     "block": 7769,
+     "ticks": 145,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 27,
+     "side": null,
+     "block": 7915,
+     "ticks": 112,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 28,
+     "side": null,
+     "block": 8028,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 29,
+     "side": null,
+     "block": 8138,
+     "ticks": 66,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 30,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 31,
+     "side": null,
+     "block": 8205,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 32,
+     "side": null,
+     "block": 8323,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 33,
+     "side": null,
+     "block": 8393,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 34,
+     "side": null,
+     "block": 8512,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 35,
+     "side": null,
+     "block": 8566,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 36,
+     "side": null,
+     "block": 8693,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 37,
+     "side": null,
+     "block": 8782,
+     "ticks": 108,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 38,
+     "side": null,
+     "block": 8891,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 39,
+     "side": null,
+     "block": 8955,
+     "ticks": 110,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 40,
+     "side": null,
+     "block": 9066,
+     "ticks": 50,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 2,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 41,
+     "side": null,
+     "block": 11824,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 42,
+     "side": null,
+     "block": 11948,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 43,
+     "side": null,
+     "block": 12025,
+     "ticks": 108,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 44,
+     "side": null,
+     "block": 12134,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 45,
+     "side": null,
+     "block": 12212,
+     "ticks": 138,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 46,
+     "side": null,
+     "block": 12351,
+     "ticks": 82,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 47,
+     "side": null,
+     "block": 12434,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 48,
+     "side": null,
+     "block": 12577,
+     "ticks": 111,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 49,
+     "side": null,
+     "block": 12689,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 50,
+     "side": null,
+     "block": 12815,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 51,
+     "side": null,
+     "block": 12904,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 52,
+     "side": null,
+     "block": 13028,
+     "ticks": 108,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 53,
+     "side": null,
+     "block": 13137,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 54,
+     "side": null,
+     "block": 13274,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 55,
+     "side": null,
+     "block": 13338,
+     "ticks": 145,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 56,
+     "side": null,
+     "block": 13484,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 57,
+     "side": null,
+     "block": 13563,
+     "ticks": 149,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 58,
+     "side": null,
+     "block": 13713,
+     "ticks": 91,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 59,
+     "side": null,
+     "block": 13805,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 60,
+     "side": null,
+     "block": 13926,
+     "ticks": 73,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 3,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 61,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 62,
+     "side": null,
+     "block": 16381,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 63,
+     "side": null,
+     "block": 16504,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 64,
+     "side": null,
+     "block": 16565,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 65,
+     "side": null,
+     "block": 16680,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 66,
+     "side": null,
+     "block": 16752,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 67,
+     "side": null,
+     "block": 16883,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 68,
+     "side": null,
+     "block": 16947,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 69,
+     "side": null,
+     "block": 17057,
+     "ticks": 45,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 70,
+     "side": "opposite_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 far side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 71,
+     "side": null,
+     "block": 17103,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 72,
+     "side": null,
+     "block": 17230,
+     "ticks": 132,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 73,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 74,
+     "side": null,
+     "block": 17363,
+     "ticks": 154,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 75,
+     "side": null,
+     "block": 17518,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 76,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 77,
+     "side": null,
+     "block": 17567,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 78,
+     "side": null,
+     "block": 17684,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 79,
+     "side": null,
+     "block": 17750,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 80,
+     "side": null,
+     "block": 17865,
+     "ticks": 88,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 4,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 81,
+     "side": null,
+     "block": 20109,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 82,
+     "side": null,
+     "block": 20236,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 83,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 84,
+     "side": null,
+     "block": 20294,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 85,
+     "side": null,
+     "block": 20418,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 86,
+     "side": null,
+     "block": 20473,
+     "ticks": 153,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 87,
+     "side": null,
+     "block": 20627,
+     "ticks": 147,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 88,
+     "side": null,
+     "block": 20775,
+     "ticks": 178,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 89,
+     "side": null,
+     "block": 20954,
+     "ticks": 133,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 90,
+     "side": null,
+     "block": 21088,
+     "ticks": 160,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 91,
+     "side": null,
+     "block": 21249,
+     "ticks": 153,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 92,
+     "side": null,
+     "block": 21403,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 93,
+     "side": null,
+     "block": 21515,
+     "ticks": 51,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 94,
+     "side": null,
+     "block": 21567,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 95,
+     "side": null,
+     "block": 21677,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 96,
+     "side": null,
+     "block": 21726,
+     "ticks": 151,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 97,
+     "side": null,
+     "block": 21878,
+     "ticks": 137,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": false,
+     "decision": 98,
+     "side": null,
+     "block": 22016,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "OpenGripper",
+     "success": true,
+     "decision": 99,
+     "side": null,
+     "block": 22152,
+     "ticks": 1,
+     "label": "OpenGripper"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 5,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 101,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 102,
+     "side": null,
+     "block": 24485,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 103,
+     "side": null,
+     "block": 24615,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 104,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 105,
+     "side": null,
+     "block": 24687,
+     "ticks": 143,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 106,
+     "side": null,
+     "block": 24831,
+     "ticks": 99,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 107,
+     "side": null,
+     "block": 24931,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 108,
+     "side": null,
+     "block": 25053,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 109,
+     "side": null,
+     "block": 25104,
+     "ticks": 146,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 110,
+     "side": null,
+     "block": 25251,
+     "ticks": 118,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 111,
+     "side": null,
+     "block": 25370,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 112,
+     "side": null,
+     "block": 25496,
+     "ticks": 80,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 113,
+     "side": null,
+     "block": 25577,
+     "ticks": 164,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 114,
+     "side": null,
+     "block": 25742,
+     "ticks": 149,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 115,
+     "side": null,
+     "block": 25892,
+     "ticks": 181,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 116,
+     "side": null,
+     "block": 26074,
+     "ticks": 181,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 117,
+     "side": null,
+     "block": 26256,
+     "ticks": 132,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 118,
+     "side": null,
+     "block": 26389,
+     "ticks": 62,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 6,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 120,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 121,
+     "side": null,
+     "block": 28619,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 122,
+     "side": null,
+     "block": 28743,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 123,
+     "side": null,
+     "block": 28798,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 124,
+     "side": null,
+     "block": 28914,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 125,
+     "side": null,
+     "block": 28970,
+     "ticks": 158,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 126,
+     "side": null,
+     "block": 29129,
+     "ticks": 145,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 127,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 128,
+     "side": null,
+     "block": 29275,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 129,
+     "side": null,
+     "block": 29405,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 130,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 131,
+     "side": null,
+     "block": 29463,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 132,
+     "side": null,
+     "block": 29581,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 133,
+     "side": null,
+     "block": 29634,
+     "ticks": 157,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 134,
+     "side": null,
+     "block": 29792,
+     "ticks": 135,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 135,
+     "side": null,
+     "block": 29928,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 136,
+     "side": null,
+     "block": 30073,
+     "ticks": 140,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 137,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 138,
+     "side": null,
+     "block": 30214,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 139,
+     "side": null,
+     "block": 30345,
+     "ticks": 51,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 7,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 140,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 141,
+     "side": null,
+     "block": 32723,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 142,
+     "side": null,
+     "block": 32854,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 143,
+     "side": null,
+     "block": 32908,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 144,
+     "side": null,
+     "block": 33071,
+     "ticks": 118,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 145,
+     "side": null,
+     "block": 33190,
+     "ticks": 161,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 146,
+     "side": null,
+     "block": 33352,
+     "ticks": 188,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 147,
+     "side": null,
+     "block": 33541,
+     "ticks": 154,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 148,
+     "side": null,
+     "block": 33696,
+     "ticks": 96,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 149,
+     "side": null,
+     "block": 33793,
+     "ticks": 154,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 150,
+     "side": null,
+     "block": 33948,
+     "ticks": 137,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 151,
+     "side": null,
+     "block": 34086,
+     "ticks": 152,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 152,
+     "side": null,
+     "block": 34239,
+     "ticks": 131,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 153,
+     "side": null,
+     "block": 34371,
+     "ticks": 139,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 154,
+     "side": null,
+     "block": 34511,
+     "ticks": 96,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 155,
+     "side": null,
+     "block": 34608,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 156,
+     "side": null,
+     "block": 34718,
+     "ticks": 59,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 157,
+     "side": null,
+     "block": 34778,
+     "ticks": 152,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 158,
+     "side": null,
+     "block": 34931,
+     "ticks": 123,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 159,
+     "side": null,
+     "block": 35055,
+     "ticks": 179,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 8,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 160,
+     "side": null,
+     "block": 37629,
+     "ticks": 143,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 161,
+     "side": null,
+     "block": 37773,
+     "ticks": 173,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 162,
+     "side": null,
+     "block": 37947,
+     "ticks": 137,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 163,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 164,
+     "side": null,
+     "block": 38085,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 165,
+     "side": null,
+     "block": 38206,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 166,
+     "side": null,
+     "block": 38295,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 167,
+     "side": null,
+     "block": 38438,
+     "ticks": 74,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 168,
+     "side": null,
+     "block": 38513,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 169,
+     "side": null,
+     "block": 38649,
+     "ticks": 96,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 170,
+     "side": null,
+     "block": 38746,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 171,
+     "side": null,
+     "block": 38878,
+     "ticks": 82,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 172,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 173,
+     "side": null,
+     "block": 38961,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 174,
+     "side": null,
+     "block": 39078,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 175,
+     "side": null,
+     "block": 39129,
+     "ticks": 182,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 176,
+     "side": null,
+     "block": 39312,
+     "ticks": 150,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 177,
+     "side": null,
+     "block": 39463,
+     "ticks": 140,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 178,
+     "side": null,
+     "block": 39604,
+     "ticks": 114,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 179,
+     "side": null,
+     "block": 39719,
+     "ticks": 154,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 9,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 180,
+     "side": null,
+     "block": 42049,
+     "ticks": 132,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 181,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 182,
+     "side": null,
+     "block": 42182,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 183,
+     "side": null,
+     "block": 42304,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 184,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 185,
+     "side": null,
+     "block": 42375,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 186,
+     "side": null,
+     "block": 42501,
+     "ticks": 64,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 187,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 188,
+     "side": null,
+     "block": 42566,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 189,
+     "side": null,
+     "block": 42703,
+     "ticks": 61,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 190,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 191,
+     "side": null,
+     "block": 42765,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 192,
+     "side": null,
+     "block": 42896,
+     "ticks": 56,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 193,
+     "side": null,
+     "block": 42953,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 194,
+     "side": null,
+     "block": 43063,
+     "ticks": 84,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 195,
+     "side": null,
+     "block": 43148,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 196,
+     "side": null,
+     "block": 43282,
+     "ticks": 46,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 197,
+     "side": null,
+     "block": 43329,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 198,
+     "side": null,
+     "block": 43465,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 199,
+     "side": null,
+     "block": 43531,
+     "ticks": 138,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 10,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 200,
+     "side": null,
+     "block": 45841,
+     "ticks": 103,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 201,
+     "side": null,
+     "block": 45945,
+     "ticks": 139,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 202,
+     "side": null,
+     "block": 46085,
+     "ticks": 110,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 203,
+     "side": null,
+     "block": 46196,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 204,
+     "side": null,
+     "block": 46338,
+     "ticks": 75,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 205,
+     "side": null,
+     "block": 46414,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 206,
+     "side": null,
+     "block": 46533,
+     "ticks": 66,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 207,
+     "side": null,
+     "block": 46600,
+     "ticks": 156,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 208,
+     "side": null,
+     "block": 46757,
+     "ticks": 115,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 209,
+     "side": null,
+     "block": 46873,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 210,
+     "side": null,
+     "block": 47003,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 211,
+     "side": null,
+     "block": 47080,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 212,
+     "side": null,
+     "block": 47193,
+     "ticks": 45,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 213,
+     "side": null,
+     "block": 47239,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 214,
+     "side": null,
+     "block": 47363,
+     "ticks": 80,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 215,
+     "side": null,
+     "block": 47444,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 216,
+     "side": null,
+     "block": 47579,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 217,
+     "side": null,
+     "block": 47635,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 218,
+     "side": null,
+     "block": 47752,
+     "ticks": 75,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 11,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 220,
+     "side": null,
+     "block": 49986,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 221,
+     "side": null,
+     "block": 50104,
+     "ticks": 84,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 222,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 223,
+     "side": null,
+     "block": 50189,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 224,
+     "side": null,
+     "block": 50302,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 225,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 226,
+     "side": null,
+     "block": 50365,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 227,
+     "side": null,
+     "block": 50477,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 228,
+     "side": null,
+     "block": 50549,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 229,
+     "side": null,
+     "block": 50676,
+     "ticks": 72,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 230,
+     "side": null,
+     "block": 50749,
+     "ticks": 167,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 231,
+     "side": null,
+     "block": 50917,
+     "ticks": 113,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 232,
+     "side": null,
+     "block": 51031,
+     "ticks": 159,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 233,
+     "side": null,
+     "block": 51191,
+     "ticks": 110,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 234,
+     "side": null,
+     "block": 51302,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 235,
+     "side": null,
+     "block": 51447,
+     "ticks": 127,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 236,
+     "side": null,
+     "block": 51575,
+     "ticks": 132,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 237,
+     "side": null,
+     "block": 51708,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 238,
+     "side": null,
+     "block": 51774,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 239,
+     "side": null,
+     "block": 51893,
+     "ticks": 72,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 12,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 240,
+     "side": null,
+     "block": 54293,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 241,
+     "side": null,
+     "block": 54408,
+     "ticks": 84,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 242,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 243,
+     "side": null,
+     "block": 54493,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 244,
+     "side": null,
+     "block": 54620,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 245,
+     "side": null,
+     "block": 54686,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 246,
+     "side": null,
+     "block": 54809,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 247,
+     "side": null,
+     "block": 54886,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 248,
+     "side": null,
+     "block": 55024,
+     "ticks": 68,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 249,
+     "side": null,
+     "block": 55093,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 250,
+     "side": null,
+     "block": 55227,
+     "ticks": 106,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 251,
+     "side": null,
+     "block": 55334,
+     "ticks": 177,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 252,
+     "side": null,
+     "block": 55512,
+     "ticks": 133,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 253,
+     "side": null,
+     "block": 55646,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 254,
+     "side": null,
+     "block": 55769,
+     "ticks": 72,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 255,
+     "side": null,
+     "block": 55842,
+     "ticks": 145,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 256,
+     "side": null,
+     "block": 55988,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 257,
+     "side": null,
+     "block": 56060,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 258,
+     "side": null,
+     "block": 56192,
+     "ticks": 90,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 13,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 260,
+     "side": null,
+     "block": 58434,
+     "ticks": 166,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 261,
+     "side": null,
+     "block": 58601,
+     "ticks": 145,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 262,
+     "side": null,
+     "block": 58747,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 263,
+     "side": null,
+     "block": 58874,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 264,
+     "side": null,
+     "block": 58951,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 265,
+     "side": null,
+     "block": 59083,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 266,
+     "side": null,
+     "block": 59172,
+     "ticks": 168,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 267,
+     "side": null,
+     "block": 59341,
+     "ticks": 144,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 268,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 269,
+     "side": null,
+     "block": 59486,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 270,
+     "side": null,
+     "block": 59601,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 271,
+     "side": null,
+     "block": 59665,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 272,
+     "side": null,
+     "block": 59786,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 273,
+     "side": null,
+     "block": 59847,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 274,
+     "side": null,
+     "block": 59969,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 275,
+     "side": null,
+     "block": 60058,
+     "ticks": 165,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 276,
+     "side": null,
+     "block": 60224,
+     "ticks": 134,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 277,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 278,
+     "side": null,
+     "block": 60359,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 279,
+     "side": null,
+     "block": 60481,
+     "ticks": 46,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 14,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 280,
+     "side": null,
+     "block": 62699,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 281,
+     "side": null,
+     "block": 62819,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 282,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 283,
+     "side": null,
+     "block": 62883,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 284,
+     "side": null,
+     "block": 63015,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 285,
+     "side": null,
+     "block": 63093,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 286,
+     "side": null,
+     "block": 63236,
+     "ticks": 68,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 287,
+     "side": null,
+     "block": 63305,
+     "ticks": 174,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 288,
+     "side": null,
+     "block": 63480,
+     "ticks": 143,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 289,
+     "side": null,
+     "block": 63624,
+     "ticks": 148,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 290,
+     "side": null,
+     "block": 63773,
+     "ticks": 125,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 291,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 292,
+     "side": null,
+     "block": 63899,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 293,
+     "side": null,
+     "block": 64014,
+     "ticks": 56,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 294,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 295,
+     "side": null,
+     "block": 64071,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 296,
+     "side": null,
+     "block": 64193,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 297,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 298,
+     "side": null,
+     "block": 64246,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 299,
+     "side": null,
+     "block": 64367,
+     "ticks": 56,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 15,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 300,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 301,
+     "side": null,
+     "block": 66582,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 302,
+     "side": null,
+     "block": 66709,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 303,
+     "side": null,
+     "block": 66767,
+     "ticks": 150,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 304,
+     "side": null,
+     "block": 66918,
+     "ticks": 124,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 305,
+     "side": null,
+     "block": 67043,
+     "ticks": 172,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 306,
+     "side": null,
+     "block": 67216,
+     "ticks": 142,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 307,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 308,
+     "side": null,
+     "block": 67359,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 309,
+     "side": null,
+     "block": 67486,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 310,
+     "side": null,
+     "block": 67552,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 311,
+     "side": null,
+     "block": 67697,
+     "ticks": 64,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 312,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 313,
+     "side": null,
+     "block": 67762,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 314,
+     "side": null,
+     "block": 67889,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 315,
+     "side": null,
+     "block": 67944,
+     "ticks": 157,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 316,
+     "side": null,
+     "block": 68102,
+     "ticks": 123,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 317,
+     "side": null,
+     "block": 68226,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 318,
+     "side": null,
+     "block": 68344,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 319,
+     "side": null,
+     "block": 68403,
+     "ticks": 116,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 16,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 320,
+     "side": null,
+     "block": 70692,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 321,
+     "side": null,
+     "block": 70764,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 322,
+     "side": null,
+     "block": 70898,
+     "ticks": 87,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 323,
+     "side": null,
+     "block": 70986,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 324,
+     "side": null,
+     "block": 71122,
+     "ticks": 128,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 325,
+     "side": null,
+     "block": 71251,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 326,
+     "side": null,
+     "block": 71379,
+     "ticks": 118,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 327,
+     "side": null,
+     "block": 71498,
+     "ticks": 146,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 328,
+     "side": null,
+     "block": 71645,
+     "ticks": 126,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 329,
+     "side": null,
+     "block": 71772,
+     "ticks": 152,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 330,
+     "side": null,
+     "block": 71925,
+     "ticks": 131,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 331,
+     "side": null,
+     "block": 72057,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 332,
+     "side": null,
+     "block": 72200,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 333,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 334,
+     "side": null,
+     "block": 72279,
+     "ticks": 113,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 335,
+     "side": null,
+     "block": 72393,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 336,
+     "side": null,
+     "block": 72471,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 337,
+     "side": null,
+     "block": 72599,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 338,
+     "side": null,
+     "block": 72654,
+     "ticks": 163,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 339,
+     "side": null,
+     "block": 72818,
+     "ticks": 159,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 17,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 340,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 341,
+     "side": null,
+     "block": 75134,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 342,
+     "side": null,
+     "block": 75262,
+     "ticks": 51,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 343,
+     "side": null,
+     "block": 75314,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 344,
+     "side": null,
+     "block": 75431,
+     "ticks": 68,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 345,
+     "side": null,
+     "block": 75500,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 346,
+     "side": null,
+     "block": 75638,
+     "ticks": 81,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 347,
+     "side": null,
+     "block": 75720,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 348,
+     "side": null,
+     "block": 75833,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 349,
+     "side": null,
+     "block": 75901,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 350,
+     "side": null,
+     "block": 76021,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 351,
+     "side": null,
+     "block": 76072,
+     "ticks": 164,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 352,
+     "side": null,
+     "block": 76237,
+     "ticks": 190,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 353,
+     "side": null,
+     "block": 76428,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 354,
+     "side": null,
+     "block": 76570,
+     "ticks": 98,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 355,
+     "side": null,
+     "block": 76669,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 356,
+     "side": null,
+     "block": 76799,
+     "ticks": 107,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 357,
+     "side": null,
+     "block": 76907,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 358,
+     "side": null,
+     "block": 77043,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 359,
+     "side": null,
+     "block": 77106,
+     "ticks": 192,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 18,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 360,
+     "side": null,
+     "block": 79603,
+     "ticks": 155,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 361,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 362,
+     "side": null,
+     "block": 79759,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 363,
+     "side": null,
+     "block": 79878,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 364,
+     "side": null,
+     "block": 79931,
+     "ticks": 175,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 365,
+     "side": null,
+     "block": 80107,
+     "ticks": 145,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 366,
+     "side": null,
+     "block": 80253,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 367,
+     "side": null,
+     "block": 80380,
+     "ticks": 92,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 368,
+     "side": null,
+     "block": 80473,
+     "ticks": 181,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 369,
+     "side": null,
+     "block": 80655,
+     "ticks": 142,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 370,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 371,
+     "side": null,
+     "block": 80798,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 372,
+     "side": null,
+     "block": 80916,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 373,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 374,
+     "side": null,
+     "block": 80970,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 375,
+     "side": null,
+     "block": 81094,
+     "ticks": 51,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 376,
+     "side": null,
+     "block": 81146,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 377,
+     "side": null,
+     "block": 81270,
+     "ticks": 49,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 19,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 379,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 380,
+     "side": null,
+     "block": 83494,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 381,
+     "side": null,
+     "block": 83609,
+     "ticks": 73,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 382,
+     "side": null,
+     "block": 83683,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 383,
+     "side": null,
+     "block": 83828,
+     "ticks": 101,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 384,
+     "side": null,
+     "block": 83930,
+     "ticks": 150,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 385,
+     "side": null,
+     "block": 84081,
+     "ticks": 102,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 386,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 387,
+     "side": null,
+     "block": 84184,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 388,
+     "side": null,
+     "block": 84307,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 389,
+     "side": null,
+     "block": 84371,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 390,
+     "side": null,
+     "block": 84534,
+     "ticks": 189,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 391,
+     "side": null,
+     "block": 84724,
+     "ticks": 167,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 392,
+     "side": null,
+     "block": 84892,
+     "ticks": 90,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 393,
+     "side": null,
+     "block": 84983,
+     "ticks": 113,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 394,
+     "side": null,
+     "block": 85097,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 395,
+     "side": null,
+     "block": 85167,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 396,
+     "side": null,
+     "block": 85298,
+     "ticks": 106,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 397,
+     "side": null,
+     "block": 85405,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 398,
+     "side": null,
+     "block": 85529,
+     "ticks": 48,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 20,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 399,
+     "side": null,
+     "block": 87909,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 400,
+     "side": null,
+     "block": 88025,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 401,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 402,
+     "side": null,
+     "block": 88080,
+     "ticks": 128,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 403,
+     "side": null,
+     "block": 88209,
+     "ticks": 74,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 404,
+     "side": null,
+     "block": 88284,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 405,
+     "side": null,
+     "block": 88409,
+     "ticks": 41,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 406,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 407,
+     "side": null,
+     "block": 88451,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 408,
+     "side": null,
+     "block": 88572,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 409,
+     "side": null,
+     "block": 88636,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 410,
+     "side": null,
+     "block": 88799,
+     "ticks": 125,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 411,
+     "side": null,
+     "block": 88925,
+     "ticks": 193,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 412,
+     "side": null,
+     "block": 89119,
+     "ticks": 120,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 413,
+     "side": null,
+     "block": 89240,
+     "ticks": 187,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 414,
+     "side": null,
+     "block": 89428,
+     "ticks": 124,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 415,
+     "side": null,
+     "block": 89553,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 416,
+     "side": null,
+     "block": 89677,
+     "ticks": 100,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 21,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 418,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 419,
+     "side": null,
+     "block": 91908,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 420,
+     "side": null,
+     "block": 92036,
+     "ticks": 64,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 421,
+     "side": null,
+     "block": 92101,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 422,
+     "side": null,
+     "block": 92218,
+     "ticks": 73,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 423,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 424,
+     "side": null,
+     "block": 92292,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 425,
+     "side": null,
+     "block": 92412,
+     "ticks": 91,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 426,
+     "side": null,
+     "block": 92504,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 427,
+     "side": null,
+     "block": 92632,
+     "ticks": 49,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 428,
+     "side": null,
+     "block": 92682,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 429,
+     "side": null,
+     "block": 92794,
+     "ticks": 68,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 430,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 431,
+     "side": null,
+     "block": 92863,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 432,
+     "side": null,
+     "block": 93008,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 433,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 434,
+     "side": null,
+     "block": 93080,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 435,
+     "side": null,
+     "block": 93203,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 436,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 437,
+     "side": null,
+     "block": 93261,
+     "ticks": 140,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 22,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 438,
+     "side": null,
+     "block": 95551,
+     "ticks": 86,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 439,
+     "side": null,
+     "block": 95638,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 440,
+     "side": null,
+     "block": 95766,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 441,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 442,
+     "side": null,
+     "block": 95825,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 443,
+     "side": null,
+     "block": 95952,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 444,
+     "side": null,
+     "block": 96031,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 445,
+     "side": null,
+     "block": 96152,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 446,
+     "side": null,
+     "block": 96203,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 447,
+     "side": null,
+     "block": 96331,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 448,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 449,
+     "side": null,
+     "block": 96403,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 450,
+     "side": null,
+     "block": 96546,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 451,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 452,
+     "side": null,
+     "block": 96601,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 453,
+     "side": null,
+     "block": 96732,
+     "ticks": 92,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 454,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 455,
+     "side": null,
+     "block": 96825,
+     "ticks": 160,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 456,
+     "side": null,
+     "block": 96986,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 457,
+     "side": null,
+     "block": 97044,
+     "ticks": 112,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 23,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 458,
+     "side": null,
+     "block": 99312,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 459,
+     "side": null,
+     "block": 99366,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 460,
+     "side": null,
+     "block": 99491,
+     "ticks": 109,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 461,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 462,
+     "side": null,
+     "block": 99601,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 463,
+     "side": null,
+     "block": 99720,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 464,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 465,
+     "side": null,
+     "block": 99784,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 466,
+     "side": null,
+     "block": 99909,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 467,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 468,
+     "side": null,
+     "block": 99975,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 469,
+     "side": null,
+     "block": 100105,
+     "ticks": 49,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 470,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 471,
+     "side": null,
+     "block": 100155,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 472,
+     "side": null,
+     "block": 100286,
+     "ticks": 46,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 473,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 474,
+     "side": null,
+     "block": 100333,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 475,
+     "side": null,
+     "block": 100454,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 476,
+     "side": null,
+     "block": 100515,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 477,
+     "side": null,
+     "block": 100642,
+     "ticks": 84,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 24,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 478,
+     "side": null,
+     "block": 102862,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 479,
+     "side": null,
+     "block": 102989,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 480,
+     "side": null,
+     "block": 103067,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 481,
+     "side": null,
+     "block": 103230,
+     "ticks": 171,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 482,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 483,
+     "side": null,
+     "block": 103402,
+     "ticks": 161,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 484,
+     "side": null,
+     "block": 103564,
+     "ticks": 82,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 485,
+     "side": null,
+     "block": 103647,
+     "ticks": 173,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 486,
+     "side": null,
+     "block": 103821,
+     "ticks": 147,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 487,
+     "side": null,
+     "block": 103969,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 488,
+     "side": null,
+     "block": 104111,
+     "ticks": 89,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 489,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 490,
+     "side": null,
+     "block": 104201,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 491,
+     "side": null,
+     "block": 104318,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 492,
+     "side": null,
+     "block": 104388,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 493,
+     "side": null,
+     "block": 104516,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 494,
+     "side": null,
+     "block": 104565,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 495,
+     "side": null,
+     "block": 104701,
+     "ticks": 98,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 25,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 497,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 498,
+     "side": null,
+     "block": 106945,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 499,
+     "side": null,
+     "block": 107061,
+     "ticks": 73,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 500,
+     "side": null,
+     "block": 107135,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 501,
+     "side": null,
+     "block": 107263,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 502,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 503,
+     "side": null,
+     "block": 107316,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 504,
+     "side": null,
+     "block": 107443,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 505,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 506,
+     "side": null,
+     "block": 107522,
+     "ticks": 128,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 507,
+     "side": null,
+     "block": 107651,
+     "ticks": 92,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 508,
+     "side": null,
+     "block": 107744,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 509,
+     "side": null,
+     "block": 107889,
+     "ticks": 68,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 510,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 511,
+     "side": null,
+     "block": 107958,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 512,
+     "side": null,
+     "block": 108078,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": false,
+     "decision": 513,
+     "side": null,
+     "block": 108139,
+     "ticks": 89,
+     "label": "Pick"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 514,
+     "side": null,
+     "block": 108229,
+     "ticks": 70,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 515,
+     "side": null,
+     "block": 108300,
+     "ticks": 149,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 26,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 517,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 518,
+     "side": null,
+     "block": 110592,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 519,
+     "side": null,
+     "block": 110715,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 520,
+     "side": null,
+     "block": 110787,
+     "ticks": 170,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 521,
+     "side": null,
+     "block": 110958,
+     "ticks": 186,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 522,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 523,
+     "side": null,
+     "block": 111145,
+     "ticks": 149,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 524,
+     "side": null,
+     "block": 111295,
+     "ticks": 83,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 525,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 526,
+     "side": null,
+     "block": 111379,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 527,
+     "side": null,
+     "block": 111504,
+     "ticks": 82,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 528,
+     "side": null,
+     "block": 111587,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 529,
+     "side": null,
+     "block": 111712,
+     "ticks": 38,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 530,
+     "side": null,
+     "block": 111751,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 531,
+     "side": null,
+     "block": 111888,
+     "ticks": 104,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 532,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 533,
+     "side": null,
+     "block": 111993,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 534,
+     "side": null,
+     "block": 112131,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 535,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 536,
+     "side": null,
+     "block": 112195,
+     "ticks": 132,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 27,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 537,
+     "side": null,
+     "block": 114463,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 538,
+     "side": null,
+     "block": 114526,
+     "ticks": 167,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 539,
+     "side": null,
+     "block": 114694,
+     "ticks": 146,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 540,
+     "side": null,
+     "block": 114841,
+     "ticks": 151,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 541,
+     "side": null,
+     "block": 114993,
+     "ticks": 102,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 542,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 543,
+     "side": null,
+     "block": 115096,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 544,
+     "side": null,
+     "block": 115212,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 545,
+     "side": null,
+     "block": 115273,
+     "ticks": 111,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 546,
+     "side": null,
+     "block": 115385,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 547,
+     "side": null,
+     "block": 115474,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 548,
+     "side": null,
+     "block": 115619,
+     "ticks": 92,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 549,
+     "side": null,
+     "block": 115712,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 550,
+     "side": null,
+     "block": 115844,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 551,
+     "side": null,
+     "block": 115910,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 552,
+     "side": null,
+     "block": 116030,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 553,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 554,
+     "side": null,
+     "block": 116091,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 555,
+     "side": null,
+     "block": 116208,
+     "ticks": 62,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 28,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 557,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 558,
+     "side": null,
+     "block": 118413,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 559,
+     "side": null,
+     "block": 118537,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 560,
+     "side": null,
+     "block": 118600,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 561,
+     "side": null,
+     "block": 118728,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 562,
+     "side": null,
+     "block": 118799,
+     "ticks": 180,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 563,
+     "side": null,
+     "block": 118980,
+     "ticks": 154,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 564,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 565,
+     "side": null,
+     "block": 119135,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 566,
+     "side": null,
+     "block": 119252,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 567,
+     "side": null,
+     "block": 119316,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 568,
+     "side": null,
+     "block": 119446,
+     "ticks": 74,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 569,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 570,
+     "side": null,
+     "block": 119521,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 571,
+     "side": null,
+     "block": 119637,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 572,
+     "side": null,
+     "block": 119696,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 573,
+     "side": null,
+     "block": 119823,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 574,
+     "side": null,
+     "block": 119882,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 575,
+     "side": null,
+     "block": 120019,
+     "ticks": 113,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 576,
+     "side": null,
+     "block": 120133,
+     "ticks": 144,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 29,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 577,
+     "side": null,
+     "block": 122438,
+     "ticks": 102,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 578,
+     "side": null,
+     "block": 122541,
+     "ticks": 152,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 579,
+     "side": null,
+     "block": 122694,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 580,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 581,
+     "side": null,
+     "block": 122762,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 582,
+     "side": null,
+     "block": 122886,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 583,
+     "side": null,
+     "block": 122937,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 584,
+     "side": null,
+     "block": 123072,
+     "ticks": 113,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 585,
+     "side": null,
+     "block": 123186,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 586,
+     "side": null,
+     "block": 123312,
+     "ticks": 99,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 587,
+     "side": null,
+     "block": 123412,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 588,
+     "side": null,
+     "block": 123532,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 589,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 590,
+     "side": null,
+     "block": 123600,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 591,
+     "side": null,
+     "block": 123718,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 592,
+     "side": null,
+     "block": 123776,
+     "ticks": 173,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 593,
+     "side": null,
+     "block": 123950,
+     "ticks": 170,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 594,
+     "side": null,
+     "block": 124121,
+     "ticks": 158,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 595,
+     "side": null,
+     "block": 124280,
+     "ticks": 114,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 596,
+     "side": null,
+     "block": 124395,
+     "ticks": 151,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 30,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 597,
+     "side": null,
+     "block": 126688,
+     "ticks": 125,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 598,
+     "side": null,
+     "block": 126814,
+     "ticks": 159,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 599,
+     "side": null,
+     "block": 126974,
+     "ticks": 167,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 600,
+     "side": null,
+     "block": 127142,
+     "ticks": 132,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 601,
+     "side": null,
+     "block": 127275,
+     "ticks": 85,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 602,
+     "side": null,
+     "block": 127361,
+     "ticks": 165,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 603,
+     "side": null,
+     "block": 127527,
+     "ticks": 108,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 604,
+     "side": null,
+     "block": 127636,
+     "ticks": 154,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 605,
+     "side": null,
+     "block": 127791,
+     "ticks": 147,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 606,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 607,
+     "side": null,
+     "block": 127939,
+     "ticks": 152,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 608,
+     "side": null,
+     "block": 128092,
+     "ticks": 87,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 609,
+     "side": null,
+     "block": 128180,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 610,
+     "side": null,
+     "block": 128290,
+     "ticks": 61,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 611,
+     "side": null,
+     "block": 128352,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 612,
+     "side": null,
+     "block": 128484,
+     "ticks": 73,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 613,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 614,
+     "side": null,
+     "block": 128558,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 615,
+     "side": null,
+     "block": 128681,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 616,
+     "side": null,
+     "block": 128759,
+     "ticks": 168,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 31,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 617,
+     "side": null,
+     "block": 131290,
+     "ticks": 183,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 618,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 619,
+     "side": null,
+     "block": 131474,
+     "ticks": 146,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 620,
+     "side": null,
+     "block": 131621,
+     "ticks": 61,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 621,
+     "side": null,
+     "block": 131683,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 622,
+     "side": null,
+     "block": 131803,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 623,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 624,
+     "side": null,
+     "block": 131857,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 625,
+     "side": null,
+     "block": 131980,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 626,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 627,
+     "side": null,
+     "block": 132033,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 628,
+     "side": null,
+     "block": 132155,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 629,
+     "side": null,
+     "block": 132232,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 630,
+     "side": null,
+     "block": 132359,
+     "ticks": 47,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 631,
+     "side": null,
+     "block": 132407,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 632,
+     "side": null,
+     "block": 132524,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 633,
+     "side": null,
+     "block": 132585,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 634,
+     "side": null,
+     "block": 132709,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 635,
+     "side": null,
+     "block": 132781,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 636,
+     "side": null,
+     "block": 132923,
+     "ticks": 99,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 32,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 637,
+     "side": null,
+     "block": 135163,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 638,
+     "side": null,
+     "block": 135300,
+     "ticks": 98,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 639,
+     "side": null,
+     "block": 135399,
+     "ticks": 163,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 640,
+     "side": null,
+     "block": 135563,
+     "ticks": 212,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 641,
+     "side": null,
+     "block": 135776,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 642,
+     "side": null,
+     "block": 135913,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 643,
+     "side": null,
+     "block": 135985,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 644,
+     "side": null,
+     "block": 136105,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 645,
+     "side": null,
+     "block": 136158,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 646,
+     "side": null,
+     "block": 136288,
+     "ticks": 105,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 647,
+     "side": null,
+     "block": 136394,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 648,
+     "side": null,
+     "block": 136515,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 649,
+     "side": null,
+     "block": 136593,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 650,
+     "side": null,
+     "block": 136727,
+     "ticks": 90,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 651,
+     "side": null,
+     "block": 136818,
+     "ticks": 106,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 652,
+     "side": null,
+     "block": 136925,
+     "ticks": 66,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 653,
+     "side": null,
+     "block": 136992,
+     "ticks": 109,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 654,
+     "side": null,
+     "block": 137102,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 655,
+     "side": null,
+     "block": 137166,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 656,
+     "side": null,
+     "block": 137283,
+     "ticks": 65,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 33,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 657,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 658,
+     "side": null,
+     "block": 139493,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 659,
+     "side": null,
+     "block": 139620,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 660,
+     "side": null,
+     "block": 139669,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 661,
+     "side": null,
+     "block": 139801,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 662,
+     "side": null,
+     "block": 139890,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 663,
+     "side": null,
+     "block": 140027,
+     "ticks": 104,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 664,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 665,
+     "side": null,
+     "block": 140132,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 666,
+     "side": null,
+     "block": 140256,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 667,
+     "side": null,
+     "block": 140315,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 668,
+     "side": null,
+     "block": 140438,
+     "ticks": 45,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 669,
+     "side": null,
+     "block": 140484,
+     "ticks": 170,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 670,
+     "side": null,
+     "block": 140655,
+     "ticks": 165,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 671,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 672,
+     "side": null,
+     "block": 140821,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 673,
+     "side": null,
+     "block": 140938,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 674,
+     "side": null,
+     "block": 141001,
+     "ticks": 171,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 675,
+     "side": null,
+     "block": 141173,
+     "ticks": 156,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 676,
+     "side": null,
+     "block": 141330,
+     "ticks": 157,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 34,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 677,
+     "side": null,
+     "block": 143622,
+     "ticks": 94,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 678,
+     "side": null,
+     "block": 143717,
+     "ticks": 149,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 679,
+     "side": null,
+     "block": 143867,
+     "ticks": 156,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 680,
+     "side": null,
+     "block": 144024,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 681,
+     "side": null,
+     "block": 144159,
+     "ticks": 84,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 682,
+     "side": null,
+     "block": 144244,
+     "ticks": 159,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 683,
+     "side": null,
+     "block": 144404,
+     "ticks": 138,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 684,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 685,
+     "side": null,
+     "block": 144543,
+     "ticks": 146,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 686,
+     "side": null,
+     "block": 144690,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 687,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 688,
+     "side": null,
+     "block": 144779,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 689,
+     "side": null,
+     "block": 144903,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 690,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 691,
+     "side": null,
+     "block": 144980,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 692,
+     "side": null,
+     "block": 145102,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 693,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 694,
+     "side": null,
+     "block": 145160,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 695,
+     "side": null,
+     "block": 145280,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 696,
+     "side": null,
+     "block": 145358,
+     "ticks": 119,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 35,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 697,
+     "side": null,
+     "block": 147628,
+     "ticks": 88,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 698,
+     "side": null,
+     "block": 147717,
+     "ticks": 156,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 699,
+     "side": null,
+     "block": 147874,
+     "ticks": 107,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 700,
+     "side": null,
+     "block": 147982,
+     "ticks": 129,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 701,
+     "side": null,
+     "block": 148112,
+     "ticks": 91,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 702,
+     "side": null,
+     "block": 148204,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 703,
+     "side": null,
+     "block": 148329,
+     "ticks": 89,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 704,
+     "side": null,
+     "block": 148419,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 705,
+     "side": null,
+     "block": 148562,
+     "ticks": 99,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 706,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 707,
+     "side": null,
+     "block": 148662,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 708,
+     "side": null,
+     "block": 148784,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 709,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 710,
+     "side": null,
+     "block": 148833,
+     "ticks": 124,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 711,
+     "side": null,
+     "block": 148958,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 712,
+     "side": null,
+     "block": 149024,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 713,
+     "side": null,
+     "block": 149143,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 714,
+     "side": "opposite_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 far side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 715,
+     "side": null,
+     "block": 149194,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 716,
+     "side": null,
+     "block": 149318,
+     "ticks": 107,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 36,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 717,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 718,
+     "side": null,
+     "block": 151557,
+     "ticks": 174,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 719,
+     "side": null,
+     "block": 151732,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 720,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 721,
+     "side": null,
+     "block": 151785,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 722,
+     "side": null,
+     "block": 151905,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 723,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 724,
+     "side": null,
+     "block": 151958,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 725,
+     "side": null,
+     "block": 152093,
+     "ticks": 89,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 726,
+     "side": null,
+     "block": 152183,
+     "ticks": 143,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 727,
+     "side": null,
+     "block": 152327,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 728,
+     "side": null,
+     "block": 152383,
+     "ticks": 170,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 729,
+     "side": null,
+     "block": 152554,
+     "ticks": 127,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 730,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 731,
+     "side": null,
+     "block": 152682,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 732,
+     "side": null,
+     "block": 152804,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 733,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 734,
+     "side": null,
+     "block": 152868,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 735,
+     "side": null,
+     "block": 152994,
+     "ticks": 84,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 37,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 737,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 738,
+     "side": null,
+     "block": 155253,
+     "ticks": 143,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 739,
+     "side": null,
+     "block": 155397,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 740,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 741,
+     "side": null,
+     "block": 155453,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 742,
+     "side": null,
+     "block": 155570,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 743,
+     "side": null,
+     "block": 155641,
+     "ticks": 195,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 744,
+     "side": null,
+     "block": 155837,
+     "ticks": 150,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 745,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 746,
+     "side": null,
+     "block": 155988,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 747,
+     "side": null,
+     "block": 156111,
+     "ticks": 64,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 748,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 749,
+     "side": null,
+     "block": 156176,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 750,
+     "side": null,
+     "block": 156296,
+     "ticks": 51,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 751,
+     "side": null,
+     "block": 156348,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 752,
+     "side": null,
+     "block": 156479,
+     "ticks": 89,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 753,
+     "side": null,
+     "block": 156569,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 754,
+     "side": null,
+     "block": 156682,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 755,
+     "side": null,
+     "block": 156735,
+     "ticks": 183,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 756,
+     "side": null,
+     "block": 156919,
+     "ticks": 140,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 38,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 757,
+     "side": null,
+     "block": 159205,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 758,
+     "side": null,
+     "block": 159322,
+     "ticks": 91,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 759,
+     "side": null,
+     "block": 159414,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 760,
+     "side": null,
+     "block": 159548,
+     "ticks": 91,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 761,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 762,
+     "side": null,
+     "block": 159640,
+     "ticks": 138,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 763,
+     "side": null,
+     "block": 159779,
+     "ticks": 59,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 764,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 765,
+     "side": null,
+     "block": 159839,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 766,
+     "side": null,
+     "block": 159959,
+     "ticks": 75,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 767,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 768,
+     "side": null,
+     "block": 160035,
+     "ticks": 125,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 769,
+     "side": null,
+     "block": 160161,
+     "ticks": 62,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 770,
+     "side": null,
+     "block": 160224,
+     "ticks": 157,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 771,
+     "side": null,
+     "block": 160382,
+     "ticks": 142,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 772,
+     "side": null,
+     "block": 160525,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 773,
+     "side": null,
+     "block": 160641,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 774,
+     "side": null,
+     "block": 160711,
+     "ticks": 196,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 775,
+     "side": null,
+     "block": 160908,
+     "ticks": 165,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 776,
+     "side": null,
+     "block": 161074,
+     "ticks": 164,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 39,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 777,
+     "side": null,
+     "block": 163395,
+     "ticks": 170,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 778,
+     "side": null,
+     "block": 163566,
+     "ticks": 165,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 779,
+     "side": null,
+     "block": 163732,
+     "ticks": 134,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 780,
+     "side": null,
+     "block": 163867,
+     "ticks": 130,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 781,
+     "side": null,
+     "block": 163998,
+     "ticks": 105,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 782,
+     "side": null,
+     "block": 164104,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 783,
+     "side": null,
+     "block": 164246,
+     "ticks": 106,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 784,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 785,
+     "side": null,
+     "block": 164353,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 786,
+     "side": null,
+     "block": 164491,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 787,
+     "side": null,
+     "block": 164562,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 788,
+     "side": null,
+     "block": 164700,
+     "ticks": 100,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 789,
+     "side": null,
+     "block": 164801,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 790,
+     "side": null,
+     "block": 164922,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 791,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 792,
+     "side": null,
+     "block": 164983,
+     "ticks": 128,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 793,
+     "side": null,
+     "block": 165112,
+     "ticks": 70,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 794,
+     "side": "opposite_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 far side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 795,
+     "side": null,
+     "block": 165183,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 796,
+     "side": null,
+     "block": 165320,
+     "ticks": 69,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 40,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 797,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 798,
+     "side": null,
+     "block": 167543,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 799,
+     "side": null,
+     "block": 167665,
+     "ticks": 49,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 800,
+     "side": null,
+     "block": 167715,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 801,
+     "side": null,
+     "block": 167847,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 802,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 803,
+     "side": null,
+     "block": 167925,
+     "ticks": 112,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 804,
+     "side": null,
+     "block": 168038,
+     "ticks": 72,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 805,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 806,
+     "side": null,
+     "block": 168111,
+     "ticks": 139,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 807,
+     "side": null,
+     "block": 168251,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 808,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 809,
+     "side": null,
+     "block": 168319,
+     "ticks": 140,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 810,
+     "side": null,
+     "block": 168460,
+     "ticks": 49,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 811,
+     "side": null,
+     "block": 168510,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 812,
+     "side": null,
+     "block": 168634,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 813,
+     "side": null,
+     "block": 168687,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 814,
+     "side": null,
+     "block": 168810,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 815,
+     "side": null,
+     "block": 168861,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 816,
+     "side": null,
+     "block": 169003,
+     "ticks": 83,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 41,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 817,
+     "side": null,
+     "block": 171219,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 818,
+     "side": null,
+     "block": 171364,
+     "ticks": 109,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 819,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 820,
+     "side": null,
+     "block": 171474,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 821,
+     "side": null,
+     "block": 171596,
+     "ticks": 64,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 822,
+     "side": null,
+     "block": 171661,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 823,
+     "side": null,
+     "block": 171789,
+     "ticks": 77,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 824,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 825,
+     "side": null,
+     "block": 171867,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 826,
+     "side": null,
+     "block": 171987,
+     "ticks": 74,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 827,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 828,
+     "side": null,
+     "block": 172062,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 829,
+     "side": null,
+     "block": 172196,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 830,
+     "side": null,
+     "block": 172252,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 831,
+     "side": null,
+     "block": 172394,
+     "ticks": 93,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 832,
+     "side": null,
+     "block": 172488,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 833,
+     "side": null,
+     "block": 172605,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 834,
+     "side": "opposite_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 far side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 835,
+     "side": null,
+     "block": 172663,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 836,
+     "side": null,
+     "block": 172799,
+     "ticks": 101,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 42,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 837,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 838,
+     "side": null,
+     "block": 175047,
+     "ticks": 132,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 839,
+     "side": null,
+     "block": 175180,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 840,
+     "side": null,
+     "block": 175236,
+     "ticks": 136,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 841,
+     "side": null,
+     "block": 175373,
+     "ticks": 104,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 842,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 843,
+     "side": null,
+     "block": 175478,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 844,
+     "side": null,
+     "block": 175602,
+     "ticks": 59,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 845,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 846,
+     "side": null,
+     "block": 175662,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 847,
+     "side": null,
+     "block": 175785,
+     "ticks": 75,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 848,
+     "side": null,
+     "block": 175861,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 849,
+     "side": null,
+     "block": 175982,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": false,
+     "decision": 850,
+     "side": null,
+     "block": 176040,
+     "ticks": 188,
+     "label": "Pick"
+    },
+    {
+     "skill": "OpenGripper",
+     "success": true,
+     "decision": 851,
+     "side": null,
+     "block": 176229,
+     "ticks": 1,
+     "label": "OpenGripper"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 852,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 853,
+     "side": null,
+     "block": 176231,
+     "ticks": 158,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 854,
+     "side": null,
+     "block": 176390,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 855,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 856,
+     "side": null,
+     "block": 176460,
+     "ticks": 119,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 43,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 857,
+     "side": null,
+     "block": 178708,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 858,
+     "side": null,
+     "block": 178774,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 859,
+     "side": null,
+     "block": 178897,
+     "ticks": 55,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 860,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 861,
+     "side": null,
+     "block": 178953,
+     "ticks": 128,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 862,
+     "side": null,
+     "block": 179082,
+     "ticks": 49,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 863,
+     "side": null,
+     "block": 179132,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 864,
+     "side": null,
+     "block": 179270,
+     "ticks": 115,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 865,
+     "side": null,
+     "block": 179386,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 866,
+     "side": null,
+     "block": 179549,
+     "ticks": 147,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 867,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 868,
+     "side": null,
+     "block": 179697,
+     "ticks": 108,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 869,
+     "side": null,
+     "block": 179806,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 870,
+     "side": null,
+     "block": 179870,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 871,
+     "side": null,
+     "block": 180005,
+     "ticks": 66,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 872,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 873,
+     "side": null,
+     "block": 180072,
+     "ticks": 121,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 874,
+     "side": null,
+     "block": 180194,
+     "ticks": 60,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 875,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 876,
+     "side": null,
+     "block": 180255,
+     "ticks": 129,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 44,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 877,
+     "side": null,
+     "block": 182528,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 878,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 879,
+     "side": null,
+     "block": 182583,
+     "ticks": 141,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 880,
+     "side": null,
+     "block": 182725,
+     "ticks": 72,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 881,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 882,
+     "side": null,
+     "block": 182798,
+     "ticks": 138,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 883,
+     "side": null,
+     "block": 182937,
+     "ticks": 66,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 884,
+     "side": null,
+     "block": 183004,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 885,
+     "side": null,
+     "block": 183127,
+     "ticks": 69,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 886,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 887,
+     "side": null,
+     "block": 183197,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 888,
+     "side": null,
+     "block": 183312,
+     "ticks": 63,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 889,
+     "side": null,
+     "block": 183376,
+     "ticks": 162,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 890,
+     "side": null,
+     "block": 183539,
+     "ticks": 149,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 891,
+     "side": null,
+     "block": 183689,
+     "ticks": 150,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 892,
+     "side": null,
+     "block": 183840,
+     "ticks": 135,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 893,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 894,
+     "side": null,
+     "block": 183976,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 895,
+     "side": null,
+     "block": 184096,
+     "ticks": 60,
+     "label": "Toss"
+    }
+   ],
+   "end": "STOP"
+  },
+  {
+   "cycle": 45,
+   "actions": [
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 897,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 898,
+     "side": null,
+     "block": 186298,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 899,
+     "side": null,
+     "block": 186418,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 900,
+     "side": null,
+     "block": 186469,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 901,
+     "side": null,
+     "block": 186614,
+     "ticks": 94,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 902,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 903,
+     "side": null,
+     "block": 186709,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 904,
+     "side": null,
+     "block": 186825,
+     "ticks": 50,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 905,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 906,
+     "side": null,
+     "block": 186876,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 907,
+     "side": null,
+     "block": 186996,
+     "ticks": 65,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 908,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 909,
+     "side": null,
+     "block": 187062,
+     "ticks": 134,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 910,
+     "side": null,
+     "block": 187197,
+     "ticks": 76,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 911,
+     "side": null,
+     "block": 187274,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 912,
+     "side": null,
+     "block": 187401,
+     "ticks": 56,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 913,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 914,
+     "side": null,
+     "block": 187458,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 915,
+     "side": null,
+     "block": 187582,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 916,
+     "side": null,
+     "block": 187661,
+     "ticks": 183,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 46,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 917,
+     "side": null,
+     "block": 190021,
+     "ticks": 166,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 918,
+     "side": null,
+     "block": 190188,
+     "ticks": 137,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 919,
+     "side": null,
+     "block": 190326,
+     "ticks": 99,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 920,
+     "side": null,
+     "block": 190426,
+     "ticks": 135,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 921,
+     "side": null,
+     "block": 190562,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 922,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 923,
+     "side": null,
+     "block": 190630,
+     "ticks": 114,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 924,
+     "side": null,
+     "block": 190745,
+     "ticks": 58,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 925,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 926,
+     "side": null,
+     "block": 190804,
+     "ticks": 127,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 927,
+     "side": null,
+     "block": 190932,
+     "ticks": 75,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 928,
+     "side": null,
+     "block": 191008,
+     "ticks": 120,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 929,
+     "side": null,
+     "block": 191129,
+     "ticks": 47,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 930,
+     "side": null,
+     "block": 191177,
+     "ticks": 110,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 931,
+     "side": null,
+     "block": 191288,
+     "ticks": 52,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 932,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 933,
+     "side": null,
+     "block": 191341,
+     "ticks": 113,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 934,
+     "side": null,
+     "block": 191455,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 935,
+     "side": null,
+     "block": 191510,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 936,
+     "side": null,
+     "block": 191644,
+     "ticks": 91,
+     "label": "Toss"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 47,
+   "actions": [
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 937,
+     "side": null,
+     "block": 193893,
+     "ticks": 166,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 938,
+     "side": null,
+     "block": 194060,
+     "ticks": 155,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 939,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 940,
+     "side": null,
+     "block": 194216,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 941,
+     "side": null,
+     "block": 194335,
+     "ticks": 51,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 942,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 943,
+     "side": null,
+     "block": 194387,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 944,
+     "side": null,
+     "block": 194503,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 945,
+     "side": null,
+     "block": 194552,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 946,
+     "side": null,
+     "block": 194697,
+     "ticks": 120,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 947,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 948,
+     "side": null,
+     "block": 194818,
+     "ticks": 115,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 949,
+     "side": null,
+     "block": 194934,
+     "ticks": 48,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 950,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 951,
+     "side": null,
+     "block": 194983,
+     "ticks": 133,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 952,
+     "side": null,
+     "block": 195117,
+     "ticks": 78,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": false,
+     "decision": 953,
+     "side": null,
+     "block": 195196,
+     "ticks": 155,
+     "label": "Pick"
+    },
+    {
+     "skill": "OpenGripper",
+     "success": true,
+     "decision": 954,
+     "side": null,
+     "block": 195352,
+     "ticks": 1,
+     "label": "OpenGripper"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 955,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 956,
+     "side": null,
+     "block": 195354,
+     "ticks": 154,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 48,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 957,
+     "side": null,
+     "block": 197651,
+     "ticks": 67,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 958,
+     "side": null,
+     "block": 197719,
+     "ticks": 117,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 959,
+     "side": null,
+     "block": 197837,
+     "ticks": 53,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 960,
+     "side": null,
+     "block": 197891,
+     "ticks": 126,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 961,
+     "side": null,
+     "block": 198018,
+     "ticks": 119,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 962,
+     "side": null,
+     "block": 198138,
+     "ticks": 142,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 963,
+     "side": null,
+     "block": 198281,
+     "ticks": 84,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 964,
+     "side": null,
+     "block": 198366,
+     "ticks": 107,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 965,
+     "side": null,
+     "block": 198474,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 966,
+     "side": null,
+     "block": 198529,
+     "ticks": 131,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 967,
+     "side": null,
+     "block": 198661,
+     "ticks": 98,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 968,
+     "side": null,
+     "block": 198760,
+     "ticks": 144,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 969,
+     "side": null,
+     "block": 198905,
+     "ticks": 71,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 970,
+     "side": null,
+     "block": 198977,
+     "ticks": 160,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 971,
+     "side": null,
+     "block": 199138,
+     "ticks": 175,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 972,
+     "side": null,
+     "block": 199314,
+     "ticks": 150,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 973,
+     "side": null,
+     "block": 199465,
+     "ticks": 124,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 974,
+     "side": null,
+     "block": 199590,
+     "ticks": 116,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 975,
+     "side": null,
+     "block": 199707,
+     "ticks": 46,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 976,
+     "side": null,
+     "block": 199754,
+     "ticks": 158,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  },
+  {
+   "cycle": 49,
+   "actions": [
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 977,
+     "side": null,
+     "block": 202063,
+     "ticks": 130,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 978,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 979,
+     "side": null,
+     "block": 202194,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 980,
+     "side": null,
+     "block": 202317,
+     "ticks": 57,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 981,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 982,
+     "side": null,
+     "block": 202375,
+     "ticks": 118,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 983,
+     "side": null,
+     "block": 202494,
+     "ticks": 46,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 984,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 985,
+     "side": null,
+     "block": 202541,
+     "ticks": 122,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 986,
+     "side": null,
+     "block": 202664,
+     "ticks": 83,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 987,
+     "side": null,
+     "block": 202748,
+     "ticks": 161,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 988,
+     "side": null,
+     "block": 202910,
+     "ticks": 114,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 989,
+     "side": null,
+     "block": 203025,
+     "ticks": 123,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 990,
+     "side": null,
+     "block": 203149,
+     "ticks": 95,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 991,
+     "side": null,
+     "block": 203245,
+     "ticks": 153,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": true,
+     "decision": 992,
+     "side": null,
+     "block": 203399,
+     "ticks": 146,
+     "label": "Toss"
+    },
+    {
+     "skill": "ask_for_reset_cube_bin_only",
+     "success": true,
+     "decision": 993,
+     "side": "robot_side",
+     "block": null,
+     "ticks": 0,
+     "label": "Reset H \u2192 robot side"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 994,
+     "side": null,
+     "block": 203546,
+     "ticks": 119,
+     "label": "Pick"
+    },
+    {
+     "skill": "MoveToTossLocationAndToss",
+     "success": false,
+     "decision": 995,
+     "side": null,
+     "block": 203666,
+     "ticks": 54,
+     "label": "Toss"
+    },
+    {
+     "skill": "PickCube",
+     "success": true,
+     "decision": 996,
+     "side": null,
+     "block": 203721,
+     "ticks": 126,
+     "label": "Pick"
+    }
+   ],
+   "end": "20-action cap"
+  }
+ ],
+ "eval": []
+}
