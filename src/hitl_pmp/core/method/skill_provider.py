@@ -47,6 +47,10 @@ class SkillProvider(BaseModel, abc.ABC):
         and the planner both enumerate)."""
         raise NotImplementedError
 
+    def deployment_skills(self) -> tuple[Skill, ...]:
+        """Physical skills scored at deployment; existing domains keep all skills."""
+        return self.skills()
+
     @abc.abstractmethod
     def predicates(self) -> tuple[Predicate, ...]:
         raise NotImplementedError

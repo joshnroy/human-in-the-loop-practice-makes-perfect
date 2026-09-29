@@ -22,12 +22,23 @@ class SweepSymbols:
         "WiperHome",
         "DrawerOpen",
         "DrawerClosed",
+        "DrawerNotOpen",
+        "DrawerNotClosed",
         "RobotHome",
+        "RobotAway",
         "AnyCubeInPile",
         *(
             f"{fact}{i}"
             for i in range(5)
-            for fact in ("InPile", "InDrawer", "HoldingCube", "Pickable", "Blocked", "Loose")
+            for fact in (
+                "InPile",
+                "InDrawer",
+                "HoldingCube",
+                "Pickable",
+                "Blocked",
+                "Loose",
+                "SweepReachable",
+            )
         ),
     )
     CONTINUOUS: ClassVar[tuple[str, ...]] = (
@@ -89,9 +100,9 @@ class SweepSymbols:
         skills = [
             build(
                 name="OpenDrawer",
-                pre=("HandEmpty", "DrawerClosed"),
-                add=("DrawerOpen",),
-                delete=("DrawerClosed",),
+                pre=("HandEmpty", "DrawerNotOpen"),
+                add=("DrawerOpen", "DrawerNotClosed"),
+                delete=("DrawerClosed", "DrawerNotOpen"),
                 param_dim=2,
             ),
             build(
@@ -103,7 +114,12 @@ class SweepSymbols:
             ),
             build(
                 name="Sweep",
-                pre=("HoldingWiper", "DrawerOpen", "AnyCubeInPile"),
+                pre=(
+                    "HoldingWiper",
+                    "DrawerOpen",
+                    "AnyCubeInPile",
+                    *(f"SweepReachable{i}" for i in range(5)),
+                ),
                 add=tuple(f"InDrawer{i}" for i in range(5)),
                 delete=("AnyCubeInPile", *(f"InPile{i}" for i in range(5))),
                 param_dim=2,
@@ -122,30 +138,46 @@ class SweepSymbols:
             ),
             build(
                 name="OpenResetDrawer",
-                pre=("HandEmpty", "DrawerClosed"),
-                add=("DrawerOpen",),
-                delete=("DrawerClosed",),
+                pre=("HandEmpty", "DrawerNotOpen"),
+                add=("DrawerOpen", "DrawerNotClosed"),
+                delete=("DrawerClosed", "DrawerNotOpen"),
             ),
             build(
                 name="CloseDrawer",
-                pre=("HandEmpty", "DrawerOpen"),
-                add=("DrawerClosed",),
-                delete=("DrawerOpen",),
+                pre=("HandEmpty", "DrawerNotClosed"),
+                add=("DrawerClosed", "DrawerNotOpen"),
+                delete=("DrawerOpen", "DrawerNotClosed"),
             ),
-            build(name="ParkRobot", pre=("HandEmpty",), add=("RobotHome",)),
+            build(
+                name="ParkRobot",
+                pre=("HandEmpty", "RobotAway"),
+                add=("RobotHome",),
+                delete=("RobotAway",),
+            ),
         ]
         for i in range(5):
             skills.extend((
                 build(
                     name=f"PickCube{i}",
-                    pre=("HandEmpty", f"Pickable{i}", f"Loose{i}"),
+                    # These are conditions for an attempted pick, not a claim
+                    # that a future geometry has a collision-free grasp. The
+                    # fixed controller plans/checks that at actual dispatch;
+                    # refusal is an observed failure. ParkWiper invents no
+                    # Pickable facts for a hypothetical future scene.
+                    pre=("HandEmpty", f"Loose{i}"),
                     add=(f"HoldingCube{i}",),
-                    delete=("HandEmpty", f"Pickable{i}", f"InDrawer{i}", f"InPile{i}"),
+                    delete=(
+                        "HandEmpty",
+                        f"Pickable{i}",
+                        f"InDrawer{i}",
+                        f"InPile{i}",
+                        f"SweepReachable{i}",
+                    ),
                 ),
                 build(
                     name=f"PlaceCube{i}",
                     pre=(f"HoldingCube{i}",),
-                    add=("HandEmpty", f"InPile{i}", "AnyCubeInPile"),
+                    add=("HandEmpty", f"InPile{i}", "AnyCubeInPile", f"SweepReachable{i}"),
                     delete=(f"HoldingCube{i}", f"Loose{i}", f"Blocked{i}"),
                 ),
                 build(
@@ -174,9 +206,11 @@ class SweepSymbols:
             "HandEmpty",
             "WiperHome",
             "DrawerClosed",
+            "DrawerNotOpen",
             "RobotHome",
             "AnyCubeInPile",
             *(f"InPile{i}" for i in range(5)),
+            *(f"SweepReachable{i}" for i in range(5)),
         )
         skill = SweepSymbols.skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
