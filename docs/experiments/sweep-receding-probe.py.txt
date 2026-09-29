@@ -1,0 +1,47 @@
+import json, time, resource, sys
+from pathlib import Path
+human_cost=float(sys.argv[1]); probe_seed=int(sys.argv[2])
+from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.environments.sweep_drawer3d.symbolic import SweepSymbols, SWEEP_PREDICATES
+from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+from hitl_pmp.methods.belief_space.sweep_deployment_model import SweepDeploymentExpectation
+from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+
+def atoms(names):
+    return frozenset(GroundAtom(predicate=SWEEP_PREDICATES[n],objects=(SweepSymbols.SCENE,)) for n in names)
+skills=tuple(GroundSkill(skill=s,objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills())+(SweepSymbols.human_reset(cost=human_cost),)
+initial=atoms(('HandEmpty','WiperHome','DrawerClosed','DrawerNotOpen','RobotHome','AnyCubeInPile',*(f'{name}{i}' for i in range(5) for name in ('InPile','SweepReachable'))))
+goal=atoms(tuple(f'InDrawer{i}' for i in range(5)))
+current=atoms(('HoldingWiper','DrawerOpen','DrawerNotClosed','RobotAway',*(f'{name}{i}' for i in range(5) for name in ('Loose','Blocked'))))
+state=SweepBeliefs.prior(skill_names=tuple(s.skill.name for s in skills),trainable_skill_names=SweepSymbols.TRAINABLE,seed=probe_seed,num_particles=1024,config=InferenceConfig(),engine="grid")
+model=SweepPracticeModel(seed=probe_seed,ground_skills=skills,trainable_skill_names=SweepSymbols.TRAINABLE,human_skill_names=(skills[-1].skill.name,),random_competences={name:0.25 for name in SweepSymbols.TRAINABLE},deployment=SweepDeploymentExpectation(ordered_skills=skills[:3],initial_atoms=initial,goal_atoms=goal,horizon=5),linear_cost_lambda=0.000003)
+
+from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
+from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+planner=DeterminizedAStarPlanner(max_iterations=1000,seed=probe_seed,observation_probability_weight=0.0)
+needed=atoms(('HandEmpty','WiperHome','DrawerClosed','RobotHome',*(f'InPile{i}' for i in range(5))))
+steps=[]; current_atoms=current; started=time.monotonic()
+for decision in range(20):
+    trace=SearchTrace(); t=time.monotonic()
+    value,action=planner.solve(environment_state=make_tossing3d_search_state(state=state,true_atoms=current_atoms),belief_state=state,summed_cost=state.accumulated_cost,horizon=20,remaining_actions=20-decision,model=model,num_samples=100,trace=trace)
+    step=dict(decision=decision+1,remaining_actions=20-decision,action=None if action is None else action.skill.name,wall_seconds=time.monotonic()-t,value=value,atoms_before=sorted(a.predicate.name for a in current_atoms),search=next(e for e in trace.events if e['event']=='search_summary'))
+    if action is None:
+        steps.append(step);break
+    assert action.preconditions<=current_atoms
+    current_atoms=apply_success_effects(true_atoms=current_atoms,ground_skill=action,effects=model._effects)
+    cost=action.evaluate_practice_cost()
+    state=model.observe_outcome(state=state,ground_skill=action,success=True,was_random_exploration=False,observed_cost=cost)
+    if action.skill.name in model.trainable_skill_names:
+        state=model.observe_training_example(state=state,skill_name=action.skill.name,success=True)
+    state=state.model_copy(update={'accumulated_cost':state.accumulated_cost+cost})
+    step.update(atoms_after=sorted(a.predicate.name for a in current_atoms),complete_reset=needed<=current_atoms,charged_cost=cost)
+    steps.append(step)
+    if step['complete_reset']:break
+result=dict(kind='synthetic all-success contract oracle; not physical evidence',seed=probe_seed,human_cost=human_cost,robot_cost=1,wall_seconds=time.monotonic()-started,complete_reset=needed<=current_atoms,used_human=any(s['action'] in model.human_skill_names for s in steps),steps=steps)
+Path(f'scratchpad/exact-search/receding-cost{human_cost:g}-seed{probe_seed}.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:v for k,v in result.items() if k!='steps'}),[s['action'] for s in steps],flush=True)
