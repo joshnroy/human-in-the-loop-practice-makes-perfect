@@ -25,7 +25,7 @@ assert len(manifest["actions"])==985
 assert manifest["cycles"][-1]["tosses"]==[153,418]
 assert manifest["duration_seconds"]==4931.7
 video=OUT/"all-practice-1x.mp4"
-probe=json.loads(subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0","-show_entries","stream=width,height,nb_frames,r_frame_rate,duration","-of","json",str(video)],text=True))["streams"][0]
+probe=json.loads(subprocess.check_output(["/home/josh/miniconda3/envs/ffnv/bin/ffprobe","-v","error","-select_streams","v:0","-show_entries","stream=width,height,nb_frames,r_frame_rate,duration","-of","json",str(video)],text=True))["streams"][0]
 assert (probe["width"],probe["height"],probe["r_frame_rate"],int(probe["nb_frames"]))==(1280,720,"20/1",98634),probe
 assert abs(float(probe["duration"])-4931.7)<.001
 for cycle in (1,25,50):
