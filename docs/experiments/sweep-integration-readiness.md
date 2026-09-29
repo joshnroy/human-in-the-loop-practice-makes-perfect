@@ -1,6 +1,15 @@
 # Sweep integration checkpoint (not pilot-ready)
 
-## Current checkpoint, September28 23:50 EDT
+## Current checkpoint, September29 00:15 EDT
+
+The integrated contract/exact-search suite passes57/57 tests at commit4d134209; earlier EES baseline coverage passed70/70. Explicit human reset after holding the wiper restores the shared target. EES smoke v2 completes2/2cycles,3/3evaluation checkpoints and4/4physical actions with1/1practice initialization and0human interventions. Those actions alternate OpenResetDrawer/CloseDrawer; short-smoke success is plumbing evidence, not evidence that the stock samplers learned. Full declared-start satisfaction is logged separately from partial robot recovery.
+
+Two independent launch gates remain. First, pinned upstream stock parameter bounds are all singleton supports, so the intended learning experiment cannot run meaningfully; diagnostics were stopped/preserved and proposed nondegenerate ranges await Josh. See `sweep-parameter-support-proposal.md`. Second, exact search remains computationally incomplete at depth20 after119.33s and297399memoized states; depth6 also times out at60s. Exact caches, suffix pruning, canonical likelihood and paid-cost factorization preserve checked root choices/values (difference1.11e-16); a further proven upper-bound optimization is under investigation. No solver substitution, approximation or horizon reduction is authorized. No first-seed experiment jobs have launched on Della; Della itself was already validated by EXP22c.
+
+All numerical first-seed settings remain a blocked draft in `sweep-first-seed-draft.json`; its native cost choices were recorded before experimental scores, and the CLI rejects DRAFT status. Calibration records from singleton supports must not populate the random-competence fields. Physical wiper recovery is owned by a separate agent and remains a stack prerequisite.
+
+## Historical23:50 checkpoint
+
 
 Josh explicitly approved the issue/fix table, resolving the earlier authorization block. The drawer, pick-candidate, reachable-cube Sweep, declared-region observation, shared explicit human reset, and deployment-skill corrections are implemented. Focused Sweep/model tests31/31 pass; baseline EES tests70/70 pass. The strengthened physical smoke held the wiper, executed one human reset, and verified the full shared start target:1/1 passed, with1initial reset,1controller action,1human intervention, no resampling. A missing recorder API dependency from the76732331 import was diagnosed and the exact matching sampler_draws.py imported; six affected source files now pass mypy. No learning pilot has launched.
 
