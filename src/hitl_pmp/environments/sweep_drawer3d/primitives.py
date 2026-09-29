@@ -569,6 +569,32 @@ class Primitives(BaseModel):
             )
         raise ExecutionError(f"no collision-free wiper parking pose inside {region}")
 
+    def wiper_handle_geometry(self) -> tuple[int, int]:
+        import mujoco
+
+        m = self.session.mj_model
+        body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, S.WIPER)
+        handle = max(
+            (g for g in range(m.ngeom) if m.geom_bodyid[g] == body),
+            key=lambda g: float(m.geom_size[g][0] / m.geom_size[g][1]),
+        )
+        return handle, 0
+
+    def wiper_in_hand(self, *, gripper: np.ndarray, wiper: np.ndarray) -> bool:
+        return WiperHold.in_hand(gripper=gripper, wiper=wiper)
+
+    def wiper_grasp_offsets(self) -> tuple[float, ...]:
+        return 0.0, 0.03, 0.06
+
+    def wiper_approach_angles(self) -> tuple[float, ...]:
+        return 0.0, 0.4, 0.7, 1.0, 1.57, 1.9
+
+    def wiper_stow_goal(self) -> np.ndarray:
+        return np.asarray(S.HOME)
+
+    def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
+        return float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
+
     def recover_wiper(self) -> str:
         """Grasp the observed handle and verify that it follows a physical lift."""
         import mujoco
@@ -578,26 +604,23 @@ class Primitives(BaseModel):
         m, data = self.session.mj_model, self.session.mj_data
         body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, S.WIPER)
         # The long, narrow handle is distinguishable from the wide blade by local x.
-        handle = max(
-            (g for g in range(m.ngeom) if m.geom_bodyid[g] == body),
-            key=lambda g: float(m.geom_size[g][0] / m.geom_size[g][1]),
-        )
+        handle, handle_axis = self.wiper_handle_geometry()
         center = np.array(data.geom_xpos[handle])
         handle_axes = np.array(data.geom_xmat[handle]).reshape(3, 3)
-        axis = handle_axes[:, 0]
-        yaw = float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
+        axis = handle_axes[:, handle_axis]
+        yaw = self.wiper_grasp_yaw(axis=axis)
         before = self.session.position(name=S.WIPER).copy()
         wiper = Pose(tuple(before), self.session.quaternion(name=S.WIPER))
         set_pose(self.scene.wiper_body, wiper, self.scene.cid)
         rejected: dict[str, int] = {}
         orientations = []
         for azimuth in np.linspace(yaw, yaw + 2 * np.pi, 8, endpoint=False):
-            for angle in (0.0, 0.4, 0.7, 1.0, 1.57, 1.9):
+            for angle in self.wiper_approach_angles():
                 closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
                 toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
                 approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
                 orientations.append((closing, approach))
-        for along in (0.0, 0.03, 0.06):
+        for along in self.wiper_grasp_offsets():
             grasp_point = center + along * axis
             for closing, approach in orientations:
                 goal = Pose(
@@ -711,7 +734,7 @@ class Primitives(BaseModel):
                         raise ExecutionError("wiper pickup lift did not converge")
                     after = self.session.position(name=S.WIPER)
                     ee = np.asarray(self.scene.ee_now().position)
-                    if after[2] < before[2] + 0.05 or not WiperHold.in_hand(
+                    if after[2] < before[2] + 0.05 or not self.wiper_in_hand(
                         gripper=ee, wiper=after
                     ):
                         raise ExecutionError(
@@ -726,7 +749,7 @@ class Primitives(BaseModel):
                         Pose(tuple(after), self.session.quaternion(name=S.WIPER)),
                     )
                     stow = self.scene.plan_arm(
-                        goal=S.HOME,
+                        goal=self.wiper_stow_goal(),
                         bodies=self.scene.bodies(),
                         held=self.scene.wiper_body,
                         held_tf=held_now,
@@ -735,7 +758,7 @@ class Primitives(BaseModel):
                         raise ExecutionError("no collision-free stow for the recovered wiper")
                     if not self.motion.follow(path=stow, grip=1.0):
                         raise ExecutionError("recovered wiper stow did not converge")
-                    if not WiperHold.in_hand(
+                    if not self.wiper_in_hand(
                         gripper=np.asarray(self.scene.ee_now().position),
                         wiper=self.session.position(name=S.WIPER),
                     ):

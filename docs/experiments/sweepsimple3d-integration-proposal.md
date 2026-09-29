@@ -1,7 +1,10 @@
 # SweepSimple3D: native audit and proposed integration
 
-Status: native simulator audit complete; new controller design requires Josh's decision.
-No learning experiments or new physical controllers have been run.
+Status: Josh explicitly approved the proposal on2026-09-29 through the parent
+session: new floor-wiper pickup, per-cube forward/reverse sweeps, individual wiper
+and robot return, the stated feasibility supports, and10-action deployment for
+both methods while practice remains20actions. Implementation is underway.
+No learning experiments have been run.
 
 ## Native task and the missing implementation
 
