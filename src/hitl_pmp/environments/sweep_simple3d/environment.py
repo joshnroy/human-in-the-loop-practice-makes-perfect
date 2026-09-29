@@ -101,7 +101,9 @@ class SweepSimpleEnvironment(Environment):
             wiper=session.position(name="wiper_0"),
         )
         validation = SimpleRegions.validate(session=session)
-        wiper_home = all(validation.checks[f"wiper_0:{key}"] for key in ("region", "yaw"))
+        wiper_home = all(
+            validation.checks[f"wiper_0:{key}"] for key in ("region", "yaw", "upright")
+        )
         robot_home = all(validation.checks[f"robot:{key}"] for key in ("region", "yaw"))
         facts = {
             "HandEmpty": not held and session.gripper() < 0.2,

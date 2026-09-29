@@ -39,6 +39,13 @@ class SimpleRegions:
                 support_tolerance=0.01 if name == "wiper_0" else 0.0,
             )
             yaw = session.base()[2] if name == "robot" else session.yaw(name=name)
+            if name == "wiper_0":
+                from scipy.spatial.transform import Rotation
+
+                vertical_axis = Rotation.from_quat(session.quaternion(name=name)).as_matrix()[:, 2]
+                checks[name + ":upright"] = bool(
+                    np.allclose(vertical_axis, (0.0, 0.0, 1.0), atol=1e-3, rtol=0.0)
+                )
             checks[name + ":yaw"] = SweepRegions.yaw_matches(
                 yaw=yaw, ranges=config.get("yaw_ranges", [[0, 360]])
             )

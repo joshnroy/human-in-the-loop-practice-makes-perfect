@@ -583,6 +583,11 @@ class Primitives(BaseModel):
     def wiper_in_hand(self, *, gripper: np.ndarray, wiper: np.ndarray) -> bool:
         return WiperHold.in_hand(gripper=gripper, wiper=wiper)
 
+    def wiper_grasp_point(
+        self, *, center: np.ndarray, axis: np.ndarray, along: float
+    ) -> np.ndarray:
+        return center + along * axis
+
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         return 0.0, 0.03, 0.06
 
@@ -597,12 +602,10 @@ class Primitives(BaseModel):
 
     def recover_wiper(self) -> str:
         """Grasp the observed handle and verify that it follows a physical lift."""
-        import mujoco
         from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
-        m, data = self.session.mj_model, self.session.mj_data
-        body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, S.WIPER)
+        data = self.session.mj_data
         # The long, narrow handle is distinguishable from the wide blade by local x.
         handle, handle_axis = self.wiper_handle_geometry()
         center = np.array(data.geom_xpos[handle])
@@ -621,7 +624,7 @@ class Primitives(BaseModel):
                 approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
                 orientations.append((closing, approach))
         for along in self.wiper_grasp_offsets():
-            grasp_point = center + along * axis
+            grasp_point = self.wiper_grasp_point(center=center, axis=axis, along=along)
             for closing, approach in orientations:
                 goal = Pose(
                     tuple(grasp_point - approach * 0.035),
@@ -636,7 +639,7 @@ class Primitives(BaseModel):
                     base = path[-1]
                     self.scene.sync(base=base)
                     bodies = self.scene.bodies()
-                    self.scene.robot.set_joints(self.scene.fingers(arm=S.HOME))
+                    self.scene.robot.set_joints(self.scene.planning_fingers(arm=S.HOME))
                     solutions = ikfast_closest_inverse_kinematics(
                         self.scene.robot,
                         world_from_target=hover,
@@ -645,7 +648,7 @@ class Primitives(BaseModel):
                     for solution in solutions[:4]:
                         q_h = np.asarray(solution[:7], dtype=float)
                         if self.scene.in_collision(
-                            joints=self.scene.fingers(arm=q_h),
+                            joints=self.scene.planning_fingers(arm=q_h),
                             bodies=bodies,
                         ):
                             continue
@@ -714,7 +717,7 @@ class Primitives(BaseModel):
                             )
                             if segment is None or any(
                                 self.scene.in_collision(
-                                    joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                                    joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                                     bodies=bodies,
                                     held=self.scene.wiper_body,
                                     held_tf=held_tf,
@@ -804,7 +807,7 @@ class Primitives(BaseModel):
                     )
                     if lift is None or any(
                         self.scene.in_collision(
-                            joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                            joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                             bodies=bodies,
                             held=self.scene.wiper_body,
                             held_tf=held_tf,
@@ -865,7 +868,7 @@ class Primitives(BaseModel):
                 )
                 if down is None or any(
                     self.scene.in_collision(
-                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                         bodies=bodies,
                         held=self.scene.wiper_body,
                         held_tf=held_tf,
@@ -907,7 +910,7 @@ class Primitives(BaseModel):
                 carry, down = redo
                 if any(
                     self.scene.in_collision(
-                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                         bodies=bodies,
                         held=self.scene.wiper_body,
                         held_tf=held_tf,
@@ -1010,7 +1013,7 @@ class Primitives(BaseModel):
                 everything = self.scene.bodies()
                 q_pre = self.scene.ik(pose=pre, seed=S.HOME)
                 if q_pre is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_pre), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_pre), bodies=everything
                 ):
                     rejected["pre"] = rejected.get("pre", 0) + 1
                     continue
@@ -1124,7 +1127,7 @@ class Primitives(BaseModel):
                 )
                 q_h = self.scene.ik(pose=hover, seed=S.HOME)
                 if q_h is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_h, state=k.pb), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_h, state=k.pb), bodies=everything
                 ):
                     rejected["hover"] = rejected.get("hover", 0) + 1
                     continue
@@ -1139,7 +1142,9 @@ class Primitives(BaseModel):
                     rejected["descent"] = rejected.get("descent", 0) + 1
                     continue
                 if self.scene.in_collision(
-                    joints=self.scene.fingers(arm=down[-1], state=ShutHand.state(held=held)),
+                    joints=self.scene.planning_fingers(
+                        arm=down[-1], state=ShutHand.state(held=held)
+                    ),
                     bodies=bystanders,
                     margin=ShutHand.MARGIN,
                 ):
@@ -1496,7 +1501,7 @@ class Primitives(BaseModel):
                 everything = self.scene.bodies()
                 q_h = self.scene.ik(pose=Pose((g[0], g[1], hz), q), seed=S.HOME)
                 if q_h is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_h), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_h), bodies=everything
                 ):
                     rejected["hover"] = rejected.get("hover", 0) + 1
                     continue

@@ -20,8 +20,12 @@ class PickupProbe:
         parser.add_argument("--sweep-angle", type=float, default=0.0)
         parser.add_argument("--pick-only", action="store_true")
         parser.add_argument("--grasp-offset", type=float)
+        parser.add_argument("--grasp-height", type=float, default=0.0)
+        parser.add_argument("--grasp-mode", choices=("handle", "blade"), default="handle")
         parser.add_argument("--tilt-limit", type=float, default=1.1)
         parser.add_argument("--stroke-length", type=float, default=0.132)
+        parser.add_argument("--contact-step", type=float, default=0.003)
+        parser.add_argument("--narrow-contact", action="store_true")
         args = parser.parse_args()
         root = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(root / "reference/kindergarden/src"))
@@ -35,6 +39,7 @@ class PickupProbe:
         output.mkdir(parents=True, exist_ok=True)
         source_dir = output / "source"
         source_dir.mkdir()
+        shutil.copy2(__file__, source_dir / "probe_driver.py")
         hashes = {}
         for source in [
             *root.glob("src/hitl_pmp/environments/sweep_simple3d/*.py"),
@@ -57,6 +62,32 @@ class PickupProbe:
         )
         primitive.scene.max_tool_tilt = args.tilt_limit
         primitive.contact_stroke_length = args.stroke_length
+        primitive.contact_step = args.contact_step
+        primitive.narrow_contact = args.narrow_contact
+        if args.grasp_mode == "blade":
+            import mujoco
+            import numpy as np
+
+            def blade_geometry(self):  # noqa: PLR0917 -- installed as a bound probe method
+                model = self.session.mj_model
+                body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+                blade = max(
+                    (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+                    key=lambda g: float(model.geom_size[g][0]),
+                )
+                return blade, 0
+
+            FloorPrimitives.wiper_handle_geometry = blade_geometry
+            FloorPrimitives.wiper_approach_angles = lambda self: (0.0, 0.4, 0.7)
+            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: float(
+                np.arctan2(axis[1], axis[0]) + np.pi / 2
+            )
+        if args.grasp_height:
+            import numpy as np
+
+            FloorPrimitives.wiper_grasp_point = lambda self, *, center, axis, along: (
+                center + along * axis + np.array([0.0, 0.0, args.grasp_height])
+            )
         if args.grasp_offset is not None:
             FloorPrimitives.wiper_grasp_offsets = lambda self: (args.grasp_offset,)
         import mujoco

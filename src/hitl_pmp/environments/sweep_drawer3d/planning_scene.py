@@ -186,6 +186,10 @@ class PlanningScene(BaseModel):
         """A 13-joint PyBullet configuration: 7 arm joints + the 6 mimic finger joints."""
         return [float(v) for v in arm[:7]] + [state, state, state, state, -state, -state]
 
+    def planning_fingers(self, *, arm: Sequence[float] | np.ndarray, state: float = 0.0) -> Joints:
+        """Planning articulation; environments may bind measured physical gripper joints."""
+        return self.fingers(arm=arm, state=state)
+
     def within_arm_limits(self, *, arm: Sequence[float] | np.ndarray) -> bool:
         """The planning URDF allows wider bends than this compiled physical robot."""
         q = np.asarray(arm[:7], dtype=float)
@@ -214,7 +218,7 @@ class PlanningScene(BaseModel):
         """IKFast solution closest to `seed` (7 arm joints), or None if unreachable."""
         from pybullet_helpers.inverse_kinematics import InverseKinematicsError, inverse_kinematics
 
-        self.robot.set_joints(self.fingers(arm=seed))
+        self.robot.set_joints(self.planning_fingers(arm=seed))
         try:
             sol = inverse_kinematics(self.robot, pose, set_joints=False)
         except InverseKinematicsError:
@@ -231,7 +235,7 @@ class PlanningScene(BaseModel):
         return None
 
     def fk(self, *, arm: Sequence[float] | np.ndarray) -> Any:
-        self.robot.set_joints(self.fingers(arm=arm))
+        self.robot.set_joints(self.planning_fingers(arm=arm))
         return self.robot.get_end_effector_pose()
 
     def ee_now(self) -> Any:
@@ -258,8 +262,8 @@ class PlanningScene(BaseModel):
         q0 = self.session.arm() if start is None else np.asarray(start)
         plan = run_motion_planning(
             self.robot,
-            self.fingers(arm=q0),
-            self.fingers(arm=goal),
+            self.planning_fingers(arm=q0),
+            self.planning_fingers(arm=goal),
             collision_bodies=bodies,
             seed=0,
             physics_client_id=self.cid,
@@ -302,7 +306,9 @@ class PlanningScene(BaseModel):
             if not self.within_arm_limits(arm=sol) or np.max(np.abs(sol - q)) > max_jump:
                 return None
             if bodies is not None and self.in_collision(
-                joints=self.fingers(arm=sol, state=finger_state), bodies=bodies, margin=margin
+                joints=self.planning_fingers(arm=sol, state=finger_state),
+                bodies=bodies,
+                margin=margin,
             ):
                 return None
             out.append(sol)

@@ -2,25 +2,23 @@
   "environment": "SweepSimple3D-o5-sweep_the_blocks_to_the_left_side_of_the_kitchen_island",
   "owner": "/root/sweepsimple3d_experiment",
   "status": "IMPLEMENTING_NOT_READY",
-  "heartbeat_utc": "2026-09-29T22:17:57.858969+00:00",
+  "heartbeat_utc": "2026-09-29T23:49:23.596458+00:00",
   "worktree": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration",
   "branch": "codex/sweepsimple3d-integration",
-  "committed_base": "b53bba56",
+  "committed_base": "18efd707",
   "frozen_revision": null,
   "launch_manifest": null,
   "active_units": [
-    "sweepsimple-top-short-v30.service",
-    "sweepsimple-lowlever-10-v31.service",
-    "sweepsimple-lowlever-12-v31.service"
+    "sweepsimple-low-handle-v55.service",
+    "sweepsimple-center-blade-v56.service"
   ],
-  "last_progress": "Physical goal remains unmet. True bilateral handle contacts are checked throughout motions; a higher grasp/continuous-stroke probe retained contacts but tool tilted under contact load and checked correction became unreachable. Testing lower lever-arm grasps without altering native physics. 8/8 Simple tests and 10/10 module typechecks pass. Readiness remains NOT_READY.",
+  "last_progress": "Native mesh and measured finger mapping allowed repeated floor strokes. v52 moved selected cube~.095m then native base planner blocked nearanothercube. Geometric blade-height feedback v53 lost bilateral grip; headingvariantv54 blocked. Testing lower handle/near-center blade grasps to reduce contact torque, unchanged physics. 11/11Simple tests+1/1Drawerfloorpickup pass; no full native goal or reverse success.",
   "evidence_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/scratchpad/sweepsimple3d",
   "proposal": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/docs/experiments/sweepsimple3d-integration-proposal.md",
   "next_tasks": [
-    "Inspect clear-mid-v23 and clear-low-v23 result.json; do not relaunch active units",
-    "Fix floor contact under unchanged native physics/goals; measure complete forward then reverse sweep",
-    "Validate all five native goals and robot/wiper recovery, parameter supports, no-hidden-reset/action accounting",
-    "Only after readiness freeze source and manifest; coordinate parent before authorized cheap/high 2x2 launch"
+    "Inspect low-handle-v55 and center-blade-v56 outputs; do not duplicate runningservices",
+    "Resolve native chassis route/under-load grasp, then achieve complete forward and reverse goals",
+    "Only after native physical/accounting/both-methods readiness freeze and release experiment gate"
   ],
   "scientific_jobs_launched": 0,
   "launch_allowed_now": false,

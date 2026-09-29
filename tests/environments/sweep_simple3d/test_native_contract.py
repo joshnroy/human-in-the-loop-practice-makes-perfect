@@ -52,3 +52,33 @@ def test_closed_gripper_proximity_does_not_imply_a_physical_grasp(
     finally:
         primitive.scene._sim.close()
         session.close()
+
+
+def test_fallen_wiper_does_not_match_upright_native_start() -> None:
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+
+    from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
+
+    env = SweepSimpleEnvironment(canonical_seed=0)
+    try:
+        env.hard_reset()
+        session = env.session()
+        edited = session.state.copy()
+        obj = edited.get_object_from_name("wiper_0")
+        quaternion = Rotation.from_euler(
+            "xyz", [np.pi / 2, 0.0, session.yaw(name="wiper_0")]
+        ).as_quat()
+        for key, value in zip(("qx", "qy", "qz", "qw"), quaternion, strict=True):
+            edited.set(obj, key, value)
+        session.restore(state=edited)
+        validation = SimpleRegions.validate(session=session)
+        assert validation.checks["wiper_0:region"]
+        assert validation.checks["wiper_0:yaw"]
+        assert not validation.checks["wiper_0:upright"]
+        assert not validation.valid
+        assert not env.observe().get(obj=SimpleSymbols.SCENE, feature_name="WiperHome")
+        assert env.reset_movables()
+        assert SimpleRegions.validate(session=session).valid
+    finally:
+        env.close()
