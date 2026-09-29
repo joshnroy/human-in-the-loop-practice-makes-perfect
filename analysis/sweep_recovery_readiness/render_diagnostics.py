@@ -49,7 +49,6 @@ class RecoveryVideos:
                     str(output / "demo.mp4"),
                     "--fps",
                     "10",
-                    "--no-room",
                     "--close-up",
                     view,
                     "--ffmpeg",
