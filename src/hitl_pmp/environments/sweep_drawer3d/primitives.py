@@ -482,11 +482,12 @@ class Primitives(BaseModel):
         held: int | None = None,
         held_tf: Any = None,
         step: float = 0.01,
+        ik_seed: np.ndarray | None = None,
     ) -> tuple[list[np.ndarray], list[np.ndarray]] | None:
         """Re-solve hover IK, the arm plan and the straight descent at the base pose the
         robot actually reached (the base stops within millimetres, not exactly)."""
         self.scene.sync()
-        q_h = self.scene.ik(pose=hover, seed=S.HOME)
+        q_h = self.scene.ik(pose=hover, seed=S.HOME if ik_seed is None else ik_seed)
         if q_h is None:
             return None
         plan = self.scene.plan_arm(goal=q_h, bodies=bodies, held=held, held_tf=held_tf)
@@ -516,81 +517,398 @@ class Primitives(BaseModel):
         return out
 
     # ================================================================ wiper
-    def park_wiper(self) -> str:
-        """Carry the held wiper back to its episode-start pose on the counter; release."""
-        from pybullet_helpers.geometry import Pose, multiply_poses
+    def choose_wiper_parking_pose(self) -> str:
+        """Keep a valid initial pose; otherwise plan inside the declared start region."""
+        import pybullet
+        from pybullet_helpers.geometry import Pose, set_pose
+        from scipy.spatial.transform import Rotation
 
-        home_pos, home_q = self.session.initial_pose(name=S.WIPER)
+        initial, quat = self.session.initial_pose(name=S.WIPER)
+        if S.COUNTER_TOP - 0.01 < initial[2] < S.COUNTER_TOP + 0.02:
+            return "valid initial wiper pose retained"
+        fixture, region = self.session.wiper_initial_region()
+        self.scene.sync()
+        obstacles = self.scene.bodies()
+        rng = np.random.default_rng(0)
+        try:
+            for _ in range(256):
+                x, y, z, yaw = fixture.sample_pose_in_region(region, rng)
+                # Initialization samples a volume, then gravity settles the object;
+                # physical placement targets the region's supporting surface.
+                z = min(float(r.bbox[2]) for r in fixture.region_objects[region])
+                xyzw = Rotation.from_euler("z", yaw).as_quat()
+                q = (float(xyzw[0]), float(xyzw[1]), float(xyzw[2]), float(xyzw[3]))
+                pos = np.array([x, y, z + 0.003])
+                set_pose(self.scene.wiper_body, Pose(tuple(pos), q), self.scene.cid)
+                low, high = pybullet.getAABB(self.scene.wiper_body, physicsClientId=self.scene.cid)
+                corners = [
+                    np.array([a, b, z], dtype=np.float32)
+                    for a in (low[0], high[0])
+                    for b in (low[1], high[1])
+                ]
+                if not all(fixture.check_in_region(c, region) for c in corners):
+                    continue
+                if any(
+                    pybullet.getClosestPoints(
+                        self.scene.wiper_body, other, distance=0.001, physicsClientId=self.scene.cid
+                    )
+                    for other in obstacles
+                ):
+                    continue
+                self.session.set_wiper_parking_pose(position=np.array([x, y, z]), quaternion=q)
+                coords = [round(v, 4) for v in (x, y, z)]
+                return f"planned wiper target inside {region}: {coords}"
+        finally:
+            set_pose(
+                self.scene.wiper_body,
+                Pose(
+                    tuple(self.session.position(name=S.WIPER)),
+                    self.session.quaternion(name=S.WIPER),
+                ),
+                self.scene.cid,
+            )
+        raise ExecutionError(f"no collision-free wiper parking pose inside {region}")
+
+    def recover_wiper(self) -> str:
+        """Grasp the observed handle and verify that it follows a physical lift."""
+        import mujoco
+        from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
+        from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
+
+        m, data = self.session.mj_model, self.session.mj_data
+        body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, S.WIPER)
+        # The long, narrow handle is distinguishable from the wide blade by local x.
+        handle = max(
+            (g for g in range(m.ngeom) if m.geom_bodyid[g] == body),
+            key=lambda g: float(m.geom_size[g][0] / m.geom_size[g][1]),
+        )
+        center = np.array(data.geom_xpos[handle])
+        handle_axes = np.array(data.geom_xmat[handle]).reshape(3, 3)
+        axis = handle_axes[:, 0]
+        yaw = float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
+        before = self.session.position(name=S.WIPER).copy()
+        wiper = Pose(tuple(before), self.session.quaternion(name=S.WIPER))
+        set_pose(self.scene.wiper_body, wiper, self.scene.cid)
+        rejected: dict[str, int] = {}
+        orientations = []
+        for azimuth in np.linspace(yaw, yaw + 2 * np.pi, 8, endpoint=False):
+            for angle in (0.0, 0.4, 0.7, 1.0, 1.57, 1.9):
+                closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
+                toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
+                approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
+                orientations.append((closing, approach))
+        for along in (0.0, 0.03, 0.06):
+            grasp_point = center + along * axis
+            for closing, approach in orientations:
+                goal = Pose(
+                    tuple(grasp_point - approach * 0.035),
+                    Orientations.from_axes(closing=closing, approach=approach),
+                )
+                hover = Pose(tuple(np.asarray(goal.position) - approach * 0.08), goal.orientation)
+                for stance in self.stances(target=grasp_point, where="floor"):
+                    path = self.scene.plan_base(target=stance)
+                    if path is None:
+                        rejected["base"] = rejected.get("base", 0) + 1
+                        continue
+                    base = path[-1]
+                    self.scene.sync(base=base)
+                    bodies = self.scene.bodies()
+                    self.scene.robot.set_joints(self.scene.fingers(arm=S.HOME))
+                    solutions = ikfast_closest_inverse_kinematics(
+                        self.scene.robot,
+                        world_from_target=hover,
+                    )
+                    q_h, down, reach = None, None, None
+                    for solution in solutions[:4]:
+                        q_h = np.asarray(solution[:7], dtype=float)
+                        if self.scene.in_collision(
+                            joints=self.scene.fingers(arm=q_h),
+                            bodies=bodies,
+                        ):
+                            continue
+                        down = self.scene.linear_path(
+                            start=q_h,
+                            target=goal,
+                            bodies=bodies,
+                            max_jump=0.6,
+                        )
+                        if down is None:
+                            continue
+                        reach = self.scene.plan_arm(
+                            goal=q_h,
+                            bodies=bodies | {self.scene.wiper_body},
+                            start=S.HOME,
+                            base=base,
+                        )
+                        if reach is not None:
+                            break
+                    if reach is None:
+                        why = "hover IK" if q_h is None else "descent" if down is None else "reach"
+                        rejected[why] = rejected.get(why, 0) + 1
+                        continue
+                    self.motion.go_home(grip=0.0)
+                    self.motion.set_gripper(command=0.0)
+                    if not self.motion.drive(path=path, grip=0.0):
+                        raise ExecutionError("wiper pickup base did not converge")
+                    redo = self.resolve_at_actual_base(
+                        hover=hover,
+                        target=goal,
+                        bodies=bodies | {self.scene.wiper_body},
+                        descent_bodies=bodies,
+                        ik_seed=q_h,
+                    )
+                    if redo is None:
+                        raise ExecutionError("wiper pickup unavailable at actual base pose")
+                    reach, down = redo
+                    if not self.motion.follow(path=reach, grip=0.0):
+                        raise ExecutionError("wiper pickup approach did not converge")
+                    if not self.motion.follow(path=down, grip=0.0, final_tol=0.006):
+                        raise ExecutionError("wiper pickup descent did not converge")
+                    self.motion.set_gripper(command=1.0)
+                    ee = self.scene.ee_now()
+                    grasped = Pose(
+                        tuple(self.session.position(name=S.WIPER)),
+                        self.session.quaternion(name=S.WIPER),
+                    )
+                    held_tf = multiply_poses(ee.invert(), grasped)
+                    up = None
+                    # A blade beneath a cabinet overhang cannot rise vertically.
+                    # Retreat along the observed approach before lifting, checking
+                    # both the arm and the carried blade at every waypoint.
+                    for retreat in (0.0, 0.05, 0.10, 0.16, 0.22):
+                        back_pos = np.asarray(ee.position) - retreat * approach
+                        targets = [Pose(tuple(back_pos), ee.orientation)] if retreat else []
+                        targets.append(Pose(tuple(back_pos + [0.0, 0.0, 0.16]), ee.orientation))
+                        candidate: list[np.ndarray] = []
+                        start = self.session.arm()
+                        for target in targets:
+                            segment = self.scene.linear_path(
+                                start=start,
+                                target=target,
+                                bodies=bodies,
+                                finger_state=G.CLOSED_PB,
+                                max_jump=0.6,
+                            )
+                            if segment is None or any(
+                                self.scene.in_collision(
+                                    joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                                    bodies=bodies,
+                                    held=self.scene.wiper_body,
+                                    held_tf=held_tf,
+                                )
+                                for q in segment
+                            ):
+                                candidate = []
+                                break
+                            candidate.extend(segment)
+                            start = segment[-1]
+                        if candidate:
+                            up = candidate
+                            break
+                    if up is None:
+                        raise ExecutionError("no collision-free lift for the grasped wiper")
+                    if not self.motion.follow(path=up, grip=1.0):
+                        raise ExecutionError("wiper pickup lift did not converge")
+                    after = self.session.position(name=S.WIPER)
+                    ee = np.asarray(self.scene.ee_now().position)
+                    if after[2] < before[2] + 0.05 or not WiperHold.in_hand(
+                        gripper=ee, wiper=after
+                    ):
+                        raise ExecutionError(
+                            f"wiper did not follow the lift: rise {after[2] - before[2]:.3f} m;"
+                            f" gripper distance {np.linalg.norm(ee - after):.3f} m"
+                        )
+                    # Base navigation assumes the arm is stowed. A floor grasp
+                    # leaves it extended below the counter, so stow while checking
+                    # the actual carried blade before any navigation begins.
+                    held_now = multiply_poses(
+                        self.scene.ee_now().invert(),
+                        Pose(tuple(after), self.session.quaternion(name=S.WIPER)),
+                    )
+                    stow = self.scene.plan_arm(
+                        goal=S.HOME,
+                        bodies=self.scene.bodies(),
+                        held=self.scene.wiper_body,
+                        held_tf=held_now,
+                    )
+                    if stow is None:
+                        raise ExecutionError("no collision-free stow for the recovered wiper")
+                    if not self.motion.follow(path=stow, grip=1.0):
+                        raise ExecutionError("recovered wiper stow did not converge")
+                    if not WiperHold.in_hand(
+                        gripper=np.asarray(self.scene.ee_now().position),
+                        wiper=self.session.position(name=S.WIPER),
+                    ):
+                        raise ExecutionError("wiper lost during stow")
+                    return f"observed wiper rise {after[2] - before[2]:.3f} m; rejected {rejected}"
+        raise ExecutionError(f"no collision-free wiper grasp; rejected {rejected}")
+
+    def park_wiper(self) -> str:
+        """Physically place the held tool in its declared start region and verify it."""
+        from pybullet_helpers.geometry import Pose, multiply_poses
+        from scipy.spatial.transform import Rotation
+
+        home_pos, home_q = self.session.wiper_parking_pose()
         ee = self.scene.ee_now()
         lying = self.session.position(name=S.WIPER)
-        if not WiperHold.in_hand(gripper=np.array(ee.position), wiper=lying):
-            # a closed gripper is not a held wiper: the stock PickWiper can finish with
-            # the hand shut on nothing, and the grasp offset below would be meaningless
-            raise ExecutionError(
-                f"the wiper is not in the hand: it lies at {np.round(lying, 3).tolist()},"
-                f" {np.linalg.norm(np.array(ee.position) - lying):.2f} m from the gripper"
+        if not WiperHold.in_hand(gripper=np.asarray(ee.position), wiper=lying):
+            raise ExecutionError("the wiper is not in the hand")
+        held_tf = multiply_poses(
+            ee.invert(), Pose(tuple(lying), self.session.quaternion(name=S.WIPER))
+        )
+        # Navigation's footprint assumes a stowed arm, including the carried blade.
+        if np.max(np.abs(np.asarray(S.HOME) - self.session.arm())) > 0.04:
+            stow = self.scene.plan_arm(
+                goal=S.HOME,
+                bodies=self.scene.bodies(),
+                held=self.scene.wiper_body,
+                held_tf=held_tf,
             )
-        wiper_now = Pose(
-            tuple(self.session.position(name=S.WIPER)), self.session.quaternion(name=S.WIPER)
-        )
-        ee_to_wiper = multiply_poses(ee.invert(), wiper_now)
-        goal = multiply_poses(
-            Pose((home_pos[0], home_pos[1], home_pos[2] + 0.012), home_q), ee_to_wiper.invert()
-        )
-        pre = Pose((goal.position[0], goal.position[1], goal.position[2] + 0.08), goal.orientation)
-        lift = None
-        for rise in (0.08, 0.05, 0.03, 0.015):
-            raised = Pose((ee.position[0], ee.position[1], ee.position[2] + rise), ee.orientation)
-            lift = self.scene.linear_path(start=self.session.arm(), target=raised, max_jump=0.6)
-            if lift is not None:
-                break
-        if lift is None:
-            raise ExecutionError("cannot lift the wiper straight up")
-        self.motion.follow(path=lift, grip=1.0)
+            if stow is None or not self.motion.follow(path=stow, grip=1.0):
+                raise ExecutionError("held wiper could not be stowed for return")
+            held_tf = multiply_poses(
+                self.scene.ee_now().invert(),
+                Pose(
+                    tuple(self.session.position(name=S.WIPER)),
+                    self.session.quaternion(name=S.WIPER),
+                ),
+            )
+        goal = multiply_poses(Pose(tuple(home_pos + [0.0, 0.0, 0.013]), home_q), held_tf.invert())
+        pre = Pose(tuple(np.asarray(goal.position) + [0.0, 0.0, 0.10]), goal.orientation)
         rejected: dict[str, int] = {}
-        for d in (0.7, 0.65, 0.75, 0.6):
+        for distance in (0.7, 0.6, 0.8, 0.65, 0.75):
             for dy in (0.0, 0.1, -0.1):
-                path = self.scene.plan_base(target=(home_pos[0] + d, home_pos[1] + dy, np.pi))
+                path = self.scene.plan_base(
+                    target=(float(home_pos[0] + distance), float(home_pos[1] + dy), np.pi)
+                )
                 if path is None:
                     rejected["base"] = rejected.get("base", 0) + 1
                     continue
                 base = path[-1]
                 self.scene.sync(base=base)
+                bodies = self.scene.bodies()
                 q_pre = self.scene.ik(pose=pre, seed=S.HOME)
-                down = None if q_pre is None else self.scene.linear_path(start=q_pre, target=goal)
-                carry = None
-                if down is not None:
-                    carry = self.scene.plan_arm(
-                        goal=q_pre,
-                        bodies=self.scene.bodies(),
-                        base=base,
-                        held=self.scene.wiper_body,
-                        held_tf=ee_to_wiper,
-                    )
-                if carry is None:
-                    rejected["arm"] = rejected.get("arm", 0) + 1
+                if q_pre is None:
+                    rejected["IK"] = rejected.get("IK", 0) + 1
                     continue
-                self.motion.drive(path=path, grip=1.0)
+                down = self.scene.linear_path(
+                    start=q_pre,
+                    target=goal,
+                    bodies=bodies,
+                    finger_state=G.CLOSED_PB,
+                    max_jump=0.6,
+                )
+                if down is None or any(
+                    self.scene.in_collision(
+                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        bodies=bodies,
+                        held=self.scene.wiper_body,
+                        held_tf=held_tf,
+                    )
+                    for q in [q_pre, *down]
+                ):
+                    rejected["descent"] = rejected.get("descent", 0) + 1
+                    continue
+                carry = self.scene.plan_arm(
+                    goal=q_pre,
+                    bodies=bodies,
+                    base=base,
+                    held=self.scene.wiper_body,
+                    held_tf=held_tf,
+                )
+                if carry is None:
+                    rejected["carry"] = rejected.get("carry", 0) + 1
+                    continue
+                if not self.motion.drive(path=path, grip=1.0):
+                    raise ExecutionError("wiper return base did not converge")
+                if not WiperHold.in_hand(
+                    gripper=np.asarray(self.scene.ee_now().position),
+                    wiper=self.session.position(name=S.WIPER),
+                ):
+                    raise ExecutionError("wiper lost during return navigation")
                 redo = self.resolve_at_actual_base(
                     hover=pre,
                     target=goal,
-                    bodies=self.scene.bodies(),
-                    descent_bodies=set(),
+                    bodies=bodies,
+                    descent_bodies=bodies,
                     held=self.scene.wiper_body,
-                    held_tf=ee_to_wiper,
+                    held_tf=held_tf,
+                    finger_state=G.CLOSED_PB,
+                    ik_seed=q_pre,
                 )
-                if redo is not None:
-                    carry, down = redo
-                self.motion.follow(path=carry, grip=1.0)
-                self.motion.follow(path=down, grip=1.0, final_tol=0.01)
+                if redo is None:
+                    rejected["actual base"] = rejected.get("actual base", 0) + 1
+                    continue
+                carry, down = redo
+                if any(
+                    self.scene.in_collision(
+                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        bodies=bodies,
+                        held=self.scene.wiper_body,
+                        held_tf=held_tf,
+                    )
+                    for q in down
+                ):
+                    rejected["actual descent"] = rejected.get("actual descent", 0) + 1
+                    continue
+                if not self.motion.follow(path=carry, grip=1.0):
+                    raise ExecutionError("wiper carry did not converge")
+                if not self.motion.follow(path=down, grip=1.0, final_tol=0.005):
+                    raise ExecutionError("wiper placement did not converge")
                 self.motion.set_gripper(command=0.0)
-                up = self.scene.linear_path(start=self.session.arm(), target=pre)
-                if up:
-                    self.motion.follow(path=up, grip=0.0)
-                self.motion.go_home(grip=0.0)
-                self.motion.hold(ticks=10, grip=0.0)
-                return f"stance ({base[0]:.2f},{base[1]:.2f}); rejected {rejected}"
-        raise ExecutionError(f"no stance to park the wiper; rejected {rejected}")
+                self.motion.hold(ticks=40, grip=0.0)
+                ee = self.scene.ee_now()
+                approach = Rotation.from_quat(ee.orientation).as_matrix()[:, 2]
+                away = np.array([base[0] - home_pos[0], base[1] - home_pos[1], 0.0])
+                away *= 0.10 / np.linalg.norm(away)
+                withdrawal = None
+                for offset in (
+                    -approach * 0.10,
+                    away,
+                    away + [0.0, 0.0, -0.05],
+                    away + [0.0, 0.0, 0.05],
+                    np.array([0.0, 0.0, 0.10]),
+                ):
+                    self.scene.sync()
+                    withdrawal = self.scene.linear_path(
+                        start=self.session.arm(),
+                        target=Pose(tuple(np.asarray(ee.position) + offset), ee.orientation),
+                        bodies=self.scene.bodies() | {self.scene.wiper_body},
+                        max_jump=0.6,
+                    )
+                    if withdrawal is not None:
+                        break
+                if withdrawal is None or not self.motion.follow(path=withdrawal, grip=0.0):
+                    raise ExecutionError("no converged collision-free withdrawal from the wiper")
+                self.motion.hold(ticks=40, grip=0.0)
+                pos = self.session.position(name=S.WIPER)
+                yaw = Rotation.from_quat(self.session.quaternion(name=S.WIPER)).as_euler("zyx")[0]
+                target_yaw = Rotation.from_quat(home_q).as_euler("zyx")[0]
+                yaw_error = abs((yaw - target_yaw + np.pi) % (2 * np.pi) - np.pi)
+                fixture, region = self.session.wiper_initial_region()
+                in_region = any(
+                    fixture.check_in_region(
+                        np.asarray(pos + [0.0, 0.0, dz], dtype=np.float32), region
+                    )
+                    for dz in (0.0, 0.01, -0.01)
+                )
+                if not (
+                    S.COUNTER_TOP - 0.01 < pos[2] < S.COUNTER_TOP + 0.02
+                    and np.linalg.norm(pos[:2] - home_pos[:2]) < 0.02
+                    and yaw_error < np.radians(5.0)
+                    and in_region
+                ):
+                    raise ExecutionError(
+                        "released wiper did not settle at the declared start target"
+                    )
+                stow = self.scene.plan_arm(
+                    goal=S.HOME,
+                    bodies=self.scene.bodies() | {self.scene.wiper_body},
+                )
+                if stow is None or not self.motion.follow(path=stow, grip=0.0):
+                    raise ExecutionError("empty-hand stow after placement did not converge")
+                return f"observed supported placement and withdrawal; rejected {rejected}"
+        raise ExecutionError(f"no physical placement plan for the wiper; rejected {rejected}")
 
     # ================================================================ drawer
     def handle_position(self) -> np.ndarray:

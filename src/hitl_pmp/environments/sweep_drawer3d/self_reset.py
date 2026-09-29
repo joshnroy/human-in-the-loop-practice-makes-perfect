@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .motion import ExecutionError, Motion
 from .planning_scene import PlanningScene
-from .primitives import DrawerStroke, Primitives
+from .primitives import DrawerStroke, Primitives, WiperHold
 from .repositioning import Repositioning
 from .session import CubeHeading, SweepDrawerSession
 from .types import CubeLocation, Mechanisms, ResetOutcome, Retrieval, SweepDrawerScene
@@ -448,6 +448,12 @@ class SweepDrawerSelfReset(BaseModel):
         self._origin = {
             c: self.session.location(cube=c) for c in S.CUBES if not self.session.in_pile(cube=c)
         }
+        self._prims.choose_wiper_parking_pose()
+        wiper = self.session.position(name=S.WIPER)
+        if wiper[2] < S.COUNTER_TOP - 0.02 and not WiperHold.in_hand(
+            gripper=np.asarray(self._scene.ee_now().position), wiper=wiper
+        ):
+            self._do(name="recover_wiper", fn=self._prims.recover_wiper)
         if self.session.position(name=S.WIPER)[2] > 0.47 or self.session.gripper() > 0.2:
             self._do(name="park_wiper", fn=self._prims.park_wiper)
         if any(self.session.location(cube=c) == "drawer" for c in S.CUBES):
@@ -465,7 +471,7 @@ class SweepDrawerSelfReset(BaseModel):
 
     def outcome(self, *, wall_s: float, ticks: int) -> ResetOutcome:
         pos, q = self.session.position(name=S.WIPER), self.session.quaternion(name=S.WIPER)
-        home_pos, home_q = self.session.initial_pose(name=S.WIPER)
+        home_pos, home_q = self.session.wiper_parking_pose()
         from scipy.spatial.transform import Rotation
 
         dyaw = (

@@ -46,6 +46,7 @@ class PlanningScene(BaseModel):
     _other_drawers: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _chassis: int = PrivateAttr(default=-1)
     _wiper: int = PrivateAttr(default=-1)
+    _arm_limits: np.ndarray = PrivateAttr(default_factory=lambda: np.empty((0, 2)))
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         import pybullet
@@ -57,6 +58,12 @@ class PlanningScene(BaseModel):
         cid = self._sim.physics_client_id
         m = self.session.mj_model
         import mujoco
+
+        limits = []
+        for number in range(1, 8):
+            joint = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"robot_joint_{number}")
+            limits.append(m.jnt_range[joint] if m.jnt_limited[joint] else (-np.inf, np.inf))
+        self._arm_limits = np.asarray(limits, dtype=float)
 
         task = (SweepDrawerScene.DRAWER, SweepDrawerScene.DRAWER + "_handle")
         for g in range(m.ngeom):
@@ -146,6 +153,14 @@ class PlanningScene(BaseModel):
         bx, by, bt = (float(x.get(robot, k)) for k in ("pos_base_x", "pos_base_y", "pos_base_rot"))
         chassis = Pose((bx, by, 0.233), (0.0, 0.0, float(np.sin(bt / 2)), float(np.cos(bt / 2))))
         set_pose(self._chassis, chassis, self.cid)
+        set_pose(
+            self._wiper,
+            Pose(
+                tuple(self.session.position(name=SweepDrawerScene.WIPER)),
+                self.session.quaternion(name=SweepDrawerScene.WIPER),
+            ),
+            self.cid,
+        )
 
     def bodies(
         self,
@@ -171,6 +186,11 @@ class PlanningScene(BaseModel):
         """A 13-joint PyBullet configuration: 7 arm joints + the 6 mimic finger joints."""
         return [float(v) for v in arm[:7]] + [state, state, state, state, -state, -state]
 
+    def within_arm_limits(self, *, arm: Sequence[float] | np.ndarray) -> bool:
+        """The planning URDF allows wider bends than this compiled physical robot."""
+        q = np.asarray(arm[:7], dtype=float)
+        return bool(np.all(q >= self._arm_limits[:, 0]) and np.all(q <= self._arm_limits[:, 1]))
+
     def in_collision(
         self,
         *,
@@ -182,6 +202,8 @@ class PlanningScene(BaseModel):
     ) -> bool:
         from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
 
+        if not self.within_arm_limits(arm=joints):
+            return True
         return bool(
             check_collisions_with_held_object(
                 self.robot, bodies, self.cid, held, held_tf, joints, distance_threshold=margin
@@ -197,7 +219,16 @@ class PlanningScene(BaseModel):
             sol = inverse_kinematics(self.robot, pose, set_joints=False)
         except InverseKinematicsError:
             return None
-        return np.asarray(sol[:7], dtype=float)
+        q = np.asarray(sol[:7], dtype=float)
+        if self.within_arm_limits(arm=q):
+            return q
+        from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
+
+        for candidate in ikfast_closest_inverse_kinematics(self.robot, world_from_target=pose):
+            q = np.asarray(candidate[:7], dtype=float)
+            if self.within_arm_limits(arm=q):
+                return q
+        return None
 
     def fk(self, *, arm: Sequence[float] | np.ndarray) -> Any:
         self.robot.set_joints(self.fingers(arm=arm))
@@ -235,7 +266,9 @@ class PlanningScene(BaseModel):
             held_object=held,
             base_link_to_held_obj=held_tf,
         )
-        return None if plan is None else [np.asarray(q[:7], dtype=float) for q in plan]
+        if plan is None or any(not self.within_arm_limits(arm=q) for q in plan):
+            return None
+        return [np.asarray(q[:7], dtype=float) for q in plan]
 
     def linear_path(
         self,
@@ -266,7 +299,7 @@ class PlanningScene(BaseModel):
             if sol is None:
                 return None
             sol = q + ArmMath.wrap(delta=sol - q)
-            if np.max(np.abs(sol - q)) > max_jump:
+            if not self.within_arm_limits(arm=sol) or np.max(np.abs(sol - q)) > max_jump:
                 return None
             if bodies is not None and self.in_collision(
                 joints=self.fingers(arm=sol, state=finger_state), bodies=bodies, margin=margin

@@ -111,6 +111,9 @@ class SweepDrawerSession(BaseModel):
     _initial: dict[str, tuple[np.ndarray, tuple[float, float, float, float]]] = PrivateAttr(
         default_factory=dict
     )
+    _wiper_parking: tuple[np.ndarray, tuple[float, float, float, float]] | None = PrivateAttr(
+        default=None
+    )
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         kinder = KinderImports.load()
@@ -172,6 +175,29 @@ class SweepDrawerSession(BaseModel):
     def initial_pose(self, *, name: str) -> tuple[np.ndarray, tuple[float, float, float, float]]:
         """Where `name` was at episode start: the wiper's parking spot, for one."""
         return self._initial[name]
+
+    def wiper_parking_pose(self) -> tuple[np.ndarray, tuple[float, float, float, float]]:
+        """The reset goal, kept separate from the recorded environment initialization."""
+        if self._wiper_parking is None:
+            return self.initial_pose(name=SweepDrawerScene.WIPER)
+        return self._wiper_parking
+
+    def set_wiper_parking_pose(
+        self, *, position: np.ndarray, quaternion: tuple[float, float, float, float]
+    ) -> None:
+        """Record a planned placement target; this never writes simulator state."""
+        self._wiper_parking = position.copy(), quaternion
+
+    def wiper_initial_region(self) -> tuple[Any, str]:
+        """The fixture and region declared by the task's wiper initial-state clause."""
+        env = self._env.unwrapped._object_centric_env
+        region = next(
+            clause[2]
+            for clause in env.task_config["initial_state"]
+            if clause[0] == "in" and clause[1] == SweepDrawerScene.WIPER
+        )
+        target = env.task_config["regions"][region]["target"]
+        return env._fixtures_dict[target], region
 
     def restore(self, *, state: Any) -> None:
         """Overwrite the simulator from an object-centric state (tests and replay only)."""
