@@ -7,14 +7,16 @@ import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.sweep_drawer3d.environment import SweepDrawerEnvironment
+from hitl_pmp.environments.sweep_drawer3d.primitives import WiperHold
 from hitl_pmp.environments.sweep_drawer3d.skill_provider import SweepDrawerSkillProvider
 from hitl_pmp.environments.sweep_drawer3d.symbolic import SweepSymbols
+from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
 
 
 class NativeCheck:
     @staticmethod
     def run():
-        out = Path("scratchpad/native-readiness")
+        out = Path("scratchpad/native-exact-tool")
         out.mkdir(parents=True, exist_ok=True)
         records = []
         for seed in (0, 1, 2, *range(10000, 10010)):
@@ -46,6 +48,17 @@ class NativeCheck:
                         "applicable": True,
                         "success": success,
                         "ticks": env.session().ticks - before,
+                        "wiper_z": float(env.session().position(name=S.WIPER)[2]),
+                        "physical_wiper_hold": bool(
+                            env.session().gripper() > 0.2
+                            and WiperHold.in_hand(
+                                gripper=np.array(env.recovery().primitives.scene.ee_now().position),
+                                wiper=env.session().position(name=S.WIPER),
+                            )
+                        ),
+                        "event": json.loads(
+                            (out / str(seed) / "sweep_events.jsonl").read_text().splitlines()[-1]
+                        ),
                     })
                 record["goal"] = all(
                     a.predicate.holds(env.current_state, a.objects)
