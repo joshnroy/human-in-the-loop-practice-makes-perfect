@@ -44,6 +44,8 @@ class SweepDrawerCli:
             raise ValueError("Sweep learning requires --practice-reset-policy never")
         raw = args.sweep_manifest.read_bytes()
         manifest = json.loads(raw)
+        if str(manifest.get("status", "")).startswith("DRAFT"):
+            raise ValueError("Sweep draft manifest has unresolved launch-readiness gates")
         if args.canonical_seed not in manifest["valid_practice_seeds"]:
             raise ValueError("Practice seed is absent from the frozen valid-start manifest")
         test_seeds = tuple(manifest["valid_evaluation_seeds"])
