@@ -725,5 +725,161 @@ def test_full_sweep_root_action_values_match_reference_with_pruning(*, horizon):
             for event in trace.events
             if event["event"] == "action_value"
         ])
-    assert results[0] == results[1]
-    assert roots[0] == roots[1]
+    assert results[0][1] == results[1][1]
+    assert results[0][0] == pytest.approx(results[1][0], rel=0, abs=2e-14)
+    for expected, actual in zip(roots[0], roots[1], strict=True):
+        assert expected[0] == actual[0]
+        assert expected[1] == pytest.approx(actual[1], rel=0, abs=2e-14)
+
+
+@pytest.mark.parametrize("engine", ["particle", "grid"])
+def test_canonical_likelihood_merges_only_exchangeable_segment(*, engine):
+    from itertools import combinations
+
+    import numpy as np
+
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+
+    skills, initial, goal = _chain()
+    state = SweepBeliefs.prior(
+        skill_names=tuple(skill.skill.name for skill in skills),
+        trainable_skill_names=(),
+        seed=5,
+        num_particles=64,
+        config=InferenceConfig(),
+        engine=engine,
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=(),
+        random_competences={},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+    )
+    model.begin_exact_search(state=state)
+    posteriors = []
+    for successes in combinations(range(6), 3):
+        current = state
+        reference = state.skill_beliefs["OpenDrawer"]
+        for step in range(6):
+            success = step in successes
+            current = model._imagined_update(
+                state=current,
+                action=skills[0],
+                success=success,
+                was_random_exploration=False,
+                condition_competence=True,
+            )
+            reference = reference.condition_outcome(success=success)
+        actual = current.skill_beliefs["OpenDrawer"]
+        posteriors.append(actual)
+        assert np.allclose(actual.arrays()[1], reference.arrays()[1], rtol=0, atol=2e-15)
+        assert actual.cycle_successes == reference.cycle_successes == 3
+        assert actual.cycle_failures == reference.cycle_failures == 3
+        assert actual.cost_belief == reference.cost_belief
+        assert current.pending_examples["OpenDrawer"] == 6
+    assert len({belief.state_weights for belief in posteriors}) == 1
+    excluded = model._imagined_update(
+        state=state,
+        action=skills[0],
+        success=True,
+        was_random_exploration=True,
+        condition_competence=False,
+    )
+    assert excluded.skill_beliefs["OpenDrawer"] == state.skill_beliefs["OpenDrawer"]
+    assert excluded.pending_examples["OpenDrawer"] == 1
+    model.end_exact_search()
+
+
+@pytest.mark.parametrize("cost_lambda", [None, 0.0, 3e-6])
+@pytest.mark.parametrize("paid", [0.0, 37.25])
+def test_affine_search_keeps_paid_cost_and_root_diagnostics(*, cost_lambda, paid):
+    from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_expectimax import SweepExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+    from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+
+    skills, initial, goal = _chain()
+    state = Tossing3DBeliefState(
+        skill_beliefs={skill.skill.name: _belief(values=(0.2, 0.8)) for skill in skills},
+        accumulated_cost=paid,
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=(),
+        random_competences={},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=cost_lambda,
+    )
+    results = []
+    traces = []
+    for cls in (ExpectimaxPlanner, SweepExpectimaxPlanner):
+        trace = SearchTrace()
+        planner = cls(use_model_j=True, observation_probability_weight=0.1)
+        results.append(
+            planner.solve(
+                environment_state=make_tossing3d_search_state(state=state, true_atoms=initial),
+                belief_state=state,
+                summed_cost=paid,
+                horizon=3,
+                model=model,
+                num_samples=1,
+                trace=trace,
+            )
+        )
+        traces.append(trace.events)
+    assert results[0][1] == results[1][1]
+    assert results[0][0] == pytest.approx(results[1][0], rel=0, abs=2e-14)
+    for expected, actual in zip(traces[0], traces[1], strict=False):
+        if expected["event"] == "search_summary":
+            break
+        assert expected["event"] == actual["event"]
+        for name in (
+            "value",
+            "summed_cost",
+            "sampled_cost",
+            "probability",
+            "successor_value",
+            "contribution",
+        ):
+            if name in expected:
+                assert expected[name] == pytest.approx(actual[name], rel=0, abs=2e-14)
+    assert (
+        planner.normalized_cost_nodes > 0
+        if cost_lambda is not None
+        else planner.normalized_cost_nodes == 0
+    )
+
+
+def test_canonical_segment_rejects_new_cost_clock_or_external_posteriors():
+    from hitl_pmp.methods.belief_space.competence_inference import (
+        InferenceConfig,
+        create_bayesian_prior,
+    )
+    from hitl_pmp.methods.belief_space.sweep_canonical_likelihood import SweepCanonicalLikelihood
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+
+    root = create_bayesian_prior(
+        model="local_trend", engine="grid", seed=7, num_particles=64, config=InferenceConfig()
+    )
+    segment = SweepCanonicalLikelihood(state=Tossing3DBeliefState(skill_beliefs={"Sweep": root}))
+    external = (
+        root.condition_cost(observed_cost=1.0),
+        root.condition_outcome(success=True),
+        root.model_copy(update={"total_training_examples": 1}),
+        root.model_copy(update={"cycle_index": 1}),
+        root.model_copy(update={"process_transition_count": 1}),
+    )
+    for belief in external:
+        assert segment.condition(name="Sweep", belief=belief, success=True) is None
+    inside = segment.condition(name="Sweep", belief=root, success=True)
+    assert inside is not None
+    assert segment.condition(name="Sweep", belief=inside, success=False) is not None
+    assert segment.condition(name="Other", belief=root, success=True) is None
