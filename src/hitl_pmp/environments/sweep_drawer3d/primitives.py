@@ -764,6 +764,48 @@ class Primitives(BaseModel):
                 held=self.scene.wiper_body,
                 held_tf=held_tf,
             )
+            if stow is None:
+                # Sweep can end with the blade contacting the counter or drawer.
+                # Leave that contact with a checked lift before folding the arm.
+                for rise in (0.08, 0.05, 0.03, 0.015, 0.12, 0.16):
+                    ee = self.scene.ee_now()
+                    bodies = self.scene.bodies()
+                    lift = self.scene.linear_path(
+                        start=self.session.arm(),
+                        target=Pose(
+                            tuple(np.asarray(ee.position) + [0.0, 0.0, rise]), ee.orientation
+                        ),
+                        bodies=bodies,
+                        finger_state=G.CLOSED_PB,
+                        max_jump=0.6,
+                    )
+                    if lift is None or any(
+                        self.scene.in_collision(
+                            joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                            bodies=bodies,
+                            held=self.scene.wiper_body,
+                            held_tf=held_tf,
+                        )
+                        for q in lift
+                    ):
+                        continue
+                    if not self.motion.follow(path=lift, grip=1.0):
+                        raise ExecutionError("held wiper lift before stow did not converge")
+                    held_tf = multiply_poses(
+                        self.scene.ee_now().invert(),
+                        Pose(
+                            tuple(self.session.position(name=S.WIPER)),
+                            self.session.quaternion(name=S.WIPER),
+                        ),
+                    )
+                    stow = self.scene.plan_arm(
+                        goal=S.HOME,
+                        bodies=self.scene.bodies(),
+                        held=self.scene.wiper_body,
+                        held_tf=held_tf,
+                    )
+                    if stow is not None:
+                        break
             if stow is None or not self.motion.follow(path=stow, grip=1.0):
                 raise ExecutionError("held wiper could not be stowed for return")
             held_tf = multiply_poses(

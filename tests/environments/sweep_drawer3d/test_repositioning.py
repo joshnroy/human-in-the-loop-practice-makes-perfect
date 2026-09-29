@@ -183,18 +183,17 @@ def test_without_the_other_drawers_the_planner_reaches_through_a_drawer_face() -
     from hitl_pmp.environments.sweep_drawer3d.planning_scene import Orientations
     from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
 
+    approach = np.array([-np.cos(0.35), 0.0, -np.sin(0.35)])
     inside = Pose(
-        (0.865 + 0.048, 0.2, 0.10),
-        Orientations.from_axes(
-            closing=np.array([0.0, 1.0, 0.0]), approach=np.array([-1.0, 0.0, 0.0])
-        ),
+        tuple(np.array([0.865, 0.2, 0.10]) - 0.048 * approach),
+        Orientations.from_axes(closing=np.array([0.0, 1.0, 0.0]), approach=approach),
     )
     verdicts = {}
     for without in ((), ("drawers",)):
         session, reset = _reset(without=without)
         try:
             scene = reset._scene
-            scene.sync(base=(1.55, 0.2, float(np.pi)))
+            scene.sync(base=(1.5, 0.2, float(np.pi)))
             joints = scene.ik(pose=inside, seed=S.HOME)
             assert joints is not None
             verdicts[without] = scene.in_collision(
