@@ -132,3 +132,23 @@ def test_collision_wiper_tracks_observed_released_pose() -> None:
         np.testing.assert_allclose(actual.position, session.position(name=S.WIPER), atol=1e-6)
     finally:
         session.close()
+
+
+@needs_kinder
+def test_wiper_leaves_counter_contact_before_stowing_for_return() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.self_reset import SweepDrawerSelfReset
+    from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
+    from hitl_pmp.environments.sweep_drawer3d.stock_skills import StockSweepSkills
+    from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
+
+    session = SweepDrawerSession(seed=11)
+    try:
+        StockSweepSkills.attempt(session=session, phase="attempt_1")
+        reset = SweepDrawerSelfReset(session=session)
+        reset.primitives.park_wiper()
+        home, _ = session.wiper_parking_pose()
+        observed = session.position(name=S.WIPER)
+        assert abs(observed[2] - S.COUNTER_TOP) < 0.01
+        assert np.linalg.norm(observed[:2] - home[:2]) < 0.02
+    finally:
+        session.close()
