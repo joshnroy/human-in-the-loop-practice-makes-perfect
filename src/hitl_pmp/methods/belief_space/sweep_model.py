@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .sweep_canonical_likelihood import SweepCanonicalLikelihood
 from .sweep_deployment_model import SweepDeploymentExpectation
 from .sweep_observation_model import SweepBeliefs
 from .sweep_transition_model import SweepTransitions
@@ -57,6 +58,7 @@ class SweepPracticeModel(BaseModel):
     )
 
     _rng: np.random.Generator = PrivateAttr()
+    _canonical: SweepCanonicalLikelihood | None = PrivateAttr(default=None)
     _imagined_updates: dict[object, Tossing3DBeliefState] = PrivateAttr(default_factory=dict)
     _atom_masks: dict[frozenset[GroundAtom], int] = PrivateAttr(default_factory=dict)
     _state_keys: dict[int, tuple[weakref.ReferenceType[Tossing3DBeliefState], object]] = (
@@ -373,6 +375,14 @@ class SweepPracticeModel(BaseModel):
             imagined_update=self._imagined_update,
         )
 
+    def begin_exact_search(self, *, state: Tossing3DBeliefState) -> None:
+        self._imagined_updates.clear()
+        self._canonical = SweepCanonicalLikelihood(state=state)
+
+    def end_exact_search(self) -> None:
+        self._canonical = None
+        self._imagined_updates.clear()
+
     def _imagined_update(
         self,
         *,
@@ -408,13 +418,22 @@ class SweepPracticeModel(BaseModel):
                 }
             )
             update_model = self._skill_belief_models_by_name[name]
+            canonical = (
+                self._canonical.condition(
+                    name=name, belief=state.skill_beliefs[name], success=success
+                )
+                if self._canonical is not None and condition_competence
+                else None
+            )
             updated = update_model.observe_outcome(
                 state=local,
                 success=success,
                 was_random_exploration=was_random_exploration,
                 resample=False,
-                condition_competence=condition_competence,
+                condition_competence=condition_competence and canonical is None,
             )
+            if canonical is not None:
+                updated = updated.model_copy(update={"skill_beliefs": {name: canonical}})
             if trainable:
                 updated = update_model.observe_training_example(state=updated, success=success)
             if len(self._imagined_updates) >= 2048:

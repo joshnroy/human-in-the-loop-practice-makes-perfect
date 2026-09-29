@@ -105,3 +105,77 @@ bytes. A sufficient-statistic/canonical-likelihood factorization might merge
 these histories while preserving the mathematical model; it would change the
 floating-point operation order and requires separate correctness validation.
 No rounding, approximate belief merging or canonicalization was applied here.
+
+
+## Exact factorization follow-up, 2026-09-29
+
+Josh's delegated approval includes mathematical factorization with explicit
+floating-point validation. The preceding "not applied" canonicalization statement
+records the earlier checkpoint; this follow-up now implements two factorizations.
+
+First, within a single imagined search segment, every Bayesian skill has a fixed
+latent grid/particles, learning-rate values, cost posterior and root posterior.
+SweepTransitions never advances the latent process, refits, observes a cost, or
+resamples those latents. It only conditions admitted Bernoulli outcomes and
+updates separate pending-example/sampler-label counts. Hence admitted success
+and failure counts are sufficient for that segment. SweepCanonicalLikelihood
+uses the unchanged condition_outcome operation in canonical success-then-failure
+order. Identity-verified descendants are tied to one search root. Unknown,
+externally conditioned, new-cost, refitted or new-clock beliefs fall back to the
+ordinary update. Actual observation/inference code is unchanged. Random evidence
+exclusion, total attempt counts and fitted sampler support remain separate.
+
+Second, linear G implies V(b,s,C,h)=V(b,s,0,h)-lambda*C. Interior nodes normalize
+only already-paid C, then restore that offset on return. Future skill-cost
+beliefs and charges stay unchanged. The root remains in actual paid-cost
+coordinates, preserving diagnostic branch costs and values. Hard-budget mode
+never uses this normalization. Both changes alter floating operation order,
+not the mathematical objective or posterior; no belief-key rounding is used.
+
+Verification:57/57 combined focused method/environment/CLI tests pass, including
+37/37 method tests. Twenty orderings per inference engine collapse to one
+canonical posterior; sequential weights agree within2e-15. Full five-cube root
+choices are identical; root/action values use a declared2e-14 absolute tolerance
+and observed differences were1.11e-16. Nonzero paid-cost and hard-budget cases
+validate root diagnostics, and foreign posterior/cost/clock mutations are rejected
+by canonical segment membership. Changed sources pass Ruff and mypy.
+
+![Factorization probes remain incomplete](sweep-exact-factorization-benchmarks.svg)
+
+| Updated-contract variant | Depth | Solver seconds | Expanded | Memoized | Peak RSS MiB | Completed |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Canonical likelihood and pruning |20|119.172|26933|355562|1247.0|0/1|
+| Canonical likelihood and pruning |6|59.091|12406|200988|740.4|0/1|
+| Canonical likelihood, paid-cost factor, pruning |20|119.329|22251|297399|1065.4|0/1|
+| Canonical likelihood, paid-cost factor, pruning |6|59.152|10565|151146|594.1|0/1|
+
+These remain individual censored cProfile probes on synthetic priors, with no
+speedup inference. Memoized-state counts from factorizations are different search
+representations and must not be treated as a completion fraction. The final
+120s run pruned10463 suffixes but visited only one node at every horizon5–20:
+no root action had completed. All named profiling services have terminated.
+
+The remaining bottleneck is structural: the search branches over independently
+uncertain recovery skills across five cubes, carrying their distinct success/
+failure histories and reachability effects, then over stock training histories.
+Canonical likelihoods remove redundant orderings within one skill; they do not
+collapse genuinely different evidence allocations across skills. Equal configured
+robot charges do not make the unknown cost posteriors interchangeable. Sharing
+or fixing them would change the approved model and was not done.
+
+Recommendation: do not launch a batch with this unresolved exact-search gate.
+A credible exact next step is an admissible continuation-value bound derived from
+a relaxed belief problem in which all three stock skills are always available
+and recovery/location constraints and nonnegative costs are removed. Because
+recovery evidence does not inform stock competence, every actual continuation
+can be embedded in that relaxation. Its value could support branch-and-bound,
+with reuse keyed only by stock beliefs, pending examples, sampler support and
+remaining actions. The relaxed subproblem itself must be proved and benchmarked;
+no useful tight bound or runtime improvement is claimed here. A trivial upper
+bound of1 is unlikely to prune much at lambda3e-6. No unproved bound was added.
+Changing the solver or declared horizon requires separate authorization.
+
+Separately, the integration owner discovered singleton pinned stock parameter
+supports, preventing the intended three-sampler learning experiment. This audit
+uses synthetic prior/competence values and is not calibration or evidence that
+that independent scientific gate has been resolved.

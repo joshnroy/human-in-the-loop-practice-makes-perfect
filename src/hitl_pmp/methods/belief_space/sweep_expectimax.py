@@ -40,6 +40,12 @@ class SweepExpectimaxPlanner(
         trace: SearchTrace | None = None,
     ) -> tuple[float, GroundSkill | StopAction]:
         self.pruned_recovery_suffixes = 0
+        self.normalized_cost_nodes = 0
+        self._linear_cost_lambda = (
+            model.linear_cost_lambda
+            if isinstance(model, SweepPracticeModel) and self.use_model_j
+            else None
+        )
         self._reachability: dict[tuple[frozenset[GroundAtom], int], bool] = {}
         self._relaxed: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom], bool]] = []
         self._can_prune = isinstance(model, SweepPracticeModel) and self.use_model_j
@@ -65,21 +71,28 @@ class SweepExpectimaxPlanner(
                     additions,
                     skill.skill.name in relevant_names,
                 ))
-        result = super().solve(
-            environment_state=environment_state,
-            summed_cost=summed_cost,
-            belief_state=belief_state,
-            horizon=horizon,
-            model=model,
-            num_samples=num_samples,
-            trace=trace,
-        )
+        if isinstance(model, SweepPracticeModel):
+            model.begin_exact_search(state=belief_state)
+        try:
+            result = super().solve(
+                environment_state=environment_state,
+                summed_cost=summed_cost,
+                belief_state=belief_state,
+                horizon=horizon,
+                model=model,
+                num_samples=num_samples,
+                trace=trace,
+            )
+        finally:
+            if isinstance(model, SweepPracticeModel):
+                model.end_exact_search()
         if trace is not None:
             trace.record(
                 event="exact_recovery_suffix_pruning",
                 node=0,
                 pruned_suffixes=self.pruned_recovery_suffixes,
                 requested_horizon=horizon,
+                normalized_cost_nodes=self.normalized_cost_nodes,
             )
         return result
 
@@ -112,6 +125,19 @@ class SweepExpectimaxPlanner(
         belief_state: Tossing3DBeliefState,
         horizon: int,
     ) -> tuple[float, GroundSkill | StopAction]:
+        if self.next_node > 0 and self._linear_cost_lambda is not None and summed_cost != 0:
+            # Linear G factors paid cost out of every possible continuation.
+            # Keep the root unnormalized so all recorded values/charges stay in
+            # the caller's coordinates, including a nonzero session cost.
+            self.normalized_cost_nodes += 1
+            normalized = belief_state.model_copy(update={"accumulated_cost": 0.0})
+            value, action = self.cached_solve_belief_space_expectimax(
+                environment_state=environment_state.model_copy(update={"state": normalized}),
+                belief_state=normalized,
+                summed_cost=0.0,
+                horizon=horizon,
+            )
+            return value - self._linear_cost_lambda * summed_cost, action
         # Leave the root intact to preserve its full action-value diagnostics.
         if (
             self._can_prune
