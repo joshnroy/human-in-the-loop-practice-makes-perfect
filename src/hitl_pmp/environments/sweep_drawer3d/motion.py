@@ -114,13 +114,14 @@ class Motion(BaseModel):
         grip: float | None = None,
         max_ticks: int = 500,
         tol: float = 0.004,
+        arm: np.ndarray | None = None,
     ) -> bool:
         """Track a base path with the arm held where it is (to 4 mm / 0.01 rad: arm plans
         are re-solved at the pose actually reached, but a tight stop keeps them close)."""
         from prpl_utils.utils import get_signed_angle_distance
 
         g = self._grip_hold() if grip is None else grip
-        q_hold = self.session.arm()
+        q_hold = self.session.arm() if arm is None else arm.copy()
         remaining = list(path)
         for _ in range(max_ticks):
             x, y, th = self.session.base()

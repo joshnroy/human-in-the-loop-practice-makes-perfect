@@ -32,3 +32,23 @@ def test_native_goal_and_human_reset_contract() -> None:
         assert env._human_reset_count == 1
     finally:
         env.close()
+
+
+def test_closed_gripper_proximity_does_not_imply_a_physical_grasp(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
+    from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
+
+    session = SweepSimpleSession(seed=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0.0)
+    try:
+        monkeypatch.setattr(SweepSimpleSession, "gripper", lambda self: 1.0)
+        handle, _ = primitive.wiper_handle_geometry()
+        assert not primitive.wiper_in_hand(
+            gripper=session.mj_data.geom_xpos[handle].copy(), wiper=session.position(name="wiper_0")
+        )
+    finally:
+        primitive.scene._sim.close()
+        session.close()

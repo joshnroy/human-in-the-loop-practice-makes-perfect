@@ -94,8 +94,8 @@ expansion only after readiness. Report actual robot-reset action counts; the new
 environment may not make these nominal costs bracket the robot sequence, and no
 crossover is guaranteed or forced.
 
-Decision requested: approve the five-cube native variant, the new explicit floor
-skills and feasibility ranges above, and10-action deployment horizon. This is a
+Decision approved by Josh on 2026-09-29: the five-cube native variant, the new explicit floor
+skills and feasibility ranges above, and 10-action deployment horizon. This is a
 real controller/model extension, not merely an environment-name conversion.
 
 ## Readiness and work order after approval

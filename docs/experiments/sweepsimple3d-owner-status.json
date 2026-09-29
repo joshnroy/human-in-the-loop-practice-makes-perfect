@@ -1,0 +1,58 @@
+{
+  "environment": "SweepSimple3D-o5-sweep_the_blocks_to_the_left_side_of_the_kitchen_island",
+  "owner": "/root/sweepsimple3d_experiment",
+  "status": "IMPLEMENTING_NOT_READY",
+  "heartbeat_utc": "2026-09-29T22:17:57.858969+00:00",
+  "worktree": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration",
+  "branch": "codex/sweepsimple3d-integration",
+  "committed_base": "b53bba56",
+  "frozen_revision": null,
+  "launch_manifest": null,
+  "active_units": [
+    "sweepsimple-top-short-v30.service",
+    "sweepsimple-lowlever-10-v31.service",
+    "sweepsimple-lowlever-12-v31.service"
+  ],
+  "last_progress": "Physical goal remains unmet. True bilateral handle contacts are checked throughout motions; a higher grasp/continuous-stroke probe retained contacts but tool tilted under contact load and checked correction became unreachable. Testing lower lever-arm grasps without altering native physics. 8/8 Simple tests and 10/10 module typechecks pass. Readiness remains NOT_READY.",
+  "evidence_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/scratchpad/sweepsimple3d",
+  "proposal": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/docs/experiments/sweepsimple3d-integration-proposal.md",
+  "next_tasks": [
+    "Inspect clear-mid-v23 and clear-low-v23 result.json; do not relaunch active units",
+    "Fix floor contact under unchanged native physics/goals; measure complete forward then reverse sweep",
+    "Validate all five native goals and robot/wiper recovery, parameter supports, no-hidden-reset/action accounting",
+    "Only after readiness freeze source and manifest; coordinate parent before authorized cheap/high 2x2 launch"
+  ],
+  "scientific_jobs_launched": 0,
+  "launch_allowed_now": false,
+  "protocol": {
+    "practice_cycles": 50,
+    "practice_horizon": 20,
+    "evaluation_horizon": 10,
+    "heldout_evaluation_tasks": 10,
+    "methods": [
+      "EES",
+      "Ours Model B"
+    ],
+    "solver": "determinized_astar",
+    "expansion_budget": 1000,
+    "goal_pursuit": false,
+    "inference": "grid 25x16",
+    "cost_particles": 1024,
+    "lambda": 3e-06,
+    "human_costs": {
+      "ours": [
+        1,
+        10,
+        20
+      ],
+      "ees": [
+        0.0953101798043249,
+        0.9531017980432489,
+        1.9062035960864978
+      ]
+    },
+    "no_human_arm": true,
+    "initial_priority": "cheap/high 2x2 paired valid seed 0",
+    "no_scheduled_practice_resets": true
+  }
+}

@@ -6,11 +6,107 @@ import numpy as np
 from pydantic import Field
 
 from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError, Motion
-from hitl_pmp.environments.sweep_drawer3d.planning_scene import PlanningScene
+from hitl_pmp.environments.sweep_drawer3d.planning_scene import ArmMath, PlanningScene
 from hitl_pmp.environments.sweep_drawer3d.primitives import Primitives
 
 
+def _handle_has_bilateral_contact(*, session: Any) -> bool:
+    import mujoco
+
+    model, data = session.mj_model, session.mj_data
+    body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+    handle = max(
+        (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+        key=lambda g: float(model.geom_size[g][2]),
+    )
+    pads = set()
+    for contact in data.contact:
+        if handle not in (contact.geom1, contact.geom2):
+            continue
+        other = contact.geom2 if contact.geom1 == handle else contact.geom1
+        pads.add(mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[other]))
+    return {"robot_left_pad", "robot_right_pad"} <= pads
+
+
 class FloorPlanningScene(PlanningScene):
+    max_tool_tilt: float = 1.1
+
+    def plan_arm(
+        self,
+        *,
+        goal: Any,
+        bodies: set[int],
+        start: Any = None,
+        base: Any = None,
+        held: int | None = None,
+        held_tf: Any = None,
+    ) -> list[np.ndarray] | None:
+        if goal is None:
+            return None
+        if held != self.wiper_body or held_tf is None:
+            return super().plan_arm(
+                goal=goal, bodies=bodies, start=start, base=base, held=held, held_tf=held_tf
+            )
+        from pybullet_helpers.geometry import multiply_poses
+        from scipy.spatial.transform import Rotation
+
+        self.sync(base=base)
+        q0 = self.session.arm() if start is None else np.asarray(start)
+        target = self.fk(arm=goal)
+        path = self.linear_path(
+            start=q0, target=target, bodies=bodies, finger_state=0.5, max_jump=0.6
+        )
+        if path is None:
+            from pybullet_helpers.geometry import Pose
+
+            origin = self.fk(arm=q0)
+            for lift in (0.1, 0.2):
+                q = q0.copy()
+                candidate = []
+                for pose in (
+                    Pose(tuple(np.asarray(origin.position) + [0, 0, lift]), origin.orientation),
+                    Pose(
+                        (target.position[0], target.position[1], origin.position[2] + lift),
+                        target.orientation,
+                    ),
+                    target,
+                ):
+                    leg = self.linear_path(
+                        start=q, target=pose, bodies=bodies, finger_state=0.5, max_jump=0.6
+                    )
+                    if leg is None:
+                        break
+                    candidate.extend(leg)
+                    q = leg[-1]
+                else:
+                    path = candidate
+                    break
+        if path is None:
+            path = super().plan_arm(
+                goal=goal, bodies=bodies, start=start, base=base, held=held, held_tf=held_tf
+            )
+        if path is None:
+            return None
+        previous = np.asarray(q0)
+        for waypoint in path:
+            waypoint = previous + ArmMath.wrap(delta=waypoint - previous)
+            steps = max(1, int(np.ceil(np.max(np.abs(waypoint - previous)) / 0.05)))
+            for fraction in np.linspace(0, 1, steps + 1):
+                joints = previous + fraction * (waypoint - previous)
+                tool_pose = multiply_poses(self.fk(arm=joints), held_tf)
+                tilt = np.arccos(
+                    np.clip(Rotation.from_quat(tool_pose.orientation).as_matrix()[2, 2], -1, 1)
+                )
+                if tilt > self.max_tool_tilt or self.in_collision(
+                    joints=self.fingers(arm=joints, state=0.5),
+                    bodies=bodies,
+                    held=held,
+                    held_tf=held_tf,
+                ):
+                    return None
+            previous = waypoint
+        return path
+
     def plan_base(
         self, *, target: tuple[float, float, float], margin: float = 0.02
     ) -> list[tuple[float, float, float]] | None:
@@ -30,7 +126,8 @@ class FloorPlanningScene(PlanningScene):
             seed=0,
             disable_collision_objects=(
                 ["wiper_0"]
-                if self.session.gripper() > 0.2 and self.session.position(name="wiper_0")[2] > 0.08
+                if self.session.gripper() > 0.2
+                and _handle_has_bilateral_contact(session=self.session)
                 else []
             ),
         )
@@ -42,6 +139,7 @@ class FloorPlanningScene(PlanningScene):
 class FloorPrimitives(Primitives):
     """Floor pickup uses the tested generic handle grasp with a learned base stance."""
 
+    contact_stroke_length: float = 0.132
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
 
@@ -106,10 +204,15 @@ class FloorPrimitives(Primitives):
         return handle, 2
 
     def wiper_in_hand(self, *, gripper: np.ndarray, wiper: np.ndarray) -> bool:
-        del wiper
-        handle, _ = self.wiper_handle_geometry()
-        center = self.session.mj_data.geom_xpos[handle]
-        return self.session.gripper() > 0.2 and float(np.linalg.norm(gripper - center)) < 0.15
+        del gripper, wiper
+        return self.session.gripper() > 0.2 and _handle_has_bilateral_contact(session=self.session)
+
+    def require_handle(self, *, phase: str) -> None:
+        if not self.wiper_in_hand(
+            gripper=np.asarray(self.scene.ee_now().position),
+            wiper=self.session.position(name="wiper_0"),
+        ):
+            raise ExecutionError(f"Physical bilateral handle grasp lost during {phase}")
 
     def stances(self, *, target: np.ndarray, where: str) -> list[tuple[float, float, float]]:
         del where
@@ -125,6 +228,26 @@ class FloorPrimitives(Primitives):
         ]
 
     def sweep_cube(self, *, cube: str, region: str, distance: float, heading_offset: float) -> str:
+        core = self.session.env.unwrapped._object_centric_env
+        stalls = 0
+        for stroke in range(24):
+            if core._ground_fixture.check_in_region(
+                self.session.position(name=cube), region, core._robot_env
+            ):
+                return f"Native target attained after {stroke} checked strokes"
+            before = self.session.position(name=cube).copy()
+            self._sweep_cube_stroke(
+                cube=cube, region=region, distance=distance, heading_offset=heading_offset
+            )
+            displacement = float(np.linalg.norm(self.session.position(name=cube)[:2] - before[:2]))
+            stalls = stalls + 1 if displacement < 0.001 else 0
+            if stalls >= 3:
+                raise ExecutionError("Three consecutive checked strokes made no cube progress")
+        raise ExecutionError("Native target not attained within 24 checked strokes")
+
+    def _sweep_cube_stroke(
+        self, *, cube: str, region: str, distance: float, heading_offset: float
+    ) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
 
         ee = self.scene.ee_now()
@@ -159,8 +282,22 @@ class FloorPrimitives(Primitives):
             stance_angle,
         )
         self.motion.drive_to(target=stance, grip=1.0)
+        self.require_handle(phase="base transport")
+        held_tf = multiply_poses(
+            self.scene.ee_now().invert(),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
+        )
         bodies = self.scene.bodies(without_cubes=tuple(f"cube_{i}" for i in range(5)))
-        wiper_start = initial[:2] - 0.045 * direction
+        transverse = np.array([-direction[1], direction[0]])
+        behind = 0.0
+        for other in (f"cube_{i}" for i in range(5)):
+            relative = self.session.position(name=other)[:2] - initial[:2]
+            if abs(float(relative @ transverse)) <= 0.16:
+                behind = max(behind, -float(relative @ direction))
+        wiper_start = initial[:2] - (behind + 0.06) * direction
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
         approach = None
@@ -182,8 +319,16 @@ class FloorPrimitives(Primitives):
                     "solutions": len(solutions),
                 })
                 for solution in solutions[:12]:
+                    candidate = self.scene.plan_arm(
+                        goal=solution[:7],
+                        bodies=bodies,
+                        held=self.scene.wiper_body,
+                        held_tf=held_tf,
+                    )
+                    if candidate is None:
+                        continue
                     candidate_lower = self.scene.linear_path(
-                        start=np.asarray(solution[:7]),
+                        start=np.asarray(candidate[-1]),
                         target=floor_ee,
                         bodies=bodies,
                         finger_state=0.5,
@@ -199,20 +344,15 @@ class FloorPrimitives(Primitives):
                         for q in candidate_lower
                     ):
                         continue
-                    approach = self.scene.plan_arm(
-                        goal=solution[:7],
-                        bodies=bodies,
-                        held=self.scene.wiper_body,
-                        held_tf=held_tf,
-                    )
-                    if approach is not None:
-                        break
+                    approach = candidate
+                    break
                 if approach is not None:
                     break
             if approach is not None:
                 break
-        if approach is None or not self.motion.follow(path=approach, grip=1.0):
+        if approach is None or not self.motion.follow(path=approach, grip=1.0, final_tol=0.003):
             raise ExecutionError(f"No collision-free floor sweep approach: {attempts}")
+        self.require_handle(phase="floor approach")
         lower = self.scene.linear_path(
             start=self.session.arm(), target=floor_ee, bodies=bodies, finger_state=0.5, max_jump=0.6
         )
@@ -228,6 +368,7 @@ class FloorPrimitives(Primitives):
             raise ExecutionError("No collision-free floor sweep descent")
         if not self.motion.follow(path=lower, grip=1.0, final_tol=0.005):
             raise ExecutionError("Floor sweep descent did not converge")
+        self.require_handle(phase="floor descent")
         # Finger compliance can change the grasp transform during reorientation.
         # Close the loop on the observed blade height rather than a stale transform.
         for _ in range(6):
@@ -250,8 +391,22 @@ class FloorPrimitives(Primitives):
                 raise ExecutionError("Cannot establish observed floor contact")
         if self.session.position(name="wiper_0")[2] > 0.006:
             raise ExecutionError("Wiper remains above the floor")
+        self.session._write(
+            record={
+                "kind": "contact_diagnostic",
+                "t": self.session.ticks,
+                "cube": self.session.position(name=cube).tolist(),
+                "wiper": self.session.position(name="wiper_0").tolist(),
+                "wiper_yaw": self.session.yaw(name="wiper_0"),
+                "target_wiper": wiper_start.tolist(),
+                "target_yaw": tool_yaw,
+            }
+        )
         base_origin = np.array(self.session.base()[:2])
-        for progress in np.arange(0.012, length + 0.10, 0.012):
+        contact_arm = self.session.arm().copy()
+        for progress in np.arange(
+            0.012, min(length + 0.10, self.contact_stroke_length + 0.001), 0.012
+        ):
             current = self.session.position(name=cube)
             if core._ground_fixture.check_in_region(current, region, core._robot_env):
                 break
@@ -261,7 +416,7 @@ class FloorPrimitives(Primitives):
             base_path = self.scene.plan_base(target=target_base)
             if base_path is None:
                 raise ExecutionError("Base route blocked during contact sweep")
-            if not self.motion.drive(path=base_path, grip=1.0, max_ticks=30):
+            if not self.motion.drive(path=base_path, grip=1.0, max_ticks=30, arm=contact_arm):
                 raise ExecutionError("Contact sweep base did not converge")
             for _ in range(3):
                 wiper_now = Pose(
@@ -273,12 +428,12 @@ class FloorPrimitives(Primitives):
                 upright_error = float(
                     np.linalg.norm(Rotation.from_quat(wiper_now.orientation).as_euler("xyz")[:2])
                 )
-                if wiper_now.position[2] <= 0.008 and upright_error < 0.035:
+                if wiper_now.position[2] <= 0.012 and upright_error < 0.15:
                     break
                 ee_now = self.scene.ee_now()
                 live_tf = multiply_poses(ee_now.invert(), wiper_now)
-                desired = Pose.from_rpy(
-                    (wiper_now.position[0], wiper_now.position[1], 0.001), (0.0, 0.0, tool_yaw)
+                desired = Pose(
+                    (wiper_now.position[0], wiper_now.position[1], 0.001), wiper_now.orientation
                 )
                 correction = multiply_poses(desired, live_tf.invert())
                 path = self.scene.linear_path(
@@ -302,6 +457,7 @@ class FloorPrimitives(Primitives):
                         f"tilt={upright_error:.4f}, path={path is not None}, "
                         f"IK={q is not None}, collision={collision}"
                     )
+                contact_arm = self.session.arm().copy()
             if not self.wiper_in_hand(
                 gripper=np.asarray(self.scene.ee_now().position),
                 wiper=self.session.position(name="wiper_0"),
@@ -319,16 +475,12 @@ class FloorPrimitives(Primitives):
         )
         if lift is None or not self.motion.follow(path=lift, grip=1.0):
             raise ExecutionError("No checked lift after floor sweep")
+        self.require_handle(phase="stroke lift")
         displacement = float(np.linalg.norm(self.session.position(name=cube)[:2] - initial[:2]))
-        if not core._ground_fixture.check_in_region(
-            self.session.position(name=cube), region, core._robot_env
-        ):
-            raise ExecutionError(
-                f"Sweep ended outside native target region; cube displacement {displacement:.3f} m"
-            )
         return f"Cube displacement {displacement:.3f} m"
 
     def stow_wiper(self) -> None:
+        self.require_handle(phase="before transport")
         from pybullet_helpers.geometry import Pose, multiply_poses
 
         goal = self.wiper_stow_goal()
@@ -346,6 +498,7 @@ class FloorPrimitives(Primitives):
         )
         if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.025):
             raise ExecutionError("No collision-free stow for the physically held wiper")
+        self.require_handle(phase="upright transport")
 
     def place_wiper_at_start(self) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
@@ -355,6 +508,7 @@ class FloorPrimitives(Primitives):
         position, orientation = self.session.initial_pose(name="wiper_0")
         stance = self.stances(target=position, where="floor")[0]
         self.motion.drive_to(target=stance, grip=1.0)
+        self.require_handle(phase="base transport")
         held_tf = multiply_poses(
             self.scene.ee_now().invert(),
             Pose(
