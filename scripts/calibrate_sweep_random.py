@@ -23,7 +23,8 @@ class Calibration:
             return None
         params = (
             provider.sample_params(ground_skill=ground, rng=rng)
-            if fixed_params is None else np.asarray(fixed_params, dtype=float)
+            if fixed_params is None
+            else np.asarray(fixed_params, dtype=float)
         )
         env.take_action(
             action=provider.compute_action(
@@ -58,9 +59,9 @@ class Calibration:
             ),
             "prior_use": "frozen random competence in the existing ModelB domain descriptor",
             "approved_parameter_bounds": {
-                "OpenDrawer": [[.65, .95], [-13*np.pi/12, -11*np.pi/12]],
-                "PickWiper": [[.55, .85], [-13*np.pi/12, -11*np.pi/12]],
-                "Sweep": [[.40, .70], [-13*np.pi/12, -11*np.pi/12]],
+                "OpenDrawer": [[0.65, 0.95], [-13 * np.pi / 12, -11 * np.pi / 12]],
+                "PickWiper": [[0.55, 0.85], [-13 * np.pi / 12, -11 * np.pi / 12]],
+                "Sweep": [[0.40, 0.70], [-13 * np.pi / 12, -11 * np.pi / 12]],
             },
         }
         (args.output / "plan.json").write_text(json.dumps(plan, indent=2))
@@ -78,11 +79,18 @@ class Calibration:
                     env.hard_reset()
                     provider = SweepDrawerSkillProvider(env=env, human_reset_enabled=False)
                     provider.validate_trainable_support()
-                    if args.skill == "Sweep":
-                        for name in ("OpenResetDrawer", "PickWiper"):
+                    if args.skill in ("PickWiper", "Sweep"):
+                        for name in (
+                            ("OpenResetDrawer", "PickWiper")
+                            if args.skill == "Sweep"
+                            else ("OpenResetDrawer",)
+                        ):
                             result = Calibration.execute(
-                                env=env, provider=provider, name=name, rng=np.random.default_rng(0),
-                                fixed_params=(.7, -np.pi) if name == "PickWiper" else (),
+                                env=env,
+                                provider=provider,
+                                name=name,
+                                rng=np.random.default_rng(0),
+                                fixed_params=(0.7, -np.pi) if name == "PickWiper" else (),
                             )
                             record["preparation"].append(result)
                     record["attempt"] = Calibration.execute(

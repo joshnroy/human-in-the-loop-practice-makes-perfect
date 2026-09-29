@@ -3,16 +3,20 @@
 import argparse
 import json
 
+import pytest
+
 from hitl_pmp.core.method.skill_provider import DomainContext
-from hitl_pmp.environments.sweep_drawer3d.environment import SweepDrawerEnvironment
-from hitl_pmp.environments.sweep_drawer3d.skill_provider import (
-    SweepDrawerOracle,
-    SweepDrawerSkillProvider,
-)
 from hitl_pmp.methods.belief_space.sweep_cli import SweepPomdpCli
 
 
 def test_manifest_engine_gate_recorder_and_snapshot_match(*, tmp_path):
+    pytest.importorskip("shapely", reason="Sweep physical adapter requires simulator extras")
+    from hitl_pmp.environments.sweep_drawer3d.environment import SweepDrawerEnvironment
+    from hitl_pmp.environments.sweep_drawer3d.skill_provider import (
+        SweepDrawerOracle,
+        SweepDrawerSkillProvider,
+    )
+
     path = tmp_path / "manifest.json"
     manifest = {
         "pomdp": {

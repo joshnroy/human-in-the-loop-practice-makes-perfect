@@ -17,6 +17,12 @@ from hitl_pmp.core.problem.tasks.types import Predicate
 class SweepSymbols:
     FACT_NAMES: ClassVar[tuple[str, ...]] = (
         "HandEmpty",
+        "RecoveryHandEmpty",
+        "PhysicallyHoldingWiper",
+        "ResetDrawerOpen",
+        "ResetDrawerClosed",
+        "OnTableWiper",
+        "InDrawerWiper",
         "ClosedEmpty",
         "HoldingWiper",
         "WiperHome",
@@ -31,6 +37,8 @@ class SweepSymbols:
             f"{fact}{i}"
             for i in range(5)
             for fact in (
+                "OnTable",
+                "PhysicallyInDrawer",
                 "InPile",
                 "InDrawer",
                 "HoldingCube",
@@ -100,28 +108,28 @@ class SweepSymbols:
         skills = [
             build(
                 name="OpenDrawer",
-                pre=("HandEmpty", "DrawerNotOpen"),
-                add=("DrawerOpen", "DrawerNotClosed"),
-                delete=("DrawerClosed", "DrawerNotOpen"),
+                pre=(
+                    "HandEmpty",
+                    "OnTableWiper",
+                    "DrawerClosed",
+                    *(f"OnTable{i}" for i in range(5)),
+                ),
+                add=("DrawerOpen",),
+                delete=("DrawerClosed",),
                 param_dim=2,
             ),
             build(
                 name="PickWiper",
-                pre=("HandEmpty", "WiperHome"),
+                pre=("HandEmpty", "OnTableWiper", "DrawerOpen", *(f"OnTable{i}" for i in range(5))),
                 add=("HoldingWiper",),
-                delete=("HandEmpty", "WiperHome"),
+                delete=("HandEmpty", "OnTableWiper"),
                 param_dim=2,
             ),
             build(
                 name="Sweep",
-                pre=(
-                    "HoldingWiper",
-                    "DrawerOpen",
-                    "AnyCubeInPile",
-                    *(f"SweepReachable{i}" for i in range(5)),
-                ),
+                pre=("HoldingWiper", "DrawerOpen", *(f"OnTable{i}" for i in range(5))),
                 add=tuple(f"InDrawer{i}" for i in range(5)),
-                delete=("AnyCubeInPile", *(f"InPile{i}" for i in range(5))),
+                delete=tuple(f"OnTable{i}" for i in range(5)),
                 param_dim=2,
             ),
             build(
@@ -133,20 +141,20 @@ class SweepSymbols:
             build(
                 name="ParkWiper",
                 pre=("HoldingWiper",),
-                add=("WiperHome", "HandEmpty"),
-                delete=("HoldingWiper",),
+                add=("WiperHome", "HandEmpty", "RecoveryHandEmpty", "OnTableWiper"),
+                delete=("HoldingWiper", "PhysicallyHoldingWiper"),
             ),
             build(
                 name="OpenResetDrawer",
                 pre=("HandEmpty", "DrawerNotOpen"),
-                add=("DrawerOpen", "DrawerNotClosed"),
-                delete=("DrawerClosed", "DrawerNotOpen"),
+                add=("DrawerOpen", "ResetDrawerOpen", "DrawerNotClosed"),
+                delete=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen"),
             ),
             build(
                 name="CloseDrawer",
                 pre=("HandEmpty", "DrawerNotClosed"),
-                add=("DrawerClosed", "DrawerNotOpen"),
-                delete=("DrawerOpen", "DrawerNotClosed"),
+                add=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen"),
+                delete=("DrawerOpen", "ResetDrawerOpen", "DrawerNotClosed"),
             ),
             build(
                 name="ParkRobot",
@@ -177,7 +185,14 @@ class SweepSymbols:
                 build(
                     name=f"PlaceCube{i}",
                     pre=(f"HoldingCube{i}",),
-                    add=("HandEmpty", f"InPile{i}", "AnyCubeInPile", f"SweepReachable{i}"),
+                    add=(
+                        "HandEmpty",
+                        "RecoveryHandEmpty",
+                        f"OnTable{i}",
+                        f"InPile{i}",
+                        "AnyCubeInPile",
+                        f"SweepReachable{i}",
+                    ),
                     delete=(f"HoldingCube{i}", f"Loose{i}", f"Blocked{i}"),
                 ),
                 build(
@@ -204,7 +219,11 @@ class SweepSymbols:
         # same classifiers. Available only through the practice reset interface.
         add = (
             "HandEmpty",
+            "RecoveryHandEmpty",
+            "OnTableWiper",
+            *(f"OnTable{i}" for i in range(5)),
             "WiperHome",
+            "ResetDrawerClosed",
             "DrawerClosed",
             "DrawerNotOpen",
             "RobotHome",

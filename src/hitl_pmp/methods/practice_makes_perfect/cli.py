@@ -324,8 +324,9 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        if args.env == "sweep_drawer3d":
+        if getattr(args, "env", None) == "sweep_drawer3d":
             from hitl_pmp.methods.belief_space.sweep_cli import SweepPomdpCli
+
             SweepPomdpCli.run(args=args, env_cli=env_cli)
             return
         if env_cli.__name__ != "Tossing3DCli":

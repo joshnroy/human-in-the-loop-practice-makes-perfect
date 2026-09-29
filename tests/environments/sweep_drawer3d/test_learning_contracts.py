@@ -9,15 +9,22 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom
-from hitl_pmp.environments.sweep_drawer3d import environment as environment_module
-from hitl_pmp.environments.sweep_drawer3d.environment import (
-    InvalidSweepStart,
-    SweepDrawerEnvironment,
-)
 from hitl_pmp.environments.sweep_drawer3d.start_regions import StartValidation, SweepRegions
 from hitl_pmp.environments.sweep_drawer3d.symbolic import SWEEP_PREDICATES, SweepSymbols
 from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
+
+
+def _environment_module():
+    pytest.importorskip("shapely", reason="Sweep physical adapter requires simulator extras")
+    from hitl_pmp.environments.sweep_drawer3d import environment
+
+    return environment
+
+
+environment_module = _environment_module()
+InvalidSweepStart = environment_module.InvalidSweepStart
+SweepDrawerEnvironment = environment_module.SweepDrawerEnvironment
 
 
 def _atoms(*, names):
@@ -135,6 +142,10 @@ def test_human_symbolic_reset_reaches_entire_declared_target():
     after = apply_success_effects(true_atoms=before, ground_skill=reset, effects=effects)
     expected = {
         "HandEmpty",
+        "RecoveryHandEmpty",
+        "OnTableWiper",
+        *(f"OnTable{i}" for i in range(5)),
+        "ResetDrawerClosed",
         "WiperHome",
         "DrawerClosed",
         "DrawerNotOpen",
@@ -202,33 +213,22 @@ def test_intermediate_drawer_can_open_or_close_without_claiming_endpoints():
         s.name: GroundSkill(skill=s, objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills()
     }
     middle = _atoms(names=("HandEmpty", "DrawerNotOpen", "DrawerNotClosed"))
-    assert skills["OpenDrawer"].preconditions <= middle
+    assert not skills["OpenDrawer"].preconditions <= middle
     assert skills["OpenResetDrawer"].preconditions <= middle
     assert skills["CloseDrawer"].preconditions <= middle
     assert not _atoms(names=("DrawerOpen",)) <= middle
     assert not _atoms(names=("DrawerClosed",)) <= middle
 
 
-def test_sweep_cannot_predict_unreachable_cube_success_but_allows_already_scored():
+def test_stock_sweep_uses_upstream_on_table_preconditions():
     sweep = next(
         GroundSkill(skill=s, objects=(SweepSymbols.SCENE,))
         for s in SweepSymbols.skills()
         if s.name == "Sweep"
     )
-    partial = _atoms(
-        names=(
-            "HoldingWiper",
-            "DrawerOpen",
-            "AnyCubeInPile",
-            "InDrawer0",
-            *(f"InPile{i}" for i in range(1, 5)),
-            *(f"SweepReachable{i}" for i in range(5)),
-        )
-    )
-    assert sweep.preconditions <= partial
-    floor = partial - _atoms(names=("SweepReachable4", "InPile4"))
-    assert not sweep.preconditions <= floor
-    assert not sweep.add_effects <= partial  # observed partial credit is not task success
+    ready = _atoms(names=("HoldingWiper", "DrawerOpen", *(f"OnTable{i}" for i in range(5))))
+    assert sweep.preconditions <= ready
+    assert not sweep.preconditions <= ready - _atoms(names=("OnTable4",))
 
 
 def test_deployment_skill_contract_matches_model_stock_policy():
@@ -256,6 +256,7 @@ def test_evaluation_resets_preserve_distinct_state_and_replay_paths(*, monkeypat
     result = StartValidation(seed=0, valid=True, checks={}, poses={}, reasons=())
     monkeypatch.setattr(SweepRegions, "validate", staticmethod(lambda **kwargs: result))
     monkeypatch.setattr(SweepDrawerEnvironment, "observe", lambda self: _state())
+    monkeypatch.setattr(environment_module.SweepUpstreamFacts, "create", lambda **kwargs: None)
     env = SweepDrawerEnvironment(evaluation=True, output_dir=tmp_path)
     try:
         env.reset_to_seed(seed=0)

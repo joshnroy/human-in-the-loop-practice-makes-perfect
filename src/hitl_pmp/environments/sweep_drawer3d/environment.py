@@ -24,6 +24,7 @@ from .start_regions import StartValidation, SweepRegions
 from .stock_skills import StockSweepSkills
 from .symbolic import SweepSymbols
 from .types import SweepDrawerScene as S
+from .upstream import SweepUpstreamFacts
 
 
 class InvalidSweepStart(ValueError):
@@ -39,6 +40,7 @@ class SweepDrawerEnvironment(Environment):
         low=np.array([-1.0, -100.0, -100.0]), high=np.array([100.0, 100.0, 100.0]), dtype=np.float64
     )
     ACTION_NAMES: ClassVar[tuple[str, ...]] = tuple(s.name for s in SweepSymbols.skills())
+    _upstream: Any = PrivateAttr(default=None)
     _session: SweepDrawerSession | None = PrivateAttr(default=None)
     _reset: SweepDrawerSelfReset | None = PrivateAttr(default=None)
     _held: dict[str, Any] = PrivateAttr(default_factory=dict)
@@ -90,6 +92,7 @@ class SweepDrawerEnvironment(Environment):
         )
         if self.require_valid_start and not self._initial_validation.valid:
             raise InvalidSweepStart(f"seed {seed}: {self._initial_validation.reasons}")
+        self._upstream = SweepUpstreamFacts.create(state=self.session().state)
         self._initial_state = self.session().state.copy()
         self._held.clear()
         self._hard_reset_count += 1
@@ -131,13 +134,6 @@ class SweepDrawerEnvironment(Environment):
                 params=action[1:],
             )
             error = record.note
-            if name == "Sweep":
-                # Same physical settling allowance as the prototype, included in
-                # this skill's tick count rather than an unreported extra action.
-                for _ in range(15):
-                    settle = np.zeros(11)
-                    settle[-1] = 1.0 if self.session().gripper() > 0.2 else 0.0
-                    self.session().step(action=settle)
         else:
             self.session().begin(
                 name=name, kind=name, phase="evaluation" if self.evaluation else "practice"
@@ -234,11 +230,11 @@ class SweepDrawerEnvironment(Environment):
         }
         empty = not holding_wiper and not self._held and session.gripper() < 0.2
         values.update(
-            HandEmpty=float(empty),
+            RecoveryHandEmpty=float(empty),
             ClosedEmpty=float(not holding_wiper and not self._held and not empty),
-            HoldingWiper=float(holding_wiper),
-            DrawerOpen=float(session.drawer_pos() >= 0.15),
-            DrawerClosed=float(session.drawer_pos() < 0.01),
+            PhysicallyHoldingWiper=float(holding_wiper),
+            ResetDrawerOpen=float(session.drawer_pos() >= 0.15),
+            ResetDrawerClosed=float(session.drawer_pos() < 0.01),
             DrawerNotOpen=float(session.drawer_pos() < 0.15),
             DrawerNotClosed=float(session.drawer_pos() >= 0.01),
         )
@@ -258,13 +254,16 @@ class SweepDrawerEnvironment(Environment):
             in_drawer = SweepRegions.in_goal(session=session, cube=cube)
             values.update({
                 f"InPile{i}": float(in_pile),
-                f"InDrawer{i}": float(in_drawer),
+                f"PhysicallyInDrawer{i}": float(in_drawer),
                 f"SweepReachable{i}": float(in_pile or in_drawer),
                 f"HoldingCube{i}": float(held),
                 f"Loose{i}": float(loose),
                 f"Pickable{i}": float(pickable),
                 f"Blocked{i}": float(loose and not pickable),
             })
+        assert self._upstream is not None
+        for fact in SweepUpstreamFacts.observed(abstractor=self._upstream, state=session.state):
+            values[fact] = 1.0
         values["AnyCubeInPile"] = float(any(values[f"InPile{i}"] for i in range(5)))
         for short, physical in (
             ("wiper", S.WIPER),
@@ -333,6 +332,9 @@ class SweepDrawerEnvironment(Environment):
             stream.write(json.dumps(event) + "\n")
 
     def close(self) -> None:
+        if self._upstream is not None:
+            SweepUpstreamFacts.close(abstractor=self._upstream)
+            self._upstream = None
         if self._reset is not None:
             self._reset.primitives.scene._sim.close()
             self._reset = None

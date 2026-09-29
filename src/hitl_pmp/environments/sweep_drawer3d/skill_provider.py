@@ -83,7 +83,11 @@ class SweepDrawerSkillProvider(SkillProvider):
     def deployment_initial_atoms() -> frozenset[GroundAtom]:
         names = (
             "HandEmpty",
+            "RecoveryHandEmpty",
+            "OnTableWiper",
+            *(f"OnTable{i}" for i in range(5)),
             "WiperHome",
+            "ResetDrawerClosed",
             "DrawerClosed",
             "DrawerNotOpen",
             "RobotHome",
@@ -98,8 +102,8 @@ class SweepDrawerSkillProvider(SkillProvider):
     @staticmethod
     def deployment_goal_atoms() -> frozenset[GroundAtom]:
         return frozenset(
-            GroundAtom(predicate=SWEEP_PREDICATES[f"InDrawer{i}"], objects=(SweepSymbols.SCENE,))
-            for i in range(5)
+            GroundAtom(predicate=SWEEP_PREDICATES[name], objects=(SweepSymbols.SCENE,))
+            for name in ("HoldingWiper", "DrawerOpen", *(f"InDrawer{i}" for i in range(5)))
         )
 
 

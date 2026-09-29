@@ -6,7 +6,7 @@ never the live practice simulator. All predicate evaluation and goal derivation
 remain the actual upstream methods, including their intentionally coarse tests.
 """
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,7 +27,7 @@ class SweepUpstreamFacts:
     def create(*, state: Any) -> Any:
         from kinder_models.dynamic3d.sweep3D.state_abstractions import Sweep3DStateAbstractor
 
-        return Sweep3DStateAbstractor(SweepSnapshot(state=state))
+        return Sweep3DStateAbstractor(cast(Any, SweepSnapshot(state=state)))
 
     @staticmethod
     def feature(*, atom: Any) -> str:
@@ -55,8 +55,7 @@ class SweepUpstreamFacts:
     @staticmethod
     def goal(*, abstractor: Any, state: Any) -> frozenset[str]:
         return frozenset(
-            SweepUpstreamFacts.feature(atom=atom)
-            for atom in abstractor.goal_deriver(state).atoms
+            SweepUpstreamFacts.feature(atom=atom) for atom in abstractor.goal_deriver(state).atoms
         )
 
     @staticmethod
