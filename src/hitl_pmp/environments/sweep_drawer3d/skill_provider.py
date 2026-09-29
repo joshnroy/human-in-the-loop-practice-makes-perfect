@@ -84,10 +84,12 @@ class SweepDrawerSkillProvider(SkillProvider):
         names = (
             "HandEmpty",
             "RecoveryHandEmpty",
+            "RecoveryArmHome",
             "OnTableWiper",
             *(f"OnTable{i}" for i in range(5)),
             "WiperHome",
             "ResetDrawerClosed",
+            "ResetDrawerNotOpen",
             "DrawerClosed",
             "DrawerNotOpen",
             "RobotHome",

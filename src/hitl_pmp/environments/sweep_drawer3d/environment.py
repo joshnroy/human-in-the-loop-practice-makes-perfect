@@ -17,7 +17,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .motion import ExecutionError
-from .primitives import WiperHold
+from .primitives import DrawerStroke, WiperHold
 from .self_reset import SweepDrawerSelfReset
 from .session import SweepDrawerSession
 from .start_regions import StartValidation, SweepRegions
@@ -177,6 +177,15 @@ class SweepDrawerEnvironment(Environment):
         primitives = reset.primitives
         if name == "OpenGripper":
             reset.primitives.motion.set_gripper(command=0.0)
+            self._held.clear()
+        elif name == "RecoverWiper":
+            primitives.recover_wiper()
+        elif name.startswith("WiggleDrawerCube"):
+            reset.repositioning.wiggle_drawer()
+        elif name.startswith("PickGroup"):
+            self._pick_group(group=tuple(map(int, name.removeprefix("PickGroup"))))
+        elif name.startswith("PlaceGroup"):
+            self._place_group(group=tuple(map(int, name.removeprefix("PlaceGroup"))))
         elif name == "ParkWiper":
             primitives.park_wiper()
         elif name == "OpenResetDrawer":
@@ -205,6 +214,55 @@ class SweepDrawerEnvironment(Environment):
         else:
             raise ValueError(f"Recovery dispatcher missing {name}")
 
+    def _group_endpoints(self, *, group: tuple[int, ...]) -> tuple[str, str] | None:
+        primitives = self.recovery().primitives
+        members = {S.CUBES[i] for i in group}
+        for i in group:
+            for j in group:
+                if i == j:
+                    continue
+                cube, partner = S.CUBES[i], S.CUBES[j]
+                middle = primitives.row_between(cube=cube, partner=partner)
+                if middle is None or {cube, *middle, partner} != members:
+                    continue
+                try:
+                    primitives.find_pick(cube=cube, partner=partner)
+                except ExecutionError:
+                    continue
+                return cube, partner
+        return None
+
+    def _pick_group(self, *, group: tuple[int, ...]) -> None:
+        from pybullet_helpers.geometry import Pose, multiply_poses
+
+        endpoints = self._group_endpoints(group=group)
+        if endpoints is None:
+            raise ExecutionError(f"No feasible exact row grasp for {group}")
+        primitives = self.recovery().primitives
+        primitives.pick(cube=endpoints[0], partner=endpoints[1])
+        inverse = primitives.scene.ee_now().invert()
+        for i in group:
+            cube = S.CUBES[i]
+            pose = Pose(
+                tuple(self.session().position(name=cube)), self.session().quaternion(name=cube)
+            )
+            self._held[cube] = multiply_poses(inverse, pose)
+
+    def _place_group(self, *, group: tuple[int, ...]) -> None:
+        reset = self.recovery()
+        members = tuple(S.CUBES[i] for i in group)
+        if any(cube not in self._held for cube in members):
+            raise ExecutionError(f"No executed grasp for all row members {group}")
+        anchor = members[0]
+        positions = np.asarray([self.session().position(name=cube)[:2] for cube in members])
+        center, _ = reset._target(cube=anchor, spacing=0.07, margin=0.035, free_spot=True)
+        target = np.asarray(center) + positions[0] - positions.mean(axis=0)
+        reset.primitives.place(
+            cube=anchor, target_xy=tuple(target), ee_to_cube=self._held[anchor], release=0.0
+        )
+        for cube in members:
+            self._held.pop(cube, None)
+
     def observe(self) -> State:
         session = self.session()
         values = dict.fromkeys(SweepSymbols.SCENE_TYPE.feature_names, 0.0)
@@ -231,9 +289,22 @@ class SweepDrawerEnvironment(Environment):
         empty = not holding_wiper and not self._held and session.gripper() < 0.2
         values.update(
             RecoveryHandEmpty=float(empty),
+            RecoveryArmHome=float(
+                np.max(np.abs((session.arm() - np.asarray(S.HOME) + np.pi) % (2 * np.pi) - np.pi))
+                < 0.01
+            ),
+            RecoveryGripperClosed=float(session.gripper() >= 0.2),
+            WiperLow=float(
+                not holding_wiper and session.position(name=S.WIPER)[2] < S.COUNTER_TOP - 0.02
+            ),
+            ResetDrawerNotOpen=float(
+                not DrawerStroke.reached(end=session.drawer_pos(), target=reset.open_to)
+            ),
             ClosedEmpty=float(not holding_wiper and not self._held and not empty),
             PhysicallyHoldingWiper=float(holding_wiper),
-            ResetDrawerOpen=float(session.drawer_pos() >= 0.15),
+            ResetDrawerOpen=float(
+                DrawerStroke.reached(end=session.drawer_pos(), target=reset.open_to)
+            ),
             ResetDrawerClosed=float(session.drawer_pos() < 0.01),
             DrawerNotOpen=float(session.drawer_pos() < 0.15),
             DrawerNotClosed=float(session.drawer_pos() >= 0.01),
@@ -261,6 +332,13 @@ class SweepDrawerEnvironment(Environment):
                 f"Pickable{i}": float(pickable),
                 f"Blocked{i}": float(loose and not pickable),
             })
+        for group in SweepSymbols.GROUPS:
+            suffix = "".join(map(str, group))
+            values[f"GroupPickable{suffix}"] = float(
+                empty
+                and all(values[f"Loose{i}"] for i in group)
+                and self._group_endpoints(group=group) is not None
+            )
         assert self._upstream is not None
         for fact in SweepUpstreamFacts.observed(abstractor=self._upstream, state=session.state):
             values[fact] = 1.0

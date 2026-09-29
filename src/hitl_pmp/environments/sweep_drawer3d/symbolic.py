@@ -6,6 +6,7 @@ skill. Only the three stock controllers expose learnable continuous parameters.
 """
 
 from functools import partial
+from itertools import combinations
 from typing import ClassVar
 
 from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
@@ -15,6 +16,9 @@ from hitl_pmp.core.problem.tasks.types import Predicate
 
 
 class SweepSymbols:
+    GROUPS: ClassVar[tuple[tuple[int, ...], ...]] = tuple(
+        group for size in (2, 3) for group in combinations(range(5), size)
+    )
     FACT_NAMES: ClassVar[tuple[str, ...]] = (
         "HandEmpty",
         "RecoveryHandEmpty",
@@ -24,6 +28,11 @@ class SweepSymbols:
         "OnTableWiper",
         "InDrawerWiper",
         "ClosedEmpty",
+        "RecoveryGripperClosed",
+        "RecoveryArmHome",
+        "ResetDrawerNotOpen",
+        "WiperLow",
+        *(f"GroupPickable{''.join(map(str, group))}" for group in GROUPS),
         "HoldingWiper",
         "WiperHome",
         "DrawerOpen",
@@ -134,26 +143,32 @@ class SweepSymbols:
             ),
             build(
                 name="OpenGripper",
-                pre=("ClosedEmpty",),
-                add=("HandEmpty",),
-                delete=("ClosedEmpty",),
+                pre=("RecoveryGripperClosed",),
+                add=("HandEmpty", "RecoveryHandEmpty"),
+                delete=(
+                    "ClosedEmpty",
+                    "RecoveryGripperClosed",
+                    "HoldingWiper",
+                    "PhysicallyHoldingWiper",
+                    *(f"HoldingCube{i}" for i in range(5)),
+                ),
             ),
             build(
                 name="ParkWiper",
-                pre=("HoldingWiper",),
+                pre=("PhysicallyHoldingWiper",),
                 add=("WiperHome", "HandEmpty", "RecoveryHandEmpty", "OnTableWiper"),
-                delete=("HoldingWiper", "PhysicallyHoldingWiper"),
+                delete=("HoldingWiper", "PhysicallyHoldingWiper", "RecoveryGripperClosed"),
             ),
             build(
                 name="OpenResetDrawer",
-                pre=("HandEmpty", "DrawerNotOpen"),
+                pre=("RecoveryHandEmpty", "ResetDrawerNotOpen"),
                 add=("DrawerOpen", "ResetDrawerOpen", "DrawerNotClosed"),
-                delete=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen"),
+                delete=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen", "ResetDrawerNotOpen"),
             ),
             build(
                 name="CloseDrawer",
                 pre=("HandEmpty", "DrawerNotClosed"),
-                add=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen"),
+                add=("DrawerClosed", "ResetDrawerClosed", "DrawerNotOpen", "ResetDrawerNotOpen"),
                 delete=("DrawerOpen", "ResetDrawerOpen", "DrawerNotClosed"),
             ),
             build(
@@ -167,15 +182,11 @@ class SweepSymbols:
             skills.extend((
                 build(
                     name=f"PickCube{i}",
-                    # These are conditions for an attempted pick, not a claim
-                    # that a future geometry has a collision-free grasp. The
-                    # fixed controller plans/checks that at actual dispatch;
-                    # refusal is an observed failure. ParkWiper invents no
-                    # Pickable facts for a hypothetical future scene.
-                    pre=("HandEmpty", f"Loose{i}"),
-                    add=(f"HoldingCube{i}",),
+                    pre=("RecoveryHandEmpty", f"Loose{i}", f"Pickable{i}"),
+                    add=(f"HoldingCube{i}", "RecoveryGripperClosed"),
                     delete=(
                         "HandEmpty",
+                        "RecoveryHandEmpty",
                         f"Pickable{i}",
                         f"InDrawer{i}",
                         f"InPile{i}",
@@ -193,7 +204,18 @@ class SweepSymbols:
                         "AnyCubeInPile",
                         f"SweepReachable{i}",
                     ),
-                    delete=(f"HoldingCube{i}", f"Loose{i}", f"Blocked{i}"),
+                    delete=(f"HoldingCube{i}", f"Loose{i}", f"Blocked{i}", "RecoveryGripperClosed"),
+                ),
+                build(
+                    name=f"WiggleDrawerCube{i}",
+                    pre=(
+                        "RecoveryHandEmpty",
+                        "ResetDrawerOpen",
+                        f"PhysicallyInDrawer{i}",
+                        f"Blocked{i}",
+                    ),
+                    add=(f"Pickable{i}",),
+                    delete=(f"Blocked{i}",),
                 ),
                 build(
                     name=f"NudgeCube{i}",
@@ -208,6 +230,58 @@ class SweepSymbols:
                     delete=(f"Blocked{i}",),
                 ),
             ))
+        skills.append(
+            build(
+                name="RecoverWiper",
+                pre=("RecoveryHandEmpty", "WiperLow"),
+                add=(
+                    "PhysicallyHoldingWiper",
+                    "HoldingWiper",
+                    "RecoveryGripperClosed",
+                    "RecoveryArmHome",
+                ),
+                delete=("HandEmpty", "RecoveryHandEmpty", "WiperLow"),
+            )
+        )
+        for group in SweepSymbols.GROUPS:
+            suffix = "".join(map(str, group))
+            skills.extend((
+                build(
+                    name=f"PickGroup{suffix}",
+                    pre=(
+                        "RecoveryHandEmpty",
+                        f"GroupPickable{suffix}",
+                        *(f"Loose{i}" for i in group),
+                    ),
+                    add=("RecoveryGripperClosed", *(f"HoldingCube{i}" for i in group)),
+                    delete=(
+                        "HandEmpty",
+                        "RecoveryHandEmpty",
+                        f"GroupPickable{suffix}",
+                        *(f"Pickable{i}" for i in group),
+                        *(f"InPile{i}" for i in group),
+                    ),
+                ),
+                build(
+                    name=f"PlaceGroup{suffix}",
+                    pre=tuple(f"HoldingCube{i}" for i in group),
+                    add=(
+                        "HandEmpty",
+                        "RecoveryHandEmpty",
+                        "AnyCubeInPile",
+                        *(f"InPile{i}" for i in group),
+                        *(f"OnTable{i}" for i in group),
+                        *(f"SweepReachable{i}" for i in group),
+                    ),
+                    delete=(
+                        "RecoveryGripperClosed",
+                        f"GroupPickable{suffix}",
+                        *(f"HoldingCube{i}" for i in group),
+                        *(f"Loose{i}" for i in group),
+                        *(f"Blocked{i}" for i in group),
+                    ),
+                ),
+            ))
         return tuple(
             s.model_copy(update={"practice_cost": costs.get(s.name, s.practice_cost)})
             for s in skills
@@ -220,10 +294,12 @@ class SweepSymbols:
         add = (
             "HandEmpty",
             "RecoveryHandEmpty",
+            "RecoveryArmHome",
             "OnTableWiper",
             *(f"OnTable{i}" for i in range(5)),
             "WiperHome",
             "ResetDrawerClosed",
+            "ResetDrawerNotOpen",
             "DrawerClosed",
             "DrawerNotOpen",
             "RobotHome",

@@ -733,7 +733,9 @@ class Primitives(BaseModel):
                     )
                     if stow is None:
                         raise ExecutionError("no collision-free stow for the recovered wiper")
-                    if not self.motion.follow(path=stow, grip=1.0):
+                    # Long floor-to-home paths can exhaust the default tracker
+                    # while still converging; retain its exact endpoint tolerance.
+                    if not self.motion.follow(path=stow, grip=1.0, max_ticks=1200):
                         raise ExecutionError("recovered wiper stow did not converge")
                     if not WiperHold.in_hand(
                         gripper=np.asarray(self.scene.ee_now().position),

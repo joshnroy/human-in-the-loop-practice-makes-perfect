@@ -143,9 +143,11 @@ def test_human_symbolic_reset_reaches_entire_declared_target():
     expected = {
         "HandEmpty",
         "RecoveryHandEmpty",
+        "RecoveryArmHome",
         "OnTableWiper",
         *(f"OnTable{i}" for i in range(5)),
         "ResetDrawerClosed",
+        "ResetDrawerNotOpen",
         "WiperHome",
         "DrawerClosed",
         "DrawerNotOpen",
@@ -177,6 +179,8 @@ def test_all_declared_recovery_actions_have_dispatch_paths(*, monkeypatch):
     reset = Mock(primitives=primitives, open_to=0.2)
     reset._target.return_value = ((0, 0), 0)
     monkeypatch.setattr(SweepDrawerEnvironment, "recovery", lambda self: reset)
+    monkeypatch.setattr(SweepDrawerEnvironment, "_pick_group", lambda self, **kwargs: None)
+    monkeypatch.setattr(SweepDrawerEnvironment, "_place_group", lambda self, **kwargs: None)
     skills = SweepSymbols.skills()
     assert tuple(skill.name for skill in skills) == env.ACTION_NAMES
     for skill in skills:
@@ -191,7 +195,7 @@ def test_all_declared_recovery_actions_have_dispatch_paths(*, monkeypatch):
         env._execute_recovery(name="UnimplementedRecovery")
 
 
-def test_park_wiper_can_expose_reachable_cube_without_unnecessary_nudge():
+def test_park_wiper_does_not_invent_future_cube_pickability():
     skills = {
         s.name: GroundSkill(skill=s, objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills()
     }
@@ -202,9 +206,8 @@ def test_park_wiper_can_expose_reachable_cube_without_unnecessary_nudge():
         ground_skill=park,
         effects={park: (park.add_effects, park.delete_effects, park.ignore_effects)},
     )
-    # A candidate pick may fail its physical planner. Availability does not claim
-    # exact future feasibility, and parking invents no universal Pickable fact.
-    assert pick.preconditions <= after
+    # A fresh physical observation must establish feasibility after parking.
+    assert not pick.preconditions <= after
     assert not _atoms(names=("Pickable0",)) <= after
 
 
@@ -212,7 +215,9 @@ def test_intermediate_drawer_can_open_or_close_without_claiming_endpoints():
     skills = {
         s.name: GroundSkill(skill=s, objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills()
     }
-    middle = _atoms(names=("HandEmpty", "DrawerNotOpen", "DrawerNotClosed"))
+    middle = _atoms(
+        names=("HandEmpty", "RecoveryHandEmpty", "ResetDrawerNotOpen", "DrawerNotClosed")
+    )
     assert not skills["OpenDrawer"].preconditions <= middle
     assert skills["OpenResetDrawer"].preconditions <= middle
     assert skills["CloseDrawer"].preconditions <= middle
@@ -236,7 +241,7 @@ def test_deployment_skill_contract_matches_model_stock_policy():
 
     provider = SweepDrawerSkillProvider(env=SweepDrawerEnvironment())
     assert tuple(s.name for s in provider.deployment_skills()) == SweepSymbols.TRAINABLE
-    assert len(provider.skills()) == 28
+    assert len(provider.skills()) == 74
 
 
 def test_robot_parking_requires_observed_departure_from_declared_start():
