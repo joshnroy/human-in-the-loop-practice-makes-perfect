@@ -65,24 +65,24 @@ class SimpleSymbols:
                 "PickFloorWiper",
                 False,
                 ("HandEmpty", "WiperAvailable"),
-                ("HoldingWiper", "RobotAway"),
-                ("HandEmpty", "WiperAvailable", "WiperHome", "RobotHome"),
+                ("HoldingWiper",),
+                ("HandEmpty", "WiperAvailable", "WiperHome"),
                 2,
             ),
             (
                 "SweepCubeToGoal",
                 True,
                 ("HoldingWiper", "OnFloor", "NotInGoal"),
-                ("InGoal", "NotAtStart", "RobotAway"),
-                ("NotInGoal", "AtStart", "RobotHome"),
+                ("InGoal", "NotAtStart"),
+                ("NotInGoal", "AtStart"),
                 2,
             ),
             (
                 "SweepCubeToStart",
                 True,
                 ("HoldingWiper", "OnFloor", "NotAtStart"),
-                ("AtStart", "NotInGoal", "RobotAway"),
-                ("NotAtStart", "InGoal", "RobotHome"),
+                ("AtStart", "NotInGoal"),
+                ("NotAtStart", "InGoal"),
                 0,
             ),
             (
@@ -113,6 +113,11 @@ class SimpleSymbols:
                     preconditions=SimpleSymbols.atoms(names=pre),
                     add_effects=SimpleSymbols.atoms(names=add),
                     delete_effects=SimpleSymbols.atoms(names=delete),
+                    # Manipulation stances may still satisfy the native home region.
+                    # Forget predicted base location; execution observes the actual facts.
+                    ignore_effects=frozenset(
+                        SIMPLE_PREDICATES[n] for n in ("RobotHome", "RobotAway")
+                    ) if name in (*SimpleSymbols.TRAINABLE, "SweepCubeToStart") else frozenset(),
                     param_dim=param_dim,
                     practice_cost=costs.get(name, 1.0),
                 )
