@@ -2,22 +2,22 @@
   "environment": "SweepSimple3D-o5-sweep_the_blocks_to_the_left_side_of_the_kitchen_island",
   "owner": "/root/sweepsimple3d_experiment",
   "status": "IMPLEMENTING_NOT_READY",
-  "heartbeat_utc": "2026-09-30T01:05:04.181734+00:00",
+  "heartbeat_utc": "2026-09-30T01:49:57.993564+00:00",
   "worktree": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration",
   "branch": "codex/sweepsimple3d-integration",
-  "committed_base": "cfb904d4",
+  "committed_base": "89fa1d5e",
   "frozen_revision": null,
   "launch_manifest": null,
   "active_units": [
-    "sweepsimple-highhandle-v80.service"
+    "sweepsimple-leveling-v97.service"
   ],
-  "last_progress": "Joint-descent replay v79 failed 0/1. Higher handle native-start probe v80 is searching a checked carry pose. Old replay v81 stopped after startup revealed native shoulder/tool contact inherited from its older source; excluded. Ruff/mypy10modules and Simple tests12/12 pass; native goal0 so far, reverse untested.",
+  "last_progress": "Simple tests14/14 pass including native local blade-edge geometry, tilt-preserving support placement and strict planned limits with measured tiny overshoot. Replay v96 pushes rear cube~.32m, then loses grasp on reapproach. v97 adds checked small wrist leveling around native support corner. All5 cubes move, no complete native goal or reverse yet; no scientific launch.",
   "evidence_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/scratchpad/sweepsimple3d",
   "proposal": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/docs/experiments/sweepsimple3d-integration-proposal.md",
   "next_tasks": [
-    "Inspect highhandle-v80 physical carry and sweep",
-    "Audit current observed grasp floor reachability before further descent changes",
-    "After forward/reverse passes run accounting/both-method checks and freeze"
+    "Inspect leveling-v97 native physical goal and retain failures",
+    "Once forward controller works run full native-start + all5 goals/reverse/home",
+    "Freeze and gated experiment launch only after both-method/accounting/readiness checks"
   ],
   "scientific_jobs_launched": 0,
   "launch_allowed_now": false,

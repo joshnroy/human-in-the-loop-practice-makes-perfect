@@ -193,3 +193,11 @@ previously tested.55m, in~3min20s; full native task is still unvalidated.
 ### Continued floor-contact diagnosis
 
 Native-start v74 did not reproduce the isolated v73 TypeError, but failed floor descent. Replay diagnostics v75–v79 are explicitly excluded from end-to-end readiness; the native joint-planner descent fallback did not make v79 feasible (0/1). A fresh higher-handle native trial v80 is running. Diagnostic replay v81 was stopped because its old source contained native shoulder/tool contact. Current Ruff and mypy pass; Simple tests 12/12 pass. No complete native task, reverse pass, frozen scientific revision, or launch yet.
+
+### Cross-grasp and native contact geometry
+
+Cross-grasp pickup/carry succeeded in native v84 (1/1, ~28 s). A 42-case geometric endpoint audit found 8/42 feasible cases within approved .40–.50 m and heading support. Replay v89/v90 moved the rear cube ~.25 m and two others ~.06–.08 m (2/2), then failed reapproach. Independent review and actual native geometry found the blade-height guard checked the highest corner of the whole blade (~12.5 mm), while the selected-cube contact edge was only6.7–7.1 mm, below its9.9 mm center. Local cube-footprint edge guard and held-tool validation for corrections/lifts are under test in replay v91. No complete native forward/reverse readiness pass or science launch.
+
+### Native contact guard and measured-limit repairs
+
+Independent review reproduced the v95 collision short circuit: recorded joint2=2.24001rad exceeds native2.24 by1e-5rad, but no prohibited collision pair exists. Replay precision is5dp. Strict planned limits remain; only tiny observed-pose overshoot bypasses that numeric bound test while actual geometry is still checked. The contact guard now uses the selected cube footprint and actual native top minus2mm, with lowering limited by native blade-floor clearance. Corrections previously targeted2mm absolute height, overcorrecting into the floor. v96 moves the rear cube~.32m, then loses grasp on reapproach. A bounded checked wrist rotation around the native support corner is under test in v97. Simple tests14/14 pass (including meaningful native geometry/soft-limit regressions); Ruff passes. Still no complete native task, reverse proof, or scientific launch.

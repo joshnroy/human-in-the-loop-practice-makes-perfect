@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
+from pybullet_helpers.geometry import Pose
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError, Motion
@@ -188,7 +189,7 @@ class FloorPrimitives(Primitives):
             relative = self.session.position(name=other)[:2] - blade_anchor
             if abs(float(relative @ transverse)) <= (0.025 if self.narrow_contact else 0.16):
                 behind = max(behind, -float(relative @ direction))
-        wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.06)) * direction
+        wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.025)) * direction
         robot_box = core.task_config["regions"]["robot_task_init_region"]["ranges"][0]
         aisle = np.array([(robot_box[0] + robot_box[2]) / 2, (robot_box[1] + robot_box[3]) / 2])
         nominal_bearing = (
@@ -222,8 +223,12 @@ class FloorPrimitives(Primitives):
             if self.narrow_contact
             else (angle - np.pi / 2, angle + np.pi / 2)
         )
-        for tool_yaw in tool_yaws:
-            floor_pose = Pose.from_rpy((*wiper_start, 0.001), (0.0, 0.0, tool_yaw))
+        for tool_yaw, preserve_tilt in [
+            (yaw, preserve) for preserve in (False, True) for yaw in tool_yaws
+        ]:
+            floor_pose = self.floor_tool_pose(
+                xy=wiper_start, yaw=tool_yaw, preserve_tilt=preserve_tilt
+            )
             floor_ee = multiply_poses(floor_pose, held_tf.invert())
             for lift_height in (0.14, 0.24):
                 hover = Pose(
@@ -236,6 +241,7 @@ class FloorPrimitives(Primitives):
                 solutions = [q for q in solutions if self.scene.within_arm_limits(arm=q[:7])]
                 attempts.append({
                     "yaw": tool_yaw,
+                    "preserve_tilt": preserve_tilt,
                     "hover": hover.position,
                     "solutions": len(solutions),
                     "approach_paths": 0,
@@ -301,7 +307,7 @@ class FloorPrimitives(Primitives):
             bodies=bodies,
             held=self.scene.wiper_body,
             held_tf=held_tf,
-            allowed_tilt=0.3,
+            allowed_tilt=self.scene.max_tool_tilt,
         ):
             lower = candidate_lower
         if lower is None or not self.scene.held_path_clear(
@@ -310,34 +316,43 @@ class FloorPrimitives(Primitives):
             bodies=bodies,
             held=self.scene.wiper_body,
             held_tf=held_tf,
-            allowed_tilt=0.3,
+            allowed_tilt=self.scene.max_tool_tilt,
         ):
             raise ExecutionError("No collision-free floor sweep descent from observed grasp")
         if not self.motion.follow(path=lower, grip=1.0, final_tol=0.005):
             raise ExecutionError("Floor sweep descent did not converge")
         self.require_handle(phase="floor descent")
-        # Finger compliance can change the grasp transform during reorientation.
-        # Close the loop on the observed blade height rather than a stale transform.
+        # Close the loop on actual blade overlap, bounded by native floor clearance.
         for _ in range(6):
-            height = float(self.session.position(name="wiper_0")[2])
-            if height <= 0.003:
+            height = self.blade_bottom_height(cube=cube)
+            center_height = self.cube_contact_ceiling(cube=cube)
+            if height <= center_height:
                 break
-            current_ee = self.scene.ee_now()
-            correction = Pose(
-                tuple(np.array(current_ee.position) - [0, 0, min(height - 0.001, 0.02)]),
-                current_ee.orientation,
+            descent = min(
+                height - center_height + 0.002, max(self.blade_minimum_height() - 0.001, 0.0), 0.02
             )
-            path = self.scene.linear_path(
-                start=self.session.arm(),
-                target=correction,
-                bodies=bodies,
-                finger_state=0.5,
-                max_jump=0.6,
+            if descent < 0.0001:
+                if self.level_blade(bodies=bodies):
+                    continue
+                break
+            ee = self.scene.ee_now()
+            live_tf = multiply_poses(
+                ee.invert(),
+                Pose(
+                    tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"),
+                ),
             )
-            if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.003):
-                raise ExecutionError("Cannot establish observed floor contact")
-        if self.session.position(name="wiper_0")[2] > 0.006:
-            raise ExecutionError("Wiper remains above the floor")
+            correction = Pose(tuple(np.asarray(ee.position) - [0.0, 0.0, descent]), ee.orientation)
+            path = self.scene.floor_descent(
+                start=self.session.arm(), target=correction, bodies=bodies, held_tf=live_tf
+            )
+            if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.005):
+                if self.level_blade(bodies=bodies):
+                    continue
+                break
+        if self.blade_bottom_height(cube=cube) > self.cube_contact_ceiling(cube=cube):
+            raise ExecutionError("Observed blade edge does not overlap the target cube height")
         self.session._write(
             record={
                 "kind": "contact_diagnostic",
@@ -369,6 +384,24 @@ class FloorPrimitives(Primitives):
             base_path = self.scene.plan_base(target=target_base)
             if base_path is None:
                 raise ExecutionError("Base route blocked during contact sweep")
+            carried_tf = multiply_poses(
+                self.scene.ee_now().invert(),
+                Pose(
+                    tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"),
+                ),
+            )
+            for waypoint in base_path:
+                self.scene.sync(base=waypoint)
+                if self.scene.in_collision(
+                    joints=self.scene.planning_fingers(arm=self.session.arm(), state=0.5),
+                    bodies=bodies,
+                    held=self.scene.wiper_body,
+                    held_tf=carried_tf,
+                ):
+                    self.scene.sync()
+                    raise ExecutionError("Carried arm/tool route blocked during contact sweep")
+            self.scene.sync()
             if not self.motion.drive(
                 path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005
             ):
@@ -383,24 +416,42 @@ class FloorPrimitives(Primitives):
                 upright_error = float(
                     np.linalg.norm(Rotation.from_quat(wiper_now.orientation).as_euler("xyz")[:2])
                 )
-                blade_bottom = self.blade_bottom_height()
-                # Keep at least half the native 20-mm cube height in blade contact.
-                if (
-                    blade_bottom <= float(self.session.position(name=cube)[2])
-                    and upright_error < 0.3
-                ):
+                blade_bottom = self.blade_bottom_height(cube=cube)
+                # Require positive native cube/blade overlap with a 2-mm margin.
+                if blade_bottom <= self.cube_contact_ceiling(cube=cube):
+                    break
+                if self.blade_minimum_height() <= 0.0011:
+                    if self.level_blade(bodies=bodies):
+                        contact_arm = self.session.arm().copy()
+                        continue
+                    self.session._write(
+                        record={
+                            "kind": "contact_stroke_ended",
+                            "t": self.session.ticks,
+                            "reason": "no downward clearance",
+                            "blade_bottom": blade_bottom,
+                        }
+                    )
+                    contact_ended = True
                     break
                 ee_now = self.scene.ee_now()
-                live_tf = multiply_poses(ee_now.invert(), wiper_now)
-                desired = Pose.from_rpy(
-                    (
-                        wiper_now.position[0],
-                        wiper_now.position[1],
-                        min(wiper_now.position[2], 0.002),
+                # Control the measured blade overlap without requiring an upright
+                # handle during contact; a leaning grasp can still sweep correctly.
+                correction = Pose(
+                    tuple(
+                        np.asarray(ee_now.position)
+                        - [
+                            0.0,
+                            0.0,
+                            min(
+                                blade_bottom - self.cube_contact_ceiling(cube=cube) + 0.002,
+                                0.02,
+                                max(self.blade_minimum_height() - 0.001, 0.0),
+                            ),
+                        ]
                     ),
-                    (0.0, 0.0, tool_yaw),
+                    ee_now.orientation,
                 )
-                correction = multiply_poses(desired, live_tf.invert())
                 path = self.scene.linear_path(
                     start=self.session.arm(),
                     target=correction,
@@ -408,8 +459,21 @@ class FloorPrimitives(Primitives):
                     finger_state=0.5,
                     max_jump=0.6,
                 )
+                live_tf = multiply_poses(ee_now.invert(), wiper_now)
+                if path is not None and not self.scene.held_path_clear(
+                    path=path,
+                    start=self.session.arm(),
+                    bodies=bodies,
+                    held=self.scene.wiper_body,
+                    held_tf=live_tf,
+                    allowed_tilt=self.scene.max_tool_tilt,
+                ):
+                    path = None
                 if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.003):
                     self.require_handle(phase="contact correction")
+                    if self.level_blade(bodies=bodies):
+                        contact_arm = self.session.arm().copy()
+                        continue
                     self.session._write(
                         record={
                             "kind": "contact_stroke_ended",
@@ -450,6 +514,22 @@ class FloorPrimitives(Primitives):
             finger_state=0.5,
             max_jump=0.6,
         )
+        lift_tf = multiply_poses(
+            current_ee.invert(),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
+        )
+        if lift is not None and not self.scene.held_path_clear(
+            path=lift,
+            start=self.session.arm(),
+            bodies=bodies,
+            held=self.scene.wiper_body,
+            held_tf=lift_tf,
+            allowed_tilt=self.scene.max_tool_tilt,
+        ):
+            lift = None
         if lift is None:
             self.stow_wiper()
         elif not self.motion.follow(path=lift, grip=1.0):
@@ -458,8 +538,115 @@ class FloorPrimitives(Primitives):
         displacement = float(np.linalg.norm(self.session.position(name=cube)[:2] - initial[:2]))
         return f"Cube displacement {displacement:.3f} m"
 
-    def blade_bottom_height(self) -> float:
-        """Highest point of the native blade bottom face in the current pose."""
+    def level_blade(self, *, bodies: set[int]) -> bool:
+        """Rotate a small amount about the observed support corner without changing physics."""
+        from itertools import product
+
+        import mujoco
+        from pybullet_helpers.geometry import multiply_poses
+        from scipy.spatial.transform import Rotation
+
+        model, data = self.session.mj_model, self.session.mj_data
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+        blade = max(
+            (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+            key=lambda g: float(model.geom_size[g][0]),
+        )
+        observed = Rotation.from_matrix(data.xmat[body].reshape(3, 3))
+        yaw = float(np.arctan2(observed.as_matrix()[1, 0], observed.as_matrix()[0, 0]))
+        delta = (Rotation.from_euler("z", yaw) * observed.inv()).as_rotvec()
+        angle = float(np.linalg.norm(delta))
+        if angle < 0.01:
+            return False
+        tool = Pose(tuple(data.xpos[body]), tuple(observed.as_quat()))
+        ee = self.scene.ee_now()
+        held_tf = multiply_poses(ee.invert(), tool)
+        geom_rotation = data.geom_xmat[blade].reshape(3, 3)
+        world = np.array([
+            data.geom_xpos[blade] + geom_rotation @ (model.geom_size[blade] * signs)
+            for signs in product((-1.0, 1.0), repeat=3)
+        ])
+        local = (world - data.xpos[body]) @ observed.as_matrix()
+        support = int(np.argmin(world[:, 2]))
+        for turn in (0.08, 0.04):
+            rotation = Rotation.from_rotvec(delta * min(1.0, turn / angle)) * observed
+            position = world[support] - rotation.apply(local[support])
+            corners = rotation.apply(local) + position
+            position[2] += max(0.0, 0.001 - float(corners[:, 2].min()))
+            target = multiply_poses(
+                Pose(tuple(position), tuple(rotation.as_quat())), held_tf.invert()
+            )
+            path = self.scene.floor_descent(
+                start=self.session.arm(), target=target, bodies=bodies, held_tf=held_tf
+            )
+            if path is None:
+                continue
+            self.motion.follow(path=path, grip=1.0, final_tol=0.005, max_ticks=120)
+            self.require_handle(phase="blade leveling")
+            after = data.xmat[body].reshape(3, 3)
+            after_tilt = float(np.arccos(np.clip(after[2, 2], -1.0, 1.0)))
+            before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
+            return after_tilt < before_tilt - 0.01
+        return False
+
+    def cube_contact_ceiling(self, *, cube: str) -> float:
+        """Highest blade edge that still overlaps the native cube by two millimeters."""
+        import mujoco
+
+        model, data = self.session.mj_model, self.session.mj_data
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, cube)
+        geom = next(g for g in range(model.ngeom) if model.geom_bodyid[g] == body)
+        vertical = data.geom_xmat[geom].reshape(3, 3)[2]
+        return float(data.geom_xpos[geom][2] + np.abs(vertical) @ model.geom_size[geom] - 0.002)
+
+    def blade_minimum_height(self) -> float:
+        """Exact native box support height above the floor."""
+        import mujoco
+
+        model, data = self.session.mj_model, self.session.mj_data
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+        blade = max(
+            (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+            key=lambda g: float(model.geom_size[g][0]),
+        )
+        vertical = data.geom_xmat[blade].reshape(3, 3)[2]
+        return float(data.geom_xpos[blade][2] - np.abs(vertical) @ model.geom_size[blade])
+
+    def floor_tool_pose(self, *, xy: np.ndarray, yaw: float, preserve_tilt: bool = True) -> Pose:
+        """Preserve observed tilt and seat the native blade at its actual support height."""
+        from itertools import product
+
+        import mujoco
+        from scipy.spatial.transform import Rotation
+
+        model, data = self.session.mj_model, self.session.mj_data
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+        blade = max(
+            (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+            key=lambda g: float(model.geom_size[g][0]),
+        )
+        observed = data.xmat[body].reshape(3, 3)
+        observed_yaw = float(np.arctan2(observed[1, 0], observed[0, 0]))
+        target_rotation = (
+            Rotation.from_rotvec([0.0, 0.0, yaw - observed_yaw]).as_matrix() @ observed
+        )
+        tilt = float(np.arccos(np.clip(target_rotation[2, 2], -1.0, 1.0)))
+        if not preserve_tilt or tilt > self.scene.max_tool_tilt:
+            target_rotation = Rotation.from_euler("z", yaw).as_matrix()
+        blade_rotation = data.geom_xmat[blade].reshape(3, 3)
+        world_corners = np.array([
+            data.geom_xpos[blade] + blade_rotation @ (model.geom_size[blade] * signs)
+            for signs in product((-1.0, 1.0), repeat=3)
+        ])
+        body_corners = (world_corners - data.xpos[body]) @ observed
+        bottom = float((body_corners @ target_rotation.T)[:, 2].min())
+        return Pose(
+            (float(xy[0]), float(xy[1]), 0.001 - bottom),
+            tuple(Rotation.from_matrix(target_rotation).as_quat()),
+        )
+
+    def blade_bottom_height(self, *, cube: str | None = None) -> float:
+        """Native bottom-edge height over the selected cube lateral footprint."""
         import mujoco
 
         model, data = self.session.mj_model, self.session.mj_data
@@ -468,8 +655,30 @@ class FloorPrimitives(Primitives):
             (geom for geom in range(model.ngeom) if model.geom_bodyid[geom] == body),
             key=lambda geom: float(model.geom_size[geom][0]),
         )
-        vertical = data.geom_xmat[blade].reshape(3, 3)[2]
+        rotation = data.geom_xmat[blade].reshape(3, 3)
+        vertical = rotation[2]
         half = model.geom_size[blade]
+        if cube is not None:
+            from itertools import product
+
+            cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, cube)
+            cube_geom = next(g for g in range(model.ngeom) if model.geom_bodyid[g] == cube_body)
+            cube_rotation = data.geom_xmat[cube_geom].reshape(3, 3)
+            cube_corners = np.array([
+                data.geom_xpos[cube_geom] + cube_rotation @ (model.geom_size[cube_geom] * signs)
+                for signs in product((-1.0, 1.0), repeat=3)
+            ])
+            local = (cube_corners - data.geom_xpos[blade]) @ rotation
+            lower = max(-half[0], float(local[:, 0].min()))
+            upper = min(half[0], float(local[:, 0].max()))
+            if lower <= upper:
+                front = float(np.sign(local[:, 1].mean())) * half[1]
+                return float(
+                    data.geom_xpos[blade][2]
+                    + max(vertical[0] * lower, vertical[0] * upper)
+                    + vertical[1] * front
+                    - vertical[2] * half[2]
+                )
         return float(
             data.geom_xpos[blade][2]
             + abs(vertical[0]) * half[0]
@@ -701,9 +910,37 @@ class FloorPlanningScene(PlanningScene):
         import pybullet
 
         chassis_bodies = {body for _, body in self._native_chassis} & bodies
-        if super().in_collision(
-            joints=joints, bodies=bodies - chassis_bodies, held=held, held_tf=held_tf, margin=margin
-        ):
+        arm = np.asarray(joints[:7])
+        # MuJoCo's soft limit can leave the measured arm a few microradians
+        # beyond the exact bound. Keep candidate IK limits strict, while testing
+        # actual collision geometry at that observed pose without clipping it.
+        measured_roundoff = (
+            not self.within_arm_limits(arm=arm)
+            and np.max(np.abs(arm - self.session.arm())) <= 1e-4
+            and np.all(arm >= self._arm_limits[:, 0] - 1e-4)
+            and np.all(arm <= self._arm_limits[:, 1] + 1e-4)
+        )
+        if measured_roundoff:
+            from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
+
+            blocked = check_collisions_with_held_object(
+                self.robot,
+                bodies - chassis_bodies,
+                self.cid,
+                held,
+                held_tf,
+                joints,
+                distance_threshold=margin,
+            )
+        else:
+            blocked = super().in_collision(
+                joints=joints,
+                bodies=bodies - chassis_bodies,
+                held=held,
+                held_tf=held_tf,
+                margin=margin,
+            )
+        if blocked:
             return True
         for body in chassis_bodies:
             contacts = pybullet.getClosestPoints(
@@ -911,7 +1148,7 @@ class FloorPlanningScene(PlanningScene):
             bodies=bodies,
             held=self.wiper_body,
             held_tf=held_tf,
-            allowed_tilt=0.3,
+            allowed_tilt=self.max_tool_tilt,
         ):
             return path
         self.sync()
@@ -939,7 +1176,7 @@ class FloorPlanningScene(PlanningScene):
                 bodies=bodies,
                 held=self.wiper_body,
                 held_tf=held_tf,
-                allowed_tilt=0.3,
+                allowed_tilt=self.max_tool_tilt,
             ):
                 return path
         return None

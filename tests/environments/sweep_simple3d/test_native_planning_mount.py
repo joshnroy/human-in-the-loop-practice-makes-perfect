@@ -3,6 +3,7 @@
 import mujoco
 import numpy as np
 import pybullet
+import pytest
 from pybullet_helpers.geometry import Pose, multiply_poses
 
 from hitl_pmp.environments.sweep_simple3d.controllers import FloorPlanningScene
@@ -124,6 +125,27 @@ def test_closed_grasp_pad_centers_match_native_articulation() -> None:
                     physicsClientId=scene.cid,
                 )[4]
                 np.testing.assert_allclose(planned_center, native_center, atol=0.001)
+    finally:
+        scene._sim.close()
+        session.close()
+
+
+def test_observed_soft_limit_roundoff_does_not_broaden_planned_limits(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recorded 10-microradian soft-limit overshoot must not invent an obstacle."""
+    measured = np.array([-0.81943, 2.24001, 2.97831, -0.7399, -2.01082, 2.01093, 1.70926])
+    session = SweepSimpleSession(seed=0)
+    monkeypatch.setattr(SweepSimpleSession, "arm", lambda self: measured.copy())
+    scene = FloorPlanningScene(session=session)
+    try:
+        assert not scene.within_arm_limits(arm=measured)
+        assert not scene.in_collision(joints=scene.planning_fingers(arm=measured), bodies=set())
+        planned = measured.copy()
+        planned[0] += 0.1
+        assert scene.in_collision(joints=scene.planning_fingers(arm=planned), bodies=set())
+        measured[1] += 0.001
+        assert scene.in_collision(joints=scene.planning_fingers(arm=measured), bodies=set())
     finally:
         scene._sim.close()
         session.close()

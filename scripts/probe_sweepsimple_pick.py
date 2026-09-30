@@ -29,6 +29,7 @@ class PickupProbe:
         parser.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
         )
+        parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         args = parser.parse_args()
         import faulthandler
 
@@ -91,6 +92,11 @@ class PickupProbe:
             FloorPrimitives.wiper_approach_angles = lambda self: (0.0, 0.4, 0.7)
             FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: float(
                 np.arctan2(axis[1], axis[0]) + np.pi / 2
+            )
+        if args.grasp_yaw_offset:
+            original_yaw = FloorPrimitives.wiper_grasp_yaw
+            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: (
+                original_yaw(self, axis=axis) + args.grasp_yaw_offset
             )
         if args.grasp_height:
             import numpy as np
