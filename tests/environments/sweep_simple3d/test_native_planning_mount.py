@@ -10,6 +10,31 @@ from hitl_pmp.environments.sweep_simple3d.controllers import FloorPlanningScene
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 
+def test_gripper_proxy_uses_whole_native_assembly_and_retains_real_overlap() -> None:
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session)
+    try:
+        before = session.mj_data.qpos.copy()
+        # v136 contact pose: URDF knuckle overlaps its chassis proxy, while the
+        # actual closed native gripper is clear. Opening here really penetrates.
+        arm = [-1.093050003, 2.219830036, 3.2355299, -0.88578999,
+               -2.542520046, 1.677080035, 1.794229984]
+        fingers = [0.632371152, 0.632301165, 0.627343405,
+                   0.627005755, -0.626700401, -0.62686354]
+        chassis, _ = scene._native_chassis[0]
+        assert scene.native_chassis_distance(
+            link=16, chassis_geom=chassis, joints=arm + fingers
+        ) == pytest.approx(1e-6)
+        overlap = scene.native_chassis_distance(
+            link=16, chassis_geom=chassis, joints=arm + [0.0] * 6
+        )
+        assert overlap is not None and overlap < -0.006
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
+    finally:
+        scene._sim.close()
+        session.close()
+
+
 def test_held_tool_cannot_plan_below_native_ground() -> None:
     session = SweepSimpleSession(seed=0)
     scene = FloorPlanningScene(session=session, capture_path_rejections=True)

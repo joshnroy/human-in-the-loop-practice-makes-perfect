@@ -679,7 +679,7 @@ class FloorPrimitives(Primitives):
         path = self.scene.floor_descent(
             start=self.session.arm(), target=target, bodies=bodies, held_tf=held
         )
-        tracking_converged = path is not None and self.motion.follow(
+        execution_terminated = path is not None and self.motion.follow(
             path=path,
             grip=1.0,
             tol=0.03,
@@ -698,7 +698,10 @@ class FloorPrimitives(Primitives):
                 "t": self.session.ticks,
                 "path_found": path is not None,
                 "clearance_attained": success,
-                "tracking_converged": tracking_converged,
+                "execution_terminated": execution_terminated,
+                "joint_target_reached": bool(path) and float(np.max(np.abs(
+                    ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm())
+                ))) < 0.005,
                 "path_waypoints": None if path is None else len(path),
                 "goal_arm": None if not path else np.asarray(path[-1]).tolist(),
                 "actual_arm": self.session.arm().tolist(),
@@ -1392,12 +1395,31 @@ class FloorPlanningScene(PlanningScene):
             12
         ].decode()
         body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_" + name)
-        if body < 0:
+        if body >= 0:
+            bodies = {body}
+        elif name in {
+            "robotiq_arg2f_base_link",
+            *(f"{side}_{part}" for side in ("left", "right") for part in (
+                "outer_knuckle", "outer_finger", "inner_finger",
+                "inner_finger_pad", "inner_knuckle",
+            )),
+        }:
+            # The URDF and native Robotiq assets name their articulated links
+            # differently. Query the WHOLE native gripper conservatively, not
+            # an assumed one-to-one alias or a missing-body collision exemption.
+            root = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_base")
+            if root < 0:
+                return None
+            bodies = {root}
+            for candidate in range(root + 1, model.nbody):
+                if model.body_parentid[candidate] in bodies:
+                    bodies.add(candidate)
+        else:
             return None
         geoms = [
             g
             for g in range(model.ngeom)
-            if model.geom_bodyid[g] == body
+            if model.geom_bodyid[g] in bodies
             and model.geom_contype[g] + model.geom_conaffinity[g] > 0
         ]
         if not geoms:
