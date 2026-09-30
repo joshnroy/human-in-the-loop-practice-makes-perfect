@@ -375,3 +375,35 @@ skills (218357fe). The initial-dispatch limitation is removed for this mode.
 Controller defaults have not yet been promoted: diagnostic success cannot stand
 in for a production-controller full-task/recovery measurement. No READY record,
 calibration campaign, or Simple science job has been launched.
+
+
+## 2026-09-30 06:41 EDT — full native task and face-aligned pickup
+
+The lower/deeper diagnostic v187 attained all **5/5 native goal cubes in 9/10
+allowed forward actions** from a fresh native seed-0 start. Its first reverse
+skill subsequently lost the grasp; full robot recovery remains unverified.
+The shorter-route v188 comparison attained 4/5 before contact nonprogress and
+grip loss. Increased floor clearance alone did not cure reverse grasp migration
+(v189), so this is not a proposal to relax ground checks or alter physics.
+
+The actual contact audit identified a 33.8-degree mismatch between the prior
+closing axis and a native square-handle face. Probe-only face-seeded yaw now
+passes nominal pickup on **3/3 seeds (0, 1, 2)** with symmetric proximal and distal
+pad contact patches and approximately 155 mm lift. Full native candidate v194
+is running. Production defaults remain unpromoted until the full candidate is
+validated; these diagnostic records are not calibration or science results.
+
+Explicit OpenGripper/PickFloorWiper reset testing exposed a separate target
+tracking defect: empty-hand homing displaced the tool about 4.4 cm after the
+original target was captured. The Simple-specific observed-target refresh
+(523d0ae8) fixes re-pick in v193 while preserving the shared Drawer default.
+Reverse then retains the grip but stalls behind a nearby cube outside actual
+blade contact. The accessible-cube-first v196 sequence is diagnostic only,
+uses existing separately counted actions, and does not change either planner.
+
+Simple-only protocol preflight now checks resolved goal-pursuit horizon zero
+for both methods before simulator construction, including manifest overrides.
+The draft readiness builder requires hashed passing evidence and emits the
+installed gate's executable verified-wrapper commands and 4+4+16 staging.
+It never publishes READY or launches by itself. No Simple scientific job has
+launched. Focused integration/accounting tests: **127/127 pass**; Ruff passes.
