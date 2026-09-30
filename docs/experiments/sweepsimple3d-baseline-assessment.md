@@ -7,30 +7,34 @@ Checkpoint: 2026-09-30. This is a prototype assessment, not an experimental succ
 | Published/native Simple bilevel benchmark | Not supplied | Neither a measured failure nor 0% success. The upstream sweep model implements SweepIntoDrawer3D. |
 | Fresh production forward readiness script | 2/2 tested native seeds; 5/5 cubes within 6/10 actions on each | Ordinary action dispatch and production controller defaults, with fixed nominal parameters and scripted cube order. Not a bilevel-policy benchmark. |
 | Custom diagnostic forward task | 2/2 tested native seeds; 5/5 cubes within 6/10 actions | Promising physical feasibility. Controller overrides and revisions differ; not a frozen policy benchmark. |
-| Complete custom robot reset | 0/2 tested native seeds | Learning experiments remain blocked. Latest seed0 counterfactual replay retains 20/20 actions and 3/5 restored cubes. |
-| Native chassis collision fix regressions | 203/203 | Software validation, not physical task success. |
+| Fresh production complete robot reset | 0/2 tested native seeds | Both runs complete goal, Place, and pickup, then fail the first reverse skill after 9 total actions. Scientific launch remains blocked. |
+| Integrated regression suite | 233/233 | Software validation, not physical task success. |
 | Calibration / method smokes | 0/48 contexts; 0/2 methods | Still required after controller readiness. |
 
 The highest registered native Simple variants contain 50 cubes. Left-of-island tasks have 1, 5, 10, and 50 cubes; right-of-counter and right-of-island tasks each have 50. The approved learning experiment remains the five-cube left-of-island task.
 
 ## Current recommendation
 
-Continue controller development, but do not launch or present Simple as a ready Ours/EES comparison yet. Forward manipulation is feasible in the tested scenes. The unresolved issue is reliable, budgeted recovery to the native start distribution, particularly blade leveling/overlap during reverse contact.
+Continue controller development, but do not launch or present Simple as a ready Ours/EES comparison yet. Forward manipulation is feasible in the tested scenes. The unresolved issue is reliable, budgeted recovery to the native start distribution, particularly retaining sufficient native joint reserve during reverse contact.
 
 The north placement stance at the same 0.70 m distance now passes physical placement and fresh pickup. A later reverse-motion failure exposed native chassis collisions with side-counter drawer handles that the upstream base planner omitted. Exact native chassis filtering now rejects those routes. Its checked fixed-reverse 0.65 m fallback physically clears the obstruction and moves the cube farther toward start; subsequent leveling still fails. The native physics and predicates were not changed.
 
-Seed1 also exposes a placement target near the native yaw boundary: its original target settles at about 46.6°, outside the allowed ±45°. A separate central-yaw diagnostic passes the unchanged settled-state checks. That diagnostic is not yet a production default. The next reverse cube fails blade overlap, and a bounded physical tracking correction is being tested. Failed attempts and replay provenance remain in the artifacts.
+Seed1 also exposes a placement target near the native yaw boundary: its original target settles at about 46.6°, outside the allowed ±45°. A separate central-yaw diagnostic passes the unchanged settled-state checks. The native midpoint-yaw target is now a production default and passes Place/regrasp on both fresh seeds. Earlier overlap and leveling corrections are integrated; the fresh failure is repeated early unloading at the native joint-reserve guard. Failed attempts and replay provenance remain in the artifacts.
 
 | Problem | Correction / evidence | Remaining validation |
 |---|---|---|
 | Place stance intersects displaced cubes | Original-first, checked north stance; physical Place and pickup pass | Fresh full recovery |
 | Native chassis hits side-counter handles omitted by base planner | Native scratch collision filtering; checked .65 m fixed-reverse fallback crosses the obstruction physically | Fresh full recovery |
 | Arm converges without sufficient physical blade lowering | Tighter bounded tracking plus measured no-progress leveling restores the previously failing cube | Other cubes and fresh recovery |
-| Unloaded leveling target blocked by joint limits | Checked 10–20 mm raised leveling candidates preserve the .95 tilt target and native limits | Physical execution in fresh proofs |
-| Successful pickup falsely fails because robot stays home | Remove unconditional base-location effects from pickup/sweep; ignore predicted base facts and retain real native observations | Fresh ordinary-dispatch proofs and planner smokes |
-| Near-boundary wiper yaw rotates outside range on floor impact | Native midpoint-yaw target under integration; same final native predicate | Fresh release and full recovery |
+| Unloaded leveling target blocked by joint limits | Checked 10–20 mm raised leveling candidates preserve the .95 tilt target and native limits | Leveling passes; complete recovery still fails |
+| Successful pickup falsely fails because robot stays home | Remove unconditional base-location effects from pickup/sweep; ignore predicted base facts and retain real native observations | Fresh pickup passes; symbolic parity tests pass; method smokes pending |
+| Near-boundary wiper yaw rotates outside range on floor impact | Native midpoint-yaw target integrated; same final native predicate | Fresh release passes 2/2; full recovery pending |
 
-Fresh production proofs `production-native-seed0-v245` and `production-native-seed1-v246` use ordinary action dispatch without controller monkeypatches. Both reach 5/5 native goal cubes within 6/10 forward actions. They use an explicit counted Place/Pick before reverse skills; their full recovery phases remain in progress at this checkpoint. Their results must be reported separately from the earlier diagnostic successes and are not a native bilevel benchmark.
+Latest fresh production proofs `production-native-seed0-v253` and `production-native-seed1-v254` are frozen at `324db170`, with ordinary action dispatch and no controller monkeypatches. Both reach 5/5 native goal cubes in 6/10 forward actions and complete counted Place/Pick. Both fail the first reverse skill after 9 total actions with three consecutive no-progress strokes. These are two seeds retested after earlier revisions, not four independent seeds.
+
+The selected floor approaches leave approximately .016 rad of native joint reserve. Loaded contact exhausts the .01-rad guard after about five ticks, so the controller unloads before useful progress and then repeats nearly the same approach. Raised leveling succeeds and native bounds remain unchanged. The next correction must improve checked approach geometry or usable reserve; relaxing the guard or counting a failed reset as success is not permitted.
+
+Simple-only model correction `3de27093` makes both existing planning engines forget uncertain base-location facts identically after Pick/Sweep, and permits an idempotent Return whenever the hand is empty. Twelve focused tests pass. Actual native observations are unchanged. Both learners and calibration use observed add effects as skill success; the production readiness proof additionally rejects controller errors. This distinction is explicit and unchanged.
 
 ## Baseline distinction
 
