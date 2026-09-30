@@ -8,7 +8,7 @@ Checkpoint: 2026-09-30. This is a prototype assessment, not an experimental succ
 | Fresh production forward readiness script | 2/2 tested native seeds; 5/5 cubes within 6/10 actions on each | Ordinary action dispatch and production controller defaults, with fixed nominal parameters and scripted cube order. Not a bilevel-policy benchmark. |
 | Custom diagnostic forward task | 2/2 tested native seeds; 5/5 cubes within 6/10 actions | Promising physical feasibility. Controller overrides and revisions differ; not a frozen policy benchmark. |
 | Fresh production complete robot reset | 0/2 tested native seeds | Both runs complete goal, Place, and pickup, then fail the first reverse skill after 9 total actions. Scientific launch remains blocked. |
-| Integrated regression suite | 233/233 | Software validation, not physical task success. |
+| Integrated regression suite | 235/235 | Software validation, not physical task success. |
 | Calibration / method smokes | 0/48 contexts; 0/2 methods | Still required after controller readiness. |
 
 The highest registered native Simple variants contain 50 cubes. Left-of-island tasks have 1, 5, 10, and 50 cubes; right-of-counter and right-of-island tasks each have 50. The approved learning experiment remains the five-cube left-of-island task.
@@ -33,6 +33,8 @@ Seed1 also exposes a placement target near the native yaw boundary: its original
 Latest fresh production proofs `production-native-seed0-v253` and `production-native-seed1-v254` are frozen at `324db170`, with ordinary action dispatch and no controller monkeypatches. Both reach 5/5 native goal cubes in 6/10 forward actions and complete counted Place/Pick. Both fail the first reverse skill after 9 total actions with three consecutive no-progress strokes. These are two seeds retested after earlier revisions, not four independent seeds.
 
 The selected floor approaches leave approximately .016 rad of native joint reserve. Loaded contact exhausts the .01-rad guard after about five ticks, so the controller unloads before useful progress and then repeats nearly the same approach. Raised leveling succeeds and native bounds remain unchanged. The next correction must improve checked approach geometry or usable reserve; relaxing the guard or counting a failed reset as success is not permitted.
+
+Counterfactual retries v255b and v256 also fail without cube progress. Ranking a higher-reserve .99-tilt pose trades the joint-limit stop for a tilt stop. Selecting another same-elbow IK branch improves some margins but does not maintain both reserves after physical contact. Neither diagnostic is promoted. The ongoing investigation compares jointly feasible pre-contact geometry and the previously successful narrow-contact reverse diagnostic; all failed ancestral actions remain counted.
 
 Simple-only model correction `3de27093` makes both existing planning engines forget uncertain base-location facts identically after Pick/Sweep, and permits an idempotent Return whenever the hand is empty. Twelve focused tests pass. Actual native observations are unchanged. Both learners and calibration use observed add effects as skill success; the production readiness proof additionally rejects controller errors. This distinction is explicit and unchanged.
 
