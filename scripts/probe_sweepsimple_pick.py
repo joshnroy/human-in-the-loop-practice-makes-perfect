@@ -26,7 +26,13 @@ class PickupProbe:
         parser.add_argument("--stroke-length", type=float, default=0.132)
         parser.add_argument("--contact-step", type=float, default=0.003)
         parser.add_argument("--narrow-contact", action="store_true")
+        parser.add_argument(
+            "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
+        )
         args = parser.parse_args()
+        import faulthandler
+
+        faulthandler.dump_traceback_later(120, repeat=True)
         root = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(root / "reference/kindergarden/src"))
         sys.path.insert(0, str(root / "reference/kinder-baselines/kinder-models/src"))
@@ -57,6 +63,10 @@ class PickupProbe:
         session = SweepSimpleSession(
             seed=args.seed, log_path=output / "state.jsonl", replay_path=output / "replay.jsonl"
         )
+        if args.resume_pick:
+            PickupProbe.restore_pick(
+                session=session, source=root / "scratchpad/sweepsimple3d" / args.resume_pick
+            )
         primitive = FloorPrimitives.create(
             session=session, distance=args.pick_distance, heading_offset=0.0
         )
@@ -95,9 +105,15 @@ class PickupProbe:
         started = time.monotonic()
         session.begin(name="PickFloorWiper", kind="PickFloorWiper", phase="feasibility")
         error = ""
+        error_traceback = ""
         success = False
         try:
-            note = primitive.recover_wiper()
+            note = (
+                "Recorded picked-state continuation; not an end-to-end native-start trial"
+                if args.resume_pick
+                else primitive.recover_wiper()
+            )
+            primitive.require_handle(phase="verified pickup or recorded continuation")
             import mujoco
 
             contacts = []
@@ -130,13 +146,20 @@ class PickupProbe:
                 )
             success = True
         except Exception as exc:
+            import traceback
+
             error = repr(exc)
+            error_traceback = traceback.format_exc()
+            print(error_traceback, flush=True)
             note = error
         finally:
             session.end(success=success, note=note)
             result = {
                 "success": success,
+                "end_to_end_native_start": args.resume_pick is None,
+                "resumed_pick": args.resume_pick,
                 "error": error,
+                "traceback": error_traceback,
                 "note": note,
                 "elapsed": time.monotonic() - started,
                 "ticks": session.ticks,
@@ -166,6 +189,58 @@ class PickupProbe:
             print(json.dumps(result), flush=True)
             primitive.scene._sim.close()
             session.close()
+            faulthandler.cancel_dump_traceback_later()
+
+    @staticmethod
+    def restore_pick(*, session, source: Path) -> None:
+        """Restore a logged physical pickup for labeled controller debugging only."""
+        import mujoco
+
+        source_manifest = json.loads((source / "probe_manifest.json").read_text())
+        if source_manifest["arguments"]["seed"] != session.seed:
+            raise ValueError("Replay and requested native seeds differ")
+        picked = None
+        subsequent_sweep = False
+        for line in (source / "state.jsonl").open():
+            record = json.loads(line)
+            if record.get("kind") == "tick" and record.get("step") == "PickFloorWiper":
+                picked = record
+            if record.get("step") == "SweepCubeToGoal":
+                subsequent_sweep = True
+        if picked is None or not subsequent_sweep:
+            raise ValueError("Source does not establish a completed pickup followed by a sweep")
+        state = session.state.copy()
+        for name, values in picked["state"].items():
+            obj = state.get_object_from_name(name)
+            for key, value in zip(state.type_features[obj.type], values, strict=True):
+                is_velocity = key.startswith("vel_") or key in {"vx", "vy", "vz", "wx", "wy", "wz"}
+                state.set(obj, key, 0.0 if is_velocity else value)
+        session.env.unwrapped._object_centric_env.set_state(state)
+        session._state = state
+        frame = None
+        for line in (source / "replay.jsonl").open():
+            record = json.loads(line)
+            if record.get("t") == picked["t"]:
+                frame = record
+                break
+        if frame is None:
+            raise ValueError("Native joint replay frame is missing")
+        session.mj_data.qpos[:] = frame["qpos"]
+        session.mj_data.qvel[:] = 0
+        mujoco.mj_forward(session.mj_model, session.mj_data)
+        session._write(
+            record={
+                "kind": "development_replay_resume",
+                "source": str(source),
+                "source_tick": picked["t"],
+                "source_manifest_sha256": hashlib.sha256(
+                    (source / "probe_manifest.json").read_bytes()
+                ).hexdigest(),
+                "velocities": "zeroed; complete native velocities were not recorded",
+                "end_to_end_native_start": False,
+            }
+        )
+        session._tick()
 
 
 if __name__ == "__main__":

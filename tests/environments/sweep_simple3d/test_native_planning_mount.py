@@ -84,3 +84,46 @@ def test_native_chassis_mesh_world_geometry_and_hypothetical_pose() -> None:
     finally:
         scene._sim.close()
         session.close()
+
+
+def test_closed_grasp_pad_centers_match_native_articulation() -> None:
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session)
+    model, data = session.mj_model, session.mj_data
+    try:
+        for angle in (0.35, 0.63):
+            for side in ("left", "right"):
+                for name, value in (
+                    ("driver", angle),
+                    ("spring_link", angle),
+                    ("follower", -angle),
+                    ("coupler", 0.0),
+                ):
+                    joint = mujoco.mj_name2id(
+                        model, mujoco.mjtObj.mjOBJ_JOINT, f"robot_{side}_{name}_joint"
+                    )
+                    data.qpos[model.jnt_qposadr[joint]] = value
+            mujoco.mj_forward(model, data)
+            session.state.set(session.state.get_object_from_name("robot"), "pos_gripper", 1.0)
+            scene.sync()
+            scene.robot.set_joints(scene.planning_fingers(arm=session.arm(), state=0.5))
+            for side, link in (("left", 14), ("right", 19)):
+                body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"robot_{side}_pad")
+                boxes = [
+                    geom
+                    for geom in range(model.ngeom)
+                    if model.geom_bodyid[geom] == body
+                    and model.geom_type[geom] == mujoco.mjtGeom.mjGEOM_BOX
+                ]
+                assert len(boxes) == 2
+                native_center = data.geom_xpos[boxes].mean(axis=0)
+                planned_center = pybullet.getLinkState(
+                    scene.robot.robot_id,
+                    link,
+                    computeForwardKinematics=True,
+                    physicsClientId=scene.cid,
+                )[4]
+                np.testing.assert_allclose(planned_center, native_center, atol=0.001)
+    finally:
+        scene._sim.close()
+        session.close()

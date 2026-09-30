@@ -156,3 +156,40 @@ The contact-step CLI option had been unused in earlier source: actual contact
 segments were12mm. Current source uses that field explicitly (v53onward3mm).
 Old probe snapshots/logs remain intact; argument metadata alone is insufficient
 to infer physical step size in those older probes.
+
+## 20:18 EDT native corridor geometry checkpoint
+
+12/12 Simple tests pass, including physical pad-center versus planning geometry
+at two native closed-finger articulations. The new native-limit IK filtering and
+joint-path constraints allow narrow-end pushing in3/3 variants(v58-v60), with
+~0.14m selected-cube motion and retained grasp, but native target success0/3.
+A direct native2D collision audit verified the next3mm base step intersects
+cube_3; pushing one cube leaves another in the chassis path.
+
+Side poses(v62-v64) achieved native goal0/3 because the native cooking-counter
+colliders occupy the proposed base positions, including distance.40m. No obstacle
+is removed. The five initial cubes span~.276m laterally within the native.30m
+blade, so current probes center a broadside blade over that local group while
+keeping success tied to the selected cube. Lower-handle grasps reduce lever arm.
+Trials v65/v66 and checked native-home transport variantv67 remain bounded
+development probes; no experiment or reverse-readiness claim.
+
+## 20:35 EDT approved-range feasibility grid
+
+A30-case read-only geometry audit tests five approved distances(.40,.45,.55,.65,.70),
+three approved heading offsets(-15,0,+15degrees), and both equivalent broadside
+blade yaws from a recorded physical lower-handle grasp. All failures are retained in
+scratchpad/sweepsimple3d/cluster-low-handle-v65/floor-goal-support-grid.json.
+No clear native-limit floor goal was found at.40-.55m; at.65m/nominal heading,
+80/100IK solutions pass, and at.70m96/100pass. This is geometric feasibility,
+not physical task success. v71/v72 physically test these feasible settings.
+
+Periodic stack traces confirm carry-pose search spends time in IK/Cartesian paths.
+The numerical IK candidate now runs before IKFast, retaining the same native
+joint limits, tight FK validation and collision checks; IKFast remains fallback.
+No high-level planning-budget change. Latest complete v70 failed approach at
+previously tested.55m, in~3min20s; full native task is still unvalidated.
+
+### Continued floor-contact diagnosis
+
+Native-start v74 did not reproduce the isolated v73 TypeError, but failed floor descent. Replay diagnostics v75–v79 are explicitly excluded from end-to-end readiness; the native joint-planner descent fallback did not make v79 feasible (0/1). A fresh higher-handle native trial v80 is running. Diagnostic replay v81 was stopped because its old source contained native shoulder/tool contact. Current Ruff and mypy pass; Simple tests 12/12 pass. No complete native task, reverse pass, frozen scientific revision, or launch yet.

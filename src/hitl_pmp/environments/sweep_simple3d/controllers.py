@@ -14,6 +14,7 @@ from hitl_pmp.environments.sweep_drawer3d.primitives import Primitives
 class FloorPrimitives(Primitives):
     """Floor pickup uses the tested generic handle grasp with a learned base stance."""
 
+    scene: "FloorPlanningScene"
     narrow_contact: bool = False
     contact_stroke_length: float = 0.132
     contact_step: float = 0.003
@@ -46,29 +47,48 @@ class FloorPrimitives(Primitives):
         )
         from scipy.spatial.transform import Rotation
 
-        for yaw in (self.session.yaw(name="wiper_0"), base[2]):
-            for rpy in ((0.0, 0.0, yaw), (0.0, np.pi / 2, yaw), (np.pi / 2, 0.0, yaw)):
-                center_offset = Rotation.from_euler("xyz", rpy).apply([0.0, 0.0, 0.17])
-                for radius in (0.1, 0.0, 0.2):
-                    for height in (0.75, 0.85, 0.65):
-                        center = np.array([
-                            base[0] + radius * np.cos(base[2]),
-                            base[1] + radius * np.sin(base[2]),
-                            height,
-                        ])
-                        target_body = Pose.from_rpy(tuple(center - center_offset), rpy)
-                        target = multiply_poses(target_body, held_tf.invert())
-                        for solution in ikfast_closest_inverse_kinematics(
-                            self.scene.robot, world_from_target=target
-                        )[:12]:
-                            path = self.scene.plan_arm(
-                                goal=solution[:7],
-                                bodies=self.scene.bodies(),
-                                held=self.scene.wiper_body,
-                                held_tf=held_tf,
+        from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene
+
+        home = np.asarray(SweepDrawerScene.HOME)
+        if (
+            self.scene.plan_arm(
+                goal=home,
+                bodies=self.scene.bodies(),
+                held=self.scene.wiper_body,
+                held_tf=held_tf,
+                allow_joint_fallback=False,
+            )
+            is not None
+        ):
+            return home
+        for allow_joint_fallback in (False, True):
+            for yaw in (self.session.yaw(name="wiper_0"), base[2]):
+                for rpy in ((0.0, 0.0, yaw), (0.0, np.pi / 2, yaw), (np.pi / 2, 0.0, yaw)):
+                    center_offset = Rotation.from_euler("xyz", rpy).apply([0.0, 0.0, 0.17])
+                    for radius in (0.25, 0.35, 0.1, 0.0):
+                        for height in (1.1, 1.0, 0.85, 0.75, 0.65):
+                            center = np.array([
+                                base[0] + radius * np.cos(base[2]),
+                                base[1] + radius * np.sin(base[2]),
+                                height,
+                            ])
+                            target_body = Pose.from_rpy(tuple(center - center_offset), rpy)
+                            target = multiply_poses(target_body, held_tf.invert())
+                            solutions = ikfast_closest_inverse_kinematics(
+                                self.scene.robot, world_from_target=target
                             )
-                            if path is not None:
-                                return np.asarray(solution[:7])
+                            for solution in [
+                                q for q in solutions if self.scene.within_arm_limits(arm=q[:7])
+                            ][:24]:
+                                path = self.scene.plan_arm(
+                                    goal=solution[:7],
+                                    bodies=self.scene.bodies(),
+                                    held=self.scene.wiper_body,
+                                    held_tf=held_tf,
+                                    allow_joint_fallback=allow_joint_fallback,
+                                )
+                                if path is not None:
+                                    return np.asarray(solution[:7])
         raise ExecutionError("No collision-free compact tool transport pose")
 
     def wiper_handle_geometry(self) -> tuple[int, int]:
@@ -155,12 +175,20 @@ class FloorPrimitives(Primitives):
         direction = delta / length
         angle = float(np.arctan2(direction[1], direction[0]))
         transverse = np.array([-direction[1], direction[0]])
+        blade_anchor = initial[:2].copy()
+        if not self.narrow_contact:
+            projections = [
+                float(self.session.position(name=f"cube_{i}")[:2] @ transverse) for i in range(5)
+            ]
+            if max(projections) - min(projections) <= 0.28:
+                midpoint = (max(projections) + min(projections)) / 2
+                blade_anchor += (midpoint - float(blade_anchor @ transverse)) * transverse
         behind = 0.0
         for other in (f"cube_{i}" for i in range(5)):
-            relative = self.session.position(name=other)[:2] - initial[:2]
+            relative = self.session.position(name=other)[:2] - blade_anchor
             if abs(float(relative @ transverse)) <= (0.025 if self.narrow_contact else 0.16):
                 behind = max(behind, -float(relative @ direction))
-        wiper_start = initial[:2] - (behind + (0.20 if self.narrow_contact else 0.06)) * direction
+        wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.06)) * direction
         robot_box = core.task_config["regions"]["robot_task_init_region"]["ranges"][0]
         aisle = np.array([(robot_box[0] + robot_box[2]) / 2, (robot_box[1] + robot_box[3]) / 2])
         nominal_bearing = (
@@ -205,6 +233,7 @@ class FloorPrimitives(Primitives):
                 solutions = ikfast_closest_inverse_kinematics(
                     self.scene.robot, world_from_target=hover
                 )
+                solutions = [q for q in solutions if self.scene.within_arm_limits(arm=q[:7])]
                 attempts.append({
                     "yaw": tool_yaw,
                     "hover": hover.position,
@@ -213,7 +242,7 @@ class FloorPrimitives(Primitives):
                     "descent_paths": 0,
                     "checked_descents": 0,
                 })
-                for solution in solutions[:12]:
+                for solution in solutions[:24]:
                     candidate = self.scene.plan_arm(
                         goal=solution[:7],
                         bodies=bodies,
@@ -223,12 +252,11 @@ class FloorPrimitives(Primitives):
                     if candidate is None:
                         continue
                     attempts[-1]["approach_paths"] += 1
-                    candidate_lower = self.scene.linear_path(
+                    candidate_lower = self.scene.floor_descent(
                         start=np.asarray(candidate[-1]),
                         target=floor_ee,
                         bodies=bodies,
-                        finger_state=0.5,
-                        max_jump=0.6,
+                        held_tf=held_tf,
                     )
                     if candidate_lower is not None:
                         attempts[-1]["descent_paths"] += 1
@@ -249,22 +277,42 @@ class FloorPrimitives(Primitives):
                     break
             if approach is not None:
                 break
-        if approach is None or not self.motion.follow(path=approach, grip=1.0, final_tol=0.003):
+        if approach is None:
             raise ExecutionError(f"No collision-free floor sweep approach: {attempts}")
-        self.require_handle(phase="floor approach")
-        lower = self.scene.linear_path(
-            start=self.session.arm(), target=floor_ee, bodies=bodies, finger_state=0.5, max_jump=0.6
-        )
-        if lower is None or any(
-            self.scene.in_collision(
-                joints=self.scene.planning_fingers(arm=q, state=0.5),
-                bodies=bodies,
-                held=self.scene.wiper_body,
-                held_tf=held_tf,
+        if not self.motion.follow(path=approach, grip=1.0, final_tol=0.03):
+            raise ExecutionError(
+                "Checked floor approach did not reach the joint tracking tolerance"
             )
-            for q in lower
+        self.require_handle(phase="floor approach")
+        held_tf = multiply_poses(
+            self.scene.ee_now().invert(),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
+        )
+        floor_ee = multiply_poses(floor_pose, held_tf.invert())
+        lower = self.scene.floor_descent(
+            start=self.session.arm(), target=floor_ee, bodies=bodies, held_tf=held_tf
+        )
+        if lower is None or not self.scene.held_path_clear(
+            path=lower,
+            start=self.session.arm(),
+            bodies=bodies,
+            held=self.scene.wiper_body,
+            held_tf=held_tf,
+            allowed_tilt=0.3,
         ):
-            raise ExecutionError("No collision-free floor sweep descent")
+            lower = candidate_lower
+        if lower is None or not self.scene.held_path_clear(
+            path=lower,
+            start=self.session.arm(),
+            bodies=bodies,
+            held=self.scene.wiper_body,
+            held_tf=held_tf,
+            allowed_tilt=0.3,
+        ):
+            raise ExecutionError("No collision-free floor sweep descent from observed grasp")
         if not self.motion.follow(path=lower, grip=1.0, final_tol=0.005):
             raise ExecutionError("Floor sweep descent did not converge")
         self.require_handle(phase="floor descent")
@@ -447,6 +495,14 @@ class FloorPrimitives(Primitives):
             )
             path = self.scene.plan_base(target=target)
             if path is None:
+                self.session._write(
+                    record={
+                        "kind": "transport_rejected",
+                        "stowed": stow,
+                        "reason": "native_base_path",
+                        "target": target,
+                    }
+                )
                 continue
             clear = True
             for base in path:
@@ -457,6 +513,15 @@ class FloorPrimitives(Primitives):
                     held=self.scene.wiper_body,
                     held_tf=held_tf,
                 ):
+                    self.session._write(
+                        record={
+                            "kind": "transport_rejected",
+                            "stowed": stow,
+                            "reason": "carried_collision",
+                            "base": base,
+                            "target": target,
+                        }
+                    )
                     clear = False
                     break
             self.scene.sync()
@@ -691,9 +756,6 @@ class FloorPlanningScene(PlanningScene):
         import pybullet
         from scipy.spatial.transform import Rotation
 
-        analytic = super().ik(pose=pose, seed=seed)
-        if analytic is not None and np.max(np.abs(ArmMath.wrap(delta=analytic - seed))) < 0.4:
-            return analytic
         self.robot.set_joints(self.planning_fingers(arm=seed))
         solved = pybullet.calculateInverseKinematics(
             self.robot.robot_id,
@@ -712,7 +774,7 @@ class FloorPlanningScene(PlanningScene):
         ).magnitude()
         if self.within_arm_limits(arm=candidate) and position_error < 0.001 and angle_error < 0.01:
             return candidate
-        return analytic
+        return super().ik(pose=pose, seed=seed)
 
     def plan_arm(
         self,
@@ -723,14 +785,14 @@ class FloorPlanningScene(PlanningScene):
         base: Any = None,
         held: int | None = None,
         held_tf: Any = None,
+        allow_joint_fallback: bool = True,
     ) -> list[np.ndarray] | None:
         if goal is None:
             return None
-        planning_bodies = bodies - {body for _, body in self._native_chassis}
         if held != self.wiper_body or held_tf is None:
-            path = super().plan_arm(
+            path = self.native_joint_path(
                 goal=goal,
-                bodies=planning_bodies,
+                bodies=bodies,
                 start=start,
                 base=base,
                 held=held,
@@ -749,6 +811,13 @@ class FloorPlanningScene(PlanningScene):
 
         self.sync(base=base)
         q0 = self.session.arm() if start is None else np.asarray(start)
+        if self.in_collision(
+            joints=self.planning_fingers(arm=goal, state=0.5),
+            bodies=bodies,
+            held=held,
+            held_tf=held_tf,
+        ):
+            return None
         target = self.fk(arm=goal)
         path = self.linear_path(
             start=q0, target=target, bodies=bodies, finger_state=0.5, max_jump=0.6
@@ -778,10 +847,12 @@ class FloorPlanningScene(PlanningScene):
                 else:
                     path = candidate
                     break
+        if path is None and not allow_joint_fallback:
+            return None
         if path is None:
-            path = super().plan_arm(
+            path = self.native_joint_path(
                 goal=goal,
-                bodies=planning_bodies,
+                bodies=bodies,
                 start=start,
                 base=base,
                 held=held,
@@ -796,7 +867,130 @@ class FloorPlanningScene(PlanningScene):
             for p in (initial_tool, goal_tool)
         ]
         allowed_tilt = max(self.max_tool_tilt, *[t + 0.05 for t in endpoint_tilts])
-        previous = np.asarray(q0)
+        if self.held_path_clear(
+            path=path,
+            start=q0,
+            bodies=bodies,
+            held=held,
+            held_tf=held_tf,
+            allowed_tilt=allowed_tilt,
+        ):
+            return path
+        if not allow_joint_fallback:
+            return None
+        alternative = self.native_joint_path(
+            goal=goal, bodies=bodies, start=start, base=base, held=held, held_tf=held_tf
+        )
+        if alternative is not None and self.held_path_clear(
+            path=alternative,
+            start=q0,
+            bodies=bodies,
+            held=held,
+            held_tf=held_tf,
+            allowed_tilt=allowed_tilt,
+        ):
+            return alternative
+        return None
+
+    def floor_descent(
+        self, *, start: Any, target: Any, bodies: set[int], held_tf: Any
+    ) -> list[np.ndarray] | None:
+        """Keep native collision checks when Cartesian IK changes branch near the floor."""
+        from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
+
+        path = self.linear_path(
+            start=np.asarray(start),
+            target=target,
+            bodies=bodies,
+            finger_state=0.5,
+            max_jump=0.6,
+        )
+        if path is not None and self.held_path_clear(
+            path=path,
+            start=start,
+            bodies=bodies,
+            held=self.wiper_body,
+            held_tf=held_tf,
+            allowed_tilt=0.3,
+        ):
+            return path
+        self.sync()
+        solutions = ikfast_closest_inverse_kinematics(self.robot, world_from_target=target)
+        candidates = [np.asarray(q[:7]) for q in solutions if self.within_arm_limits(arm=q[:7])]
+        candidates.sort(key=lambda q: float(np.linalg.norm(q - start)))
+        for goal in candidates[:8]:
+            if self.in_collision(
+                joints=self.planning_fingers(arm=goal, state=0.5),
+                bodies=bodies,
+                held=self.wiper_body,
+                held_tf=held_tf,
+            ):
+                continue
+            path = self.native_joint_path(
+                goal=goal,
+                start=start,
+                bodies=bodies,
+                held=self.wiper_body,
+                held_tf=held_tf,
+            )
+            if path is not None and self.held_path_clear(
+                path=path,
+                start=start,
+                bodies=bodies,
+                held=self.wiper_body,
+                held_tf=held_tf,
+                allowed_tilt=0.3,
+            ):
+                return path
+        return None
+
+    def native_joint_path(
+        self,
+        *,
+        goal: Any,
+        bodies: set[int],
+        start: Any = None,
+        base: Any = None,
+        held: int | None = None,
+        held_tf: Any = None,
+    ) -> list[np.ndarray] | None:
+        """Reuse BiRRT with native joint limits and chassis/held-object constraints."""
+        from pybullet_helpers.motion_planning import run_motion_planning
+
+        self.sync(base=base)
+        initial = self.session.arm() if start is None else np.asarray(start)
+        planning_bodies = bodies - {body for _, body in self._native_chassis}
+        path = run_motion_planning(
+            self.robot,
+            self.planning_fingers(arm=initial, state=0.5 if held is not None else 0.0),
+            self.planning_fingers(arm=goal, state=0.5 if held is not None else 0.0),
+            collision_bodies=planning_bodies,
+            seed=0,
+            physics_client_id=self.cid,
+            held_object=held,
+            base_link_to_held_obj=held_tf,
+            additional_state_constraint_fn=lambda q: (
+                not self.in_collision(joints=q, bodies=bodies, held=held, held_tf=held_tf)
+            ),
+        )
+        if path is None:
+            return None
+        return [np.asarray(q[:7], dtype=float) for q in path]
+
+    def held_path_clear(
+        self,
+        *,
+        path: Any,
+        start: Any,
+        bodies: set[int],
+        held: int,
+        held_tf: Any,
+        allowed_tilt: float,
+    ) -> bool:
+        from pybullet_helpers.geometry import multiply_poses
+        from scipy.spatial.transform import Rotation
+
+        previous = np.asarray(start)
         for waypoint in path:
             waypoint = previous + ArmMath.wrap(delta=waypoint - previous)
             steps = max(1, int(np.ceil(np.max(np.abs(waypoint - previous)) / 0.05)))
@@ -812,9 +1006,9 @@ class FloorPlanningScene(PlanningScene):
                     held=held,
                     held_tf=held_tf,
                 ):
-                    return None
+                    return False
             previous = waypoint
-        return path
+        return True
 
     def plan_base(
         self, *, target: tuple[float, float, float], margin: float = 0.02
