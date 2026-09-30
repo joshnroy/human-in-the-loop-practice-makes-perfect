@@ -77,11 +77,11 @@ class FloorPrimitives(Primitives):
 
     scene: "FloorPlanningScene"
     narrow_contact: bool = False
-    stand_ahead: bool = False
-    native_contact_guard: bool = False
+    stand_ahead: bool = True
+    native_contact_guard: bool = True
     contact_stroke_length: float = 0.10
     contact_step: float = 0.003
-    floor_clearance: float = Field(default=0.001, ge=0.001, le=0.01)
+    floor_clearance: float = Field(default=0.005, ge=0.001, le=0.01)
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
     _ground_clearance_hold: np.ndarray | None = PrivateAttr(default=None)
@@ -142,7 +142,7 @@ class FloorPrimitives(Primitives):
 
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         # A low cross-handle grasp shortens the contact-force lever arm.
-        return (-0.09,)
+        return (-0.12,)
 
     def wiper_approach_angles(self) -> tuple[float, ...]:
         return np.pi / 2, 1.2, 1.8
@@ -165,8 +165,8 @@ class FloorPrimitives(Primitives):
                 orientations.append((closing, approach))
         return orientations
 
-    diagnostic_grasp_standoff: float = Field(default=0.035, ge=0.0, le=0.035)
-    retain_pickup_carry_pose: bool = False
+    diagnostic_grasp_standoff: float = Field(default=0.020, ge=0.0, le=0.035)
+    retain_pickup_carry_pose: bool = True
 
     def wiper_pickup_carry_goal(self) -> np.ndarray:
         """Optionally retain a verified raised grasp only at pickup completion."""
@@ -191,16 +191,17 @@ class FloorPrimitives(Primitives):
         return self.wiper_stow_goal()
 
     def wiper_grasp_standoff(self) -> float:
-        """Keep the shared default; allow explicit diagnostic insertion trials."""
+        """Use the floor handle insertion; allow explicit diagnostic trials."""
         if not 0.0 <= self.diagnostic_grasp_standoff <= 0.035:
             raise ValueError("Diagnostic grasp standoff must lie in [0, 0.035] meters")
         return self.diagnostic_grasp_standoff
 
     def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
+        """Align the grasp with the native handle face, independent of base stance."""
         del axis
-        base = self.session.base()
-        wiper = self.session.position(name="wiper_0")
-        return float(np.arctan2(base[1] - wiper[1], base[0] - wiper[0]))
+        handle, _ = self.wiper_handle_geometry()
+        axes = self.session.mj_data.geom_xmat[handle].reshape(3, 3)
+        return float(np.arctan2(axes[1, 0], axes[0, 0]))
 
     def wiper_pick_targets_after_navigation(
         self, *, hover: Pose, target: Pose, along: float, approach: np.ndarray
@@ -410,23 +411,9 @@ class FloorPrimitives(Primitives):
 
     @staticmethod
     def broad_blade_center(*, projections: list[float], target: float) -> float:
-        """Cover the selected cube without balancing a neighbor on the blade tip."""
-        if max(projections) - min(projections) <= 0.28:
-            return (max(projections) + min(projections)) / 2
-        candidates = {target}
-        for a in projections:
-            candidates.update(a + offset for offset in (-0.17, -0.14, 0.14, 0.17))
-            for b in projections:
-                candidates.add((a + b) / 2)
-        feasible = [c for c in candidates if abs(c - target) <= 0.14 + 1e-9]
-
-        def score(center: float) -> tuple[int, int, float, float, float]:  # noqa: PLR0917 -- min key
-            distances = [abs(p - center) for p in projections]
-            edge_count = sum(0.14 + 1e-9 < d < 0.17 - 1e-9 for d in distances)
-            covered = [d for d in distances if d <= 0.14 + 1e-9]
-            return edge_count, -len(covered), max(covered), abs(center - target), center
-
-        return min(feasible, key=score)
+        """Center on the selected cube so neighboring cubes cannot move its anchor."""
+        del projections
+        return target
 
     @staticmethod
     def contact_behind_offset(

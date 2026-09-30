@@ -1,4 +1,4 @@
-"""Retaining pickup posture is opt-in and cannot short-circuit compact stow."""
+"""Retaining a verified pickup posture cannot short-circuit explicit compact stow."""
 
 from types import SimpleNamespace
 
@@ -11,7 +11,7 @@ from hitl_pmp.environments.sweep_drawer3d.primitives import Primitives
 from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
 
 
-@pytest.mark.parametrize("case", ["default", "clear", "collision", "low", "lost"])
+@pytest.mark.parametrize("case", ["default", "disabled", "collision", "low", "lost"])
 def test_pickup_carry_admission_and_fallback(*, monkeypatch, case: str) -> None:
     current, compact = np.zeros(7), np.ones(7)
     checked = []
@@ -39,8 +39,8 @@ def test_pickup_carry_admission_and_fallback(*, monkeypatch, case: str) -> None:
     primitive = FloorPrimitives.model_construct(
         session=session, scene=scene, motion=None, floor_clearance=0.005
     )
-    if case != "default":
-        primitive.retain_pickup_carry_pose = True
+    if case == "disabled":
+        primitive.retain_pickup_carry_pose = False
     monkeypatch.setattr(FloorPrimitives, "require_handle", require_handle)
     monkeypatch.setattr(FloorPrimitives, "wiper_stow_goal", stow)
     monkeypatch.setattr(FloorPrimitives, "blade_minimum_height",
@@ -51,15 +51,15 @@ def test_pickup_carry_admission_and_fallback(*, monkeypatch, case: str) -> None:
         assert not stows
         return
     result = primitive.wiper_pickup_carry_goal()
-    np.testing.assert_array_equal(result, current if case == "clear" else compact)
-    assert len(stows) == (0 if case == "clear" else 1)
+    np.testing.assert_array_equal(result, current if case == "default" else compact)
+    assert len(stows) == (0 if case == "default" else 1)
     if checked:
         assert checked[0]["bodies"] is bodies
         assert checked[0]["held"] == 3
         assert checked[0]["allowed_tilt"] == 1.1
         np.testing.assert_array_equal(checked[0]["path"][0], current)
     else:
-        assert case in ("default", "low")
+        assert case in ("disabled", "low")
 
 
 def test_shared_default_delegates_and_explicit_stow_ignores_pickup_hook(*, monkeypatch) -> None:

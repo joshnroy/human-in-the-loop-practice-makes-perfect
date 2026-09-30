@@ -52,7 +52,7 @@ def test_local_contact_edge_excludes_unrelated_high_blade_corner() -> None:
         data.qpos[tool_q : tool_q + 3] = target.position
         data.qpos[tool_q + 3 : tool_q + 7] = np.asarray(target.orientation)[[3, 0, 1, 2]]
         mujoco.mj_forward(model, data)
-        assert abs(primitive.blade_minimum_height() - 0.001) < 1e-8
+        assert abs(primitive.blade_minimum_height() - primitive.floor_clearance) < 1e-8
         matrix = data.xmat[tool].reshape(3, 3)
         assert abs(np.arccos(matrix[2, 2]) - abs(pitch)) < 1e-8
         assert abs(np.arctan2(matrix[1, 0], matrix[0, 0]) - 1.1) < 1e-8

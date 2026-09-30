@@ -1,4 +1,4 @@
-"""Diagnostic insertion leaves the shared native pickup default unchanged."""
+"""Floor insertion uses its validated default without changing drawer pickup."""
 
 import pytest
 
@@ -10,9 +10,9 @@ def test_grasp_standoff_defaults_and_explicit_diagnostic_override() -> None:
     drawer = Primitives.model_construct()
     floor = FloorPrimitives.model_construct()
     assert drawer.wiper_grasp_standoff() == 0.035
-    assert floor.wiper_grasp_standoff() == drawer.wiper_grasp_standoff()
-    floor.diagnostic_grasp_standoff = 0.020
     assert floor.wiper_grasp_standoff() == 0.020
+    floor.diagnostic_grasp_standoff = 0.010
+    assert floor.wiper_grasp_standoff() == 0.010
     assert drawer.wiper_grasp_standoff() == 0.035
 
 
