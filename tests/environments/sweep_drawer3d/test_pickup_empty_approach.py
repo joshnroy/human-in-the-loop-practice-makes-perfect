@@ -54,6 +54,9 @@ def test_empty_replanned_approach_reaches_motion_with_observed_start(*, monkeypa
         motion=SimpleNamespace(go_home=lambda **_: None, set_gripper=lambda **_: None,
                                drive=lambda **_: True, follow=follow),
     )
+    primitive.wiper_grasp_orientations = lambda **kw: Primitives.wiper_grasp_orientations(
+        primitive, **kw
+    )
     with pytest.raises(FollowReached):
         Primitives.recover_wiper(primitive)
     assert len(captured) == 2

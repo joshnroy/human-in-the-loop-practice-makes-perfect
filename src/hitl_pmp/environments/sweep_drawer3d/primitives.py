@@ -620,6 +620,18 @@ class Primitives(BaseModel):
         """Environment-specific pickup geometry validation; shared behavior unchanged."""
         return True
 
+    def wiper_grasp_orientations(self, *, axis: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Ordered grasp frames; the shared lateral/overhead search is unchanged."""
+        yaw = self.wiper_grasp_yaw(axis=axis)
+        orientations = []
+        for azimuth in np.linspace(yaw, yaw + 2 * np.pi, 8, endpoint=False):
+            for angle in self.wiper_approach_angles():
+                closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
+                toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
+                approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
+                orientations.append((closing, approach))
+        return orientations
+
     def recover_wiper(self) -> str:
         """Grasp the observed handle and verify that it follows a physical lift."""
         from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
@@ -631,18 +643,11 @@ class Primitives(BaseModel):
         center = np.array(data.geom_xpos[handle])
         handle_axes = np.array(data.geom_xmat[handle]).reshape(3, 3)
         axis = handle_axes[:, handle_axis]
-        yaw = self.wiper_grasp_yaw(axis=axis)
         before = self.session.position(name=S.WIPER).copy()
         wiper = Pose(tuple(before), self.session.quaternion(name=S.WIPER))
         set_pose(self.scene.wiper_body, wiper, self.scene.cid)
         rejected: dict[str, int] = {}
-        orientations = []
-        for azimuth in np.linspace(yaw, yaw + 2 * np.pi, 8, endpoint=False):
-            for angle in self.wiper_approach_angles():
-                closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
-                toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
-                approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
-                orientations.append((closing, approach))
+        orientations = self.wiper_grasp_orientations(axis=axis)
         for along in self.wiper_grasp_offsets():
             grasp_point = self.wiper_grasp_point(center=center, axis=axis, along=along)
             for closing, approach in orientations:

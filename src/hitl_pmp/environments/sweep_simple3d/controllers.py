@@ -147,6 +147,24 @@ class FloorPrimitives(Primitives):
     def wiper_approach_angles(self) -> tuple[float, ...]:
         return np.pi / 2, 1.2, 1.8
 
+    def wiper_grasp_orientations(self, *, axis: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Keep nominal candidates first; approach a tipped handle from above last."""
+        orientations = super().wiper_grasp_orientations(axis=axis)
+        if abs(float(axis[2])) >= np.cos(np.pi / 4):
+            return orientations
+        handle, handle_axis = self.wiper_handle_geometry()
+        axes = np.asarray(self.session.mj_data.geom_xmat[handle]).reshape(3, 3)
+        face = max((axes[:, i] for i in range(3) if i != handle_axis),
+                   key=lambda a: float(np.linalg.norm(a[:2])))
+        yaw = float(np.arctan2(face[1], face[0]))
+        for azimuth in (yaw, yaw + np.pi):
+            closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
+            toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
+            for angle in (0.0, 0.2, 0.4):
+                approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
+                orientations.append((closing, approach))
+        return orientations
+
     diagnostic_grasp_standoff: float = Field(default=0.035, ge=0.0, le=0.035)
     retain_pickup_carry_pose: bool = False
 
