@@ -342,3 +342,36 @@ Commit acce689b fixes carry-search ordering: the existing checked joint fallback
 Native close control is correctly255. Recorded native contact geometry places the old35mm insertion grasp at distal pad tips/width corners. Exact pad geometry suggests reducing insertion standoff to28mm (distal center) or20mm (combined patch center). Shared/production default remains35mm; bounded diagnostic hooke2a6705d changes no native physics. Actual-step contactforce logging verifies28mm eventually engages both pad boxes symmetrically; no forces are inferred from replay.20mm v181 loses grip during an unnecessary high carry. Opt-in checked pickup-pose retentionff2414df avoids that lift while preserving full carried-path checks and distinct compact fallback; v183 then succeeds pickup but loses grip in its first sweep.
 
 Fresh-native v184 combines the existing lowhandle grasp−.09m with28mm insertion and checked pickup carry. It has reached2/5 exact upstream goal cubes: cube4 at tick4538 after28strokes, cube2 at4642. It continues the full counted10-action task and is not yet a full success. This is partial improvement over prior1/5, not readiness. Highhandle v182 remains an ongoing comparison. Focused guard/default/integration/accounting checks pass72/72.
+
+
+## 2026-09-30 06:05 EDT — four-cube progress and transport diagnosis
+
+The fresh-native selected-center trial v185 attained 4/5 goal cubes in 10/10
+forward actions with the grasp retained. The contiguous-sequence trial v186 also
+attained 4/5 in 10/10 actions, then lost the bilateral handle grasp on the final
+transfer. Neither is a full-task pass; recovery/home was not entered.
+
+Actual-step contact records show no non-pad tool collision during the failing
+v186 transfer. The native planner took a long route around the already-goal
+cubes; actual accumulated travel was 9.17 m with 6.43 rad yaw before loss.
+The pad contact patch gradually reached a distal corner. No force/friction,
+native goal, collision tolerance, or action-budget change is justified.
+
+Commit da8c5e5e adds a native-planned upper-aisle alternative and chooses among
+fully carried-collision-checked routes, retaining the original fallback. Static
+reconstruction from the disclosed rounded recorded state gives 1.59 m/0.52 rad
+versus 10.97 m/8.30 rad, with all waypoints collision-clear. This is diagnostic
+static evidence only. Fresh physical trial v188 is running; v187 separately
+checks deeper insertion with the same low handle grasp.
+
+The obsolete higher-handle v182 completed naturally: 0/5 goal cubes, 10/10
+forward actions, 51.8 minutes dominated by repeated identical-state exhausted
+compact-pose searches. It was not interrupted. The exact-state failure cache
+in subsequent revisions prevents redundant searches without erasing failures.
+
+Strict production-controller probe mode now bypasses diagnostic overrides and
+uses ordinary Environment.take_action for initial pickup/sweep as well as later
+skills (218357fe). The initial-dispatch limitation is removed for this mode.
+Controller defaults have not yet been promoted: diagnostic success cannot stand
+in for a production-controller full-task/recovery measurement. No READY record,
+calibration campaign, or Simple science job has been launched.
