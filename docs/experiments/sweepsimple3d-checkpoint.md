@@ -425,3 +425,28 @@ The lower handle candidate (-0.12 m offset, face alignment,0.020 m insertion) pa
 Bounded post-unload leveling (`38804ad4`) uses existing checked motions, requires actual tilt decrease and stops after four turns. v203 physically lowers tilt0.9956→0.9271→0.8585 in two turns, then fails a later floor endpoint. Seven distances0.40–0.70 all fail native-limit-valid floor IK for that observed grasp, despite checked base routes. A finer static audit finds nearby tilt0.925 at the original0.70/0 stance has52 native collision-clear IK solutions and a checked approach/descent; the existing two-orientation search is too sparse. A bounded nearby-orientation fallback is being implemented without changing native geometry, limits, physics, or learned distance/heading semantics.
 
 Higher-grasp v207 retains a failed leveling outcome at4476. Explicit existing OpenGripper/PickFloorWiper recovery is being tested separately with every failed sweep and regrasp counted in20actions. Calibration and all Simple science remain unlaunched.
+
+
+### 2026-09-30: overhead regrasp and wider checked floor search
+
+The nominal lower face pickup passes 3/3 seed pickup stages; full fresh native
+forward task remains 5/5 cubes in 6/10 actions. Complete robot recovery has not
+passed. Explicit OpenGripper/PickFloorWiper diagnostics retain every failed
+sweep and pickup in the 20-action accounting; v220 ends failed at 13/20 actions.
+
+Simple-only overhead grasp fallback physically recovers the tipped wiper in
+v216 (1/1 counted pickup, 601 ticks). The resulting grasp needs a different
+floor orientation. Static native IK/collision audits find full approach/descent
+paths at .4/.6/.8/.95 rad, which the original upright/nearby search omits.
+Commit e1917407 appends a bounded .2/.4/.6/.8/.95 fallback after existing
+candidates, with unchanged yaw, native blade support, joint limits, and full
+collision checks. v221 tests it physically; this replay diagnostic is never
+readiness evidence. Integration/accounting regression: 189/189 tests passed.
+
+Terminology correction: 1.1 rad is our Simple controller tilt heuristic, not a
+native physics or upstream goal constraint. No physics or goal changes were
+made. v220's final empty-hand return has genuine blade/upper-arm contact
+(native penetration approximately .306 mm), and the HOME endpoint intersects
+the released tool. An unchecked HOME fallback is not a valid fix; safe physical
+disengagement remains under investigation. Calibration, strict production
+verification, manifest freeze, READY, and scientific launch remain pending.
