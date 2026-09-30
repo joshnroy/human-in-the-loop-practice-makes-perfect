@@ -17,13 +17,14 @@ class FloorPrimitives(Primitives):
 
     scene: "FloorPlanningScene"
     narrow_contact: bool = False
-    contact_stroke_length: float = 0.132
+    contact_stroke_length: float = 0.10
     contact_step: float = 0.003
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
 
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
-        return 0.0, 0.03, 0.06
+        # A low cross-handle grasp shortens the contact-force lever arm.
+        return (-0.09,)
 
     def wiper_approach_angles(self) -> tuple[float, ...]:
         return np.pi / 2, 1.2, 1.8
@@ -32,7 +33,7 @@ class FloorPrimitives(Primitives):
         del axis
         base = self.session.base()
         wiper = self.session.position(name="wiper_0")
-        return float(np.arctan2(base[1] - wiper[1], base[0] - wiper[0]) - np.pi / 2)
+        return float(np.arctan2(base[1] - wiper[1], base[0] - wiper[0]))
 
     def wiper_stow_goal(self) -> np.ndarray:
         from pybullet_helpers.geometry import Pose, multiply_poses
@@ -192,7 +193,13 @@ class FloorPrimitives(Primitives):
         wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.025)) * direction
         # Keep the chassis behind the blade on both legs. Facing the initial
         # aisle during a westward stroke folds the cross-grasp wrist into it.
-        nominal_bearing = angle + np.pi
+        # The fixed eastward recovery instead stands north: west of a goal
+        # cube is occupied by the native island, even though the blade fits.
+        nominal_bearing = (
+            np.pi / 2
+            if region == "blocks_init_region" and abs(direction[0]) > abs(direction[1])
+            else angle + np.pi
+        )
         stance_bearing = nominal_bearing + heading_offset
         stance_angle = float((stance_bearing + 2 * np.pi) % (2 * np.pi) - np.pi)
         stance = (
@@ -343,7 +350,13 @@ class FloorPrimitives(Primitives):
             path = self.scene.floor_descent(
                 start=self.session.arm(), target=correction, bodies=bodies, held_tf=live_tf
             )
-            if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.005):
+            if path is None or not self.motion.follow(
+                path=path,
+                grip=1.0,
+                max_ticks=30,
+                final_tol=0.005,
+                tick_guard=lambda: self.require_handle(phase="initial blade-height correction"),
+            ):
                 if self.level_blade(bodies=bodies):
                     continue
                 break
@@ -397,6 +410,17 @@ class FloorPrimitives(Primitives):
                     held_tf=carried_tf,
                     allowed_tilt=self.scene.max_tool_tilt,
                 ):
+                    self.session._write(
+                        record={
+                            "kind": "contact_path_rejection",
+                            "t": self.session.ticks,
+                            "actual_arm": self.session.arm().tolist(),
+                            "target_arm": contact_arm.tolist(),
+                            "waypoint": list(waypoint),
+                            "held_position": list(carried_tf.position),
+                            "held_orientation": list(carried_tf.orientation),
+                        }
+                    )
                     self.scene.sync()
                     raise ExecutionError("Carried arm/tool route blocked during contact sweep")
             self.scene.sync()
@@ -523,9 +547,7 @@ class FloorPrimitives(Primitives):
                     self.scene.sync()
                     raise ExecutionError("Carried arm/tool route blocked during contact retreat")
             self.scene.sync()
-            if not self.motion.drive(
-                path=retreat_path, grip=1.0, max_ticks=80, arm=retreat_arm
-            ):
+            if not self.motion.drive(path=retreat_path, grip=1.0, max_ticks=80, arm=retreat_arm):
                 raise ExecutionError("Checked contact retreat did not converge")
             self.require_handle(phase="contact retreat")
             if not self.wiper_loaded_by_cube():
@@ -879,6 +901,9 @@ class FloorPrimitives(Primitives):
 
 class FloorPlanningScene(PlanningScene):
     max_tool_tilt: float = 1.1
+    capture_path_rejections: bool = False
+    _last_path_rejection: dict[str, Any] | None = PrivateAttr(default=None)
+    _last_collision_rejection: dict[str, Any] | None = PrivateAttr(default=None)
     _native_chassis: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _distance_data: Any = PrivateAttr(default=None)
 
@@ -951,6 +976,25 @@ class FloorPlanningScene(PlanningScene):
         ]
         return [float(value) for value in arm[:7]] + actual
 
+    def collision_pair_detail(self, *, contact: Any) -> dict[str, Any]:
+        """Describe an already queried Bullet pair without changing planning state."""
+        import pybullet
+
+        labels = {body: name for name, body in self._sim._static_colliders.items()}
+        labels.update({body: f"native_chassis_{geom}" for geom, body in self._native_chassis})
+        labels[self.robot.robot_id] = "robot"
+        labels[self.wiper_body] = "wiper"
+        detail: dict[str, Any] = {"distance": float(contact[8])}
+        for side, body, link in (("a", contact[1], contact[3]), ("b", contact[2], contact[4])):
+            detail[f"body_{side}"] = int(body)
+            detail[f"name_{side}"] = labels.get(body, str(body))
+            detail[f"link_{side}"] = int(link)
+            if body == self.robot.robot_id and link >= 0:
+                detail[f"link_name_{side}"] = pybullet.getJointInfo(
+                    body, link, physicsClientId=self.cid
+                )[12].decode()
+        return detail
+
     def in_collision(
         self,
         *,
@@ -962,6 +1006,8 @@ class FloorPlanningScene(PlanningScene):
     ) -> bool:
         import pybullet
 
+        if self.capture_path_rejections:
+            self._last_collision_rejection = None
         chassis_bodies = {body for _, body in self._native_chassis} & bodies
         arm = np.asarray(joints[:7])
         # Collision geometry of an observed physical pose is separate from
@@ -992,6 +1038,44 @@ class FloorPlanningScene(PlanningScene):
                 margin=margin,
             )
         if blocked:
+            if self.capture_path_rejections:
+                pairs = []
+                for first, second in self.robot.self_collision_link_ids:
+                    pairs.extend(
+                        pybullet.getClosestPoints(
+                            self.robot.robot_id,
+                            self.robot.robot_id,
+                            distance=margin,
+                            linkIndexA=first,
+                            linkIndexB=second,
+                            physicsClientId=self.cid,
+                        )
+                    )
+                for body in bodies - chassis_bodies:
+                    pairs.extend(
+                        pybullet.getClosestPoints(
+                            self.robot.robot_id,
+                            body,
+                            distance=margin,
+                            physicsClientId=self.cid,
+                        )
+                    )
+                    if held is not None:
+                        pairs.extend(
+                            pybullet.getClosestPoints(
+                                held,
+                                body,
+                                distance=margin,
+                                physicsClientId=self.cid,
+                            )
+                        )
+                self._last_collision_rejection = {
+                    "planning_joints": np.asarray(joints).tolist(),
+                    "reason": "upstream",
+                    "within_arm_limits": self.within_arm_limits(arm=arm),
+                    "observed_roundoff": bool(measured_roundoff),
+                    "pairs": [self.collision_pair_detail(contact=pair) for pair in pairs],
+                }
             return True
         for body in chassis_bodies:
             contacts = pybullet.getClosestPoints(
@@ -1008,16 +1092,39 @@ class FloorPlanningScene(PlanningScene):
                         11
                     ]
                 ) + float(pybullet.getDynamicsInfo(body, -1, physicsClientId=self.cid)[11])
+                native_distance = None
                 if contact[8] >= -padding - 1e-5:
                     native_distance = self.native_chassis_distance(
                         link=link, chassis_geom=chassis_geom, joints=joints
                     )
                     if native_distance is not None and native_distance > margin:
                         continue
+                if self.capture_path_rejections:
+                    if native_distance is None:
+                        native_distance = self.native_chassis_distance(
+                            link=link, chassis_geom=chassis_geom, joints=joints
+                        )
+                    self._last_collision_rejection = {
+                        "planning_joints": np.asarray(joints).tolist(),
+                        "reason": "arm_chassis",
+                        "pair": self.collision_pair_detail(contact=contact),
+                        "chassis_geom": int(chassis_geom),
+                        "padding": padding,
+                        "native_distance": native_distance,
+                    }
                 return True
-            if held is not None and pybullet.getClosestPoints(
-                held, body, distance=margin, physicsClientId=self.cid
-            ):
+            held_contacts = (
+                pybullet.getClosestPoints(held, body, distance=margin, physicsClientId=self.cid)
+                if held is not None
+                else ()
+            )
+            if held_contacts:
+                if self.capture_path_rejections:
+                    self._last_collision_rejection = {
+                        "planning_joints": np.asarray(joints).tolist(),
+                        "reason": "held_chassis",
+                        "pair": self.collision_pair_detail(contact=held_contacts[0]),
+                    }
                 return True
         if held is None:
             return False
@@ -1025,7 +1132,16 @@ class FloorPlanningScene(PlanningScene):
         contacts = pybullet.getClosestPoints(
             held, self.robot.robot_id, distance=0.01, physicsClientId=self.cid
         )
-        return any(contact[4] <= 10 and contact[8] < 0.005 for contact in contacts)
+        for contact in contacts:
+            if contact[4] <= 10 and contact[8] < 0.005:
+                if self.capture_path_rejections:
+                    self._last_collision_rejection = {
+                        "planning_joints": np.asarray(joints).tolist(),
+                        "reason": "held_arm",
+                        "pair": self.collision_pair_detail(contact=contact),
+                    }
+                return True
+        return False
 
     def native_chassis_distance(self, *, link: int, chassis_geom: int, joints: Any) -> float | None:
         """Refine mesh-padding overlaps against exact native geometry without physical mutation."""
@@ -1342,8 +1458,10 @@ class FloorPlanningScene(PlanningScene):
         from pybullet_helpers.geometry import multiply_poses
         from scipy.spatial.transform import Rotation
 
+        if self.capture_path_rejections:
+            self._last_path_rejection = None
         previous = np.asarray(start)
-        for waypoint in path:
+        for waypoint_index, waypoint in enumerate(path):
             waypoint = previous + ArmMath.wrap(delta=waypoint - previous)
             steps = max(1, int(np.ceil(np.max(np.abs(waypoint - previous)) / 0.05)))
             for fraction in np.linspace(0, 1, steps + 1):
@@ -1358,6 +1476,18 @@ class FloorPlanningScene(PlanningScene):
                     held=held,
                     held_tf=held_tf,
                 ):
+                    if self.capture_path_rejections:
+                        self._last_path_rejection = {
+                            "waypoint_index": waypoint_index,
+                            "fraction": float(fraction),
+                            "tilt": float(tilt),
+                            "allowed_tilt": float(allowed_tilt),
+                            "joints": joints.tolist(),
+                            "reason": "tilt" if tilt > allowed_tilt else "collision",
+                            "collision": (
+                                None if tilt > allowed_tilt else self._last_collision_rejection
+                            ),
+                        }
                     return False
             previous = waypoint
         return True
