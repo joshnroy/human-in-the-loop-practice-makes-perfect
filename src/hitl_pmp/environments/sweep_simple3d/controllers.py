@@ -18,6 +18,7 @@ class FloorPrimitives(Primitives):
     scene: "FloorPlanningScene"
     narrow_contact: bool = False
     stand_ahead: bool = False
+    native_contact_guard: bool = False
     contact_stroke_length: float = 0.10
     contact_step: float = 0.003
     floor_clearance: float = Field(default=0.001, ge=0.001, le=0.01)
@@ -119,6 +120,27 @@ class FloorPrimitives(Primitives):
             wiper=self.session.position(name="wiper_0"),
         ):
             raise ExecutionError(f"Physical bilateral handle grasp lost during {phase}")
+
+    def handle_nonpad_gripper_contacts(self) -> list[str]:
+        """Observe handle wedging against robot parts outside the two intended pads."""
+        import mujoco
+
+        model, data = self.session.mj_model, self.session.mj_data
+        handle, _ = self.wiper_handle_geometry()
+        bodies = set()
+        for contact in data.contact[: data.ncon]:
+            if contact.geom1 == handle:
+                other = contact.geom2
+            elif contact.geom2 == handle:
+                other = contact.geom1
+            else:
+                continue
+            name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[other])
+            if name and name.startswith("robot_") and name not in {
+                "robot_left_pad", "robot_right_pad"
+            }:
+                bodies.add(name)
+        return sorted(bodies)
 
     def stances(self, *, target: np.ndarray, where: str) -> list[tuple[float, float, float]]:
         del where
@@ -574,11 +596,21 @@ class FloorPrimitives(Primitives):
                 Rotation.from_quat(observed_grasp.orientation)
                 * Rotation.from_quat(contact_grasp.orientation).inv()
             ).magnitude())
-            if grasp_translation > 0.01 or grasp_rotation > 0.06:
+            unexpected_contacts = self.handle_nonpad_gripper_contacts()
+            unload = (
+                bool(unexpected_contacts) if self.native_contact_guard
+                else grasp_translation > 0.01 or grasp_rotation > 0.06
+            )
+            if unload:
                 self.session._write(record={
                     "kind": "contact_stroke_ended",
                     "t": self.session.ticks,
-                    "reason": "loaded grasp drift; unload before further correction",
+                    "reason": (
+                        "native handle contact outside finger pads; unload"
+                        if self.native_contact_guard
+                        else "loaded grasp drift; unload before further correction"
+                    ),
+                    "unexpected_handle_contacts": unexpected_contacts,
                     "grasp_translation_m": grasp_translation,
                     "grasp_rotation_rad": grasp_rotation,
                 })

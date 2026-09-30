@@ -38,6 +38,7 @@ class PickupProbe:
         parser.add_argument("--floor-clearance", type=float, default=0.001)
         parser.add_argument("--narrow-contact", action="store_true")
         parser.add_argument("--stand-ahead", action="store_true")
+        parser.add_argument("--native-contact-guard", action="store_true")
         resume = parser.add_mutually_exclusive_group()
         resume.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
@@ -122,6 +123,7 @@ class PickupProbe:
         primitive.floor_clearance = args.floor_clearance
         primitive.narrow_contact = args.narrow_contact
         primitive.stand_ahead = args.stand_ahead
+        primitive.native_contact_guard = args.native_contact_guard
         if args.grasp_mode == "blade":
             import mujoco
             import numpy as np
