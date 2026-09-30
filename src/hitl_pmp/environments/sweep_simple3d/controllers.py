@@ -785,6 +785,7 @@ class FloorPrimitives(Primitives):
                 break
             next_xy = base_origin + progress * direction
             target_base = (float(next_xy[0]), float(next_xy[1]), stance_angle)
+            contact_arm = self.valid_contact_hold(cached=contact_arm)
             # Replan against observed moving cubes rather than their stale pre-sweep poses.
             base_path = self.scene.plan_base(target=target_base)
             if base_path is None:
@@ -1189,6 +1190,22 @@ class FloorPrimitives(Primitives):
             raise ExecutionError(
                 "Checked unloaded leveling exhausted four-turn tilt recovery budget"
             )
+
+    def valid_contact_hold(self, *, cached: np.ndarray) -> np.ndarray:
+        """Replace only an invalid stale hold with an exactly valid observed arm."""
+        if self.scene.within_arm_limits(arm=cached):
+            return cached
+        observed = self.session.arm().copy()
+        valid = self.scene.within_arm_limits(arm=observed)
+        self.session._write(record={
+            "kind": "contact_hold_limit_refresh", "t": self.session.ticks,
+            "cached_arm": cached.tolist(), "observed_arm": observed.tolist(),
+            "observed_within_native_limits": bool(valid),
+            "reason": "cached_hold_outside_native_joint_limits",
+        })
+        if not valid:
+            raise ExecutionError("Cached and observed contact arms violate native joint limits")
+        return observed
 
     @staticmethod
     def leveling_tick_budget(*, path_waypoints: int) -> int:
