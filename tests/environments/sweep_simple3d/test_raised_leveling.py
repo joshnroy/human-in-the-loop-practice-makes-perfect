@@ -7,12 +7,13 @@ import numpy as np
 import pytest
 
 from hitl_pmp.environments.sweep_drawer3d.motion import Motion
-from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
+from hitl_pmp.environments.sweep_simple3d.controllers import FloorPlanningScene, FloorPrimitives
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 
+@pytest.mark.parametrize("candidate_mode", ["native", "low_then_safe", "all_low"])
 def test_recorded_unloaded_pose_uses_raised_checked_path_but_requires_physical_progress(
-    *, monkeypatch: pytest.MonkeyPatch,
+    *, monkeypatch: pytest.MonkeyPatch, candidate_mode: str,
 ) -> None:
     fixture = json.loads(Path(__file__).with_name("raised_leveling_fixture.json").read_text())
     session = SweepSimpleSession(seed=0)
@@ -39,12 +40,36 @@ def test_recorded_unloaded_pose_uses_raised_checked_path_but_requires_physical_p
             return False  # No physics executed: never manufacture a successful correction.
 
         monkeypatch.setattr(Motion, "follow", follow)
+        if candidate_mode != "native":
+            calls = []
+
+            def descent(self, **kwargs):  # noqa: PLR0917 -- instance-method replacement
+                del self
+                calls.append(kwargs)
+                end = np.zeros(7)
+                # v249 had only .001908 rad of native elbow reserve.
+                end[1] = 2.238092 if candidate_mode == "all_low" or len(calls) < 4 else 2.20
+                return [kwargs["start"], end]
+
+            monkeypatch.setattr(FloorPlanningScene, "floor_descent", descent)
         qpos = session.mj_data.qpos.copy()
         assert not primitive.wiper_loaded_by_cube()
         assert not primitive.level_blade(bodies=primitive.scene.bodies())
         candidates = [r for r in records if r["kind"] == "blade_leveling_candidate"]
-        assert [(r["turn"], r["lift"], r["path_found"]) for r in candidates] == [
-            (.08, 0., False), (.04, 0., False), (.02, 0., False), (.02, .01, True)]
+        if candidate_mode == "all_low":
+            assert len(candidates) == 5
+            assert not executions
+            assert all(not r["joint_reserve_ok"] for r in candidates)
+            np.testing.assert_array_equal(session.mj_data.qpos, qpos)
+            return
+        assert [(r["turn"], r["lift"]) for r in candidates] == [
+            (.08, 0.), (.04, 0.), (.02, 0.), (.04, .02)]
+        assert all(not r["joint_reserve_ok"] for r in candidates[:3])
+        assert candidates[-1]["joint_reserve_ok"]
+        if candidate_mode == "low_then_safe":
+            assert all(r["path_found"] for r in candidates)
+            assert candidates[0]["endpoint_native_joint_margin"] == pytest.approx(.001908)
+
         assert len(executions) == 1
         execution = executions[0]
         assert execution["tol"] == execution["final_tol"] == .005

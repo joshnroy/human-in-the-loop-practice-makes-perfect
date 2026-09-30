@@ -1317,7 +1317,7 @@ class FloorPrimitives(Primitives):
         # Preserve support-pivot attempts first. An unloaded low grasp can
         # require a small lift to keep the elbow inside its native joint limit.
         for turn, lift in ((0.08, 0.0), (0.04, 0.0), (0.02, 0.0),
-                           (0.02, 0.01), (0.04, 0.02)):
+                           (0.04, 0.02), (0.02, 0.01)):
             rotation = Rotation.from_rotvec(delta * min(1.0, turn / angle)) * observed
             position = world[support] - rotation.apply(local[support])
             corners = rotation.apply(local) + position
@@ -1328,6 +1328,12 @@ class FloorPrimitives(Primitives):
             path = self.scene.floor_descent(
                 start=self.session.arm(), target=target, bodies=bodies, held_tf=held_tf
             )
+            endpoint_margin = (
+                FloorApproachPreference.native_margin(
+                    arm=path[-1], limits=self.scene._arm_limits
+                ) if path else None
+            )
+            reserve_ok = endpoint_margin is not None and endpoint_margin >= 0.01
             before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
             self.session._write(
                 record={
@@ -1337,13 +1343,16 @@ class FloorPrimitives(Primitives):
                     "lift": lift,
                     "before_tilt": before_tilt,
                     "path_found": path is not None,
+                    "endpoint_native_joint_margin": endpoint_margin,
+                    "required_joint_reserve": 0.01,
+                    "joint_reserve_ok": reserve_ok,
                     "path_waypoints": None if path is None else len(path),
                     "goal_arm": None if not path else np.asarray(path[-1]).tolist(),
                     "target_tool_position": position.tolist(),
                     "target_tool_orientation": rotation.as_quat().tolist(),
                 }
             )
-            if path is None:
+            if not path or not reserve_ok:
                 continue
             converged = None
             execution_error = None
