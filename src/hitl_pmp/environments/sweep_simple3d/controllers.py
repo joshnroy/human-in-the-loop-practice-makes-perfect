@@ -85,6 +85,36 @@ class FloorPrimitives(Primitives):
             # checker and remains a failure if that checked route is unavailable.
             raise ContactTiltLimit
 
+    def wiper_pickup_descent_clear(self, *, start: np.ndarray, path: list[np.ndarray]) -> bool:
+        """Allow pad contact only; a fallen blade must not collide with finger links."""
+        from hitl_pmp.environments.sweep_simple3d.native_palm import NativePalmClearance
+
+        if self.scene._native_palm is None:
+            self.scene._native_palm = NativePalmClearance(
+                model=self.session.mj_model, live_data=self.session.mj_data
+            )
+        tool = Pose(tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"))
+        previous = np.asarray(start)
+        for waypoint in path:
+            waypoint = previous + ArmMath.wrap(delta=np.asarray(waypoint) - previous)
+            steps = max(1, int(np.ceil(np.max(np.abs(waypoint - previous)) / 0.05)))
+            for fraction in np.linspace(0.0, 1.0, steps + 1):
+                arm = previous + fraction * (waypoint - previous)
+                contacts = self.scene._native_palm.nonpad_tool_contacts(
+                    joints=self.scene.planning_fingers(arm=arm, state=0.0),
+                    tool_pose=tool, base=self.scene._planning_base,
+                )
+                if contacts:
+                    self.session._write(record={
+                        "kind": "pickup_nonpad_path_rejection", "t": self.session.ticks,
+                        "fraction": float(fraction), "arm": arm.tolist(),
+                        "base": list(self.scene._planning_base), "contacts": contacts,
+                    })
+                    return False
+            previous = waypoint
+        return True
+
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         # A low cross-handle grasp shortens the contact-force lever arm.
         return (-0.09,)

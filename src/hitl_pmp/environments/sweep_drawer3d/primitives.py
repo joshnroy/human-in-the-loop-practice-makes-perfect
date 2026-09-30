@@ -616,6 +616,10 @@ class Primitives(BaseModel):
         del along, approach
         return hover, target
 
+    def wiper_pickup_descent_clear(self, *, start: np.ndarray, path: list[np.ndarray]) -> bool:
+        """Environment-specific pickup geometry validation; shared behavior unchanged."""
+        return True
+
     def recover_wiper(self) -> str:
         """Grasp the observed handle and verify that it follows a physical lift."""
         from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
@@ -674,7 +678,9 @@ class Primitives(BaseModel):
                             bodies=bodies,
                             max_jump=0.6,
                         )
-                        if down is None:
+                        if down is None or not self.wiper_pickup_descent_clear(
+                            start=q_h, path=down
+                        ):
                             continue
                         reach = self.scene.plan_arm(
                             goal=q_h,
@@ -705,6 +711,10 @@ class Primitives(BaseModel):
                     if redo is None:
                         raise ExecutionError("wiper pickup unavailable at actual base pose")
                     reach, down = redo
+                    if not self.wiper_pickup_descent_clear(
+                        start=np.asarray(reach[-1]), path=down
+                    ):
+                        raise ExecutionError("Native non-pad/tool collision blocks pickup descent")
                     if not self.motion.follow(path=reach, grip=0.0):
                         raise ExecutionError("wiper pickup approach did not converge")
                     if not self.motion.follow(path=down, grip=0.0, final_tol=0.006):
