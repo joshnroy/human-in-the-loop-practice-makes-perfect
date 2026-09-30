@@ -1797,6 +1797,7 @@ class FloorPlanningScene(PlanningScene):
     _distance_data: Any = PrivateAttr(default=None)
     _native_tool_corners: Any = PrivateAttr(default=None)
     _native_palm: Any = PrivateAttr(default=None)
+    _native_base_clearance: Any = PrivateAttr(default=None)
     _planning_base: tuple[float, float, float] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
@@ -2523,6 +2524,22 @@ class FloorPlanningScene(PlanningScene):
         )
         from spatialmath import SE2
 
+        from .native_chassis import NativeChassisClearance
+
+        if self._native_base_clearance is None:
+            self._native_base_clearance = NativeChassisClearance(
+                model=self.session.mj_model, live_data=self.session.mj_data
+            )
+        held_wiper = (self.session.gripper() > 0.2
+                      and FloorGrip.has_bilateral_contact(session=self.session))
+        rejection = self._native_base_clearance.first_route_rejection(
+            path=[target], held_wiper=held_wiper
+        )
+        if rejection is not None:
+            self.session._write(record={"kind": "native_chassis_route_rejected",
+                                        "t": self.session.ticks, "detail": rejection})
+            return None
+
         state = self.session.state
         if start is not None:
             from kinder_models.dynamic3d.utils import MujocoTidyBotRobotObjectType
@@ -2541,14 +2558,21 @@ class FloorPlanningScene(PlanningScene):
             seed=0,
             disable_collision_objects=(
                 ["wiper_0"]
-                if self.session.gripper() > 0.2
-                and FloorGrip.has_bilateral_contact(session=self.session)
+                if held_wiper
                 else []
             ),
         )
         if path is None:
             return None
-        return [(float(p.x), float(p.y), float(p.theta())) for p in path]
+        result = [(float(p.x), float(p.y), float(p.theta())) for p in path]
+        rejection = self._native_base_clearance.first_route_rejection(
+            path=result, held_wiper=held_wiper
+        )
+        if rejection is not None:
+            self.session._write(record={"kind": "native_chassis_route_rejected",
+                                        "t": self.session.ticks, "detail": rejection})
+            return None
+        return result
 
 
 class FloorGrip:
