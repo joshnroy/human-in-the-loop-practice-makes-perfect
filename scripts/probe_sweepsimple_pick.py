@@ -19,11 +19,16 @@ class PickupProbe:
         parser.add_argument("--sweep-distance", type=float, default=0.55)
         parser.add_argument("--sweep-angle", type=float, default=0.0)
         parser.add_argument("--pick-only", action="store_true")
+        parser.add_argument(
+            "--full-cycle",
+            action="store_true",
+            help="Check all native goals, individual reverse sweeps, and existing return skills.",
+        )
         parser.add_argument("--grasp-offset", type=float)
         parser.add_argument("--grasp-height", type=float, default=0.0)
         parser.add_argument("--grasp-mode", choices=("handle", "blade"), default="handle")
         parser.add_argument("--tilt-limit", type=float, default=1.1)
-        parser.add_argument("--stroke-length", type=float, default=0.132)
+        parser.add_argument("--stroke-length", type=float, default=0.10)
         parser.add_argument("--contact-step", type=float, default=0.003)
         parser.add_argument("--narrow-contact", action="store_true")
         parser.add_argument(
@@ -31,6 +36,8 @@ class PickupProbe:
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         args = parser.parse_args()
+        if args.full_cycle and args.pick_only:
+            parser.error("--full-cycle cannot be combined with --pick-only")
         import faulthandler
 
         faulthandler.dump_traceback_later(120, repeat=True)
@@ -64,6 +71,7 @@ class PickupProbe:
         session = SweepSimpleSession(
             seed=args.seed, log_path=output / "state.jsonl", replay_path=output / "replay.jsonl"
         )
+        initial_state = session.state.copy()
         if args.resume_pick:
             PickupProbe.restore_pick(
                 session=session, source=root / "scratchpad/sweepsimple3d" / args.resume_pick
@@ -113,6 +121,22 @@ class PickupProbe:
         error = ""
         error_traceback = ""
         success = False
+        cycle = {
+            "stages": [],
+            "native_goal_success": None,
+            "start_distribution_shared": None,
+            "start_distribution_strict": None,
+            "wiper_start_support_tolerance_m": 0.01,
+            "end_to_end_native_start": args.resume_pick is None,
+        }
+        if args.full_cycle:
+            cycle["stages"].append({
+                "name": "PickFloorWiper",
+                "cube": None,
+                "success": False,
+                "replayed": args.resume_pick is not None,
+                "tick_start": session.ticks,
+            })
         try:
             note = (
                 "Recorded picked-state continuation; not an end-to-end native-start trial"
@@ -120,6 +144,8 @@ class PickupProbe:
                 else primitive.recover_wiper()
             )
             primitive.require_handle(phase="verified pickup or recorded continuation")
+            if args.full_cycle:
+                cycle["stages"][-1].update(success=True, tick_end=session.ticks, note=note)
             import mujoco
 
             contacts = []
@@ -144,12 +170,42 @@ class PickupProbe:
             if not args.pick_only:
                 session.end(success=True, note=note)
                 session.begin(name="SweepCubeToGoal", kind="SweepCubeToGoal", phase="feasibility")
+                if args.full_cycle:
+                    cycle["stages"].append({
+                        "name": "SweepCubeToGoal",
+                        "cube": "cube_0",
+                        "success": False,
+                        "tick_start": session.ticks,
+                    })
                 note = primitive.sweep_cube(
                     cube="cube_0",
                     region="sweep_region",
                     distance=args.sweep_distance,
                     heading_offset=args.sweep_angle,
                 )
+                if args.full_cycle:
+                    from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
+
+                    attained = SimpleRegions.contains(
+                        session=session, name="cube_0", region="sweep_region"
+                    )
+                    cycle["stages"][-1].update(
+                        success=attained,
+                        tick_end=session.ticks,
+                        note=note,
+                        native_counts=PickupProbe.native_counts(session=session),
+                    )
+                    if not attained:
+                        raise RuntimeError("Selected cube sweep did not attain its native goal")
+                    session.end(success=True, note=note)
+                    PickupProbe.full_cycle(
+                        session=session,
+                        primitive=primitive,
+                        initial_state=initial_state,
+                        args=args,
+                        report=cycle,
+                    )
+                    note = "All native cube goals and the shared validated start contract attained"
             success = True
         except Exception as exc:
             import traceback
@@ -158,8 +214,11 @@ class PickupProbe:
             error_traceback = traceback.format_exc()
             print(error_traceback, flush=True)
             note = error
+            if args.full_cycle and cycle["stages"] and not cycle["stages"][-1]["success"]:
+                cycle["stages"][-1].update(error=error, tick_end=session.ticks)
         finally:
-            session.end(success=success, note=note)
+            if session._current is not None:
+                session.end(success=success, note=note)
             result = {
                 "success": success,
                 "end_to_end_native_start": args.resume_pick is None,
@@ -191,11 +250,150 @@ class PickupProbe:
                     )
                 ],
             }
+            if args.full_cycle:
+                cycle["final_native_counts"] = PickupProbe.native_counts(session=session)
+                cycle["stages_succeeded"] = sum(bool(s["success"]) for s in cycle["stages"])
+                cycle["stages_attempted"] = len(cycle["stages"])
+                cycle["robot_actions_executed"] = sum(
+                    not stage.get("skipped", False) and not stage.get("replayed", False)
+                    for stage in cycle["stages"]
+                    if not stage["name"].startswith("Validate")
+                )
+                result["full_cycle"] = cycle
             (output / "result.json").write_text(json.dumps(result, indent=2))
             print(json.dumps(result), flush=True)
             primitive.scene._sim.close()
             session.close()
             faulthandler.cancel_dump_traceback_later()
+
+    @staticmethod
+    def native_counts(*, session) -> dict[str, int]:
+        from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
+
+        return {
+            region: sum(
+                SimpleRegions.contains(session=session, name=f"cube_{i}", region=region)
+                for i in range(5)
+            )
+            for region in ("sweep_region", "blocks_init_region")
+        }
+
+    @staticmethod
+    def full_cycle(*, session, primitive, initial_state, args, report) -> None:
+        """Compose existing skills on the live session; no restoration or hidden pickup."""
+        from hitl_pmp.environments.sweep_simple3d.environment import SweepSimpleEnvironment
+        from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
+        from hitl_pmp.environments.sweep_simple3d.symbolic import SimpleSymbols
+
+        env = SweepSimpleEnvironment(canonical_seed=session.seed)
+        env._session, env._primitive, env._initial_state = session, primitive, initial_state
+        env.current_state = env.observe()
+        for i in range(1, 5):
+            PickupProbe.cycle_action(
+                env=env,
+                name="SweepCubeToGoal",
+                cube=i,
+                report=report,
+                params=(args.sweep_distance, args.sweep_angle),
+                already_satisfied=SimpleRegions.contains(
+                    session=session, name=f"cube_{i}", region="sweep_region"
+                ),
+            )
+        core = session.env.unwrapped._object_centric_env
+        report["native_goal_success"] = bool(core._check_goals())
+        report["forward_native_counts"] = PickupProbe.native_counts(session=session)
+        report["stages"].append({
+            "name": "ValidateNativeGoal",
+            "cube": None,
+            "success": report["native_goal_success"],
+            "tick_start": session.ticks,
+            "tick_end": session.ticks,
+            "native_counts": report["forward_native_counts"],
+        })
+        if not report["native_goal_success"]:
+            raise RuntimeError("All-cube native goal check failed before recovery")
+        for i in range(5):
+            PickupProbe.cycle_action(
+                env=env,
+                name="SweepCubeToStart",
+                cube=i,
+                report=report,
+                already_satisfied=SimpleRegions.contains(
+                    session=session, name=f"cube_{i}", region="blocks_init_region"
+                ),
+            )
+        for name, fact in (("PlaceWiperAtStart", "WiperHome"), ("ReturnRobotToStart", "RobotHome")):
+            PickupProbe.cycle_action(
+                env=env,
+                name=name,
+                cube=-1,
+                report=report,
+                already_satisfied=bool(
+                    env.get_current_state().get(obj=SimpleSymbols.SCENE, feature_name=fact)
+                    and env.get_current_state().get(
+                        obj=SimpleSymbols.SCENE, feature_name="HandEmpty"
+                    )
+                ),
+            )
+        validation = SimpleRegions.validate(session=session)
+        strict = dict(validation.checks)
+        for _, name, region in core.task_config["initial_state"]:
+            strict[name + ":region"] = SimpleRegions.contains(
+                session=session, name=name, region=region, support_tolerance=0.0
+            )
+        hand_empty = bool(
+            env.get_current_state().get(obj=SimpleSymbols.SCENE, feature_name="HandEmpty")
+        )
+        report["start_validation"] = validation.model_dump()
+        report["strict_start_checks"] = strict
+        report["start_distribution_shared"] = validation.valid
+        report["start_distribution_strict"] = all(strict.values())
+        report["hand_empty_after_return"] = hand_empty
+        stage = {
+            "name": "ValidateStartDistribution",
+            "cube": None,
+            "success": bool(validation.valid and hand_empty),
+            "tick_start": session.ticks,
+            "tick_end": session.ticks,
+            "native_counts": PickupProbe.native_counts(session=session),
+        }
+        report["stages"].append(stage)
+        if not stage["success"]:
+            raise RuntimeError("Robot recovery failed the existing shared validated start contract")
+
+    @staticmethod
+    def cycle_action(
+        *, env, name, cube, report, already_satisfied=False, params=(0.0, 0.0)
+    ) -> None:
+        import numpy as np
+
+        session = env.session()
+        stage = {
+            "name": name,
+            "cube": None if cube < 0 else f"cube_{cube}",
+            "success": False,
+            "skipped": already_satisfied,
+            "tick_start": session.ticks,
+        }
+        report["stages"].append(stage)
+        try:
+            if not already_satisfied:
+                env.take_action(
+                    action=np.array([env.ACTION_NAMES.index(name), cube, *params], dtype=float)
+                )
+                observed = session._steps[-1]
+                stage.update(success=bool(observed.success), note=observed.note)
+                if not observed.success or observed.note:
+                    stage["success"] = False
+                    raise RuntimeError(f"{name}({cube}) failed: {observed.note}")
+            else:
+                stage.update(
+                    success=True, note="Native target already satisfied; no action executed"
+                )
+        finally:
+            stage.update(
+                tick_end=session.ticks, native_counts=PickupProbe.native_counts(session=session)
+            )
 
     @staticmethod
     def restore_pick(*, session, source: Path) -> None:
