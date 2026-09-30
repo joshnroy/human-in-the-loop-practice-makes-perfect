@@ -46,6 +46,7 @@ def test_production_skips_every_controller_override(*, probe) -> None:
     "--stroke-length=.1", "--contact-step=.003", "--floor-clearance=.001",
     "--narrow-contact", "--center-selected-cube", "--stand-ahead", "--native-contact-guard",
     "--retain-pickup-carry-pose",
+    "--grasp-face-seeded",
 ])
 def test_explicit_diagnostic_options_are_rejected_even_at_default(*, probe, flag: str) -> None:
     with pytest.raises(SystemExit) as error:
@@ -75,6 +76,32 @@ def test_deeper_insertion_diagnostic_parses_without_starting_physics(
     with pytest.raises(SystemExit):
         probe.run()
     assert "--cube-order must contain every native cube" in capsys.readouterr().err
+
+
+def test_face_seed_reads_native_cross_section_not_vertical_handle_axis(
+    *, probe, monkeypatch
+) -> None:
+    import numpy as np
+
+    from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
+
+    original = FloorPrimitives.wiper_grasp_yaw
+    monkeypatch.setattr(FloorPrimitives, "wiper_grasp_yaw", original)
+    args = SimpleNamespace(
+        production_controller=False, tilt_limit=1.1, stroke_length=.1, contact_step=.003,
+        floor_clearance=.005, narrow_contact=False, center_selected_cube=False,
+        stand_ahead=True, native_contact_guard=True, retain_pickup_carry_pose=True,
+        grasp_insertion_offset=.020, grasp_mode="handle", grasp_yaw_offset=0,
+        grasp_face_seeded=True, grasp_height=0, grasp_approach_angle=None, grasp_offset=None,
+    )
+    fake = SimpleNamespace(scene=SimpleNamespace())
+    probe.configure_controller(primitive=fake, args=args)
+    angle = .6
+    matrix = np.array([[np.cos(angle), -np.sin(angle), 0],
+                       [np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+    fake.session = SimpleNamespace(mj_data=SimpleNamespace(geom_xmat=matrix.reshape(1, 9)))
+    fake.wiper_handle_geometry = lambda: (0, 2)
+    assert FloorPrimitives.wiper_grasp_yaw(fake, axis=np.array([0, 0, 1])) == pytest.approx(angle)
 
 
 @pytest.mark.parametrize("success,note", [

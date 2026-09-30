@@ -61,8 +61,14 @@ class PickupProbe:
             help="Failed probe final-state tag; development replay, excluded from readiness",
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
+        parser.add_argument(
+            "--grasp-face-seeded", action="store_true",
+            help="Seed existing grasp azimuth search from the native handle cross-section x axis.",
+        )
         args = parser.parse_args()
         PickupProbe.validate_controller_mode(args=args, argv=sys.argv[1:], parser=parser)
+        if args.grasp_face_seeded and (args.grasp_yaw_offset or args.grasp_mode != "handle"):
+            parser.error("--grasp-face-seeded requires handle mode and no grasp yaw offset")
         if sorted(args.cube_order) != list(range(5)):
             parser.error("--cube-order must contain every native cube index exactly once")
         if args.full_cycle and args.pick_only:
@@ -337,6 +343,7 @@ class PickupProbe:
             "--stroke-length", "--contact-step", "--floor-clearance", "--narrow-contact",
             "--center-selected-cube", "--stand-ahead", "--native-contact-guard",
             "--retain-pickup-carry-pose",
+            "--grasp-face-seeded",
         }
         conflicts = sorted({token.split("=", 1)[0] for token in argv} & diagnostic)
         if conflicts:
@@ -387,6 +394,16 @@ class PickupProbe:
             FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: (
                 original_yaw(self, axis=axis) + args.grasp_yaw_offset
             )
+        if args.grasp_face_seeded:
+            def native_face_yaw(self, *, axis):  # noqa: PLR0917 -- bound diagnostic callback
+                import numpy as np
+
+                del axis
+                handle, _ = self.wiper_handle_geometry()
+                axes = self.session.mj_data.geom_xmat[handle].reshape(3, 3)
+                return float(np.arctan2(axes[1, 0], axes[0, 0]))
+
+            FloorPrimitives.wiper_grasp_yaw = native_face_yaw
         if args.grasp_height:
             import numpy as np
 
