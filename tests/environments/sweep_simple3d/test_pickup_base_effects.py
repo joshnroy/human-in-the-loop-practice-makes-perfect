@@ -42,7 +42,7 @@ def test_pickup_success_depends_on_holding_and_preserves_observed_base(
     skill = next(s for s in SimpleSymbols.skills() if s.name == "PickFloorWiper")
     assert {p.name for p in skill.ignore_effects} == {"RobotHome", "RobotAway"}
     assert {a.predicate.name for a in skill.add_effects} == {"HoldingWiper"}
-    assert not {"RobotHome", "RobotAway"} & {a.predicate.name for a in skill.delete_effects}
+    assert {"RobotHome", "RobotAway"} <= {a.predicate.name for a in skill.delete_effects}
 
 
 @pytest.mark.parametrize("name", ["SweepCubeToGoal", "SweepCubeToStart"])
@@ -79,6 +79,5 @@ def test_sweep_target_outcome_is_independent_of_observed_home_base(
     assert result.get(obj=SimpleSymbols.SCENE, feature_name="RobotAway") == 0.
     skill = next(s for s in SimpleSymbols.skills() if s.name == name)
     assert {p.name for p in skill.ignore_effects} == {"RobotHome", "RobotAway"}
-    assert not {"RobotHome", "RobotAway"} & {
-        a.predicate.name for a in skill.add_effects | skill.delete_effects
-    }
+    assert not {"RobotHome", "RobotAway"} & {a.predicate.name for a in skill.add_effects}
+    assert {"RobotHome", "RobotAway"} <= {a.predicate.name for a in skill.delete_effects}

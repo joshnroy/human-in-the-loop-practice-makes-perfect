@@ -97,13 +97,19 @@ class SimpleSymbols:
             (
                 "ReturnRobotToStart",
                 False,
-                ("HandEmpty", "RobotAway"),
+                ("HandEmpty",),
                 ("RobotHome",),
                 ("RobotAway",),
                 0,
             ),
         )
         for name, cube, pre, add, delete, param_dim in descriptions:
+            unknown_base = name in (*SimpleSymbols.TRAINABLE, "SweepCubeToStart")
+            # PDDL clears ignored predicates, whereas the belief forecast preserves
+            # them unless explicitly deleted. Delete both single-scene base atoms
+            # to encode unknown location consistently; neither opposite is asserted.
+            if unknown_base:
+                delete = (*delete, "RobotHome", "RobotAway")
             result.append(
                 Skill(
                     name=name,
@@ -117,7 +123,7 @@ class SimpleSymbols:
                     # Forget predicted base location; execution observes the actual facts.
                     ignore_effects=frozenset(
                         SIMPLE_PREDICATES[n] for n in ("RobotHome", "RobotAway")
-                    ) if name in (*SimpleSymbols.TRAINABLE, "SweepCubeToStart") else frozenset(),
+                    ) if unknown_base else frozenset(),
                     param_dim=param_dim,
                     practice_cost=costs.get(name, 1.0),
                 )
