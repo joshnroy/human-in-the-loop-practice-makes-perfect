@@ -34,6 +34,8 @@ def main():
         "1" if args.smoke else str(manifest["num_test_tasks"]),
         "--practice-reset-policy",
         "never",
+        "--goal-pursuit-horizon",
+        "0",
         "--no-ees-reset-gate",
         "--human-reset-practice-cost",
         str(arm["human_reset_practice_cost"]),
