@@ -12,8 +12,12 @@ from pathlib import Path
 class PickupProbe:
     @staticmethod
     def run() -> None:
-        parser = argparse.ArgumentParser()
+        parser = argparse.ArgumentParser(allow_abbrev=False)
         parser.add_argument("--tag", required=True)
+        parser.add_argument(
+            "--production-controller", action="store_true",
+            help="Use ordinary controller defaults; reject explicit diagnostic overrides.",
+        )
         parser.add_argument("--seed", type=int, default=0)
         parser.add_argument("--pick-distance", type=float, default=0.7)
         parser.add_argument("--sweep-distance", type=float, default=0.55)
@@ -58,6 +62,7 @@ class PickupProbe:
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         args = parser.parse_args()
+        PickupProbe.validate_controller_mode(args=args, argv=sys.argv[1:], parser=parser)
         if sorted(args.cube_order) != list(range(5)):
             parser.error("--cube-order must contain every native cube index exactly once")
         if args.full_cycle and args.pick_only:
@@ -107,6 +112,13 @@ class PickupProbe:
                 {
                     "arguments": vars(args),
                     "source_sha256": hashes,
+                    "controller_mode": ("production_defaults" if args.production_controller
+                                        else "diagnostic_overrides"),
+                    "initial_dispatch": "direct primitive recover_wiper and first sweep_cube",
+                    "initial_dispatch_limitation": (
+                        "Initial two calls retain probe logging/counts, bypass Environment "
+                        "precondition dispatch; subsequent full-cycle calls use take_action."
+                    ),
                     "resume_phase": resume_phase,
                     "end_to_end_native_start": resume_tag is None,
                 },
@@ -128,53 +140,7 @@ class PickupProbe:
         primitive = FloorPrimitives.create(
             session=session, distance=args.pick_distance, heading_offset=0.0
         )
-        primitive.scene.max_tool_tilt = args.tilt_limit
-        primitive.contact_stroke_length = args.stroke_length
-        primitive.contact_step = args.contact_step
-        primitive.floor_clearance = args.floor_clearance
-        primitive.narrow_contact = args.narrow_contact
-        if args.center_selected_cube:
-            FloorPrimitives.broad_blade_center = staticmethod(
-                lambda *, projections, target: target
-            )
-        primitive.stand_ahead = args.stand_ahead
-        primitive.native_contact_guard = args.native_contact_guard
-        primitive.retain_pickup_carry_pose = args.retain_pickup_carry_pose
-        if args.grasp_insertion_offset is not None:
-            primitive.diagnostic_grasp_standoff = args.grasp_insertion_offset
-        if args.grasp_mode == "blade":
-            import mujoco
-            import numpy as np
-
-            def blade_geometry(self):  # noqa: PLR0917 -- installed as a bound probe method
-                model = self.session.mj_model
-                body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
-                blade = max(
-                    (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
-                    key=lambda g: float(model.geom_size[g][0]),
-                )
-                return blade, 0
-
-            FloorPrimitives.wiper_handle_geometry = blade_geometry
-            FloorPrimitives.wiper_approach_angles = lambda self: (0.0, 0.4, 0.7)
-            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: float(
-                np.arctan2(axis[1], axis[0]) + np.pi / 2
-            )
-        if args.grasp_yaw_offset:
-            original_yaw = FloorPrimitives.wiper_grasp_yaw
-            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: (
-                original_yaw(self, axis=axis) + args.grasp_yaw_offset
-            )
-        if args.grasp_height:
-            import numpy as np
-
-            FloorPrimitives.wiper_grasp_point = lambda self, *, center, axis, along: (
-                center + along * axis + np.array([0.0, 0.0, args.grasp_height])
-            )
-        if args.grasp_approach_angle is not None:
-            FloorPrimitives.wiper_approach_angles = lambda self: (args.grasp_approach_angle,)
-        if args.grasp_offset is not None:
-            FloorPrimitives.wiper_grasp_offsets = lambda self: (args.grasp_offset,)
+        PickupProbe.configure_controller(primitive=primitive, args=args)
         import mujoco
 
         started = time.monotonic()
@@ -343,6 +309,88 @@ class PickupProbe:
             faulthandler.cancel_dump_traceback_later()
 
     @staticmethod
+    def validate_controller_mode(*, args, argv, parser) -> None:
+        """Reject even explicit default-valued overrides in production mode."""
+        if not args.production_controller:
+            return
+        diagnostic = {
+            "--grasp-offset", "--grasp-insertion-offset", "--grasp-approach-angle",
+            "--grasp-height", "--grasp-mode", "--grasp-yaw-offset", "--tilt-limit",
+            "--stroke-length", "--contact-step", "--floor-clearance", "--narrow-contact",
+            "--center-selected-cube", "--stand-ahead", "--native-contact-guard",
+            "--retain-pickup-carry-pose",
+        }
+        conflicts = sorted({token.split("=", 1)[0] for token in argv} & diagnostic)
+        if conflicts:
+            parser.error("--production-controller forbids diagnostic overrides: "
+                         + ", ".join(conflicts))
+
+    @staticmethod
+    def configure_controller(*, primitive, args) -> None:
+        """Production leaves every controller property and class method untouched."""
+        if args.production_controller:
+            return
+        from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
+
+        primitive.scene.max_tool_tilt = args.tilt_limit
+        primitive.contact_stroke_length = args.stroke_length
+        primitive.contact_step = args.contact_step
+        primitive.floor_clearance = args.floor_clearance
+        primitive.narrow_contact = args.narrow_contact
+        if args.center_selected_cube:
+            FloorPrimitives.broad_blade_center = staticmethod(
+                lambda *, projections, target: target
+            )
+        primitive.stand_ahead = args.stand_ahead
+        primitive.native_contact_guard = args.native_contact_guard
+        primitive.retain_pickup_carry_pose = args.retain_pickup_carry_pose
+        if args.grasp_insertion_offset is not None:
+            primitive.diagnostic_grasp_standoff = args.grasp_insertion_offset
+        if args.grasp_mode == "blade":
+            import mujoco
+            import numpy as np
+
+            def blade_geometry(self):  # noqa: PLR0917 -- installed as a bound probe method
+                model = self.session.mj_model
+                body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+                blade = max(
+                    (g for g in range(model.ngeom) if model.geom_bodyid[g] == body),
+                    key=lambda g: float(model.geom_size[g][0]),
+                )
+                return blade, 0
+
+            FloorPrimitives.wiper_handle_geometry = blade_geometry
+            FloorPrimitives.wiper_approach_angles = lambda self: (0.0, 0.4, 0.7)
+            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: float(
+                np.arctan2(axis[1], axis[0]) + np.pi / 2
+            )
+        if args.grasp_yaw_offset:
+            original_yaw = FloorPrimitives.wiper_grasp_yaw
+            FloorPrimitives.wiper_grasp_yaw = lambda self, *, axis: (
+                original_yaw(self, axis=axis) + args.grasp_yaw_offset
+            )
+        if args.grasp_height:
+            import numpy as np
+
+            FloorPrimitives.wiper_grasp_point = lambda self, *, center, axis, along: (
+                center + along * axis + np.array([0.0, 0.0, args.grasp_height])
+            )
+        if args.grasp_approach_angle is not None:
+            FloorPrimitives.wiper_approach_angles = lambda self: (args.grasp_approach_angle,)
+        if args.grasp_offset is not None:
+            FloorPrimitives.wiper_grasp_offsets = lambda self: (args.grasp_offset,)
+
+    @staticmethod
+    def live_environment(*, session, primitive, initial_state):
+        """Attach ordinary action dispatch to this same simulator without resetting."""
+        from hitl_pmp.environments.sweep_simple3d.environment import SweepSimpleEnvironment
+
+        env = SweepSimpleEnvironment(canonical_seed=session.seed)
+        env._session, env._primitive, env._initial_state = session, primitive, initial_state
+        env.current_state = env.observe()
+        return env
+
+    @staticmethod
     def native_counts(*, session) -> dict[str, int]:
         from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
 
@@ -413,13 +461,12 @@ class PickupProbe:
     @staticmethod
     def full_cycle(*, session, primitive, initial_state, args, report) -> None:
         """Compose existing skills on the live session; no restoration or hidden pickup."""
-        from hitl_pmp.environments.sweep_simple3d.environment import SweepSimpleEnvironment
         from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
         from hitl_pmp.environments.sweep_simple3d.symbolic import SimpleSymbols
 
-        env = SweepSimpleEnvironment(canonical_seed=session.seed)
-        env._session, env._primitive, env._initial_state = session, primitive, initial_state
-        env.current_state = env.observe()
+        env = PickupProbe.live_environment(
+            session=session, primitive=primitive, initial_state=initial_state
+        )
         core = session.env.unwrapped._object_centric_env
         if args.forward_budget:
             report["forward_action_budget"] = args.forward_budget
