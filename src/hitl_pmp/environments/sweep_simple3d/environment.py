@@ -199,6 +199,16 @@ class SweepSimpleEnvironment(Environment):
                 path = primitive.scene.plan_arm(
                     goal=initial_arm, bodies=primitive.scene.bodies() | {primitive.scene.wiper_body}
                 )
+                if path is None:
+                    from hitl_pmp.environments.sweep_simple3d.release_recovery import (
+                        separate_released_tool,
+                    )
+
+                    if separate_released_tool(primitive=primitive):
+                        path = primitive.scene.plan_arm(
+                            goal=initial_arm,
+                            bodies=primitive.scene.bodies() | {primitive.scene.wiper_body},
+                        )
                 if path is None or not primitive.motion.follow(path=path, grip=0.0):
                     raise ExecutionError("No collision-free empty-hand return posture")
                 target = tuple(
