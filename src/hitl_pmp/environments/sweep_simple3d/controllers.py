@@ -1147,6 +1147,47 @@ class FloorPrimitives(Primitives):
             - vertical[2] * half[2]
         )
 
+    @staticmethod
+    def transport_route_burden(*, path: list[tuple[float, float, float]]) -> float:
+        """Use the native base planner's translation-plus-wrapped-yaw metric."""
+        delta = np.diff(np.asarray(path), axis=0)
+        return float(np.linalg.norm(delta[:, :2], axis=1).sum()
+                     + np.abs((delta[:, 2] + np.pi) % (2 * np.pi) - np.pi).sum())
+
+    def transport_base_candidates(
+        self, *, target: tuple[float, float, float]
+    ) -> list[tuple[str, list[tuple[float, float, float]]]]:
+        """Retain native fallback and try the aisle above the native goal region."""
+        from kinder_models.dynamic3d.utils import (
+            MujocoTidyBotRobotObjectType,
+            get_bounding_box,
+        )
+
+        result = []
+        direct = self.scene.plan_base(target=target)
+        if direct is not None:
+            result.append(("native", direct))
+        start = self.session.base()
+        core = self.session.env.unwrapped._object_centric_env
+        ranges = core.task_config["regions"]["sweep_region"]["ranges"]
+        robot, = self.session.state.get_objects(MujocoTidyBotRobotObjectType)
+        width, depth, _ = get_bounding_box(self.session.state, robot)
+        # A chassis half-diagonal clears every heading above this region. The
+        # extra 20 mm is the existing base planning clearance, not a goal change.
+        aisle_y = max(start[1], target[1],
+                      max(box[3] for box in ranges) + np.hypot(width, depth) / 2 + 0.02)
+        waypoints = [(start[0], aisle_y, start[2]),
+                     (target[0], aisle_y, target[2]), target]
+        path = [start]
+        for waypoint in waypoints:
+            leg = self.scene.plan_base(target=waypoint, start=path[-1])
+            if leg is None:
+                break
+            path.extend(leg[1:])
+        else:
+            result.append(("upper_aisle", path))
+        return result
+
     def transport_wiper(self, *, target: tuple[float, float, float]) -> None:
         """Reuse native base paths, checking the actual carried arm/tool along each."""
         from pybullet_helpers.geometry import Pose, multiply_poses
@@ -1163,47 +1204,50 @@ class FloorPrimitives(Primitives):
                     self.session.quaternion(name="wiper_0"),
                 ),
             )
-            path = self.scene.plan_base(target=target)
-            if path is None:
-                self.session._write(
-                    record={
-                        "kind": "transport_rejected",
-                        "stowed": stow,
-                        "reason": "native_base_path",
-                        "target": target,
-                    }
-                )
-                continue
-            clear = True
-            for base in path:
-                self.scene.sync(base=base)
-                self.scene.capture_path_rejections = True
-                blocked = self.scene.in_collision(
-                    joints=self.scene.planning_fingers(arm=arm, state=0.5),
-                    bodies=self.scene.bodies(),
-                    held=self.scene.wiper_body,
-                    held_tf=held_tf,
-                )
-                self.scene.capture_path_rejections = False
-                if blocked:
-                    self.session._write(
-                        record={
-                            "kind": "transport_rejected",
-                            "stowed": stow,
-                            "reason": "carried_collision",
-                            "base": base,
-                            "target": target,
-                            "t": self.session.ticks,
-                            "checker": self.scene._last_collision_rejection,
-                            "held_position": list(held_tf.position),
-                            "held_orientation": list(held_tf.orientation),
-                            "native_qpos": self.session.mj_data.qpos.tolist(),
-                        }
+            candidates = self.transport_base_candidates(target=target)
+            safe_paths = []
+            for label, path in candidates:
+                clear = True
+                for base in path:
+                    self.scene.sync(base=base)
+                    self.scene.capture_path_rejections = True
+                    blocked = self.scene.in_collision(
+                        joints=self.scene.planning_fingers(arm=arm, state=0.5),
+                        bodies=self.scene.bodies(),
+                        held=self.scene.wiper_body,
+                        held_tf=held_tf,
                     )
-                    clear = False
-                    break
+                    self.scene.capture_path_rejections = False
+                    if blocked:
+                        self.session._write(
+                            record={
+                                "kind": "transport_rejected",
+                                "stowed": stow,
+                                "reason": "carried_collision",
+                                "base": base,
+                                "target": target,
+                                "t": self.session.ticks,
+                                "checker": self.scene._last_collision_rejection,
+                                "held_position": list(held_tf.position),
+                                "held_orientation": list(held_tf.orientation),
+                                "native_qpos": self.session.mj_data.qpos.tolist(),
+                            }
+                        )
+                        clear = False
+                        break
+                if clear:
+                    safe_paths.append((self.transport_route_burden(path=path), label, path))
             self.scene.sync()
+            clear = bool(safe_paths)
             if clear:
+                burden, label, path = min(safe_paths, key=lambda item: item[0])
+                self.session._write(record={
+                    "kind": "transport_route_selected", "t": self.session.ticks,
+                    "stowed": stow, "route": label, "burden": burden,
+                    "path": path, "target": target,
+                    "held_position": list(held_tf.position),
+                    "held_orientation": list(held_tf.orientation),
+                })
                 if not self.motion.drive(
                     path=path,
                     grip=1.0,
@@ -2061,7 +2105,8 @@ class FloorPlanningScene(PlanningScene):
         return True
 
     def plan_base(
-        self, *, target: tuple[float, float, float], margin: float = 0.02
+        self, *, target: tuple[float, float, float], margin: float = 0.02,
+        start: tuple[float, float, float] | None = None,
     ) -> list[tuple[float, float, float]] | None:
         del margin
         from kinder_models.dynamic3d.utils import (
@@ -2071,8 +2116,18 @@ class FloorPlanningScene(PlanningScene):
         )
         from spatialmath import SE2
 
+        state = self.session.state
+        if start is not None:
+            from kinder_models.dynamic3d.utils import MujocoTidyBotRobotObjectType
+
+            state = state.copy()
+            robot, = state.get_objects(MujocoTidyBotRobotObjectType)
+            for feature, value in zip(
+                ("pos_base_x", "pos_base_y", "pos_base_rot"), start, strict=True
+            ):
+                state.set(robot, feature, value)
         path = run_base_motion_planning(
-            state=self.session.state,
+            state=state,
             target_base_pose=SE2(*target),
             x_bounds=WORLD_X_BOUNDS,
             y_bounds=WORLD_Y_BOUNDS,
