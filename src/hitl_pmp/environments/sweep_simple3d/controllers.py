@@ -1721,12 +1721,30 @@ class FloorPrimitives(Primitives):
             self.scene.sync()
         raise ExecutionError("No native carried base route to a wiper placement stance")
 
+    def place_target_orientation(self) -> tuple[float, float, float, float]:
+        """Place upright at the center of a declared native start yaw interval."""
+        from scipy.spatial.transform import Rotation
+
+        core = self.session.env.unwrapped._object_centric_env
+        region = next(region for _, name, region in core.task_config["initial_state"]
+                      if name == "wiper_0")
+        ranges = core.task_config["regions"][region].get("yaw_ranges", [[0.0, 360.0]])
+        if not ranges:
+            raise ExecutionError("Wiper start region has no yaw interval")
+        low, high = ranges[0]
+        if not np.isfinite((low, high)).all() or low > high:
+            raise ExecutionError("Unsupported native wiper start yaw interval")
+        quaternion = Rotation.from_euler("z", np.radians((low + high) / 2)).as_quat()
+        return (float(quaternion[0]), float(quaternion[1]),
+                float(quaternion[2]), float(quaternion[3]))
+
     def place_wiper_at_start(self) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
         self.stow_wiper()
-        position, orientation = self.session.initial_pose(name="wiper_0")
+        position, _ = self.session.initial_pose(name="wiper_0")
+        orientation = self.place_target_orientation()
         stance = self.place_transport_stance(position=position)
         self.transport_wiper(target=stance)
         self.require_handle(phase="base transport")
