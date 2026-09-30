@@ -118,11 +118,26 @@ class Motion(BaseModel):
         max_ticks: int = 500,
         tol: float = 0.004,
         arm: np.ndarray | None = None,
+        max_translation_step: float | None = None,
+        max_yaw_step: float | None = None,
+        translation_step_change: float | None = None,
+        yaw_step_change: float | None = None,
+        tick_guard: Callable[[], None] | None = None,
     ) -> bool:
-        """Track a base path with the arm held where it is (to 4 mm / 0.01 rad: arm plans
-        are re-solved at the pose actually reached, but a tight stop keeps them close)."""
+        """Track a base path while holding the arm at its requested configuration.
+
+        Optional translation/yaw caps are meters/radians commanded per control tick.
+        Change caps bound consecutive commands, starting from zero; translation uses
+        the Euclidean norm. None preserves the existing tracking commands. The guard
+        runs immediately after each executed tick and may raise to stop execution.
+        """
         from prpl_utils.utils import get_signed_angle_distance
 
+        for limit in (max_translation_step, max_yaw_step, translation_step_change, yaw_step_change):
+            if limit is not None and (not np.isfinite(limit) or limit <= 0):
+                raise ValueError("Optional drive limits must be finite and positive")
+        previous_translation = np.zeros(2)
+        previous_yaw = 0.0
         g = self._grip_hold() if grip is None else grip
         q_hold = self.session.arm() if arm is None else arm.copy()
         remaining = list(path)
@@ -142,9 +157,28 @@ class Motion(BaseModel):
                 return True
             a = np.zeros(11)
             a[0], a[1], a[2] = nx - x, ny - y, dth
+            translation_norm = float(np.linalg.norm(a[:2]))
+            if max_translation_step is not None and translation_norm > max_translation_step:
+                a[:2] *= max_translation_step / translation_norm
+            if max_yaw_step is not None:
+                a[2] = np.clip(a[2], -max_yaw_step, max_yaw_step)
+            if translation_step_change is not None:
+                change = a[:2] - previous_translation
+                change_norm = float(np.linalg.norm(change))
+                if change_norm > translation_step_change:
+                    change *= translation_step_change / change_norm
+                a[:2] = previous_translation + change
+            if yaw_step_change is not None:
+                a[2] = previous_yaw + np.clip(
+                    a[2] - previous_yaw, -yaw_step_change, yaw_step_change
+                )
             a[3:10] = np.clip(ArmMath.wrap(delta=q_hold - self.session.arm()), -0.1, 0.1)
             a[-1] = g
             self.session.step(action=a)
+            previous_translation = a[:2].copy()
+            previous_yaw = float(a[2])
+            if tick_guard is not None:
+                tick_guard()
         return False
 
     def drive_straight(
