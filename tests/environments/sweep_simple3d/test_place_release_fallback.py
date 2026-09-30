@@ -48,6 +48,7 @@ def test_place_prefers_floor_and_refreshes_carried_descent(
     )
     primitive = SimpleNamespace(
         stow_wiper=lambda: None, stances=lambda **kwargs: [(0., 0., 0.)],
+        place_transport_stance=lambda **kwargs: (0., 0., 0.),
         transport_wiper=lambda **kwargs: None, require_handle=lambda **kwargs: None,
         scene=scene,
         session=SimpleNamespace(initial_pose=lambda **kwargs: ((1., 1., 0.), (0., 0., 0., 1.)),

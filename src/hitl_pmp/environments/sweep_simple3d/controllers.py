@@ -1659,13 +1659,48 @@ class FloorPrimitives(Primitives):
                 raise ExecutionError("Stow grasp replanning made no arm progress")
         raise ExecutionError("Stow exhausted eight grasp replanning attempts")
 
+    def place_transport_stance(self, *, position: np.ndarray) -> tuple[float, float, float]:
+        """Try the original bearing, then the north aisle, with native carried-route checks."""
+        from pybullet_helpers.geometry import multiply_poses
+
+        candidates = list(self.stances(target=position, where="floor"))
+        north = (float(position[0]), float(position[1] + self.distance), -np.pi / 2)
+        if not any(np.allclose(candidate, north, rtol=0.0, atol=1e-9)
+                   for candidate in candidates):
+            candidates.append(north)
+        arm = self.session.arm().copy()
+        held_tf = multiply_poses(
+            self.scene.ee_now().invert(),
+            Pose(tuple(self.session.position(name="wiper_0")),
+                 self.session.quaternion(name="wiper_0")),
+        )
+        try:
+            for target in candidates:
+                self.scene.sync()
+                for _, path in self.transport_base_candidates(target=target):
+                    clear = True
+                    for base in path:
+                        self.scene.sync(base=base)
+                        if self.scene.in_collision(
+                            joints=self.scene.planning_fingers(arm=arm, state=0.5),
+                            bodies=self.scene.bodies(), held=self.scene.wiper_body,
+                            held_tf=held_tf,
+                        ):
+                            clear = False
+                            break
+                    if clear:
+                        return target
+        finally:
+            self.scene.sync()
+        raise ExecutionError("No native carried base route to a wiper placement stance")
+
     def place_wiper_at_start(self) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
         self.stow_wiper()
         position, orientation = self.session.initial_pose(name="wiper_0")
-        stance = self.stances(target=position, where="floor")[0]
+        stance = self.place_transport_stance(position=position)
         self.transport_wiper(target=stance)
         self.require_handle(phase="base transport")
         held_tf = multiply_poses(
