@@ -1293,11 +1293,14 @@ class FloorPrimitives(Primitives):
         ])
         local = (world - data.xpos[body]) @ observed.as_matrix()
         support = int(np.argmin(world[:, 2]))
-        for turn in (0.08, 0.04, 0.02):
+        # Preserve support-pivot attempts first. An unloaded low grasp can
+        # require a small lift to keep the elbow inside its native joint limit.
+        for turn, lift in ((0.08, 0.0), (0.04, 0.0), (0.02, 0.0),
+                           (0.02, 0.01), (0.04, 0.02)):
             rotation = Rotation.from_rotvec(delta * min(1.0, turn / angle)) * observed
             position = world[support] - rotation.apply(local[support])
             corners = rotation.apply(local) + position
-            position[2] += max(0.0, 0.001 - float(corners[:, 2].min()))
+            position[2] += max(0.0, 0.001 - float(corners[:, 2].min())) + lift
             target = multiply_poses(
                 Pose(tuple(position), tuple(rotation.as_quat())), held_tf.invert()
             )
@@ -1310,6 +1313,7 @@ class FloorPrimitives(Primitives):
                     "kind": "blade_leveling_candidate",
                     "t": self.session.ticks,
                     "turn": turn,
+                    "lift": lift,
                     "before_tilt": before_tilt,
                     "path_found": path is not None,
                     "path_waypoints": None if path is None else len(path),
