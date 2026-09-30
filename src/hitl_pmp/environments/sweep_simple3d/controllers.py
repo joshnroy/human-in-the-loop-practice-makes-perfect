@@ -67,34 +67,33 @@ class FloorPrimitives(Primitives):
             is not None
         ):
             return home
-        for allow_joint_fallback in (False, True):
-            for yaw in (self.session.yaw(name="wiper_0"), base[2]):
-                for rpy in ((0.0, 0.0, yaw), (0.0, np.pi / 2, yaw), (np.pi / 2, 0.0, yaw)):
-                    center_offset = Rotation.from_euler("xyz", rpy).apply([0.0, 0.0, 0.17])
-                    for radius in (0.25, 0.35, 0.1, 0.0):
-                        for height in (1.1, 1.0, 0.85, 0.75, 0.65):
-                            center = np.array([
-                                base[0] + radius * np.cos(base[2]),
-                                base[1] + radius * np.sin(base[2]),
-                                height,
-                            ])
-                            target_body = Pose.from_rpy(tuple(center - center_offset), rpy)
-                            target = multiply_poses(target_body, held_tf.invert())
-                            solutions = ikfast_closest_inverse_kinematics(
-                                self.scene.robot, world_from_target=target
+        for yaw in (self.session.yaw(name="wiper_0"), base[2]):
+            for rpy in ((0.0, 0.0, yaw), (0.0, np.pi / 2, yaw), (np.pi / 2, 0.0, yaw)):
+                center_offset = Rotation.from_euler("xyz", rpy).apply([0.0, 0.0, 0.17])
+                for radius in (0.25, 0.35, 0.1, 0.0):
+                    for height in (1.1, 1.0, 0.85, 0.75, 0.65):
+                        center = np.array([
+                            base[0] + radius * np.cos(base[2]),
+                            base[1] + radius * np.sin(base[2]),
+                            height,
+                        ])
+                        target_body = Pose.from_rpy(tuple(center - center_offset), rpy)
+                        target = multiply_poses(target_body, held_tf.invert())
+                        solutions = ikfast_closest_inverse_kinematics(
+                            self.scene.robot, world_from_target=target
+                        )
+                        for solution in [
+                            q for q in solutions if self.scene.within_arm_limits(arm=q[:7])
+                        ][:24]:
+                            path = self.scene.plan_arm(
+                                goal=solution[:7],
+                                bodies=self.scene.bodies(),
+                                held=self.scene.wiper_body,
+                                held_tf=held_tf,
+                                allow_joint_fallback=True,
                             )
-                            for solution in [
-                                q for q in solutions if self.scene.within_arm_limits(arm=q[:7])
-                            ][:24]:
-                                path = self.scene.plan_arm(
-                                    goal=solution[:7],
-                                    bodies=self.scene.bodies(),
-                                    held=self.scene.wiper_body,
-                                    held_tf=held_tf,
-                                    allow_joint_fallback=allow_joint_fallback,
-                                )
-                                if path is not None:
-                                    return np.asarray(solution[:7])
+                            if path is not None:
+                                return np.asarray(solution[:7])
         raise ExecutionError("No collision-free compact tool transport pose")
 
     def wiper_handle_geometry(self) -> tuple[int, int]:
