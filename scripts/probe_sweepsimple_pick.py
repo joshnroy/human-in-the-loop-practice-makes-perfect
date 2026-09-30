@@ -34,7 +34,7 @@ class PickupProbe:
             help="Check all native goals, individual reverse sweeps, and existing return skills.",
         )
         parser.add_argument("--grasp-offset", type=float)
-        parser.add_argument("--grasp-insertion-offset", type=float, choices=(0.020, 0.028))
+        parser.add_argument("--grasp-insertion-offset", type=float, choices=(0.010, 0.020, 0.028))
         parser.add_argument(
             "--grasp-approach-angle", type=float, choices=(1.2, 1.8),
             help="Select an existing controller grasp-angle candidate for diagnosis.",

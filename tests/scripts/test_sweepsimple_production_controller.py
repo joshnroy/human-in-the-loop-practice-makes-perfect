@@ -2,6 +2,7 @@
 
 import argparse
 import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,6 +63,18 @@ def test_nominal_parameters_orchestration_and_readonly_logging_remain_allowed(*,
               "--finish-selected-first", "--forward-budget=10", "--log-live-grasp"],
         parser=argparse.ArgumentParser(),
     )
+
+
+def test_deeper_insertion_diagnostic_parses_without_starting_physics(
+    *, probe, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(sys, "argv", [
+        "probe", "--tag", "unused", "--grasp-insertion-offset", ".010",
+        "--cube-order", "0", "0", "0", "0", "0",
+    ])
+    with pytest.raises(SystemExit):
+        probe.run()
+    assert "--cube-order must contain every native cube" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("success,note", [
