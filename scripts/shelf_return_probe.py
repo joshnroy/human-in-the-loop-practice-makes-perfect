@@ -58,7 +58,6 @@ try:
             get_overhead_object_se2_pose(demo.initial, cube), distance, heading
         )
         target = [demo.initial.get(cube, f) for f in ("x", "y", "z", "qx", "qy", "qz", "qw")]
-        target[2] += 0.003
         params = np.array([pose.x, pose.y, pose.theta(), *target])
         controller = ReturnCubeToStartController(objects=[demo.robot, cube], pybullet_sim=demo.sim)
         controller.physical_joint_limits = limits

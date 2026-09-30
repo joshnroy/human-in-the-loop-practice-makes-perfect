@@ -265,7 +265,7 @@ class ReturnCubeToStartController(PlaceShelfController):
             )
             if (
                 self.supported_in_initial_region(self._last_state)
-                and angle < 0.01745
+                and angle < 0.001745
                 and xy_error < 0.005
             ):
                 self.release_observations["supported"] = {
@@ -355,7 +355,7 @@ class ReturnCubeToStartController(PlaceShelfController):
         ).magnitude()
         if (
             xy_error < 0.003
-            and angle < 0.01
+            and angle < 0.001
             and abs(actual_object.position[2] - self._lower_target_z) < 0.003
         ):
             self._lower_target_z = max(
