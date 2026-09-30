@@ -568,12 +568,12 @@ class FloorPrimitives(Primitives):
         tool_yaws = (
             (angle + np.pi, angle) if narrow_contact else (angle - np.pi / 2, angle + np.pi / 2)
         )
-        for tool_yaw, preserve_tilt, nearby_tilt in self.floor_orientation_candidates(
-            tool_yaws=tool_yaws
+        for tool_yaw, preserve_tilt, nearby_tilt, blade_axis in self.contact_orientation_candidates(
+            tool_yaws=tool_yaws, region=region, narrow_contact=narrow_contact
         ):
             floor_pose = self.floor_tool_pose(
                 xy=wiper_start, yaw=tool_yaw, preserve_tilt=preserve_tilt,
-                tilt=nearby_tilt,
+                tilt=nearby_tilt, blade_axis=blade_axis,
             )
             floor_ee = multiply_poses(floor_pose, held_tf.invert())
             for lift_height in (0.14, 0.24):
@@ -589,6 +589,7 @@ class FloorPrimitives(Primitives):
                     "yaw": tool_yaw,
                     "preserve_tilt": preserve_tilt,
                     "nearby_tilt": nearby_tilt,
+                    "native_blade_axis": blade_axis,
                     "hover": hover.position,
                     "solutions": len(solutions),
                     "approach_paths": 0,
@@ -642,7 +643,7 @@ class FloorPrimitives(Primitives):
                     )
                     if preference.consider(
                         candidate=(candidate, candidate_lower, tool_yaw, preserve_tilt,
-                                   nearby_tilt, floor_pose),
+                                   nearby_tilt, floor_pose, blade_axis),
                         margin=margin,
                     ):
                         break
@@ -652,7 +653,7 @@ class FloorPrimitives(Primitives):
                 break
         if preference.candidate is None:
             raise ExecutionError(f"No collision-free floor sweep approach: {attempts}")
-        approach, candidate_lower, tool_yaw, preserve_tilt, nearby_tilt, floor_pose = (
+        approach, candidate_lower, tool_yaw, preserve_tilt, nearby_tilt, floor_pose, blade_axis = (
             preference.candidate
         )
         self.session._write(
@@ -664,6 +665,7 @@ class FloorPrimitives(Primitives):
                 "tool_yaw": tool_yaw,
                 "preserve_tilt": preserve_tilt,
                 "nearby_tilt": nearby_tilt,
+                "native_blade_axis": blade_axis,
                 "floor_position": floor_pose.position,
                 "floor_orientation": floor_pose.orientation,
                 "attempts": attempts,
@@ -954,11 +956,9 @@ class FloorPrimitives(Primitives):
                     np.linalg.norm(Rotation.from_quat(wiper_now.orientation).as_euler("xyz")[:2])
                 )
                 blade_bottom = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
-                # Track the commanded low contact height, not merely overlap
-                # near the cube top where the blade can ride over a rolling cube.
-                contact_ceiling = min(
-                    self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003
-                )
+                # Forward strokes retain their low target; reset strokes keep the
+                # same native cube overlap used to accept their floor placement.
+                contact_ceiling = self.contact_control_ceiling(cube=cube, region=region)
                 if blade_bottom <= contact_ceiling:
                     break
                 if self.blade_minimum_height() <= 0.0011:
@@ -1024,9 +1024,7 @@ class FloorPrimitives(Primitives):
                         tick_guard=correction_guard,
                         stop_condition=lambda: self.blade_bottom_height(
                             cube=cube, narrow=narrow_contact
-                        ) <= min(
-                            self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003
-                        ),
+                        ) <= self.contact_control_ceiling(cube=cube, region=region),
                     )
                 except (ContactTiltLimit, ContactJointReserveLimit) as stop:
                     tilt_unload = isinstance(stop, ContactTiltLimit)
@@ -1418,6 +1416,24 @@ class FloorPrimitives(Primitives):
         vertical = data.geom_xmat[blade].reshape(3, 3)[2]
         return float(data.geom_xpos[blade][2] - np.abs(vertical) @ model.geom_size[blade])
 
+    def contact_control_ceiling(self, *, cube: str, region: str) -> float:
+        """Reset strokes use the same native overlap height accepted at placement."""
+        ceiling = self.cube_contact_ceiling(cube=cube)
+        if region == "blocks_init_region":
+            return ceiling
+        return min(ceiling, self.floor_clearance + 0.003)
+
+    def contact_orientation_candidates(
+        self, *, tool_yaws: tuple[float, ...], region: str, narrow_contact: bool,
+    ) -> list[tuple[float, bool, float | None, bool]]:
+        """Try broad reset contact about the blade long axis before observed lean."""
+        candidates: list[tuple[float, bool, float | None, bool]] = []
+        if region == "blocks_init_region" and not narrow_contact:
+            candidates.extend((yaw, True, 0.2, True) for yaw in tool_yaws)
+        candidates.extend((yaw, preserve, tilt, False) for yaw, preserve, tilt
+                          in self.floor_orientation_candidates(tool_yaws=tool_yaws))
+        return candidates
+
     def floor_orientation_candidates(
         self, *, tool_yaws: tuple[float, ...]
     ) -> list[tuple[float, bool, float | None]]:
@@ -1454,7 +1470,7 @@ class FloorPrimitives(Primitives):
 
     def floor_tool_pose(
         self, *, xy: np.ndarray, yaw: float, preserve_tilt: bool = True,
-        tilt: float | None = None,
+        tilt: float | None = None, blade_axis: bool = False,
     ) -> Pose:
         """Preserve observed tilt and seat the native blade at its actual support height."""
         from itertools import product
@@ -1491,6 +1507,14 @@ class FloorPrimitives(Primitives):
                 Rotation.from_euler("z", yaw - candidate_yaw).as_matrix() @ target_rotation
             )
         blade_rotation = data.geom_xmat[blade].reshape(3, 3)
+        if blade_axis:
+            if tilt is None:
+                raise ValueError("Native blade-axis candidate requires an explicit tilt")
+            local_blade_rotation = observed.T @ blade_rotation
+            target_rotation = (
+                Rotation.from_euler("z", yaw).as_matrix()
+                @ Rotation.from_euler("x", tilt).as_matrix() @ local_blade_rotation.T
+            )
         world_corners = np.array([
             data.geom_xpos[blade] + blade_rotation @ (model.geom_size[blade] * signs)
             for signs in product((-1.0, 1.0), repeat=3)
