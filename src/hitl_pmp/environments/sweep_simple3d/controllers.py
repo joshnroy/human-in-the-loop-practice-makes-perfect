@@ -1158,25 +1158,56 @@ class FloorPrimitives(Primitives):
         raise ExecutionError("No native base path clears the carried arm/tool")
 
     def stow_wiper(self) -> None:
-        self.require_handle(phase="before transport")
-        from pybullet_helpers.geometry import Pose, multiply_poses
+        """Track stow with live grip checks and bounded grasp-frame replanning."""
+        from pybullet_helpers.geometry import multiply_poses
+        from scipy.spatial.transform import Rotation
 
+        self.require_handle(phase="before transport")
         goal = self.wiper_stow_goal()
         if np.max(np.abs(self.session.arm() - goal)) < 0.03:
             return
-        held_tf = multiply_poses(
-            self.scene.ee_now().invert(),
-            Pose(
-                tuple(self.session.position(name="wiper_0")),
-                self.session.quaternion(name="wiper_0"),
-            ),
-        )
-        path = self.scene.plan_arm(
-            goal=goal, bodies=self.scene.bodies(), held=self.scene.wiper_body, held_tf=held_tf
-        )
-        if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.025):
-            raise ExecutionError("No collision-free stow for the physically held wiper")
-        self.require_handle(phase="upright transport")
+        for _ in range(8):
+            start = self.session.arm().copy()
+            if np.max(np.abs(ArmMath.wrap(delta=start - goal))) < 0.025:
+                return
+            held_tf = multiply_poses(
+                self.scene.ee_now().invert(),
+                Pose(tuple(self.session.position(name="wiper_0")),
+                     self.session.quaternion(name="wiper_0")),
+            )
+
+            def grasp_drifted(*, reference: Pose = held_tf) -> bool:
+                observed = multiply_poses(
+                    self.scene.ee_now().invert(),
+                    Pose(tuple(self.session.position(name="wiper_0")),
+                         self.session.quaternion(name="wiper_0")),
+                )
+                translation = float(np.linalg.norm(
+                    np.asarray(observed.position) - np.asarray(reference.position)
+                ))
+                rotation = float((Rotation.from_quat(observed.orientation)
+                                  * Rotation.from_quat(reference.orientation).inv()).magnitude())
+                return translation > 0.01 or rotation > 0.06
+
+            path = self.scene.plan_arm(
+                goal=goal, bodies=self.scene.bodies(), held=self.scene.wiper_body, held_tf=held_tf
+            )
+            if path is None or not self.motion.follow(
+                path=path, grip=1.0, final_tol=0.025,
+                tick_guard=lambda: self.require_handle(phase="upright transport"),
+                stop_condition=grasp_drifted,
+            ):
+                raise ExecutionError("No collision-free stow for the physically held wiper")
+            self.require_handle(phase="upright transport")
+            actual = self.session.arm()
+            if np.max(np.abs(ArmMath.wrap(delta=actual - goal))) < 0.025:
+                return
+            # follow(True) also means an explicit drift stop, not arrival.
+            if not grasp_drifted():
+                raise ExecutionError("Stow stopped without attaining its physical arm target")
+            if np.max(np.abs(ArmMath.wrap(delta=actual - start))) < 1e-4:
+                raise ExecutionError("Stow grasp replanning made no arm progress")
+        raise ExecutionError("Stow exhausted eight grasp replanning attempts")
 
     def place_wiper_at_start(self) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
