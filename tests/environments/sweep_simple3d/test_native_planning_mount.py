@@ -35,6 +35,29 @@ def test_gripper_proxy_uses_whole_native_assembly_and_retains_real_overlap() -> 
         session.close()
 
 
+def test_ambiguous_zero_distance_uses_native_contacts_without_state_mutation() -> None:
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session)
+    try:
+        before = session.mj_data.qpos.copy()
+        flags = (int(session.mj_model.opt.enableflags), int(session.mj_model.opt.disableflags))
+        joints = [-4.037112236, -2.235447645, 6.205644608, -0.83306241,
+                  -2.16072917, 1.947588682, 1.619778872,
+                  0.631739705, 0.631668414, 0.626715387, 0.626406089,
+                  -0.626049358, -0.626740728]
+        chassis, _ = scene._native_chassis[0]
+        assert scene.native_chassis_distance(
+            link=4, chassis_geom=chassis, joints=joints
+        ) == pytest.approx(1e-6)
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
+        assert (
+            int(session.mj_model.opt.enableflags), int(session.mj_model.opt.disableflags)
+        ) == flags
+    finally:
+        scene._sim.close()
+        session.close()
+
+
 def test_held_tool_cannot_plan_below_native_ground() -> None:
     session = SweepSimpleSession(seed=0)
     scene = FloorPlanningScene(session=session, capture_path_rejections=True)

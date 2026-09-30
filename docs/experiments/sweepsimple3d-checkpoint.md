@@ -264,3 +264,14 @@ Fresh native v136 retained pickup and completed several contact strokes, then fa
 A diagnostic initially used the default open-finger planning configuration; it was corrected to use the actual recorded closed articulation before interpreting the result. The closed/open distinction is retained as the regression negative control.
 
 Persistent fresh native v137 launched with the same development grasp −0.06 m, distance 0.40 m and heading −15 degrees. Full native goal and reverse recovery are still unverified; no experiment launch is authorized by the readiness gate yet. The development override has not replaced the frozen production grasp.
+
+### 2026-09-30 02:10 EDT — native contact and bounded full-task checks
+
+- v137 retained pickup but failed unloading after a real native gripper/chassis overlap. Mid/far stances v138/v139 and neutral v140 remained unsuccessful.
+- Shared handle-center grasp v141 advanced12strokes, then the process segfaulted inside IKFast under the diagnostic watchdog; no result JSON. `crashed.json` and `service-crash.log` retain this separate infrastructure failure. v142 midpoint failed a later floor approach.
+- v143 raised commanded blade clearance from1mm to5mm (diagnostic override only), revealing descent onto neighboring cubes. Widening broad-blade stand-off from25mm to50mm avoided that failure in v144, which then hit an ambiguous native forearm/chassis distance query after13strokes. At the exact recorded pose, native contact generation reports no contact; the enabled pair is not excluded. Zero-distance/zero-margin ambiguity now uses native `mj_forward` contact generation on private data. Positive margins and real penetration checks remain conservative;9/9 native collision regressions pass.
+- v145 narrow blade-end approach was unreachable. Shared upper-handle grasp(+0.06m) v146 advanced14strokes then a different cube blocked the base. v147 midpoint advanced27strokes before3consecutive nonprogress strokes.
+- Stalling diagnosis: once all cubes no longer fit, the old anchor centered on the selected cube but still started behind a neighbor at the blade edge. New safe-subset anchoring covers the target and nearby cubes centrally, avoids thin edge overlap, and preserves the original compact-group center.
+- v148 checks a transparent nearer-cube order with nominal heading. v149 runs the same native task with up to10**counted** forward actions including initial pickup and failed calls; no reset, hidden pickup, or uncounted retries. Forward failures remain failures. A budget regression verifies8failed additional calls stop after10total actions; contact/budget checks3/3passed. This is only readiness-probe sequencing; neither method’s policy or approved experiment budget changes.
+
+Full native all-five goal and reverse recovery remain unverified. No Simple scientific run has launched. Production grasp remains the original fixed value until physical verification supports freezing a replacement.

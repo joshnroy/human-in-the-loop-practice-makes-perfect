@@ -19,6 +19,7 @@ class FloorPrimitives(Primitives):
     narrow_contact: bool = False
     contact_stroke_length: float = 0.10
     contact_step: float = 0.003
+    floor_clearance: float = Field(default=0.001, ge=0.001, le=0.01)
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
     _ground_clearance_hold: np.ndarray | None = PrivateAttr(default=None)
@@ -156,6 +157,26 @@ class FloorPrimitives(Primitives):
             return "Native target attained after 36 checked strokes"
         raise ExecutionError("Native target not attained within 36 checked strokes")
 
+    @staticmethod
+    def broad_blade_center(*, projections: list[float], target: float) -> float:
+        """Cover the selected cube without balancing a neighbor on the blade tip."""
+        if max(projections) - min(projections) <= 0.28:
+            return (max(projections) + min(projections)) / 2
+        candidates = {target}
+        for a in projections:
+            candidates.update(a + offset for offset in (-0.17, -0.14, 0.14, 0.17))
+            for b in projections:
+                candidates.add((a + b) / 2)
+        feasible = [c for c in candidates if abs(c - target) <= 0.14 + 1e-9]
+
+        def score(center: float) -> tuple[int, int, float, float, float]:  # noqa: PLR0917 -- min key
+            distances = [abs(p - center) for p in projections]
+            edge_count = sum(0.14 + 1e-9 < d < 0.17 - 1e-9 for d in distances)
+            covered = [d for d in distances if d <= 0.14 + 1e-9]
+            return edge_count, -len(covered), max(covered), abs(center - target), center
+
+        return min(feasible, key=score)
+
     def _sweep_cube_stroke(
         self, *, cube: str, region: str, distance: float, heading_offset: float
     ) -> str:
@@ -189,15 +210,19 @@ class FloorPrimitives(Primitives):
             projections = [
                 float(self.session.position(name=f"cube_{i}")[:2] @ transverse) for i in range(5)
             ]
-            if max(projections) - min(projections) <= 0.28:
-                midpoint = (max(projections) + min(projections)) / 2
-                blade_anchor += (midpoint - float(blade_anchor @ transverse)) * transverse
+            midpoint = self.broad_blade_center(
+                projections=projections, target=float(blade_anchor @ transverse)
+            )
+            blade_anchor += (midpoint - float(blade_anchor @ transverse)) * transverse
         behind = 0.0
         for other in (f"cube_{i}" for i in range(5)):
             relative = self.session.position(name=other)[:2] - blade_anchor
             if abs(float(relative @ transverse)) <= (0.025 if narrow_contact else 0.16):
                 behind = max(behind, -float(relative @ direction))
-        wiper_start = blade_anchor - (behind + (0.20 if narrow_contact else 0.025)) * direction
+        # Leave room for physical tracking error during descent. A 25 mm
+        # center gap left only 5 mm beyond blade/cube half-widths, and the
+        # loaded tool could land on the cubes before reaching floor height.
+        wiper_start = blade_anchor - (behind + (0.20 if narrow_contact else 0.05)) * direction
         # Keep the chassis behind the blade on both legs. Facing the initial
         # aisle during a westward stroke folds the cross-grasp wrist into it.
         # The fixed eastward recovery instead stands north: west of a goal
@@ -362,6 +387,15 @@ class FloorPrimitives(Primitives):
             final_tol=0.005,
             tick_guard=lambda: self.require_handle(phase="floor descent"),
         ):
+            self.session._write(record={
+                "kind": "floor_descent_failed",
+                "t": self.session.ticks,
+                "goal_arm": np.asarray(lower[-1]).tolist(),
+                "actual_arm": self.session.arm().tolist(),
+                "goal_tool_position": floor_pose.position,
+                "actual_tool_position": self.session.position(name="wiper_0").tolist(),
+                "native_qpos": self.session.mj_data.qpos.tolist(),
+            })
             raise ExecutionError("Floor sweep descent did not converge")
         self.require_handle(phase="floor descent")
         # Close the loop on actual blade overlap, bounded by native floor clearance.
@@ -882,7 +916,7 @@ class FloorPrimitives(Primitives):
         body_corners = (world_corners - data.xpos[body]) @ observed
         bottom = float((body_corners @ target_rotation.T)[:, 2].min())
         return Pose(
-            (float(xy[0]), float(xy[1]), 0.001 - bottom),
+            (float(xy[0]), float(xy[1]), self.floor_clearance - bottom),
             tuple(Rotation.from_matrix(target_rotation).as_quat()),
         )
 
@@ -1448,10 +1482,24 @@ class FloorPlanningScene(PlanningScene):
         # convex meshes in pinned MuJoCo 3.3.7. We need only the threshold test:
         # a positive capped return proves separation, not an exact distance.
         distance_cap = max(0.0, distance_threshold) + 1e-6
-        return min(
+        clearance = min(
             float(mujoco.mj_geomDistance(model, data, geom, chassis_geom, distance_cap, None))
             for geom in geoms
         )
+        if clearance == 0.0 and distance_threshold == 0.0:
+            # Pinned MuJoCo can also return an ambiguous zero at a tiny cap.
+            # Resolve only the zero-margin boolean with the native contact
+            # pipeline at this exact candidate, on private data. Do not infer
+            # positive safety margins from absence of native contact.
+            mujoco.mj_forward(model, data)
+            distances = [
+                float(contact.dist)
+                for contact in data.contact
+                if (contact.geom1 == chassis_geom and contact.geom2 in geoms)
+                or (contact.geom2 == chassis_geom and contact.geom1 in geoms)
+            ]
+            return min(distances) if distances else distance_cap
+        return clearance
 
     def sync(self, *, base: tuple[float, float, float] | None = None) -> None:
         import mujoco

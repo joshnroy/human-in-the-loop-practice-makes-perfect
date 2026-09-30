@@ -18,6 +18,11 @@ class PickupProbe:
         parser.add_argument("--pick-distance", type=float, default=0.7)
         parser.add_argument("--sweep-distance", type=float, default=0.55)
         parser.add_argument("--sweep-angle", type=float, default=0.0)
+        parser.add_argument("--cube-order", type=int, nargs=5, default=[0, 1, 2, 3, 4])
+        parser.add_argument(
+            "--forward-budget", type=int, choices=(0, 10), default=0,
+            help="Count failed skill calls within the approved 10-action task budget; no resets.",
+        )
         parser.add_argument("--pick-only", action="store_true")
         parser.add_argument(
             "--full-cycle",
@@ -30,6 +35,7 @@ class PickupProbe:
         parser.add_argument("--tilt-limit", type=float, default=1.1)
         parser.add_argument("--stroke-length", type=float, default=0.10)
         parser.add_argument("--contact-step", type=float, default=0.003)
+        parser.add_argument("--floor-clearance", type=float, default=0.001)
         parser.add_argument("--narrow-contact", action="store_true")
         resume = parser.add_mutually_exclusive_group()
         resume.add_argument(
@@ -41,8 +47,12 @@ class PickupProbe:
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         args = parser.parse_args()
+        if sorted(args.cube_order) != list(range(5)):
+            parser.error("--cube-order must contain every native cube index exactly once")
         if args.full_cycle and args.pick_only:
             parser.error("--full-cycle cannot be combined with --pick-only")
+        if args.forward_budget and not args.full_cycle:
+            parser.error("--forward-budget requires --full-cycle")
         resume_tag = args.resume_pick or args.resume_final
         resume_phase = (
             "final_recorded_state"
@@ -106,6 +116,7 @@ class PickupProbe:
         primitive.scene.max_tool_tilt = args.tilt_limit
         primitive.contact_stroke_length = args.stroke_length
         primitive.contact_step = args.contact_step
+        primitive.floor_clearance = args.floor_clearance
         primitive.narrow_contact = args.narrow_contact
         if args.grasp_mode == "blade":
             import mujoco
@@ -198,31 +209,42 @@ class PickupProbe:
                 if args.full_cycle:
                     cycle["stages"].append({
                         "name": "SweepCubeToGoal",
-                        "cube": "cube_0",
+                        "cube": f"cube_{args.cube_order[0]}",
                         "success": False,
                         "tick_start": session.ticks,
                     })
-                note = primitive.sweep_cube(
-                    cube="cube_0",
-                    region="sweep_region",
-                    distance=args.sweep_distance,
-                    heading_offset=args.sweep_angle,
-                )
+                from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
+
+                sweep_error = None
+                try:
+                    note = primitive.sweep_cube(
+                        cube=f"cube_{args.cube_order[0]}",
+                        region="sweep_region",
+                        distance=args.sweep_distance,
+                        heading_offset=args.sweep_angle,
+                    )
+                except ExecutionError as exc:
+                    if not args.forward_budget:
+                        raise
+                    sweep_error = repr(exc)
+                    note = sweep_error
                 if args.full_cycle:
                     from hitl_pmp.environments.sweep_simple3d.regions import SimpleRegions
 
                     attained = SimpleRegions.contains(
-                        session=session, name="cube_0", region="sweep_region"
+                        session=session, name=f"cube_{args.cube_order[0]}", region="sweep_region"
                     )
                     cycle["stages"][-1].update(
-                        success=attained,
+                        success=attained and sweep_error is None,
+                        native_target_attained=attained,
+                        error=sweep_error,
                         tick_end=session.ticks,
                         note=note,
                         native_counts=PickupProbe.native_counts(session=session),
                     )
-                    if not attained:
+                    if not attained and not args.forward_budget:
                         raise RuntimeError("Selected cube sweep did not attain its native goal")
-                    session.end(success=True, note=note)
+                    session.end(success=attained and sweep_error is None, note=note)
                     PickupProbe.full_cycle(
                         session=session,
                         primitive=primitive,
@@ -315,18 +337,52 @@ class PickupProbe:
         env = SweepSimpleEnvironment(canonical_seed=session.seed)
         env._session, env._primitive, env._initial_state = session, primitive, initial_state
         env.current_state = env.observe()
-        for i in range(1, 5):
-            PickupProbe.cycle_action(
-                env=env,
-                name="SweepCubeToGoal",
-                cube=i,
-                report=report,
-                params=(args.sweep_distance, args.sweep_angle),
-                already_satisfied=SimpleRegions.contains(
-                    session=session, name=f"cube_{i}", region="sweep_region"
-                ),
-            )
         core = session.env.unwrapped._object_centric_env
+        if args.forward_budget:
+            report["forward_action_budget"] = args.forward_budget
+            # The initial pickup and first sweep already consumed two actions.
+            # Rotate through the remaining native subgoals; a failed skill stays
+            # failed and consumes its action. No state restoration or hidden pick.
+            order = args.cube_order[1:] + args.cube_order[:1]
+            for slot in range(2, args.forward_budget):
+                if core._check_goals():
+                    break
+                pending = [i for i in order if not SimpleRegions.contains(
+                    session=session, name=f"cube_{i}", region="sweep_region"
+                )]
+                if not pending:
+                    break
+                i = pending[0]
+                order = order[order.index(i) + 1:] + order[:order.index(i) + 1]
+                try:
+                    PickupProbe.cycle_action(
+                        env=env, name="SweepCubeToGoal", cube=i, report=report,
+                        params=(args.sweep_distance, args.sweep_angle),
+                    )
+                except RuntimeError as exc:
+                    if "note" not in report["stages"][-1]:
+                        raise
+                    report["stages"][-1]["counted_failure"] = repr(exc)
+                report["stages"][-1]["forward_action_index"] = slot + 1
+            report["forward_robot_actions_executed"] = sum(
+                stage["name"] in {"PickFloorWiper", "SweepCubeToGoal"}
+                and not stage.get("skipped", False)
+                for stage in report["stages"]
+            )
+            if report["forward_robot_actions_executed"] > args.forward_budget:
+                raise RuntimeError("Readiness probe exceeded the approved forward action budget")
+        else:
+            for i in args.cube_order[1:]:
+                PickupProbe.cycle_action(
+                    env=env,
+                    name="SweepCubeToGoal",
+                    cube=i,
+                    report=report,
+                    params=(args.sweep_distance, args.sweep_angle),
+                    already_satisfied=SimpleRegions.contains(
+                        session=session, name=f"cube_{i}", region="sweep_region"
+                    ),
+                )
         report["native_goal_success"] = bool(core._check_goals())
         report["forward_native_counts"] = PickupProbe.native_counts(session=session)
         report["stages"].append({
