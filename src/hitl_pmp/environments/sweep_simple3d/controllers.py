@@ -650,6 +650,7 @@ class FloorPrimitives(Primitives):
             ),
         )
         contact_ended = False
+        tilt_unload = False
         travel = ContactTravelBudget(length=length, stroke=self.contact_stroke_length,
                                      step=self.contact_step, behind=behind)
         self.session._write(record={
@@ -680,7 +681,8 @@ class FloorPrimitives(Primitives):
         for proposed in travel.targets():
             try:
                 observe_contact_travel()
-            except ContactTravelLimit:
+            except ContactTravelLimit as stop:
+                tilt_unload = isinstance(stop, ContactTiltLimit)
                 break
             progress = travel.target(proposed=float(proposed))
             ground_corrected = False
@@ -752,7 +754,8 @@ class FloorPrimitives(Primitives):
                     path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005,
                     tick_guard=observe_contact_travel,
                 )
-            except ContactTravelLimit:
+            except ContactTravelLimit as stop:
+                tilt_unload = isinstance(stop, ContactTiltLimit)
                 self.require_handle(phase="loaded contact travel limit")
                 break
             if not driven:
@@ -879,6 +882,7 @@ class FloorPrimitives(Primitives):
                         ),
                     )
                 except ContactTiltLimit:
+                    tilt_unload = True
                     contact_ended = True
                     break
                 if not corrected:
@@ -962,6 +966,8 @@ class FloorPrimitives(Primitives):
                 break
         if self.wiper_loaded_by_cube():
             raise ExecutionError("Blade remains loaded by cubes after checked retreat")
+        if tilt_unload:
+            self.restore_unloaded_tilt_margin(bodies=bodies)
         current_ee = self.scene.ee_now()
         lift = self.scene.linear_path(
             start=self.session.arm(),
@@ -1060,6 +1066,38 @@ class FloorPrimitives(Primitives):
             }
         )
         return success
+
+    def restore_unloaded_tilt_margin(self, *, bodies: set[int]) -> None:
+        """After a tilt stop, require measured recovery before lifting/reapproaching."""
+        from scipy.spatial.transform import Rotation
+
+        def observed_tilt() -> float:
+            rotation = Rotation.from_quat(self.session.quaternion(name="wiper_0"))
+            return float(np.arccos(np.clip(rotation.as_matrix()[2, 2], -1, 1)))
+
+        target = min(0.9, self.scene.max_tool_tilt - 0.20)
+        for attempt in range(4):
+            before = observed_tilt()
+            if self.wiper_loaded_by_cube():
+                raise ExecutionError("Tilt recovery requires an unloaded blade")
+            if before < target:
+                return
+            improved = self.level_blade(bodies=bodies)
+            after = observed_tilt()
+            self.session._write(record={
+                "kind": "unloaded_tilt_recovery", "t": self.session.ticks,
+                "attempt": attempt + 1, "before_tilt": before, "after_tilt": after,
+                "target_tilt": target, "measured_progress": before - after,
+                "leveling_success": improved,
+            })
+            if not improved or after >= before - 0.002:
+                raise ExecutionError("Checked unloaded leveling made no measured tilt progress")
+        if self.wiper_loaded_by_cube():
+            raise ExecutionError("Tilt recovery reloaded the blade")
+        if observed_tilt() >= target:
+            raise ExecutionError(
+                "Checked unloaded leveling exhausted four-turn tilt recovery budget"
+            )
 
     def level_blade(self, *, bodies: set[int]) -> bool:
         """Rotate a small amount only after unloading the blade from all cubes."""
