@@ -76,8 +76,13 @@ class Motion(BaseModel):
         final_tol: float = 0.01,
         max_ticks: int = 600,
         tick_guard: Callable[[], None] | None = None,
+        stop_condition: Callable[[], bool] | None = None,
     ) -> bool:
-        """Track joint waypoints, densified to <= 0.05 rad; True if the last was reached."""
+        """Track waypoints; True at the final waypoint or an explicit physical goal.
+
+        The optional condition is checked after the guard on each physical tick.
+        None preserves final-joint-target termination.
+        """
         if path is None:
             return False
         g = self._grip_hold() if grip is None else grip
@@ -108,6 +113,8 @@ class Motion(BaseModel):
             self.session.step(action=a)
             if tick_guard is not None:
                 tick_guard()
+            if stop_condition is not None and stop_condition():
+                return True
         return False
 
     def drive(

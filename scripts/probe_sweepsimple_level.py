@@ -72,6 +72,7 @@ class LevelProbe:
         parser.add_argument("--tag", required=True)
         parser.add_argument("--cube", choices=[f"cube_{i}" for i in range(5)], default="cube_0")
         parser.add_argument("--iterations", type=int, choices=range(1, 7), default=6)
+        parser.add_argument("--operation", choices=("level", "ground_clearance"), default="level")
         args = parser.parse_args()
         root = Path(__file__).resolve().parents[1]
         source = root / "scratchpad/sweepsimple3d" / args.source
@@ -129,18 +130,29 @@ class LevelProbe:
                     "before": LevelProbe.measure(primitive=primitive, cube=args.cube),
                 }
                 report["attempts"].append(attempt)
-                progress = primitive.level_blade(bodies=bodies)
+                progress = (
+                    primitive.level_blade(bodies=bodies)
+                    if args.operation == "level"
+                    else primitive.raise_blade_clear_of_ground(bodies=bodies)
+                )
                 attempt.update(
                     progress=progress, after=LevelProbe.measure(primitive=primitive, cube=args.cube)
                 )
                 session._write(record={"kind": "level_probe_iteration", **attempt})
                 print(json.dumps(attempt), flush=True)
-                if attempt["after"]["vertical_overlap_attained"]:
+                attained = (
+                    attempt["after"]["vertical_overlap_attained"]
+                    if args.operation == "level"
+                    else attempt["after"]["blade_minimum_height"] >= 0.005
+                )
+                if attained:
                     report["success"] = True
-                    report["stop_reason"] = "native end-height overlap attained; diagnostic only"
+                    report["stop_reason"] = (
+                        "selected native geometric objective attained; diagnostic only"
+                    )
                     break
                 if not progress:
-                    report["stop_reason"] = "existing level_blade returned no progress"
+                    report["stop_reason"] = "selected controller returned no progress"
                     break
             else:
                 report["stop_reason"] = "bounded iteration limit"

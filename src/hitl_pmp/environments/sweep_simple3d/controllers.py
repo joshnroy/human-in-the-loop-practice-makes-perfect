@@ -21,6 +21,7 @@ class FloorPrimitives(Primitives):
     contact_step: float = 0.003
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
+    _ground_clearance_hold: np.ndarray | None = PrivateAttr(default=None)
 
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         # A low cross-handle grasp shortens the contact-force lever arm.
@@ -259,6 +260,16 @@ class FloorPrimitives(Primitives):
                     "checked_descents": 0,
                 })
                 for solution in solutions[:24]:
+                    # Reject unreachable floor endpoints before spending time on
+                    # a hover approach that cannot complete this descent.
+                    candidate_lower = self.scene.floor_descent(
+                        start=np.asarray(solution[:7]),
+                        target=floor_ee,
+                        bodies=bodies,
+                        held_tf=held_tf,
+                    )
+                    if candidate_lower is None:
+                        continue
                     candidate = self.scene.plan_arm(
                         goal=solution[:7],
                         bodies=bodies,
@@ -411,6 +422,7 @@ class FloorPrimitives(Primitives):
             min(length + 0.10, self.contact_stroke_length + self.contact_step),
             self.contact_step,
         ):
+            ground_corrected = False
             current = self.session.position(name=cube)
             if (
                 core._ground_fixture.check_in_region(current, region, core._robot_env)
@@ -459,6 +471,11 @@ class FloorPrimitives(Primitives):
                     self.scene.sync()
                     rejection = self.scene._last_path_rejection or {}
                     if (rejection.get("collision") or {}).get("reason") == "native_tool_ground":
+                        if self.raise_blade_clear_of_ground(bodies=bodies):
+                            assert self._ground_clearance_hold is not None
+                            contact_arm = self._ground_clearance_hold.copy()
+                            ground_corrected = True
+                            break
                         # End and unload this contact stroke before a stale arm
                         # hold target would drive the blade into the floor.
                         contact_ended = True
@@ -467,6 +484,8 @@ class FloorPrimitives(Primitives):
             self.scene.sync()
             if contact_ended:
                 break
+            if ground_corrected:
+                continue
             if not self.motion.drive(
                 path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005
             ):
@@ -643,6 +662,55 @@ class FloorPrimitives(Primitives):
             if (a == wiper and b in cubes) or (b == wiper and a in cubes):
                 return True
         return False
+
+    def raise_blade_clear_of_ground(self, *, bodies: set[int]) -> bool:
+        """Lift through a checked path and verify actual clearance before contact."""
+        from pybullet_helpers.geometry import multiply_poses
+
+        ee = self.scene.ee_now()
+        held = multiply_poses(
+            ee.invert(),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
+        )
+        target = Pose(tuple(np.asarray(ee.position) + [0.0, 0.0, 0.02]), ee.orientation)
+        path = self.scene.floor_descent(
+            start=self.session.arm(), target=target, bodies=bodies, held_tf=held
+        )
+        tracking_converged = path is not None and self.motion.follow(
+            path=path,
+            grip=1.0,
+            tol=0.03,
+            final_tol=0.005,
+            max_ticks=180,
+            tick_guard=lambda: self.require_handle(phase="ground-clearance correction"),
+            stop_condition=lambda: self.blade_minimum_height() >= 0.005,
+        )
+        # The servo has a load-dependent joint residual. The correction's goal
+        # is measured floor clearance, not an exact unloaded joint posture.
+        success = path is not None and self.blade_minimum_height() >= 0.005
+        self._ground_clearance_hold = self.session.arm().copy() if success else None
+        self.session._write(
+            record={
+                "kind": "ground_clearance_correction",
+                "t": self.session.ticks,
+                "path_found": path is not None,
+                "clearance_attained": success,
+                "tracking_converged": tracking_converged,
+                "path_waypoints": None if path is None else len(path),
+                "goal_arm": None if not path else np.asarray(path[-1]).tolist(),
+                "actual_arm": self.session.arm().tolist(),
+                "max_joint_residual": None
+                if not path
+                else float(
+                    np.max(np.abs(ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm())))
+                ),
+                "blade_minimum_height": self.blade_minimum_height(),
+            }
+        )
+        return success
 
     def level_blade(self, *, bodies: set[int]) -> bool:
         """Rotate a small amount only after unloading the blade from all cubes."""
