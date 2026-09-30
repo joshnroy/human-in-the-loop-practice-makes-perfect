@@ -44,6 +44,10 @@ class ContactTravelLimit(Exception):
     """Internal motion stop: unload normally after reaching the loaded travel cap."""
 
 
+class ContactTiltLimit(ContactTravelLimit):
+    """Internal stop before loaded tilt exhausts the checked retreat allowance."""
+
+
 class FloorPrimitives(Primitives):
     """Floor pickup uses the tested generic handle grasp with a learned base stance."""
 
@@ -58,6 +62,28 @@ class FloorPrimitives(Primitives):
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
     _ground_clearance_hold: np.ndarray | None = PrivateAttr(default=None)
     _exhausted_stow_key: tuple[Any, ...] | None = PrivateAttr(default=None)
+
+    def guard_loaded_tool_tilt(self, *, phase: str) -> None:
+        """Unload loaded contact with 0.10rad reserve; keep the planning limit intact."""
+        from scipy.spatial.transform import Rotation
+
+        if not self.wiper_loaded_by_cube():
+            return
+        rotation = Rotation.from_quat(self.session.quaternion(name="wiper_0"))
+        tilt = float(np.arccos(np.clip(rotation.as_matrix()[2, 2], -1, 1)))
+        limit = self.scene.max_tool_tilt
+        unload_tilt = max(0.0, limit - 0.10)
+        if tilt >= unload_tilt:
+            self.session._write(record={
+                "kind": "contact_stroke_ended", "t": self.session.ticks,
+                "reason": "loaded tool tilt reserve exhausted; checked unload required",
+                "phase": phase, "tilt": tilt, "unload_tilt": unload_tilt,
+                "planning_tilt_limit": limit,
+                "already_over_planning_limit": tilt > limit,
+            })
+            # An already-invalid starting pose still faces the unchanged retreat
+            # checker and remains a failure if that checked route is unavailable.
+            raise ContactTiltLimit
 
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         # A low cross-handle grasp shortens the contact-force lever arm.
@@ -633,6 +659,7 @@ class FloorPrimitives(Primitives):
         })
 
         def observe_contact_travel() -> None:
+            self.guard_loaded_tool_tilt(phase="contact drive")
             projection = float((np.asarray(self.session.base()[:2]) - base_origin) @ direction)
             before = travel.onset
             reached = travel.observe(projection=projection, loaded=self.wiper_loaded_by_cube())
@@ -831,17 +858,30 @@ class FloorPrimitives(Primitives):
                     allowed_tilt=self.scene.max_tool_tilt,
                 ):
                     path = None
-                if path is None or not self.motion.follow(
-                    path=path,
-                    grip=1.0,
-                    tol=0.03,
-                    final_tol=0.0005,
-                    max_ticks=180,
-                    tick_guard=lambda: self.require_handle(phase="contact correction"),
-                    stop_condition=lambda: self.blade_bottom_height(
-                        cube=cube, narrow=narrow_contact
-                    ) <= min(self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003),
-                ):
+
+                def correction_guard() -> None:
+                    self.require_handle(phase="contact correction")
+                    self.guard_loaded_tool_tilt(phase="contact correction")
+
+                try:
+                    correction_guard()
+                    corrected = path is not None and self.motion.follow(
+                        path=path,
+                        grip=1.0,
+                        tol=0.03,
+                        final_tol=0.0005,
+                        max_ticks=180,
+                        tick_guard=correction_guard,
+                        stop_condition=lambda: self.blade_bottom_height(
+                            cube=cube, narrow=narrow_contact
+                        ) <= min(
+                            self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003
+                        ),
+                    )
+                except ContactTiltLimit:
+                    contact_ended = True
+                    break
+                if not corrected:
                     self.require_handle(phase="contact correction")
                     self.session._write(
                         record={

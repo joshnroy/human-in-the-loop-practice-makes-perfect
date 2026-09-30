@@ -407,3 +407,11 @@ The draft readiness builder requires hashed passing evidence and emits the
 installed gate's executable verified-wrapper commands and 4+4+16 staging.
 It never publishes READY or launches by itself. No Simple scientific job has
 launched. Focused integration/accounting tests: **127/127 pass**; Ruff passes.
+
+### 2026-09-30: reverse contact and grip diagnosis
+
+The corrected contact travel bound (`bbb8c997`) keeps free approach separate from the unchanged 0.10 m loaded travel cap. Diagnostic replay v199 crosses both prior reverse deadlocks: cube 4 moves east to x=1.47943 and begins moving south to y=1.08507. The action still fails: observed tool tilt is 1.12817 rad, exceeding the unchanged 1.1 rad checked-route limit, while the blade remains loaded against two cubes. No success or readiness credit is assigned.
+
+Live native forces show proximal pads at their 0.6 sliding-friction limit. The logged gripper frame is the actual palm; the observed handle rotation is real. Native contacts have dimension 3 and no direct torsional/rolling friction component. Physics, friction, forces, and goal predicates remain unchanged. A lower face-aligned grasp at offset -0.12 m passes static approach/native-clearance checks and is under a bounded physical test (v200). Early unload before the existing tilt bound is being tested separately.
+
+Best completed fresh native forward result remains 5/5 cubes in 9/10 actions (v187). Nominal face-aligned pickups pass 3/3 valid seeds, but the latest fresh face-aligned full task (v198) ends at 4/5. Neither pickup feasibility nor diagnostic replay establishes full production recovery. Calibration, strict production readiness, and experiment launch remain pending.
