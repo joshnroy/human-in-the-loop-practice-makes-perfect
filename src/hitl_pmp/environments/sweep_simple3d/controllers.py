@@ -1675,30 +1675,53 @@ class FloorPrimitives(Primitives):
                 self.session.quaternion(name="wiper_0"),
             ),
         )
-        body_target = Pose((float(position[0]), float(position[1]), 0.001), orientation)
-        ee_target = multiply_poses(body_target, held_tf.invert())
-        hover = Pose(
-            tuple(np.asarray(ee_target.position) + [0.0, 0.0, 0.15]), ee_target.orientation
-        )
-        self.scene.sync()
         path = None
         bodies = self.scene.bodies()
-        for solution in ikfast_closest_inverse_kinematics(
-            self.scene.robot, world_from_target=hover
-        )[:12]:
-            path = self.scene.plan_arm(
-                goal=solution[:7], bodies=bodies, held=self.scene.wiper_body, held_tf=held_tf
+        for height in (0.001, 0.30):
+            body_target = Pose((float(position[0]), float(position[1]), height), orientation)
+            ee_target = multiply_poses(body_target, held_tf.invert())
+            hover = Pose(
+                tuple(np.asarray(ee_target.position) + [0.0, 0.0, 0.15]), ee_target.orientation
             )
+            self.scene.sync()
+            solutions = [
+                solution for solution in ikfast_closest_inverse_kinematics(
+                    self.scene.robot, world_from_target=hover
+                ) if self.scene.within_arm_limits(arm=solution[:7])
+            ]
+            for solution in solutions[:12]:
+                candidate = self.scene.plan_arm(
+                    goal=solution[:7], bodies=bodies,
+                    held=self.scene.wiper_body, held_tf=held_tf,
+                )
+                if candidate is None:
+                    continue
+                descent = self.scene.floor_descent(
+                    start=np.asarray(candidate[-1]), target=ee_target,
+                    bodies=bodies, held_tf=held_tf,
+                )
+                if descent is not None:
+                    path = candidate
+                    break
             if path is not None:
                 break
         if path is None or not self.motion.follow(path=path, grip=1.0):
             raise ExecutionError("No collision-free wiper placement approach")
-        path = self.scene.linear_path(
+        self.require_handle(phase="wiper placement approach")
+        held_tf = multiply_poses(
+            self.scene.ee_now().invert(),
+            Pose(tuple(self.session.position(name="wiper_0")),
+                 self.session.quaternion(name="wiper_0")),
+        )
+        ee_target = multiply_poses(body_target, held_tf.invert())
+        hover = Pose(
+            tuple(np.asarray(ee_target.position) + [0.0, 0.0, 0.15]), ee_target.orientation
+        )
+        path = self.scene.floor_descent(
             start=self.session.arm(),
             target=ee_target,
             bodies=bodies,
-            finger_state=0.5,
-            max_jump=0.6,
+            held_tf=held_tf,
         )
         if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.005):
             raise ExecutionError("No collision-free wiper placement descent")
@@ -1708,7 +1731,15 @@ class FloorPrimitives(Primitives):
         )
         if retreat is None or not self.motion.follow(path=retreat, grip=0.0):
             raise ExecutionError("No collision-free retreat from released wiper")
-        return "Wiper physically released at its original native floor start"
+        from typing import cast
+
+        from .regions import SimpleRegions
+        from .session import SweepSimpleSession
+
+        checks = SimpleRegions.validate(session=cast(SweepSimpleSession, self.session)).checks
+        if not all(value for key, value in checks.items() if key.startswith("wiper_0:")):
+            raise ExecutionError("Released wiper did not settle in its approved start contract")
+        return "Wiper physically released and observed settled in its approved start region"
 
     @staticmethod
     def create(*, session: Any, distance: float, heading_offset: float) -> "FloorPrimitives":
