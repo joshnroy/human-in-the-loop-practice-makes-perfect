@@ -22,6 +22,10 @@ def main():
     environment = manifest.get("environment", "sweep_drawer3d")
     if environment not in ("sweep_drawer3d", "sweep_simple3d"):
         raise ValueError(f"Unsupported Sweep manifest environment {environment!r}")
+    if environment == "sweep_simple3d":
+        from hitl_pmp.environments.sweep_simple3d.cli import SweepSimpleCli
+
+        SweepSimpleCli.validate_manifest(manifest=manifest)
     arm = next(a for a in manifest["arms"] if a["name"] == args.arm)
     method = arm["method"]
     flags = [

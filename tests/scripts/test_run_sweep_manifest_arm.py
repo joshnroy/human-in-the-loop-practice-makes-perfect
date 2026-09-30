@@ -32,6 +32,18 @@ def test_manifest_routes_environment_and_disables_goal_pursuit(
     }
     if environment is not None:
         manifest["environment"] = environment
+    if environment == "sweep_simple3d":
+        manifest.update(
+            status="FROZEN", deployment_horizon=10, practice_reset_policy="never",
+            valid_practice_seeds=[0], valid_evaluation_seeds=list(range(10000, 10010)),
+            pomdp=dict(
+                goal_pursuit_horizon=0, pomdp_solver="determinized_astar",
+                pomdp_max_search_iterations=1000, pomdp_search_depth=20,
+                pomdp_inference_engine="grid", pomdp_grid_competence_bins=25,
+                pomdp_grid_learning_rate_bins=16, pomdp_num_particles=1024,
+                pomdp_linear_cost_lambda=3e-6,
+            ),
+        )
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(manifest))
     monkeypatch.setattr(
