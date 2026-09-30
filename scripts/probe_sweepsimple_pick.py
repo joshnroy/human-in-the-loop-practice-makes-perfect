@@ -31,13 +31,26 @@ class PickupProbe:
         parser.add_argument("--stroke-length", type=float, default=0.10)
         parser.add_argument("--contact-step", type=float, default=0.003)
         parser.add_argument("--narrow-contact", action="store_true")
-        parser.add_argument(
+        resume = parser.add_mutually_exclusive_group()
+        resume.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
+        )
+        resume.add_argument(
+            "--resume-final",
+            help="Failed probe final-state tag; development replay, excluded from readiness",
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         args = parser.parse_args()
         if args.full_cycle and args.pick_only:
             parser.error("--full-cycle cannot be combined with --pick-only")
+        resume_tag = args.resume_pick or args.resume_final
+        resume_phase = (
+            "final_recorded_state"
+            if args.resume_final
+            else "picked_state"
+            if args.resume_pick
+            else None
+        )
         import faulthandler
 
         faulthandler.enable()
@@ -67,15 +80,25 @@ class PickupProbe:
             shutil.copy2(source, source_dir / label)
             hashes[label] = hashlib.sha256(source.read_bytes()).hexdigest()
         (output / "probe_manifest.json").write_text(
-            json.dumps({"arguments": vars(args), "source_sha256": hashes}, indent=2)
+            json.dumps(
+                {
+                    "arguments": vars(args),
+                    "source_sha256": hashes,
+                    "resume_phase": resume_phase,
+                    "end_to_end_native_start": resume_tag is None,
+                },
+                indent=2,
+            )
         )
         session = SweepSimpleSession(
             seed=args.seed, log_path=output / "state.jsonl", replay_path=output / "replay.jsonl"
         )
         initial_state = session.state.copy()
-        if args.resume_pick:
-            PickupProbe.restore_pick(
-                session=session, source=root / "scratchpad/sweepsimple3d" / args.resume_pick
+        if resume_tag:
+            PickupProbe.restore_recorded(
+                session=session,
+                source=root / "scratchpad/sweepsimple3d" / resume_tag,
+                final=args.resume_final is not None,
             )
         primitive = FloorPrimitives.create(
             session=session, distance=args.pick_distance, heading_offset=0.0
@@ -128,20 +151,21 @@ class PickupProbe:
             "start_distribution_shared": None,
             "start_distribution_strict": None,
             "wiper_start_support_tolerance_m": 0.01,
-            "end_to_end_native_start": args.resume_pick is None,
+            "end_to_end_native_start": resume_tag is None,
         }
         if args.full_cycle:
             cycle["stages"].append({
                 "name": "PickFloorWiper",
                 "cube": None,
                 "success": False,
-                "replayed": args.resume_pick is not None,
+                "replayed": resume_tag is not None,
+                "resume_phase": resume_phase,
                 "tick_start": session.ticks,
             })
         try:
             note = (
-                "Recorded picked-state continuation; not an end-to-end native-start trial"
-                if args.resume_pick
+                f"Recorded {resume_phase} continuation; not an end-to-end native-start trial"
+                if resume_tag
                 else primitive.recover_wiper()
             )
             primitive.require_handle(phase="verified pickup or recorded continuation")
@@ -222,8 +246,10 @@ class PickupProbe:
                 session.end(success=success, note=note)
             result = {
                 "success": success,
-                "end_to_end_native_start": args.resume_pick is None,
+                "end_to_end_native_start": resume_tag is None,
                 "resumed_pick": args.resume_pick,
+                "resumed_final": args.resume_final,
+                "resume_phase": resume_phase,
                 "error": error,
                 "traceback": error_traceback,
                 "note": note,
@@ -398,22 +424,44 @@ class PickupProbe:
 
     @staticmethod
     def restore_pick(*, session, source: Path) -> None:
-        """Restore a logged physical pickup for labeled controller debugging only."""
+        """Compatibility entrypoint for picked-state diagnostic continuation."""
+        PickupProbe.restore_recorded(session=session, source=source, final=False)
+
+    @staticmethod
+    def restore_recorded(*, session, source: Path, final: bool) -> None:
+        """Restore recorded native joints for explicitly labeled controller debugging."""
         import mujoco
 
         source_manifest = json.loads((source / "probe_manifest.json").read_text())
         if source_manifest["arguments"]["seed"] != session.seed:
             raise ValueError("Replay and requested native seeds differ")
-        picked = None
-        subsequent_sweep = False
-        for line in (source / "state.jsonl").open():
-            record = json.loads(line)
-            if record.get("kind") == "tick" and record.get("step") == "PickFloorWiper":
-                picked = record
-            if record.get("step") == "SweepCubeToGoal":
-                subsequent_sweep = True
-        if picked is None or not subsequent_sweep:
-            raise ValueError("Source does not establish a completed pickup followed by a sweep")
+        records = [json.loads(line) for line in (source / "state.jsonl").open()]
+        if final:
+            result = json.loads((source / "result.json").read_text())
+            if result.get("success") is not False:
+                raise ValueError("Final-state continuation requires a completed failed probe")
+            picked = next(
+                (
+                    record
+                    for record in reversed(records)
+                    if record.get("kind") == "tick" and "state" in record
+                ),
+                None,
+            )
+            if picked is None or picked["t"] != result["ticks"]:
+                raise ValueError("Final native tick and failed result disagree")
+        else:
+            picked = next(
+                (
+                    record
+                    for record in reversed(records)
+                    if record.get("kind") == "tick" and record.get("step") == "PickFloorWiper"
+                ),
+                None,
+            )
+            subsequent_sweep = any(record.get("step") == "SweepCubeToGoal" for record in records)
+            if picked is None or not subsequent_sweep:
+                raise ValueError("Source does not establish a completed pickup followed by a sweep")
         state = session.state.copy()
         for name, values in picked["state"].items():
             obj = state.get_object_from_name(name)
@@ -430,12 +478,22 @@ class PickupProbe:
                 break
         if frame is None:
             raise ValueError("Native joint replay frame is missing")
-        session.mj_data.qpos[:] = frame["qpos"]
+        precise = next(
+            (
+                record
+                for record in reversed(records)
+                if record.get("t") == picked["t"] and "native_qpos" in record
+            ),
+            None,
+        )
+        session.mj_data.qpos[:] = precise["native_qpos"] if precise is not None else frame["qpos"]
         session.mj_data.qvel[:] = 0
         mujoco.mj_forward(session.mj_model, session.mj_data)
         session._write(
             record={
                 "kind": "development_replay_resume",
+                "resume_phase": "final_recorded_state" if final else "picked_state",
+                "qpos_source": "native_qpos" if precise is not None else "rounded_replay_qpos",
                 "source": str(source),
                 "source_tick": picked["t"],
                 "source_manifest_sha256": hashlib.sha256(
