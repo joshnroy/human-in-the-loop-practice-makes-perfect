@@ -445,6 +445,29 @@ class FloorPrimitives(Primitives):
             ]
         )
 
+    def fixed_reverse_stance(
+        self, *, region: str, distance: float, wiper_start: np.ndarray,
+        bearing: float, original: tuple[float, float, float],
+    ) -> tuple[float, float, float]:
+        """Keep learned stances unchanged; retry the fixed .70 reset at checked .65."""
+        if region != "blocks_init_region" or distance != 0.70:
+            return original
+        if self.scene.plan_base(target=original) is not None:
+            return original
+        alternative = (
+            float(wiper_start[0] + .65 * np.cos(bearing)),
+            float(wiper_start[1] + .65 * np.sin(bearing)),
+            original[2],
+        )
+        if self.scene.plan_base(target=alternative) is None:
+            raise ExecutionError("No native base route to either fixed reverse stance")
+        self.session._write(record={
+            "kind": "fixed_reverse_stance_fallback", "t": self.session.ticks,
+            "original": original, "selected": alternative,
+            "reason": "Original .70 fixed reverse base route rejected; checked .65 route",
+        })
+        return alternative
+
     def _sweep_cube_stroke(
         self, *, cube: str, region: str, distance: float, heading_offset: float
     ) -> str:
@@ -517,6 +540,10 @@ class FloorPrimitives(Primitives):
             float(wiper_start[0] + distance * np.cos(stance_bearing)),
             float(wiper_start[1] + distance * np.sin(stance_bearing)),
             stance_angle,
+        )
+        stance = self.fixed_reverse_stance(
+            region=region, distance=distance, wiper_start=wiper_start,
+            bearing=stance_bearing, original=stance,
         )
         self.transport_wiper(target=stance)
         self.require_handle(phase="base transport")
