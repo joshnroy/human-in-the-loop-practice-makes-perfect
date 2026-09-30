@@ -451,11 +451,12 @@ class FloorPrimitives(Primitives):
         tool_yaws = (
             (angle + np.pi, angle) if narrow_contact else (angle - np.pi / 2, angle + np.pi / 2)
         )
-        for tool_yaw, preserve_tilt in [
-            (yaw, preserve) for preserve in (False, True) for yaw in tool_yaws
-        ]:
+        for tool_yaw, preserve_tilt, nearby_tilt in self.floor_orientation_candidates(
+            tool_yaws=tool_yaws
+        ):
             floor_pose = self.floor_tool_pose(
-                xy=wiper_start, yaw=tool_yaw, preserve_tilt=preserve_tilt
+                xy=wiper_start, yaw=tool_yaw, preserve_tilt=preserve_tilt,
+                tilt=nearby_tilt,
             )
             floor_ee = multiply_poses(floor_pose, held_tf.invert())
             for lift_height in (0.14, 0.24):
@@ -470,6 +471,7 @@ class FloorPrimitives(Primitives):
                 attempts.append({
                     "yaw": tool_yaw,
                     "preserve_tilt": preserve_tilt,
+                    "nearby_tilt": nearby_tilt,
                     "hover": hover.position,
                     "solutions": len(solutions),
                     "approach_paths": 0,
@@ -529,6 +531,7 @@ class FloorPrimitives(Primitives):
                 "t": self.session.ticks,
                 "tool_yaw": tool_yaw,
                 "preserve_tilt": preserve_tilt,
+                "nearby_tilt": nearby_tilt,
                 "floor_position": floor_pose.position,
                 "floor_orientation": floor_pose.orientation,
                 "attempts": attempts,
@@ -1181,7 +1184,7 @@ class FloorPrimitives(Primitives):
                     grip=1.0,
                     tol=0.005,
                     final_tol=0.005,
-                    max_ticks=30,
+                    max_ticks=180,
                     tick_guard=lambda: self.require_handle(phase="blade leveling"),
                 )
                 self.require_handle(phase="blade leveling")
@@ -1237,7 +1240,28 @@ class FloorPrimitives(Primitives):
         vertical = data.geom_xmat[blade].reshape(3, 3)[2]
         return float(data.geom_xpos[blade][2] - np.abs(vertical) @ model.geom_size[blade])
 
-    def floor_tool_pose(self, *, xy: np.ndarray, yaw: float, preserve_tilt: bool = True) -> Pose:
+    def floor_orientation_candidates(
+        self, *, tool_yaws: tuple[float, ...]
+    ) -> list[tuple[float, bool, float | None]]:
+        """Try existing poses first, then nearby tilts with an unload reserve."""
+        from scipy.spatial.transform import Rotation
+
+        candidates: list[tuple[float, bool, float | None]] = [
+            (yaw, preserve, None) for preserve in (False, True) for yaw in tool_yaws
+        ]
+        rotation = Rotation.from_quat(self.session.quaternion(name="wiper_0"))
+        observed = float(np.arccos(np.clip(rotation.as_matrix()[2, 2], -1, 1)))
+        ceiling = min(0.95, self.scene.max_tool_tilt - 0.15)
+        for delta in (0.02, 0.04, -0.02, -0.04):
+            tilt = observed + delta
+            if 0.0 < tilt <= ceiling:
+                candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
+        return candidates
+
+    def floor_tool_pose(
+        self, *, xy: np.ndarray, yaw: float, preserve_tilt: bool = True,
+        tilt: float | None = None,
+    ) -> Pose:
         """Preserve observed tilt and seat the native blade at its actual support height."""
         from itertools import product
 
@@ -1255,9 +1279,23 @@ class FloorPrimitives(Primitives):
         target_rotation = (
             Rotation.from_rotvec([0.0, 0.0, yaw - observed_yaw]).as_matrix() @ observed
         )
-        tilt = float(np.arccos(np.clip(target_rotation[2, 2], -1.0, 1.0)))
-        if not preserve_tilt or tilt > self.scene.max_tool_tilt:
+        observed_tilt = float(np.arccos(np.clip(target_rotation[2, 2], -1.0, 1.0)))
+        if not preserve_tilt or observed_tilt > self.scene.max_tool_tilt:
             target_rotation = Rotation.from_euler("z", yaw).as_matrix()
+        if tilt is not None:
+            if not np.isfinite(tilt) or not 0.0 <= tilt <= self.scene.max_tool_tilt:
+                raise ValueError("Floor tilt candidate must satisfy the existing planning limit")
+            axis = np.cross([0.0, 0.0, 1.0], target_rotation[:, 2])
+            norm = float(np.linalg.norm(axis))
+            axis = axis / norm if norm > 1e-9 else np.array([np.cos(yaw), np.sin(yaw), 0.0])
+            current_tilt = float(np.arccos(np.clip(target_rotation[2, 2], -1.0, 1.0)))
+            target_rotation = (
+                Rotation.from_rotvec(axis * (tilt - current_tilt)).as_matrix() @ target_rotation
+            )
+            candidate_yaw = float(np.arctan2(target_rotation[1, 0], target_rotation[0, 0]))
+            target_rotation = (
+                Rotation.from_euler("z", yaw - candidate_yaw).as_matrix() @ target_rotation
+            )
         blade_rotation = data.geom_xmat[blade].reshape(3, 3)
         world_corners = np.array([
             data.geom_xpos[blade] + blade_rotation @ (model.geom_size[blade] * signs)

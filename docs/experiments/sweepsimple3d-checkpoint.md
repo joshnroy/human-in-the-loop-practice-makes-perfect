@@ -415,3 +415,13 @@ The corrected contact travel bound (`bbb8c997`) keeps free approach separate fro
 Live native forces show proximal pads at their 0.6 sliding-friction limit. The logged gripper frame is the actual palm; the observed handle rotation is real. Native contacts have dimension 3 and no direct torsional/rolling friction component. Physics, friction, forces, and goal predicates remain unchanged. A lower face-aligned grasp at offset -0.12 m passes static approach/native-clearance checks and is under a bounded physical test (v200). Early unload before the existing tilt bound is being tested separately.
 
 Best completed fresh native forward result remains 5/5 cubes in 9/10 actions (v187). Nominal face-aligned pickups pass 3/3 valid seeds, but the latest fresh face-aligned full task (v198) ends at 4/5. Neither pickup feasibility nor diagnostic replay establishes full production recovery. Calibration, strict production readiness, and experiment launch remain pending.
+
+### 2026-09-30: lower-grasp native forward task and bounded leveling
+
+Fresh native v202 reaches **5/5 goal cubes in 6/10 actions** (pickup plus five successful sweep skills), with the exact native goal checked at tick13232. Its first reverse fails at tick15576 because observed tilt1.10309 exceeds1.1; bilateral grasp remains present and no collision is reported. This is a full-run failure, not robot-reset readiness.
+
+The lower handle candidate (-0.12 m offset, face alignment,0.020 m insertion) passes nominal pickup on seeds0,1,2. Seed1 v204 accidentally also executes the default follow-on sweep, which fails its floor approach; only the pickup stage passes. Seed2 v206 uses explicit pickup-only and passes in268ticks. No diagnostic counts are used as scientific results.
+
+Bounded post-unload leveling (`38804ad4`) uses existing checked motions, requires actual tilt decrease and stops after four turns. v203 physically lowers tilt0.9956→0.9271→0.8585 in two turns, then fails a later floor endpoint. Seven distances0.40–0.70 all fail native-limit-valid floor IK for that observed grasp, despite checked base routes. A finer static audit finds nearby tilt0.925 at the original0.70/0 stance has52 native collision-clear IK solutions and a checked approach/descent; the existing two-orientation search is too sparse. A bounded nearby-orientation fallback is being implemented without changing native geometry, limits, physics, or learned distance/heading semantics.
+
+Higher-grasp v207 retains a failed leveling outcome at4476. Explicit existing OpenGripper/PickFloorWiper recovery is being tested separately with every failed sweep and regrasp counted in20actions. Calibration and all Simple science remain unlaunched.
