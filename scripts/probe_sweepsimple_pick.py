@@ -30,6 +30,7 @@ class PickupProbe:
             help="Check all native goals, individual reverse sweeps, and existing return skills.",
         )
         parser.add_argument("--grasp-offset", type=float)
+        parser.add_argument("--grasp-insertion-offset", type=float, choices=(0.020, 0.028))
         parser.add_argument(
             "--grasp-approach-angle", type=float, choices=(1.2, 1.8),
             help="Select an existing controller grasp-angle candidate for diagnosis.",
@@ -43,6 +44,7 @@ class PickupProbe:
         parser.add_argument("--narrow-contact", action="store_true")
         parser.add_argument("--stand-ahead", action="store_true")
         parser.add_argument("--native-contact-guard", action="store_true")
+        parser.add_argument("--log-live-grasp", action="store_true")
         resume = parser.add_mutually_exclusive_group()
         resume.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
@@ -111,6 +113,8 @@ class PickupProbe:
         session = SweepSimpleSession(
             seed=args.seed, log_path=output / "state.jsonl", replay_path=output / "replay.jsonl"
         )
+        if args.log_live_grasp:
+            PickupProbe.install_live_grasp_logging(session_type=SweepSimpleSession)
         initial_state = session.state.copy()
         if resume_tag:
             PickupProbe.restore_recorded(
@@ -128,6 +132,8 @@ class PickupProbe:
         primitive.narrow_contact = args.narrow_contact
         primitive.stand_ahead = args.stand_ahead
         primitive.native_contact_guard = args.native_contact_guard
+        if args.grasp_insertion_offset is not None:
+            primitive.diagnostic_grasp_standoff = args.grasp_insertion_offset
         if args.grasp_mode == "blade":
             import mujoco
             import numpy as np
@@ -339,6 +345,54 @@ class PickupProbe:
             )
             for region in ("sweep_region", "blocks_init_region")
         }
+
+    @staticmethod
+    def install_live_grasp_logging(*, session_type) -> None:
+        """Observe real post-step native contact forces; never reconstruct replay forces."""
+        import mujoco
+        import numpy as np
+
+        original_step = session_type.step
+
+        def traced_step(self, *, action, clip=True):  # noqa: PLR0917 -- bound diagnostic method
+            state = original_step(self, action=action, clip=clip)
+            model, data = self.mj_model, self.mj_data
+            tool = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+            palm = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_base")
+            if min(tool, palm) < 0:
+                raise RuntimeError("Required native tool/palm body missing from diagnostic model")
+            contacts = []
+            for index, contact in enumerate(data.contact[:data.ncon]):
+                if tool not in (model.geom_bodyid[contact.geom1], model.geom_bodyid[contact.geom2]):
+                    continue
+                force = np.zeros(6)
+                mujoco.mj_contactForce(model, data, index, force)
+                contacts.append({
+                    "geom1": int(contact.geom1), "geom2": int(contact.geom2),
+                    "body1": mujoco.mj_id2name(
+                        model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[contact.geom1]
+                    ),
+                    "body2": mujoco.mj_id2name(
+                        model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[contact.geom2]
+                    ),
+                    "position_world": contact.pos.tolist(), "distance": float(contact.dist),
+                    "contact_frame": contact.frame.tolist(),
+                    "contact_frame_wrench": force.tolist(),
+                    "contact_dimension": int(contact.dim),
+                })
+            self._write(record={
+                "kind": "live_grasp_physics", "t": self.ticks,
+                "provenance": "native data immediately after actual environment.step",
+                "contacts": contacts, "ctrl": data.ctrl.tolist(),
+                "actuator_force": data.actuator_force.tolist(),
+                "palm_position": data.xpos[palm].tolist(),
+                "palm_rotation_matrix": data.xmat[palm].tolist(),
+                "tool_position": data.xpos[tool].tolist(),
+                "tool_rotation_matrix": data.xmat[tool].tolist(),
+            })
+            return state
+
+        session_type.step = traced_step
 
     @staticmethod
     def full_cycle(*, session, primitive, initial_state, args, report) -> None:
