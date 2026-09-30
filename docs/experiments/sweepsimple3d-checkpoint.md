@@ -201,3 +201,14 @@ Cross-grasp pickup/carry succeeded in native v84 (1/1, ~28 s). A 42-case geometr
 ### Native contact guard and measured-limit repairs
 
 Independent review reproduced the v95 collision short circuit: recorded joint2=2.24001rad exceeds native2.24 by1e-5rad, but no prohibited collision pair exists. Replay precision is5dp. Strict planned limits remain; only tiny observed-pose overshoot bypasses that numeric bound test while actual geometry is still checked. The contact guard now uses the selected cube footprint and actual native top minus2mm, with lowering limited by native blade-floor clearance. Corrections previously targeted2mm absolute height, overcorrecting into the floor. v96 moves the rear cube~.32m, then loses grasp on reapproach. A bounded checked wrist rotation around the native support corner is under test in v97. Simple tests14/14 pass (including meaningful native geometry/soft-limit regressions); Ruff passes. Still no complete native task, reverse proof, or scientific launch.
+
+
+## 2026-09-29 late checkpoint: first leg physically demonstrated
+
+Diagnostic replay v105 (`scratchpad/sweepsimple3d/native-clearance-v105`) moved all 5/5 cubes from native sample0 into the north corridor (final y1.164–1.189m), retaining bilateral tool contact. This resumes a recorded valid pickup and is not a native-start readiness pass. No complete goal and no reverse/home measurement yet.
+
+The earlier shallow Bullet wrist/chassis overlap was proxy padding: measured native separation+1.93mm vs Bullet−0.03mm. A narrow refinement consults exact native geometry only within the known proxy padding; genuine native penetration remains rejected. Regression verifies both clearance and a9.8mm penetration and preserves live native state.
+
+At the westward turn, all184/184 hover IK endpoints collided with actual chassis geometry. Native representative wrist penetrations55.8–155.1mm establish a real stance issue. v106 uses behind-stroke stance for both route legs within approved distance/heading supports; no geometry, dynamics, goals or predicate relaxation. Checks now also validate carried arm/tool throughout unloading retreat and the exact arm target commanded during contact base motion. Per-tick grasp guards stop correction immediately after physical grasp loss.
+
+Validation: Simple tests28/28; Ruff and mypy controller/shared motion pass. Shared Motion callback defaults toNone and leaves existing call behavior unchanged. Readiness contract read; noREADY record, frozen revision or science launch. Owner heartbeat records active probe.

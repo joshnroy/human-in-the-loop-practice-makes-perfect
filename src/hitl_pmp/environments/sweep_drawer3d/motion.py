@@ -6,7 +6,7 @@ executed motion off the planned (collision-checked) segment, which is how an ear
 version of this reset pushed the open drawer shut with its own forearm.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -75,6 +75,7 @@ class Motion(BaseModel):
         tol: float = 0.03,
         final_tol: float = 0.01,
         max_ticks: int = 600,
+        tick_guard: Callable[[], None] | None = None,
     ) -> bool:
         """Track joint waypoints, densified to <= 0.05 rad; True if the last was reached."""
         if path is None:
@@ -105,6 +106,8 @@ class Motion(BaseModel):
             a[3:10] = cmd
             a[-1] = g
             self.session.step(action=a)
+            if tick_guard is not None:
+                tick_guard()
         return False
 
     def drive(

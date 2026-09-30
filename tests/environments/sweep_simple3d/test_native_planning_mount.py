@@ -140,12 +140,50 @@ def test_observed_soft_limit_roundoff_does_not_broaden_planned_limits(
     scene = FloorPlanningScene(session=session)
     try:
         assert not scene.within_arm_limits(arm=measured)
+        assert scene.plan_arm(goal=measured, bodies=set()) is None
         assert not scene.in_collision(joints=scene.planning_fingers(arm=measured), bodies=set())
         planned = measured.copy()
         planned[0] += 0.1
         assert scene.in_collision(joints=scene.planning_fingers(arm=planned), bodies=set())
         measured[1] += 0.001
-        assert scene.in_collision(joints=scene.planning_fingers(arm=measured), bodies=set())
+        assert not scene.within_arm_limits(arm=measured)
+        assert scene.plan_arm(goal=measured, bodies=set()) is None
+        assert not scene.in_collision(joints=scene.planning_fingers(arm=measured), bodies=set())
+        proposed = measured.copy()
+        proposed[0] += 0.1
+        assert scene.in_collision(joints=scene.planning_fingers(arm=proposed), bodies=set())
+    finally:
+        scene._sim.close()
+        session.close()
+
+
+def test_native_distance_refines_mesh_padding_without_mutating_physics() -> None:
+    """A measured 1.93-mm native clearance was reported as30-micron proxy overlap."""
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session)
+    try:
+        arm = np.array([-0.82547, 2.21671, 2.81530, -0.92952, -8.28174, 1.72315, 1.50567])
+        joints = scene.planning_fingers(arm=arm, state=0.5)
+        chassis_geom, proxy = scene._native_chassis[0]
+        before = session.mj_data.qpos.copy()
+        distance = scene.native_chassis_distance(link=6, chassis_geom=chassis_geom, joints=joints)
+        assert distance is not None and 0.0018 < distance < 0.0021
+        assert not scene.in_collision(joints=joints, bodies={proxy})
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
+        scene.robot.set_joints(joints)
+        padded = pybullet.getClosestPoints(
+            scene.robot.robot_id, proxy, distance=0.0, linkIndexA=6, physicsClientId=scene.cid
+        )
+        assert padded and padded[0][8] < 0.0
+        penetrating = arm.copy()
+        penetrating[0] -= 0.05
+        penetrating_joints = scene.planning_fingers(arm=penetrating, state=0.5)
+        native_overlap = scene.native_chassis_distance(
+            link=6, chassis_geom=chassis_geom, joints=penetrating_joints
+        )
+        assert native_overlap is not None and native_overlap < -0.009
+        assert scene.in_collision(joints=penetrating_joints, bodies={proxy})
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
     finally:
         scene._sim.close()
         session.close()

@@ -2,7 +2,9 @@
 
 import mujoco
 import numpy as np
+import pytest
 
+from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
 from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
@@ -45,6 +47,28 @@ def test_local_contact_edge_excludes_unrelated_high_blade_corner() -> None:
         matrix = data.xmat[tool].reshape(3, 3)
         assert abs(np.arccos(matrix[2, 2]) - abs(pitch)) < 1e-8
         assert abs(np.arctan2(matrix[1, 0], matrix[0, 0]) - 1.1) < 1e-8
+    finally:
+        primitive.scene._sim.close()
+        session.close()
+
+
+def test_contact_guard_stops_arm_motion_after_first_failed_physical_tick() -> None:
+    session = SweepSimpleSession(seed=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0.0)
+    try:
+        start = session.ticks
+        target = session.arm().copy()
+        target[0] += 0.1
+        calls = []
+
+        def guard() -> None:
+            calls.append(session.ticks)
+            raise ExecutionError("measured grasp loss")
+
+        with pytest.raises(ExecutionError, match="measured grasp loss"):
+            primitive.motion.follow(path=[target], grip=0.0, tick_guard=guard)
+        assert calls == [start + 1]
+        assert session.ticks == start + 1
     finally:
         primitive.scene._sim.close()
         session.close()

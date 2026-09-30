@@ -190,13 +190,9 @@ class FloorPrimitives(Primitives):
             if abs(float(relative @ transverse)) <= (0.025 if self.narrow_contact else 0.16):
                 behind = max(behind, -float(relative @ direction))
         wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.025)) * direction
-        robot_box = core.task_config["regions"]["robot_task_init_region"]["ranges"][0]
-        aisle = np.array([(robot_box[0] + robot_box[2]) / 2, (robot_box[1] + robot_box[3]) / 2])
-        nominal_bearing = (
-            angle + np.pi
-            if abs(direction[1]) > abs(direction[0])
-            else float(np.arctan2(aisle[1] - wiper_start[1], aisle[0] - wiper_start[0]))
-        )
+        # Keep the chassis behind the blade on both legs. Facing the initial
+        # aisle during a westward stroke folds the cross-grasp wrist into it.
+        nominal_bearing = angle + np.pi
         stance_bearing = nominal_bearing + heading_offset
         stance_angle = float((stance_bearing + 2 * np.pi) % (2 * np.pi) - np.pi)
         stance = (
@@ -393,11 +389,13 @@ class FloorPrimitives(Primitives):
             )
             for waypoint in base_path:
                 self.scene.sync(base=waypoint)
-                if self.scene.in_collision(
-                    joints=self.scene.planning_fingers(arm=self.session.arm(), state=0.5),
+                if not self.scene.held_path_clear(
+                    path=[contact_arm],
+                    start=self.session.arm(),
                     bodies=bodies,
                     held=self.scene.wiper_body,
                     held_tf=carried_tf,
+                    allowed_tilt=self.scene.max_tool_tilt,
                 ):
                     self.scene.sync()
                     raise ExecutionError("Carried arm/tool route blocked during contact sweep")
@@ -406,6 +404,7 @@ class FloorPrimitives(Primitives):
                 path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005
             ):
                 raise ExecutionError("Contact sweep base did not converge")
+            self.require_handle(phase="contact base step")
             for _ in range(8):
                 wiper_now = Pose(
                     tuple(self.session.position(name="wiper_0")),
@@ -421,9 +420,6 @@ class FloorPrimitives(Primitives):
                 if blade_bottom <= self.cube_contact_ceiling(cube=cube):
                     break
                 if self.blade_minimum_height() <= 0.0011:
-                    if self.level_blade(bodies=bodies):
-                        contact_arm = self.session.arm().copy()
-                        continue
                     self.session._write(
                         record={
                             "kind": "contact_stroke_ended",
@@ -469,11 +465,15 @@ class FloorPrimitives(Primitives):
                     allowed_tilt=self.scene.max_tool_tilt,
                 ):
                     path = None
-                if path is None or not self.motion.follow(path=path, grip=1.0, final_tol=0.003):
+                if path is None or not self.motion.follow(
+                    path=path,
+                    grip=1.0,
+                    tol=0.005,
+                    final_tol=0.003,
+                    max_ticks=30,
+                    tick_guard=lambda: self.require_handle(phase="contact correction"),
+                ):
                     self.require_handle(phase="contact correction")
-                    if self.level_blade(bodies=bodies):
-                        contact_arm = self.session.arm().copy()
-                        continue
                     self.session._write(
                         record={
                             "kind": "contact_stroke_ended",
@@ -494,16 +494,44 @@ class FloorPrimitives(Primitives):
                 wiper=self.session.position(name="wiper_0"),
             ):
                 raise ExecutionError("Wiper lost during contact sweep")
-        if contact_ended:
-            retreat_base = np.asarray(self.session.base()[:2]) - 0.03 * direction
+        retreat_origin = np.asarray(self.session.base()[:2])
+        for retreat in (0.03, 0.06, 0.10):
+            retreat_base = retreat_origin - retreat * direction
             retreat_path = self.scene.plan_base(
                 target=(float(retreat_base[0]), float(retreat_base[1]), stance_angle)
             )
-            if retreat_path is None or not self.motion.drive(
-                path=retreat_path, grip=1.0, max_ticks=80
+            if retreat_path is None:
+                raise ExecutionError("Cannot unload blade/cube contact along a checked route")
+            retreat_arm = self.session.arm().copy()
+            retreat_tf = multiply_poses(
+                self.scene.ee_now().invert(),
+                Pose(
+                    tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"),
+                ),
+            )
+            for waypoint in retreat_path:
+                self.scene.sync(base=waypoint)
+                if not self.scene.held_path_clear(
+                    path=[retreat_arm],
+                    start=retreat_arm,
+                    bodies=bodies,
+                    held=self.scene.wiper_body,
+                    held_tf=retreat_tf,
+                    allowed_tilt=self.scene.max_tool_tilt,
+                ):
+                    self.scene.sync()
+                    raise ExecutionError("Carried arm/tool route blocked during contact retreat")
+            self.scene.sync()
+            if not self.motion.drive(
+                path=retreat_path, grip=1.0, max_ticks=80, arm=retreat_arm
             ):
-                raise ExecutionError("Cannot leave blade/cube contact along a checked route")
+                raise ExecutionError("Checked contact retreat did not converge")
             self.require_handle(phase="contact retreat")
+            if not self.wiper_loaded_by_cube():
+                break
+        if self.wiper_loaded_by_cube():
+            raise ExecutionError("Blade remains loaded by cubes after checked retreat")
         current_ee = self.scene.ee_now()
         lift = self.scene.linear_path(
             start=self.session.arm(),
@@ -538,8 +566,23 @@ class FloorPrimitives(Primitives):
         displacement = float(np.linalg.norm(self.session.position(name=cube)[:2] - initial[:2]))
         return f"Cube displacement {displacement:.3f} m"
 
+    def wiper_loaded_by_cube(self) -> bool:
+        """Use native contact pairs rather than assuming the lowest corner is grounded."""
+        import mujoco
+
+        model, data = self.session.mj_model, self.session.mj_data
+        wiper = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+        cubes = {mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"cube_{i}") for i in range(5)}
+        for contact in data.contact[: data.ncon]:
+            a, b = model.geom_bodyid[contact.geom1], model.geom_bodyid[contact.geom2]
+            if (a == wiper and b in cubes) or (b == wiper and a in cubes):
+                return True
+        return False
+
     def level_blade(self, *, bodies: set[int]) -> bool:
-        """Rotate a small amount about the observed support corner without changing physics."""
+        """Rotate a small amount only after unloading the blade from all cubes."""
+        if self.wiper_loaded_by_cube():
+            return False
         from itertools import product
 
         import mujoco
@@ -581,8 +624,17 @@ class FloorPrimitives(Primitives):
             )
             if path is None:
                 continue
-            self.motion.follow(path=path, grip=1.0, final_tol=0.005, max_ticks=120)
+            converged = self.motion.follow(
+                path=path,
+                grip=1.0,
+                tol=0.005,
+                final_tol=0.005,
+                max_ticks=30,
+                tick_guard=lambda: self.require_handle(phase="blade leveling"),
+            )
             self.require_handle(phase="blade leveling")
+            if not converged:
+                return False
             after = data.xmat[body].reshape(3, 3)
             after_tilt = float(np.arccos(np.clip(after[2, 2], -1.0, 1.0)))
             before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
@@ -828,6 +880,7 @@ class FloorPrimitives(Primitives):
 class FloorPlanningScene(PlanningScene):
     max_tool_tilt: float = 1.1
     _native_chassis: list[tuple[int, int]] = PrivateAttr(default_factory=list)
+    _distance_data: Any = PrivateAttr(default=None)
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         super().model_post_init(__context)
@@ -911,14 +964,12 @@ class FloorPlanningScene(PlanningScene):
 
         chassis_bodies = {body for _, body in self._native_chassis} & bodies
         arm = np.asarray(joints[:7])
-        # MuJoCo's soft limit can leave the measured arm a few microradians
-        # beyond the exact bound. Keep candidate IK limits strict, while testing
-        # actual collision geometry at that observed pose without clipping it.
+        # Collision geometry of an observed physical pose is separate from
+        # admissibility of a proposed arm target. Native soft-limit contact may
+        # place the observed arm slightly beyond the nominal bound; every IK
+        # candidate still goes through strict within_arm_limits filtering.
         measured_roundoff = (
-            not self.within_arm_limits(arm=arm)
-            and np.max(np.abs(arm - self.session.arm())) <= 1e-4
-            and np.all(arm >= self._arm_limits[:, 0] - 1e-4)
-            and np.all(arm <= self._arm_limits[:, 1] + 1e-4)
+            not self.within_arm_limits(arm=arm) and np.max(np.abs(arm - self.session.arm())) <= 1e-7
         )
         if measured_roundoff:
             from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
@@ -947,7 +998,22 @@ class FloorPlanningScene(PlanningScene):
                 self.robot.robot_id, body, distance=margin, physicsClientId=self.cid
             )
             # Native adjacent chassis/arm-mount bodies are collision-excluded.
-            if any(contact[3] != 0 for contact in contacts):
+            chassis_geom = next(geom for geom, proxy in self._native_chassis if proxy == body)
+            for contact in contacts:
+                link = contact[3]
+                if link == 0:
+                    continue
+                padding = float(
+                    pybullet.getDynamicsInfo(self.robot.robot_id, link, physicsClientId=self.cid)[
+                        11
+                    ]
+                ) + float(pybullet.getDynamicsInfo(body, -1, physicsClientId=self.cid)[11])
+                if contact[8] >= -padding - 1e-5:
+                    native_distance = self.native_chassis_distance(
+                        link=link, chassis_geom=chassis_geom, joints=joints
+                    )
+                    if native_distance is not None and native_distance > margin:
+                        continue
                 return True
             if held is not None and pybullet.getClosestPoints(
                 held, body, distance=margin, physicsClientId=self.cid
@@ -960,6 +1026,53 @@ class FloorPlanningScene(PlanningScene):
             held, self.robot.robot_id, distance=0.01, physicsClientId=self.cid
         )
         return any(contact[4] <= 10 and contact[8] < 0.005 for contact in contacts)
+
+    def native_chassis_distance(self, *, link: int, chassis_geom: int, joints: Any) -> float | None:
+        """Refine mesh-padding overlaps against exact native geometry without physical mutation."""
+        import mujoco
+        import pybullet
+
+        model = self.session.mj_model
+        if link < 0:
+            return None
+        name = pybullet.getJointInfo(self.robot.robot_id, link, physicsClientId=self.cid)[
+            12
+        ].decode()
+        body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_" + name)
+        if body < 0:
+            return None
+        geoms = [
+            g
+            for g in range(model.ngeom)
+            if model.geom_bodyid[g] == body
+            and model.geom_contype[g] + model.geom_conaffinity[g] > 0
+        ]
+        if not geoms:
+            return None
+        if self._distance_data is None:
+            self._distance_data = mujoco.MjData(model)
+        data = self._distance_data
+        data.qpos[:] = self.session.mj_data.qpos
+        for number, value in enumerate(joints[:7], start=1):
+            joint = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"robot_joint_{number}")
+            data.qpos[model.jnt_qposadr[joint]] = value
+        names = (
+            "left_driver",
+            "right_driver",
+            "left_spring_link",
+            "right_spring_link",
+            "left_follower",
+            "right_follower",
+        )
+        for name, value in zip(names, joints[7:], strict=True):
+            joint = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "robot_" + name + "_joint")
+            data.qpos[model.jnt_qposadr[joint]] = value
+        # Arm/chassis distance is invariant to their shared rigid base transform.
+        mujoco.mj_kinematics(model, data)
+        return min(
+            float(mujoco.mj_geomDistance(model, data, geom, chassis_geom, 0.01, None))
+            for geom in geoms
+        )
 
     def sync(self, *, base: tuple[float, float, float] | None = None) -> None:
         import mujoco
@@ -1024,7 +1137,7 @@ class FloorPlanningScene(PlanningScene):
         held_tf: Any = None,
         allow_joint_fallback: bool = True,
     ) -> list[np.ndarray] | None:
-        if goal is None:
+        if goal is None or not self.within_arm_limits(arm=goal):
             return None
         if held != self.wiper_body or held_tf is None:
             path = self.native_joint_path(
@@ -1194,6 +1307,8 @@ class FloorPlanningScene(PlanningScene):
         """Reuse BiRRT with native joint limits and chassis/held-object constraints."""
         from pybullet_helpers.motion_planning import run_motion_planning
 
+        if not self.within_arm_limits(arm=goal):
+            return None
         self.sync(base=base)
         initial = self.session.arm() if start is None else np.asarray(start)
         planning_bodies = bodies - {body for _, body in self._native_chassis}
