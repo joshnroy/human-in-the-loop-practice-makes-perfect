@@ -114,8 +114,12 @@ class PickupProbe:
                     "source_sha256": hashes,
                     "controller_mode": ("production_defaults" if args.production_controller
                                         else "diagnostic_overrides"),
-                    "initial_dispatch": "direct primitive recover_wiper and first sweep_cube",
+                    "initial_dispatch": (
+                        "ordinary Environment.take_action" if args.production_controller
+                        else "direct primitive recover_wiper and first sweep_cube"
+                    ),
                     "initial_dispatch_limitation": (
+                        None if args.production_controller else
                         "Initial two calls retain probe logging/counts, bypass Environment "
                         "precondition dispatch; subsequent full-cycle calls use take_action."
                     ),
@@ -144,7 +148,11 @@ class PickupProbe:
         import mujoco
 
         started = time.monotonic()
-        session.begin(name="PickFloorWiper", kind="PickFloorWiper", phase="feasibility")
+        ordinary = (PickupProbe.live_environment(
+            session=session, primitive=primitive, initial_state=initial_state
+        ) if args.production_controller else None)
+        if ordinary is None:
+            session.begin(name="PickFloorWiper", kind="PickFloorWiper", phase="feasibility")
         error = ""
         error_traceback = ""
         success = False
@@ -169,7 +177,10 @@ class PickupProbe:
             note = (
                 f"Recorded {resume_phase} continuation; not an end-to-end native-start trial"
                 if resume_tag
-                else primitive.recover_wiper()
+                else PickupProbe.dispatch_ordinary(
+                    env=ordinary, name="PickFloorWiper", cube=-1,
+                    params=(args.pick_distance, 0.0),
+                ) if ordinary is not None else primitive.recover_wiper()
             )
             primitive.require_handle(phase="verified pickup or recorded continuation")
             if args.full_cycle:
@@ -196,8 +207,11 @@ class PickupProbe:
                 flush=True,
             )
             if not args.pick_only:
-                session.end(success=True, note=note)
-                session.begin(name="SweepCubeToGoal", kind="SweepCubeToGoal", phase="feasibility")
+                if ordinary is None:
+                    session.end(success=True, note=note)
+                    session.begin(
+                        name="SweepCubeToGoal", kind="SweepCubeToGoal", phase="feasibility"
+                    )
                 if args.full_cycle:
                     cycle["stages"].append({
                         "name": "SweepCubeToGoal",
@@ -209,12 +223,15 @@ class PickupProbe:
 
                 sweep_error = None
                 try:
-                    note = primitive.sweep_cube(
+                    note = (PickupProbe.dispatch_ordinary(
+                        env=ordinary, name="SweepCubeToGoal", cube=args.cube_order[0],
+                        params=(args.sweep_distance, args.sweep_angle),
+                    ) if ordinary is not None else primitive.sweep_cube(
                         cube=f"cube_{args.cube_order[0]}",
                         region="sweep_region",
                         distance=args.sweep_distance,
                         heading_offset=args.sweep_angle,
-                    )
+                    ))
                 except ExecutionError as exc:
                     if not args.forward_budget:
                         raise
@@ -237,7 +254,8 @@ class PickupProbe:
                     session._write(record={"kind": "readiness_skill", **cycle["stages"][-1]})
                     if not attained and not args.forward_budget:
                         raise RuntimeError("Selected cube sweep did not attain its native goal")
-                    session.end(success=attained and sweep_error is None, note=note)
+                    if ordinary is None:
+                        session.end(success=attained and sweep_error is None, note=note)
                     PickupProbe.full_cycle(
                         session=session,
                         primitive=primitive,
@@ -389,6 +407,19 @@ class PickupProbe:
         env._session, env._primitive, env._initial_state = session, primitive, initial_state
         env.current_state = env.observe()
         return env
+
+    @staticmethod
+    def dispatch_ordinary(*, env, name, cube, params) -> str:
+        """Use real preconditions, execution, observation and skill accounting."""
+        import numpy as np
+
+        from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
+
+        env.take_action(action=np.array([env.ACTION_NAMES.index(name), cube, *params], dtype=float))
+        observed = env.session()._steps[-1]
+        if not observed.success or observed.note:
+            raise ExecutionError(f"{name}({cube}) failed: {observed.note}")
+        return observed.note
 
     @staticmethod
     def native_counts(*, session) -> dict[str, int]:

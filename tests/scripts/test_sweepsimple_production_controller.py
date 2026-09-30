@@ -62,3 +62,31 @@ def test_nominal_parameters_orchestration_and_readonly_logging_remain_allowed(*,
               "--finish-selected-first", "--forward-budget=10", "--log-live-grasp"],
         parser=argparse.ArgumentParser(),
     )
+
+
+@pytest.mark.parametrize("success,note", [
+    (True, ""), (False, "Observed action preconditions do not hold")
+])
+def test_initial_dispatch_uses_ordinary_action_result(*, probe, success, note) -> None:
+    import numpy as np
+
+    from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
+
+    calls = []
+    session = SimpleNamespace(_steps=[])
+
+    def take_action(*, action):
+        calls.append(action)
+        session._steps.append(SimpleNamespace(success=success, note=note))
+
+    env = SimpleNamespace(ACTION_NAMES=["PickFloorWiper"], take_action=take_action,
+                          session=lambda: session)
+    if success:
+        assert probe.dispatch_ordinary(env=env, name="PickFloorWiper", cube=-1,
+                                       params=(.7, 0.0)) == ""
+    else:
+        with pytest.raises(ExecutionError, match="preconditions"):
+            probe.dispatch_ordinary(env=env, name="PickFloorWiper", cube=-1,
+                                    params=(.7, 0.0))
+    assert len(calls) == 1
+    np.testing.assert_array_equal(calls[0], [0, -1, .7, 0.0])
