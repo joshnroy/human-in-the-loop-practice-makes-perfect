@@ -270,9 +270,18 @@ class FloorPrimitives(Primitives):
         if self._exhausted_stow_key == cache_key:
             raise ExecutionError("No collision-free compact tool transport pose")
         self._exhausted_stow_key = None
+
+        def carry_endpoint_clear(*, arm: np.ndarray) -> bool:
+            tool = multiply_poses(self.scene.fk(arm=arm), held_tf)
+            tilt = float(np.arccos(np.clip(
+                Rotation.from_quat(tool.orientation).as_matrix()[2, 2], -1.0, 1.0
+            )))
+            return tilt <= self.scene.max_tool_tilt
+
         home = np.asarray(SweepDrawerScene.HOME)
         if (
-            self.scene.plan_arm(
+            carry_endpoint_clear(arm=home)
+            and self.scene.plan_arm(
                 goal=home,
                 bodies=self.scene.bodies(),
                 held=self.scene.wiper_body,
@@ -300,6 +309,8 @@ class FloorPrimitives(Primitives):
                         for solution in [
                             q for q in solutions if self.scene.within_arm_limits(arm=q[:7])
                         ][:24]:
+                            if not carry_endpoint_clear(arm=np.asarray(solution[:7])):
+                                continue
                             path = self.scene.plan_arm(
                                 goal=solution[:7],
                                 bodies=self.scene.bodies(),

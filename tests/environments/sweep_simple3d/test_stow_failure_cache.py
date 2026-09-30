@@ -35,7 +35,7 @@ def test_exact_exhaustion_cache(*, monkeypatch, change: str) -> None:
         position=lambda **kwargs: np.zeros(3),
         quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0), yaw=lambda **kwargs: 0.0,
     )
-    scene = SimpleNamespace(
+    scene = SimpleNamespace(fk=lambda **_: Pose((0.0, 0.0, 0.0)), 
         sync=lambda: None, ee_now=lambda: Pose((0.0, 0.0, 0.0)),
         plan_arm=plan, bodies=lambda: {1}, robot=object(), wiper_body=2,
         within_arm_limits=lambda **kwargs: True, max_tool_tilt=1.1,
