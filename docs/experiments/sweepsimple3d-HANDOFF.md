@@ -7,3 +7,7 @@ The corrected pickup operator guarantees HoldingWiper and leaves RobotHome/Robot
 The same authorized correction applies to SweepCubeToGoal and SweepCubeToStart: their geometry-dependent stance cannot guarantee RobotAway. Both now ignore predicted base predicates while requiring their existing cube add effects. Regression tests cover attained and unattained target conditions while the base remains observed home. ReturnRobotToStart and the human reset retain their explicit home guarantees.
 
 Fresh native proofs remain required after the model correction. This is an integration bug fix, not scientific success evidence.
+
+## Loaded native joint reserve correction
+
+Authorized before implementation: production seed1 v246 reached 5/5 goals, then reverse contact motion exhausted joint_2 reserve. Final observed 2.2401583195 exceeds native 2.24 by .0001583195 rad. Last selected approach was valid with .020914 rad reserve; loaded corrections subsequently consumed it. Introduce a .01 rad loaded-only reserve guard at both base drive and corrective descent, ending the stroke into the existing checked retreat. Keep strict native limits and observed-state validation; no clipping or limit/physics changes. Any recorded-state v249 replay is counterfactual diagnostics, with nine prior actions retained and one retry counted as action ten, not readiness evidence.

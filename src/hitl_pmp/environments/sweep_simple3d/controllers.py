@@ -72,6 +72,10 @@ class ContactTiltLimit(ContactTravelLimit):
     """Internal stop before loaded tilt exhausts the checked retreat allowance."""
 
 
+class ContactJointReserveLimit(ContactTravelLimit):
+    """Stop loaded contact while a valid arm still has room for checked retreat."""
+
+
 class FloorPrimitives(Primitives):
     """Floor pickup uses the tested generic handle grasp with a learned base stance."""
 
@@ -108,6 +112,21 @@ class FloorPrimitives(Primitives):
             # An already-invalid starting pose still faces the unchanged retreat
             # checker and remains a failure if that checked route is unavailable.
             raise ContactTiltLimit
+
+    def guard_loaded_joint_reserve(self, *, phase: str) -> None:
+        """Stop loaded motion at the existing 0.01rad native approach reserve."""
+        if not self.wiper_loaded_by_cube():
+            return
+        arm = self.session.arm().copy()
+        margin = FloorApproachPreference.native_margin(arm=arm, limits=self.scene._arm_limits)
+        if margin <= 0.01:
+            self.session._write(record={
+                "kind": "contact_stroke_ended", "t": self.session.ticks,
+                "reason": "loaded native joint reserve exhausted; checked unload required",
+                "phase": phase, "native_joint_margin": margin, "required_reserve": 0.01,
+                "observed_arm": arm.tolist(), "already_outside_native_limits": margin < 0.0,
+            })
+            raise ContactJointReserveLimit
 
     def wiper_pickup_descent_clear(self, *, start: np.ndarray, path: list[np.ndarray]) -> bool:
         """Allow pad contact only; a fallen blade must not collide with finger links."""
@@ -785,6 +804,7 @@ class FloorPrimitives(Primitives):
         })
 
         def observe_contact_travel() -> None:
+            self.guard_loaded_joint_reserve(phase="contact drive")
             self.guard_loaded_tool_tilt(phase="contact drive")
             projection = float((np.asarray(self.session.base()[:2]) - base_origin) @ direction)
             before = travel.onset
@@ -990,6 +1010,7 @@ class FloorPrimitives(Primitives):
 
                 def correction_guard() -> None:
                     self.require_handle(phase="contact correction")
+                    self.guard_loaded_joint_reserve(phase="contact correction")
                     self.guard_loaded_tool_tilt(phase="contact correction")
 
                 try:
@@ -1007,8 +1028,8 @@ class FloorPrimitives(Primitives):
                             self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003
                         ),
                     )
-                except ContactTiltLimit:
-                    tilt_unload = True
+                except (ContactTiltLimit, ContactJointReserveLimit) as stop:
+                    tilt_unload = isinstance(stop, ContactTiltLimit)
                     contact_ended = True
                     break
                 if not corrected:
