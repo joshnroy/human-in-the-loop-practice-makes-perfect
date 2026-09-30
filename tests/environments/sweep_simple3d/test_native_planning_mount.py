@@ -167,7 +167,7 @@ def test_native_distance_refines_mesh_padding_without_mutating_physics() -> None
         chassis_geom, proxy = scene._native_chassis[0]
         before = session.mj_data.qpos.copy()
         distance = scene.native_chassis_distance(link=6, chassis_geom=chassis_geom, joints=joints)
-        assert distance is not None and 0.0018 < distance < 0.0021
+        assert distance == pytest.approx(1e-6)
         assert not scene.in_collision(joints=joints, bodies={proxy})
         np.testing.assert_array_equal(session.mj_data.qpos, before)
         scene.robot.set_joints(joints)
@@ -184,6 +184,98 @@ def test_native_distance_refines_mesh_padding_without_mutating_physics() -> None
         assert native_overlap is not None and native_overlap < -0.009
         assert scene.in_collision(joints=penetrating_joints, bodies={proxy})
         np.testing.assert_array_equal(session.mj_data.qpos, before)
+    finally:
+        scene._sim.close()
+        session.close()
+
+
+def test_exact_contact_pose_uses_threshold_distance_without_changing_native_state() -> None:
+    """MuJoCo 3.3.7 can return zero for a separated mesh pair at a large query cap."""
+    session = SweepSimpleSession(seed=0)
+    model, data = session.mj_model, session.mj_data
+    # Full-precision v111 rejection: unlike its rounded replay, this pose exposes
+    # the positive-distance solver ambiguity. No physics steps are needed.
+    base = (1.3360242983535768, 0.39041569104544893, -4.974209976088986)
+    arm = np.array([
+        -0.8263251185417175,
+        2.2201499938964844,
+        2.814652919769287,
+        -0.923022449016571,
+        -8.281150817871094,
+        1.7281091213226318,
+        1.508354902267456,
+    ])
+    fingers = (
+        0.6294240741200892,
+        0.6292491778980899,
+        0.6245892227718545,
+        0.6238522908238139,
+        -0.6218662570634816,
+        -0.6254938868813136,
+    )
+    joint_values = dict(
+        zip(("robot_joint_x", "robot_joint_y", "robot_joint_th"), base, strict=True)
+    )
+    joint_values.update({f"robot_joint_{i}": value for i, value in enumerate(arm, start=1)})
+    joint_values.update({
+        f"robot_{name}_joint": value
+        for name, value in zip(
+            (
+                "left_driver",
+                "right_driver",
+                "left_spring_link",
+                "right_spring_link",
+                "left_follower",
+                "right_follower",
+            ),
+            fingers,
+            strict=True,
+        )
+    })
+    joint_values.update({
+        "robot_left_coupler_joint": 0.0005482488952691177,
+        "robot_right_coupler_joint": 0.0006636535957275588,
+    })
+    for name, value in joint_values.items():
+        joint = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        data.qpos[model.jnt_qposadr[joint]] = value
+    mujoco.mj_forward(model, data)
+    scene = FloorPlanningScene(session=session)
+    try:
+        before = data.qpos.copy()
+        before_geom = data.geom_xpos.copy()
+        before_flags = (int(model.opt.enableflags), int(model.opt.disableflags))
+        wrist = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_spherical_wrist_2_link")
+        wrist_geoms = [
+            g
+            for g in range(model.ngeom)
+            if model.geom_bodyid[g] == wrist
+            and model.geom_contype[g] + model.geom_conaffinity[g] > 0
+        ]
+        assert len(wrist_geoms) == 1
+        chassis_geom, proxy = scene._native_chassis[0]
+        wrist_geom = wrist_geoms[0]
+        assert not any({c.geom1, c.geom2} == {wrist_geom, chassis_geom} for c in data.contact)
+        # This upstream numerical quirk is version-specific; the threshold and
+        # negative-control assertions below remain valid after a MuJoCo upgrade.
+        if mujoco.__version__ == "3.3.7":
+            assert mujoco.mj_geomDistance(model, data, wrist_geom, chassis_geom, 0.01, None) == 0.0
+        assert mujoco.mj_geomDistance(model, data, wrist_geom, chassis_geom, 1e-6, None) == 1e-6
+        joints = arm.tolist() + list(fingers)
+        assert scene.native_chassis_distance(
+            link=6, chassis_geom=chassis_geom, joints=joints
+        ) == pytest.approx(1e-6)
+        assert not scene.in_collision(joints=joints, bodies={proxy})
+        penetrating = list(joints)
+        penetrating[0] -= 0.05
+        distance = scene.native_chassis_distance(
+            link=6, chassis_geom=chassis_geom, joints=penetrating
+        )
+        assert distance is not None and distance < -0.009
+        assert scene.in_collision(joints=penetrating, bodies={proxy})
+        np.testing.assert_array_equal(data.qpos, before)
+        np.testing.assert_array_equal(data.geom_xpos, before_geom)
+        assert (int(model.opt.enableflags), int(model.opt.disableflags)) == before_flags
     finally:
         scene._sim.close()
         session.close()
