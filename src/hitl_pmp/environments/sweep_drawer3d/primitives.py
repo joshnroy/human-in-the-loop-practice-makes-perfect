@@ -712,7 +712,7 @@ class Primitives(BaseModel):
                         raise ExecutionError("wiper pickup unavailable at actual base pose")
                     reach, down = redo
                     if not self.wiper_pickup_descent_clear(
-                        start=np.asarray(reach[-1]), path=down
+                        start=np.asarray(reach[-1]) if reach else self.session.arm(), path=down
                     ):
                         raise ExecutionError("Native non-pad/tool collision blocks pickup descent")
                     if not self.motion.follow(path=reach, grip=0.0):

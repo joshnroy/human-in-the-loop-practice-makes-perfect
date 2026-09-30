@@ -133,7 +133,8 @@ class FloorPrimitives(Primitives):
                     self.session._write(record={
                         "kind": "pickup_nonpad_path_rejection", "t": self.session.ticks,
                         "fraction": float(fraction), "arm": arm.tolist(),
-                        "base": list(self.scene._planning_base), "contacts": contacts,
+                        "base": None if self.scene._planning_base is None
+                        else list(self.scene._planning_base), "contacts": contacts,
                     })
                     return False
             previous = waypoint
