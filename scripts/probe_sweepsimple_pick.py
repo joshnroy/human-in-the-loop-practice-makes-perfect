@@ -30,6 +30,10 @@ class PickupProbe:
             help="Check all native goals, individual reverse sweeps, and existing return skills.",
         )
         parser.add_argument("--grasp-offset", type=float)
+        parser.add_argument(
+            "--grasp-approach-angle", type=float, choices=(1.2, 1.8),
+            help="Select an existing controller grasp-angle candidate for diagnosis.",
+        )
         parser.add_argument("--grasp-height", type=float, default=0.0)
         parser.add_argument("--grasp-mode", choices=("handle", "blade"), default="handle")
         parser.add_argument("--tilt-limit", type=float, default=1.1)
@@ -153,6 +157,8 @@ class PickupProbe:
             FloorPrimitives.wiper_grasp_point = lambda self, *, center, axis, along: (
                 center + along * axis + np.array([0.0, 0.0, args.grasp_height])
             )
+        if args.grasp_approach_angle is not None:
+            FloorPrimitives.wiper_approach_angles = lambda self: (args.grasp_approach_angle,)
         if args.grasp_offset is not None:
             FloorPrimitives.wiper_grasp_offsets = lambda self: (args.grasp_offset,)
         import mujoco
