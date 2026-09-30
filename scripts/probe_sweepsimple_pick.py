@@ -43,6 +43,7 @@ class PickupProbe:
         parser.add_argument("--floor-clearance", type=float, default=0.001)
         parser.add_argument("--narrow-contact", action="store_true")
         parser.add_argument("--center-selected-cube", action="store_true")
+        parser.add_argument("--finish-selected-first", action="store_true")
         parser.add_argument("--stand-ahead", action="store_true")
         parser.add_argument("--native-contact-guard", action="store_true")
         parser.add_argument("--log-live-grasp", action="store_true")
@@ -425,7 +426,8 @@ class PickupProbe:
             # The initial pickup and first sweep already consumed two actions.
             # Rotate through the remaining native subgoals; a failed skill stays
             # failed and consumes its action. No state restoration or hidden pick.
-            order = args.cube_order[1:] + args.cube_order[:1]
+            order = (list(args.cube_order) if args.finish_selected_first
+                     else args.cube_order[1:] + args.cube_order[:1])
             for slot in range(2, args.forward_budget):
                 if core._check_goals():
                     break
@@ -435,7 +437,8 @@ class PickupProbe:
                 if not pending:
                     break
                 i = pending[0]
-                order = order[order.index(i) + 1:] + order[:order.index(i) + 1]
+                if not args.finish_selected_first:
+                    order = order[order.index(i) + 1:] + order[:order.index(i) + 1]
                 try:
                     PickupProbe.cycle_action(
                         env=env, name="SweepCubeToGoal", cube=i, report=report,

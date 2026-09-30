@@ -7,7 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_failed_forward_calls_are_counted_without_reset(*, monkeypatch) -> None:
+@pytest.mark.parametrize("finish_selected_first", [False, True])
+def test_failed_forward_calls_are_counted_without_reset(
+    *, monkeypatch, finish_selected_first
+) -> None:
     from hitl_pmp.environments.sweep_simple3d import environment, regions
 
     path = Path(__file__).resolve().parents[2] / "scripts/probe_sweepsimple_pick.py"
@@ -45,13 +48,14 @@ def test_failed_forward_calls_are_counted_without_reset(*, monkeypatch) -> None:
         {"name": "SweepCubeToGoal", "success": False},
     ]}
     args = SimpleNamespace(
-        forward_budget=10, cube_order=[0, 1, 2, 3, 4], sweep_distance=0.4, sweep_angle=0.0
+        forward_budget=10, cube_order=[0, 1, 2, 3, 4], sweep_distance=0.4, sweep_angle=0.0,
+        finish_selected_first=finish_selected_first,
     )
     with pytest.raises(RuntimeError, match="All-cube native goal check failed"):
         probe.full_cycle(
             session=session, primitive=None, initial_state=None, args=args, report=report
         )
-    assert calls == [1, 2, 3, 4, 0, 1, 2, 3]
+    assert calls == ([0] * 8 if finish_selected_first else [1, 2, 3, 4, 0, 1, 2, 3])
     assert report["forward_robot_actions_executed"] == 10
     assert sum(bool(s.get("counted_failure")) for s in report["stages"]) == 8
     assert report["native_goal_success"] is False
