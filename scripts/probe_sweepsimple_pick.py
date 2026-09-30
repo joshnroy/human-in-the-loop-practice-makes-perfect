@@ -45,6 +45,7 @@ class PickupProbe:
         parser.add_argument("--stand-ahead", action="store_true")
         parser.add_argument("--native-contact-guard", action="store_true")
         parser.add_argument("--log-live-grasp", action="store_true")
+        parser.add_argument("--retain-pickup-carry-pose", action="store_true")
         resume = parser.add_mutually_exclusive_group()
         resume.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
@@ -132,6 +133,7 @@ class PickupProbe:
         primitive.narrow_contact = args.narrow_contact
         primitive.stand_ahead = args.stand_ahead
         primitive.native_contact_guard = args.native_contact_guard
+        primitive.retain_pickup_carry_pose = args.retain_pickup_carry_pose
         if args.grasp_insertion_offset is not None:
             primitive.diagnostic_grasp_standoff = args.grasp_insertion_offset
         if args.grasp_mode == "blade":
@@ -376,6 +378,14 @@ class PickupProbe:
                         model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[contact.geom2]
                     ),
                     "position_world": contact.pos.tolist(), "distance": float(contact.dist),
+                    "geom1_local_position": (
+                        data.geom_xmat[contact.geom1].reshape(3, 3).T
+                        @ (contact.pos - data.geom_xpos[contact.geom1])
+                    ).tolist(),
+                    "geom2_local_position": (
+                        data.geom_xmat[contact.geom2].reshape(3, 3).T
+                        @ (contact.pos - data.geom_xpos[contact.geom2])
+                    ).tolist(),
                     "contact_frame": contact.frame.tolist(),
                     "contact_frame_wrench": force.tolist(),
                     "contact_dimension": int(contact.dim),
