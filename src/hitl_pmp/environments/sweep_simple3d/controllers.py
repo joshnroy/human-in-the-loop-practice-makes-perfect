@@ -25,7 +25,8 @@ class ContactTravelBudget(BaseModel):
         # Preserve the original zero-behind command sequence exactly.
         if self.behind == 0:
             return np.arange(self.step, min(self.length + .10, self.stroke + self.step), self.step)
-        bound = min(self.length + .10, self.stroke + self.behind)
+        # Remaining cube travel excludes the clearance offset behind its anchor.
+        bound = self.behind + min(self.length + .10, self.stroke)
         return np.minimum(np.arange(self.step, bound + self.step, self.step), bound)
 
     def observe(self, *, projection: float, loaded: bool) -> bool:

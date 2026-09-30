@@ -29,7 +29,7 @@ def test_early_contact_clips_every_later_command_and_stops_at_loaded_limit() -> 
 
 def test_absent_contact_is_bounded_and_zero_behind_preserves_original_targets() -> None:
     travel = ContactTravelBudget(length=.02, stroke=.10, step=.003, behind=.3)
-    assert travel.targets()[-1] == pytest.approx(.12)
+    assert travel.targets()[-1] == pytest.approx(.40)
     for target in travel.targets():
         assert not travel.observe(projection=float(target), loaded=False)
     original = ContactTravelBudget(length=.5, stroke=.10, step=.003, behind=0)
@@ -40,3 +40,12 @@ def test_absent_contact_is_bounded_and_zero_behind_preserves_original_targets() 
 def test_invalid_clearance_never_enters_motion(*, behind: float) -> None:
     with pytest.raises(ValueError):
         ContactTravelBudget(length=.5, stroke=.1, step=.003, behind=behind)
+
+
+def test_recorded_late_reverse_gap_keeps_clearance_outside_remaining_travel() -> None:
+    travel = ContactTravelBudget(length=.241994, stroke=.10, step=.003, behind=.310769)
+    assert travel.targets()[-1] == pytest.approx(.410769)
+    # An early physical contact still limits all commands to 100mm loaded travel.
+    assert not travel.observe(projection=.02, loaded=True)
+    assert max(travel.target(proposed=float(x)) for x in travel.targets()) == pytest.approx(.12)
+    assert travel.observe(projection=.02 + .10, loaded=True)
