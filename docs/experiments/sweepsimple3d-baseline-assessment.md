@@ -38,6 +38,12 @@ Counterfactual retries v255b and v256 also fail without cube progress. Ranking a
 
 Simple-only model correction `3de27093` makes both existing planning engines forget uncertain base-location facts identically after Pick/Sweep, and permits an idempotent Return whenever the hand is empty. Twelve focused tests pass. Actual native observations are unchanged. Both learners and calibration use observed add effects as skill success; the production readiness proof additionally rejects controller errors. This distinction is explicit and unchanged.
 
+## Additional parameter and recovery diagnostics
+
+Four single-cube production support probes use seed 0/cube 4 and ordinary Pick/Sweep dispatch. At distance 0.70 m, both heading endpoints ±15° succeed (2/2). At heading 0°, distance 0.40 m fails blade overlap and 0.55 m fails the no-progress check (0/2). These selected feasibility checks are not random calibration or full-task success estimates. The approved ranges remain unchanged. All four outcomes and result hashes are retained in `scratchpad/sweepsimple3d/forward-support-observations-v257-v261.json`.
+
+Broad southward reverse contact rotates the tool relative to the palm by about 71 mm and 0.99 rad between the measured first-south and later-contact states. Diagnostic v259 localizes existing narrow contact to southward robot reset, at fixed 0.55 m distance with the native cube-contact ceiling, and prefers existing nearly upright approaches with 0.03 rad native joint reserve. It returns cube 0 under the native predicate at counted action 11, then fails cube 1's blade-overlap check at action 12. Final reset count is 1/5 cubes, with no wiper/robot return executed. Earlier failed actions are retained; this replay has no readiness credit and is not promoted. A fresh seed-1 transfer check runs the identical frozen candidate while the second-cube failure is diagnosed.
+
 ## Baseline distinction
 
 Pinned KINDER is `8f600231da8ee898da1055144665a8c5f6c246f0`; baselines is `427ad6cdfcc79efb489ebabc8fd39d77e104bb4e`. Native task registrations are in KINDER `src/kinder/__init__.py:492–542`. Baselines `tidybot3d_sweep3D.py:55–58` loads Drawer configurations. Its `experiments/conf/env/sweep3d-o5.yaml` selects SweepIntoDrawer3D.
