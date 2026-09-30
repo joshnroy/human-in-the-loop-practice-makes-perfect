@@ -588,6 +588,10 @@ class Primitives(BaseModel):
     ) -> np.ndarray:
         return center + along * axis
 
+    def wiper_grasp_standoff(self) -> float:
+        """Distance behind the grasp point along negative end-effector approach."""
+        return 0.035
+
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         return 0.0, 0.03, 0.06
 
@@ -627,7 +631,7 @@ class Primitives(BaseModel):
             grasp_point = self.wiper_grasp_point(center=center, axis=axis, along=along)
             for closing, approach in orientations:
                 goal = Pose(
-                    tuple(grasp_point - approach * 0.035),
+                    tuple(grasp_point - approach * self.wiper_grasp_standoff()),
                     Orientations.from_axes(closing=closing, approach=approach),
                 )
                 hover = Pose(tuple(np.asarray(goal.position) - approach * 0.08), goal.orientation)

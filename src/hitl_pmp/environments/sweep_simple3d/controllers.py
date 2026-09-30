@@ -33,6 +33,14 @@ class FloorPrimitives(Primitives):
     def wiper_approach_angles(self) -> tuple[float, ...]:
         return np.pi / 2, 1.2, 1.8
 
+    diagnostic_grasp_standoff: float = Field(default=0.035, ge=0.0, le=0.035)
+
+    def wiper_grasp_standoff(self) -> float:
+        """Keep the shared default; allow explicit diagnostic insertion trials."""
+        if not 0.0 <= self.diagnostic_grasp_standoff <= 0.035:
+            raise ValueError("Diagnostic grasp standoff must lie in [0, 0.035] meters")
+        return self.diagnostic_grasp_standoff
+
     def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
         del axis
         base = self.session.base()
