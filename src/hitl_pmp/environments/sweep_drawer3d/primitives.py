@@ -9,6 +9,7 @@ having touched the world.
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from pybullet_helpers.geometry import Pose
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 from shapely.affinity import translate
 from shapely.geometry import Polygon
@@ -608,6 +609,13 @@ class Primitives(BaseModel):
     def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
         return float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
 
+    def wiper_pick_targets_after_navigation(
+        self, *, hover: Pose, target: Pose, along: float, approach: np.ndarray
+    ) -> tuple[Pose, Pose]:
+        """Shared default preserves the already checked native pickup targets."""
+        del along, approach
+        return hover, target
+
     def recover_wiper(self) -> str:
         """Grasp the observed handle and verify that it follows a physical lift."""
         from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
@@ -684,6 +692,9 @@ class Primitives(BaseModel):
                     self.motion.set_gripper(command=0.0)
                     if not self.motion.drive(path=path, grip=0.0):
                         raise ExecutionError("wiper pickup base did not converge")
+                    hover, goal = self.wiper_pick_targets_after_navigation(
+                        hover=hover, target=goal, along=along, approach=approach
+                    )
                     redo = self.resolve_at_actual_base(
                         hover=hover,
                         target=goal,

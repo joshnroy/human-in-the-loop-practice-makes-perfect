@@ -71,6 +71,29 @@ class FloorPrimitives(Primitives):
         wiper = self.session.position(name="wiper_0")
         return float(np.arctan2(base[1] - wiper[1], base[0] - wiper[0]))
 
+    def wiper_pick_targets_after_navigation(
+        self, *, hover: Pose, target: Pose, along: float, approach: np.ndarray
+    ) -> tuple[Pose, Pose]:
+        """Refresh a floor tool displaced by empty-hand navigation before descent."""
+        del hover
+        handle, handle_axis = self.wiper_handle_geometry()
+        data = self.session.mj_data
+        center = np.asarray(data.geom_xpos[handle])
+        axis = np.asarray(data.geom_xmat[handle]).reshape(3, 3)[:, handle_axis]
+        point = self.wiper_grasp_point(center=center, axis=axis, along=along)
+        refreshed = Pose(tuple(point - approach * self.wiper_grasp_standoff()),
+                         target.orientation)
+        hover = Pose(tuple(np.asarray(refreshed.position) - approach * 0.08),
+                     refreshed.orientation)
+        self.session._write(record={
+            "kind": "pickup_target_refreshed", "t": self.session.ticks,
+            "previous_target": list(target.position), "target": list(refreshed.position),
+            "observed_handle_center": center.tolist(), "observed_handle_axis": axis.tolist(),
+        })
+        # The shared caller still resolves IK and collision-checks approach and
+        # descent at the actual base. This hook neither moves nor grasps anything.
+        return hover, refreshed
+
     def wiper_stow_goal(self) -> np.ndarray:
         from hashlib import sha256
 
