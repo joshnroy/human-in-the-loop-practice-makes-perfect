@@ -1364,7 +1364,7 @@ class FloorPrimitives(Primitives):
     def floor_orientation_candidates(
         self, *, tool_yaws: tuple[float, ...]
     ) -> list[tuple[float, bool, float | None]]:
-        """Try existing poses first, then nearby tilts with an unload reserve."""
+        """Try existing and nearby poses before broader tilts within the controller reserve."""
         from scipy.spatial.transform import Rotation
 
         candidates: list[tuple[float, bool, float | None]] = [
@@ -1379,6 +1379,12 @@ class FloorPrimitives(Primitives):
             if delta > 0 and observed < ceiling:
                 tilt = min(tilt, ceiling)
             if (0.0 < tilt <= ceiling
+                    and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
+                    and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
+                nearby.append(tilt)
+                candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
+        for tilt in (0.2, 0.4, 0.6, 0.8, 0.95):
+            if (tilt <= ceiling
                     and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
                     and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
                 nearby.append(tilt)
