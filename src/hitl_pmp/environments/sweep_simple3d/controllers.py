@@ -402,14 +402,17 @@ class FloorPrimitives(Primitives):
             )
             for waypoint in base_path:
                 self.scene.sync(base=waypoint)
-                if not self.scene.held_path_clear(
+                self.scene.capture_path_rejections = True
+                carried_clear = self.scene.held_path_clear(
                     path=[contact_arm],
                     start=self.session.arm(),
                     bodies=bodies,
                     held=self.scene.wiper_body,
                     held_tf=carried_tf,
                     allowed_tilt=self.scene.max_tool_tilt,
-                ):
+                )
+                self.scene.capture_path_rejections = False
+                if not carried_clear:
                     self.session._write(
                         record={
                             "kind": "contact_path_rejection",
@@ -419,6 +422,8 @@ class FloorPrimitives(Primitives):
                             "waypoint": list(waypoint),
                             "held_position": list(carried_tf.position),
                             "held_orientation": list(carried_tf.orientation),
+                            "checker": self.scene._last_path_rejection,
+                            "native_qpos": self.session.mj_data.qpos.tolist(),
                         }
                     )
                     self.scene.sync()
@@ -1095,14 +1100,20 @@ class FloorPlanningScene(PlanningScene):
                 native_distance = None
                 if contact[8] >= -padding - 1e-5:
                     native_distance = self.native_chassis_distance(
-                        link=link, chassis_geom=chassis_geom, joints=joints
+                        link=link,
+                        chassis_geom=chassis_geom,
+                        joints=joints,
+                        distance_threshold=margin,
                     )
                     if native_distance is not None and native_distance > margin:
                         continue
                 if self.capture_path_rejections:
                     if native_distance is None:
                         native_distance = self.native_chassis_distance(
-                            link=link, chassis_geom=chassis_geom, joints=joints
+                            link=link,
+                            chassis_geom=chassis_geom,
+                            joints=joints,
+                            distance_threshold=margin,
                         )
                     self._last_collision_rejection = {
                         "planning_joints": np.asarray(joints).tolist(),
@@ -1143,8 +1154,10 @@ class FloorPlanningScene(PlanningScene):
                 return True
         return False
 
-    def native_chassis_distance(self, *, link: int, chassis_geom: int, joints: Any) -> float | None:
-        """Refine mesh-padding overlaps against exact native geometry without physical mutation."""
+    def native_chassis_distance(
+        self, *, link: int, chassis_geom: int, joints: Any, distance_threshold: float = 0.0
+    ) -> float | None:
+        """Query capped native clearance at the collision threshold, without mutation."""
         import mujoco
         import pybullet
 
@@ -1185,8 +1198,12 @@ class FloorPlanningScene(PlanningScene):
             data.qpos[model.jnt_qposadr[joint]] = value
         # Arm/chassis distance is invariant to their shared rigid base transform.
         mujoco.mj_kinematics(model, data)
+        # A larger positive search cap can yield an ambiguous zero for separated
+        # convex meshes in pinned MuJoCo 3.3.7. We need only the threshold test:
+        # a positive capped return proves separation, not an exact distance.
+        distance_cap = max(0.0, distance_threshold) + 1e-6
         return min(
-            float(mujoco.mj_geomDistance(model, data, geom, chassis_geom, 0.01, None))
+            float(mujoco.mj_geomDistance(model, data, geom, chassis_geom, distance_cap, None))
             for geom in geoms
         )
 

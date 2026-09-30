@@ -181,7 +181,7 @@ class SweepSimpleEnvironment(Environment):
                 primitive.sweep_cube(
                     cube=objects[1].name,
                     region="sweep_region" if name == "SweepCubeToGoal" else "blocks_init_region",
-                    distance=float(action[2]) if skill.param_dim else 0.55,
+                    distance=float(action[2]) if skill.param_dim else 0.70,
                     heading_offset=float(action[3]) if skill.param_dim else 0.0,
                 )
             elif name == "PlaceWiperAtStart":

@@ -112,3 +112,10 @@ real controller/model extension, not merely an environment-name conversion.
 
 Estimated first physical feasibility checkpoint after approval:1–2hours. Complete
 integration/launch ETA depends on that result; no credible overnight guarantee yet.
+
+
+## Outstanding calibration decision before freezing
+
+The Simple Model B integration now rejects absent/mismatched competence calibration instead of inventing priors. The existing Drawer calibration procedure is the concrete proposed template: 3 valid seeds ×8 sampled parameters per learnable skill, actual native outcomes, Beta(1,1) estimate `(successes+1)/(attempts+2)`. For the new per-cube Sweep skill, rotate cube contexts and use the verified fixed pickup preparation; retain preparation failures explicitly. PickFloorWiper and SweepCubeToGoal are the only trainable skills. This proposal has been sent to the parent for confirmation that prior user authorization covers its application; it is not represented as newly approved here. No synthetic .25 values may enter experiments.
+
+Calibrate only after full native forward and robot recovery feasibility pass. Freeze the exact measured supports, priors, source and dependencies together. Existing diagnostic replays and changed-controller attempts are not independent scientific trials.

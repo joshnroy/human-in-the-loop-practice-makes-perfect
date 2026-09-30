@@ -2,16 +2,16 @@
   "environment": "SweepSimple3D-o5-sweep_the_blocks_to_the_left_side_of_the_kitchen_island",
   "owner": "/root/sweepsimple3d_experiment",
   "status": "IMPLEMENTING_NOT_READY",
-  "heartbeat_utc": "2026-09-30T02:29:45.987053+00:00",
+  "heartbeat_utc": "2026-09-30T03:03:23.757163+00:00",
   "worktree": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration",
   "branch": "codex/sweepsimple3d-integration",
-  "committed_base": "2ace63701792306608b6391d6a9d9cbafed790a0",
+  "committed_base": "f366c833",
   "frozen_revision": null,
   "launch_manifest": null,
   "active_units": [
-    "sweepsimple-behind-turn-v106.service"
+    "sweepsimple-threshold-native-v112.service"
   ],
-  "last_progress": "v105 moves 5/5 cubes into north corridor y1.164\u20131.189, retains bilateral grasp, then fails westward hover due184/184 actual chassis collisions with aisle-based stance. v106 uses behind-stroke stance on both legs, with carried-arm target/retreat checks. Tests28/28, Ruff/mypy pass. Full native goal0, reverse untested; no launch.",
+  "last_progress": "Exact v111 diagnosed native distance API positive-cap degeneracy: pinnedMuJoCo3.3.7 returns0 at1cm cap but positive1\u00b5m cap; native collision has no pair. Genuine\u22129.81mm penetration rejected atallcaps. Changed helper to threshold+1\u00b5m capped query, no physics/criterion change. v112 native fullcycle nowrunning; regression childchecks. Low pickup3/3; nativefullgoal0/reverseuntested; no science.",
   "evidence_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/scratchpad/sweepsimple3d",
   "proposal": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/sweepsimple3d-integration/docs/experiments/sweepsimple3d-integration-proposal.md",
   "next_tasks": [

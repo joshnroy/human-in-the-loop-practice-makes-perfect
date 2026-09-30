@@ -212,3 +212,14 @@ The earlier shallow Bullet wrist/chassis overlap was proxy padding: measured nat
 At the westward turn, all184/184 hover IK endpoints collided with actual chassis geometry. Native representative wrist penetrations55.8–155.1mm establish a real stance issue. v106 uses behind-stroke stance for both route legs within approved distance/heading supports; no geometry, dynamics, goals or predicate relaxation. Checks now also validate carried arm/tool throughout unloading retreat and the exact arm target commanded during contact base motion. Per-tick grasp guards stop correction immediately after physical grasp loss.
 
 Validation: Simple tests28/28; Ruff and mypy controller/shared motion pass. Shared Motion callback defaults toNone and leaves existing call behavior unchanged. Readiness contract read; noREADY record, frozen revision or science launch. Owner heartbeat records active probe.
+
+
+## Native distance-query diagnosis (v108–v112)
+
+Fresh native v108/v110 stopped at the same sixth contact stroke. Exact runtime instrumentation in v111 proved the native wrist/chassis refinement returned0.0 for a separated pair. Fresh MjData, full forward computation, and canonical base coordinates reproduce the same issue; no stale scratch-state hypothesis remains. Installed MuJoCo3.3.7 has native CCD enabled. Asking for a1cm positive distance produces0.0; asking for1µm yields positive capped clearance. Native collision detection reports no contact. A genuine−9.8099mm penetration remains negative for every tested cap. Evidence: `exact-pairs-v111/native-distance-thresholds.json`.
+
+The helper now queries only the required collision threshold+1µm, treating its result as capped clearance, never an exact distance measurement. Native flags, shapes, physical simulation and zero-margin rejection criteria remain unchanged. v112 is a fresh native-start full-cycle probe.
+
+Fixed reverse geometry also needed a north-side stance: the former west stance overlapped the native island66.5mm. At0.7m north stance,24/24 floor/hover IK endpoints, a direct descent interpolation and a34-waypoint base route are collision-free statically; this is not yet physical recovery success. Current fixed reverse distance0.7 remains in approved support.
+
+Validation after the native threshold-query fix: Simple tests29/29 pass; Ruff and mypy pass. Exact v111 regression verifies real penetration stays rejected and native state/flags remain unchanged.
