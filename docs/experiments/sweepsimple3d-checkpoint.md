@@ -275,3 +275,15 @@ Persistent fresh native v137 launched with the same development grasp −0.06 m,
 - v148 checks a transparent nearer-cube order with nominal heading. v149 runs the same native task with up to10**counted** forward actions including initial pickup and failed calls; no reset, hidden pickup, or uncounted retries. Forward failures remain failures. A budget regression verifies8failed additional calls stop after10total actions; contact/budget checks3/3passed. This is only readiness-probe sequencing; neither method’s policy or approved experiment budget changes.
 
 Full native all-five goal and reverse recovery remain unverified. No Simple scientific run has launched. Production grasp remains the original fixed value until physical verification supports freezing a replacement.
+
+### 2026-09-30 — contact-feedback and radial-grasp diagnosis
+
+The native shared grasp azimuth describes the finger closing axis, not the radial approach axis. A diagnostic -pi/2 offset with a +0.06 m handle grasp and a stand-ahead north stance reaches floor poses that the previous sideways approach could not. These are explicit probe overrides; production defaults remain unchanged pending feasibility.
+
+v154/v155 stopped at a custom 5 mm palm-clearance margin despite an observed positive 4.794 mm gap. Matching the shared collision semantics removes that extra positive palm margin while retaining actual penetration rejection and the other arm clearances. The regression includes a real 3.696 mm palm-penetration negative control. Focused integration, collision, motion and accounting tests pass 47/47.
+
+v156 (10 cm strokes) and v157 (20 cm strokes) complete with 0/2 native full-goal successes, 0/5 cubes in the goal each. Both pick up successfully. v156 loses bilateral handle contact after 14 strokes; v157 retains the handle while tipping approximately 35 degrees and safely rejects retreat clearance. Neither reaches the reverse/home checks. There are still no Simple scientific runs.
+
+An independent recorded-state audit finds that v156's last loaded stroke moves the base 86.6 mm while moving the selected cube about 1 mm, with tool-to-palm drift reaching 37.6 mm / 0.146 rad. Of 257 height-correction records, 116 remain above the requested height and only 167 distinct physical ticks are represented. Joint convergence was incorrectly treated as physical correction success. Contact correction now uses a tighter final joint tolerance and explicitly checks measured blade height before recording success or advancing the base; failure ends and unloads the stroke. It does not change native goals, predicates or simulator physics. Actual contact forces were not logged, so force magnitudes are not inferred from state replay.
+
+Fresh v158/v159 test shorter-lever radial handle grasps (0.0 / +0.03 m), preserving approved distance/heading supports and the same native start. These diagnostics started before the final physical-height check was added and retain that source provenance. Full native task, reverse recovery, calibration and method readiness remain pending.

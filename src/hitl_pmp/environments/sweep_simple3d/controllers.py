@@ -17,6 +17,7 @@ class FloorPrimitives(Primitives):
 
     scene: "FloorPlanningScene"
     narrow_contact: bool = False
+    stand_ahead: bool = False
     contact_stroke_length: float = 0.10
     contact_step: float = 0.003
     floor_clearance: float = Field(default=0.001, ge=0.001, le=0.01)
@@ -234,7 +235,9 @@ class FloorPrimitives(Primitives):
         elif region == "blocks_init_region" and abs(direction[0]) > abs(direction[1]):
             nominal_bearing = np.pi / 2
         else:
-            nominal_bearing = angle + np.pi
+            nominal_bearing = (
+                angle if self.stand_ahead and region == "sweep_region" else angle + np.pi
+            )
         stance_bearing = nominal_bearing + heading_offset
         stance_angle = float((stance_bearing + 2 * np.pi) % (2 * np.pi) - np.pi)
         stance = (
@@ -536,8 +539,12 @@ class FloorPrimitives(Primitives):
                     np.linalg.norm(Rotation.from_quat(wiper_now.orientation).as_euler("xyz")[:2])
                 )
                 blade_bottom = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
-                # Require positive native cube/blade overlap with a 2-mm margin.
-                if blade_bottom <= self.cube_contact_ceiling(cube=cube):
+                # Track the commanded low contact height, not merely overlap
+                # near the cube top where the blade can ride over a rolling cube.
+                contact_ceiling = min(
+                    self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003
+                )
+                if blade_bottom <= contact_ceiling:
                     break
                 if self.blade_minimum_height() <= 0.0011:
                     self.session._write(
@@ -560,7 +567,7 @@ class FloorPrimitives(Primitives):
                             0.0,
                             0.0,
                             min(
-                                blade_bottom - self.cube_contact_ceiling(cube=cube) + 0.002,
+                                blade_bottom - contact_ceiling + 0.002,
                                 0.02,
                                 max(self.blade_minimum_height() - 0.001, 0.0),
                             ),
@@ -588,10 +595,13 @@ class FloorPrimitives(Primitives):
                 if path is None or not self.motion.follow(
                     path=path,
                     grip=1.0,
-                    tol=0.005,
-                    final_tol=0.003,
-                    max_ticks=30,
+                    tol=0.03,
+                    final_tol=0.0005,
+                    max_ticks=180,
                     tick_guard=lambda: self.require_handle(phase="contact correction"),
+                    stop_condition=lambda: self.blade_bottom_height(
+                        cube=cube, narrow=narrow_contact
+                    ) <= min(self.cube_contact_ceiling(cube=cube), self.floor_clearance + 0.003),
                 ):
                     self.require_handle(phase="contact correction")
                     self.session._write(
@@ -602,10 +612,33 @@ class FloorPrimitives(Primitives):
                             "height": wiper_now.position[2],
                             "tilt": upright_error,
                             "blade_bottom": blade_bottom,
+                            "actual_blade_bottom": self.blade_bottom_height(
+                                cube=cube, narrow=narrow_contact
+                            ),
+                            "goal_arm": np.asarray(path[-1]).tolist() if path else None,
+                            "actual_arm": self.session.arm().tolist(),
                         }
                     )
                     contact_ended = True
                     break
+                attained_height = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
+                if attained_height > contact_ceiling:
+                    self.session._write(record={
+                        "kind": "contact_stroke_ended",
+                        "t": self.session.ticks,
+                        "reason": "joint convergence did not attain physical contact height",
+                        "blade_bottom": attained_height,
+                        "control_contact_ceiling": contact_ceiling,
+                    })
+                    contact_ended = True
+                    break
+                self.session._write(record={
+                    "kind": "contact_overlap_corrected",
+                    "t": self.session.ticks,
+                    "blade_bottom": self.blade_bottom_height(cube=cube, narrow=narrow_contact),
+                    "cube_contact_ceiling": self.cube_contact_ceiling(cube=cube),
+                    "control_contact_ceiling": contact_ceiling,
+                })
                 contact_arm = self.session.arm().copy()
             if contact_ended:
                 break
@@ -1405,7 +1438,12 @@ class FloorPlanningScene(PlanningScene):
             held, self.robot.robot_id, distance=0.01, physicsClientId=self.cid
         )
         for contact in contacts:
-            if contact[4] <= 10 and contact[8] < 0.005:
+            # The shared attachment checker permits gripper/tool proximity.
+            # A 5-mm palm margin stranded a physically separated loaded grasp
+            # at a 4.794-mm gap. Retain penetration rejection at the palm and
+            # the existing positive clearance for the actual arm links.
+            clearance = 0.0 if contact[4] == 10 else 0.005
+            if contact[4] <= 10 and contact[8] < clearance:
                 if self.capture_path_rejections:
                     self._last_collision_rejection = {
                         "planning_joints": np.asarray(joints).tolist(),

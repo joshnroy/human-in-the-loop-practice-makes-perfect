@@ -10,6 +10,33 @@ from hitl_pmp.environments.sweep_simple3d.controllers import FloorPlanningScene
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 
+def test_separated_loaded_palm_grasp_can_retreat_but_penetration_is_rejected() -> None:
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session, capture_path_rejections=True)
+    try:
+        joints = [0.00441, 1.07365, 3.14013, -1.74943, 3.33812, -0.00411, -1.76809,
+                  0.6319, 0.6319, 0.6267, 0.62666, -0.62548, -0.62498]
+        position = np.array([0.000241994858, -0.018652379513, 0.300312131643])
+        orientation = (0.997462153435, 0.000846872572, -0.000516393746, -0.071191705763)
+        before = session.mj_data.qpos.copy()
+        assert not scene.in_collision(
+            joints=joints, bodies=set(), held=scene.wiper_body,
+            held_tf=Pose(tuple(position), orientation),
+        )
+        assert scene.in_collision(
+            joints=joints, bodies=set(), held=scene.wiper_body,
+            held_tf=Pose(tuple(position + [0, 0, -0.02]), orientation),
+        )
+        rejection = scene._last_collision_rejection
+        assert rejection["reason"] == "held_arm"
+        assert rejection["pair"]["link_b"] == 10
+        assert rejection["pair"]["distance"] < -0.003
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
+    finally:
+        scene._sim.close()
+        session.close()
+
+
 def test_gripper_proxy_uses_whole_native_assembly_and_retains_real_overlap() -> None:
     session = SweepSimpleSession(seed=0)
     scene = FloorPlanningScene(session=session)

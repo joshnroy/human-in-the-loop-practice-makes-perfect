@@ -37,6 +37,7 @@ class PickupProbe:
         parser.add_argument("--contact-step", type=float, default=0.003)
         parser.add_argument("--floor-clearance", type=float, default=0.001)
         parser.add_argument("--narrow-contact", action="store_true")
+        parser.add_argument("--stand-ahead", action="store_true")
         resume = parser.add_mutually_exclusive_group()
         resume.add_argument(
             "--resume-pick", help="Development replay tag; excluded from end-to-end readiness"
@@ -118,6 +119,7 @@ class PickupProbe:
         primitive.contact_step = args.contact_step
         primitive.floor_clearance = args.floor_clearance
         primitive.narrow_contact = args.narrow_contact
+        primitive.stand_ahead = args.stand_ahead
         if args.grasp_mode == "blade":
             import mujoco
             import numpy as np
@@ -242,6 +244,7 @@ class PickupProbe:
                         note=note,
                         native_counts=PickupProbe.native_counts(session=session),
                     )
+                    session._write(record={"kind": "readiness_skill", **cycle["stages"][-1]})
                     if not attained and not args.forward_budget:
                         raise RuntimeError("Selected cube sweep did not attain its native goal")
                     session.end(success=attained and sweep_error is None, note=note)
@@ -477,6 +480,7 @@ class PickupProbe:
             stage.update(
                 tick_end=session.ticks, native_counts=PickupProbe.native_counts(session=session)
             )
+            session._write(record={"kind": "readiness_skill", **stage})
 
     @staticmethod
     def restore_pick(*, session, source: Path) -> None:
