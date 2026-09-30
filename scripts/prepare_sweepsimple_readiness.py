@@ -13,6 +13,7 @@ class SimpleReadiness:
     GATES = (
         "native_forward", "native_recovery", "native_goal_parity", "parameter_support",
         "action_accounting", "calibration_pick", "calibration_sweep", "ees_smoke", "pomdp_smoke",
+        "valid_start", "protocol_approved",
     )
 
     @staticmethod
@@ -45,7 +46,8 @@ class SimpleReadiness:
         # This is an evidence-summary scaffold, not an interpretation of raw
         # replay success or a replacement for physical/calibration gate audits.
         source_files = evidence.get("source_files", {})
-        required = {"scripts/with_sweep_simple_env.sh", "scripts/run_sweep_verified_arm.py",
+        required = {"scripts/with_env.sh", "scripts/with_sweep_simple_env.sh",
+                    "scripts/run_sweep_verified_arm.py",
                     "scripts/run_sweep_manifest_arm.py"}
         if not required <= set(source_files):
             raise ValueError("Missing verified launcher source hashes")
@@ -65,19 +67,21 @@ class SimpleReadiness:
         seeds = [first] + [s for s in manifest["valid_practice_seeds"] if s != first]
         for stage, names in enumerate(order):
             for name in names:
-                if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
+                if not re.fullmatch(r"[a-z0-9-]+", name):
                     raise ValueError("Unsafe arm identifier")
                 for seed_index, seed in enumerate(seeds):
                     job_id = f"{name}-s{seed}"
                     output = output_root / name / f"seed-{seed}"
                     completion = output / "completion.json"
                     jobs.append(dict(
-                        id=job_id, arm=name, seed=seed, stage=stage + seed_index * len(order),
+                        id=job_id, arm=name, seed=seed,
+                        stage=stage if seed_index == 0 else len(order),
                         output=str(output.resolve()),
                         progress_path=str((output / arms[name]["method"] / str(seed)
                                            / "progress.jsonl").resolve()),
                         completion_record=str(completion.resolve()),
-                        argv=[str((source / "scripts/with_sweep_simple_env.sh").resolve()),
+                        argv=[str((source / "scripts/with_env.sh").resolve()), "bash",
+                              str((source / "scripts/with_sweep_simple_env.sh").resolve()),
                               "python",
                               str((source / "scripts/run_sweep_verified_arm.py").resolve()),
                               "--manifest", str(manifest_path.resolve()), "--arm", name,
@@ -86,13 +90,14 @@ class SimpleReadiness:
                               "--job-id", job_id, "--revision", revision],
                     ))
         return dict(
-            status="DRAFT", environment="sweep_simple3d", owner_validated=False,
+            status="DRAFT", environment="simple", owner_validated=False,
             purpose="Prepared jobs only; owner must audit evidence before readiness publication",
             source=str(source.resolve()), revision=revision,
-            manifest=str(manifest_path.resolve()), manifest_sha256=cls.digest(path=manifest_path),
+            manifest={"path": str(manifest_path.resolve()),
+                      "sha256": cls.digest(path=manifest_path)},
             checks=checks, source_files=source_files,
             memory_max_bytes=6 * 1024**3, memory_swap_max_bytes=0,
-            output_root=str(output_root.resolve()), jobs=jobs,
+            output_root=str(output_root.resolve()), jobs=sorted(jobs, key=lambda job: job["stage"]),
         )
 
     @classmethod

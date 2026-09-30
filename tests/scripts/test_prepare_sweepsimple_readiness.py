@@ -20,9 +20,13 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
     revision = "a" * 40
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(dict(
-        source_revision=revision, first_seed=0, valid_practice_seeds=[0, 1],
-        arms=[dict(name="ees-low", method="ees"), dict(name="pomdp-low", method="pomdp")],
-        launch_order=[["ees-low", "pomdp-low"]],
+        source_revision=revision, first_seed=0, valid_practice_seeds=[0, 1, 2],
+        arms=[dict(name=f"{method}-{cost}", method=method)
+              for method in ("ees", "pomdp") for cost in ("low", "high", "mid", "none")],
+        launch_order=[[f"{method}-{cost}" for method in ("ees", "pomdp")
+                       for cost in ("low", "high")],
+                      [f"{method}-{cost}" for method in ("ees", "pomdp")
+                       for cost in ("mid", "none")]],
     )))
     evidence = {"checks": {}, "source_files": {}}
     for name in builder.GATES:
@@ -39,7 +43,8 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
     if failure == "hash":
         (tmp_path / "native_forward.json").write_text("{}")
     for name in (
-        "with_sweep_simple_env.sh", "run_sweep_verified_arm.py", "run_sweep_manifest_arm.py"
+        "with_env.sh", "with_sweep_simple_env.sh", "run_sweep_verified_arm.py",
+        "run_sweep_manifest_arm.py"
     ):
         relative = "scripts/" + name
         path = tmp_path / relative
@@ -57,10 +62,20 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
                              source=tmp_path, output_root=tmp_path / "results")
     assert result["status"] == "DRAFT" and result["owner_validated"] is False
     assert result["memory_swap_max_bytes"] == 0
-    assert len(result["jobs"]) == 4
+    assert len(result["jobs"]) == 24
+    assert [job["stage"] for job in result["jobs"]] == [0] * 4 + [1] * 4 + [2] * 16
+    assert result["environment"] == "simple"
+    assert result["manifest"]["path"] == str(manifest)
     for job in result["jobs"]:
-        assert job["stage"] == job["seed"]
+        if job["seed"]:
+            assert job["stage"] == 2
+        else:
+            assert job["stage"] == (0 if job["arm"].endswith(("low", "high")) else 1)
         argv = job["argv"]
-        assert argv[2].endswith("run_sweep_verified_arm.py")
+        assert argv[0].endswith("scripts/with_env.sh")
+        assert argv[1] == "bash"
+        assert argv[2].endswith("scripts/with_sweep_simple_env.sh")
+        assert argv[3] == "python"
+        assert argv[4].endswith("run_sweep_verified_arm.py")
         assert argv[argv.index("--completion-record") + 1] == job["completion_record"]
         assert argv[argv.index("--revision") + 1] == revision
