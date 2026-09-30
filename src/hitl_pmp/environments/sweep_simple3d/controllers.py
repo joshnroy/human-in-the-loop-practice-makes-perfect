@@ -133,7 +133,7 @@ class FloorPrimitives(Primitives):
     def sweep_cube(self, *, cube: str, region: str, distance: float, heading_offset: float) -> str:
         core = self.session.env.unwrapped._object_centric_env
         stalls = 0
-        for stroke in range(24):
+        for stroke in range(36):
             if core._ground_fixture.check_in_region(
                 self.session.position(name=cube), region, core._robot_env
             ):
@@ -149,7 +149,11 @@ class FloorPrimitives(Primitives):
             stalls = stalls + 1 if displacement < 0.001 else 0
             if stalls >= 3:
                 raise ExecutionError("Three consecutive checked strokes made no cube progress")
-        raise ExecutionError("Native target not attained within 24 checked strokes")
+        if core._ground_fixture.check_in_region(
+            self.session.position(name=cube), region, core._robot_env
+        ):
+            return "Native target attained after 36 checked strokes"
+        raise ExecutionError("Native target not attained within 36 checked strokes")
 
     def _sweep_cube_stroke(
         self, *, cube: str, region: str, distance: float, heading_offset: float
@@ -176,9 +180,11 @@ class FloorPrimitives(Primitives):
             return "Cube already at target center"
         direction = delta / length
         angle = float(np.arctan2(direction[1], direction[0]))
+        westward_goal_leg = region == "sweep_region" and abs(direction[0]) > abs(direction[1])
+        narrow_contact = self.narrow_contact or westward_goal_leg
         transverse = np.array([-direction[1], direction[0]])
         blade_anchor = initial[:2].copy()
-        if not self.narrow_contact:
+        if not narrow_contact:
             projections = [
                 float(self.session.position(name=f"cube_{i}")[:2] @ transverse) for i in range(5)
             ]
@@ -188,18 +194,21 @@ class FloorPrimitives(Primitives):
         behind = 0.0
         for other in (f"cube_{i}" for i in range(5)):
             relative = self.session.position(name=other)[:2] - blade_anchor
-            if abs(float(relative @ transverse)) <= (0.025 if self.narrow_contact else 0.16):
+            if abs(float(relative @ transverse)) <= (0.025 if narrow_contact else 0.16):
                 behind = max(behind, -float(relative @ direction))
-        wiper_start = blade_anchor - (behind + (0.20 if self.narrow_contact else 0.025)) * direction
+        wiper_start = blade_anchor - (behind + (0.20 if narrow_contact else 0.025)) * direction
         # Keep the chassis behind the blade on both legs. Facing the initial
         # aisle during a westward stroke folds the cross-grasp wrist into it.
         # The fixed eastward recovery instead stands north: west of a goal
         # cube is occupied by the native island, even though the blade fits.
-        nominal_bearing = (
-            np.pi / 2
-            if region == "blocks_init_region" and abs(direction[0]) > abs(direction[1])
-            else angle + np.pi
-        )
+        if westward_goal_leg:
+            # The right counter blocks a broad-blade approach from the east.
+            # A blade-end push from this checked north-side stance fits the aisle.
+            nominal_bearing = 2 * np.pi / 3
+        elif region == "blocks_init_region" and abs(direction[0]) > abs(direction[1]):
+            nominal_bearing = np.pi / 2
+        else:
+            nominal_bearing = angle + np.pi
         stance_bearing = nominal_bearing + heading_offset
         stance_angle = float((stance_bearing + 2 * np.pi) % (2 * np.pi) - np.pi)
         stance = (
@@ -223,7 +232,7 @@ class FloorPrimitives(Primitives):
         attempts: list[dict[str, Any]] = []
         tool_yaws = (
             (angle, angle + np.pi)
-            if self.narrow_contact
+            if narrow_contact
             else (angle - np.pi / 2, angle + np.pi / 2)
         )
         for tool_yaw, preserve_tilt in [
@@ -814,7 +823,17 @@ class FloorPrimitives(Primitives):
                     break
             self.scene.sync()
             if clear:
-                if not self.motion.drive(path=path, grip=1.0, arm=arm):
+                if not self.motion.drive(
+                    path=path,
+                    grip=1.0,
+                    arm=arm,
+                    max_ticks=2500,
+                    max_translation_step=0.01,
+                    max_yaw_step=0.005,
+                    translation_step_change=0.002,
+                    yaw_step_change=0.001,
+                    tick_guard=lambda: self.require_handle(phase="checked base transport step"),
+                ):
                     raise ExecutionError("Checked carried-tool base motion did not converge")
                 self.require_handle(phase="checked base transport")
                 return
@@ -848,7 +867,7 @@ class FloorPrimitives(Primitives):
         self.stow_wiper()
         position, orientation = self.session.initial_pose(name="wiper_0")
         stance = self.stances(target=position, where="floor")[0]
-        self.motion.drive_to(target=stance, grip=1.0)
+        self.transport_wiper(target=stance)
         self.require_handle(phase="base transport")
         held_tf = multiply_poses(
             self.scene.ee_now().invert(),

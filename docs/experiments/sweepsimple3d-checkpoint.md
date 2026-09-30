@@ -223,3 +223,14 @@ The helper now queries only the required collision threshold+1µm, treating its 
 Fixed reverse geometry also needed a north-side stance: the former west stance overlapped the native island66.5mm. At0.7m north stance,24/24 floor/hover IK endpoints, a direct descent interpolation and a34-waypoint base route are collision-free statically; this is not yet physical recovery success. Current fixed reverse distance0.7 remains in approved support.
 
 Validation after the native threshold-query fix: Simple tests29/29 pass; Ruff and mypy pass. Exact v111 regression verifies real penetration stays rejected and native state/flags remain unchanged.
+
+
+## West-turn transport checkpoint
+
+Native v112 moved all 5/5 cubes into the north corridor, then the east-side base stance hit the right counter. A north-side blade-end push has verified base/arm/floor geometry at the same approved distance/heading. The controller uses this contact orientation for the west leg and allows at most36 internal short strokes; the experiment still counts one invocation as one skill action, with the unchanged20-action practice budget.
+
+Native v114 and diagnostic replay v115 lost the handle during base turning. Restored evidence shows bilateral contact through tick62, release at63, and a fall onto the floor by67. Turning reached approximately0.75rad/s; arm tracking was good and gripper remained closed. The old drive continued123ticks after release.
+
+Optional drive limits now bound per-tick translation/yaw and their change; all default toNone, preserving Drawer commands. Simple carried transport requests .01m/.005rad caps, .002m/.001rad per-tick changes, and checks bilateral grip after every tick. Focused motion tests4/4, Ruff/mypy pass. v116 retained the grasp through the previously failing transfer and reached the west stance; pushing and full native/recovery validation remain pending.
+
+`--resume-final` permits explicit failed-state diagnostic restarts with disclosed velocity zeroing and false end-to-end-native-start provenance. These are never readiness trials. Live owner heartbeat is now external at `results/sweep-launch/environments/simple/owner-status.json` so future frozen source can remain clean. Generated replay evidence remains on disk under ignored `scratchpad/sweepsimple3d/`.

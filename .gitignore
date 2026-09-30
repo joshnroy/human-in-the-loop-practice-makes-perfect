@@ -247,3 +247,6 @@ reference/*/.claude/
 # code it is about -- but never committed, because none of it has been through review.
 # Anything here that turns out to matter gets promoted to docs/ in its own PR.
 scratch/
+
+# Generated native SimpleSweep diagnostics and replay evidence; retained locally.
+/scratchpad/sweepsimple3d/
