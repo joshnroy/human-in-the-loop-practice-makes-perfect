@@ -48,6 +48,10 @@ class PickupProbe:
         parser.add_argument("--narrow-contact", action="store_true")
         parser.add_argument("--center-selected-cube", action="store_true")
         parser.add_argument("--finish-selected-first", action="store_true")
+        parser.add_argument(
+            "--regrasp-before-reset", action="store_true",
+            help="Execute counted PlaceWiperAtStart and PickFloorWiper before reverse skills.",
+        )
         parser.add_argument("--stand-ahead", action="store_true")
         parser.add_argument("--native-contact-guard", action="store_true")
         parser.add_argument("--log-live-grasp", action="store_true")
@@ -575,6 +579,16 @@ class PickupProbe:
         })
         if not report["native_goal_success"]:
             raise RuntimeError("All-cube native goal check failed before recovery")
+        if getattr(args, "regrasp_before_reset", False):
+            # These are ordinary observable robot skills, not a simulator reset
+            # or an internal regrasp hidden inside a sweep action.
+            PickupProbe.cycle_action(
+                env=env, name="PlaceWiperAtStart", cube=-1, report=report,
+            )
+            PickupProbe.cycle_action(
+                env=env, name="PickFloorWiper", cube=-1, report=report,
+                params=(args.pick_distance, 0.0),
+            )
         for i in range(5):
             PickupProbe.cycle_action(
                 env=env,

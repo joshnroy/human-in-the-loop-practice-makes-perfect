@@ -6,15 +6,19 @@ Checkpoint: 2026-09-30. This is a prototype assessment, not an experimental succ
 |---|---|---|
 | Published/native Simple bilevel benchmark | Not supplied | Neither a measured failure nor 0% success. The upstream sweep model implements SweepIntoDrawer3D. |
 | Custom diagnostic forward task | 2/2 tested native seeds; 5/5 cubes within 6/10 actions | Promising physical feasibility. Controller overrides and revisions differ; not a frozen policy benchmark. |
-| Complete custom robot reset | 0/2 tested native seeds | Learning experiments remain blocked. Latest counted mixed-revision replay restores 3/5 cubes after 16/20 actions. |
-| Current placement fix regressions | 199/199 | Software validation, not physical task success. |
+| Complete custom robot reset | 0/2 tested native seeds | Learning experiments remain blocked. Latest seed0 counterfactual replay retains 20/20 actions and 3/5 restored cubes. |
+| Native chassis collision fix regressions | 203/203 | Software validation, not physical task success. |
 | Calibration / method smokes | 0/48 contexts; 0/2 methods | Still required after controller readiness. |
 
 The highest registered native Simple variants contain 50 cubes. Left-of-island tasks have 1, 5, 10, and 50 cubes; right-of-counter and right-of-island tasks each have 50. The approved learning experiment remains the five-cube left-of-island task.
 
 ## Current recommendation
 
-Continue controller development, but do not launch or present Simple as a ready Ours/EES comparison yet. Forward manipulation is feasible in the tested scenes. The unresolved issue is reliable, budgeted recovery to the native start distribution: grip/leveling after reverse contact and collision-free placement access. The latest placement attempt never reached release because its selected chassis stance intersected two cubes. A north stance at the same 0.70 m distance has a checked native base/carried-tool route and placement path; its physical validation is pending.
+Continue controller development, but do not launch or present Simple as a ready Ours/EES comparison yet. Forward manipulation is feasible in the tested scenes. The unresolved issue is reliable, budgeted recovery to the native start distribution, particularly blade leveling/overlap during reverse contact.
+
+The north placement stance at the same 0.70 m distance now passes physical placement and fresh pickup. A later reverse-motion failure exposed native chassis collisions with side-counter drawer handles that the upstream base planner omitted. Exact native chassis filtering now rejects those routes. Its checked fixed-reverse 0.65 m fallback physically clears the obstruction and moves the cube farther toward start; subsequent leveling still fails. The native physics and predicates were not changed.
+
+Seed1 also exposes a placement target near the native yaw boundary: its original target settles at about 46.6°, outside the allowed ±45°. A separate central-yaw diagnostic passes the unchanged settled-state checks. That diagnostic is not yet a production default. The next reverse cube fails blade overlap, and a bounded physical tracking correction is being tested. Failed attempts and replay provenance remain in the artifacts.
 
 ## Baseline distinction
 
