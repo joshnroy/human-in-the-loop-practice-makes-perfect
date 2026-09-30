@@ -1172,6 +1172,11 @@ class FloorPrimitives(Primitives):
                 "Checked unloaded leveling exhausted four-turn tilt recovery budget"
             )
 
+    @staticmethod
+    def leveling_tick_budget(*, path_waypoints: int) -> int:
+        """Allow checked branch changes to settle while bounding leveling time."""
+        return max(180, min(1800, 30 * path_waypoints))
+
     def level_blade(self, *, bodies: set[int]) -> bool:
         """Rotate a small amount only after unloading the blade from all cubes."""
         if self.wiper_loaded_by_cube():
@@ -1254,7 +1259,7 @@ class FloorPrimitives(Primitives):
                     grip=1.0,
                     tol=0.005,
                     final_tol=0.005,
-                    max_ticks=180,
+                    max_ticks=self.leveling_tick_budget(path_waypoints=len(path)),
                     tick_guard=lambda: self.require_handle(phase="blade leveling"),
                 )
                 self.require_handle(phase="blade leveling")
