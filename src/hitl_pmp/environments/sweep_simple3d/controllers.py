@@ -40,6 +40,30 @@ class ContactTravelBudget(BaseModel):
         return proposed if self.onset is None else min(proposed, self.onset + self.stroke)
 
 
+class FloorApproachPreference(BaseModel):
+    """Prefer native endpoint reserve without discarding a valid first fallback."""
+
+    candidate: Any = None
+    margin: float = -np.inf
+    preferred: bool = False
+
+    @staticmethod
+    def native_margin(*, arm: Any, limits: np.ndarray) -> float:
+        q = np.asarray(arm[:7], dtype=float)
+        distances = np.column_stack((q - limits[:, 0], limits[:, 1] - q))
+        finite = np.isfinite(limits)
+        return float(distances[finite].min()) if finite.any() else float("inf")
+
+    def consider(self, *, candidate: Any, margin: float) -> bool:
+        if np.isnan(margin) or margin < 0:
+            raise ValueError("Only native-valid checked candidates can be ranked")
+        if self.candidate is None:
+            self.candidate, self.margin = candidate, margin
+        if margin >= 0.01:
+            self.candidate, self.margin, self.preferred = candidate, margin, True
+        return self.preferred
+
+
 class ContactTravelLimit(Exception):
     """Internal motion stop: unload normally after reaching the loaded travel cap."""
 
@@ -476,7 +500,7 @@ class FloorPrimitives(Primitives):
         bodies = self.scene.bodies(without_cubes=tuple(f"cube_{i}" for i in range(5)))
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
-        approach = None
+        preference = FloorApproachPreference()
         attempts: list[dict[str, Any]] = []
         tool_yaws = (
             (angle + np.pi, angle) if narrow_contact else (angle - np.pi / 2, angle + np.pi / 2)
@@ -547,18 +571,33 @@ class FloorPrimitives(Primitives):
                     ):
                         continue
                     attempts[-1]["checked_descents"] += 1
-                    approach = candidate
+                    margin = preference.native_margin(
+                        arm=candidate_lower[-1], limits=self.scene._arm_limits
+                    )
+                    attempts[-1]["best_endpoint_native_margin"] = max(
+                        margin, attempts[-1].get("best_endpoint_native_margin", -np.inf)
+                    )
+                    if preference.consider(
+                        candidate=(candidate, candidate_lower, tool_yaw, preserve_tilt,
+                                   nearby_tilt, floor_pose),
+                        margin=margin,
+                    ):
+                        break
+                if preference.preferred:
                     break
-                if approach is not None:
-                    break
-            if approach is not None:
+            if preference.preferred:
                 break
-        if approach is None:
+        if preference.candidate is None:
             raise ExecutionError(f"No collision-free floor sweep approach: {attempts}")
+        approach, candidate_lower, tool_yaw, preserve_tilt, nearby_tilt, floor_pose = (
+            preference.candidate
+        )
         self.session._write(
             record={
                 "kind": "floor_approach_selected",
                 "t": self.session.ticks,
+                "endpoint_native_joint_margin": preference.margin,
+                "preferred_joint_margin": preference.preferred,
                 "tool_yaw": tool_yaw,
                 "preserve_tilt": preserve_tilt,
                 "nearby_tilt": nearby_tilt,
@@ -1108,7 +1147,7 @@ class FloorPrimitives(Primitives):
             rotation = Rotation.from_quat(self.session.quaternion(name="wiper_0"))
             return float(np.arccos(np.clip(rotation.as_matrix()[2, 2], -1, 1)))
 
-        target = min(0.9, self.scene.max_tool_tilt - 0.20)
+        target = min(0.95, self.scene.max_tool_tilt - 0.15)
         for attempt in range(4):
             before = observed_tilt()
             if self.wiper_loaded_by_cube():
