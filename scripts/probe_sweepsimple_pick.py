@@ -42,6 +42,7 @@ class PickupProbe:
         parser.add_argument("--contact-step", type=float, default=0.003)
         parser.add_argument("--floor-clearance", type=float, default=0.001)
         parser.add_argument("--narrow-contact", action="store_true")
+        parser.add_argument("--center-selected-cube", action="store_true")
         parser.add_argument("--stand-ahead", action="store_true")
         parser.add_argument("--native-contact-guard", action="store_true")
         parser.add_argument("--log-live-grasp", action="store_true")
@@ -131,6 +132,10 @@ class PickupProbe:
         primitive.contact_step = args.contact_step
         primitive.floor_clearance = args.floor_clearance
         primitive.narrow_contact = args.narrow_contact
+        if args.center_selected_cube:
+            FloorPrimitives.broad_blade_center = staticmethod(
+                lambda *, projections, target: target
+            )
         primitive.stand_ahead = args.stand_ahead
         primitive.native_contact_guard = args.native_contact_guard
         primitive.retain_pickup_carry_pose = args.retain_pickup_carry_pose
