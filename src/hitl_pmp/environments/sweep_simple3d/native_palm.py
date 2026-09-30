@@ -15,28 +15,30 @@ class NativePalmClearance:
     rejection. This helper does not justify any positive clearance margin.
     """
 
-    def __init__(self, model: mujoco.MjModel, live_data: mujoco.MjData) -> None:
+    def __init__(self, *, model: mujoco.MjModel, live_data: mujoco.MjData) -> None:
         self.model = model
         self.live_data = live_data
         self.data = mujoco.MjData(model)
-        self.palm_geoms = self._geoms("robot_base")
-        self.tool_geoms = self._geoms("wiper_0")
+        self.palm_geoms = self._geoms(name="robot_base")
+        self.tool_geoms = self._geoms(name="wiper_0")
         names = [f"robot_joint_{i}" for i in range(1, 8)] + [
             f"robot_{side}_{part}_joint"
             for part in ("driver", "spring_link", "follower")
             for side in ("left", "right")
         ]
-        self.joint_addresses = [self._address(name) for name in names]
-        self.base_addresses = [self._address(f"robot_joint_{axis}") for axis in ("x", "y", "th")]
-        self.tool_address = self._address("wiper_0_joint")
+        self.joint_addresses = [self._address(name=name) for name in names]
+        self.base_addresses = [
+            self._address(name=f"robot_joint_{axis}") for axis in ("x", "y", "th")
+        ]
+        self.tool_address = self._address(name="wiper_0_joint")
 
-    def _address(self, name: str) -> int:
+    def _address(self, *, name: str) -> int:
         joint = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
         if joint < 0:
             raise ValueError(f"Missing native joint: {name}")
         return int(self.model.jnt_qposadr[joint])
 
-    def _geoms(self, name: str) -> list[int]:
+    def _geoms(self, *, name: str) -> list[int]:
         body = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
         geoms = [g for g in range(self.model.ngeom)
                  if body >= 0 and self.model.geom_bodyid[g] == body

@@ -3,13 +3,16 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.sweep_simple3d import environment as module
 from hitl_pmp.environments.sweep_simple3d.environment import SweepSimpleEnvironment
 
 
-def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(monkeypatch) -> None:
+def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     state = State(data={})
     env = SweepSimpleEnvironment.model_construct(current_state=state)
     calls = []
@@ -19,12 +22,12 @@ def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(monkey
                               end=lambda **kwargs: endings.append(kwargs))
     primitive = SimpleNamespace(distance=0.7, heading_offset=0.0)
 
-    def record(name: str) -> None:
+    def record(*, name: str) -> None:
         calls.append((name, primitive.distance, primitive.heading_offset))
         session.ticks += 3
 
-    primitive.recover_wiper = lambda: record("pickup")
-    primitive.place_wiper_at_start = lambda: record("home")
+    primitive.recover_wiper = lambda: record(name="pickup")
+    primitive.place_wiper_at_start = lambda: record(name="home")
     env._session = session
     env._primitive = primitive
     # Isolate dispatch from physical predicates while retaining real skill IDs,

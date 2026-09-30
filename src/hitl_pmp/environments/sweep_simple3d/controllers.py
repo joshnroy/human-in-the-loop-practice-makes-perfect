@@ -178,6 +178,23 @@ class FloorPrimitives(Primitives):
 
         return min(feasible, key=score)
 
+    @staticmethod
+    def contact_behind_offset(
+        *, relative_positions: list[tuple[float, float]], narrow: bool
+    ) -> float:
+        """Clear nearby cubes without anchoring every stroke to distant cubes."""
+        stand_off = 0.20 if narrow else 0.05
+        blade_half_depth = 0.15 if narrow else 0.01
+        # Native cubes have 1 cm half-width; keep another 5 mm clearance.
+        rear_reach = stand_off + blade_half_depth + 0.015
+        half_width = 0.025 if narrow else 0.16
+        return max(
+            [0.0] + [
+                -along for along, across in relative_positions
+                if -rear_reach <= along < 0.0 and abs(across) <= half_width
+            ]
+        )
+
     def _sweep_cube_stroke(
         self, *, cube: str, region: str, distance: float, heading_offset: float
     ) -> str:
@@ -203,8 +220,12 @@ class FloorPrimitives(Primitives):
             return "Cube already at target center"
         direction = delta / length
         angle = float(np.arctan2(direction[1], direction[0]))
-        westward_goal_leg = region == "sweep_region" and abs(direction[0]) > abs(direction[1])
-        narrow_contact = self.narrow_contact or westward_goal_leg
+        horizontal_leg = abs(direction[0]) > abs(direction[1])
+        westward_goal_leg = region == "sweep_region" and horizontal_leg
+        # The same blade-end geometry serves westward goal and eastward reset
+        # strokes. A broad eastward blade requires an unreachable 90-degree
+        # floor wrist orientation with the observed post-goal grasp.
+        narrow_contact = self.narrow_contact or horizontal_leg
         transverse = np.array([-direction[1], direction[0]])
         blade_anchor = initial[:2].copy()
         if not narrow_contact:
@@ -215,11 +236,13 @@ class FloorPrimitives(Primitives):
                 projections=projections, target=float(blade_anchor @ transverse)
             )
             blade_anchor += (midpoint - float(blade_anchor @ transverse)) * transverse
-        behind = 0.0
+        relative_positions = []
         for other in (f"cube_{i}" for i in range(5)):
             relative = self.session.position(name=other)[:2] - blade_anchor
-            if abs(float(relative @ transverse)) <= (0.025 if narrow_contact else 0.16):
-                behind = max(behind, -float(relative @ direction))
+            relative_positions.append((float(relative @ direction), float(relative @ transverse)))
+        behind = self.contact_behind_offset(
+            relative_positions=relative_positions, narrow=narrow_contact
+        )
         # Leave room for physical tracking error during descent. A 25 mm
         # center gap left only 5 mm beyond blade/cube half-widths, and the
         # loaded tool could land on the cubes before reaching floor height.
@@ -799,7 +822,7 @@ class FloorPrimitives(Primitives):
                 "path_found": path is not None,
                 "clearance_attained": success,
                 "execution_terminated": execution_terminated,
-                "joint_target_reached": bool(path) and float(np.max(np.abs(
+                "joint_target_reached": path is not None and bool(path) and float(np.max(np.abs(
                     ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm())
                 ))) < 0.005,
                 "path_waypoints": None if path is None else len(path),
@@ -1059,12 +1082,15 @@ class FloorPrimitives(Primitives):
             clear = True
             for base in path:
                 self.scene.sync(base=base)
-                if self.scene.in_collision(
+                self.scene.capture_path_rejections = True
+                blocked = self.scene.in_collision(
                     joints=self.scene.planning_fingers(arm=arm, state=0.5),
                     bodies=self.scene.bodies(),
                     held=self.scene.wiper_body,
                     held_tf=held_tf,
-                ):
+                )
+                self.scene.capture_path_rejections = False
+                if blocked:
                     self.session._write(
                         record={
                             "kind": "transport_rejected",
@@ -1072,6 +1098,11 @@ class FloorPrimitives(Primitives):
                             "reason": "carried_collision",
                             "base": base,
                             "target": target,
+                            "t": self.session.ticks,
+                            "checker": self.scene._last_collision_rejection,
+                            "held_position": list(held_tf.position),
+                            "held_orientation": list(held_tf.orientation),
+                            "native_qpos": self.session.mj_data.qpos.tolist(),
                         }
                     )
                     clear = False
@@ -1186,6 +1217,8 @@ class FloorPlanningScene(PlanningScene):
     _native_chassis: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _distance_data: Any = PrivateAttr(default=None)
     _native_tool_corners: Any = PrivateAttr(default=None)
+    _native_palm: Any = PrivateAttr(default=None)
+    _planning_base: tuple[float, float, float] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         super().model_post_init(__context)
@@ -1477,6 +1510,24 @@ class FloorPlanningScene(PlanningScene):
             # the existing positive clearance for the actual arm links.
             clearance = 0.0 if contact[4] == 10 else 0.005
             if contact[4] <= 10 and contact[8] < clearance:
+                if (
+                    contact[4] == 10 and held == self.wiper_body
+                    and held_tf is not None and len(joints) == 13
+                ):
+                    from hitl_pmp.environments.sweep_simple3d.native_palm import NativePalmClearance
+
+                    if self._native_palm is None:
+                        self._native_palm = NativePalmClearance(
+                            model=self.session.mj_model, live_data=self.session.mj_data
+                        )
+                    # Refine only the zero-margin palm proxy rejection against
+                    # the native candidate geometry, never finger contacts or
+                    # positive arm-clearance requirements. Ambiguous zero stays blocked.
+                    native_clearance = self._native_palm.distance(
+                        joints=joints, tool_pose=tool_pose, base=self._planning_base
+                    )
+                    if native_clearance > 0.0:
+                        continue
                 if self.capture_path_rejections:
                     self._last_collision_rejection = {
                         "planning_joints": np.asarray(joints).tolist(),
@@ -1584,6 +1635,7 @@ class FloorPlanningScene(PlanningScene):
         physical_base = Pose.from_rpy((bx, by, 0.0), (0.0, 0.0, yaw))
         self._sim._base_to_arm_pose = multiply_poses(physical_base.invert(), physical_arm_root)
         super().sync(base=base)
+        self._planning_base = (bx, by, yaw) if base is None else (base[0], base[1], base[2])
         from pybullet_helpers.geometry import set_pose
         from scipy.spatial.transform import Rotation
 

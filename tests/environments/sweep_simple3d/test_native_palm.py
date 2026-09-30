@@ -15,13 +15,13 @@ FIXTURES = json.loads(Path(__file__).with_name("native_palm_fixtures.json").read
 
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=lambda row: row["source"])
-def test_native_palm_candidate_separation_and_penetration(fixture: dict) -> None:
+def test_native_palm_candidate_separation_and_penetration(*, fixture: dict) -> None:
     session = SweepSimpleSession(seed=0)
     try:
         model, live = session.mj_model, session.mj_data
         live.qpos[:] = fixture["qpos"]
         mujoco.mj_forward(model, live)
-        query = NativePalmClearance(model, live)
+        query = NativePalmClearance(model=model, live_data=live)
         before = {name: getattr(live, name).copy() for name in
                   ("qpos", "qvel", "ctrl", "xpos", "geom_xpos")}
         flags = (int(model.opt.enableflags), int(model.opt.disableflags))
@@ -41,7 +41,9 @@ def test_native_palm_candidate_separation_and_penetration(fixture: dict) -> None
         base = live.qpos[query.base_addresses].copy()
         base[:2] += shift[:2]
         moved = Pose(tuple(np.array(pose.position) + shift), pose.orientation)
-        assert query.distance(joints=fixture["joints"], tool_pose=moved, base=base) == pytest.approx(1e-6)
+        assert query.distance(
+            joints=fixture["joints"], tool_pose=moved, base=base
+        ) == pytest.approx(1e-6)
         for name, value in before.items():
             np.testing.assert_array_equal(getattr(live, name), value)
         assert (int(model.opt.enableflags), int(model.opt.disableflags)) == flags

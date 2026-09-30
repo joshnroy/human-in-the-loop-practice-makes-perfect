@@ -185,6 +185,9 @@ class SweepSimpleEnvironment(Environment):
                     heading_offset=float(action[3]) if skill.param_dim else 0.0,
                 )
             elif name == "PlaceWiperAtStart":
+                # This fixed skill must not inherit the previous learned pickup.
+                primitive.distance = 0.70
+                primitive.heading_offset = 0.0
                 primitive.place_wiper_at_start()
             elif name == "OpenGripper":
                 primitive.motion.set_gripper(command=0.0)
