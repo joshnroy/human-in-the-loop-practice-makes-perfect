@@ -39,6 +39,15 @@ def test_local_contact_edge_excludes_unrelated_high_blade_corner() -> None:
         high_edge = primitive.blade_bottom_height(cube="cube_0")
         assert high_edge > 0.03
         assert high_edge > low_edge + 0.02
+        data.qpos[cube_q : cube_q + 2] = [1.3, 0.5]
+        mujoco.mj_forward(model, data)
+        low_end = primitive.blade_bottom_height(cube="cube_0", narrow=True)
+        assert 0.004 < low_end < 0.006
+        assert primitive.blade_bottom_height(cube="cube_0") > 0.03
+        data.qpos[cube_q] = 1.7
+        mujoco.mj_forward(model, data)
+        high_end = primitive.blade_bottom_height(cube="cube_0", narrow=True)
+        assert high_end > low_end + 0.029
         target = primitive.floor_tool_pose(xy=np.array([0.5, 1.2]), yaw=1.1)
         data.qpos[tool_q : tool_q + 3] = target.position
         data.qpos[tool_q + 3 : tool_q + 7] = np.asarray(target.orientation)[[3, 0, 1, 2]]

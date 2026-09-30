@@ -231,9 +231,7 @@ class FloorPrimitives(Primitives):
         approach = None
         attempts: list[dict[str, Any]] = []
         tool_yaws = (
-            (angle, angle + np.pi)
-            if narrow_contact
-            else (angle - np.pi / 2, angle + np.pi / 2)
+            (angle + np.pi, angle) if narrow_contact else (angle - np.pi / 2, angle + np.pi / 2)
         )
         for tool_yaw, preserve_tilt in [
             (yaw, preserve) for preserve in (False, True) for yaw in tool_yaws
@@ -297,6 +295,17 @@ class FloorPrimitives(Primitives):
                 break
         if approach is None:
             raise ExecutionError(f"No collision-free floor sweep approach: {attempts}")
+        self.session._write(
+            record={
+                "kind": "floor_approach_selected",
+                "t": self.session.ticks,
+                "tool_yaw": tool_yaw,
+                "preserve_tilt": preserve_tilt,
+                "floor_position": floor_pose.position,
+                "floor_orientation": floor_pose.orientation,
+                "attempts": attempts,
+            }
+        )
         if not self.motion.follow(path=approach, grip=1.0, final_tol=0.03):
             raise ExecutionError(
                 "Checked floor approach did not reach the joint tracking tolerance"
@@ -336,7 +345,7 @@ class FloorPrimitives(Primitives):
         self.require_handle(phase="floor descent")
         # Close the loop on actual blade overlap, bounded by native floor clearance.
         for _ in range(6):
-            height = self.blade_bottom_height(cube=cube)
+            height = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
             center_height = self.cube_contact_ceiling(cube=cube)
             if height <= center_height:
                 break
@@ -369,7 +378,9 @@ class FloorPrimitives(Primitives):
                 if self.level_blade(bodies=bodies):
                     continue
                 break
-        if self.blade_bottom_height(cube=cube) > self.cube_contact_ceiling(cube=cube):
+        if self.blade_bottom_height(cube=cube, narrow=narrow_contact) > self.cube_contact_ceiling(
+            cube=cube
+        ):
             raise ExecutionError("Observed blade edge does not overlap the target cube height")
         self.session._write(
             record={
@@ -453,7 +464,7 @@ class FloorPrimitives(Primitives):
                 upright_error = float(
                     np.linalg.norm(Rotation.from_quat(wiper_now.orientation).as_euler("xyz")[:2])
                 )
-                blade_bottom = self.blade_bottom_height(cube=cube)
+                blade_bottom = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
                 # Require positive native cube/blade overlap with a 2-mm margin.
                 if blade_bottom <= self.cube_contact_ceiling(cube=cube):
                     break
@@ -618,6 +629,13 @@ class FloorPrimitives(Primitives):
     def level_blade(self, *, bodies: set[int]) -> bool:
         """Rotate a small amount only after unloading the blade from all cubes."""
         if self.wiper_loaded_by_cube():
+            self.session._write(
+                record={
+                    "kind": "blade_leveling_skipped",
+                    "t": self.session.ticks,
+                    "reason": "cube_loaded",
+                }
+            )
             return False
         from itertools import product
 
@@ -636,6 +654,14 @@ class FloorPrimitives(Primitives):
         delta = (Rotation.from_euler("z", yaw) * observed.inv()).as_rotvec()
         angle = float(np.linalg.norm(delta))
         if angle < 0.01:
+            self.session._write(
+                record={
+                    "kind": "blade_leveling_skipped",
+                    "t": self.session.ticks,
+                    "reason": "below_turn_threshold",
+                    "turn_needed": angle,
+                }
+            )
             return False
         tool = Pose(tuple(data.xpos[body]), tuple(observed.as_quat()))
         ee = self.scene.ee_now()
@@ -647,7 +673,7 @@ class FloorPrimitives(Primitives):
         ])
         local = (world - data.xpos[body]) @ observed.as_matrix()
         support = int(np.argmin(world[:, 2]))
-        for turn in (0.08, 0.04):
+        for turn in (0.08, 0.04, 0.02):
             rotation = Rotation.from_rotvec(delta * min(1.0, turn / angle)) * observed
             position = world[support] - rotation.apply(local[support])
             corners = rotation.apply(local) + position
@@ -658,23 +684,61 @@ class FloorPrimitives(Primitives):
             path = self.scene.floor_descent(
                 start=self.session.arm(), target=target, bodies=bodies, held_tf=held_tf
             )
+            before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
+            self.session._write(
+                record={
+                    "kind": "blade_leveling_candidate",
+                    "t": self.session.ticks,
+                    "turn": turn,
+                    "before_tilt": before_tilt,
+                    "path_found": path is not None,
+                    "path_waypoints": None if path is None else len(path),
+                    "goal_arm": None if not path else np.asarray(path[-1]).tolist(),
+                    "target_tool_position": position.tolist(),
+                    "target_tool_orientation": rotation.as_quat().tolist(),
+                }
+            )
             if path is None:
                 continue
-            converged = self.motion.follow(
-                path=path,
-                grip=1.0,
-                tol=0.005,
-                final_tol=0.005,
-                max_ticks=30,
-                tick_guard=lambda: self.require_handle(phase="blade leveling"),
-            )
-            self.require_handle(phase="blade leveling")
+            converged = None
+            execution_error = None
+            try:
+                converged = self.motion.follow(
+                    path=path,
+                    grip=1.0,
+                    tol=0.005,
+                    final_tol=0.005,
+                    max_ticks=30,
+                    tick_guard=lambda: self.require_handle(phase="blade leveling"),
+                )
+                self.require_handle(phase="blade leveling")
+            except Exception as error:
+                execution_error = repr(error)
+                raise
+            finally:
+                after = data.xmat[body].reshape(3, 3)
+                after_tilt = float(np.arccos(np.clip(after[2, 2], -1.0, 1.0)))
+                residual = (
+                    ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm()) if path else None
+                )
+                self.session._write(
+                    record={
+                        "kind": "blade_leveling_outcome",
+                        "t": self.session.ticks,
+                        "turn": turn,
+                        "before_tilt": before_tilt,
+                        "after_tilt": after_tilt,
+                        "converged": converged,
+                        "max_joint_residual": None
+                        if residual is None
+                        else float(np.max(np.abs(residual))),
+                        "actual_arm": self.session.arm().tolist(),
+                        "error": execution_error,
+                    }
+                )
             if not converged:
                 return False
-            after = data.xmat[body].reshape(3, 3)
-            after_tilt = float(np.arccos(np.clip(after[2, 2], -1.0, 1.0)))
-            before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
-            return after_tilt < before_tilt - 0.01
+            return after_tilt < before_tilt - 0.002
         return False
 
     def cube_contact_ceiling(self, *, cube: str) -> float:
@@ -733,7 +797,7 @@ class FloorPrimitives(Primitives):
             tuple(Rotation.from_matrix(target_rotation).as_quat()),
         )
 
-    def blade_bottom_height(self, *, cube: str | None = None) -> float:
+    def blade_bottom_height(self, *, cube: str | None = None, narrow: bool = False) -> float:
         """Native bottom-edge height over the selected cube lateral footprint."""
         import mujoco
 
@@ -757,14 +821,16 @@ class FloorPrimitives(Primitives):
                 for signs in product((-1.0, 1.0), repeat=3)
             ])
             local = (cube_corners - data.geom_xpos[blade]) @ rotation
-            lower = max(-half[0], float(local[:, 0].min()))
-            upper = min(half[0], float(local[:, 0].max()))
+            lateral = 1 if narrow else 0
+            front_axis = 1 - lateral
+            lower = max(-half[lateral], float(local[:, lateral].min()))
+            upper = min(half[lateral], float(local[:, lateral].max()))
             if lower <= upper:
-                front = float(np.sign(local[:, 1].mean())) * half[1]
+                front = float(np.sign(local[:, front_axis].mean())) * half[front_axis]
                 return float(
                     data.geom_xpos[blade][2]
-                    + max(vertical[0] * lower, vertical[0] * upper)
-                    + vertical[1] * front
+                    + max(vertical[lateral] * lower, vertical[lateral] * upper)
+                    + vertical[front_axis] * front
                     - vertical[2] * half[2]
                 )
         return float(
@@ -1420,7 +1486,8 @@ class FloorPlanningScene(PlanningScene):
         solutions = ikfast_closest_inverse_kinematics(self.robot, world_from_target=target)
         candidates = [np.asarray(q[:7]) for q in solutions if self.within_arm_limits(arm=q[:7])]
         candidates.sort(key=lambda q: float(np.linalg.norm(q - start)))
-        for goal in candidates[:8]:
+        checked_candidates = 0
+        for goal in candidates:
             if self.in_collision(
                 joints=self.planning_fingers(arm=goal, state=0.5),
                 bodies=bodies,
@@ -1428,6 +1495,11 @@ class FloorPlanningScene(PlanningScene):
                 held_tf=held_tf,
             ):
                 continue
+            # The budget limits path searches, not collision-rejected IK branches.
+            # Otherwise eight blocked branches can hide a reachable ninth one.
+            checked_candidates += 1
+            if checked_candidates > 8:
+                break
             path = self.native_joint_path(
                 goal=goal,
                 start=start,
