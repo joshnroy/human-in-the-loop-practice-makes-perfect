@@ -58,3 +58,18 @@ def test_native_floor_support_and_contact_yaw_are_preserved(*, tilt: float) -> N
         assert primitive.scene.max_tool_tilt == 1.1
     finally:
         session.close()
+
+
+def test_overshooting_positive_steps_include_existing_ceiling_once_per_yaw() -> None:
+    primitive = SimpleNamespace(
+        session=SimpleNamespace(
+            quaternion=lambda **_: Rotation.from_euler("x", .93465).as_quat()
+        ),
+        scene=SimpleNamespace(max_tool_tilt=1.1),
+    )
+    candidates = FloorPrimitives.floor_orientation_candidates(primitive, tool_yaws=(0., np.pi))
+    nearby = candidates[4:]
+    assert [c[2] for c in nearby[::2]] == pytest.approx([.95, .91465, .89465])
+    assert sum(np.isclose(c[2], .95) for c in nearby) == 2
+    assert all(c[2] <= .95 for c in nearby)
+    assert primitive.scene.max_tool_tilt == 1.1

@@ -1322,9 +1322,15 @@ class FloorPrimitives(Primitives):
         rotation = Rotation.from_quat(self.session.quaternion(name="wiper_0"))
         observed = float(np.arccos(np.clip(rotation.as_matrix()[2, 2], -1, 1)))
         ceiling = min(0.95, self.scene.max_tool_tilt - 0.15)
+        nearby: list[float] = []
         for delta in (0.02, 0.04, -0.02, -0.04):
             tilt = observed + delta
-            if 0.0 < tilt <= ceiling:
+            if delta > 0 and observed < ceiling:
+                tilt = min(tilt, ceiling)
+            if (0.0 < tilt <= ceiling
+                    and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
+                    and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
+                nearby.append(tilt)
                 candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
         return candidates
 
