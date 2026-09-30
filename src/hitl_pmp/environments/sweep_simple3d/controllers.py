@@ -1199,7 +1199,9 @@ class FloorPrimitives(Primitives):
                 raise ExecutionError("No collision-free stow for the physically held wiper")
             self.require_handle(phase="upright transport")
             actual = self.session.arm()
-            if np.max(np.abs(ArmMath.wrap(delta=actual - goal))) < 0.025:
+            # Cartesian planning may return another valid IK branch for the goal pose.
+            planned_goal = np.asarray(path[-1][:7]) if path else start
+            if np.max(np.abs(ArmMath.wrap(delta=actual - planned_goal))) < 0.025:
                 return
             # follow(True) also means an explicit drift stop, not arrival.
             if not grasp_drifted():

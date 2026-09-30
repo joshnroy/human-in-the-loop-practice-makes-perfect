@@ -10,7 +10,7 @@ from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
 from hitl_pmp.environments.sweep_simple3d.controllers import FloorPrimitives
 
 
-@pytest.mark.parametrize("mode", ["replan", "budget", "stall", "grip_loss"])
+@pytest.mark.parametrize("mode", ["replan", "alternate_ik", "budget", "stall", "grip_loss"])
 def test_stow_replans_live_grasp_and_preserves_failures(*, monkeypatch, mode: str) -> None:
     state = SimpleNamespace(arm=np.zeros(7), tool=np.zeros(3), lost=False, ticks=0)
     attachments = []
@@ -23,10 +23,15 @@ def test_stow_replans_live_grasp_and_preserves_failures(*, monkeypatch, mode: st
 
     def plan_arm(**kwargs):  # noqa: ANN003, ANN202 -- fake planning callback
         attachments.append(kwargs["held_tf"])
-        return [np.ones(7)]
+        return [np.full(7, 0.4 if mode == "alternate_ik" else 1.0)]
 
     def follow(**kwargs) -> bool:  # noqa: ANN003 -- fake motion callback
         state.ticks += 1
+        if mode == "alternate_ik":
+            state.arm[:] = kwargs["path"][-1]
+            kwargs["tick_guard"]()
+            assert not kwargs["stop_condition"]()
+            return True
         if mode == "grip_loss":
             state.lost = True
             kwargs["tick_guard"]()
@@ -51,7 +56,11 @@ def test_stow_replans_live_grasp_and_preserves_failures(*, monkeypatch, mode: st
     )
     monkeypatch.setattr(FloorPrimitives, "require_handle", require_handle)
     monkeypatch.setattr(FloorPrimitives, "wiper_stow_goal", lambda self: np.ones(7))
-    if mode == "replan":
+    if mode == "alternate_ik":
+        primitive.stow_wiper()
+        assert state.ticks == 1
+        np.testing.assert_array_equal(state.arm, np.full(7, 0.4))
+    elif mode == "replan":
         primitive.stow_wiper()
         assert state.ticks == 2
         assert attachments[0].position[0] == 0.0
