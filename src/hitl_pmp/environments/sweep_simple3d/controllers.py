@@ -453,6 +453,13 @@ class FloorPrimitives(Primitives):
         )
         base_origin = np.array(self.session.base()[:2])
         contact_arm = self.session.arm().copy()
+        contact_grasp = multiply_poses(
+            self.scene.ee_now().invert(),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
+        )
         contact_ended = False
         for progress in np.arange(
             self.contact_step,
@@ -528,6 +535,32 @@ class FloorPrimitives(Primitives):
             ):
                 raise ExecutionError("Contact sweep base did not converge")
             self.require_handle(phase="contact base step")
+            from scipy.spatial.transform import Rotation
+
+            observed_grasp = multiply_poses(
+                self.scene.ee_now().invert(),
+                Pose(
+                    tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"),
+                ),
+            )
+            grasp_translation = float(np.linalg.norm(
+                np.asarray(observed_grasp.position) - contact_grasp.position
+            ))
+            grasp_rotation = float((
+                Rotation.from_quat(observed_grasp.orientation)
+                * Rotation.from_quat(contact_grasp.orientation).inv()
+            ).magnitude())
+            if grasp_translation > 0.01 or grasp_rotation > 0.06:
+                self.session._write(record={
+                    "kind": "contact_stroke_ended",
+                    "t": self.session.ticks,
+                    "reason": "loaded grasp drift; unload before further correction",
+                    "grasp_translation_m": grasp_translation,
+                    "grasp_rotation_rad": grasp_rotation,
+                })
+                contact_ended = True
+                break
             for _ in range(8):
                 wiper_now = Pose(
                     tuple(self.session.position(name="wiper_0")),

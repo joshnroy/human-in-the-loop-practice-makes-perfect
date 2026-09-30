@@ -65,7 +65,9 @@ class PickupProbe:
         import faulthandler
 
         faulthandler.enable()
-        faulthandler.dump_traceback_later(120, repeat=True)
+        # Keep fatal traces, but avoid an asynchronous repeating dump thread
+        # while native IK/collision extensions are active. Service state and
+        # persisted tick records provide the independent progress watchdog.
         root = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(root / "reference/kindergarden/src"))
         sys.path.insert(0, str(root / "reference/kinder-baselines/kinder-models/src"))
