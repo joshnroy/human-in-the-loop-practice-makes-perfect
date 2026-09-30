@@ -306,7 +306,12 @@ class FloorPrimitives(Primitives):
                 "attempts": attempts,
             }
         )
-        if not self.motion.follow(path=approach, grip=1.0, final_tol=0.03):
+        if not self.motion.follow(
+            path=approach,
+            grip=1.0,
+            final_tol=0.03,
+            tick_guard=lambda: self.require_handle(phase="floor approach"),
+        ):
             raise ExecutionError(
                 "Checked floor approach did not reach the joint tracking tolerance"
             )
@@ -340,7 +345,12 @@ class FloorPrimitives(Primitives):
             allowed_tilt=self.scene.max_tool_tilt,
         ):
             raise ExecutionError("No collision-free floor sweep descent from observed grasp")
-        if not self.motion.follow(path=lower, grip=1.0, final_tol=0.005):
+        if not self.motion.follow(
+            path=lower,
+            grip=1.0,
+            final_tol=0.005,
+            tick_guard=lambda: self.require_handle(phase="floor descent"),
+        ):
             raise ExecutionError("Floor sweep descent did not converge")
         self.require_handle(phase="floor descent")
         # Close the loop on actual blade overlap, bounded by native floor clearance.
@@ -447,8 +457,16 @@ class FloorPrimitives(Primitives):
                         }
                     )
                     self.scene.sync()
+                    rejection = self.scene._last_path_rejection or {}
+                    if (rejection.get("collision") or {}).get("reason") == "native_tool_ground":
+                        # End and unload this contact stroke before a stale arm
+                        # hold target would drive the blade into the floor.
+                        contact_ended = True
+                        break
                     raise ExecutionError("Carried arm/tool route blocked during contact sweep")
             self.scene.sync()
+            if contact_ended:
+                break
             if not self.motion.drive(
                 path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005
             ):
@@ -996,13 +1014,34 @@ class FloorPlanningScene(PlanningScene):
     _last_collision_rejection: dict[str, Any] | None = PrivateAttr(default=None)
     _native_chassis: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _distance_data: Any = PrivateAttr(default=None)
+    _native_tool_corners: Any = PrivateAttr(default=None)
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         super().model_post_init(__context)
+        from itertools import product
+
         import mujoco
         import pybullet
+        from scipy.spatial.transform import Rotation
 
         model = self.session.mj_model
+        tool = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "wiper_0")
+        corners = []
+        for geom in range(model.ngeom):
+            if model.geom_bodyid[geom] != tool or not (
+                model.geom_contype[geom] + model.geom_conaffinity[geom]
+            ):
+                continue
+            if model.geom_type[geom] != mujoco.mjtGeom.mjGEOM_BOX:
+                raise ValueError("Native Simple tool floor check requires box geometry")
+            rotation = Rotation.from_quat(model.geom_quat[geom][[1, 2, 3, 0]])
+            corners.extend(
+                model.geom_pos[geom]
+                + rotation.apply([
+                    model.geom_size[geom] * signs for signs in product((-1.0, 1.0), repeat=3)
+                ])
+            )
+        self._native_tool_corners = np.asarray(corners)
         chassis = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "robot_base_link")
         for geom in range(model.ngeom):
             if model.geom_bodyid[geom] != chassis or not (
@@ -1098,6 +1137,38 @@ class FloorPlanningScene(PlanningScene):
 
         if self.capture_path_rejections:
             self._last_collision_rejection = None
+        if held == self.wiper_body and held_tf is not None:
+            from pybullet_helpers.geometry import multiply_poses
+            from scipy.spatial.transform import Rotation
+
+            tool_pose = multiply_poses(self.fk(arm=np.asarray(joints[:7])), held_tf)
+            minimum = float(
+                (
+                    Rotation.from_quat(tool_pose.orientation).apply(self._native_tool_corners)
+                    + tool_pose.position
+                )[:, 2].min()
+            )
+            # Native soft contacts may place the observed tool fractionally below
+            # the plane. Permit escape from that state, never a deeper path.
+            observed = Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            )
+            observed_minimum = float(
+                (
+                    Rotation.from_quat(observed.orientation).apply(self._native_tool_corners)
+                    + observed.position
+                )[:, 2].min()
+            )
+            floor_limit = min(0.0, observed_minimum) - 1e-6
+            if minimum < floor_limit:
+                if self.capture_path_rejections:
+                    self._last_collision_rejection = dict(
+                        reason="native_tool_ground",
+                        minimum_height=minimum,
+                        minimum_allowed_height=floor_limit,
+                    )
+                return True
         chassis_bodies = {body for _, body in self._native_chassis} & bodies
         arm = np.asarray(joints[:7])
         # Collision geometry of an observed physical pose is separate from

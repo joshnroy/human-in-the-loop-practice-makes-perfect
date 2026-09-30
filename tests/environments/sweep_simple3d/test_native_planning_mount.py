@@ -10,6 +10,27 @@ from hitl_pmp.environments.sweep_simple3d.controllers import FloorPlanningScene
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 
+def test_held_tool_cannot_plan_below_native_ground() -> None:
+    session = SweepSimpleSession(seed=0)
+    scene = FloorPlanningScene(session=session, capture_path_rejections=True)
+    try:
+        before = session.mj_data.qpos.copy()
+        submerged = Pose((1.5, 1.0, -0.05), (0.0, 0.0, 0.0, 1.0))
+        attachment = multiply_poses(scene.ee_now().invert(), submerged)
+        assert scene.in_collision(
+            joints=scene.planning_fingers(arm=session.arm()),
+            bodies=set(),
+            held=scene.wiper_body,
+            held_tf=attachment,
+        )
+        assert scene._last_collision_rejection["reason"] == "native_tool_ground"
+        assert scene._last_collision_rejection["minimum_height"] < -0.04
+        np.testing.assert_array_equal(session.mj_data.qpos, before)
+    finally:
+        scene._sim.close()
+        session.close()
+
+
 def test_planning_mount_matches_native_and_preserves_physical_state() -> None:
     session = SweepSimpleSession(seed=0)
     scene = FloorPlanningScene(session=session)
