@@ -747,10 +747,19 @@ class FloorPrimitives(Primitives):
             if path is None or not self.motion.follow(
                 path=path,
                 grip=1.0,
-                max_ticks=30,
-                final_tol=0.005,
+                max_ticks=180,
+                final_tol=0.0005,
                 tick_guard=lambda: self.require_handle(phase="initial blade-height correction"),
             ):
+                if self.level_blade(bodies=bodies):
+                    continue
+                break
+            corrected_height = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
+            if corrected_height > center_height and height - corrected_height < 0.0001:
+                # Joint convergence alone does not establish physical overlap:
+                # a submillimeter descent can finish inside the arm tolerance.
+                # Use the existing checked leveling motion when it made no
+                # measurable contact-height progress; never relax the floor.
                 if self.level_blade(bodies=bodies):
                     continue
                 break
