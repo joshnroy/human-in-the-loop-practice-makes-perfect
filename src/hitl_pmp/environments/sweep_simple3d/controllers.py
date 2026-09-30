@@ -34,6 +34,29 @@ class FloorPrimitives(Primitives):
         return np.pi / 2, 1.2, 1.8
 
     diagnostic_grasp_standoff: float = Field(default=0.035, ge=0.0, le=0.035)
+    retain_pickup_carry_pose: bool = False
+
+    def wiper_pickup_carry_goal(self) -> np.ndarray:
+        """Optionally retain a verified raised grasp only at pickup completion."""
+        from pybullet_helpers.geometry import multiply_poses
+
+        if self.retain_pickup_carry_pose:
+            self.require_handle(phase="pickup carry verification")
+            if self.blade_minimum_height() > self.floor_clearance:
+                self.scene.sync()
+                arm = self.session.arm().copy()
+                held_tf = multiply_poses(
+                    self.scene.ee_now().invert(),
+                    Pose(tuple(self.session.position(name="wiper_0")),
+                         self.session.quaternion(name="wiper_0")),
+                )
+                if self.scene.held_path_clear(
+                    path=[arm], start=arm, bodies=self.scene.bodies(),
+                    held=self.scene.wiper_body, held_tf=held_tf,
+                    allowed_tilt=self.scene.max_tool_tilt,
+                ):
+                    return arm
+        return self.wiper_stow_goal()
 
     def wiper_grasp_standoff(self) -> float:
         """Keep the shared default; allow explicit diagnostic insertion trials."""

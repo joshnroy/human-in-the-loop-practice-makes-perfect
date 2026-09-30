@@ -601,6 +601,10 @@ class Primitives(BaseModel):
     def wiper_stow_goal(self) -> np.ndarray:
         return np.asarray(S.HOME)
 
+    def wiper_pickup_carry_goal(self) -> np.ndarray:
+        """Keep shared pickup completion at its existing stow posture."""
+        return self.wiper_stow_goal()
+
     def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
         return float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
 
@@ -756,7 +760,7 @@ class Primitives(BaseModel):
                         Pose(tuple(after), self.session.quaternion(name=S.WIPER)),
                     )
                     stow = self.scene.plan_arm(
-                        goal=self.wiper_stow_goal(),
+                        goal=self.wiper_pickup_carry_goal(),
                         bodies=self.scene.bodies(),
                         held=self.scene.wiper_body,
                         held_tf=held_now,
