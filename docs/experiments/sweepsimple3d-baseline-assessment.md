@@ -8,7 +8,7 @@ Checkpoint: 2026-09-30. This is a prototype assessment, not an experimental succ
 | Fresh production forward readiness script | 2/2 tested native seeds; 5/5 cubes within 6/10 actions on each | Ordinary action dispatch and production controller defaults, with fixed nominal parameters and scripted cube order. Not a bilevel-policy benchmark. |
 | Custom diagnostic forward task | 2/2 tested native seeds; 5/5 cubes within 6/10 actions | Promising physical feasibility. Controller overrides and revisions differ; not a frozen policy benchmark. |
 | Fresh production complete robot reset | 0/2 tested native seeds | Both runs complete goal, Place, and pickup, then fail the first reverse skill after 9 total actions. Scientific launch remains blocked. |
-| Integrated regression suite | 235/235 | Software validation, not physical task success. |
+| Integrated regression suite | 238/238 | Software validation, not physical task success. |
 | Calibration / method smokes | 0/48 contexts; 0/2 methods | Still required after controller readiness. |
 
 The highest registered native Simple variants contain 50 cubes. Left-of-island tasks have 1, 5, 10, and 50 cubes; right-of-counter and right-of-island tasks each have 50. The approved learning experiment remains the five-cube left-of-island task.
@@ -44,6 +44,12 @@ Four single-cube production support probes use seed 0/cube 4 and ordinary Pick/S
 
 Broad southward reverse contact rotates the tool relative to the palm by about 71 mm and 0.99 rad between the measured first-south and later-contact states. Diagnostic v259 localizes existing narrow contact to southward robot reset, at fixed 0.55 m distance with the native cube-contact ceiling, and prefers existing nearly upright approaches with 0.03 rad native joint reserve. It returns cube 0 under the native predicate at counted action 11, then fails cube 1's blade-overlap check at action 12. Final reset count is 1/5 cubes, with no wiper/robot return executed. Earlier failed actions are retained; this replay has no readiness credit and is not promoted. A fresh seed-1 transfer check runs the identical frozen candidate while the second-cube failure is diagnosed.
 
+The fresh seed-1 narrow-contact transfer v260 fails on the first reverse cube: its trailing blade tip contacts a different cube and exhausts the loaded stroke before reaching the target. Other replay candidates reach 2/5 reset cubes but subsequently hit an upstream conservative base-footprint check. These candidates were not promoted, and the footprint check was preserved.
+
+Replay v265 instead retains the broad 0.70 m south stance, tries a native blade-long-axis roll of +0.2 rad first, and consistently uses the existing geometry-derived cube contact ceiling as the fixed-reset height target. The prior internal 8 mm target caused unnecessary lowering even when the blade already satisfied actual overlap. Cube 0 returns under the unchanged native predicate at tick 1643/action 11; cube 1 then fails actual blade-height overlap at tick 4410/action 12. Final count is 1/5 reset cubes. The two minimal reset-only geometry corrections are integrated at `1193bcad`, with 24/24 focused tests and 238/238 established regressions passing; forward behavior and all acceptance criteria are unchanged. This is partial prototype progress, not full reset or readiness evidence.
+
+The remaining cube-1 failure ends with the blade edge about 70.9 mm above the floor, tilt 0.873 rad, and native joint reserve 0.031 rad. Repeated raised leveling follows low-reserve contact approaches; there is no cube contact at the final overlap failure. A checked initial approach that avoids this sequence is under investigation. Fresh full physical proofs, calibration, and method smokes remain pending.
+
 ## Baseline distinction
 
 Pinned KINDER is `8f600231da8ee898da1055144665a8c5f6c246f0`; baselines is `427ad6cdfcc79efb489ebabc8fd39d77e104bb4e`. Native task registrations are in KINDER `src/kinder/__init__.py:492–542`. Baselines `tidybot3d_sweep3D.py:55–58` loads Drawer configurations. Its `experiments/conf/env/sweep3d-o5.yaml` selects SweepIntoDrawer3D.
@@ -52,7 +58,7 @@ Our global CLI exposes skill-oracle, random-skills, EES, and POMDP, not a bileve
 
 ## Remaining Ours/EES integration and readiness
 
-1. Verify explicit Place/Pick/reverse/robot-return recovery within 20 counted actions, with no hidden resets and the settled native start contract.
+1. Verify explicit Place/Pick/reverse/robot-return recovery with counted actions, no hidden resets, and the settled native start contract. The current diagnostic conservatively caps the combined forward-and-reset sequence at 20 actions; the experiment retains physical state across 20-action practice cycles, so this diagnostic cap is not a new reset deadline.
 2. Promote the exact verified diagnostic controller choices into production defaults, then repeat fresh native forward and recovery checks without overrides.
 3. Validate the approved pickup/sweep parameter supports and all native predicate/operator/accounting contracts.
 4. Run 24 fixed calibration contexts for each of the two learned skills, rotating all five targets as approved; preserve failures.
