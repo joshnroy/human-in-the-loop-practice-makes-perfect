@@ -25,6 +25,7 @@ class FloorPrimitives(Primitives):
     distance: float = Field(default=0.7, ge=0.55, le=0.85)
     heading_offset: float = Field(default=0.0, ge=-np.pi / 12, le=np.pi / 12)
     _ground_clearance_hold: np.ndarray | None = PrivateAttr(default=None)
+    _exhausted_stow_key: tuple[Any, ...] | None = PrivateAttr(default=None)
 
     def wiper_grasp_offsets(self) -> tuple[float, ...]:
         # A low cross-handle grasp shortens the contact-force lever arm.
@@ -71,9 +72,14 @@ class FloorPrimitives(Primitives):
         return float(np.arctan2(base[1] - wiper[1], base[0] - wiper[0]))
 
     def wiper_stow_goal(self) -> np.ndarray:
+        from hashlib import sha256
+
         from pybullet_helpers.geometry import Pose, multiply_poses
         from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
+        # IKFast sorts relative to the planning robot's current joints. Restore
+        # the observed state before consulting an exact-state failure cache.
+        self.scene.sync()
         base = self.session.base()
         held_tf = multiply_poses(
             self.scene.ee_now().invert(),
@@ -86,6 +92,30 @@ class FloorPrimitives(Primitives):
 
         from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene
 
+        model, data = self.session.mj_model, self.session.mj_data
+        geometry = sha256()
+        # Include mutable native geometry, not just model identity: diagnostic
+        # restores and human actions must never reuse a different scene's failure.
+        for name in (
+            "geom_type", "geom_size", "geom_pos", "geom_quat", "geom_bodyid",
+            "geom_contype", "geom_conaffinity", "geom_margin", "geom_gap",
+            "body_pos", "body_quat", "jnt_range", "jnt_pos", "jnt_axis",
+            "mesh_vert", "mesh_face", "hfield_data", "hfield_size",
+            "geom_dataid", "exclude_signature", "pair_geom1", "pair_geom2",
+        ):
+            geometry.update(np.asarray(getattr(model, name)).tobytes())
+        cache_key = (
+            id(model), id(self.scene), geometry.digest(),
+            model.opt.enableflags, model.opt.disableflags,
+            data.qpos.tobytes(), data.qvel.tobytes(),
+            data.mocap_pos.tobytes(), data.mocap_quat.tobytes(),
+            data.geom_xpos.tobytes(), data.geom_xmat.tobytes(),
+            tuple(held_tf.position), tuple(held_tf.orientation),
+            self.scene.max_tool_tilt, tuple(sorted(self.scene.bodies())),
+        )
+        if self._exhausted_stow_key == cache_key:
+            raise ExecutionError("No collision-free compact tool transport pose")
+        self._exhausted_stow_key = None
         home = np.asarray(SweepDrawerScene.HOME)
         if (
             self.scene.plan_arm(
@@ -125,6 +155,9 @@ class FloorPrimitives(Primitives):
                             )
                             if path is not None:
                                 return np.asarray(solution[:7])
+        # Only complete exhaustion is reusable; exceptions and partial searches
+        # leave no cached result. The caller still records each failed action.
+        self._exhausted_stow_key = cache_key
         raise ExecutionError("No collision-free compact tool transport pose")
 
     def wiper_handle_geometry(self) -> tuple[int, int]:

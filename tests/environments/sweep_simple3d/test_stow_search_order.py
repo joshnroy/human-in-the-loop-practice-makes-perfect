@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import mujoco
 import numpy as np
 from pybullet_helpers.geometry import Pose
 from pybullet_helpers.ikfast import utils
@@ -28,10 +29,14 @@ def test_stow_tries_checked_fallback_before_enumerating_more_candidates(*, monke
                               position=lambda **kwargs: np.array([0.0, 0.0, 0.2]),
                               quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
                               yaw=lambda **kwargs: 0.0)
+    session.mj_model = mujoco.MjModel.from_xml_string("<mujoco/>")
+    session.mj_data = mujoco.MjData(session.mj_model)
     scene = SimpleNamespace(ee_now=lambda: Pose((0.0, 0.0, 0.3)),
                             plan_arm=plan_arm, bodies=lambda: bodies,
                             robot=object(), wiper_body=7,
                             within_arm_limits=lambda **kwargs: True)
+    scene.sync = lambda: None
+    scene.max_tool_tilt = 1.1
     primitive = FloorPrimitives.model_construct(session=session, scene=scene, motion=None)
     monkeypatch.setattr(utils, "ikfast_closest_inverse_kinematics", inverse_kinematics)
     np.testing.assert_array_equal(primitive.wiper_stow_goal(), goal)
