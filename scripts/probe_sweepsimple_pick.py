@@ -40,6 +40,7 @@ class PickupProbe:
             parser.error("--full-cycle cannot be combined with --pick-only")
         import faulthandler
 
+        faulthandler.enable()
         faulthandler.dump_traceback_later(120, repeat=True)
         root = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(root / "reference/kindergarden/src"))
