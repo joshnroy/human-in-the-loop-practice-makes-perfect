@@ -1,5 +1,7 @@
 """Two learned task samplers and independently selectable fixed floor recoveries."""
 
+from typing import ClassVar
+
 import numpy as np
 from pydantic import Field
 
@@ -14,23 +16,33 @@ from .symbolic import SIMPLE_PREDICATES, SimpleSymbols
 
 
 class SweepSimpleSkillProvider(SkillProvider):
+    APPROVED_PARAMETER_BOUNDS: ClassVar[
+        dict[str, tuple[tuple[float, float], tuple[float, float]]]
+    ] = {
+        "PickFloorWiper": ((0.55, 0.85), (-np.pi / 12, np.pi / 12)),
+        "SweepCubeToGoal": ((0.40, 0.70), (-np.pi / 12, np.pi / 12)),
+    }
     env: SweepSimpleEnvironment
     human_reset_enabled: bool = True
     human_reset_practice_cost: float = Field(default=1.0, ge=0.0)
     robot_practice_costs: dict[str, float] = Field(default_factory=dict)
     stock_parameter_bounds: dict[str, tuple[tuple[float, float], tuple[float, float]]] = Field(
-        default_factory=lambda: {
-            "PickFloorWiper": ((0.55, 0.85), (-np.pi / 12, np.pi / 12)),
-            "SweepCubeToGoal": ((0.40, 0.70), (-np.pi / 12, np.pi / 12)),
-        }
+        default_factory=lambda: dict(SweepSimpleSkillProvider.APPROVED_PARAMETER_BOUNDS)
     )
 
     def validate_trainable_support(self) -> None:
         if set(self.stock_parameter_bounds) != set(SimpleSymbols.TRAINABLE):
             raise ValueError("Expected exactly two approved Simple sampler supports")
-        for bounds in self.stock_parameter_bounds.values():
+        for name, bounds in self.stock_parameter_bounds.items():
             if any(not np.isfinite([lo, hi]).all() or lo >= hi for lo, hi in bounds):
                 raise ValueError("Nonfinite or degenerate Simple sampler support")
+            if any(
+                lo < allowed_lo or hi > allowed_hi
+                for (lo, hi), (allowed_lo, allowed_hi) in zip(
+                    bounds, self.APPROVED_PARAMETER_BOUNDS[name], strict=True
+                )
+            ):
+                raise ValueError(f"Simple sampler support for {name} exceeds approved ranges")
 
     def skills(self) -> tuple[Skill, ...]:
         return SimpleSymbols.skills(costs=self.robot_practice_costs)

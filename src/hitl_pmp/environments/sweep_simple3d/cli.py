@@ -5,6 +5,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
@@ -14,6 +15,11 @@ from hitl_pmp.practice_loop import PracticeResetPolicy
 
 
 class SweepSimpleCli:
+    @staticmethod
+    def validate_manifest(*, manifest: dict[str, Any]) -> None:
+        if manifest.get("status") != "FROZEN":
+            raise ValueError("Simple launch requires an explicitly FROZEN readiness manifest")
+
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
@@ -44,8 +50,7 @@ class SweepSimpleCli:
             raise ValueError("Sweep learning requires --practice-reset-policy never")
         raw = args.sweep_manifest.read_bytes()
         manifest = json.loads(raw)
-        if str(manifest.get("status", "")).startswith("DRAFT"):
-            raise ValueError("Sweep draft manifest has unresolved launch-readiness gates")
+        SweepSimpleCli.validate_manifest(manifest=manifest)
         if args.canonical_seed not in manifest["valid_practice_seeds"]:
             raise ValueError("Practice seed is absent from the frozen valid-start manifest")
         test_seeds = tuple(manifest["valid_evaluation_seeds"])
