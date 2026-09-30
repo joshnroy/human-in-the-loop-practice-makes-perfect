@@ -5,11 +5,42 @@ from typing import Any
 
 import numpy as np
 from pybullet_helpers.geometry import Pose
-from pydantic import Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr
 
 from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError, Motion
 from hitl_pmp.environments.sweep_drawer3d.planning_scene import ArmMath, PlanningScene
 from hitl_pmp.environments.sweep_drawer3d.primitives import Primitives
+
+
+class ContactTravelBudget(BaseModel):
+    """Bound extra clearance approach separately from observed loaded travel."""
+
+    length: float = Field(gt=0, allow_inf_nan=False)
+    stroke: float = Field(gt=0, allow_inf_nan=False)
+    step: float = Field(gt=0, allow_inf_nan=False)
+    behind: float = Field(ge=0, allow_inf_nan=False)
+    onset: float | None = None
+
+    def targets(self) -> np.ndarray:
+        # Preserve the original zero-behind command sequence exactly.
+        if self.behind == 0:
+            return np.arange(self.step, min(self.length + .10, self.stroke + self.step), self.step)
+        bound = min(self.length + .10, self.stroke + self.behind)
+        return np.minimum(np.arange(self.step, bound + self.step, self.step), bound)
+
+    def observe(self, *, projection: float, loaded: bool) -> bool:
+        if not np.isfinite(projection):
+            raise ValueError("Nonfinite observed contact travel")
+        if loaded and self.onset is None:
+            self.onset = projection
+        return self.onset is not None and projection >= self.onset + self.stroke
+
+    def target(self, *, proposed: float) -> float:
+        return proposed if self.onset is None else min(proposed, self.onset + self.stroke)
+
+
+class ContactTravelLimit(Exception):
+    """Internal motion stop: unload normally after reaching the loaded travel cap."""
 
 
 class FloorPrimitives(Primitives):
@@ -592,11 +623,38 @@ class FloorPrimitives(Primitives):
             ),
         )
         contact_ended = False
-        for progress in np.arange(
-            self.contact_step,
-            min(length + 0.10, self.contact_stroke_length + self.contact_step),
-            self.contact_step,
-        ):
+        travel = ContactTravelBudget(length=length, stroke=self.contact_stroke_length,
+                                     step=self.contact_step, behind=behind)
+        self.session._write(record={
+            "kind": "contact_travel_budget", "t": self.session.ticks,
+            "free_lead_in": behind, "loaded_limit": self.contact_stroke_length,
+            "command_projection_limit": float(travel.targets()[-1]),
+        })
+
+        def observe_contact_travel() -> None:
+            projection = float((np.asarray(self.session.base()[:2]) - base_origin) @ direction)
+            before = travel.onset
+            reached = travel.observe(projection=projection, loaded=self.wiper_loaded_by_cube())
+            if before is None and travel.onset is not None:
+                self.session._write(record={
+                    "kind": "contact_load_onset", "t": self.session.ticks,
+                    "base_projection": travel.onset, "free_lead_in": behind,
+                    "loaded_projection_limit": travel.onset + travel.stroke,
+                })
+            if reached:
+                self.session._write(record={
+                    "kind": "contact_loaded_limit", "t": self.session.ticks,
+                    "base_projection": projection, "contact_onset": travel.onset,
+                    "loaded_limit": travel.stroke,
+                })
+                raise ContactTravelLimit
+
+        for proposed in travel.targets():
+            try:
+                observe_contact_travel()
+            except ContactTravelLimit:
+                break
+            progress = travel.target(proposed=float(proposed))
             ground_corrected = False
             current = self.session.position(name=cube)
             if (
@@ -661,9 +719,15 @@ class FloorPrimitives(Primitives):
                 break
             if ground_corrected:
                 continue
-            if not self.motion.drive(
-                path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005
-            ):
+            try:
+                driven = self.motion.drive(
+                    path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005,
+                    tick_guard=observe_contact_travel,
+                )
+            except ContactTravelLimit:
+                self.require_handle(phase="loaded contact travel limit")
+                break
+            if not driven:
                 raise ExecutionError("Contact sweep base did not converge")
             self.require_handle(phase="contact base step")
             from scipy.spatial.transform import Rotation
