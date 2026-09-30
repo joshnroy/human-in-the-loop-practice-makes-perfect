@@ -41,6 +41,7 @@ def test_exact_exhaustion_cache(*, monkeypatch, change: str) -> None:
         within_arm_limits=lambda **kwargs: True, max_tool_tilt=1.1,
     )
     primitive = FloorPrimitives.model_construct(session=session, scene=scene, motion=None)
+
     def ik(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202 -- library callback
         ik_calls.append(kwargs)
         return []
