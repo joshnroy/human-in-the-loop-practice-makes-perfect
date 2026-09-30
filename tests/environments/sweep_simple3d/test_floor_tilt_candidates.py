@@ -21,7 +21,7 @@ def test_existing_orientations_precede_bounded_nearby_fallbacks() -> None:
     assert candidates[:4] == [(0., False, None), (np.pi, False, None),
                               (0., True, None), (np.pi, True, None)]
     assert [c[2] for c in candidates[4:12:2]] == pytest.approx([.914, .934, .874, .854])
-    assert all(c[1] and 0 < c[2] <= .95 for c in candidates[4:])
+    assert all(c[1] and 0 < c[2] <= .99 for c in candidates[4:])
 
 
 def test_candidates_cannot_consume_existing_tilt_reserve() -> None:
@@ -30,11 +30,11 @@ def test_candidates_cannot_consume_existing_tilt_reserve() -> None:
         scene=SimpleNamespace(max_tool_tilt=1.1),
     )
     candidates = FloorPrimitives.floor_orientation_candidates(primitive, tool_yaws=(0.,))
-    assert [c[2] for c in candidates[2:]] == [.2, .4, .6, .8, .95]
-    assert all(c[2] <= primitive.scene.max_tool_tilt - .15 for c in candidates[2:])
+    assert [c[2] for c in candidates[2:]] == [.2, .4, .6, .8, .95, .99]
+    assert all(c[2] <= primitive.scene.max_tool_tilt - .10 for c in candidates[2:])
 
 
-@pytest.mark.parametrize("tilt", [.2, .4, .6, .8, .95, .914, .934])
+@pytest.mark.parametrize("tilt", [.2, .4, .6, .8, .95, .99, .914, .934])
 @pytest.mark.parametrize("observed_tilt", [0.0, 1.659])
 def test_native_floor_support_and_contact_yaw_are_preserved(
     *, tilt: float, observed_tilt: float
@@ -82,7 +82,7 @@ def test_overshooting_positive_steps_include_existing_ceiling_once_per_yaw() -> 
     nearby = candidates[4:]
     assert [c[2] for c in nearby[:6:2]] == pytest.approx([.95, .91465, .89465])
     assert sum(np.isclose(c[2], .95) for c in nearby) == 2
-    assert all(c[2] <= .95 for c in nearby)
+    assert all(c[2] <= .99 for c in nearby)
     assert primitive.scene.max_tool_tilt == 1.1
 
 
@@ -93,7 +93,7 @@ def test_tipped_grasp_gets_recorded_feasible_broad_fallback_without_duplicates()
     )
     candidates = FloorPrimitives.floor_orientation_candidates(primitive, tool_yaws=(.0474,))
     assert candidates[:2] == [(.0474, False, None), (.0474, True, None)]
-    assert [c[2] for c in candidates[2:]] == [.2, .4, .6, .8, .95]
+    assert [c[2] for c in candidates[2:]] == [.2, .4, .6, .8, .95, .99]
     assert primitive.scene.max_tool_tilt == 1.1
 
 

@@ -1383,8 +1383,12 @@ class FloorPrimitives(Primitives):
                     and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
                 nearby.append(tilt)
                 candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
-        for tilt in (0.2, 0.4, 0.6, 0.8, 0.95):
-            if (tilt <= ceiling
+        # A slipped overhead grasp can need .99 rad to keep the elbow away
+        # from its native limit. This last fallback retains the .10-rad
+        # loaded-unload reserve; it does not change either route/guard limit.
+        for tilt in (0.2, 0.4, 0.6, 0.8, 0.95, 0.99):
+            candidate_ceiling = self.scene.max_tool_tilt - 0.10 if tilt == 0.99 else ceiling
+            if (tilt <= candidate_ceiling
                     and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
                     and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
                 nearby.append(tilt)
