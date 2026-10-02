@@ -1,7 +1,7 @@
 {
   "coding": {
     "sandbox": {
-      "image": "/absolute/path/to/robocode-strict-blackbox.sif",
+      "image": "hitl-agentic-strict:latest",
       "robocode_checkout": "/absolute/path/to/robocode-with-isolated-transport",
       "container_python": "/opt/robocode-strict/bin/python",
       "timeout_seconds": 120,

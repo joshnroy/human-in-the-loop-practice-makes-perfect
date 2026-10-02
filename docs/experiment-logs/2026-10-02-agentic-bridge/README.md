@@ -50,10 +50,63 @@ The isolated generated-code launcher and live model calls are separate checks.
 Passing this native probe does not establish that those integrations run or that
 the learned skills solve Tossing3D.
 
-## Agentic experiment protocol and current blocker
+## Agentic experiment protocol
+
+**Current runtime: Docker.** This supersedes the earlier Apptainer setup and its
+pending host-profile request. No AppArmor policy was installed or changed.
+
+Build the strict image from the configured, audited Robocode checkout:
+
+```bash
+scripts/with_env.sh docker build --memory 4g --tag hitl-agentic-strict:latest \
+  --file /absolute/path/to/robocode-with-isolated-transport/docker/Dockerfile.strict-blackbox \
+  /absolute/path/to/robocode-with-isolated-transport
+```
+
+The older installed image failed Robocode's package-isolation guard; rebuilding
+from the audited checkout passed it. The launcher uses `--network none`, drops
+all capabilities, sets no-new-privileges, runs as the non-root host UID, and mounts
+only the run workspace and explicit sockets. The container root filesystem is
+read-only; memory, CPU and process limits apply. It uses the local Docker daemon,
+never pulls during execution, and snapshots the immutable image ID.
+
+The coding agent reaches only Robocode's validating host model broker through a
+Unix socket; provider credentials remain on the host. The policy container gets
+only the bounded robot relay. Neither gets repository source, reset access, the
+Docker socket, or general network access. The image's network/firewall entrypoint
+is replaced by the trusted namespace and strict-package verifier. A named
+container is explicitly removed on completion, error or timeout so killing the
+Docker client cannot leave the container running.
+
+### Host Python environment
+
+The audited Robocode checkout requires Python **3.11 or 3.12**. The repository's
+ordinary Python 3.10 environment remains suitable for the existing methods, but
+does not satisfy that dependency. Use a separate environment for this experiment:
+
+```bash
+scripts/with_env.sh uv venv --python 3.11 .venv-agentic
+scripts/with_env.sh uv pip install --no-sources \
+  --python .venv-agentic/bin/python --torch-backend cpu \
+  --editable '.[dev,tossing3d]' \
+  --editable reference/kindergarden \
+  --editable reference/kinder-baselines/kinder-models \
+  --editable /absolute/path/to/robocode-with-isolated-transport
+scripts/with_env.sh uv pip check --python .venv-agentic/bin/python
+```
+
+`--no-sources` keeps the explicitly supplied worktree dependencies instead of
+following Robocode's optional local-source overrides into other submodules. The
+PyTorch CPU build is sufficient for the host belief model; simulator rendering
+still uses EGL. This setup does not change the shared conda environment.
+
+Run the protocol with the explicit `.venv-agentic/bin/python` interpreter. It
+passes that interpreter into the sweep, while keeping worktree-local imports.
+
+### Runtime configuration and execution
 
 [The example runtime configuration](runtime.example.json) contains placeholders,
-not selected models or credentials. Set both absolute paths, choose the coding
+not selected models or credentials. Set the Docker image and Robocode checkout, choose the coding
 and multimodal models, and set the vision endpoint. The vision schema follows
 Robocode's `OpenAICompatibleClient`: `provider`, `model`, `base_url`, and
 `api_key_env`. An empty `api_key_env` is for a keyless local server; for a hosted
@@ -68,7 +121,7 @@ before that marker. This preflight makes **zero model calls** and does not
 initialize the simulation.
 
 ```bash
-scripts/with_env.sh python scripts/agentic_tossing3d_experiment.py \
+scripts/with_env.sh .venv-agentic/bin/python scripts/agentic_tossing3d_experiment.py \
   --runtime-config /absolute/path/to/runtime.json \
   --inputs experiment_inputs/agentic_tossing3d \
   --results-root artifacts/agentic-tossing3d-first-run \
@@ -91,14 +144,66 @@ environment. A paired comparison can run a second fresh protocol directory with
 code, judgments, revisions, `stats.json`, and `timing.json` remain separate
 artifacts; fixed simulator seeds do not imply deterministic model completions.
 
-The checked workstation preflight failed before the trusted marker with
+### Earlier Apptainer attempt (superseded)
+
+The original workstation preflight failed before the trusted marker with
 `Failed to create container process: Operation not permitted`, including when
 run outside the agent filesystem sandbox. [Recorded failure](preflight.json)
 and [input/image hashes](digests.json) preserve the exact invocation. The protocol
 returned exit status 2, made zero model calls, and did not start a sweep. There
 is no host-code or network-enabled fallback.
 
-The next dependent action is to run the same preflight on a host that permits
-the required user, network and process namespaces. After it passes, validate
-generated controller execution and VLM judgments before drawing conclusions
-from the practice experiment. Learning and human-benefit results remain unmeasured.
+That attempt led to the host diagnosis below. The subsequent Docker run removes
+this namespace blocker; generated-policy and VLM results are still unmeasured.
+
+### Follow-up diagnosis on October 2
+
+A host-level diagnostic run isolated the denial to AppArmor:
+
+```text
+profile="unprivileged_userns" comm="starter" capname="sys_admin"
+execpath="/usr/lib/x86_64-linux-gnu/apptainer/bin/starter"
+```
+
+The system-wide unprivileged-user-namespace restriction is enabled, and the
+installed Apptainer package lacks its application-specific AppArmor profile.
+The prepared profile follows Apptainer's installation instructions with these
+system-owned executable paths. It passed a parser check without loading any
+policy. Installation was pending explicit approval because it changes host
+security policy. The user subsequently selected Docker, so the profile was not
+installed and the system-wide restriction has not been changed.
+
+The separate Python 3.11.15 environment successfully imports the configured
+Robocode launcher and VLM client, this worktree's project code, and both pinned
+simulator checkouts. Dependency validation passes, as do **53/53 focused tests**.
+The native relay probe also completed **2/2 control periods** charged as **1/1
+option action** in the new environment. Its before/after position and all four
+camera images match the earlier probe. The [separate result](python311-result.json)
+records package versions and image hashes; the images above also illustrate this
+repeat. This remains trusted numeric execution, with no generated-policy result.
+
+Robocode can load the existing coding-provider login. That does not supply the
+separate OpenAI-compatible VLM client with API credentials: none were configured,
+and neither local endpoint checked (ports 8000 and 11434) was serving a model.
+An explicit VLM configuration is still required. No inference request or
+generated-code execution has been performed by this follow-up.
+
+### Docker validation on October 2
+
+The production [Docker preflight passed](docker-preflight.json): the strict
+supervisor completed before the trusted marker, without model calls. A
+[native policy-container probe](docker-native-result.json) then completed **2/2
+control periods** charged as **1/1 option action**. It received both actual camera
+views and moved the base by the same amount as the previous trusted host probe.
+The controller used its full two-step budget, so its `controller_done` flag is
+false; no VLM success claim is inferred. This was hand-written numeric probe
+code, not a generated skill or a demonstration of learning. **54/54 focused tests**
+pass after the Docker switch, including the broker-only client configuration.
+
+A genuine generation attempt was prepared with the external task, robot API,
+generation prompt and resolved input bundle, capped at $2 and 20 turns. Automatic
+approval review rejected launching it because explicit permission is required
+for sending that experiment content to the fixed Codex inference destination.
+The user was asked to approve that payload and destination. No model call ran.
+The VLM endpoint/model and credential configuration remain a separate dependency
+for the full practice loop.

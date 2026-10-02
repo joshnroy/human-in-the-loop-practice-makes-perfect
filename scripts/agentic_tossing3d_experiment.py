@@ -9,10 +9,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
-from hitl_pmp.agentic_runtime.sandbox import ApptainerPolicyExecutor
+from hitl_pmp.agentic_runtime.sandbox import DockerContainer, DockerPolicyExecutor
 from hitl_pmp.methods.agentic_options.cli import RuntimeConfig
 
 
@@ -51,6 +52,15 @@ class AgenticExperimentProtocol:
                 "Use vision.api_key_env; runtime snapshots must not contain credentials"
             )
         runtime = RuntimeConfig.model_validate(raw_config)
+        runtime.coding = runtime.coding.model_copy(
+            update={
+                "sandbox": runtime.coding.sandbox.model_copy(
+                    update={
+                        "image": DockerContainer(settings=runtime.coding.sandbox).image_id(),
+                    }
+                ),
+            }
+        )
         output = args.results_root / "protocol"
         output.mkdir(parents=True, exist_ok=False)
         snapshot = output / "runtime.json"
@@ -67,9 +77,7 @@ class AgenticExperimentProtocol:
             digests["library.json"] = AgenticExperimentProtocol.digest(path=output / "library.json")
         transport = runtime.coding.sandbox.transport_source()
         digests["robocode_transport.py"] = AgenticExperimentProtocol.digest(path=transport)
-        digests["container_image"] = AgenticExperimentProtocol.digest(
-            path=runtime.coding.sandbox.image
-        )
+        digests["container_image"] = runtime.coding.sandbox.image
         (output / "digests.json").write_text(json.dumps(digests, indent=2) + "\n")
         preflight = AgenticExperimentProtocol.preflight(runtime=runtime)
         (output / "preflight.json").write_text(json.dumps(preflight, indent=2) + "\n")
@@ -167,7 +175,7 @@ class AgenticExperimentProtocol:
     @staticmethod
     def preflight(*, runtime: RuntimeConfig) -> dict[str, Any]:
         settings = runtime.coding.sandbox
-        executor = ApptainerPolicyExecutor(settings=settings)
+        executor = DockerPolicyExecutor(settings=settings)
         with tempfile.TemporaryDirectory(prefix="hitl-agentic-preflight-") as tmp:
             work = Path(tmp)
             shutil.copyfile(settings.transport_source(), work / "transport.py")
@@ -177,7 +185,8 @@ class AgenticExperimentProtocol:
             (work / "policy_worker.py").write_text(
                 'print("HITL_AGENTIC_ISOLATION_OK", flush=True)\n'
             )
-            command = executor.command(work_dir=work)
+            name = f"hitl-preflight-{uuid.uuid4().hex}"
+            command = executor.command(work_dir=work, name=name)
             try:
                 result = subprocess.run(
                     command,
@@ -205,6 +214,8 @@ class AgenticExperimentProtocol:
                     "generated_code_executed": False,
                     "model_calls": 0,
                 }
+            finally:
+                executor.container.remove(name=name)
 
     @staticmethod
     def digest(*, path: Path) -> str:

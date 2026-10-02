@@ -72,18 +72,44 @@ trusted numeric commands and proves the control/observation integration only.
 Both global and wrist camera images are real simulator observations. See the
 [probe evidence and reproduction instructions](2026-10-02-agentic-bridge/README.md).
 
-No generated-policy learning or task-success result is established. The exact
+No generated-policy learning or task-success result is established. The original exact
 disconnected Apptainer preflight fails with `Operation not permitted` before
 entering the container, including an escalated probe. The recorded preflight
 made zero model calls and launched no sweep. The configured modern Robocode
-checkout also needs installation in the runtime environment. There is no
+checkout also needed installation in the runtime environment. The follow-ups
+below resolve these installation and namespace blockers. There is no
 host-execution fallback. Native bridge and offline tests do not establish live
 VLM/coding-agent feasibility.
 
 ## Recommendation
 
-The critical next step is to pass the same disconnected preflight on a compatible
-host. Then validate genuine generated-library and VLM execution, persistent
+**Current status — Docker:** at the user's request, both policy execution and
+coding-agent execution now use disconnected Docker containers. The rebuilt
+strict image passes the production preflight. The native Docker policy probe
+completed **2/2 control periods** as **1/1 option action**, with no model calls or
+generated code; **54/54 focused tests** pass. The host AppArmor profile is no
+longer needed and was not installed. Details and provenance are in the
+[Docker validation record](2026-10-02-agentic-bridge/README.md).
+
+The next live step is genuine skill generation. Automatic approval review
+rejected its launch pending explicit authorization for sending the external
+experiment inputs to the fixed Codex inference destination. That approval and
+the VLM endpoint/model/credential configuration remain outstanding. No learning
+or human-benefit result is established.
+
+**October 2 runtime follow-up:** the Robocode dependency is now installed in a
+separate Python 3.11.15 environment, with this worktree's pinned simulator sources.
+Both live integration modules import successfully, dependency validation passes,
+and **53/53 focused tests** pass under that interpreter. The native relay probe
+also repeats successfully: **2/2 control periods**, charged as **1/1 option action**,
+with identical before/after camera images. The host kernel log
+identifies AppArmor's `unprivileged_userns` profile denying Apptainer's `starter`
+the namespace capability it needs. An application-specific profile was prepared
+and syntax-checked; the later Docker decision supersedes its installation. A VLM endpoint/model and its
+credential configuration are also still needed. See the
+[runtime setup and diagnosis](2026-10-02-agentic-bridge/README.md).
+
+With the Docker preflight passing, validate genuine generated-library and VLM execution, persistent
 sessions with actual code revisions, and finally paired fixed-seed comparisons.
 The [experiment protocol](../../scripts/agentic_tossing3d_experiment.py) snapshots
 inputs and hashes, checks isolation before model calls, and launches the existing
