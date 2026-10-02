@@ -1,0 +1,931 @@
+<!doctype html><html><head><meta charset="utf-8"><title>EXP-14 unnecessary resets</title>
+<style>body{font-family:system-ui,sans-serif;max-width:1400px;margin:20px auto;padding:0 16px;background:#fff;color:#111;line-height:1.45}
+img{max-width:100%;border:1px solid #ddd}table{border-collapse:collapse;font-size:13px}td,th{border:1px solid #ccc;padding:3px 7px;vertical-align:top}
+.m{color:#555;font-size:13px} tr.chosen td{background:#fdf0d5} tr.alt td{background:#e3eef8} tr.flip td{background:#e6f4ea}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px} @media(max-width:900px){.two{grid-template-columns:1fr}}
+section{border-top:2px solid #ddd;margin-top:28px;padding-top:6px} .fix{border-left:4px solid #0072B2;padding:2px 12px;margin:10px 0}
+.tree .node{margin-left:18px;font-family:ui-monospace,monospace;font-size:12px} .tree summary{cursor:pointer}
+.tree .act{margin-left:18px} .tree .ch{color:#b07a00;font-weight:600} code{background:#f4f4f4;padding:0 3px}</style><style>.nc{color:var(--muted,#666)} .card.nc{opacity:.65} .card.nc code{font-size:.75rem;overflow-wrap:anywhere} .snap{background:#fff4d6;color:#4a3b00;border:1px solid #e8d48a;border-radius:8px;padding:6px 10px;margin:8px 0;font-size:.9rem}</style></head><body><p class="snap"><a href="index.html">← Experiment log (committed copy)</a>. Committed snapshot of a live sub-page, taken 2026-09-27 10:45; files that were not committed are marked “not committed”.</p>
+<h1>EXP-14: why the planner asked for unnecessary human resets</h1>
+<p class="m">Runs: EXP-14 (code f68a29dd), 4 arms × 5 seeds, 50 cycles × 20 actions, belief-space expectimax at depth min(6, remaining).
+A reset is <b>gave-up</b> if a Toss was among the root options (the robot was holding the cube) and <b>optional</b> if a Pick was.
+This is the same rule as the EXP-14 page. Scripts: <code>hitl-pmp-scratch-plots-20260925/unnecessary-resets/</code>.</p>
+
+<h2>TL;DR</h2>
+<ul>
+<li><b>187/205 unnecessary resets are gave-up resets, and one cause accounts for all of them: a training clock on OpenGripper.</b>
+When the robot is holding the cube, a reset leaves the gripper closed and empty. The planner's next action is then OpenGripper,
+in 187/187 of the reconstructed trees. The belief model treats OpenGripper as a skill that
+improves with practice, although it is a fixed controller that succeeded 197/197 times. Deployment value J depends on OpenGripper
+(it is how a failed pick is recovered), so the model forecasts that each OpenGripper attempt raises J. Freezing only OpenGripper's
+clock inside the search flips <b>187/187</b> of these resets to Toss. Freezing Pick's clock flips 0/187,
+and freezing the reset's own clock flips 0/187.</li>
+<li>The gave-up resets win by tiny margins: median 1.3e-05, with 90% below 9.3e-05.
+At λ=0 the objective has no cost term, so any positive margin is enough, and Model A λ=0 has the most gave-up resets (90).
+The search depth matters. Gave-up resets are chosen in 67/385 holding decisions at depth 2, 40/438 at depth 4 and 65/6064 at depth 6.
+At depth 1 there are none (0/461), because OpenGripper can no longer follow the reset. In a short search, the one OpenGripper
+tick after a reset is a large share of everything the search can gain.</li>
+<li><b>The 18 optional resets have a different cause.</b> All of them happen with the bin on the far side and move it to the robot side.
+The failure-effect model is learned separately for each exact symbolic context and treats an unseen context as "nothing changes".
+8/18 of these resets happen at the 3rd action of the whole run. At that point the only failure the model has seen is one
+far-side greedy toss, in which the cube fell and had to be picked again. A robot-side failure is unseen, so it is imagined to leave the
+cube in hand, ready to toss again: an optimistic identity effect. The other 10 happen later, when the model has seen dozens to
+hundreds of robot-side failures (the cube stays re-pickable) and only 1–4 far-side ones per mode. Letting unseen exact contexts borrow the
+effects observed in other contexts flips <b>18/18</b> of them to Pick. No clock freeze flips any (0/18).
+In the real data, far-side failures strand the cube more often, so it is not settled that the later ones are wrong.</li>
+<li>Hypotheses from the code review, verified: (1) the reset's <i>own</i> clock has no effect (0/187; J never reads the reset
+belief). What matters is the fixed-skill clock the reset unlocks, and that clock is OpenGripper's, not Pick's. (2) The ε-random
+toss success of 0.25 against the observed 314/3683 is
+a real model error but a minor driver (16/187 gave-up, 2/18 optional). (3) The identity assumption for
+unseen failure contexts does not drive the gave-up resets: every toss context there had been seen (187/187). It does drive
+the optional ones. (4) Deployment horizon 4 matches the evaluation (eval tasks run 2 or 4 steps). With horizon 8 OpenGripper
+matters less and 178/187 gave-up resets flip, but that would misstate the evaluation, so it is a sensitivity, not a fix.</li>
+</ul>
+
+<h2>1. How many, when, in what state</h2>
+<img src="../2026-09-25-tossing3d-exp14-unnecessary-resets-counts.png">
+<p class="m">Top row: counts per run (faint dots = seeds, bar = mean of 5). Labels are resets over the decisions at which that kind of reset was
+possible, summed over 5 seeds. Bottom row: cumulative count over the run (faint = seed), the action slot within the cycle, and the
+state and preceding actions.</p>
+<p>A recurring pattern: 63/179 of all far-side resets (the needed ones after a successful toss included) are followed straight away
+by Pick and then a gave-up reset that brings the bin back to the robot side. That is two human resets in three actions. It
+accounts for the 63 gave-up resets labelled "holding, bin opposite, after reset→pick". In the planner's tree, the gain is the
+Pick and the OpenGripper attempt that the round trip creates.</p>
+
+<h2>2. What drives them (all 205 resets, not only the examples)</h2>
+<img src="../2026-09-25-tossing3d-exp14-unnecessary-resets-drivers.png">
+<p><b>Method.</b> Every one of the 205 decisions was rebuilt offline: the logged belief (plus the one sampler training row
+recorded after it), atoms, failure-effect counts and model settings were fed to the pinned solver at f68a29dd. All 205 root
+value vectors match the logged ones exactly (max |Δ| = 0.0; the tolerance was 1e-9). A further 963 decisions of every kind (every
+20th decision of each run) also match exactly (963/963). Each decision was then re-solved with one modelling
+assumption changed inside the search. The robot's actual belief is unchanged, so each re-solve is a single-decision counterfactual,
+not a closed-loop rerun.</p>
+<table><tr><th>variant (one change)</th><th>gave-up flipped</th><th>flipped to</th><th>optional flipped</th><th>flipped to</th></tr>
+<tr><td>fixed_clocks_frozen</td><td>187/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 187}</td><td>0/18</td><td>{}</td></tr><tr><td>open_clock_frozen</td><td>187/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 187}</td><td>0/18</td><td>{}</td></tr><tr><td>pick_clock_frozen</td><td>0/187</td><td>{}</td><td>0/18</td><td>{}</td></tr><tr><td>reset_clock_frozen</td><td>0/187</td><td>{}</td><td>0/18</td><td>{}</td></tr><tr><td>no_forecast</td><td>161/187</td><td>{&#x27;STOP&#x27;: 92, &#x27;MoveToTossLocationAndToss&#x27;: 69}</td><td>18/18</td><td>{&#x27;PickCube&#x27;: 9, &#x27;STOP&#x27;: 9}</td></tr><tr><td>no_pick_conditioning</td><td>6/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 6}</td><td>0/18</td><td>{}</td></tr><tr><td>random_toss_observed</td><td>16/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 16}</td><td>2/18</td><td>{&#x27;PickCube&#x27;: 2}</td></tr><tr><td>pooled_failure_effects</td><td>2/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 2}</td><td>18/18</td><td>{&#x27;PickCube&#x27;: 18}</td></tr><tr><td>deployment_horizon_8</td><td>178/187</td><td>{&#x27;MoveToTossLocationAndToss&#x27;: 178}</td><td>0/18</td><td>{}</td></tr>
+</table>
+<p class="m">"no learning forecast" flips many resets, but 92 of those flip to STOP:
+without any forecast nothing is worth practising, so it is a diagnostic, not a fix. Every gave-up reset's best alternative is Toss
+(187/187). In 187/187 of them, the extra value that OpenGripper's clock adds to the reset path
+(compared with the toss path) exceeds the reset's margin. OpenGripper's learning-rate belief is higher than the toss's at every
+gave-up reset (187/187). Real OpenGripper attempts total 91 / 49 / 36 / 21 over the 5 seeds of each arm, close to
+that arm's gave-up count (90 / 45 / 33 / 19). OpenGripper is practised almost only because of these resets.</p>
+<p class="m">Side effects of the top fix, measured on the 963 sampled decisions: freezing both fixed-controller clocks changes
+1/847 non-reset choices and 7/116 reset choices
+(Reset→Reset: 2, Reset→Toss: 5, Pick→Reset: 1).</p>
+
+<h2>3. Suggested fixes (model-side, ranked by expected impact)</h2>
+<div class="fix"><b>1. Parameter-free skills should not have a practice-driven learning term.</b> PickCube and OpenGripper are fixed controllers
+(consultation <code>no_sampler</code>). Since #370 their attempts advance a training clock
+(<code>SKILL_BELIEF_MODELS</code>, <code>PracticeExampleSource.OUTCOME</code>). Model A's curve prior and Model B's drift η ≥ 0 then forecast
+improvement from every attempt, and nothing in the data can cancel that forecast for a skill that is barely attempted. Model their
+competence as stationary: uncertain, updated by success/failure, but not trending with practice. Keeping the information value
+of observing them is fine; in the counterfactuals the information value alone never produced a gave-up reset.
+<br><i>Evidence:</i> OpenGripper clock frozen → 187/187 gave-up resets flip to Toss. Pick clock frozen → 0/187. On 963 sampled decisions
+(every 20th of each run), freezing both clocks changed 1/847 non-reset choices and 7/116 reset choices
+(Reset→Reset: 2, Reset→Toss: 5, Pick→Reset: 1). So it is not side-effect free: it can occasionally prefer a reset over a pick. Real OpenGripper outcomes: 197/197 successes.
+<i>Expected impact:</i> removes about 187/205 of the unnecessary resets (about 18/run in Model A λ=0). This is inferred from
+single-decision counterfactuals; a closed-loop rerun is needed to confirm it.</div>
+<div class="fix"><b>2. Failure effects should carry uncertainty in sparse contexts.</b> <code>EmpiricalFailureEffects</code> uses exact-context maximum
+likelihood, falling back to identity when a context is unseen. With 0–4 far-side observations per mode it is either blind (identity) or overconfident. A
+hierarchical or partially pooled model (a context-specific estimate that shrinks towards the same skill's effects in related
+contexts, with the posterior predictive used in search) would let the planner weigh far-side practice on what it has actually seen.
+<br><i>Evidence:</i> letting unseen exact contexts borrow the observed effects flips 18/18 optional resets to Pick (and 2/187 gave-up).
+<i>Caveat:</i> in the real data a failed greedy far-side toss stranded the cube in
+30/48 cases,
+against 0/1433 on the robot side. So the full pooling tested here
+is optimistic, and a calibrated model may still choose to move the bin. <i>Expected impact:</i> at most about 4 resets/arm; uncertain.</div>
+<div class="fix"><b>3. Toss competence should depend on where the bin is.</b> One toss belief is shared across bin sides (#344), but greedy
+success was 2744/4177 with the bin on the robot side against 45/93 on
+the far side. The evaluation places the bin on the far side (bin x ≥ 1.6, barrier at x = 1.3), yet
+7797/7953 practice tosses had the bin on the robot side. Under a side-agnostic belief, a
+reset that moves the bin to the robot side (every optional reset) looks free of any transfer cost.
+<i>Evidence:</i> inferred, not tested; testing it needs a model change, not a re-solve. <i>Expected impact:</i> unknown for the resets, and
+possibly larger for what practice is worth.</div>
+<div class="fix"><b>4. The ε-random toss success should be learned, not fixed at 0.25.</b> Observed:
+314/3683. A Beta belief on the ε-branch rate, updated by
+the ε-random outcomes, is the model-side version.
+<i>Evidence:</i> with the observed rate, 16/187 gave-up and 2/18 optional resets flip. <i>Expected impact:</i> small.</div>
+<p class="m">Not a fix: the deployment horizon (4 is what the evaluation uses) and λ. At λ=0 a reset is free in the objective. At λ=3e-6 it
+costs 5×3e-6 = 1.5e-5 in J, already included in those arms' values, and the resets still won. Among λ=0 gave-up resets,
+69/90 (Model A) and 10/33 (Model B) have margins below 1.5e-5. These are statements about the
+objective, not suggestions to add a penalty.</p>
+
+<h2>4. Examples</h2>
+<p>Gave-up (sampled to span arms, seeds and cycles): <ul><li><a href='#global_curve-lam0-s0-c19-d0399'>Model A, λ=0, s0, cycle 20, action 19</a></li><li><a href='#global_curve-lam0-s4-c32-d0654'>Model A, λ=0, s4, cycle 33, action 14</a></li><li><a href='#global_curve-lam0-s1-c40-d0814'>Model A, λ=0, s1, cycle 41, action 14</a></li><li><a href='#global_curve-lam0-s2-c48-d0978'>Model A, λ=0, s2, cycle 49, action 19</a></li><li><a href='#global_curve-lam3e-6-s3-c19-d0398'>Model A, λ=3e-6, s3, cycle 20, action 19</a></li><li><a href='#global_curve-lam3e-6-s2-c29-d0582'>Model A, λ=3e-6, s2, cycle 30, action 3</a></li><li><a href='#global_curve-lam3e-6-s0-c43-d0865'>Model A, λ=3e-6, s0, cycle 44, action 10</a></li><li><a href='#local_trend-lam0-s4-c23-d0476'>Model B, λ=0, s4, cycle 24, action 16</a></li><li><a href='#local_trend-lam0-s3-c29-d0587'>Model B, λ=0, s3, cycle 30, action 7</a></li><li><a href='#local_trend-lam0-s2-c32-d0656'>Model B, λ=0, s2, cycle 33, action 16</a></li><li><a href='#local_trend-lam0-s0-c38-d0777'>Model B, λ=0, s0, cycle 39, action 17</a></li><li><a href='#local_trend-lam3e-6-s3-c30-d0614'>Model B, λ=3e-6, s3, cycle 31, action 14</a></li><li><a href='#local_trend-lam3e-6-s1-c36-d0739'>Model B, λ=3e-6, s1, cycle 37, action 19</a></li><li><a href='#local_trend-lam3e-6-s2-c43-d0873'>Model B, λ=3e-6, s2, cycle 44, action 14</a></li></ul> Optional (all 18): <ul><li><a href='#global_curve-lam0-s0-c00-d0003'>Model A, λ=0, s0, cycle 1, action 3</a></li><li><a href='#global_curve-lam0-s0-c17-d0341'>Model A, λ=0, s0, cycle 18, action 1</a></li><li><a href='#global_curve-lam0-s2-c24-d0481'>Model A, λ=0, s2, cycle 25, action 1</a></li><li><a href='#global_curve-lam0-s3-c00-d0003'>Model A, λ=0, s3, cycle 1, action 3</a></li><li><a href='#global_curve-lam0-s4-c09-d0182'>Model A, λ=0, s4, cycle 10, action 2</a></li><li><a href='#global_curve-lam3e-6-s0-c00-d0003'>Model A, λ=3e-6, s0, cycle 1, action 3</a></li><li><a href='#global_curve-lam3e-6-s2-c06-d0121'>Model A, λ=3e-6, s2, cycle 7, action 1</a></li><li><a href='#global_curve-lam3e-6-s3-c00-d0003'>Model A, λ=3e-6, s3, cycle 1, action 3</a></li><li><a href='#global_curve-lam3e-6-s4-c09-d0181'>Model A, λ=3e-6, s4, cycle 10, action 1</a></li><li><a href='#local_trend-lam0-s0-c00-d0003'>Model B, λ=0, s0, cycle 1, action 3</a></li><li><a href='#local_trend-lam0-s1-c48-d0961'>Model B, λ=0, s1, cycle 49, action 1</a></li><li><a href='#local_trend-lam0-s3-c00-d0003'>Model B, λ=0, s3, cycle 1, action 3</a></li><li><a href='#local_trend-lam0-s4-c09-d0182'>Model B, λ=0, s4, cycle 10, action 2</a></li><li><a href='#local_trend-lam3e-6-s0-c00-d0003'>Model B, λ=3e-6, s0, cycle 1, action 3</a></li><li><a href='#local_trend-lam3e-6-s2-c12-d0241'>Model B, λ=3e-6, s2, cycle 13, action 1</a></li><li><a href='#local_trend-lam3e-6-s2-c19-d0381'>Model B, λ=3e-6, s2, cycle 20, action 1</a></li><li><a href='#local_trend-lam3e-6-s3-c00-d0003'>Model B, λ=3e-6, s3, cycle 1, action 3</a></li><li><a href='#local_trend-lam3e-6-s4-c11-d0221'>Model B, λ=3e-6, s4, cycle 12, action 1</a></li></ul></p>
+<p class="m">Each example shows the replayed video, the logged root values and branches, the beliefs, a plain-words explanation, the
+counterfactual re-solves, a static tree (root → every action; the chosen reset in amber and the best alternative in blue, with
+their chance branches and the next choice), and the full reconstructed tree to browse. The full tree was rebuilt offline and its
+root values equal the logged ones exactly for every example.</p>
+<h2 id="gave">4a. Gave-up resets</h2>
+
+<section id="global_curve-lam0-s0-c19-d0399"><h3>Model A, λ=0 · seed 0 · cycle 20 · action 19 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s0-c19-d0399.mp4</code>]</span>
+<p class="m">Actions 15–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.4639090</td><td class='m'>p=1.000→0.4639090</td></tr><tr><td>Reset→bin far side</td><td>0.4639090</td><td class='m'>p=1.000→0.4639090</td></tr><tr class="alt"><td>Toss</td><td>0.4638703</td><td class='m'>p=0.261→0.4722569; p=0.200→0.4547377; p=0.013→0.4547377; p=0.026→0.4547377; p=0.125→0.4638703; p=0.318→0.4638703; p=0.028→0.4638703; p=0.007→0.4638703; p=0.021→0.4638703</td></tr><tr><td>STOP</td><td>0.4636308</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.521</td><td>2.81e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.978</td><td>2.52e-07</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.551</td><td>3.28e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.973</td><td>2.50e-05</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 30.00 · remaining actions 2 · search depth 2 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 19 of 20, bin on the robot side), so it was
+holding it. 2 actions were left, so the search looked 2 steps ahead. Tossing now was worth 0.4638703;
+asking the human for a reset was worth 0.4639090, which is 3.9e-05 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 3.3e-02. For the toss it forecasts 2.8e-04 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.551) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 2.8e-04 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.4638703 and
+Reset 0.4636308, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.4636308</td><td>0.4638703</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.4639090</td><td>0.4638703</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.4636308</td><td>0.4638703</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.4639090</td><td>0.4638703</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.4639090</td><td>0.4638703</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.4639090</td><td>0.4638703</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.5159617</td><td>0.5159617</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.4677468</td><td>0.4678426</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s0-c19-d0399.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s0-c19-d0399.json"><summary>Full reconstructed search tree (34 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s4-c32-d0654"><h3>Model A, λ=0 · seed 4 · cycle 33 · action 14 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s4-c32-d0654.mp4</code>]</span>
+<p class="m">Actions 10–18 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.6941483</td><td class='m'>p=1.000→0.6941483</td></tr><tr class="alt"><td>Toss</td><td>0.6941258</td><td class='m'>p=0.357→0.6969269; p=0.143→0.6870741; p=0.125→0.6941179; p=0.125→0.6941179; p=0.250→0.6941497</td></tr><tr><td>Reset→bin far side</td><td>0.6941203</td><td class='m'>p=1.000→0.6941203</td></tr><tr><td>STOP</td><td>0.6939645</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.715</td><td>6.17e-05</td><td>1.00</td></tr><tr><td>Pick</td><td>0.979</td><td>4.73e-08</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.809</td><td>5.85e-03</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.976</td><td>2.42e-06</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 17.00 · remaining actions 7 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 14 of 20, bin on the far side), so it was
+holding it. 7 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.6941258;
+asking the human for a reset was worth 0.6941483, which is 2.2e-05 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 5.9e-03. For the toss it forecasts 6.2e-05 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.809) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 8.6e-05 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.6941188 and
+Reset 0.6940552, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.6940552</td><td>0.6941188</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.6941483</td><td>0.6941258</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.6940552</td><td>0.6941188</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.6941483</td><td>0.6941258</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.6941479</td><td>0.6941273</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.6941483</td><td>0.6941257</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.7117261</td><td>0.7117261</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.6970843</td><td>0.6971368</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s4-c32-d0654.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s4-c32-d0654.json"><summary>Full reconstructed search tree (1301 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s1-c40-d0814"><h3>Model A, λ=0 · seed 1 · cycle 41 · action 14 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s1-c40-d0814.mp4</code>]</span>
+<p class="m">Actions 10–18 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.7408377</td><td class='m'>p=1.000→0.7408377</td></tr><tr class="alt"><td>Toss</td><td>0.7408376</td><td class='m'>p=0.403→0.7429059; p=0.079→0.7322008; p=0.017→0.7321887; p=0.125→0.7408391; p=0.350→0.7408372; p=0.017→0.7408248; p=0.005→0.7408248; p=0.002→0.7408248</td></tr><tr><td>Reset→bin far side</td><td>0.7408324</td><td class='m'>p=1.000→0.7408324</td></tr><tr><td>STOP</td><td>0.7407838</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.807</td><td>1.63e-05</td><td>1.00</td></tr><tr><td>Pick</td><td>0.963</td><td>1.42e-08</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.915</td><td>9.26e-04</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.977</td><td>1.59e-06</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 21.00 · remaining actions 7 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 14 of 20, bin on the robot side), so it was
+holding it. 7 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.7408376;
+asking the human for a reset was worth 0.7408377, which is 1.0e-07 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 9.3e-04. For the toss it forecasts 1.6e-05 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.915) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 2.3e-05 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.7408322 and
+Reset 0.7408097, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, pooling unseen failure contexts. The planner also tosses after using the observed ε-random toss rate. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.7408097</td><td>0.7408322</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.7408377</td><td>0.7408376</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.7408097</td><td>0.7408322</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.7408377</td><td>0.7408376</td></tr><tr class=flip><td>ε-random toss success 0.085</td><td>Toss</td><td>0.7408376</td><td>0.7408379</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.7408377</td><td>0.7408367</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.8026543</td><td>0.8026543</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.7458431</td><td>0.7458641</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s1-c40-d0814.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s1-c40-d0814.json"><summary>Full reconstructed search tree (2285 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s2-c48-d0978"><h3>Model A, λ=0 · seed 2 · cycle 49 · action 19 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s2-c48-d0978.mp4</code>]</span>
+<p class="m">Actions 15–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8824729</td><td class='m'>p=1.000→0.8824729</td></tr><tr><td>Reset→bin far side</td><td>0.8824729</td><td class='m'>p=1.000→0.8824729</td></tr><tr class="alt"><td>Toss</td><td>0.8824719</td><td class='m'>p=0.448→0.8828527; p=0.052→0.8791802; p=0.125→0.8824719; p=0.188→0.8824719; p=0.188→0.8824719</td></tr><tr><td>STOP</td><td>0.8824673</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.896</td><td>5.97e-06</td><td>1.00</td></tr><tr><td>Pick</td><td>0.979</td><td>1.93e-09</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.941</td><td>3.90e-04</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.978</td><td>4.82e-07</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 30.00 · remaining actions 2 · search depth 2 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 19 of 20, bin on the far side), so it was
+holding it. 2 actions were left, so the search looked 2 steps ahead. Tossing now was worth 0.8824719;
+asking the human for a reset was worth 0.8824729, which is 1.0e-06 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 3.9e-04. For the toss it forecasts 6.0e-06 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.941) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 5.7e-06 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8824719 and
+Reset 0.8824673, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8824673</td><td>0.8824719</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8824729</td><td>0.8824719</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8824673</td><td>0.8824719</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8824729</td><td>0.8824719</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8824729</td><td>0.8824719</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8824729</td><td>0.8824719</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.8948213</td><td>0.8948213</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.8839727</td><td>0.8839773</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s2-c48-d0978.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s2-c48-d0978.json"><summary>Full reconstructed search tree (24 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s3-c19-d0398"><h3>Model A, λ=3e-6 · seed 3 · cycle 20 · action 19 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s3-c19-d0398.mp4</code>]</span>
+<p class="m">Actions 15–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.7013923</td><td class='m'>p=1.000→0.7013923</td></tr><tr><td>Reset→bin far side</td><td>0.7013923</td><td class='m'>p=1.000→0.7013923</td></tr><tr class="alt"><td>Toss</td><td>0.7013333</td><td class='m'>p=0.363→0.7076596; p=0.115→0.6845720; p=0.019→0.6845720; p=0.003→0.6845720; p=0.125→0.7013333; p=0.345→0.7013333; p=0.024→0.7013333; p=0.006→0.7013333</td></tr><tr><td>STOP</td><td>0.7009017</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.726</td><td>5.12e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.975</td><td>7.07e-06</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.551</td><td>3.28e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.973</td><td>2.59e-05</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 30.00 · remaining actions 2 · search depth 2 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 19 of 20, bin on the robot side), so it was
+holding it. 2 actions were left, so the search looked 2 steps ahead. Tossing now was worth 0.7013333;
+asking the human for a reset was worth 0.7013923, which is 5.9e-05 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 3.3e-02. For the toss it forecasts 5.1e-04 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.551) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 5.1e-04 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.7013333 and
+Reset 0.7008867, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.7008867</td><td>0.7013333</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.7013923</td><td>0.7013333</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.7008867</td><td>0.7013333</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.7013923</td><td>0.7013333</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.7013923</td><td>0.7013333</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.7013923</td><td>0.7013333</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.7172540</td><td>0.7172660</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.7086438</td><td>0.7088209</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s3-c19-d0398.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s3-c19-d0398.json"><summary>Full reconstructed search tree (33 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s2-c29-d0582"><h3>Model A, λ=3e-6 · seed 2 · cycle 30 · action 3 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s2-c29-d0582.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8276415</td><td class='m'>p=1.000→0.8276415</td></tr><tr class="alt"><td>Toss</td><td>0.8276026</td><td class='m'>p=0.416→0.8303225; p=0.084→0.8140898; p=0.125→0.8275935; p=0.188→0.8276422; p=0.188→0.8275935</td></tr><tr><td>Reset→bin far side</td><td>0.8275895</td><td class='m'>p=1.000→0.8275895</td></tr><tr><td>STOP</td><td>0.8273403</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.832</td><td>1.01e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.978</td><td>5.33e-08</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.773</td><td>8.45e-03</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.976</td><td>4.13e-06</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 6.00 · remaining actions 18 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 3 of 20, bin on the far side), so it was
+holding it. 18 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.8276026;
+asking the human for a reset was worth 0.8276415, which is 3.9e-05 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 8.4e-03. For the toss it forecasts 1.0e-04 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.773) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 1.6e-04 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8275947 and
+Reset 0.8274747, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8274747</td><td>0.8275947</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8276415</td><td>0.8276026</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8274747</td><td>0.8275947</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8276415</td><td>0.8276026</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8276412</td><td>0.8276044</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8276415</td><td>0.8276024</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8273530</td><td>0.8273650</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.8317344</td><td>0.8318271</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s2-c29-d0582.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s2-c29-d0582.json"><summary>Full reconstructed search tree (1508 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s0-c43-d0865"><h3>Model A, λ=3e-6 · seed 0 · cycle 44 · action 10 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s0-c43-d0865.mp4</code>]</span>
+<p class="m">Actions 6–14 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8052742</td><td class='m'>p=1.000→0.8052742</td></tr><tr class="alt"><td>Toss</td><td>0.8052739</td><td class='m'>p=0.410→0.8072998; p=0.070→0.7961163; p=0.008→0.7960946; p=0.013→0.7960946; p=0.125→0.8052763; p=0.338→0.8052740; p=0.014→0.8052519; p=0.023→0.8052519</td></tr><tr><td>Reset→bin far side</td><td>0.8052673</td><td class='m'>p=1.000→0.8052673</td></tr><tr><td>STOP</td><td>0.8052377</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.819</td><td>1.74e-05</td><td>1.00</td></tr><tr><td>Pick</td><td>0.961</td><td>1.26e-08</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.908</td><td>1.15e-03</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.978</td><td>7.74e-07</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 9.00 · remaining actions 11 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 10 of 20, bin on the robot side), so it was
+holding it. 11 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.8052739;
+asking the human for a reset was worth 0.8052742, which is 3.5e-07 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 1.2e-03. For the toss it forecasts 1.7e-05 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.908) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 3.6e-05 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8052718 and
+Reset 0.8052358, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, pooling unseen failure contexts. The planner also tosses after using the observed ε-random toss rate. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8052358</td><td>0.8052718</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8052742</td><td>0.8052739</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8052358</td><td>0.8052718</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8052742</td><td>0.8052739</td></tr><tr class=flip><td>ε-random toss success 0.085</td><td>Toss</td><td>0.8052742</td><td>0.8052743</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8052742</td><td>0.8052726</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8142213</td><td>0.8142333</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.8110328</td><td>0.8110666</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s0-c43-d0865.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s0-c43-d0865.json"><summary>Full reconstructed search tree (3481 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s4-c23-d0476"><h3>Model B, λ=0 · seed 4 · cycle 24 · action 16 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s4-c23-d0476.mp4</code>]</span>
+<p class="m">Actions 12–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin far side</td><td>0.9138442</td><td class='m'>p=1.000→0.9138442</td></tr><tr><td>Reset→bin robot side</td><td>0.9137888</td><td class='m'>p=1.000→0.9137888</td></tr><tr class="alt"><td>Toss</td><td>0.9130863</td><td class='m'>p=0.464→0.9191069; p=0.036→0.8331210; p=0.125→0.9129420; p=0.125→0.9129420; p=0.250→0.9135187</td></tr><tr><td>STOP</td><td>0.9101538</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.928</td><td>2.38e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.919</td><td>1.67e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.785</td><td>3.96e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.981</td><td>4.69e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 27.00 · remaining actions 5 · search depth 5 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 16 of 20, bin on the far side), so it was
+holding it. 5 actions were left, so the search looked 5 steps ahead. Tossing now was worth 0.9130863;
+asking the human for a reset was worth 0.9138442, which is 7.6e-04 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 4.0e-02. For the toss it forecasts 2.4e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.785) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 1.8e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.9122388 and
+Reset 0.9112023, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin far side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.9112023</td><td>0.9122388</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin far side</td><td>0.9136607</td><td>0.9128379</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.9109539</td><td>0.9118802</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin far side</td><td>0.9138442</td><td>0.9130863</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin far side</td><td>0.9138442</td><td>0.9131182</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.9137888</td><td>0.9130188</td></tr><tr><td>no learning forecast</td><td>Reset→bin robot side</td><td>0.9062872</td><td>0.9062872</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.9297931</td><td>0.9301858</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s4-c23-d0476.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s4-c23-d0476.json"><summary>Full reconstructed search tree (560 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s3-c29-d0587"><h3>Model B, λ=0 · seed 3 · cycle 30 · action 7 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s3-c29-d0587.mp4</code>]</span>
+<p class="m">Actions 3–11 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8549010</td><td class='m'>p=1.000→0.8549010</td></tr><tr class="alt"><td>Toss</td><td>0.8548190</td><td class='m'>p=0.435→0.8676056; p=0.049→0.7694970; p=0.014→0.7688507; p=0.002→0.7688507; p=0.125→0.8550147; p=0.356→0.8547109; p=0.011→0.8538546; p=0.007→0.8538546</td></tr><tr><td>Reset→bin far side</td><td>0.8544306</td><td class='m'>p=1.000→0.8544306</td></tr><tr><td>STOP</td><td>0.8487473</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.871</td><td>2.19e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.938</td><td>1.61e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.646</td><td>4.50e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.975</td><td>5.63e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 14.00 · remaining actions 14 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 7 of 20, bin on the robot side), so it was
+holding it. 14 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.8548190;
+asking the human for a reset was worth 0.8549010, which is 8.2e-05 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 4.5e-02. For the toss it forecasts 2.2e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.646) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 3.2e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8547029 and
+Reset 0.8515668, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8515668</td><td>0.8547029</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8544013</td><td>0.8540999</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8509685</td><td>0.8537690</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8549010</td><td>0.8548190</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8548972</td><td>0.8548535</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8549010</td><td>0.8546973</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8486863</td><td>0.8486863</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.8695416</td><td>0.8705293</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s3-c29-d0587.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s3-c29-d0587.json"><summary>Full reconstructed search tree (1980 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s2-c32-d0656"><h3>Model B, λ=0 · seed 2 · cycle 33 · action 16 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s2-c32-d0656.mp4</code>]</span>
+<p class="m">Actions 12–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.9705296</td><td class='m'>p=1.000→0.9705296</td></tr><tr class="alt"><td>Toss</td><td>0.9705260</td><td class='m'>p=0.491→0.9714747; p=0.007→0.9217009; p=0.002→0.9210791; p=0.000→0.9210791; p=0.125→0.9705203; p=0.327→0.9705271; p=0.027→0.9704118; p=0.021→0.9704118</td></tr><tr><td>Reset→bin far side</td><td>0.9704619</td><td class='m'>p=1.000→0.9704619</td></tr><tr><td>STOP</td><td>0.9696851</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.981</td><td>2.76e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.943</td><td>2.56e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.968</td><td>2.64e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.985</td><td>3.66e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 27.00 · remaining actions 5 · search depth 5 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 16 of 20, bin on the robot side), so it was
+holding it. 5 actions were left, so the search looked 5 steps ahead. Tossing now was worth 0.9705260;
+asking the human for a reset was worth 0.9705296, which is 3.5e-06 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 2.6e-02. For the toss it forecasts 2.8e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.968) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 3.2e-04 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.9704247 and
+Reset 0.9701131, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.9701131</td><td>0.9704247</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.9703441</td><td>0.9703403</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.9699170</td><td>0.9702177</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.9705296</td><td>0.9705260</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.9705288</td><td>0.9705256</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.9705252</td><td>0.9705239</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.9728829</td><td>0.9728829</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.9781008</td><td>0.9783799</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s2-c32-d0656.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s2-c32-d0656.json"><summary>Full reconstructed search tree (1437 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s0-c38-d0777"><h3>Model B, λ=0 · seed 0 · cycle 39 · action 17 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s0-c38-d0777.mp4</code>]</span>
+<p class="m">Actions 13–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.9232160</td><td class='m'>p=1.000→0.9232160</td></tr><tr><td>Reset→bin far side</td><td>0.9231915</td><td class='m'>p=1.000→0.9231915</td></tr><tr class="alt"><td>Toss</td><td>0.9231197</td><td class='m'>p=0.465→0.9274334; p=0.027→0.8656435; p=0.001→0.8655485; p=0.006→0.8655485; p=0.125→0.9231041; p=0.337→0.9231498; p=0.030→0.9227588; p=0.009→0.9227588</td></tr><tr><td>STOP</td><td>0.9210074</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.930</td><td>2.51e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.911</td><td>1.74e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.920</td><td>2.74e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.984</td><td>3.67e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 24.00 · remaining actions 4 · search depth 4 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 17 of 20, bin on the robot side), so it was
+holding it. 4 actions were left, so the search looked 4 steps ahead. Tossing now was worth 0.9231197;
+asking the human for a reset was worth 0.9232160, which is 9.6e-05 more. That margin is tiny. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 2.7e-02. For the toss it forecasts 2.5e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.920) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 1.2e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.9229448 and
+Reset 0.9218648, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.9218648</td><td>0.9229448</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.9231065</td><td>0.9229895</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.9217408</td><td>0.9227423</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.9232160</td><td>0.9231197</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.9232160</td><td>0.9231202</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.9232160</td><td>0.9231197</td></tr><tr class=flip><td>no learning forecast</td><td>Toss</td><td>0.9156844</td><td>0.9156844</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.9351763</td><td>0.9361172</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s0-c38-d0777.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s0-c38-d0777.json"><summary>Full reconstructed search tree (376 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s3-c30-d0614"><h3>Model B, λ=3e-6 · seed 3 · cycle 31 · action 14 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s3-c30-d0614.mp4</code>]</span>
+<p class="m">Actions 10–18 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.9332726</td><td class='m'>p=1.000→0.9332726</td></tr><tr class="alt"><td>Toss</td><td>0.9332685</td><td class='m'>p=0.469→0.9389404; p=0.023→0.8480512; p=0.007→0.8476261; p=0.001→0.8476261; p=0.125→0.9333007; p=0.357→0.9332378; p=0.011→0.9327757; p=0.007→0.9327757</td></tr><tr><td>Reset→bin far side</td><td>0.9330126</td><td class='m'>p=1.000→0.9330126</td></tr><tr><td>STOP</td><td>0.9306928</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.938</td><td>2.53e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.963</td><td>2.17e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.787</td><td>4.07e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.977</td><td>5.04e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 13.00 · remaining actions 7 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 14 of 20, bin on the robot side), so it was
+holding it. 7 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.9332685;
+asking the human for a reset was worth 0.9332726, which is 4.1e-06 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 4.1e-02. For the toss it forecasts 2.5e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.787) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 1.1e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.9331067 and
+Reset 0.9319851, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, pooling unseen failure contexts. The planner also tosses after using the observed ε-random toss rate. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.9319851</td><td>0.9331067</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.9331678</td><td>0.9331437</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.9318530</td><td>0.9329359</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.9332726</td><td>0.9332685</td></tr><tr class=flip><td>ε-random toss success 0.085</td><td>Toss</td><td>0.9332707</td><td>0.9332824</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.9332726</td><td>0.9332533</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.9283858</td><td>0.9283978</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.9408255</td><td>0.9416505</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s3-c30-d0614.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s3-c30-d0614.json"><summary>Full reconstructed search tree (2076 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s1-c36-d0739"><h3>Model B, λ=3e-6 · seed 1 · cycle 37 · action 19 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s1-c36-d0739.mp4</code>]</span>
+<p class="m">Actions 15–20 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8805816</td><td class='m'>p=1.000→0.8805816</td></tr><tr><td>Reset→bin far side</td><td>0.8805816</td><td class='m'>p=1.000→0.8805816</td></tr><tr class="alt"><td>Toss</td><td>0.8803354</td><td class='m'>p=0.444→0.8876876; p=0.043→0.8219953; p=0.012→0.8218711; p=0.001→0.8218711; p=0.125→0.8803409; p=0.345→0.8803409; p=0.020→0.8802078; p=0.010→0.8802078</td></tr><tr><td>STOP</td><td>0.8790095</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.888</td><td>2.15e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.929</td><td>1.63e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.782</td><td>4.18e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.975</td><td>5.88e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 34.00 · remaining actions 2 · search depth 2 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 19 of 20, bin on the robot side), so it was
+holding it. 2 actions were left, so the search looked 2 steps ahead. Tossing now was worth 0.8803354;
+asking the human for a reset was worth 0.8805816, which is 2.5e-04 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 4.2e-02. For the toss it forecasts 2.2e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.782) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 1.6e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8803354 and
+Reset 0.8789945, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8789945</td><td>0.8803354</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8805816</td><td>0.8802078</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8789945</td><td>0.8802078</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8805816</td><td>0.8803354</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8805816</td><td>0.8803345</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8805816</td><td>0.8803354</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8699997</td><td>0.8700117</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.8942021</td><td>0.8951481</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s1-c36-d0739.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s1-c36-d0739.json"><summary>Full reconstructed search tree (33 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s2-c43-d0873"><h3>Model B, λ=3e-6 · seed 2 · cycle 44 · action 14 — gave up a held cube</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s2-c43-d0873.mp4</code>]</span>
+<p class="m">Actions 10–18 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8931854</td><td class='m'>p=1.000→0.8931854</td></tr><tr class="alt"><td>Toss</td><td>0.8925566</td><td class='m'>p=0.450→0.8983618; p=0.050→0.8397888; p=0.125→0.8924524; p=0.188→0.8924524; p=0.141→0.8931934; p=0.047→0.8924524</td></tr><tr><td>Reset→bin far side</td><td>0.8925284</td><td class='m'>p=1.000→0.8925284</td></tr><tr><td>STOP</td><td>0.8887540</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.899</td><td>2.11e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.941</td><td>1.61e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.758</td><td>4.35e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.980</td><td>4.58e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 25.00 · remaining actions 7 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot had just picked the cube (action 14 of 20, bin on the far side), so it was
+holding it. 7 actions were left, so the search looked 6 steps ahead. Tossing now was worth 0.8925566;
+asking the human for a reset was worth 0.8931854, which is 6.3e-04 more. That margin is tiny. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> When the robot is holding the cube, a reset leaves its gripper closed and empty, so in the
+planner's own tree the next action after the reset is <b>OpenGripper</b>. OpenGripper is a fixed controller: it
+has no parameters and it succeeded in 197 of 197 real attempts. The belief model still gives it a training clock, and it
+forecasts that each attempt raises its competence by about 4.4e-02. For the toss it forecasts 2.1e-03 per example.
+The objective J scores deployment, and deployment needs OpenGripper to recover from a failed pick, so J rises with
+OpenGripper competence. OpenGripper's belief is still low (0.758) because the skill is almost never practised,
+which makes each imagined attempt look useful. Along the reset path, the value of OpenGripper's clock is 2.1e-03 greater
+than along the toss path. That exceeds the margin, so this clock is what decides the choice.</p>
+<p><b>Check.</b> If only OpenGripper's clock is frozen inside the search, the same belief gives Toss 0.8924661 and
+Reset 0.8909630, so the planner tosses. The reset is still chosen after freezing Pick's clock, freezing the reset's own clock, using the observed ε-random toss rate, pooling unseen failure contexts. See the table.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Toss</th></tr><tr class=flip><td>OpenGripper clock frozen</td><td>Toss</td><td>0.8909630</td><td>0.8924661</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8929694</td><td>0.8922629</td></tr><tr class=flip><td>Pick + OpenGripper clocks frozen</td><td>Toss</td><td>0.8907028</td><td>0.8921620</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8931854</td><td>0.8925566</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8931773</td><td>0.8925716</td></tr><tr><td>unseen failure contexts pooled</td><td>Reset→bin robot side</td><td>0.8931849</td><td>0.8925498</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8832938</td><td>0.8833058</td></tr><tr class=flip><td>deployment horizon 8</td><td>Toss</td><td>0.9043133</td><td>0.9052067</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s2-c43-d0873.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s2-c43-d0873.json"><summary>Full reconstructed search tree (1726 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<h2 id="optional">4b. Optional resets</h2>
+
+<section id="global_curve-lam0-s0-c00-d0003"><h3>Model A, λ=0 · seed 0 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s0-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.2813513</td><td class='m'>p=1.000→0.2813513</td></tr><tr class="alt"><td>Pick</td><td>0.2769677</td><td class='m'>p=0.544→0.3071763; p=0.456→0.2409419</td></tr><tr><td>Reset→bin far side</td><td>0.2694994</td><td class='m'>p=1.000→0.2694994</td></tr><tr><td>STOP</td><td>0.2105951</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.255</td><td>8.59e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.544</td><td>5.42e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.2769677 and Reset→bin robot side was worth 0.2813513, which is 4.4e-03 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.2760680 and
+Reset 0.2692648, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.2607731</td><td>0.2538299</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.2607731</td><td>0.2538299</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.2692648</td><td>0.2760680</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.1560871</td><td>0.1560871</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3252720</td><td>0.3189769</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s0-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s0-c00-d0003.json"><summary>Full reconstructed search tree (919 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s0-c17-d0341"><h3>Model A, λ=0 · seed 0 · cycle 18 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>../2026-09-25-tossing3d-exp14-unnecessary-reset-model-a-lam0-s0-c17-d0341.mp4</code>]</span></video>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.4685275</td><td class='m'>p=1.000→0.4685275</td></tr><tr class="alt"><td>Pick</td><td>0.4684966</td><td class='m'>p=0.978→0.4685051; p=0.022→0.4681236</td></tr><tr><td>Reset→bin far side</td><td>0.4684359</td><td class='m'>p=1.000→0.4684359</td></tr><tr><td>STOP</td><td>0.4676694</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.473</td><td>4.01e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.978</td><td>3.79e-07</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.551</td><td>3.28e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.969</td><td>4.00e-05</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.4684966 and Reset→bin robot side was worth 0.4685275, which is 3.1e-05 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 110 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 3 greedy failure(s) in which the cube stays robot side, 1 greedy failure(s) in which the cube to far side, 1 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.4684966 and
+Reset 0.4684444, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.4685275</td><td>0.4684966</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.4685274</td><td>0.4684965</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.4685274</td><td>0.4684965</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.4685275</td><td>0.4684966</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.4685174</td><td>0.4685081</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.4684444</td><td>0.4684966</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.4676694</td><td>0.4676694</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.4723719</td><td>0.4723408</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s0-c17-d0341.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s0-c17-d0341.json"><summary>Full reconstructed search tree (1727 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s2-c24-d0481"><h3>Model A, λ=0 · seed 2 · cycle 25 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s2-c24-d0481.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8271077</td><td class='m'>p=1.000→0.8271077</td></tr><tr class="alt"><td>Pick</td><td>0.8271057</td><td class='m'>p=0.978→0.8271146; p=0.022→0.8267142</td></tr><tr><td>Reset→bin far side</td><td>0.8270622</td><td class='m'>p=1.000→0.8270622</td></tr><tr><td>STOP</td><td>0.8266760</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.832</td><td>2.03e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.978</td><td>1.07e-07</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.725</td><td>1.27e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.973</td><td>1.49e-05</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.8271057 and Reset→bin robot side was worth 0.8271077, which is 1.9e-06 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 137 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 2 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.8271045 and
+Reset 0.8270645, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.8271061</td><td>0.8270755</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8271076</td><td>0.8271057</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.8271060</td><td>0.8270755</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8271077</td><td>0.8271057</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8271079</td><td>0.8271057</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.8270645</td><td>0.8271045</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.8266760</td><td>0.8266760</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.8320637</td><td>0.8320327</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s2-c24-d0481.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s2-c24-d0481.json"><summary>Full reconstructed search tree (1298 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s3-c00-d0003"><h3>Model A, λ=0 · seed 3 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s3-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.2813513</td><td class='m'>p=1.000→0.2813513</td></tr><tr class="alt"><td>Pick</td><td>0.2769677</td><td class='m'>p=0.544→0.3071763; p=0.456→0.2409419</td></tr><tr><td>Reset→bin far side</td><td>0.2694994</td><td class='m'>p=1.000→0.2694994</td></tr><tr><td>STOP</td><td>0.2105951</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.255</td><td>8.59e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.544</td><td>5.42e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.2769677 and Reset→bin robot side was worth 0.2813513, which is 4.4e-03 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.2760680 and
+Reset 0.2692648, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.2607731</td><td>0.2538299</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.2607731</td><td>0.2538299</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.2813513</td><td>0.2769677</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.2692648</td><td>0.2760680</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.1560871</td><td>0.1560871</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3252720</td><td>0.3189769</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s3-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s3-c00-d0003.json"><summary>Full reconstructed search tree (868 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam0-s4-c09-d0182"><h3>Model A, λ=0 · seed 4 · cycle 10 · action 2 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam0-s4-c09-d0182.mp4</code>]</span>
+<p class="m">Actions 1–6 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.3503772</td><td class='m'>p=1.000→0.3503772</td></tr><tr class="alt"><td>Pick</td><td>0.3502672</td><td class='m'>p=0.972→0.3503195; p=0.028→0.3484711</td></tr><tr><td>Reset→bin far side</td><td>0.3501658</td><td class='m'>p=1.000→0.3501658</td></tr><tr><td>STOP</td><td>0.3480650</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.354</td><td>1.14e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.972</td><td>4.85e-06</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.941</td><td>3.36e-04</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 1.00 · remaining actions 19 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 2 of 20, bin on the far
+side). Pick was worth 0.3502672 and Reset→bin robot side was worth 0.3503772, which is 1.1e-04 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 67 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 2 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.3502438 and
+Reset 0.3501512, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.3503772</td><td>0.3502672</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.3503754</td><td>0.3502655</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.3503754</td><td>0.3502655</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.3503772</td><td>0.3502672</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.3503426</td><td>0.3502965</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.3501512</td><td>0.3502438</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.3469585</td><td>0.3469585</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3540749</td><td>0.3539644</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam0-s4-c09-d0182.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam0-s4-c09-d0182.json"><summary>Full reconstructed search tree (1318 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s0-c00-d0003"><h3>Model A, λ=3e-6 · seed 0 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s0-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.2813245</td><td class='m'>p=1.000→0.2813245</td></tr><tr class="alt"><td>Pick</td><td>0.2769419</td><td class='m'>p=0.544→0.3071515; p=0.456→0.2409151</td></tr><tr><td>Reset→bin far side</td><td>0.2694695</td><td class='m'>p=1.000→0.2694695</td></tr><tr><td>STOP</td><td>0.2105891</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.255</td><td>8.59e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.544</td><td>5.42e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.2769419 and Reset→bin robot side was worth 0.2813245, which is 4.4e-03 more. At λ=3e-06 the reset's cost enters as −λ×2.00 = −6.0e-06, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.2760435 and
+Reset 0.2692380, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.2813245</td><td>0.2769419</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.2607473</td><td>0.2538042</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.2607473</td><td>0.2538042</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.2813245</td><td>0.2769419</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.2813245</td><td>0.2769419</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.2692380</td><td>0.2760435</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.1560751</td><td>0.1560781</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3252451</td><td>0.3189512</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s0-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s0-c00-d0003.json"><summary>Full reconstructed search tree (919 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s2-c06-d0121"><h3>Model A, λ=3e-6 · seed 2 · cycle 7 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s2-c06-d0121.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.2806443</td><td class='m'>p=1.000→0.2806443</td></tr><tr class="alt"><td>Pick</td><td>0.2806319</td><td class='m'>p=0.971→0.2806864; p=0.029→0.2788160</td></tr><tr><td>Reset→bin far side</td><td>0.2805697</td><td class='m'>p=1.000→0.2805697</td></tr><tr><td>STOP</td><td>0.2800028</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.284</td><td>3.18e-04</td><td>1.00</td></tr><tr><td>Pick</td><td>0.971</td><td>1.44e-05</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.551</td><td>3.28e-02</td><td>0.99</td></tr><tr><td>Reset (human)</td><td>0.882</td><td>1.77e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.2806319 and Reset→bin robot side was worth 0.2806443, which is 1.2e-05 more. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 45 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 1 ε-random failure(s) in which the cube stays robot side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.2806319 and
+Reset 0.2805865, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.2806442</td><td>0.2806316</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.2806418</td><td>0.2806292</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.2806417</td><td>0.2806290</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.2806443</td><td>0.2806319</td></tr><tr class=flip><td>ε-random toss success 0.085</td><td>Pick</td><td>0.2806341</td><td>0.2806513</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.2805865</td><td>0.2806319</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.2799878</td><td>0.2799998</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.2837289</td><td>0.2837161</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s2-c06-d0121.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s2-c06-d0121.json"><summary>Full reconstructed search tree (1264 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s3-c00-d0003"><h3>Model A, λ=3e-6 · seed 3 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s3-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.2813244</td><td class='m'>p=1.000→0.2813244</td></tr><tr class="alt"><td>Pick</td><td>0.2769419</td><td class='m'>p=0.544→0.3071515; p=0.456→0.2409151</td></tr><tr><td>Reset→bin far side</td><td>0.2694695</td><td class='m'>p=1.000→0.2694695</td></tr><tr><td>STOP</td><td>0.2105891</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.255</td><td>8.59e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.544</td><td>5.42e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.2769419 and Reset→bin robot side was worth 0.2813244, which is 4.4e-03 more. At λ=3e-06 the reset's cost enters as −λ×2.00 = −6.0e-06, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.2760435 and
+Reset 0.2692380, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.2813244</td><td>0.2769419</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.2607473</td><td>0.2538042</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.2607473</td><td>0.2538042</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.2813244</td><td>0.2769419</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.2813244</td><td>0.2769419</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.2692380</td><td>0.2760435</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.1560751</td><td>0.1560781</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3252451</td><td>0.3189512</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s3-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s3-c00-d0003.json"><summary>Full reconstructed search tree (868 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="global_curve-lam3e-6-s4-c09-d0181"><h3>Model A, λ=3e-6 · seed 4 · cycle 10 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/global_curve-lam3e-6-s4-c09-d0181.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.3492973</td><td class='m'>p=1.000→0.3492973</td></tr><tr class="alt"><td>Pick</td><td>0.3491629</td><td class='m'>p=0.972→0.3492148; p=0.028→0.3473818</td></tr><tr><td>Reset→bin far side</td><td>0.3490688</td><td class='m'>p=1.000→0.3490688</td></tr><tr><td>STOP</td><td>0.3469654</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.354</td><td>1.14e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.972</td><td>5.07e-06</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.358</td><td>7.45e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.941</td><td>3.36e-04</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.3491629 and Reset→bin robot side was worth 0.3492973, which is 1.3e-04 more. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 67 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 1 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.3491372 and
+Reset 0.3490671, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.3492973</td><td>0.3491629</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.3492959</td><td>0.3491614</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.3492959</td><td>0.3491614</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.3492973</td><td>0.3491629</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.3492619</td><td>0.3491803</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.3490671</td><td>0.3491372</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.3469504</td><td>0.3469624</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.3529805</td><td>0.3528452</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/global_curve-lam3e-6-s4-c09-d0181.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/global_curve-lam3e-6-s4-c09-d0181.json"><summary>Full reconstructed search tree (1209 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s0-c00-d0003"><h3>Model B, λ=0 · seed 0 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s0-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.5826513</td><td class='m'>p=1.000→0.5826513</td></tr><tr class="alt"><td>Pick</td><td>0.5733446</td><td class='m'>p=0.750→0.5930893; p=0.250→0.5139562</td></tr><tr><td>Reset→bin far side</td><td>0.5594762</td><td class='m'>p=1.000→0.5594762</td></tr><tr><td>STOP</td><td>0.4704045</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.499</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.750</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.5733446 and Reset→bin robot side was worth 0.5826513, which is 9.3e-03 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.5695403 and
+Reset 0.5609447, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.5548702</td><td>0.5434891</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.5548702</td><td>0.5434891</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.5609447</td><td>0.5695403</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.4245458</td><td>0.4245458</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.6159748</td><td>0.6042341</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s0-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s0-c00-d0003.json"><summary>Full reconstructed search tree (919 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s1-c48-d0961"><h3>Model B, λ=0 · seed 1 · cycle 49 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s1-c48-d0961.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.9284875</td><td class='m'>p=1.000→0.9284875</td></tr><tr class="alt"><td>Pick</td><td>0.9284290</td><td class='m'>p=0.981→0.9286354; p=0.019→0.9175215</td></tr><tr><td>Reset→bin far side</td><td>0.9281165</td><td class='m'>p=1.000→0.9281165</td></tr><tr><td>STOP</td><td>0.9247382</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.935</td><td>2.26e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.981</td><td>2.31e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.840</td><td>4.08e-02</td><td>1.00</td></tr><tr><td>Reset (human)</td><td>0.980</td><td>3.96e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.9284290 and Reset→bin robot side was worth 0.9284875, which is 5.9e-05 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 263 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 2 greedy failure(s) in which the cube to far side, 2 ε-random failure(s) in which the cube stays robot side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.9284043 and
+Reset 0.9282073, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.9284874</td><td>0.9284239</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.9279084</td><td>0.9278143</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.9279078</td><td>0.9278041</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.9284875</td><td>0.9284290</td></tr><tr class=flip><td>ε-random toss success 0.085</td><td>Pick</td><td>0.9284932</td><td>0.9285071</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.9282073</td><td>0.9284043</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.9309452</td><td>0.9309452</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.9331659</td><td>0.9330643</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s1-c48-d0961.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s1-c48-d0961.json"><summary>Full reconstructed search tree (1130 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s3-c00-d0003"><h3>Model B, λ=0 · seed 3 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s3-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.5826513</td><td class='m'>p=1.000→0.5826513</td></tr><tr class="alt"><td>Pick</td><td>0.5733446</td><td class='m'>p=0.750→0.5930893; p=0.250→0.5139562</td></tr><tr><td>Reset→bin far side</td><td>0.5594762</td><td class='m'>p=1.000→0.5594762</td></tr><tr><td>STOP</td><td>0.4704045</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.499</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.750</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.5733446 and Reset→bin robot side was worth 0.5826513, which is 9.3e-03 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.5695403 and
+Reset 0.5609447, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.5548702</td><td>0.5434891</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.5548702</td><td>0.5434891</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.5826513</td><td>0.5733446</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.5609447</td><td>0.5695403</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.4245458</td><td>0.4245458</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.6159748</td><td>0.6042341</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s3-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s3-c00-d0003.json"><summary>Full reconstructed search tree (868 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam0-s4-c09-d0182"><h3>Model B, λ=0 · seed 4 · cycle 10 · action 2 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam0-s4-c09-d0182.mp4</code>]</span>
+<p class="m">Actions 1–6 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.4088953</td><td class='m'>p=1.000→0.4088953</td></tr><tr class="alt"><td>Pick</td><td>0.4086587</td><td class='m'>p=0.967→0.4089355; p=0.033→0.4005362</td></tr><tr><td>Reset→bin far side</td><td>0.4083552</td><td class='m'>p=1.000→0.4083552</td></tr><tr><td>STOP</td><td>0.4034244</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.407</td><td>2.34e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.967</td><td>2.21e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.661</td><td>4.13e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.991</td><td>8.83e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 1.00 · remaining actions 19 · search depth 6 · λ=0</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 2 of 20, bin on the far
+side). Pick was worth 0.4086587 and Reset→bin robot side was worth 0.4088953, which is 2.4e-04 more. At λ=0 the objective contains no cost term at all, so the reset's human cost (5) is invisible to the planner.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 67 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 2 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.4086461 and
+Reset 0.4084210, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.4088953</td><td>0.4086587</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.4083809</td><td>0.4081431</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.4083809</td><td>0.4081431</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.4088953</td><td>0.4086587</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.4088206</td><td>0.4087270</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.4084210</td><td>0.4086461</td></tr><tr class=flip><td>no learning forecast</td><td>Pick</td><td>0.4021464</td><td>0.4021464</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.4137047</td><td>0.4134623</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam0-s4-c09-d0182.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam0-s4-c09-d0182.json"><summary>Full reconstructed search tree (1318 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s0-c00-d0003"><h3>Model B, λ=3e-6 · seed 0 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s0-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.5826245</td><td class='m'>p=1.000→0.5826245</td></tr><tr class="alt"><td>Pick</td><td>0.5733186</td><td class='m'>p=0.750→0.5930635; p=0.250→0.5139293</td></tr><tr><td>Reset→bin far side</td><td>0.5594464</td><td class='m'>p=1.000→0.5594464</td></tr><tr><td>STOP</td><td>0.4703985</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.499</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.750</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.5733186 and Reset→bin robot side was worth 0.5826245, which is 9.3e-03 more. At λ=3e-06 the reset's cost enters as −λ×2.00 = −6.0e-06, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.5695149 and
+Reset 0.5609178, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.5548446</td><td>0.5434637</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.5548446</td><td>0.5434637</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.5609178</td><td>0.5695149</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.4245338</td><td>0.4245368</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.6159480</td><td>0.6042073</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s0-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s0-c00-d0003.json"><summary>Full reconstructed search tree (919 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s2-c12-d0241"><h3>Model B, λ=3e-6 · seed 2 · cycle 13 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s2-c12-d0241.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.6447182</td><td class='m'>p=1.000→0.6447182</td></tr><tr class="alt"><td>Pick</td><td>0.6443661</td><td class='m'>p=0.980→0.6446362; p=0.020→0.6310191</td></tr><tr><td>Reset→bin far side</td><td>0.6440848</td><td class='m'>p=1.000→0.6440848</td></tr><tr><td>STOP</td><td>0.6390491</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.646</td><td>2.31e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.980</td><td>2.37e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.659</td><td>4.18e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.988</td><td>4.38e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.6443661 and Reset→bin robot side was worth 0.6447182, which is 3.5e-04 more. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 76 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 1 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.6443597 and
+Reset 0.6442228, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.6447182</td><td>0.6443661</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.6440063</td><td>0.6436313</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.6440063</td><td>0.6436310</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.6447182</td><td>0.6443661</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.6446881</td><td>0.6444047</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.6442228</td><td>0.6443597</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.6410365</td><td>0.6410485</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.6498375</td><td>0.6494504</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s2-c12-d0241.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s2-c12-d0241.json"><summary>Full reconstructed search tree (1146 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s2-c19-d0381"><h3>Model B, λ=3e-6 · seed 2 · cycle 20 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s2-c19-d0381.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.8318410</td><td class='m'>p=1.000→0.8318410</td></tr><tr class="alt"><td>Pick</td><td>0.8316320</td><td class='m'>p=0.983→0.8318811; p=0.017→0.8168914</td></tr><tr><td>Reset→bin far side</td><td>0.8312986</td><td class='m'>p=1.000→0.8312986</td></tr><tr><td>STOP</td><td>0.8268785</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.836</td><td>2.20e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.983</td><td>2.28e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.654</td><td>4.32e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.977</td><td>4.66e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.8316320 and Reset→bin robot side was worth 0.8318410, which is 2.1e-04 more. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 113 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 2 ε-random failure(s) in which the cube stays robot side, 1 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.8316214 and
+Reset 0.8314637, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.8318410</td><td>0.8316270</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.8309764</td><td>0.8307300</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.8309753</td><td>0.8307184</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.8318410</td><td>0.8316320</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.8318352</td><td>0.8316849</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.8314637</td><td>0.8316214</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.8309237</td><td>0.8309357</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.8376467</td><td>0.8373792</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s2-c19-d0381.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s2-c19-d0381.json"><summary>Full reconstructed search tree (1297 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s3-c00-d0003"><h3>Model B, λ=3e-6 · seed 3 · cycle 1 · action 3 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s3-c00-d0003.mp4</code>]</span>
+<p class="m">Actions 1–7 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.5826245</td><td class='m'>p=1.000→0.5826245</td></tr><tr class="alt"><td>Pick</td><td>0.5733186</td><td class='m'>p=0.750→0.5930635; p=0.250→0.5139293</td></tr><tr><td>Reset→bin far side</td><td>0.5594464</td><td class='m'>p=1.000→0.5594464</td></tr><tr><td>STOP</td><td>0.4703985</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.499</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>Pick</td><td>0.750</td><td>3.98e-02</td><td>0.99</td></tr><tr><td>OpenGripper</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.667</td><td>3.98e-02</td><td>2.00</td></tr></table>
+<p class="m">summed cost so far 2.00 · remaining actions 18 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 3 of 20, bin on the far
+side). Pick was worth 0.5733186 and Reset→bin robot side was worth 0.5826245, which is 9.3e-03 more. At λ=3e-06 the reset's cost enters as −λ×2.00 = −6.0e-06, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context, and an unseen context is
+treated as "nothing changes". So far the model had seen only 1 greedy failure(s) in which the cube stays robot side. It had never seen a toss fail with the bin on the robot
+side, so it imagines that a failed robot-side toss leaves the cube in the gripper, ready to toss again without re-picking. That
+is an optimistic identity effect, and it makes a robot-side bin look like more toss practice per action. With the bin on the far
+side, the one observed failure means a failure costs a re-pick, and a success leaves the cube in the far bin, which needs a reset.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.5695149 and
+Reset 0.5609178, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.5548446</td><td>0.5434636</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.5548446</td><td>0.5434636</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.5826245</td><td>0.5733186</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.5609178</td><td>0.5695149</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.4245338</td><td>0.4245368</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.6159480</td><td>0.6042073</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s3-c00-d0003.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s3-c00-d0003.json"><summary>Full reconstructed search tree (868 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+<section id="local_trend-lam3e-6-s4-c11-d0221"><h3>Model B, λ=3e-6 · seed 4 · cycle 12 · action 1 — optional (cube pickable)</h3>
+<div class="two"><div><span class="nc">[video not committed: <code>videos/local_trend-lam3e-6-s4-c11-d0221.mp4</code>]</span>
+<p class="m">Actions 1–5 of the cycle, replayed from the state log. The reset is outlined in amber, and
+the banner shows the logged root values.</p></div>
+<div><table><tr><th>root action</th><th>value (logged)</th><th>chance branches: probability → successor value</th></tr><tr class="chosen"><td>Reset→bin robot side</td><td>0.7048746</td><td class='m'>p=1.000→0.7048746</td></tr><tr class="alt"><td>Pick</td><td>0.7046981</td><td class='m'>p=0.936→0.7054641; p=0.064→0.6935689</td></tr><tr><td>Reset→bin far side</td><td>0.7042246</td><td class='m'>p=1.000→0.7042246</td></tr><tr><td>STOP</td><td>0.6987313</td><td class='m'></td></tr></table>
+<table style="margin-top:6px"><tr><th>belief at the decision</th><th>competence</th><th>learning rate</th><th>est. cost</th></tr><tr><td>Toss</td><td>0.719</td><td>2.56e-03</td><td>1.00</td></tr><tr><td>Pick</td><td>0.936</td><td>2.11e-03</td><td>1.00</td></tr><tr><td>OpenGripper</td><td>0.659</td><td>4.16e-02</td><td>2.00</td></tr><tr><td>Reset (human)</td><td>0.990</td><td>5.47e-03</td><td>5.00</td></tr></table>
+<p class="m">summed cost so far 0.00 · remaining actions 20 · search depth 6 · λ=3e-06</p></div></div>
+<p><b>What happened.</b> The robot's hand was empty and it could pick the cube (action 1 of 20, bin on the far
+side). Pick was worth 0.7046981 and Reset→bin robot side was worth 0.7048746, which is 1.8e-04 more. At λ=3e-06 the reset's cost enters as −λ×5.00 = −1.5e-05, already inside these values.</p>
+<p><b>Why the reset scored higher.</b> In the planner's tree, after the reset the robot picks and tosses with the bin on the robot
+side. The failure-effect model is learned separately for each exact symbolic context. With the bin on the robot side
+it had seen 70 failed tosses, and in nearly all of them the cube stayed on the robot side and could be picked again. A success
+can also be re-picked, because the model keeps GraspClear after a success. With the bin on the far side it had seen only 1 greedy failure(s) in which the cube to far side, 1 ε-random failure(s) in which the cube stays robot side, 2 ε-random failure(s) in which the cube to far side.
+Some exact far-side contexts were unseen, and those are treated as "nothing changes". A far-side success always leaves the cube in
+the far bin, so the next step must be a reset. Moving the bin makes more of the next 6 actions forecast practice.</p>
+<p><b>Check.</b> If unseen exact contexts borrow the effects observed in other contexts, the same belief gives Pick 0.7046487 and
+Reset 0.7044359, so the planner picks. Freezing any training clock leaves the reset chosen. In the real data, a failed greedy
+far-side toss sent the cube to the far side in 30/48
+cases, so borrowing robot-side effects is itself optimistic about the far side.</p>
+<details><summary>Counterfactual re-solves of this exact decision (one assumption changed at a time)</summary>
+<table><tr><th>variant</th><th>choice</th><th>Reset→bin robot side</th><th>Pick</th></tr><tr><td>OpenGripper clock frozen</td><td>Reset→bin robot side</td><td>0.7048746</td><td>0.7046753</td></tr><tr><td>Pick clock frozen</td><td>Reset→bin robot side</td><td>0.7036497</td><td>0.7034741</td></tr><tr><td>Pick + OpenGripper clocks frozen</td><td>Reset→bin robot side</td><td>0.7036489</td><td>0.7034298</td></tr><tr><td>reset's own clock frozen</td><td>Reset→bin robot side</td><td>0.7048746</td><td>0.7046981</td></tr><tr><td>ε-random toss success 0.085</td><td>Reset→bin robot side</td><td>0.7048491</td><td>0.7047131</td></tr><tr class=flip><td>unseen failure contexts pooled</td><td>Pick</td><td>0.7044359</td><td>0.7046487</td></tr><tr class=flip><td>no learning forecast</td><td>STOP</td><td>0.7002392</td><td>0.7002512</td></tr><tr><td>deployment horizon 8</td><td>Reset→bin robot side</td><td>0.7200466</td><td>0.7198081</td></tr></table></details>
+<p><span class="nc">[img not committed: <code>trees/local_trend-lam3e-6-s4-c11-d0221.png</code>]</span></p>
+<details class="tree" data-not-committed="trees/local_trend-lam3e-6-s4-c11-d0221.json"><summary>Full reconstructed search tree (1324 nodes; click to browse)</summary><div class="treebody"></div></details>
+</section>
+
+<h2>Verified vs inferred</h2>
+<ul><li>Verified: reset counts and classification (the same rule as the EXP-14 page); bit-exact reconstruction of all 205 reset decisions and
+963/963 sampled decisions; the full trees (their root values are bit-identical to the unmodified solver and to the log); every
+counterfactual flip count; real outcome rates from the logs.</li>
+<li>Inferred: that the fixes would remove the resets in closed loop. Every counterfactual changes one decision while holding
+the belief fixed, and a rerun would change the belief trajectory. Fix 3 is untested.</li></ul>
+<script>
+const SH = {"MoveToTossLocationAndToss":"Toss","PickCube":"Pick","OpenGripper":"OpenGripper","ask_for_reset_cube_bin_only":"Reset"};
+function sk(k){ if(k==="STOP") return "STOP"; const n=k.split("(")[0]; let s=SH[n]||n; if(s==="Reset") s+= k.endsWith("robot_side)")?"→bin robot":"→bin far"; return s; }
+function st(a){ const h=a.some(x=>x.startsWith("Holding("))?"holding":(a.some(x=>x.startsWith("ClosedEmpty("))?"closed-empty":"hand empty");
+  const b=a.some(x=>x.startsWith("BinAtSide")&&x.includes("opposite"))?"bin far":"bin robot"; const c=a.some(x=>x.startsWith("CubeAtSide")&&x.includes("opposite"))?", cube far":"";
+  const i=a.some(x=>x.startsWith("InBin("))?", in bin":""; return h+", "+b+c+i; }
+function node(T,id,p){ const n=T.nodes[id]; const d=document.createElement("details"); d.className="node";
+  const s=document.createElement("summary"); const b=n.b; const pend=Object.entries(b.pending||{}).map(([k,v])=>(SH[k]||k)[0]+":"+v).join(" ");
+  s.textContent=(p!==null?`p=${p.toFixed(3)} → `:"")+`[depth left ${n.h}] ${st(n.a)} · V=${n.V.toFixed(7)} · J(stop)=${n.J.toFixed(7)} · choice: ${sk(n.c)} · clocks {${pend}}`;
+  d.appendChild(s); d.addEventListener("toggle",()=>{ if(!d.open||d.dataset.done) return; d.dataset.done=1;
+    for(const a of n.x){ const ad=document.createElement("details"); ad.className="act"; const as=document.createElement("summary");
+      as.innerHTML=`<span class="${a.k===n.c?'ch':''}">${sk(a.k)}: ${a.v.toFixed(7)}${a.k===n.c?' ◀ chosen':''}</span>`; ad.appendChild(as);
+      ad.addEventListener("toggle",()=>{ if(!ad.open||ad.dataset.done) return; ad.dataset.done=1; for(const br of a.br) ad.appendChild(node(T,String(br[2]),br[0])); });
+      d.appendChild(ad); } });
+  return d; }
+document.querySelectorAll("details.tree").forEach(el=>el.addEventListener("toggle",async()=>{
+  if(!el.open||el.dataset.done) return; el.dataset.done=1; const body=el.querySelector(".treebody"); body.textContent="loading…";
+  const T=await (await fetch(el.dataset.src)).json(); body.textContent=""; const r=node(T,"0",null); r.open=true; body.appendChild(r); r.dispatchEvent(new Event("toggle")); }));
+</script>
+</body></html>
