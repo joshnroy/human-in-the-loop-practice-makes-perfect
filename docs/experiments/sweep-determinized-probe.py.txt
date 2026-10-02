@@ -1,0 +1,72 @@
+import json, time, signal, sys, resource, cProfile, pstats
+profile=cProfile.Profile()
+mode=sys.argv[1]
+depth=int(sys.argv[2])
+probe_seed=int(sys.argv[3]) if len(sys.argv)>3 else 0
+if mode == 'baseline':
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('hitl_pmp.methods.belief_space.baseline_model','scratchpad/exact-search/baseline_model.py')
+    baseline=importlib.util.module_from_spec(spec);sys.modules[spec.name]=baseline;spec.loader.exec_module(baseline)
+from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.environments.sweep_drawer3d.symbolic import SweepSymbols, SWEEP_PREDICATES
+from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+from hitl_pmp.methods.belief_space.sweep_deployment_model import SweepDeploymentExpectation
+from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+
+def atoms(names):
+    return frozenset(GroundAtom(predicate=SWEEP_PREDICATES[n],objects=(SweepSymbols.SCENE,)) for n in names)
+skills=tuple(GroundSkill(skill=s,objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills())+(SweepSymbols.human_reset(cost=3),)
+initial=atoms(('HandEmpty','WiperHome','DrawerClosed','DrawerNotOpen','RobotHome','AnyCubeInPile',*(f'{name}{i}' for i in range(5) for name in ('InPile','SweepReachable'))))
+goal=atoms(tuple(f'InDrawer{i}' for i in range(5)))
+current=atoms(('HoldingWiper','DrawerOpen','DrawerNotClosed','RobotAway',*(f'{name}{i}' for i in range(5) for name in ('Loose','Blocked'))))
+state=SweepBeliefs.prior(skill_names=tuple(s.skill.name for s in skills),trainable_skill_names=SweepSymbols.TRAINABLE,seed=probe_seed,num_particles=1024,config=InferenceConfig(),engine="grid")
+model=SweepPracticeModel(seed=probe_seed,ground_skills=skills,trainable_skill_names=SweepSymbols.TRAINABLE,human_skill_names=(skills[-1].skill.name,),random_competences={name:0.25 for name in SweepSymbols.TRAINABLE},deployment=SweepDeploymentExpectation(ordered_skills=skills[:3],initial_atoms=initial,goal_atoms=goal,horizon=5),linear_cost_lambda=0.000003)
+from pydantic import PrivateAttr
+from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+class RecordedModel(SweepPracticeModel):
+    _keys: dict = PrivateAttr(default_factory=dict)
+    _node_atoms: dict = PrivateAttr(default_factory=dict)
+    def search_cache_key(self, **kwargs):
+        key=super().search_cache_key(**kwargs)
+        if key not in self._keys:
+            index=len(self._keys);self._keys[key]=index;self._node_atoms[index]=kwargs['environment_state'].true_atoms
+        return key
+class CompactTrace(SearchTrace):
+    def record(self, *, event, **fields):
+        if isinstance(fields.get('action'),dict):fields['action']=fields['action']['skill']['name']
+        if 'best_action_path' in fields:fields['best_action_path']=[a['skill']['name'] for a in fields['best_action_path']]
+        super().record(event=event,**fields)
+model=RecordedModel(**{key:getattr(model,key) for key in type(model).model_fields})
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
+witness=['ParkWiper']+[name for i in range(5) for name in (f'PickCube{i}',f'PlaceCube{i}')]+['CloseDrawer','ParkRobot']
+witness_atoms=current;witness_steps=[]
+for name in witness:
+    skill=next(skill for skill in skills if skill.skill.name==name)
+    applicable=skill.preconditions<=witness_atoms
+    witness_steps.append(dict(action=name,applicable=applicable))
+    if not applicable:break
+    witness_atoms=apply_success_effects(true_atoms=witness_atoms,ground_skill=skill,effects=model._effects)
+planner=DeterminizedAStarPlanner(max_iterations=depth,seed=probe_seed,observation_probability_weight=0.0,log_full_search_tree=True)
+trace=CompactTrace();started=time.monotonic()
+value,action=planner.solve(environment_state=make_tossing3d_search_state(state=state,true_atoms=current),belief_state=state,summed_cost=0,horizon=20,remaining_actions=20,model=model,num_samples=100,trace=trace)
+summary=next(event for event in trace.events if event['event']=='search_summary')
+summary.update(seed=probe_seed,wall_seconds=time.monotonic()-started,peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,root_action=getattr(getattr(action,'skill',None),'name','STOP'),value=value,parameters='Approved determinized diagnostic; synthetic uncalibrated prior, not experiment')
+needed=atoms(('HandEmpty','WiperHome','DrawerClosed','RobotHome',*(f'InPile{i}' for i in range(5))))
+edges=sorted((event for event in trace.events if event['event']=='tree_edge' and event.get('disposition')!='infeasible'),key=lambda event:event['depth'])
+for label,excluded in [('robot_only',set(model.human_skill_names)),('recovery_only',set(model.human_skill_names)|set(model.trainable_skill_names))]:
+    paths={0:[]}
+    for edge in edges:
+        if edge['node'] in paths and edge['action'] not in excluded:
+            paths.setdefault(edge['child_node'],paths[edge['node']]+[edge['action']])
+    complete=[path for node,path in paths.items() if needed<=model._node_atoms[node]]
+    summary[label]=dict(reachable_nodes=len(paths),max_depth=max(map(len,paths.values()),default=0),reset_state_nodes=len(complete),shortest_reset_path=min(complete,key=len) if complete else None)
+summary['nominal_robot_reset_witness']=dict(steps=witness_steps,restored=needed<=witness_atoms,interpretation='All-success symbolic path only; not executed or forced in search')
+summary['root_paths']=[{key:event.get(key) for key in ('action','depth','best_action_path','beats_stop','value')} for event in trace.events if event['event']=='action_value']
+Path=__import__('pathlib').Path
+out=Path('scratchpad/exact-search')/f'determinized-{depth}-seed{probe_seed}.json';out.write_text(json.dumps(dict(summary=summary,trace=trace.events,node_atoms={node:sorted(atom.predicate.name for atom in aa) for node,aa in model._node_atoms.items()}),indent=2)+'\n')
+print(json.dumps(summary),flush=True)

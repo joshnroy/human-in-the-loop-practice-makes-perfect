@@ -404,19 +404,24 @@ only a mean. Keep the table too.
 
 ### Training-curve style, fixed project-wide
 
-- **Colour carries the arm's role, never anything else.** Blue (`#0072B2`) is the arm that
-  *has* an assistance mechanism available (`scheduled`, `on-stuck`, `at-random`,
-  `on-no-applicable-skill`) whether or not it ever fires; orange (`#D55E00`) is the arm
-  nothing helps (`never`, `no-human`, any control with no assistance mechanism at all).
-  This is deliberately about whether the mechanism *exists*: an arm whose trigger never
-  activates is still blue, because the finding is that the mechanism existed and did
-  nothing. Grey dotted is reserved for reference/ceiling arms. No fourth hue — encode a
-  second axis with linestyle.
-- **Linestyle carries the subgroup within a colour.** Solid is the main population, dashed
-  `(0, (4, 2))` the secondary (e.g. a stuck/stranded split). An arm with no such split gets
-  one solid bold line and *says so* in its legend entry ("no stranding here").
-- **Reference/ceiling arms are flat horizontal lines, never a curve** — plotting a
-  non-learner as a wandering line invites a reader to hunt for a trend that isn't there.
+- **Colour carries the method, never anything else.** Okabe–Ito: ours, Model B
+  (`local_trend`) `#0072B2`; ours, Model A (`global_curve`) `#56B4E9`; EES `#009E73`. A new
+  method takes `#CC79A7`, then `#E69F00`, then `#F0E442`, and keeps its colour in every
+  figure. **The environment is never a colour**: each figure names it in text (e.g.
+  `Tossing3D` in the title or a corner annotation).
+- **Linestyle carries whether the human reset is available.** Solid = available, dashed
+  `(0, (4, 2))` = not available (e.g. a `--no-human-reset` arm). An arm whose reset exists
+  but never fires is still solid: the finding is that it existed and went unused.
+- **A knob swept within a method is a shade of that method's colour**, light = small knob,
+  dark = large (λ for ours, human-reset cost for EES), with the value in the legend. A figure
+  of one method across many knob values uses the shade ramp; a figure of several methods
+  keeps colour for the method and gives knob values shades or markers. The two blues use
+  disjoint bands (Model A at or lighter than `#56B4E9`, Model B at or darker than `#0072B2`)
+  so a shade never reads as the other model.
+- **A crashed run gets an `✕` marker in its arm's colour.**
+- **Reference/oracle/ceiling arms are grey `#999999`, dotted, and flat horizontal lines,
+  never a curve** — plotting a non-learner as a wandering line invites a reader to hunt for
+  a trend that isn't there.
 - **Faint per-seed traces (`alpha≈0.16`, `linewidth≈0.8`) drawn first, underneath the bold
   subgroup means (`linewidth≈2.3`), on every training curve.** They are the point: a bold
   mean over a bimodal population describes none of its seeds.

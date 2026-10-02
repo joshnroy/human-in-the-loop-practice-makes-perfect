@@ -1,0 +1,214 @@
+{
+  "status": "DRAFT: launch disabled until every readiness gate is verified",
+  "purpose": "Sweep first-seed experiment batch; Della itself is already validated",
+  "valid_practice_seeds": [
+    0,
+    1,
+    2
+  ],
+  "first_seed": 0,
+  "valid_evaluation_seeds": [
+    10000,
+    10001,
+    10002,
+    10003,
+    10004,
+    10005,
+    10006,
+    10007,
+    10008,
+    10009
+  ],
+  "num_cycles": 50,
+  "max_steps_per_interaction": 20,
+  "practice_reset_policy": "never",
+  "num_test_tasks": 10,
+  "deployment_horizon": 5,
+  "robot_practice_costs": {
+    "OpenDrawer": 1.0,
+    "PickWiper": 1.0,
+    "Sweep": 1.0,
+    "OpenGripper": 1.0,
+    "ParkWiper": 1.0,
+    "OpenResetDrawer": 1.0,
+    "CloseDrawer": 1.0,
+    "ParkRobot": 1.0,
+    "PickCube0": 1.0,
+    "PlaceCube0": 1.0,
+    "NudgeCube0": 1.0,
+    "PushCube0": 1.0,
+    "PickCube1": 1.0,
+    "PlaceCube1": 1.0,
+    "NudgeCube1": 1.0,
+    "PushCube1": 1.0,
+    "PickCube2": 1.0,
+    "PlaceCube2": 1.0,
+    "NudgeCube2": 1.0,
+    "PushCube2": 1.0,
+    "PickCube3": 1.0,
+    "PlaceCube3": 1.0,
+    "NudgeCube3": 1.0,
+    "PushCube3": 1.0,
+    "PickCube4": 1.0,
+    "PlaceCube4": 1.0,
+    "NudgeCube4": 1.0,
+    "PushCube4": 1.0
+  },
+  "random_competences": null,
+  "random_competence_source": "fixed24contexts/stockskill calibration in progress; freeze summaries before experimental scores",
+  "pomdp": {
+    "pomdp_competence_evidence": "non_epsilon",
+    "pomdp_competence_model": "local_trend",
+    "pomdp_competence_process_noise_std": "0.03",
+    "pomdp_grid_competence_bins": "25",
+    "pomdp_grid_learning_rate_bins": "16",
+    "pomdp_inference_engine": "grid",
+    "pomdp_learning_rate_decay": "0.9",
+    "pomdp_learning_rate_max": "0.15",
+    "pomdp_learning_rate_process_noise_std": "0.005",
+    "pomdp_learning_time_scale": "1.0",
+    "pomdp_linear_cost_lambda": "3e-06",
+    "pomdp_log_full_search_tree": "False",
+    "pomdp_max_search_iterations": 1000,
+    "pomdp_num_particles": "1024",
+    "pomdp_num_samples": "100",
+    "pomdp_observation_probability_weight": "0.0",
+    "pomdp_search_depth": 20,
+    "pomdp_solver": "determinized_astar"
+  },
+  "cost_calibration": {
+    "frozen_before_experiment_scores": true,
+    "robot_reset_reference": "13 nominal actions: ParkWiper +5 PickCube/PlaceCube pairs +CloseDrawer +ParkRobot; fewer if already satisfied, extra recovery may be needed",
+    "model_b_robot_per_action": 1.0,
+    "model_b_reference_sequence": 13.0,
+    "ees_initial_robot_cost_per_action": 0.0953101798043249,
+    "ees_reference_sequence": 1.2390323374562235,
+    "human_reference_action_multipliers": [
+      1,
+      10,
+      20
+    ],
+    "units": "native configured method costs, not wall seconds",
+    "model_b_lambda": 3e-06,
+    "cost_posterior_support": [
+      0,
+      20
+    ],
+    "caveat": "Nominal ratios do not guarantee a policy crossover; EES gate remains disabled and ModelB retains its learned cost posterior."
+  },
+  "arms": [
+    {
+      "name": "ees-low",
+      "method": "ees",
+      "human_reset": true,
+      "human_reset_practice_cost": 0.0953101798043249,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "ees-mid",
+      "method": "ees",
+      "human_reset": true,
+      "human_reset_practice_cost": 0.9531017980432489,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "ees-high",
+      "method": "ees",
+      "human_reset": true,
+      "human_reset_practice_cost": 1.9062035960864978,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "ees-nohuman",
+      "method": "ees",
+      "human_reset": false,
+      "human_reset_practice_cost": 0.0953101798043249,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "pomdp-low",
+      "method": "pomdp",
+      "human_reset": true,
+      "human_reset_practice_cost": 1.0,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "pomdp-mid",
+      "method": "pomdp",
+      "human_reset": true,
+      "human_reset_practice_cost": 10.0,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "pomdp-high",
+      "method": "pomdp",
+      "human_reset": true,
+      "human_reset_practice_cost": 20.0,
+      "ees_reset_gate": false
+    },
+    {
+      "name": "pomdp-nohuman",
+      "method": "pomdp",
+      "human_reset": false,
+      "human_reset_practice_cost": 1.0,
+      "ees_reset_gate": false
+    }
+  ],
+  "readiness_gates": [
+    "physical_wiper_fix_and_valid_start_recovery_checked",
+    "shared_human_robot_contracts_and_no_auto_reset_verified",
+    "approved_determinized_runtime_and_structural_recovery_path_checked",
+    "random_stock_competence_calibration_frozen",
+    "native_costs_manifest_and_source_commit_frozen",
+    "draft_stack_PR_and_own_pinned_dependencies_verified",
+    "all8first_seed_runs_pass_measurement_checks_before_expanding3seeds"
+  ],
+  "solver_authorization": "Josh explicitly approved determinized A* only on September29 overnight: approximate sampled successor search,1000 queue pops/decision,20 remaining physical actions; replaces exact expectimax.",
+  "stock_parameter_bounds": {
+    "OpenDrawer": [
+      [
+        0.65,
+        0.95
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ],
+    "PickWiper": [
+      [
+        0.55,
+        0.85
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ],
+    "Sweep": [
+      [
+        0.4,
+        0.7
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ]
+  },
+  "launch_order": [
+    [
+      "ees-low",
+      "ees-high",
+      "pomdp-low",
+      "pomdp-high"
+    ],
+    [
+      "ees-mid",
+      "ees-nohuman",
+      "pomdp-mid",
+      "pomdp-nohuman"
+    ]
+  ],
+  "solver_coverage_caveat": "Structural13-action reset is applicable and reaches shared target. Synthetic1000-pop diagnostics seed0..2 finish0.461\u20130.480s but sample0/3 complete robot-only resets; approximation does not guarantee recovery exploration or a cost crossover."
+}

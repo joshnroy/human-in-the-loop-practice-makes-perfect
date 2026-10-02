@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "upstream_contract_tests": "72/72",
+  "upstream_boundary_combinations": "25/25",
+  "calibration": {
+    "open": {
+      "skill": "OpenDrawer",
+      "contexts": 24,
+      "attempts": 24,
+      "precondition_unavailable": 0,
+      "successes": 8,
+      "random_competence": 0.34615384615384615,
+      "estimator": "Beta(1,1) posterior mean: (successes+1)/(attempts+2)"
+    },
+    "pick": {
+      "skill": "PickWiper",
+      "contexts": 24,
+      "attempts": 24,
+      "precondition_unavailable": 0,
+      "successes": 16,
+      "random_competence": 0.6538461538461539,
+      "estimator": "Beta(1,1) posterior mean: (successes+1)/(attempts+2)"
+    },
+    "sweep": {
+      "skill": "Sweep",
+      "contexts": 24,
+      "attempts": 16,
+      "precondition_unavailable": 8,
+      "successes": 0,
+      "random_competence": 0.05555555555555555,
+      "estimator": "Beta(1,1) posterior mean: (successes+1)/(attempts+2)"
+    }
+  },
+  "smokes": {
+    "ees": {
+      "initial_practice_resets": 1,
+      "robot_actions": 20,
+      "human_actions": 0,
+      "action_budget": 20,
+      "scheduled_resets": 0,
+      "evaluation_checkpoints": 2,
+      "returncode": 0
+    },
+    "pomdp": {
+      "initial_practice_resets": 1,
+      "robot_actions": 18,
+      "human_actions": 2,
+      "action_budget": 20,
+      "scheduled_resets": 0,
+      "evaluation_checkpoints": 2,
+      "returncode": 0
+    }
+  },
+  "limitations": [
+    "Sweep random calibration0/16 successes with8/24 unavailable preparations; no success filtering",
+    "One-cycle implementation smoke, not scientific outcomes or inference",
+    "Original upstream goal includes height-based InDrawer heuristic; physical containment separate diagnostic"
+  ]
+}
