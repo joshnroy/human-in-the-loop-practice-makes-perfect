@@ -153,11 +153,16 @@ def test_wiper_leaves_counter_contact_before_stowing_for_return() -> None:
         # recovery itself with current native physics and collision checks.
         fixture = json.loads(Path(__file__).with_name("held_wiper_contact_seed11.json").read_text())
         assert session.replay_header() == fixture["header"]
+        state = session.state.copy()
+        for name, values in fixture["objects"].items():
+            state.data[state.get_object_from_name(name)] = np.asarray(values)
+        core = session.env.unwrapped._object_centric_env
+        core.set_state(state)
         session.mj_data.qpos[:] = fixture["qpos"]
         session.mj_data.qvel[:] = fixture["qvel"]
         session.mj_data.ctrl[:] = fixture["ctrl"]
         mujoco.mj_forward(session.mj_model, session.mj_data)
-        session._state = session.env.unwrapped._object_centric_env._get_state()
+        session._state = core._get_state()
         reset = SweepDrawerSelfReset(session=session)
         assert WiperHold.in_hand(
             gripper=np.asarray(reset.primitives.scene.ee_now().position),
