@@ -32,41 +32,12 @@ def test_the_robot_pulls_the_drawer_past_the_countertop_and_closes_it_again() ->
         session.close()
 
 
-@needs_kinder
-def test_counter_objects_no_longer_block_the_stock_base_planner() -> None:
-    """Seed 0 starts the robot overlapping the wiper's floor projection, so kinder-models'
-    base planner starts in collision and every OpenDrawer plan fails; with the fix the
-    wiper, which rests on the countertop above the chassis, is not an obstacle."""
-    from kinder_models.dynamic3d import utils as kmu
-    from spatialmath import SE2
+def test_stock_planning_functions_are_unmodified_upstream():
+    from kinder_models.dynamic3d import utils
+    from kinder_models.dynamic3d.sweep3D import parameterized_skills as sweep
 
-    from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
-    from hitl_pmp.environments.sweep_drawer3d.stock_skills import StockSweepSkills
-
-    session = SweepDrawerSession(seed=0)
-    try:
-        target = SE2(1.68, -0.08, np.pi)
-        stock = kmu.run_base_motion_planning(
-            state=session.state,
-            target_base_pose=target,
-            x_bounds=kmu.WORLD_X_BOUNDS,
-            y_bounds=kmu.WORLD_Y_BOUNDS,
-            seed=0,
-        )
-        assert stock is None
-        StockSweepSkills.install_planning_fixes()
-        from kinder_models.dynamic3d.sweep3D import parameterized_skills as sweep
-
-        fixed = sweep.run_base_motion_planning(
-            state=session.state,
-            target_base_pose=target,
-            x_bounds=kmu.WORLD_X_BOUNDS,
-            y_bounds=kmu.WORLD_Y_BOUNDS,
-            seed=0,
-        )
-        assert fixed is not None
-    finally:
-        session.close()
+    assert sweep.PyBulletSim is utils.PyBulletSim
+    assert sweep.run_base_motion_planning is utils.run_base_motion_planning
 
 
 def test_jitter_does_not_make_a_refused_pick_worth_planning_again() -> None:
