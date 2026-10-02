@@ -1,0 +1,38 @@
+{
+  "bundle_version": 1,
+  "name": "tossing3d-language-options-v1",
+  "task": "task.md",
+  "robot_api": "robot_api.md",
+  "human_input": "human_input.json",
+  "observation_mode": "object_state",
+  "evaluation_skill_order": [
+    "MoveToTossLocationAndToss",
+    "PickCube",
+    "OpenGripper"
+  ],
+  "prompts": {
+    "generate": "generate.md",
+    "classify": "classify.md",
+    "verify_option": "verify_option.md",
+    "improve": "improve.md"
+  },
+  "configured_costs": {
+    "robot": 1.0,
+    "human": 5.0
+  },
+  "belief_skills": {
+    "pick": "PickCube",
+    "toss": "MoveToTossLocationAndToss",
+    "open_gripper": "OpenGripper",
+    "human_reset": "ask_for_reset_cube_bin_only"
+  },
+  "robot_options": {
+    "pick": "PickCube",
+    "toss": "MoveToTossLocationAndToss",
+    "open_gripper": "OpenGripper"
+  },
+  "human_interventions": {
+    "reset_cube_far": "opposite_side",
+    "reset_cube_and_bin_near": "robot_side"
+  }
+}
