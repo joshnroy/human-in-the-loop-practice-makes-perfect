@@ -136,15 +136,33 @@ def test_collision_wiper_tracks_observed_released_pose() -> None:
 
 @needs_kinder
 def test_wiper_leaves_counter_contact_before_stowing_for_return() -> None:
+    import json
+    from pathlib import Path
+
+    import mujoco
+
+    from hitl_pmp.environments.sweep_drawer3d.primitives import WiperHold
     from hitl_pmp.environments.sweep_drawer3d.self_reset import SweepDrawerSelfReset
     from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
-    from hitl_pmp.environments.sweep_drawer3d.stock_skills import StockSweepSkills
     from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
 
     session = SweepDrawerSession(seed=11)
     try:
-        StockSweepSkills.attempt(session=session, phase="attempt_1")
+        # The old setup depended on task-controller collision overrides removed
+        # from production. Restore its recorded contact state, then test the
+        # recovery itself with current native physics and collision checks.
+        fixture = json.loads(Path(__file__).with_name("held_wiper_contact_seed11.json").read_text())
+        assert session.replay_header() == fixture["header"]
+        session.mj_data.qpos[:] = fixture["qpos"]
+        session.mj_data.qvel[:] = fixture["qvel"]
+        session.mj_data.ctrl[:] = fixture["ctrl"]
+        mujoco.mj_forward(session.mj_model, session.mj_data)
+        session._state = session.env.unwrapped._object_centric_env._get_state()
         reset = SweepDrawerSelfReset(session=session)
+        assert WiperHold.in_hand(
+            gripper=np.asarray(reset.primitives.scene.ee_now().position),
+            wiper=session.position(name=S.WIPER),
+        )
         reset.primitives.park_wiper()
         home, _ = session.wiper_parking_pose()
         observed = session.position(name=S.WIPER)
