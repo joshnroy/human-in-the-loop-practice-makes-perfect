@@ -30,12 +30,19 @@ def test_pickup_carry_admission_and_fallback(*, monkeypatch, case: str) -> None:
         stows.append(True)
         return compact
 
-    scene = SimpleNamespace(sync=lambda: None, ee_now=lambda: Pose((0.0, 0.0, 0.0)),
-                            bodies=lambda: bodies, held_path_clear=clear_path,
-                            wiper_body=3, max_tool_tilt=1.1)
-    session = SimpleNamespace(arm=lambda: current,
-                              position=lambda **kwargs: np.array([0.0, 0.0, 0.15]),
-                              quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0))
+    scene = SimpleNamespace(
+        sync=lambda: None,
+        ee_now=lambda: Pose((0.0, 0.0, 0.0)),
+        bodies=lambda: bodies,
+        held_path_clear=clear_path,
+        wiper_body=3,
+        max_tool_tilt=1.1,
+    )
+    session = SimpleNamespace(
+        arm=lambda: current,
+        position=lambda **kwargs: np.array([0.0, 0.0, 0.15]),
+        quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
+    )
     primitive = FloorPrimitives.model_construct(
         session=session, scene=scene, motion=None, floor_clearance=0.005
     )
@@ -43,8 +50,9 @@ def test_pickup_carry_admission_and_fallback(*, monkeypatch, case: str) -> None:
         primitive.retain_pickup_carry_pose = False
     monkeypatch.setattr(FloorPrimitives, "require_handle", require_handle)
     monkeypatch.setattr(FloorPrimitives, "wiper_stow_goal", stow)
-    monkeypatch.setattr(FloorPrimitives, "blade_minimum_height",
-                        lambda self: 0.001 if case == "low" else 0.15)
+    monkeypatch.setattr(
+        FloorPrimitives, "blade_minimum_height", lambda self: 0.001 if case == "low" else 0.15
+    )
     if case == "lost":
         with pytest.raises(ExecutionError, match="physical grasp lost"):
             primitive.wiper_pickup_carry_goal()

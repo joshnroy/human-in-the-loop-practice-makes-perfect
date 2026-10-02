@@ -43,12 +43,17 @@ def test_failed_forward_calls_are_counted_without_reset(
         raise RuntimeError("physical failure")
 
     monkeypatch.setattr(probe, "cycle_action", fail_call)
-    report = {"stages": [
-        {"name": "PickFloorWiper", "success": True},
-        {"name": "SweepCubeToGoal", "success": False},
-    ]}
+    report = {
+        "stages": [
+            {"name": "PickFloorWiper", "success": True},
+            {"name": "SweepCubeToGoal", "success": False},
+        ]
+    }
     args = SimpleNamespace(
-        forward_budget=10, cube_order=[0, 1, 2, 3, 4], sweep_distance=0.4, sweep_angle=0.0,
+        forward_budget=10,
+        cube_order=[0, 1, 2, 3, 4],
+        sweep_distance=0.4,
+        sweep_angle=0.0,
         finish_selected_first=finish_selected_first,
     )
     with pytest.raises(RuntimeError, match="All-cube native goal check failed"):

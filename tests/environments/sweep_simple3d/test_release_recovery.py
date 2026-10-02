@@ -17,12 +17,17 @@ from hitl_pmp.environments.sweep_simple3d.release_recovery import (
 from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 
-@pytest.mark.parametrize("current,allowed", [
-    ({(134, 149): -.0001}, True), ({}, True),
-    ({(134, 149): -.0004}, False), ({(133, 170): -.00001}, False),
-])
+@pytest.mark.parametrize(
+    "current,allowed",
+    [
+        ({(134, 149): -0.0001}, True),
+        ({}, True),
+        ({(134, 149): -0.0004}, False),
+        ({(133, 170): -0.00001}, False),
+    ],
+)
 def test_no_new_or_deeper_native_contact(*, current: dict, allowed: bool) -> None:
-    assert ReleaseContacts.separating(previous={(134, 149): -.0003}, current=current) is allowed
+    assert ReleaseContacts.separating(previous={(134, 149): -0.0003}, current=current) is allowed
 
 
 @pytest.mark.parametrize("inject_contact", [False, True])
@@ -31,7 +36,7 @@ def test_recorded_native_release_preflight_and_live_guard(
 ) -> None:
     fixture = json.loads(Path(__file__).with_name("release_contact_fixture.json").read_text())
     session = SweepSimpleSession(seed=0)
-    primitive = FloorPrimitives.create(session=session, distance=.7, heading_offset=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0)
     try:
         state = session.state.copy()
         for name, values in fixture["state"].items():
@@ -51,7 +56,7 @@ def test_recorded_native_release_preflight_and_live_guard(
             assert grip == 0 and max_ticks == 180
             if inject_contact:
                 monkeypatch.setattr(
-                    ReleaseContacts, "contacts", lambda *_, **__: {(133, 171): -.001}
+                    ReleaseContacts, "contacts", lambda *_, **__: {(133, 171): -0.001}
                 )
                 tick_guard()
             # No simulation: inability to clear the live starting contact is not success.

@@ -46,11 +46,14 @@ def test_stow_replans_live_grasp_and_preserves_failures(*, monkeypatch, mode: st
         assert kwargs["stop_condition"]()
         return True  # Motion.follow also returns True for drift interruption.
 
-    session = SimpleNamespace(arm=lambda: state.arm.copy(),
-                              position=lambda **kwargs: state.tool.copy(),
-                              quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0))
-    scene = SimpleNamespace(ee_now=lambda: Pose((0.0, 0.0, 0.0)),
-                            plan_arm=plan_arm, bodies=set, wiper_body=1)
+    session = SimpleNamespace(
+        arm=lambda: state.arm.copy(),
+        position=lambda **kwargs: state.tool.copy(),
+        quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
+    )
+    scene = SimpleNamespace(
+        ee_now=lambda: Pose((0.0, 0.0, 0.0)), plan_arm=plan_arm, bodies=set, wiper_body=1
+    )
     primitive = FloorPrimitives.model_construct(
         session=session, scene=scene, motion=SimpleNamespace(follow=follow)
     )
@@ -67,8 +70,11 @@ def test_stow_replans_live_grasp_and_preserves_failures(*, monkeypatch, mode: st
         assert attachments[1].position[0] == pytest.approx(0.02)
         np.testing.assert_array_equal(state.arm, np.ones(7))
     else:
-        message = {"budget": "eight grasp replanning", "stall": "no arm progress",
-                   "grip_loss": "test physical grip lost"}[mode]
+        message = {
+            "budget": "eight grasp replanning",
+            "stall": "no arm progress",
+            "grip_loss": "test physical grip lost",
+        }[mode]
         with pytest.raises(ExecutionError, match=message):
             primitive.stow_wiper()
         assert state.ticks == (8 if mode == "budget" else 1)

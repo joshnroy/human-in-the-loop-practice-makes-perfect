@@ -17,7 +17,8 @@ def guard_fixture(*, tilt: float, loaded: bool):
         _write=lambda **kwargs: records.append(kwargs["record"]),
     )
     primitive = SimpleNamespace(
-        session=session, scene=SimpleNamespace(max_tool_tilt=1.1),
+        session=session,
+        scene=SimpleNamespace(max_tool_tilt=1.1),
         wiper_loaded_by_cube=lambda: loaded,
     )
     return primitive, records
@@ -40,7 +41,7 @@ def test_unloaded_pose_does_not_trigger_loaded_guard() -> None:
 
 
 def test_loaded_safe_pose_continues_and_over_limit_start_is_disclosed() -> None:
-    primitive, records = guard_fixture(tilt=.99, loaded=True)
+    primitive, records = guard_fixture(tilt=0.99, loaded=True)
     FloorPrimitives.guard_loaded_tool_tilt(primitive, phase="contact correction")
     assert records == []
     primitive.session.quaternion = lambda **_: Rotation.from_euler("x", 1.128).as_quat()

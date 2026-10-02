@@ -34,20 +34,31 @@ def test_selects_shortest_fully_checked_route(*, monkeypatch, short_blocked: boo
         return True
 
     scene = SimpleNamespace(
-        sync=sync, ee_now=lambda: Pose((0.0, 0.0, 0.0)), bodies=lambda: bodies,
-        planning_fingers=lambda **kwargs: np.zeros(13), in_collision=collision,
-        wiper_body=7, capture_path_rejections=False, _last_collision_rejection={},
+        sync=sync,
+        ee_now=lambda: Pose((0.0, 0.0, 0.0)),
+        bodies=lambda: bodies,
+        planning_fingers=lambda **kwargs: np.zeros(13),
+        in_collision=collision,
+        wiper_body=7,
+        capture_path_rejections=False,
+        _last_collision_rejection={},
     )
     session = SimpleNamespace(
-        arm=lambda: np.zeros(7), position=lambda **kwargs: np.zeros(3),
-        quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0), ticks=3,
-        mj_data=SimpleNamespace(qpos=np.zeros(2)), _write=lambda **kwargs: logged.append(kwargs),
+        arm=lambda: np.zeros(7),
+        position=lambda **kwargs: np.zeros(3),
+        quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
+        ticks=3,
+        mj_data=SimpleNamespace(qpos=np.zeros(2)),
+        _write=lambda **kwargs: logged.append(kwargs),
     )
     primitive = FloorPrimitives.model_construct(
         scene=scene, session=session, motion=SimpleNamespace(drive=drive)
     )
-    monkeypatch.setattr(FloorPrimitives, "transport_base_candidates",
-                        lambda self, **kwargs: [("native", native), ("upper_aisle", short)])
+    monkeypatch.setattr(
+        FloorPrimitives,
+        "transport_base_candidates",
+        lambda self, **kwargs: [("native", native), ("upper_aisle", short)],
+    )
     monkeypatch.setattr(FloorPrimitives, "require_handle", lambda self, **kwargs: None)
     primitive.transport_wiper(target=(1.0, 0.0, 0.0))
     assert driven == [native if short_blocked else short]
@@ -68,9 +79,15 @@ def test_native_blocked_aisle_leg_is_never_inserted(*, monkeypatch) -> None:
         return fallback if start is None else None
 
     monkeypatch.setattr(native, "get_bounding_box", lambda *args: (0.4, 0.4, 0.5))
-    core = SimpleNamespace(task_config={"regions": {"sweep_region": {
-        "ranges": [(0.0, 1.0, 1.0, 1.2)],
-    }}})
+    core = SimpleNamespace(
+        task_config={
+            "regions": {
+                "sweep_region": {
+                    "ranges": [(0.0, 1.0, 1.0, 1.2)],
+                }
+            }
+        }
+    )
     session = SimpleNamespace(
         base=lambda: (0.0, 0.0, 0.0),
         state=SimpleNamespace(get_objects=lambda *args: [object()]),

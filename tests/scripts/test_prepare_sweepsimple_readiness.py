@@ -19,15 +19,24 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
     monkeypatch.setattr(module.SweepSimpleCli, "validate_manifest", lambda **kwargs: None)
     revision = "a" * 40
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps(dict(
-        source_revision=revision, first_seed=0, valid_practice_seeds=[0, 1, 2],
-        arms=[dict(name=f"{method}-{cost}", method=method)
-              for method in ("ees", "pomdp") for cost in ("low", "high", "mid", "none")],
-        launch_order=[[f"{method}-{cost}" for method in ("ees", "pomdp")
-                       for cost in ("low", "high")],
-                      [f"{method}-{cost}" for method in ("ees", "pomdp")
-                       for cost in ("mid", "none")]],
-    )))
+    manifest.write_text(
+        json.dumps(
+            dict(
+                source_revision=revision,
+                first_seed=0,
+                valid_practice_seeds=[0, 1, 2],
+                arms=[
+                    dict(name=f"{method}-{cost}", method=method)
+                    for method in ("ees", "pomdp")
+                    for cost in ("low", "high", "mid", "none")
+                ],
+                launch_order=[
+                    [f"{method}-{cost}" for method in ("ees", "pomdp") for cost in ("low", "high")],
+                    [f"{method}-{cost}" for method in ("ees", "pomdp") for cost in ("mid", "none")],
+                ],
+            )
+        )
+    )
     evidence = {"checks": {}, "source_files": {}}
     for name in builder.GATES:
         path = tmp_path / f"{name}.json"
@@ -43,8 +52,10 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
     if failure == "hash":
         (tmp_path / "native_forward.json").write_text("{}")
     for name in (
-        "with_env.sh", "with_sweep_simple_env.sh", "run_sweep_verified_arm.py",
-        "run_sweep_manifest_arm.py"
+        "with_env.sh",
+        "with_sweep_simple_env.sh",
+        "run_sweep_verified_arm.py",
+        "run_sweep_manifest_arm.py",
     ):
         relative = "scripts/" + name
         path = tmp_path / relative
@@ -55,11 +66,19 @@ def test_evidence_and_verified_wrapper_jobs(*, tmp_path, monkeypatch, failure):
     evidence_path.write_text(json.dumps(evidence))
     if failure:
         with pytest.raises(ValueError):
-            builder.prepare(manifest_path=manifest, evidence_path=evidence_path,
-                            source=tmp_path, output_root=tmp_path / "results")
+            builder.prepare(
+                manifest_path=manifest,
+                evidence_path=evidence_path,
+                source=tmp_path,
+                output_root=tmp_path / "results",
+            )
         return
-    result = builder.prepare(manifest_path=manifest, evidence_path=evidence_path,
-                             source=tmp_path, output_root=tmp_path / "results")
+    result = builder.prepare(
+        manifest_path=manifest,
+        evidence_path=evidence_path,
+        source=tmp_path,
+        output_root=tmp_path / "results",
+    )
     assert result["status"] == "DRAFT" and result["owner_validated"] is False
     assert result["memory_swap_max_bytes"] == 0
     assert len(result["jobs"]) == 24

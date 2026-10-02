@@ -1,4 +1,5 @@
 """Native side-counter geometry omitted by the upstream 2D planner still blocks routes."""
+
 import json
 from pathlib import Path
 
@@ -23,15 +24,17 @@ def test_recorded_side_handles_rejected_without_live_or_model_mutation() -> None
         assert not helper.contacts(base=fixture["safe_base"], held_wiper=True)
         blocked = helper.contacts(base=fixture["blocked_base"], held_wiper=True)
         assert {c["body"] for c in blocked} >= {
-            "kitchen_left_side_drawer_s0c1_handle", "kitchen_left_side_drawer_s1c1_handle"}
-        assert min(c["distance"] for c in blocked) < -.02
+            "kitchen_left_side_drawer_s0c1_handle",
+            "kitchen_left_side_drawer_s1c1_handle",
+        }
+        assert min(c["distance"] for c in blocked) < -0.02
         # Safe endpoints cannot bypass a blocked intermediate portion.
         rejected = helper.first_route_rejection(
             path=[fixture["safe_base"], fixture["blocked_base"], fixture["safe_base"]],
             held_wiper=True,
         )
         assert rejected is not None and rejected["segment"] == 1
-        assert 0. < rejected["fraction"] <= 1.
+        assert 0.0 < rejected["fraction"] <= 1.0
         assert helper.first_route_rejection(path=[fixture["safe_base"]], held_wiper=True) is None
         np.testing.assert_array_equal(session.mj_data.qpos, qpos)
         np.testing.assert_array_equal(session.mj_data.qvel, qvel)
@@ -45,8 +48,9 @@ def test_recorded_side_handles_rejected_without_live_or_model_mutation() -> None
         address = session.mj_model.jnt_qposadr[joint]
         # A cube elevated into the chassis is a genuine native collision;
         # a ground cube beneath the chassis need not touch its raised shell.
-        session.mj_data.qpos[address:address + 3] = [*fixture["safe_base"][:2], .233]
-        assert "cube_0" in {c["body"] for c in helper.contacts(
-            base=fixture["safe_base"], held_wiper=True)}
+        session.mj_data.qpos[address : address + 3] = [*fixture["safe_base"][:2], 0.233]
+        assert "cube_0" in {
+            c["body"] for c in helper.contacts(base=fixture["safe_base"], held_wiper=True)
+        }
     finally:
         session.close()

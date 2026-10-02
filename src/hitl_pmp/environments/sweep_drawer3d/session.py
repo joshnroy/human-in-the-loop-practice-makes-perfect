@@ -118,9 +118,7 @@ class SweepDrawerSession(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         kinder = KinderImports.load()
-        self._env = kinder.make(
-            self.ENV_ID, render_mode="rgb_array", allow_state_access=True
-        )
+        self._env = kinder.make(self.ENV_ID, render_mode="rgb_array", allow_state_access=True)
         obs, _ = self._env.reset(seed=self.seed)
         self._state = self._env.observation_space.devectorize(obs)
         self._initial = {

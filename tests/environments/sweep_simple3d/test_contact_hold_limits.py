@@ -15,8 +15,9 @@ def hold_fixture(*, current: float):
     observed[1] = current
     primitive = SimpleNamespace(
         scene=SimpleNamespace(within_arm_limits=lambda *, arm: bool(abs(arm[1]) <= 2.24)),
-        session=SimpleNamespace(arm=lambda: observed, ticks=5830,
-                                _write=lambda *, record: records.append(record)),
+        session=SimpleNamespace(
+            arm=lambda: observed, ticks=5830, _write=lambda *, record: records.append(record)
+        ),
     )
     return primitive, observed, records
 

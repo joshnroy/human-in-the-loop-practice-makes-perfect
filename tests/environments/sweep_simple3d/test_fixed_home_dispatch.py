@@ -18,8 +18,9 @@ def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(
     calls = []
     events = []
     endings = []
-    session = SimpleNamespace(ticks=0, begin=lambda **kwargs: None,
-                              end=lambda **kwargs: endings.append(kwargs))
+    session = SimpleNamespace(
+        ticks=0, begin=lambda **kwargs: None, end=lambda **kwargs: endings.append(kwargs)
+    )
     primitive = SimpleNamespace(distance=0.7, heading_offset=0.0)
 
     def record(*, name: str) -> None:
@@ -32,11 +33,13 @@ def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(
     env._primitive = primitive
     # Isolate dispatch from physical predicates while retaining real skill IDs,
     # parameter interpretation, primitive reuse, and action accounting.
-    monkeypatch.setattr(module, "GroundSkill", lambda **kwargs: SimpleNamespace(
-        preconditions=(), add_effects=()))
+    monkeypatch.setattr(
+        module, "GroundSkill", lambda **kwargs: SimpleNamespace(preconditions=(), add_effects=())
+    )
     monkeypatch.setattr(SweepSimpleEnvironment, "observe", lambda self: state)
-    monkeypatch.setattr(SweepSimpleEnvironment, "_write_event",
-                        lambda self, *, event: events.append(event))
+    monkeypatch.setattr(
+        SweepSimpleEnvironment, "_write_event", lambda self, *, event: events.append(event)
+    )
     pickup_id = env.ACTION_NAMES.index("PickFloorWiper")
     home_id = env.ACTION_NAMES.index("PlaceWiperAtStart")
 
@@ -45,12 +48,20 @@ def test_fixed_home_after_different_pickups_keeps_one_action_per_dispatch(
         # Fixed-skill action slots are deliberately nondefault as well.
         env.take_action(action=np.array([home_id, -1, 0.63, -0.1]))
 
-    assert calls == [("pickup", 0.55, -0.2), ("home", 0.7, 0.0),
-                     ("pickup", 0.85, 0.2), ("home", 0.7, 0.0)]
+    assert calls == [
+        ("pickup", 0.55, -0.2),
+        ("home", 0.7, 0.0),
+        ("pickup", 0.85, 0.2),
+        ("home", 0.7, 0.0),
+    ]
     assert env._action_count == 4
     assert [event["index"] for event in events] == [1, 2, 3, 4]
     assert [event["name"] for event in events] == [
-        "PickFloorWiper", "PlaceWiperAtStart", "PickFloorWiper", "PlaceWiperAtStart"]
+        "PickFloorWiper",
+        "PlaceWiperAtStart",
+        "PickFloorWiper",
+        "PlaceWiperAtStart",
+    ]
     assert all(event["ticks"] == 3 and event["symbolic_success"] for event in events)
     assert len(endings) == 4
     assert env._hard_reset_count == env._human_reset_count == 0

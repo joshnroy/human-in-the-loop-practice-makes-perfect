@@ -17,15 +17,24 @@ from hitl_pmp.environments.sweep_simple3d.controllers import (
 def test_loaded_motion_requests_retreat_without_changing_state_or_limits(
     *, phase: str, joint_2: float
 ) -> None:
-    arm = np.array([0., joint_2, 0., 0., 0., 0., 0.])
-    limits = np.array([[-np.inf, np.inf], [-2.24, 2.24], [-np.inf, np.inf],
-                       [-2.57, 2.57], [-np.inf, np.inf], [-2.09, 2.09], [-np.inf, np.inf]])
+    arm = np.array([0.0, joint_2, 0.0, 0.0, 0.0, 0.0, 0.0])
+    limits = np.array([
+        [-np.inf, np.inf],
+        [-2.24, 2.24],
+        [-np.inf, np.inf],
+        [-2.57, 2.57],
+        [-np.inf, np.inf],
+        [-2.09, 2.09],
+        [-np.inf, np.inf],
+    ])
     original_arm, original_limits = arm.copy(), limits.copy()
     records = []
     primitive = SimpleNamespace(
-        session=SimpleNamespace(arm=lambda: arm, ticks=18399,
-                                _write=lambda **kwargs: records.append(kwargs["record"])),
-        scene=SimpleNamespace(_arm_limits=limits), wiper_loaded_by_cube=lambda: True,
+        session=SimpleNamespace(
+            arm=lambda: arm, ticks=18399, _write=lambda **kwargs: records.append(kwargs["record"])
+        ),
+        scene=SimpleNamespace(_arm_limits=limits),
+        wiper_loaded_by_cube=lambda: True,
     )
     # The base drive catches ContactTravelLimit and follows checked retreat;
     # corrective descent also catches this specific reserve stop explicitly.
@@ -47,7 +56,7 @@ def test_unloaded_pose_never_reads_or_restricts_native_arm() -> None:
 def test_loaded_pose_with_reserve_continues() -> None:
     primitive = SimpleNamespace(
         session=SimpleNamespace(arm=lambda: np.zeros(7)),
-        scene=SimpleNamespace(_arm_limits=np.tile([-2., 2.], (7, 1))),
+        scene=SimpleNamespace(_arm_limits=np.tile([-2.0, 2.0], (7, 1))),
         wiper_loaded_by_cube=lambda: True,
     )
     FloorPrimitives.guard_loaded_joint_reserve(primitive, phase="contact drive")

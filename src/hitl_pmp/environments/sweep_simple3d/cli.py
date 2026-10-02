@@ -20,19 +20,26 @@ class SweepSimpleCli:
         if manifest.get("status") != "FROZEN":
             raise ValueError("Simple launch requires an explicitly FROZEN readiness manifest")
         expected = {
-            "environment": "sweep_simple3d", "num_cycles": 50,
-            "max_steps_per_interaction": 20, "num_test_tasks": 10,
-            "deployment_horizon": 10, "practice_reset_policy": "never",
+            "environment": "sweep_simple3d",
+            "num_cycles": 50,
+            "max_steps_per_interaction": 20,
+            "num_test_tasks": 10,
+            "deployment_horizon": 10,
+            "practice_reset_policy": "never",
         }
         for name, value in expected.items():
             if manifest.get(name) != value or isinstance(manifest.get(name), bool):
                 raise ValueError(f"Unapproved Simple protocol {name}: expected {value!r}")
         model = manifest.get("pomdp", {})
         approved = {
-            "goal_pursuit_horizon": 0, "pomdp_solver": "determinized_astar",
-            "pomdp_max_search_iterations": 1000, "pomdp_search_depth": 20,
-            "pomdp_inference_engine": "grid", "pomdp_grid_competence_bins": 25,
-            "pomdp_grid_learning_rate_bins": 16, "pomdp_num_particles": 1024,
+            "goal_pursuit_horizon": 0,
+            "pomdp_solver": "determinized_astar",
+            "pomdp_max_search_iterations": 1000,
+            "pomdp_search_depth": 20,
+            "pomdp_inference_engine": "grid",
+            "pomdp_grid_competence_bins": 25,
+            "pomdp_grid_learning_rate_bins": 16,
+            "pomdp_num_particles": 1024,
             "pomdp_linear_cost_lambda": 3e-6,
         }
         for name, value in approved.items():
@@ -80,7 +87,8 @@ class SweepSimpleCli:
         if args.goal_pursuit_horizon not in (0, "0"):
             raise ValueError("Simple requires resolved --goal-pursuit-horizon 0 for both methods")
         if max_steps_per_interaction != 20 or (num_cycles, args.num_test_tasks) not in {
-            (50, 10), (1, 1),  # Explicit launcher smoke is one cycle / one task.
+            (50, 10),
+            (1, 1),  # Explicit launcher smoke is one cycle / one task.
         }:
             raise ValueError("Simple requires 50x20 practice / ten tasks, or one-cycle smoke")
         # Global CLI registration must remain usable without simulation extras.

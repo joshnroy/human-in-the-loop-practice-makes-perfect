@@ -29,21 +29,24 @@ def test_recorded_pad_contacts_distinguish_handle_wedging(*, record: dict) -> No
             if handle not in (contact.geom1, contact.geom2):
                 continue
             other = contact.geom2 if contact.geom1 == handle else contact.geom1
-            touching.add(mujoco.mj_id2name(
-                model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[other])
-            ))
+            touching.add(
+                mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[other]))
+            )
         assert {"robot_left_pad", "robot_right_pad"} <= touching
-        before = {name: getattr(data, name).copy() for name in
-                  ("qpos", "qvel", "ctrl", "geom_xpos")}
-        contacts_before = [(int(c.geom1), int(c.geom2), float(c.dist))
-                           for c in data.contact[: data.ncon]]
+        before = {
+            name: getattr(data, name).copy() for name in ("qpos", "qvel", "ctrl", "geom_xpos")
+        }
+        contacts_before = [
+            (int(c.geom1), int(c.geom2), float(c.dist)) for c in data.contact[: data.ncon]
+        ]
         time_before = data.time
         flags = (int(model.opt.enableflags), int(model.opt.disableflags))
         assert primitive.handle_nonpad_gripper_contacts() == record["expected"]
         for name, value in before.items():
             np.testing.assert_array_equal(getattr(data, name), value)
-        assert [(int(c.geom1), int(c.geom2), float(c.dist))
-                for c in data.contact[: data.ncon]] == contacts_before
+        assert [
+            (int(c.geom1), int(c.geom2), float(c.dist)) for c in data.contact[: data.ncon]
+        ] == contacts_before
         assert data.time == time_before
         assert (int(model.opt.enableflags), int(model.opt.disableflags)) == flags
     finally:

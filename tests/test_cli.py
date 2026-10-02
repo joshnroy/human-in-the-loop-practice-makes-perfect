@@ -75,6 +75,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
         "ballring",
         "lightswitch",
         "sweep_drawer3d",
+        "sweep_simple3d",
         "tossing3d",
         "tossingroom",
     }

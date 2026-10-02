@@ -123,7 +123,9 @@ class SimpleSymbols:
                     # Forget predicted base location; execution observes the actual facts.
                     ignore_effects=frozenset(
                         SIMPLE_PREDICATES[n] for n in ("RobotHome", "RobotAway")
-                    ) if unknown_base else frozenset(),
+                    )
+                    if unknown_base
+                    else frozenset(),
                     param_dim=param_dim,
                     practice_cost=costs.get(name, 1.0),
                 )

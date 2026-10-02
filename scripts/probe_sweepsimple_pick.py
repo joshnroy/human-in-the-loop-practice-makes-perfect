@@ -15,7 +15,8 @@ class PickupProbe:
         parser = argparse.ArgumentParser(allow_abbrev=False)
         parser.add_argument("--tag", required=True)
         parser.add_argument(
-            "--production-controller", action="store_true",
+            "--production-controller",
+            action="store_true",
             help="Use ordinary controller defaults; reject explicit diagnostic overrides.",
         )
         parser.add_argument("--seed", type=int, default=0)
@@ -24,7 +25,10 @@ class PickupProbe:
         parser.add_argument("--sweep-angle", type=float, default=0.0)
         parser.add_argument("--cube-order", type=int, nargs=5, default=[0, 1, 2, 3, 4])
         parser.add_argument(
-            "--forward-budget", type=int, choices=(0, 10), default=0,
+            "--forward-budget",
+            type=int,
+            choices=(0, 10),
+            default=0,
             help="Count failed skill calls within the approved 10-action task budget; no resets.",
         )
         parser.add_argument("--pick-only", action="store_true")
@@ -36,7 +40,9 @@ class PickupProbe:
         parser.add_argument("--grasp-offset", type=float)
         parser.add_argument("--grasp-insertion-offset", type=float, choices=(0.010, 0.020, 0.028))
         parser.add_argument(
-            "--grasp-approach-angle", type=float, choices=(1.2, 1.8),
+            "--grasp-approach-angle",
+            type=float,
+            choices=(1.2, 1.8),
             help="Select an existing controller grasp-angle candidate for diagnosis.",
         )
         parser.add_argument("--grasp-height", type=float, default=0.0)
@@ -49,7 +55,8 @@ class PickupProbe:
         parser.add_argument("--center-selected-cube", action="store_true")
         parser.add_argument("--finish-selected-first", action="store_true")
         parser.add_argument(
-            "--regrasp-before-reset", action="store_true",
+            "--regrasp-before-reset",
+            action="store_true",
             help="Execute counted PlaceWiperAtStart and PickFloorWiper before reverse skills.",
         )
         parser.add_argument("--stand-ahead", action="store_true")
@@ -66,7 +73,8 @@ class PickupProbe:
         )
         parser.add_argument("--grasp-yaw-offset", type=float, default=0.0)
         parser.add_argument(
-            "--grasp-face-seeded", action="store_true",
+            "--grasp-face-seeded",
+            action="store_true",
             help="Seed existing grasp azimuth search from the native handle cross-section x axis.",
         )
         args = parser.parse_args()
@@ -122,15 +130,20 @@ class PickupProbe:
                 {
                     "arguments": vars(args),
                     "source_sha256": hashes,
-                    "controller_mode": ("production_defaults" if args.production_controller
-                                        else "diagnostic_overrides"),
+                    "controller_mode": (
+                        "production_defaults"
+                        if args.production_controller
+                        else "diagnostic_overrides"
+                    ),
                     "initial_dispatch": (
-                        "ordinary Environment.take_action" if args.production_controller
+                        "ordinary Environment.take_action"
+                        if args.production_controller
                         else "direct primitive recover_wiper and first sweep_cube"
                     ),
                     "initial_dispatch_limitation": (
-                        None if args.production_controller else
-                        "Initial two calls retain probe logging/counts, bypass Environment "
+                        None
+                        if args.production_controller
+                        else "Initial two calls retain probe logging/counts, bypass Environment "
                         "precondition dispatch; subsequent full-cycle calls use take_action."
                     ),
                     "resume_phase": resume_phase,
@@ -158,9 +171,13 @@ class PickupProbe:
         import mujoco
 
         started = time.monotonic()
-        ordinary = (PickupProbe.live_environment(
-            session=session, primitive=primitive, initial_state=initial_state
-        ) if args.production_controller else None)
+        ordinary = (
+            PickupProbe.live_environment(
+                session=session, primitive=primitive, initial_state=initial_state
+            )
+            if args.production_controller
+            else None
+        )
         if ordinary is None:
             session.begin(name="PickFloorWiper", kind="PickFloorWiper", phase="feasibility")
         error = ""
@@ -188,9 +205,13 @@ class PickupProbe:
                 f"Recorded {resume_phase} continuation; not an end-to-end native-start trial"
                 if resume_tag
                 else PickupProbe.dispatch_ordinary(
-                    env=ordinary, name="PickFloorWiper", cube=-1,
+                    env=ordinary,
+                    name="PickFloorWiper",
+                    cube=-1,
                     params=(args.pick_distance, 0.0),
-                ) if ordinary is not None else primitive.recover_wiper()
+                )
+                if ordinary is not None
+                else primitive.recover_wiper()
             )
             primitive.require_handle(phase="verified pickup or recorded continuation")
             if args.full_cycle:
@@ -233,15 +254,21 @@ class PickupProbe:
 
                 sweep_error = None
                 try:
-                    note = (PickupProbe.dispatch_ordinary(
-                        env=ordinary, name="SweepCubeToGoal", cube=args.cube_order[0],
-                        params=(args.sweep_distance, args.sweep_angle),
-                    ) if ordinary is not None else primitive.sweep_cube(
-                        cube=f"cube_{args.cube_order[0]}",
-                        region="sweep_region",
-                        distance=args.sweep_distance,
-                        heading_offset=args.sweep_angle,
-                    ))
+                    note = (
+                        PickupProbe.dispatch_ordinary(
+                            env=ordinary,
+                            name="SweepCubeToGoal",
+                            cube=args.cube_order[0],
+                            params=(args.sweep_distance, args.sweep_angle),
+                        )
+                        if ordinary is not None
+                        else primitive.sweep_cube(
+                            cube=f"cube_{args.cube_order[0]}",
+                            region="sweep_region",
+                            distance=args.sweep_distance,
+                            heading_offset=args.sweep_angle,
+                        )
+                    )
                 except ExecutionError as exc:
                     if not args.forward_budget:
                         raise
@@ -342,17 +369,28 @@ class PickupProbe:
         if not args.production_controller:
             return
         diagnostic = {
-            "--grasp-offset", "--grasp-insertion-offset", "--grasp-approach-angle",
-            "--grasp-height", "--grasp-mode", "--grasp-yaw-offset", "--tilt-limit",
-            "--stroke-length", "--contact-step", "--floor-clearance", "--narrow-contact",
-            "--center-selected-cube", "--stand-ahead", "--native-contact-guard",
+            "--grasp-offset",
+            "--grasp-insertion-offset",
+            "--grasp-approach-angle",
+            "--grasp-height",
+            "--grasp-mode",
+            "--grasp-yaw-offset",
+            "--tilt-limit",
+            "--stroke-length",
+            "--contact-step",
+            "--floor-clearance",
+            "--narrow-contact",
+            "--center-selected-cube",
+            "--stand-ahead",
+            "--native-contact-guard",
             "--retain-pickup-carry-pose",
             "--grasp-face-seeded",
         }
         conflicts = sorted({token.split("=", 1)[0] for token in argv} & diagnostic)
         if conflicts:
-            parser.error("--production-controller forbids diagnostic overrides: "
-                         + ", ".join(conflicts))
+            parser.error(
+                "--production-controller forbids diagnostic overrides: " + ", ".join(conflicts)
+            )
 
     @staticmethod
     def configure_controller(*, primitive, args) -> None:
@@ -367,9 +405,7 @@ class PickupProbe:
         primitive.floor_clearance = args.floor_clearance
         primitive.narrow_contact = args.narrow_contact
         if args.center_selected_cube:
-            FloorPrimitives.broad_blade_center = staticmethod(
-                lambda *, projections, target: target
-            )
+            FloorPrimitives.broad_blade_center = staticmethod(lambda *, projections, target: target)
         primitive.stand_ahead = args.stand_ahead
         primitive.native_contact_guard = args.native_contact_guard
         primitive.retain_pickup_carry_pose = args.retain_pickup_carry_pose
@@ -399,6 +435,7 @@ class PickupProbe:
                 original_yaw(self, axis=axis) + args.grasp_yaw_offset
             )
         if args.grasp_face_seeded:
+
             def native_face_yaw(self, *, axis):  # noqa: PLR0917 -- bound diagnostic callback
                 import numpy as np
 
@@ -470,20 +507,22 @@ class PickupProbe:
             if min(tool, palm) < 0:
                 raise RuntimeError("Required native tool/palm body missing from diagnostic model")
             contacts = []
-            for index, contact in enumerate(data.contact[:data.ncon]):
+            for index, contact in enumerate(data.contact[: data.ncon]):
                 if tool not in (model.geom_bodyid[contact.geom1], model.geom_bodyid[contact.geom2]):
                     continue
                 force = np.zeros(6)
                 mujoco.mj_contactForce(model, data, index, force)
                 contacts.append({
-                    "geom1": int(contact.geom1), "geom2": int(contact.geom2),
+                    "geom1": int(contact.geom1),
+                    "geom2": int(contact.geom2),
                     "body1": mujoco.mj_id2name(
                         model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[contact.geom1]
                     ),
                     "body2": mujoco.mj_id2name(
                         model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[contact.geom2]
                     ),
-                    "position_world": contact.pos.tolist(), "distance": float(contact.dist),
+                    "position_world": contact.pos.tolist(),
+                    "distance": float(contact.dist),
                     "geom1_local_position": (
                         data.geom_xmat[contact.geom1].reshape(3, 3).T
                         @ (contact.pos - data.geom_xpos[contact.geom1])
@@ -496,16 +535,20 @@ class PickupProbe:
                     "contact_frame_wrench": force.tolist(),
                     "contact_dimension": int(contact.dim),
                 })
-            self._write(record={
-                "kind": "live_grasp_physics", "t": self.ticks,
-                "provenance": "native data immediately after actual environment.step",
-                "contacts": contacts, "ctrl": data.ctrl.tolist(),
-                "actuator_force": data.actuator_force.tolist(),
-                "palm_position": data.xpos[palm].tolist(),
-                "palm_rotation_matrix": data.xmat[palm].tolist(),
-                "tool_position": data.xpos[tool].tolist(),
-                "tool_rotation_matrix": data.xmat[tool].tolist(),
-            })
+            self._write(
+                record={
+                    "kind": "live_grasp_physics",
+                    "t": self.ticks,
+                    "provenance": "native data immediately after actual environment.step",
+                    "contacts": contacts,
+                    "ctrl": data.ctrl.tolist(),
+                    "actuator_force": data.actuator_force.tolist(),
+                    "palm_position": data.xpos[palm].tolist(),
+                    "palm_rotation_matrix": data.xmat[palm].tolist(),
+                    "tool_position": data.xpos[tool].tolist(),
+                    "tool_rotation_matrix": data.xmat[tool].tolist(),
+                }
+            )
             return state
 
         session_type.step = traced_step
@@ -525,22 +568,32 @@ class PickupProbe:
             # The initial pickup and first sweep already consumed two actions.
             # Rotate through the remaining native subgoals; a failed skill stays
             # failed and consumes its action. No state restoration or hidden pick.
-            order = (list(args.cube_order) if args.finish_selected_first
-                     else args.cube_order[1:] + args.cube_order[:1])
+            order = (
+                list(args.cube_order)
+                if args.finish_selected_first
+                else args.cube_order[1:] + args.cube_order[:1]
+            )
             for slot in range(2, args.forward_budget):
                 if core._check_goals():
                     break
-                pending = [i for i in order if not SimpleRegions.contains(
-                    session=session, name=f"cube_{i}", region="sweep_region"
-                )]
+                pending = [
+                    i
+                    for i in order
+                    if not SimpleRegions.contains(
+                        session=session, name=f"cube_{i}", region="sweep_region"
+                    )
+                ]
                 if not pending:
                     break
                 i = pending[0]
                 if not args.finish_selected_first:
-                    order = order[order.index(i) + 1:] + order[:order.index(i) + 1]
+                    order = order[order.index(i) + 1 :] + order[: order.index(i) + 1]
                 try:
                     PickupProbe.cycle_action(
-                        env=env, name="SweepCubeToGoal", cube=i, report=report,
+                        env=env,
+                        name="SweepCubeToGoal",
+                        cube=i,
+                        report=report,
                         params=(args.sweep_distance, args.sweep_angle),
                     )
                 except RuntimeError as exc:
@@ -583,10 +636,16 @@ class PickupProbe:
             # These are ordinary observable robot skills, not a simulator reset
             # or an internal regrasp hidden inside a sweep action.
             PickupProbe.cycle_action(
-                env=env, name="PlaceWiperAtStart", cube=-1, report=report,
+                env=env,
+                name="PlaceWiperAtStart",
+                cube=-1,
+                report=report,
             )
             PickupProbe.cycle_action(
-                env=env, name="PickFloorWiper", cube=-1, report=report,
+                env=env,
+                name="PickFloorWiper",
+                cube=-1,
+                report=report,
                 params=(args.pick_distance, 0.0),
             )
         for i in range(5):

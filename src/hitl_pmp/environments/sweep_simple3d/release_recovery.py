@@ -21,9 +21,11 @@ class ReleaseContacts:
         )
         model = self.query.model
         self.robot_geoms = {
-            g for g in range(model.ngeom)
-            if (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY,
-                                 int(model.geom_bodyid[g])) or "").startswith("robot_")
+            g
+            for g in range(model.ngeom)
+            if (
+                mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[g])) or ""
+            ).startswith("robot_")
         }
         self.tool_geoms = set(self.query.tool_geoms)
 
@@ -34,7 +36,7 @@ class ReleaseContacts:
             query.data.qpos[np.asarray(query.joint_addresses[:7])] = arm
         mujoco.mj_fwdPosition(query.model, query.data)
         contacts: ContactMap = {}
-        for contact in query.data.contact[:query.data.ncon]:
+        for contact in query.data.contact[: query.data.ncon]:
             first, second = int(contact.geom1), int(contact.geom2)
             pair = (min(first, second), max(first, second))
             if contact.dist <= 0 and any(g in self.robot_geoms for g in pair):
@@ -47,8 +49,7 @@ class ReleaseContacts:
     @staticmethod
     def separating(*, previous: ContactMap, current: ContactMap) -> bool:
         """No new pair, recontact, or deeper penetration; no clearance tolerance."""
-        return all(pair in previous and depth >= previous[pair]
-                   for pair, depth in current.items())
+        return all(pair in previous and depth >= previous[pair] for pair, depth in current.items())
 
     @staticmethod
     def record(*, contacts: ContactMap) -> list[dict]:
@@ -77,8 +78,9 @@ def separate_released_tool(*, primitive: "FloorPrimitives") -> bool:
     )
     if path is None:
         return False
-    if (not scene.within_arm_limits(arm=start)
-            or scene.in_collision(joints=scene.planning_fingers(arm=start), bodies=bodies)):
+    if not scene.within_arm_limits(arm=start) or scene.in_collision(
+        joints=scene.planning_fingers(arm=start), bodies=bodies
+    ):
         return False
     previous = initial
     arm = start
@@ -87,20 +89,26 @@ def separate_released_tool(*, primitive: "FloorPrimitives") -> bool:
         for fraction in np.linspace(0.0, 1.0, steps + 1)[1:]:
             candidate = arm + fraction * (waypoint - arm)
             current = query.contacts(arm=candidate)
-            if (not query.separating(previous=previous, current=current)
-                    or not scene.within_arm_limits(arm=candidate)
-                    or scene.in_collision(joints=scene.planning_fingers(arm=candidate),
-                                          bodies=bodies)):
+            if (
+                not query.separating(previous=previous, current=current)
+                or not scene.within_arm_limits(arm=candidate)
+                or scene.in_collision(joints=scene.planning_fingers(arm=candidate), bodies=bodies)
+            ):
                 return False
             previous = current
         arm = waypoint
     if query.tool_contact(contacts=previous):
         return False
-    session._write(record={
-        "kind": "release_separation_checked", "t": session.ticks,
-        "displacement": [0.0, 0.0, -0.03], "waypoints": len(path),
-        "initial_contacts": query.record(contacts=initial), "max_ticks": 180,
-    })
+    session._write(
+        record={
+            "kind": "release_separation_checked",
+            "t": session.ticks,
+            "displacement": [0.0, 0.0, -0.03],
+            "waypoints": len(path),
+            "initial_contacts": query.record(contacts=initial),
+            "max_ticks": 180,
+        }
+    )
     previous = initial
 
     def guard() -> None:
@@ -108,19 +116,25 @@ def separate_released_tool(*, primitive: "FloorPrimitives") -> bool:
         current = query.contacts()
         actual = session.arm()
         scene.sync()
-        valid = (query.separating(previous=previous, current=current)
-                 and scene.within_arm_limits(arm=actual)
-                 and not scene.in_collision(joints=scene.planning_fingers(arm=actual),
-                                            bodies=scene.bodies() - {scene.wiper_body}))
-        session._write(record={
-            "kind": "release_separation_tick", "t": session.ticks,
-            "contacts": query.record(contacts=current), "valid": bool(valid),
-        })
+        valid = (
+            query.separating(previous=previous, current=current)
+            and scene.within_arm_limits(arm=actual)
+            and not scene.in_collision(
+                joints=scene.planning_fingers(arm=actual),
+                bodies=scene.bodies() - {scene.wiper_body},
+            )
+        )
+        session._write(
+            record={
+                "kind": "release_separation_tick",
+                "t": session.ticks,
+                "contacts": query.record(contacts=current),
+                "valid": bool(valid),
+            }
+        )
         if not valid:
             raise ExecutionError("Released-tool separation gained or deepened a native contact")
         previous = current
 
-    converged = primitive.motion.follow(
-        path=path, grip=0.0, max_ticks=180, tick_guard=guard
-    )
+    converged = primitive.motion.follow(path=path, grip=0.0, max_ticks=180, tick_guard=guard)
     return bool(converged and not query.tool_contact(contacts=query.contacts()))

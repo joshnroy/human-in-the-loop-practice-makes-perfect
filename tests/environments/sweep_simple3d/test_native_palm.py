@@ -22,13 +22,16 @@ def test_native_palm_candidate_separation_and_penetration(*, fixture: dict) -> N
         live.qpos[:] = fixture["qpos"]
         mujoco.mj_forward(model, live)
         query = NativePalmClearance(model=model, live_data=live)
-        before = {name: getattr(live, name).copy() for name in
-                  ("qpos", "qvel", "ctrl", "xpos", "geom_xpos")}
+        before = {
+            name: getattr(live, name).copy()
+            for name in ("qpos", "qvel", "ctrl", "xpos", "geom_xpos")
+        }
         flags = (int(model.opt.enableflags), int(model.opt.disableflags))
         masks = (model.geom_contype.copy(), model.geom_conaffinity.copy())
         adr = query.tool_address
-        pose = Pose(tuple(live.qpos[adr:adr + 3]),
-                    tuple(live.qpos[adr + 3:adr + 7][[1, 2, 3, 0]]))
+        pose = Pose(
+            tuple(live.qpos[adr : adr + 3]), tuple(live.qpos[adr + 3 : adr + 7][[1, 2, 3, 0]])
+        )
         assert query.distance(joints=fixture["joints"], tool_pose=pose) == pytest.approx(1e-6)
         # Center the native handle inside the native palm, without changing live state.
         palm_center = live.geom_xpos[query.palm_geoms[0]].copy()

@@ -1,4 +1,5 @@
 """Placement chooses inside the native start yaw set without changing acceptance."""
+
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -24,8 +25,8 @@ def test_actual_native_start_interval_center_and_predicates_are_unchanged() -> N
         region = next(region for _, name, region in before["initial_state"] if name == "wiper_0")
         bounds = before["regions"][region]["yaw_ranges"]
         assert bounds == [[-45, 45]]
-        assert yaw == pytest.approx(0.)
-        np.testing.assert_allclose(rotation.as_matrix()[:, 2], [0., 0., 1.])
+        assert yaw == pytest.approx(0.0)
+        np.testing.assert_allclose(rotation.as_matrix()[:, 2], [0.0, 0.0, 1.0])
         assert SweepRegions.yaw_matches(yaw=yaw, ranges=bounds)
         assert not SweepRegions.yaw_matches(yaw=np.radians(46.62895575), ranges=bounds)
         assert core.task_config == before
@@ -34,12 +35,19 @@ def test_actual_native_start_interval_center_and_predicates_are_unchanged() -> N
         session.close()
 
 
-@pytest.mark.parametrize("bounds", [[[10., 30.]], [[170., 190.]], [[-170., -100.]]])
+@pytest.mark.parametrize("bounds", [[[10.0, 30.0]], [[170.0, 190.0]], [[-170.0, -100.0]]])
 def test_target_reads_declared_bounds_in_degrees(*, bounds: list[list[float]]) -> None:
-    core = SimpleNamespace(task_config={"initial_state": [["in", "wiper_0", "home"]],
-                                       "regions": {"home": {"yaw_ranges": bounds}}})
-    primitive = SimpleNamespace(session=SimpleNamespace(
-        env=SimpleNamespace(unwrapped=SimpleNamespace(_object_centric_env=core))))
+    core = SimpleNamespace(
+        task_config={
+            "initial_state": [["in", "wiper_0", "home"]],
+            "regions": {"home": {"yaw_ranges": bounds}},
+        }
+    )
+    primitive = SimpleNamespace(
+        session=SimpleNamespace(
+            env=SimpleNamespace(unwrapped=SimpleNamespace(_object_centric_env=core))
+        )
+    )
     rotation = Rotation.from_quat(FloorPrimitives.place_target_orientation(primitive))
     expected = Rotation.from_euler("z", np.radians(sum(bounds[0]) / 2))
     assert (rotation.inv() * expected).magnitude() < 1e-12

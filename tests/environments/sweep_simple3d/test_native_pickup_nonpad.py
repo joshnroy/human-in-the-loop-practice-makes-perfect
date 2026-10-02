@@ -25,26 +25,31 @@ def test_native_obstruction_vs_allowed_pad_contact_without_mutation(*, name: str
         live.qpos[:] = FIXTURES[name]["qpos"]
         mujoco.mj_forward(model, live)
         query = NativePalmClearance(model=model, live_data=live)
-        before = {key: getattr(live, key).copy() for key in
-                  ("qpos", "qvel", "ctrl", "xpos", "geom_xpos")}
+        before = {
+            key: getattr(live, key).copy() for key in ("qpos", "qvel", "ctrl", "xpos", "geom_xpos")
+        }
         flags = (int(model.opt.enableflags), int(model.opt.disableflags))
         masks = (model.geom_contype.copy(), model.geom_conaffinity.copy())
         adr = query.tool_address
-        pose = Pose(tuple(live.qpos[adr:adr + 3]),
-                    tuple(live.qpos[adr + 3:adr + 7][[1, 2, 3, 0]]))
+        pose = Pose(
+            tuple(live.qpos[adr : adr + 3]), tuple(live.qpos[adr + 3 : adr + 7][[1, 2, 3, 0]])
+        )
         rejected = query.nonpad_tool_contacts(
             joints=live.qpos[query.joint_addresses], tool_pose=pose
         )
         if name == "blocked":
             assert {c["robot_body"] for c in rejected} == {
-                "robot_right_spring_link", "robot_left_spring_link"
+                "robot_right_spring_link",
+                "robot_left_spring_link",
             }
-            assert all(c["tool_geom"] == 134 and c["distance"] < -.0006 for c in rejected)
+            assert all(c["tool_geom"] == 134 and c["distance"] < -0.0006 for c in rejected)
         else:
             assert rejected == []
             # Physical pad contact exists but is deliberately permitted by this guard.
-            assert any(c.geom1 == 133 and c.geom2 in (170, 171, 182, 183)
-                       for c in live.contact[:live.ncon])
+            assert any(
+                c.geom1 == 133 and c.geom2 in (170, 171, 182, 183)
+                for c in live.contact[: live.ncon]
+            )
         for key, value in before.items():
             np.testing.assert_array_equal(getattr(live, key), value)
         assert flags == (int(model.opt.enableflags), int(model.opt.disableflags))
@@ -57,7 +62,7 @@ def test_native_obstruction_vs_allowed_pad_contact_without_mutation(*, name: str
 @pytest.mark.parametrize("fixture", FIXTURES["nominal"], ids=lambda row: str(row["seed"]))
 def test_nominal_lower_face_descent_stays_valid(*, fixture: dict) -> None:
     session = SweepSimpleSession(seed=fixture["seed"])
-    primitive = FloorPrimitives.create(session=session, distance=.7, heading_offset=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0)
     try:
         primitive.scene.sync(base=tuple(fixture["base"]))
         before = session.mj_data.qpos.copy()

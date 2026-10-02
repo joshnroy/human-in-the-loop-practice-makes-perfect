@@ -14,17 +14,34 @@ def test_separated_loaded_palm_grasp_can_retreat_but_penetration_is_rejected() -
     session = SweepSimpleSession(seed=0)
     scene = FloorPlanningScene(session=session, capture_path_rejections=True)
     try:
-        joints = [0.00441, 1.07365, 3.14013, -1.74943, 3.33812, -0.00411, -1.76809,
-                  0.6319, 0.6319, 0.6267, 0.62666, -0.62548, -0.62498]
+        joints = [
+            0.00441,
+            1.07365,
+            3.14013,
+            -1.74943,
+            3.33812,
+            -0.00411,
+            -1.76809,
+            0.6319,
+            0.6319,
+            0.6267,
+            0.62666,
+            -0.62548,
+            -0.62498,
+        ]
         position = np.array([0.000241994858, -0.018652379513, 0.300312131643])
         orientation = (0.997462153435, 0.000846872572, -0.000516393746, -0.071191705763)
         before = session.mj_data.qpos.copy()
         assert not scene.in_collision(
-            joints=joints, bodies=set(), held=scene.wiper_body,
+            joints=joints,
+            bodies=set(),
+            held=scene.wiper_body,
             held_tf=Pose(tuple(position), orientation),
         )
         assert scene.in_collision(
-            joints=joints, bodies=set(), held=scene.wiper_body,
+            joints=joints,
+            bodies=set(),
+            held=scene.wiper_body,
             held_tf=Pose(tuple(position + [0, 0, -0.02]), orientation),
         )
         rejection = scene._last_collision_rejection
@@ -44,10 +61,16 @@ def test_gripper_proxy_uses_whole_native_assembly_and_retains_real_overlap() -> 
         before = session.mj_data.qpos.copy()
         # v136 contact pose: URDF knuckle overlaps its chassis proxy, while the
         # actual closed native gripper is clear. Opening here really penetrates.
-        arm = [-1.093050003, 2.219830036, 3.2355299, -0.88578999,
-               -2.542520046, 1.677080035, 1.794229984]
-        fingers = [0.632371152, 0.632301165, 0.627343405,
-                   0.627005755, -0.626700401, -0.62686354]
+        arm = [
+            -1.093050003,
+            2.219830036,
+            3.2355299,
+            -0.88578999,
+            -2.542520046,
+            1.677080035,
+            1.794229984,
+        ]
+        fingers = [0.632371152, 0.632301165, 0.627343405, 0.627005755, -0.626700401, -0.62686354]
         chassis, _ = scene._native_chassis[0]
         assert scene.native_chassis_distance(
             link=16, chassis_geom=chassis, joints=arm + fingers
@@ -68,17 +91,29 @@ def test_ambiguous_zero_distance_uses_native_contacts_without_state_mutation() -
     try:
         before = session.mj_data.qpos.copy()
         flags = (int(session.mj_model.opt.enableflags), int(session.mj_model.opt.disableflags))
-        joints = [-4.037112236, -2.235447645, 6.205644608, -0.83306241,
-                  -2.16072917, 1.947588682, 1.619778872,
-                  0.631739705, 0.631668414, 0.626715387, 0.626406089,
-                  -0.626049358, -0.626740728]
+        joints = [
+            -4.037112236,
+            -2.235447645,
+            6.205644608,
+            -0.83306241,
+            -2.16072917,
+            1.947588682,
+            1.619778872,
+            0.631739705,
+            0.631668414,
+            0.626715387,
+            0.626406089,
+            -0.626049358,
+            -0.626740728,
+        ]
         chassis, _ = scene._native_chassis[0]
         assert scene.native_chassis_distance(
             link=4, chassis_geom=chassis, joints=joints
         ) == pytest.approx(1e-6)
         np.testing.assert_array_equal(session.mj_data.qpos, before)
         assert (
-            int(session.mj_model.opt.enableflags), int(session.mj_model.opt.disableflags)
+            int(session.mj_model.opt.enableflags),
+            int(session.mj_model.opt.disableflags),
         ) == flags
     finally:
         scene._sim.close()

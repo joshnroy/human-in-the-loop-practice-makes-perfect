@@ -13,7 +13,7 @@ from hitl_pmp.environments.sweep_simple3d.session import SweepSimpleSession
 
 def test_nominal_candidates_remain_exactly_unchanged() -> None:
     session = SweepSimpleSession(seed=0)
-    primitive = FloorPrimitives.create(session=session, distance=.7, heading_offset=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0)
     try:
         handle, index = primitive.wiper_handle_geometry()
         axis = session.mj_data.geom_xmat[handle].reshape(3, 3)[:, index]
@@ -29,7 +29,7 @@ def test_nominal_candidates_remain_exactly_unchanged() -> None:
 def test_recorded_tipped_overhead_frame_and_native_descent_clear() -> None:
     fixture = json.loads(Path(__file__).with_name("tipped_pickup_fixture.json").read_text())
     session = SweepSimpleSession(seed=0)
-    primitive = FloorPrimitives.create(session=session, distance=.7, heading_offset=0)
+    primitive = FloorPrimitives.create(session=session, distance=0.7, heading_offset=0)
     try:
         state = session.state.copy()
         for name, values in fixture["state"].items():
@@ -45,7 +45,7 @@ def test_recorded_tipped_overhead_frame_and_native_descent_clear() -> None:
         original = Primitives.wiper_grasp_orientations(primitive, axis=axes[:, index])
         actual = primitive.wiper_grasp_orientations(axis=axes[:, index])
         assert len(actual) == len(original) + 6
-        np.testing.assert_array_equal(actual[:len(original)], original)
+        np.testing.assert_array_equal(actual[: len(original)], original)
         closing, approach = actual[len(original)]
         np.testing.assert_allclose(approach, [0, 0, -1])
         np.testing.assert_allclose(closing[:2], axes[:2, 0] / np.linalg.norm(axes[:2, 0]))

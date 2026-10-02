@@ -24,9 +24,9 @@ class ContactTravelBudget(BaseModel):
     def targets(self) -> np.ndarray:
         # Preserve the original zero-behind command sequence exactly.
         if self.behind == 0:
-            return np.arange(self.step, min(self.length + .10, self.stroke + self.step), self.step)
+            return np.arange(self.step, min(self.length + 0.10, self.stroke + self.step), self.step)
         # Remaining cube travel excludes the clearance offset behind its anchor.
-        bound = self.behind + min(self.length + .10, self.stroke)
+        bound = self.behind + min(self.length + 0.10, self.stroke)
         return np.minimum(np.arange(self.step, bound + self.step, self.step), bound)
 
     def observe(self, *, projection: float, loaded: bool) -> bool:
@@ -102,13 +102,18 @@ class FloorPrimitives(Primitives):
         limit = self.scene.max_tool_tilt
         unload_tilt = max(0.0, limit - 0.10)
         if tilt >= unload_tilt:
-            self.session._write(record={
-                "kind": "contact_stroke_ended", "t": self.session.ticks,
-                "reason": "loaded tool tilt reserve exhausted; checked unload required",
-                "phase": phase, "tilt": tilt, "unload_tilt": unload_tilt,
-                "planning_tilt_limit": limit,
-                "already_over_planning_limit": tilt > limit,
-            })
+            self.session._write(
+                record={
+                    "kind": "contact_stroke_ended",
+                    "t": self.session.ticks,
+                    "reason": "loaded tool tilt reserve exhausted; checked unload required",
+                    "phase": phase,
+                    "tilt": tilt,
+                    "unload_tilt": unload_tilt,
+                    "planning_tilt_limit": limit,
+                    "already_over_planning_limit": tilt > limit,
+                }
+            )
             # An already-invalid starting pose still faces the unchanged retreat
             # checker and remains a failure if that checked route is unavailable.
             raise ContactTiltLimit
@@ -120,12 +125,18 @@ class FloorPrimitives(Primitives):
         arm = self.session.arm().copy()
         margin = FloorApproachPreference.native_margin(arm=arm, limits=self.scene._arm_limits)
         if margin <= 0.01:
-            self.session._write(record={
-                "kind": "contact_stroke_ended", "t": self.session.ticks,
-                "reason": "loaded native joint reserve exhausted; checked unload required",
-                "phase": phase, "native_joint_margin": margin, "required_reserve": 0.01,
-                "observed_arm": arm.tolist(), "already_outside_native_limits": margin < 0.0,
-            })
+            self.session._write(
+                record={
+                    "kind": "contact_stroke_ended",
+                    "t": self.session.ticks,
+                    "reason": "loaded native joint reserve exhausted; checked unload required",
+                    "phase": phase,
+                    "native_joint_margin": margin,
+                    "required_reserve": 0.01,
+                    "observed_arm": arm.tolist(),
+                    "already_outside_native_limits": margin < 0.0,
+                }
+            )
             raise ContactJointReserveLimit
 
     def wiper_pickup_descent_clear(self, *, start: np.ndarray, path: list[np.ndarray]) -> bool:
@@ -136,8 +147,9 @@ class FloorPrimitives(Primitives):
             self.scene._native_palm = NativePalmClearance(
                 model=self.session.mj_model, live_data=self.session.mj_data
             )
-        tool = Pose(tuple(self.session.position(name="wiper_0")),
-                    self.session.quaternion(name="wiper_0"))
+        tool = Pose(
+            tuple(self.session.position(name="wiper_0")), self.session.quaternion(name="wiper_0")
+        )
         previous = np.asarray(start)
         for waypoint in path:
             waypoint = previous + ArmMath.wrap(delta=np.asarray(waypoint) - previous)
@@ -146,15 +158,22 @@ class FloorPrimitives(Primitives):
                 arm = previous + fraction * (waypoint - previous)
                 contacts = self.scene._native_palm.nonpad_tool_contacts(
                     joints=self.scene.planning_fingers(arm=arm, state=0.0),
-                    tool_pose=tool, base=self.scene._planning_base,
+                    tool_pose=tool,
+                    base=self.scene._planning_base,
                 )
                 if contacts:
-                    self.session._write(record={
-                        "kind": "pickup_nonpad_path_rejection", "t": self.session.ticks,
-                        "fraction": float(fraction), "arm": arm.tolist(),
-                        "base": None if self.scene._planning_base is None
-                        else list(self.scene._planning_base), "contacts": contacts,
-                    })
+                    self.session._write(
+                        record={
+                            "kind": "pickup_nonpad_path_rejection",
+                            "t": self.session.ticks,
+                            "fraction": float(fraction),
+                            "arm": arm.tolist(),
+                            "base": None
+                            if self.scene._planning_base is None
+                            else list(self.scene._planning_base),
+                            "contacts": contacts,
+                        }
+                    )
                     return False
             previous = waypoint
         return True
@@ -173,8 +192,10 @@ class FloorPrimitives(Primitives):
             return orientations
         handle, handle_axis = self.wiper_handle_geometry()
         axes = np.asarray(self.session.mj_data.geom_xmat[handle]).reshape(3, 3)
-        face = max((axes[:, i] for i in range(3) if i != handle_axis),
-                   key=lambda a: float(np.linalg.norm(a[:2])))
+        face = max(
+            (axes[:, i] for i in range(3) if i != handle_axis),
+            key=lambda a: float(np.linalg.norm(a[:2])),
+        )
         yaw = float(np.arctan2(face[1], face[0]))
         for azimuth in (yaw, yaw + np.pi):
             closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
@@ -198,12 +219,17 @@ class FloorPrimitives(Primitives):
                 arm = self.session.arm().copy()
                 held_tf = multiply_poses(
                     self.scene.ee_now().invert(),
-                    Pose(tuple(self.session.position(name="wiper_0")),
-                         self.session.quaternion(name="wiper_0")),
+                    Pose(
+                        tuple(self.session.position(name="wiper_0")),
+                        self.session.quaternion(name="wiper_0"),
+                    ),
                 )
                 if self.scene.held_path_clear(
-                    path=[arm], start=arm, bodies=self.scene.bodies(),
-                    held=self.scene.wiper_body, held_tf=held_tf,
+                    path=[arm],
+                    start=arm,
+                    bodies=self.scene.bodies(),
+                    held=self.scene.wiper_body,
+                    held_tf=held_tf,
                     allowed_tilt=self.scene.max_tool_tilt,
                 ):
                     return arm
@@ -232,15 +258,18 @@ class FloorPrimitives(Primitives):
         center = np.asarray(data.geom_xpos[handle])
         axis = np.asarray(data.geom_xmat[handle]).reshape(3, 3)[:, handle_axis]
         point = self.wiper_grasp_point(center=center, axis=axis, along=along)
-        refreshed = Pose(tuple(point - approach * self.wiper_grasp_standoff()),
-                         target.orientation)
-        hover = Pose(tuple(np.asarray(refreshed.position) - approach * 0.08),
-                     refreshed.orientation)
-        self.session._write(record={
-            "kind": "pickup_target_refreshed", "t": self.session.ticks,
-            "previous_target": list(target.position), "target": list(refreshed.position),
-            "observed_handle_center": center.tolist(), "observed_handle_axis": axis.tolist(),
-        })
+        refreshed = Pose(tuple(point - approach * self.wiper_grasp_standoff()), target.orientation)
+        hover = Pose(tuple(np.asarray(refreshed.position) - approach * 0.08), refreshed.orientation)
+        self.session._write(
+            record={
+                "kind": "pickup_target_refreshed",
+                "t": self.session.ticks,
+                "previous_target": list(target.position),
+                "target": list(refreshed.position),
+                "observed_handle_center": center.tolist(),
+                "observed_handle_axis": axis.tolist(),
+            }
+        )
         # The shared caller still resolves IK and collision-checks approach and
         # descent at the actual base. This hook neither moves nor grasps anything.
         return hover, refreshed
@@ -271,21 +300,46 @@ class FloorPrimitives(Primitives):
         # Include mutable native geometry, not just model identity: diagnostic
         # restores and human actions must never reuse a different scene's failure.
         for name in (
-            "geom_type", "geom_size", "geom_pos", "geom_quat", "geom_bodyid",
-            "geom_contype", "geom_conaffinity", "geom_margin", "geom_gap",
-            "body_pos", "body_quat", "jnt_range", "jnt_pos", "jnt_axis",
-            "mesh_vert", "mesh_face", "hfield_data", "hfield_size",
-            "geom_dataid", "exclude_signature", "pair_geom1", "pair_geom2",
+            "geom_type",
+            "geom_size",
+            "geom_pos",
+            "geom_quat",
+            "geom_bodyid",
+            "geom_contype",
+            "geom_conaffinity",
+            "geom_margin",
+            "geom_gap",
+            "body_pos",
+            "body_quat",
+            "jnt_range",
+            "jnt_pos",
+            "jnt_axis",
+            "mesh_vert",
+            "mesh_face",
+            "hfield_data",
+            "hfield_size",
+            "geom_dataid",
+            "exclude_signature",
+            "pair_geom1",
+            "pair_geom2",
         ):
             geometry.update(np.asarray(getattr(model, name)).tobytes())
         cache_key = (
-            id(model), id(self.scene), geometry.digest(),
-            model.opt.enableflags, model.opt.disableflags,
-            data.qpos.tobytes(), data.qvel.tobytes(),
-            data.mocap_pos.tobytes(), data.mocap_quat.tobytes(),
-            data.geom_xpos.tobytes(), data.geom_xmat.tobytes(),
-            tuple(held_tf.position), tuple(held_tf.orientation),
-            self.scene.max_tool_tilt, tuple(sorted(self.scene.bodies())),
+            id(model),
+            id(self.scene),
+            geometry.digest(),
+            model.opt.enableflags,
+            model.opt.disableflags,
+            data.qpos.tobytes(),
+            data.qvel.tobytes(),
+            data.mocap_pos.tobytes(),
+            data.mocap_quat.tobytes(),
+            data.geom_xpos.tobytes(),
+            data.geom_xmat.tobytes(),
+            tuple(held_tf.position),
+            tuple(held_tf.orientation),
+            self.scene.max_tool_tilt,
+            tuple(sorted(self.scene.bodies())),
         )
         if self._exhausted_stow_key == cache_key:
             raise ExecutionError("No collision-free compact tool transport pose")
@@ -293,9 +347,11 @@ class FloorPrimitives(Primitives):
 
         def carry_endpoint_clear(*, arm: np.ndarray) -> bool:
             tool = multiply_poses(self.scene.fk(arm=arm), held_tf)
-            tilt = float(np.arccos(np.clip(
-                Rotation.from_quat(tool.orientation).as_matrix()[2, 2], -1.0, 1.0
-            )))
+            tilt = float(
+                np.arccos(
+                    np.clip(Rotation.from_quat(tool.orientation).as_matrix()[2, 2], -1.0, 1.0)
+                )
+            )
             return tilt <= self.scene.max_tool_tilt
 
         home = np.asarray(SweepDrawerScene.HOME)
@@ -384,9 +440,11 @@ class FloorPrimitives(Primitives):
             else:
                 continue
             name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[other])
-            if name and name.startswith("robot_") and name not in {
-                "robot_left_pad", "robot_right_pad"
-            }:
+            if (
+                name
+                and name.startswith("robot_")
+                and name not in {"robot_left_pad", "robot_right_pad"}
+            ):
                 bodies.add(name)
         return sorted(bodies)
 
@@ -445,15 +503,22 @@ class FloorPrimitives(Primitives):
         rear_reach = stand_off + blade_half_depth + 0.015
         half_width = 0.025 if narrow else 0.16
         return max(
-            [0.0] + [
-                -along for along, across in relative_positions
+            [0.0]
+            + [
+                -along
+                for along, across in relative_positions
                 if -rear_reach <= along < 0.0 and abs(across) <= half_width
             ]
         )
 
     def fixed_reverse_stance(
-        self, *, region: str, distance: float, wiper_start: np.ndarray,
-        bearing: float, original: tuple[float, float, float],
+        self,
+        *,
+        region: str,
+        distance: float,
+        wiper_start: np.ndarray,
+        bearing: float,
+        original: tuple[float, float, float],
     ) -> tuple[float, float, float]:
         """Keep learned stances unchanged; retry the fixed .70 reset at checked .65."""
         if region != "blocks_init_region" or distance != 0.70:
@@ -461,17 +526,21 @@ class FloorPrimitives(Primitives):
         if self.scene.plan_base(target=original) is not None:
             return original
         alternative = (
-            float(wiper_start[0] + .65 * np.cos(bearing)),
-            float(wiper_start[1] + .65 * np.sin(bearing)),
+            float(wiper_start[0] + 0.65 * np.cos(bearing)),
+            float(wiper_start[1] + 0.65 * np.sin(bearing)),
             original[2],
         )
         if self.scene.plan_base(target=alternative) is None:
             raise ExecutionError("No native base route to either fixed reverse stance")
-        self.session._write(record={
-            "kind": "fixed_reverse_stance_fallback", "t": self.session.ticks,
-            "original": original, "selected": alternative,
-            "reason": "Original .70 fixed reverse base route rejected; checked .65 route",
-        })
+        self.session._write(
+            record={
+                "kind": "fixed_reverse_stance_fallback",
+                "t": self.session.ticks,
+                "original": original,
+                "selected": alternative,
+                "reason": "Original .70 fixed reverse base route rejected; checked .65 route",
+            }
+        )
         return alternative
 
     def _sweep_cube_stroke(
@@ -548,8 +617,11 @@ class FloorPrimitives(Primitives):
             stance_angle,
         )
         stance = self.fixed_reverse_stance(
-            region=region, distance=distance, wiper_start=wiper_start,
-            bearing=stance_bearing, original=stance,
+            region=region,
+            distance=distance,
+            wiper_start=wiper_start,
+            bearing=stance_bearing,
+            original=stance,
         )
         self.transport_wiper(target=stance)
         self.require_handle(phase="base transport")
@@ -572,8 +644,11 @@ class FloorPrimitives(Primitives):
             tool_yaws=tool_yaws, region=region, narrow_contact=narrow_contact
         ):
             floor_pose = self.floor_tool_pose(
-                xy=wiper_start, yaw=tool_yaw, preserve_tilt=preserve_tilt,
-                tilt=nearby_tilt, blade_axis=blade_axis,
+                xy=wiper_start,
+                yaw=tool_yaw,
+                preserve_tilt=preserve_tilt,
+                tilt=nearby_tilt,
+                blade_axis=blade_axis,
             )
             floor_ee = multiply_poses(floor_pose, held_tf.invert())
             for lift_height in (0.14, 0.24):
@@ -642,8 +717,15 @@ class FloorPrimitives(Primitives):
                         margin, attempts[-1].get("best_endpoint_native_margin", -np.inf)
                     )
                     if preference.consider(
-                        candidate=(candidate, candidate_lower, tool_yaw, preserve_tilt,
-                                   nearby_tilt, floor_pose, blade_axis),
+                        candidate=(
+                            candidate,
+                            candidate_lower,
+                            tool_yaw,
+                            preserve_tilt,
+                            nearby_tilt,
+                            floor_pose,
+                            blade_axis,
+                        ),
                         margin=margin,
                     ):
                         break
@@ -716,15 +798,17 @@ class FloorPrimitives(Primitives):
             final_tol=0.005,
             tick_guard=lambda: self.require_handle(phase="floor descent"),
         ):
-            self.session._write(record={
-                "kind": "floor_descent_failed",
-                "t": self.session.ticks,
-                "goal_arm": np.asarray(lower[-1]).tolist(),
-                "actual_arm": self.session.arm().tolist(),
-                "goal_tool_position": floor_pose.position,
-                "actual_tool_position": self.session.position(name="wiper_0").tolist(),
-                "native_qpos": self.session.mj_data.qpos.tolist(),
-            })
+            self.session._write(
+                record={
+                    "kind": "floor_descent_failed",
+                    "t": self.session.ticks,
+                    "goal_arm": np.asarray(lower[-1]).tolist(),
+                    "actual_arm": self.session.arm().tolist(),
+                    "goal_tool_position": floor_pose.position,
+                    "actual_tool_position": self.session.position(name="wiper_0").tolist(),
+                    "native_qpos": self.session.mj_data.qpos.tolist(),
+                }
+            )
             raise ExecutionError("Floor sweep descent did not converge")
         self.require_handle(phase="floor descent")
         # Close the loop on actual blade overlap, bounded by native floor clearance.
@@ -797,13 +881,18 @@ class FloorPrimitives(Primitives):
         )
         contact_ended = False
         tilt_unload = False
-        travel = ContactTravelBudget(length=length, stroke=self.contact_stroke_length,
-                                     step=self.contact_step, behind=behind)
-        self.session._write(record={
-            "kind": "contact_travel_budget", "t": self.session.ticks,
-            "free_lead_in": behind, "loaded_limit": self.contact_stroke_length,
-            "command_projection_limit": float(travel.targets()[-1]),
-        })
+        travel = ContactTravelBudget(
+            length=length, stroke=self.contact_stroke_length, step=self.contact_step, behind=behind
+        )
+        self.session._write(
+            record={
+                "kind": "contact_travel_budget",
+                "t": self.session.ticks,
+                "free_lead_in": behind,
+                "loaded_limit": self.contact_stroke_length,
+                "command_projection_limit": float(travel.targets()[-1]),
+            }
+        )
 
         def observe_contact_travel() -> None:
             self.guard_loaded_joint_reserve(phase="contact drive")
@@ -812,17 +901,25 @@ class FloorPrimitives(Primitives):
             before = travel.onset
             reached = travel.observe(projection=projection, loaded=self.wiper_loaded_by_cube())
             if before is None and travel.onset is not None:
-                self.session._write(record={
-                    "kind": "contact_load_onset", "t": self.session.ticks,
-                    "base_projection": travel.onset, "free_lead_in": behind,
-                    "loaded_projection_limit": travel.onset + travel.stroke,
-                })
+                self.session._write(
+                    record={
+                        "kind": "contact_load_onset",
+                        "t": self.session.ticks,
+                        "base_projection": travel.onset,
+                        "free_lead_in": behind,
+                        "loaded_projection_limit": travel.onset + travel.stroke,
+                    }
+                )
             if reached:
-                self.session._write(record={
-                    "kind": "contact_loaded_limit", "t": self.session.ticks,
-                    "base_projection": projection, "contact_onset": travel.onset,
-                    "loaded_limit": travel.stroke,
-                })
+                self.session._write(
+                    record={
+                        "kind": "contact_loaded_limit",
+                        "t": self.session.ticks,
+                        "base_projection": projection,
+                        "contact_onset": travel.onset,
+                        "loaded_limit": travel.stroke,
+                    }
+                )
                 raise ContactTravelLimit
 
         for proposed in travel.targets():
@@ -899,7 +996,11 @@ class FloorPrimitives(Primitives):
                 continue
             try:
                 driven = self.motion.drive(
-                    path=base_path, grip=1.0, max_ticks=30, arm=contact_arm, tol=0.0005,
+                    path=base_path,
+                    grip=1.0,
+                    max_ticks=30,
+                    arm=contact_arm,
+                    tol=0.0005,
                     tick_guard=observe_contact_travel,
                 )
             except ContactTravelLimit as stop:
@@ -918,31 +1019,36 @@ class FloorPrimitives(Primitives):
                     self.session.quaternion(name="wiper_0"),
                 ),
             )
-            grasp_translation = float(np.linalg.norm(
-                np.asarray(observed_grasp.position) - contact_grasp.position
-            ))
-            grasp_rotation = float((
-                Rotation.from_quat(observed_grasp.orientation)
-                * Rotation.from_quat(contact_grasp.orientation).inv()
-            ).magnitude())
+            grasp_translation = float(
+                np.linalg.norm(np.asarray(observed_grasp.position) - contact_grasp.position)
+            )
+            grasp_rotation = float(
+                (
+                    Rotation.from_quat(observed_grasp.orientation)
+                    * Rotation.from_quat(contact_grasp.orientation).inv()
+                ).magnitude()
+            )
             unexpected_contacts = self.handle_nonpad_gripper_contacts()
             unload = (
-                bool(unexpected_contacts) if self.native_contact_guard
+                bool(unexpected_contacts)
+                if self.native_contact_guard
                 else grasp_translation > 0.01 or grasp_rotation > 0.06
             )
             if unload:
-                self.session._write(record={
-                    "kind": "contact_stroke_ended",
-                    "t": self.session.ticks,
-                    "reason": (
-                        "native handle contact outside finger pads; unload"
-                        if self.native_contact_guard
-                        else "loaded grasp drift; unload before further correction"
-                    ),
-                    "unexpected_handle_contacts": unexpected_contacts,
-                    "grasp_translation_m": grasp_translation,
-                    "grasp_rotation_rad": grasp_rotation,
-                })
+                self.session._write(
+                    record={
+                        "kind": "contact_stroke_ended",
+                        "t": self.session.ticks,
+                        "reason": (
+                            "native handle contact outside finger pads; unload"
+                            if self.native_contact_guard
+                            else "loaded grasp drift; unload before further correction"
+                        ),
+                        "unexpected_handle_contacts": unexpected_contacts,
+                        "grasp_translation_m": grasp_translation,
+                        "grasp_rotation_rad": grasp_rotation,
+                    }
+                )
                 contact_ended = True
                 break
             for _ in range(8):
@@ -1022,9 +1128,10 @@ class FloorPrimitives(Primitives):
                         final_tol=0.0005,
                         max_ticks=180,
                         tick_guard=correction_guard,
-                        stop_condition=lambda: self.blade_bottom_height(
-                            cube=cube, narrow=narrow_contact
-                        ) <= self.contact_control_ceiling(cube=cube, region=region),
+                        stop_condition=lambda: (
+                            self.blade_bottom_height(cube=cube, narrow=narrow_contact)
+                            <= self.contact_control_ceiling(cube=cube, region=region)
+                        ),
                     )
                 except (ContactTiltLimit, ContactJointReserveLimit) as stop:
                     tilt_unload = isinstance(stop, ContactTiltLimit)
@@ -1051,22 +1158,26 @@ class FloorPrimitives(Primitives):
                     break
                 attained_height = self.blade_bottom_height(cube=cube, narrow=narrow_contact)
                 if attained_height > contact_ceiling:
-                    self.session._write(record={
-                        "kind": "contact_stroke_ended",
-                        "t": self.session.ticks,
-                        "reason": "joint convergence did not attain physical contact height",
-                        "blade_bottom": attained_height,
-                        "control_contact_ceiling": contact_ceiling,
-                    })
+                    self.session._write(
+                        record={
+                            "kind": "contact_stroke_ended",
+                            "t": self.session.ticks,
+                            "reason": "joint convergence did not attain physical contact height",
+                            "blade_bottom": attained_height,
+                            "control_contact_ceiling": contact_ceiling,
+                        }
+                    )
                     contact_ended = True
                     break
-                self.session._write(record={
-                    "kind": "contact_overlap_corrected",
-                    "t": self.session.ticks,
-                    "blade_bottom": self.blade_bottom_height(cube=cube, narrow=narrow_contact),
-                    "cube_contact_ceiling": self.cube_contact_ceiling(cube=cube),
-                    "control_contact_ceiling": contact_ceiling,
-                })
+                self.session._write(
+                    record={
+                        "kind": "contact_overlap_corrected",
+                        "t": self.session.ticks,
+                        "blade_bottom": self.blade_bottom_height(cube=cube, narrow=narrow_contact),
+                        "cube_contact_ceiling": self.cube_contact_ceiling(cube=cube),
+                        "control_contact_ceiling": contact_ceiling,
+                    }
+                )
                 contact_arm = self.session.arm().copy()
             if contact_ended:
                 break
@@ -1196,9 +1307,12 @@ class FloorPrimitives(Primitives):
                 "path_found": path is not None,
                 "clearance_attained": success,
                 "execution_terminated": execution_terminated,
-                "joint_target_reached": path is not None and bool(path) and float(np.max(np.abs(
-                    ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm())
-                ))) < 0.005,
+                "joint_target_reached": path is not None
+                and bool(path)
+                and float(
+                    np.max(np.abs(ArmMath.wrap(delta=np.asarray(path[-1]) - self.session.arm())))
+                )
+                < 0.005,
                 "path_waypoints": None if path is None else len(path),
                 "goal_arm": None if not path else np.asarray(path[-1]).tolist(),
                 "actual_arm": self.session.arm().tolist(),
@@ -1229,12 +1343,18 @@ class FloorPrimitives(Primitives):
                 return
             improved = self.level_blade(bodies=bodies)
             after = observed_tilt()
-            self.session._write(record={
-                "kind": "unloaded_tilt_recovery", "t": self.session.ticks,
-                "attempt": attempt + 1, "before_tilt": before, "after_tilt": after,
-                "target_tilt": target, "measured_progress": before - after,
-                "leveling_success": improved,
-            })
+            self.session._write(
+                record={
+                    "kind": "unloaded_tilt_recovery",
+                    "t": self.session.ticks,
+                    "attempt": attempt + 1,
+                    "before_tilt": before,
+                    "after_tilt": after,
+                    "target_tilt": target,
+                    "measured_progress": before - after,
+                    "leveling_success": improved,
+                }
+            )
             if not improved or after >= before - 0.002:
                 raise ExecutionError("Checked unloaded leveling made no measured tilt progress")
         if self.wiper_loaded_by_cube():
@@ -1250,12 +1370,16 @@ class FloorPrimitives(Primitives):
             return cached
         observed = self.session.arm().copy()
         valid = self.scene.within_arm_limits(arm=observed)
-        self.session._write(record={
-            "kind": "contact_hold_limit_refresh", "t": self.session.ticks,
-            "cached_arm": cached.tolist(), "observed_arm": observed.tolist(),
-            "observed_within_native_limits": bool(valid),
-            "reason": "cached_hold_outside_native_joint_limits",
-        })
+        self.session._write(
+            record={
+                "kind": "contact_hold_limit_refresh",
+                "t": self.session.ticks,
+                "cached_arm": cached.tolist(),
+                "observed_arm": observed.tolist(),
+                "observed_within_native_limits": bool(valid),
+                "reason": "cached_hold_outside_native_joint_limits",
+            }
+        )
         if not valid:
             raise ExecutionError("Cached and observed contact arms violate native joint limits")
         return observed
@@ -1314,8 +1438,7 @@ class FloorPrimitives(Primitives):
         support = int(np.argmin(world[:, 2]))
         # Preserve support-pivot attempts first. An unloaded low grasp can
         # require a small lift to keep the elbow inside its native joint limit.
-        for turn, lift in ((0.08, 0.0), (0.04, 0.0), (0.02, 0.0),
-                           (0.04, 0.02), (0.02, 0.01)):
+        for turn, lift in ((0.08, 0.0), (0.04, 0.0), (0.02, 0.0), (0.04, 0.02), (0.02, 0.01)):
             rotation = Rotation.from_rotvec(delta * min(1.0, turn / angle)) * observed
             position = world[support] - rotation.apply(local[support])
             corners = rotation.apply(local) + position
@@ -1327,9 +1450,9 @@ class FloorPrimitives(Primitives):
                 start=self.session.arm(), target=target, bodies=bodies, held_tf=held_tf
             )
             endpoint_margin = (
-                FloorApproachPreference.native_margin(
-                    arm=path[-1], limits=self.scene._arm_limits
-                ) if path else None
+                FloorApproachPreference.native_margin(arm=path[-1], limits=self.scene._arm_limits)
+                if path
+                else None
             )
             reserve_ok = endpoint_margin is not None and endpoint_margin >= 0.01
             before_tilt = float(np.arccos(np.clip(observed.as_matrix()[2, 2], -1.0, 1.0)))
@@ -1424,14 +1547,20 @@ class FloorPrimitives(Primitives):
         return min(ceiling, self.floor_clearance + 0.003)
 
     def contact_orientation_candidates(
-        self, *, tool_yaws: tuple[float, ...], region: str, narrow_contact: bool,
+        self,
+        *,
+        tool_yaws: tuple[float, ...],
+        region: str,
+        narrow_contact: bool,
     ) -> list[tuple[float, bool, float | None, bool]]:
         """Try broad reset contact about the blade long axis before observed lean."""
         candidates: list[tuple[float, bool, float | None, bool]] = []
         if region == "blocks_init_region" and not narrow_contact:
             candidates.extend((yaw, True, 0.2, True) for yaw in tool_yaws)
-        candidates.extend((yaw, preserve, tilt, False) for yaw, preserve, tilt
-                          in self.floor_orientation_candidates(tool_yaws=tool_yaws))
+        candidates.extend(
+            (yaw, preserve, tilt, False)
+            for yaw, preserve, tilt in self.floor_orientation_candidates(tool_yaws=tool_yaws)
+        )
         return candidates
 
     def floor_orientation_candidates(
@@ -1451,9 +1580,11 @@ class FloorPrimitives(Primitives):
             tilt = observed + delta
             if delta > 0 and observed < ceiling:
                 tilt = min(tilt, ceiling)
-            if (0.0 < tilt <= ceiling
-                    and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
-                    and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
+            if (
+                0.0 < tilt <= ceiling
+                and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
+                and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)
+            ):
                 nearby.append(tilt)
                 candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
         # A slipped overhead grasp can need .99 rad to keep the elbow away
@@ -1461,16 +1592,23 @@ class FloorPrimitives(Primitives):
         # loaded-unload reserve; it does not change either route/guard limit.
         for tilt in (0.2, 0.4, 0.6, 0.8, 0.95, 0.99):
             candidate_ceiling = self.scene.max_tool_tilt - 0.10 if tilt == 0.99 else ceiling
-            if (tilt <= candidate_ceiling
-                    and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
-                    and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)):
+            if (
+                tilt <= candidate_ceiling
+                and not np.isclose(tilt, observed, rtol=0, atol=1e-12)
+                and not any(np.isclose(tilt, prior, rtol=0, atol=1e-12) for prior in nearby)
+            ):
                 nearby.append(tilt)
                 candidates.extend((yaw, True, tilt) for yaw in tool_yaws)
         return candidates
 
     def floor_tool_pose(
-        self, *, xy: np.ndarray, yaw: float, preserve_tilt: bool = True,
-        tilt: float | None = None, blade_axis: bool = False,
+        self,
+        *,
+        xy: np.ndarray,
+        yaw: float,
+        preserve_tilt: bool = True,
+        tilt: float | None = None,
+        blade_axis: bool = False,
     ) -> Pose:
         """Preserve observed tilt and seat the native blade at its actual support height."""
         from itertools import product
@@ -1513,7 +1651,8 @@ class FloorPrimitives(Primitives):
             local_blade_rotation = observed.T @ blade_rotation
             target_rotation = (
                 Rotation.from_euler("z", yaw).as_matrix()
-                @ Rotation.from_euler("x", tilt).as_matrix() @ local_blade_rotation.T
+                @ Rotation.from_euler("x", tilt).as_matrix()
+                @ local_blade_rotation.T
             )
         world_corners = np.array([
             data.geom_xpos[blade] + blade_rotation @ (model.geom_size[blade] * signs)
@@ -1573,8 +1712,10 @@ class FloorPrimitives(Primitives):
     def transport_route_burden(*, path: list[tuple[float, float, float]]) -> float:
         """Use the native base planner's translation-plus-wrapped-yaw metric."""
         delta = np.diff(np.asarray(path), axis=0)
-        return float(np.linalg.norm(delta[:, :2], axis=1).sum()
-                     + np.abs((delta[:, 2] + np.pi) % (2 * np.pi) - np.pi).sum())
+        return float(
+            np.linalg.norm(delta[:, :2], axis=1).sum()
+            + np.abs((delta[:, 2] + np.pi) % (2 * np.pi) - np.pi).sum()
+        )
 
     def transport_base_candidates(
         self, *, target: tuple[float, float, float]
@@ -1592,14 +1733,14 @@ class FloorPrimitives(Primitives):
         start = self.session.base()
         core = self.session.env.unwrapped._object_centric_env
         ranges = core.task_config["regions"]["sweep_region"]["ranges"]
-        robot, = self.session.state.get_objects(MujocoTidyBotRobotObjectType)
+        (robot,) = self.session.state.get_objects(MujocoTidyBotRobotObjectType)
         width, depth, _ = get_bounding_box(self.session.state, robot)
         # A chassis half-diagonal clears every heading above this region. The
         # extra 20 mm is the existing base planning clearance, not a goal change.
-        aisle_y = max(start[1], target[1],
-                      max(box[3] for box in ranges) + np.hypot(width, depth) / 2 + 0.02)
-        waypoints = [(start[0], aisle_y, start[2]),
-                     (target[0], aisle_y, target[2]), target]
+        aisle_y = max(
+            start[1], target[1], max(box[3] for box in ranges) + np.hypot(width, depth) / 2 + 0.02
+        )
+        waypoints = [(start[0], aisle_y, start[2]), (target[0], aisle_y, target[2]), target]
         path = [start]
         for waypoint in waypoints:
             leg = self.scene.plan_base(target=waypoint, start=path[-1])
@@ -1663,13 +1804,19 @@ class FloorPrimitives(Primitives):
             clear = bool(safe_paths)
             if clear:
                 burden, label, path = min(safe_paths, key=lambda item: item[0])
-                self.session._write(record={
-                    "kind": "transport_route_selected", "t": self.session.ticks,
-                    "stowed": stow, "route": label, "burden": burden,
-                    "path": path, "target": target,
-                    "held_position": list(held_tf.position),
-                    "held_orientation": list(held_tf.orientation),
-                })
+                self.session._write(
+                    record={
+                        "kind": "transport_route_selected",
+                        "t": self.session.ticks,
+                        "stowed": stow,
+                        "route": label,
+                        "burden": burden,
+                        "path": path,
+                        "target": target,
+                        "held_position": list(held_tf.position),
+                        "held_orientation": list(held_tf.orientation),
+                    }
+                )
                 if not self.motion.drive(
                     path=path,
                     grip=1.0,
@@ -1701,28 +1848,38 @@ class FloorPrimitives(Primitives):
                 return
             held_tf = multiply_poses(
                 self.scene.ee_now().invert(),
-                Pose(tuple(self.session.position(name="wiper_0")),
-                     self.session.quaternion(name="wiper_0")),
+                Pose(
+                    tuple(self.session.position(name="wiper_0")),
+                    self.session.quaternion(name="wiper_0"),
+                ),
             )
 
             def grasp_drifted(*, reference: Pose = held_tf) -> bool:
                 observed = multiply_poses(
                     self.scene.ee_now().invert(),
-                    Pose(tuple(self.session.position(name="wiper_0")),
-                         self.session.quaternion(name="wiper_0")),
+                    Pose(
+                        tuple(self.session.position(name="wiper_0")),
+                        self.session.quaternion(name="wiper_0"),
+                    ),
                 )
-                translation = float(np.linalg.norm(
-                    np.asarray(observed.position) - np.asarray(reference.position)
-                ))
-                rotation = float((Rotation.from_quat(observed.orientation)
-                                  * Rotation.from_quat(reference.orientation).inv()).magnitude())
+                translation = float(
+                    np.linalg.norm(np.asarray(observed.position) - np.asarray(reference.position))
+                )
+                rotation = float(
+                    (
+                        Rotation.from_quat(observed.orientation)
+                        * Rotation.from_quat(reference.orientation).inv()
+                    ).magnitude()
+                )
                 return translation > 0.01 or rotation > 0.06
 
             path = self.scene.plan_arm(
                 goal=goal, bodies=self.scene.bodies(), held=self.scene.wiper_body, held_tf=held_tf
             )
             if path is None or not self.motion.follow(
-                path=path, grip=1.0, final_tol=0.025,
+                path=path,
+                grip=1.0,
+                final_tol=0.025,
                 tick_guard=lambda: self.require_handle(phase="upright transport"),
                 stop_condition=grasp_drifted,
             ):
@@ -1746,14 +1903,15 @@ class FloorPrimitives(Primitives):
 
         candidates = list(self.stances(target=position, where="floor"))
         north = (float(position[0]), float(position[1] + self.distance), -np.pi / 2)
-        if not any(np.allclose(candidate, north, rtol=0.0, atol=1e-9)
-                   for candidate in candidates):
+        if not any(np.allclose(candidate, north, rtol=0.0, atol=1e-9) for candidate in candidates):
             candidates.append(north)
         arm = self.session.arm().copy()
         held_tf = multiply_poses(
             self.scene.ee_now().invert(),
-            Pose(tuple(self.session.position(name="wiper_0")),
-                 self.session.quaternion(name="wiper_0")),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
         )
         try:
             for target in candidates:
@@ -1764,7 +1922,8 @@ class FloorPrimitives(Primitives):
                         self.scene.sync(base=base)
                         if self.scene.in_collision(
                             joints=self.scene.planning_fingers(arm=arm, state=0.5),
-                            bodies=self.scene.bodies(), held=self.scene.wiper_body,
+                            bodies=self.scene.bodies(),
+                            held=self.scene.wiper_body,
                             held_tf=held_tf,
                         ):
                             clear = False
@@ -1780,8 +1939,9 @@ class FloorPrimitives(Primitives):
         from scipy.spatial.transform import Rotation
 
         core = self.session.env.unwrapped._object_centric_env
-        region = next(region for _, name, region in core.task_config["initial_state"]
-                      if name == "wiper_0")
+        region = next(
+            region for _, name, region in core.task_config["initial_state"] if name == "wiper_0"
+        )
         ranges = core.task_config["regions"][region].get("yaw_ranges", [[0.0, 360.0]])
         if not ranges:
             raise ExecutionError("Wiper start region has no yaw interval")
@@ -1789,8 +1949,12 @@ class FloorPrimitives(Primitives):
         if not np.isfinite((low, high)).all() or low > high:
             raise ExecutionError("Unsupported native wiper start yaw interval")
         quaternion = Rotation.from_euler("z", np.radians((low + high) / 2)).as_quat()
-        return (float(quaternion[0]), float(quaternion[1]),
-                float(quaternion[2]), float(quaternion[3]))
+        return (
+            float(quaternion[0]),
+            float(quaternion[1]),
+            float(quaternion[2]),
+            float(quaternion[3]),
+        )
 
     def place_wiper_at_start(self) -> str:
         from pybullet_helpers.geometry import Pose, multiply_poses
@@ -1819,20 +1983,26 @@ class FloorPrimitives(Primitives):
             )
             self.scene.sync()
             solutions = [
-                solution for solution in ikfast_closest_inverse_kinematics(
+                solution
+                for solution in ikfast_closest_inverse_kinematics(
                     self.scene.robot, world_from_target=hover
-                ) if self.scene.within_arm_limits(arm=solution[:7])
+                )
+                if self.scene.within_arm_limits(arm=solution[:7])
             ]
             for solution in solutions[:12]:
                 candidate = self.scene.plan_arm(
-                    goal=solution[:7], bodies=bodies,
-                    held=self.scene.wiper_body, held_tf=held_tf,
+                    goal=solution[:7],
+                    bodies=bodies,
+                    held=self.scene.wiper_body,
+                    held_tf=held_tf,
                 )
                 if candidate is None:
                     continue
                 descent = self.scene.floor_descent(
-                    start=np.asarray(candidate[-1]), target=ee_target,
-                    bodies=bodies, held_tf=held_tf,
+                    start=np.asarray(candidate[-1]),
+                    target=ee_target,
+                    bodies=bodies,
+                    held_tf=held_tf,
                 )
                 if descent is not None:
                     path = candidate
@@ -1844,8 +2014,10 @@ class FloorPrimitives(Primitives):
         self.require_handle(phase="wiper placement approach")
         held_tf = multiply_poses(
             self.scene.ee_now().invert(),
-            Pose(tuple(self.session.position(name="wiper_0")),
-                 self.session.quaternion(name="wiper_0")),
+            Pose(
+                tuple(self.session.position(name="wiper_0")),
+                self.session.quaternion(name="wiper_0"),
+            ),
         )
         ee_target = multiply_poses(body_target, held_tf.invert())
         hover = Pose(
@@ -2190,8 +2362,10 @@ class FloorPlanningScene(PlanningScene):
             clearance = 0.0 if contact[4] == 10 else 0.005
             if contact[4] <= 10 and contact[8] < clearance:
                 if (
-                    contact[4] == 10 and held == self.wiper_body
-                    and held_tf is not None and len(joints) == 13
+                    contact[4] == 10
+                    and held == self.wiper_body
+                    and held_tf is not None
+                    and len(joints) == 13
                 ):
                     from hitl_pmp.environments.sweep_simple3d.native_palm import NativePalmClearance
 
@@ -2234,10 +2408,17 @@ class FloorPlanningScene(PlanningScene):
             bodies = {body}
         elif name in {
             "robotiq_arg2f_base_link",
-            *(f"{side}_{part}" for side in ("left", "right") for part in (
-                "outer_knuckle", "outer_finger", "inner_finger",
-                "inner_finger_pad", "inner_knuckle",
-            )),
+            *(
+                f"{side}_{part}"
+                for side in ("left", "right")
+                for part in (
+                    "outer_knuckle",
+                    "outer_finger",
+                    "inner_finger",
+                    "inner_finger_pad",
+                    "inner_knuckle",
+                )
+            ),
         }:
             # The URDF and native Robotiq assets name their articulated links
             # differently. Query the WHOLE native gripper conservatively, not
@@ -2612,7 +2793,10 @@ class FloorPlanningScene(PlanningScene):
         return True
 
     def plan_base(
-        self, *, target: tuple[float, float, float], margin: float = 0.02,
+        self,
+        *,
+        target: tuple[float, float, float],
+        margin: float = 0.02,
         start: tuple[float, float, float] | None = None,
     ) -> list[tuple[float, float, float]] | None:
         del margin
@@ -2629,14 +2813,20 @@ class FloorPlanningScene(PlanningScene):
             self._native_base_clearance = NativeChassisClearance(
                 model=self.session.mj_model, live_data=self.session.mj_data
             )
-        held_wiper = (self.session.gripper() > 0.2
-                      and FloorGrip.has_bilateral_contact(session=self.session))
+        held_wiper = self.session.gripper() > 0.2 and FloorGrip.has_bilateral_contact(
+            session=self.session
+        )
         rejection = self._native_base_clearance.first_route_rejection(
             path=[target], held_wiper=held_wiper
         )
         if rejection is not None:
-            self.session._write(record={"kind": "native_chassis_route_rejected",
-                                        "t": self.session.ticks, "detail": rejection})
+            self.session._write(
+                record={
+                    "kind": "native_chassis_route_rejected",
+                    "t": self.session.ticks,
+                    "detail": rejection,
+                }
+            )
             return None
 
         state = self.session.state
@@ -2644,7 +2834,7 @@ class FloorPlanningScene(PlanningScene):
             from kinder_models.dynamic3d.utils import MujocoTidyBotRobotObjectType
 
             state = state.copy()
-            robot, = state.get_objects(MujocoTidyBotRobotObjectType)
+            (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
             for feature, value in zip(
                 ("pos_base_x", "pos_base_y", "pos_base_rot"), start, strict=True
             ):
@@ -2655,11 +2845,7 @@ class FloorPlanningScene(PlanningScene):
             x_bounds=WORLD_X_BOUNDS,
             y_bounds=WORLD_Y_BOUNDS,
             seed=0,
-            disable_collision_objects=(
-                ["wiper_0"]
-                if held_wiper
-                else []
-            ),
+            disable_collision_objects=(["wiper_0"] if held_wiper else []),
         )
         if path is None:
             return None
@@ -2668,8 +2854,13 @@ class FloorPlanningScene(PlanningScene):
             path=result, held_wiper=held_wiper
         )
         if rejection is not None:
-            self.session._write(record={"kind": "native_chassis_route_rejected",
-                                        "t": self.session.ticks, "detail": rejection})
+            self.session._write(
+                record={
+                    "kind": "native_chassis_route_rejected",
+                    "t": self.session.ticks,
+                    "detail": rejection,
+                }
+            )
             return None
         return result
 

@@ -20,15 +20,26 @@ def test_simple_manifest_requires_explicit_frozen_status(*, status):
 @pytest.fixture
 def approved_manifest():
     return dict(
-        status="FROZEN", environment="sweep_simple3d", num_cycles=50,
-        max_steps_per_interaction=20, num_test_tasks=10, deployment_horizon=10,
-        practice_reset_policy="never", valid_practice_seeds=[0, 1, 2],
+        status="FROZEN",
+        environment="sweep_simple3d",
+        num_cycles=50,
+        max_steps_per_interaction=20,
+        num_test_tasks=10,
+        deployment_horizon=10,
+        practice_reset_policy="never",
+        valid_practice_seeds=[0, 1, 2],
         valid_evaluation_seeds=list(range(10000, 10010)),
-        pomdp=dict(goal_pursuit_horizon=0, pomdp_solver="determinized_astar",
-                   pomdp_max_search_iterations=1000, pomdp_search_depth=20,
-                   pomdp_inference_engine="grid", pomdp_grid_competence_bins="25",
-                   pomdp_grid_learning_rate_bins="16", pomdp_num_particles="1024",
-                   pomdp_linear_cost_lambda="3e-6"),
+        pomdp=dict(
+            goal_pursuit_horizon=0,
+            pomdp_solver="determinized_astar",
+            pomdp_max_search_iterations=1000,
+            pomdp_search_depth=20,
+            pomdp_inference_engine="grid",
+            pomdp_grid_competence_bins="25",
+            pomdp_grid_learning_rate_bins="16",
+            pomdp_num_particles="1024",
+            pomdp_linear_cost_lambda="3e-6",
+        ),
     )
 
 
@@ -36,11 +47,17 @@ def test_simple_manifest_accepts_frozen_protocol(*, approved_manifest):
     SweepSimpleCli.validate_manifest(manifest=approved_manifest)
 
 
-@pytest.mark.parametrize("key,value", [
-    ("goal_pursuit_horizon", None), ("goal_pursuit_horizon", 1),
-    ("pomdp_solver", "expectimax"), ("pomdp_max_search_iterations", 999),
-    ("pomdp_num_particles", 512), ("pomdp_grid_competence_bins", 24),
-])
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("goal_pursuit_horizon", None),
+        ("goal_pursuit_horizon", 1),
+        ("pomdp_solver", "expectimax"),
+        ("pomdp_max_search_iterations", 999),
+        ("pomdp_num_particles", 512),
+        ("pomdp_grid_competence_bins", 24),
+    ],
+)
 def test_simple_rejects_conflicting_model_settings(*, approved_manifest, key, value):
     approved_manifest["pomdp"][key] = value
     with pytest.raises(ValueError, match=key):
@@ -56,13 +73,18 @@ def test_resolved_goal_pursuit_rejected_before_simulation(
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(approved_manifest))
     monkeypatch.setattr(
-        SweepSimpleEnvironment, "__init__",
+        SweepSimpleEnvironment,
+        "__init__",
         lambda *args, **kwargs: pytest.fail("Simulator constructed before preflight"),
     )
     args = argparse.Namespace(sweep_manifest=path, method=method, goal_pursuit_horizon=None)
     with pytest.raises(ValueError, match="goal-pursuit-horizon"):
-        SweepSimpleCli.run_method(args=args, method_factory=lambda context: None,
-                                 num_cycles=50, max_steps_per_interaction=20)
+        SweepSimpleCli.run_method(
+            args=args,
+            method_factory=lambda context: None,
+            num_cycles=50,
+            max_steps_per_interaction=20,
+        )
 
 
 @pytest.mark.parametrize(

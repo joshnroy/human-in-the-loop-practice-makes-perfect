@@ -25,17 +25,23 @@ def test_stow_tries_checked_fallback_before_enumerating_more_candidates(*, monke
         assert len(calls) == 1, "Search must accept the first checked fallback"
         return [goal]
 
-    session = SimpleNamespace(base=lambda: np.zeros(3),
-                              position=lambda **kwargs: np.array([0.0, 0.0, 0.2]),
-                              quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
-                              yaw=lambda **kwargs: 0.0)
+    session = SimpleNamespace(
+        base=lambda: np.zeros(3),
+        position=lambda **kwargs: np.array([0.0, 0.0, 0.2]),
+        quaternion=lambda **kwargs: (0.0, 0.0, 0.0, 1.0),
+        yaw=lambda **kwargs: 0.0,
+    )
     session.mj_model = mujoco.MjModel.from_xml_string("<mujoco/>")
     session.mj_data = mujoco.MjData(session.mj_model)
-    scene = SimpleNamespace(fk=lambda **_: Pose((0.0, 0.0, 0.0)),
-                            ee_now=lambda: Pose((0.0, 0.0, 0.3)),
-                            plan_arm=plan_arm, bodies=lambda: bodies,
-                            robot=object(), wiper_body=7,
-                            within_arm_limits=lambda **kwargs: True)
+    scene = SimpleNamespace(
+        fk=lambda **_: Pose((0.0, 0.0, 0.0)),
+        ee_now=lambda: Pose((0.0, 0.0, 0.3)),
+        plan_arm=plan_arm,
+        bodies=lambda: bodies,
+        robot=object(),
+        wiper_body=7,
+        within_arm_limits=lambda **kwargs: True,
+    )
     scene.sync = lambda: None
     scene.max_tool_tilt = 1.1
     primitive = FloorPrimitives.model_construct(session=session, scene=scene, motion=None)
@@ -54,8 +60,11 @@ def test_eligible_home_stays_first_without_compact_search(*, monkeypatch) -> Non
     calls = []
     model = mujoco.MjModel.from_xml_string("<mujoco/>")
     session = SimpleNamespace(
-        mj_model=model, mj_data=mujoco.MjData(model), base=lambda: np.zeros(3),
-        position=lambda **_: np.zeros(3), quaternion=lambda **_: (0., 0., 0., 1.),
+        mj_model=model,
+        mj_data=mujoco.MjData(model),
+        base=lambda: np.zeros(3),
+        position=lambda **_: np.zeros(3),
+        quaternion=lambda **_: (0.0, 0.0, 0.0, 1.0),
     )
 
     def plan(**kwargs):  # noqa: ANN003, ANN202 -- fake planning callback
@@ -66,9 +75,13 @@ def test_eligible_home_stays_first_without_compact_search(*, monkeypatch) -> Non
         raise AssertionError("Eligible HOME should avoid compact IK search")
 
     scene = SimpleNamespace(
-        sync=lambda: None, ee_now=lambda: Pose((0., 0., 0.)),
-        fk=lambda **_: Pose((0., 0., 0.)), bodies=lambda: set(), max_tool_tilt=1.1,
-        plan_arm=plan, wiper_body=1,
+        sync=lambda: None,
+        ee_now=lambda: Pose((0.0, 0.0, 0.0)),
+        fk=lambda **_: Pose((0.0, 0.0, 0.0)),
+        bodies=lambda: set(),
+        max_tool_tilt=1.1,
+        plan_arm=plan,
+        wiper_body=1,
     )
     primitive = FloorPrimitives.model_construct(session=session, scene=scene, motion=None)
     monkeypatch.setattr(utils, "ikfast_closest_inverse_kinematics", unexpected)
