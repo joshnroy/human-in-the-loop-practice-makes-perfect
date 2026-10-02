@@ -73,6 +73,7 @@ class MethodRunner:
         # Next to `problem`, which is the one it is the counterpart of -- see
         # PracticeLoop's "separate evaluation environment" section.
         evaluation_problem: Problem | None = None,
+        practice_initialized: bool = False,
         num_cycles: int,
         max_steps_per_interaction: int,
         renderer: type[Renderer] | None,
@@ -243,6 +244,7 @@ class MethodRunner:
                 # keeps their results byte-identical -- PracticeLoop then evaluates
                 # on `problem`, exactly as before. See its own docstring.
                 evaluation_problem=evaluation_problem,
+                practice_initialized=practice_initialized,
                 method=method,
                 metrics=metrics,
                 num_cycles=num_cycles,
