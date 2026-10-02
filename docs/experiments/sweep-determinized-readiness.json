@@ -1,0 +1,396 @@
+{
+  "source_commit": "4f6efae80cb42ef2404af2a6c7563597f816a3d3",
+  "kind": "synthetic uncalibrated readiness diagnostic, not experiment",
+  "solver": "existing determinized_astar",
+  "queue_pop_budget": 1000,
+  "remaining_actions": 20,
+  "grid": [
+    25,
+    16
+  ],
+  "cost_particles": 1024,
+  "observation_probability_weight": 0,
+  "linear_cost_lambda": 3e-06,
+  "records": [
+    {
+      "event": "search_summary",
+      "node": 0,
+      "solver": "determinized_astar",
+      "expanded_nodes": 1000,
+      "traversed_nodes": 1000,
+      "generated_successors": 1430,
+      "unique_nodes": 1212,
+      "merged_nodes": 219,
+      "reopened_nodes": 0,
+      "cached_successor_relaxations": 0,
+      "stale_queue_entries": 0,
+      "action_transitions_evaluated": 1430,
+      "chance_outcomes_enumerated": 2448,
+      "frontier_nodes": 212,
+      "max_frontier_size": 217,
+      "max_depth_reached": 20,
+      "effective_action_horizon": 20,
+      "selected_path_depth": 20,
+      "action_horizon_terminal_nodes": 588,
+      "iterations": 1000,
+      "max_iterations": 1000,
+      "observation_probability_weight": 0.0,
+      "stop_value_evaluations": 1212,
+      "search_elapsed_seconds": 0.4757974949898198,
+      "termination_reason": "iteration_budget",
+      "timestamp": "2026-09-29T04:29:14.862547+00:00",
+      "elapsed_seconds": 0.5066670450032689,
+      "wall_seconds": 0.4801411789958365,
+      "peak_rss_kib": 116508,
+      "root_action": "ParkWiper",
+      "value": 0.9345486535792269,
+      "parameters": "Approved determinized diagnostic; synthetic uncalibrated prior, not experiment",
+      "robot_only": {
+        "reachable_nodes": 115,
+        "max_depth": 12,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "recovery_only": {
+        "reachable_nodes": 19,
+        "max_depth": 2,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "root_paths": [
+        {
+          "action": "ParkWiper",
+          "depth": 20,
+          "best_action_path": [
+            "ParkWiper",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "ask_for_reset_cube_bin_only",
+            "PickWiper",
+            "ask_for_reset_cube_bin_only",
+            "PickWiper",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "PickWiper",
+            "Sweep",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer"
+          ],
+          "beats_stop": true,
+          "value": 0.9345486535792269
+        },
+        {
+          "action": "ask_for_reset_cube_bin_only",
+          "depth": 1,
+          "best_action_path": [
+            "ask_for_reset_cube_bin_only"
+          ],
+          "beats_stop": false,
+          "value": 0.6757932916869653
+        }
+      ],
+      "raw_trace_sha256": "165a4b2a824b6c0c0878560441cee6258f8751fc55105be3792dc8d9bce5f03d",
+      "raw_trace_path": "scratchpad/exact-search/determinized-1000.json",
+      "seed": 0
+    },
+    {
+      "event": "search_summary",
+      "node": 0,
+      "solver": "determinized_astar",
+      "expanded_nodes": 1000,
+      "traversed_nodes": 1000,
+      "generated_successors": 1344,
+      "unique_nodes": 1125,
+      "merged_nodes": 220,
+      "reopened_nodes": 0,
+      "cached_successor_relaxations": 0,
+      "stale_queue_entries": 0,
+      "action_transitions_evaluated": 1344,
+      "chance_outcomes_enumerated": 2277,
+      "frontier_nodes": 125,
+      "max_frontier_size": 146,
+      "max_depth_reached": 20,
+      "effective_action_horizon": 20,
+      "selected_path_depth": 20,
+      "action_horizon_terminal_nodes": 589,
+      "iterations": 1000,
+      "max_iterations": 1000,
+      "observation_probability_weight": 0.0,
+      "stop_value_evaluations": 1125,
+      "search_elapsed_seconds": 0.4585815920145251,
+      "termination_reason": "iteration_budget",
+      "timestamp": "2026-09-29T04:31:05.410601+00:00",
+      "elapsed_seconds": 0.4870262340118643,
+      "seed": 1,
+      "wall_seconds": 0.46114388000569306,
+      "peak_rss_kib": 115344,
+      "root_action": "ParkWiper",
+      "value": 0.9758190034426748,
+      "parameters": "Approved determinized diagnostic; synthetic uncalibrated prior, not experiment",
+      "robot_only": {
+        "reachable_nodes": 39,
+        "max_depth": 4,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "recovery_only": {
+        "reachable_nodes": 19,
+        "max_depth": 2,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "nominal_robot_reset_witness": {
+        "steps": [
+          {
+            "action": "ParkWiper",
+            "applicable": true
+          },
+          {
+            "action": "PickCube0",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube0",
+            "applicable": true
+          },
+          {
+            "action": "PickCube1",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube1",
+            "applicable": true
+          },
+          {
+            "action": "PickCube2",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube2",
+            "applicable": true
+          },
+          {
+            "action": "PickCube3",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube3",
+            "applicable": true
+          },
+          {
+            "action": "PickCube4",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube4",
+            "applicable": true
+          },
+          {
+            "action": "CloseDrawer",
+            "applicable": true
+          },
+          {
+            "action": "ParkRobot",
+            "applicable": true
+          }
+        ],
+        "restored": true,
+        "interpretation": "All-success symbolic path only; not executed or forced in search"
+      },
+      "root_paths": [
+        {
+          "action": "ParkWiper",
+          "depth": 20,
+          "best_action_path": [
+            "ParkWiper",
+            "PickWiper",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "Sweep",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "PickWiper",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "CloseDrawer",
+            "OpenDrawer",
+            "PickWiper",
+            "Sweep",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "PickWiper"
+          ],
+          "beats_stop": true,
+          "value": 0.9758190034426748
+        },
+        {
+          "action": "ask_for_reset_cube_bin_only",
+          "depth": 1,
+          "best_action_path": [
+            "ask_for_reset_cube_bin_only"
+          ],
+          "beats_stop": false,
+          "value": 0.6757932916869653
+        }
+      ],
+      "raw_trace_sha256": "24e8e305d4f287fe6cf7bfbfe78e8dc147c9fb8991e2811b10373cdebe90e00d",
+      "raw_trace_path": "scratchpad/exact-search/determinized-1000-seed1.json"
+    },
+    {
+      "event": "search_summary",
+      "node": 0,
+      "solver": "determinized_astar",
+      "expanded_nodes": 1000,
+      "traversed_nodes": 1000,
+      "generated_successors": 1429,
+      "unique_nodes": 1129,
+      "merged_nodes": 301,
+      "reopened_nodes": 0,
+      "cached_successor_relaxations": 0,
+      "stale_queue_entries": 0,
+      "action_transitions_evaluated": 1429,
+      "chance_outcomes_enumerated": 2421,
+      "frontier_nodes": 129,
+      "max_frontier_size": 191,
+      "max_depth_reached": 20,
+      "effective_action_horizon": 20,
+      "selected_path_depth": 20,
+      "action_horizon_terminal_nodes": 563,
+      "iterations": 1000,
+      "max_iterations": 1000,
+      "observation_probability_weight": 0.0,
+      "stop_value_evaluations": 1129,
+      "search_elapsed_seconds": 0.47477365701342933,
+      "termination_reason": "iteration_budget",
+      "timestamp": "2026-09-29T04:31:08.329518+00:00",
+      "elapsed_seconds": 0.5022930330014788,
+      "seed": 2,
+      "wall_seconds": 0.4773114859999623,
+      "peak_rss_kib": 117648,
+      "root_action": "ask_for_reset_cube_bin_only",
+      "value": 0.9511786862260287,
+      "parameters": "Approved determinized diagnostic; synthetic uncalibrated prior, not experiment",
+      "robot_only": {
+        "reachable_nodes": 20,
+        "max_depth": 2,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "recovery_only": {
+        "reachable_nodes": 19,
+        "max_depth": 2,
+        "reset_state_nodes": 0,
+        "shortest_reset_path": null
+      },
+      "nominal_robot_reset_witness": {
+        "steps": [
+          {
+            "action": "ParkWiper",
+            "applicable": true
+          },
+          {
+            "action": "PickCube0",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube0",
+            "applicable": true
+          },
+          {
+            "action": "PickCube1",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube1",
+            "applicable": true
+          },
+          {
+            "action": "PickCube2",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube2",
+            "applicable": true
+          },
+          {
+            "action": "PickCube3",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube3",
+            "applicable": true
+          },
+          {
+            "action": "PickCube4",
+            "applicable": true
+          },
+          {
+            "action": "PlaceCube4",
+            "applicable": true
+          },
+          {
+            "action": "CloseDrawer",
+            "applicable": true
+          },
+          {
+            "action": "ParkRobot",
+            "applicable": true
+          }
+        ],
+        "restored": true,
+        "interpretation": "All-success symbolic path only; not executed or forced in search"
+      },
+      "root_paths": [
+        {
+          "action": "ParkWiper",
+          "depth": 1,
+          "best_action_path": [
+            "ParkWiper"
+          ],
+          "beats_stop": false,
+          "value": 0.6757932916869653
+        },
+        {
+          "action": "ask_for_reset_cube_bin_only",
+          "depth": 20,
+          "best_action_path": [
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer",
+            "CloseDrawer",
+            "PickWiper",
+            "ParkWiper",
+            "OpenDrawer",
+            "CloseDrawer",
+            "PickWiper",
+            "ParkWiper",
+            "OpenDrawer",
+            "CloseDrawer",
+            "PickWiper",
+            "ParkWiper",
+            "OpenDrawer",
+            "PickWiper",
+            "ParkWiper",
+            "PickWiper",
+            "Sweep",
+            "ask_for_reset_cube_bin_only",
+            "OpenDrawer"
+          ],
+          "beats_stop": true,
+          "value": 0.9511786862260287
+        }
+      ],
+      "raw_trace_sha256": "cff2b62f6d9ce3ab547155c1df5d61700982aa0e8554b81c14ef9255a97d8a71",
+      "raw_trace_path": "scratchpad/exact-search/determinized-1000-seed2.json"
+    }
+  ]
+}
