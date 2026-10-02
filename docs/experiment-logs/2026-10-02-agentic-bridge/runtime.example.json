@@ -1,0 +1,24 @@
+{
+  "coding": {
+    "sandbox": {
+      "image": "/absolute/path/to/robocode-strict-blackbox.sif",
+      "robocode_checkout": "/absolute/path/to/robocode-with-isolated-transport",
+      "container_python": "/opt/robocode-strict/bin/python",
+      "timeout_seconds": 120,
+      "artifact_dir": "artifacts/agentic-runtime"
+    },
+    "artifact_dir": "artifacts/agentic-coding",
+    "backend": "codex",
+    "model": "CHOOSE_CODING_MODEL",
+    "max_budget_usd": 2.0,
+    "max_turns": 20,
+    "reasoning_effort": "",
+    "system_prompt": ""
+  },
+  "vision": {
+    "provider": "openai_compatible",
+    "model": "CHOOSE_MULTIMODAL_MODEL",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "api_key_env": ""
+  }
+}
