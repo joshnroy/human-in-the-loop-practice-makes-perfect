@@ -17,6 +17,11 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.toss import NO_FEASIBLE_TOSS_DIRECTION_REJECTION
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    TossDirectionChoice,
+    TossDirectionSelector,
+)
 from hitl_pmp.environments.tossing3d.types import (
     PlanarCollisionBox,
     TossFeasibilityGeometry,
@@ -192,6 +197,14 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
         "parameter_rejection_reason",
         lambda self, **kwargs: "blocked" if reject else None,
     )
+    # A hand-built state has no planner geometry; the direction is not under test.
+    monkeypatch.setattr(
+        TossDirectionSelector,
+        "select_for_state",
+        lambda **kwargs: TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        ),
+    )
     # Tossing3D replans every practice action, so a preloaded plan alone does
     # not isolate dispatch accounting from the planner's STOP criterion.
     monkeypatch.setattr(_EesEpisode, "_next_plan", lambda self, **kwargs: [ground])
@@ -231,6 +244,104 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
     assert env._backend is None  # noqa: SLF001
 
 
+def test_starved_pool_deselects_the_action_and_replans_within_the_step(
+    *, monkeypatch, tmp_path
+) -> None:
+    """The 2026-09-22 validation run's defect: a 0-of-10,000 candidate pool ended the
+    practice session (`interaction_complete` at 0 actions, nine cycles in a row)
+    instead of letting the planner practice something else. A starved pool must
+    deselect that ground action for the rest of the session and replan in the same
+    step."""
+    method, ground_on, state = _lightswitch(tmp_path=tmp_path)
+    env = method.env
+    ground_off = GroundSkill(skill=LightSwitchSkills.TURN_OFF_LIGHT, objects=ground_on.objects)
+    atoms = frozenset(ground_on.preconditions | ground_off.preconditions)
+    monkeypatch.setattr(EesMethod, "abstract_state", lambda self, **kwargs: atoms)
+    select = Mock(side_effect=lambda **kwargs: [ground_on, ground_off])
+    monkeypatch.setattr(EesMethod, "select_skill_to_practice", select)
+    monkeypatch.setattr(
+        LightSwitchSkillProvider,
+        "parameter_rejection_reason",
+        lambda self, **kwargs: (
+            "blocked" if kwargs["ground_skill"].skill.name == "TurnOnLight" else None
+        ),
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    labeled = episode.step(state=state)
+    assert labeled is not None
+    assert episode._pending == ground_off  # noqa: SLF001 (the replanned dispatch)
+    assert method.starved_ground_skills(true_atoms=atoms) == frozenset({ground_on})
+    # First selection chose the starving action; the replan selected again and the
+    # starved action was skipped without a second sampling attempt.
+    assert select.call_count == 2
+    del env
+
+
+def test_starvation_everywhere_still_ends_the_practice_period(*, monkeypatch, tmp_path) -> None:
+    method, ground, state = _lightswitch(tmp_path=tmp_path)
+    atoms = frozenset(ground.preconditions)
+    monkeypatch.setattr(EesMethod, "abstract_state", lambda self, **kwargs: atoms)
+    monkeypatch.setattr(EesMethod, "select_skill_to_practice", lambda self, **kwargs: [ground])
+    monkeypatch.setattr(
+        LightSwitchSkillProvider, "parameter_rejection_reason", Mock(return_value="blocked")
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    with pytest.raises(InteractionComplete) as caught:
+        episode.step(state=state)
+    assert not caught.value.planner_stop
+    assert ground in method.starved_ground_skills(true_atoms=atoms)
+
+
+def test_pomdp_masks_starved_action_so_the_planner_chooses_again(*, monkeypatch, tmp_path) -> None:
+    from hitl_pmp.core.problem.tasks.types import Goal, Task
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+        make_tossing3d_search_state,
+    )
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env),
+        num_candidates=2,
+        max_proposals_per_candidate=2,
+        pomdp_num_particles=16,
+        decision_log=tmp_path / "decisions.jsonl",
+    )
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    toss = next(
+        ground
+        for ground in method._pomdp_model.ground_skills  # noqa: SLF001
+        if ground.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
+    )
+    atoms = frozenset(toss.preconditions)
+    search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
+    assert toss in method._pomdp_model.get_valid_actions(  # noqa: SLF001
+        environment_state=search_state
+    )
+    method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
+    masked = method._pomdp_model.get_valid_actions(environment_state=search_state)  # noqa: SLF001
+    assert toss not in masked
+    # The mask is the exact (symbolic state, action) pair, not the action globally:
+    # a state with one more atom still offers the toss.
+    extra = next(iter(toss.add_effects - atoms))
+    other = make_tossing3d_search_state(
+        state=method.pomdp_state, true_atoms=frozenset(atoms | {extra})
+    )
+    assert toss in method._pomdp_model.get_valid_actions(  # noqa: SLF001
+        environment_state=other
+    )
+    # A new practice session clears the mask: starvation is per state *and* session.
+    monkeypatch.setattr(EesMethod, "abstract_state", lambda self, **kwargs: atoms)
+    method.get_practice_policy(task=Task(initial_state=state, goal=Goal(atoms=frozenset())))
+    assert toss in method._pomdp_model.get_valid_actions(  # noqa: SLF001
+        environment_state=search_state
+    )
+    assert method.starved_ground_skills(true_atoms=atoms) == frozenset()
+
+
 def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -> None:
     env = Tossing3DEnvironment(scene_bg=False)
     provider = Tossing3DSkillProvider(env=env)
@@ -259,12 +370,35 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
         return geometry
 
     monkeypatch.setattr(KinderBackend, "toss_feasibility_geometry", geometry_for_state)
-    values = [np.array([d, 0.0, 360.0, 500.0]) for d in [1.35, 2.5, 1.7, 2.6]]
+    planned: list[object] = []
+
+    def base_plan_failure(*, snapshot, distance, rotation):
+        del distance, rotation
+        planned.append(snapshot)
+        return None
+
+    monkeypatch.setattr(TossDirectionSelector, "base_plan_failure", base_plan_failure)
+    TossDirectionSelector.clear_plan_cache()
+    values = [np.array([d, 360.0, 500.0]) for d in [2.5, 2.6]]
     proposals = Mock(side_effect=values)
-    monkeypatch.setattr(Tossing3DSkillProvider, "sample_params", proposals)
-    _, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
+    monkeypatch.setattr(Tossing3DSkillProvider, "sample_params_at_state", proposals)
+    labeled, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
     assert record is not None and record.params[0] in (2.5, 2.6)
-    assert record.params[1:] == [0.0, 360.0, 500.0]
+    assert record.params[1:] == [360.0, 500.0]
+    assert record.controller_choices == {"toss_direction_deg": 0.0}
+    assert "toss_direction_deg=0.0" in labeled.label
     assert not record.records_training_row
-    assert proposals.call_count == 4
+    assert proposals.call_count == 2
+    assert planned and all(item is snapshot for item in planned)
+    # A standoff whose every stand is across the barrier is rejected; with nothing
+    # else on offer the pool is empty, which the practice planner replans around.
+    monkeypatch.setattr(
+        Tossing3DSkillProvider,
+        "sample_params_at_state",
+        Mock(return_value=np.array([1.35, 360.0, 500.0])),
+    )
+    with pytest.raises(NoFeasibleParametersError) as caught:
+        method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
+    assert set(caught.value.diagnostics.rejection_reasons) == {NO_FEASIBLE_TOSS_DIRECTION_REJECTION}
+    TossDirectionSelector.clear_plan_cache()
     assert env._backend is None  # noqa: SLF001 (no live training environment read)

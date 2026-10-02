@@ -34,12 +34,15 @@ from .layout import Tossing3DLayout
 
 class SkillEvent(BaseModel):
     """One ground skill dispatch: its name, the objects it was bound to, and its
-    sampled continuous parameters (empty for a param_dim=0 skill like PickCube)."""
+    continuous parameters. For the toss these are the three learned ones
+    (standoff, speed, release) and the controller-chosen stand direction is its own
+    field; other skills keep their raw parameter slots and no direction."""
 
     kind: str = "skill"
     name: str
     objects: tuple[str, ...]
     params: tuple[float, ...]
+    toss_direction_deg: float | None = None
 
 
 class TickEvent(BaseModel):
@@ -84,9 +87,18 @@ class StateLogWriter(BaseModel):
         self._write(obj={"kind": "header", **self.header.model_dump()})
 
     def record_skill(
-        self, *, name: str, objects: tuple[str, ...], params: tuple[float, ...]
+        self,
+        *,
+        name: str,
+        objects: tuple[str, ...],
+        params: tuple[float, ...],
+        toss_direction_deg: float | None = None,
     ) -> None:
-        self._write(obj=SkillEvent(name=name, objects=objects, params=params).model_dump())
+        self._write(
+            obj=SkillEvent(
+                name=name, objects=objects, params=params, toss_direction_deg=toss_direction_deg
+            ).model_dump()
+        )
 
     def record_tick(
         self,

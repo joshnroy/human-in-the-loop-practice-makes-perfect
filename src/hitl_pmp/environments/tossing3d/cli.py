@@ -122,6 +122,14 @@ class Tossing3DCli:
             help="Cost of Tossing3D's provider-owned human cube/bin reset skill, in "
             "robot-action equivalents.",
         )
+        parser.add_argument(
+            "--human-reset",
+            action=argparse.BooleanOptionalAction,
+            default=Tossing3DSkillProvider.model_fields["offer_human_reset"].default,
+            help="Offer the human cube/bin reset skill to practice. --no-human-reset "
+            "removes it outright (not just prices it high), for the baseline that asks "
+            "whether the reset is needed. Evaluation never offers it either way.",
+        )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
@@ -162,7 +170,7 @@ class Tossing3DCli:
         scene** for the length of the run. That is real and is the reason this was
         deferred; it is not free, and a sweep's memory cap has to be sized for it.
         """
-        practice_problem = Tossing3DCli.build_problem(args=args)
+        practice_problem = Tossing3DCli.build_practice_problem(args=args)
         # The same seed stream, independent objects, and an optional explicit
         # geometry override. Changing layout must not resample the test tasks.
         evaluation_problem = Tossing3DCli.build_evaluation_problem(args=args)
@@ -206,6 +214,7 @@ class Tossing3DCli:
             skill_provider=Tossing3DSkillProvider(
                 env=practice_problem.env,
                 human_reset_practice_cost=args.human_reset_practice_cost,
+                offer_human_reset=args.human_reset,
             ),
             oracle=Tossing3DOracle(
                 env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
@@ -240,6 +249,14 @@ class Tossing3DCli:
                 state_log_writer.close()
             if evaluation_state_log_writer is not None:
                 evaluation_state_log_writer.close()
+
+    @staticmethod
+    def build_practice_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
+        """The practice Problem, configured exactly like the evaluation one: every
+        practice scene starts from the task's own bin placement (beyond the barrier on
+        the barrier layout). Whether and where to move the bin is the planner's choice,
+        through a reset grounded for either side."""
+        return Tossing3DCli.build_problem(args=args)
 
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> Tossing3DProblem:

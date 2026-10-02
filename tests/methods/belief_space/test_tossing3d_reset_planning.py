@@ -27,11 +27,18 @@ from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import Weigh
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
-def _method() -> Tossing3DPomdpMethod:
+def _method(*, offer_non_human_reset: bool = False) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
     return Tossing3DPomdpMethod(
-        env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0, pomdp_num_particles=32
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_non_human_reset=offer_non_human_reset),
+        seed=0,
+        pomdp_num_particles=32,
     )
+
+
+def _offered_resets(*, method: Tossing3DPomdpMethod) -> set[str]:
+    return {skill.name for skill in method.human_skills()}
 
 
 def _atom(*, method: Tossing3DPomdpMethod, name: str) -> GroundAtom:
@@ -54,13 +61,13 @@ def _reset(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
         for skill in method._pomdp_model.ground_skills  # noqa: SLF001
         if skill.skill.name == name
         and skill.objects[-2].name == "robot_side"
-        and skill.objects[-1].name == "opposite_side"
+        and skill.objects[-1].name == "robot_side"
     )
 
 
 @pytest.mark.parametrize("reset_name", sorted(RESET_SKILLS))
 def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_name: str) -> None:
-    method = _method()
+    method = _method(offer_non_human_reset=True)
     model = method._pomdp_model  # noqa: SLF001
     reset = _reset(method=method, name=reset_name)
     beliefs = dict(method.pomdp_state.skill_beliefs)
@@ -80,7 +87,7 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
     assert reset.add_effects <= after
     assert next_state.accumulated_cost == pytest.approx(mean_cost(belief=beliefs[reset_name]))
     assert next_state.skill_beliefs == state.skill_beliefs
-    assert next_state.pending_examples == state.pending_examples
+    assert next_state.pending_examples == {**state.pending_examples, reset_name: 1}
     assert (
         model.transition_outcomes(
             environment_state=search_state, belief_state=state, practice_action=reset
@@ -93,7 +100,7 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
 def test_real_reset_still_updates_identical_cost_and_performance_filters(
     *, reset_name: str
 ) -> None:
-    method = _method()
+    method = _method(offer_non_human_reset=True)
     reset = _reset(method=method, name=reset_name)
     before = method.pomdp_state.skill_beliefs[reset_name]
     method.record_action_cost(ground_skill=reset)
@@ -105,31 +112,57 @@ def test_real_reset_still_updates_identical_cost_and_performance_filters(
     )
     expected = before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[reset_name] == expected
-    assert method.pomdp_state.pending_examples.get(reset_name, 0) == 0
+    assert method.pomdp_state.pending_examples.get(reset_name, 0) == 1
     assert method.pomdp_state.accumulated_cost == 5.0
     refitted = refit_belief_state(state=method.pomdp_state)
-    assert refitted.skill_beliefs[reset_name] == expected
+    assert refitted.skill_beliefs[reset_name] == expected.refit(training_examples=1)
 
 
 @pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])
-def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
+def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
+    """A reset re-randomizes the geometry even when no symbolic atom moves, so whether
+    that is worth its cost is the planner's decision, not a pruning rule's."""
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
     ready = frozenset(
         _atom(method=method, name=name)
-        for name in (gripper, "OnGround", "NotHolding", "RobotAtSide", "CubeAtSide", "BinAtSide")
+        for name in (
+            gripper,
+            "OnGround",
+            "NotHolding",
+            "RobotAtSide",
+            "CubeAtSide",
+            "BinAtSide",
+            "GraspClear",
+            "PickPlannable",
+            "PickupUnblocked",
+            "BinOnGround",
+        )
     )
-    actions = model.get_valid_actions(
-        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    self_loop = next(
+        reset
+        for reset in model.ground_skills
+        if reset.skill.name in RESET_SKILLS
+        and reset.objects[-2].name == "robot_side"
+        and reset.objects[-1].name == "opposite_side"
     )
-    resets = [action for action in actions if action.skill.name in RESET_SKILLS]
-    assert resets  # Moving the bin to the other side is not a self-loop.
-    assert all(reset.objects[-1].name == "robot_side" for reset in resets)
+    assert self_loop.preconditions <= ready
+    assert (
+        model.outcomes(environment_state=search_state, state=method.pomdp_state, action=self_loop)[
+            0
+        ][2]
+        == ready
+    )
+    actions = model.get_valid_actions(environment_state=search_state)
+    assert self_loop in actions
+    assert {reset.objects[-1].name for reset in actions if reset.skill.name in RESET_SKILLS} == {
+        "robot_side",
+        "opposite_side",
+    }
     assert {action.skill.name for action in actions if action.skill.name not in RESET_SKILLS} == {
         PICK_SKILL if gripper == "HandEmpty" else OPEN_GRIPPER_SKILL
     }
-    for reset_name in RESET_SKILLS:
-        assert _reset(method=method, name=reset_name).preconditions <= ready
 
 
 @pytest.mark.parametrize("condition", ["unreachable", "in_bin", "holding"])
@@ -146,7 +179,7 @@ def test_reset_recoveries_remain_available(*, condition: str) -> None:
     actions = method._pomdp_model.get_valid_actions(  # noqa: SLF001
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     )
-    assert {action.skill.name for action in actions} >= RESET_SKILLS
+    assert {action.skill.name for action in actions} >= _offered_resets(method=method)
 
 
 @pytest.mark.parametrize("cost_lambda", [0.0, 0.0003])
@@ -196,7 +229,11 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
     assert reset_atoms == ready.true_atoms
     assert long_atoms == direct_atoms
     assert long_state.skill_beliefs == direct_state.skill_beliefs
-    assert long_state.pending_examples == direct_state.pending_examples
+    # The detour's only belief difference is the reset's own clock tick.
+    assert long_state.pending_examples == {
+        **direct_state.pending_examples,
+        reset.skill.name: 1,
+    }
     saved_cost = mean_cost(belief=state.skill_beliefs[reset.skill.name])
     assert long_state.accumulated_cost - direct_state.accumulated_cost == pytest.approx(saved_cost)
     assert model.J(
@@ -204,3 +241,32 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
     ) - model.J(
         belief_state=long_state, summed_cost=long_state.accumulated_cost, num_samples=1
     ) == pytest.approx(cost_lambda * saved_cost)
+
+
+def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() -> None:
+    """With PickupUnblocked absent (an observed refusal), the pick is still offered
+    alongside every reset: whether to retry it is the planner's choice, and a refused
+    retry is one more failed attempt for the pick's competence belief."""
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    refused = frozenset(
+        _atom(method=method, name=name)
+        for name in (
+            "HandEmpty",
+            "OnGround",
+            "NotHolding",
+            "RobotAtSide",
+            "CubeAtSide",
+            "BinAtSide",
+            "GraspClear",
+            "PickPlannable",
+            "BinOnGround",
+            # Deliberately NOT PickupUnblocked: the refusal was observed.
+        )
+    )
+    actions = model.get_valid_actions(
+        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=refused)
+    )
+    names = {action.skill.name for action in actions}
+    assert PICK_SKILL in names
+    assert _offered_resets(method=method) <= names

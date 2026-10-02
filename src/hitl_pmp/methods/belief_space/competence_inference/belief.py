@@ -73,8 +73,12 @@ class BayesianSkillBelief(SkillBelief):
                 raise ValueError("curve parameters must satisfy 0 <= phi0 <= phi1 <= 1")
             if np.any(values[:, 2] < 0) or np.any(values[:, 3] <= 2):
                 raise ValueError("curve rates must be nonnegative and concentration > 2")
-        elif np.any((values[:, 1] < 0) | (values[:, 1] > self.config.eta_max)):
-            raise ValueError("learning rates must respect the shared cap")
+        elif np.any(values[:, 1] < 0):
+            raise ValueError("learning rates must be nonnegative")
+        elif self.engine == "grid" and np.any(values[:, 1] > self.config.eta_max):
+            # Grid states are axis points by construction, so a rate above eta_max is
+            # a corrupted buffer; particle rates are uncapped, notebook-exact.
+            raise ValueError("grid learning rates must lie on the [0, eta_max] axis")
         if self.engine == "particle":
             ancestors = self.ancestors()
             if ancestors.shape != (self.state_count,) or np.any(
@@ -133,47 +137,28 @@ class BayesianSkillBelief(SkillBelief):
             self.cost_belief.sample(rng=rng, count=count)[:, 2],
         ))
 
-    def condition_outcome(self, *, success: bool, resample: bool = True) -> Self:
-        """Condition S/F, optionally preserving weighted support for planning.
+    def condition_outcome(self, *, success: bool) -> Self:
+        """Multiply one S/F likelihood into the weights, never resampling.
 
-        Online observations retain ESS resampling. Imagined branches keep their
-        exact likelihood weights so averaging posterior values does not turn
-        resampling noise into a fictitious practice reward.
+        The notebook ingests a cycle as one (m, n, s) batch: weight by c^s (1-c)^(n-s),
+        then resample once. Per-outcome weighting multiplies to exactly that batch
+        likelihood, and the single systematic resample happens at the real cycle
+        boundary (`advance_cycle`), so the filter is the notebook's.
         """
-        values, weights = self.arrays()
+        _, weights = self.arrays()
         competence = self.competence_values()
         masses = weights * (competence if success else 1.0 - competence)
         normalizer = float(masses.sum())
         if normalizer <= 0 or not np.isfinite(normalizer):
             raise ValueError("S/F observation has zero probability under the represented posterior")
         posterior = masses / normalizer
-        updates: dict[str, object] = {
-            "cycle_successes": self.cycle_successes + int(success),
-            "cycle_failures": self.cycle_failures + int(not success),
-        }
-        if (
-            resample
-            and self.engine == "particle"
-            and 1.0 / float(posterior @ posterior)
-            < self.config.resample_ess_fraction * self.state_count
-        ):
-            rng = make_rng(seed=self.seed, stream=self.resampling_count, tag=0x434F4D50524553)
-            positions = (rng.random() + np.arange(self.state_count)) / self.state_count
-            cumulative = np.cumsum(posterior)
-            cumulative[-1] = 1.0
-            selected = np.searchsorted(cumulative, positions, side="right")
-            updates.update({
-                "latent_values": np.ascontiguousarray(
-                    values[selected], dtype=FLOAT_DTYPE
-                ).tobytes(),
-                "parent_indices": np.ascontiguousarray(
-                    self.ancestors()[selected], dtype=INDEX_DTYPE
-                ).tobytes(),
-                "resampling_count": self.resampling_count + 1,
-            })
-            posterior = np.full(self.state_count, 1.0 / self.state_count)
-        updates["state_weights"] = np.ascontiguousarray(posterior, dtype=FLOAT_DTYPE).tobytes()
-        return self.model_copy(update=updates)
+        return self.model_copy(
+            update={
+                "cycle_successes": self.cycle_successes + int(success),
+                "cycle_failures": self.cycle_failures + int(not success),
+                "state_weights": np.ascontiguousarray(posterior, dtype=FLOAT_DTYPE).tobytes(),
+            }
+        )
 
     def condition_execution(self, *, success: bool, observed_cost: float) -> Self:
         return self.condition_outcome(success=success).condition_cost(observed_cost=observed_cost)
@@ -195,23 +180,48 @@ class BayesianSkillBelief(SkillBelief):
         return self
 
     def refit(self, *, training_examples: int) -> Self:
-        """Pure forecast used by search, with no transition at zero added examples."""
+        """The notebook's `extrapolate`: a pure predict step, including at zero examples.
+
+        There is deliberately no zero-example identity (the notebook always predicts
+        across a boundary). The identity used to be here to suppress a
+        spurious-practice-value pathology in search; notebook semantics were chosen
+        over it, so watch search values for that pathology rather than re-adding it.
+
+        Particles are pushed through the transition with their weights intact and
+        without resampling, so an imagined branch carries no resampling noise; the
+        process noise comes from a stream keyed on (seed, process_transition_count),
+        so the same forecast of the same belief is bit-identical.
+        """
         if training_examples < 0:
             raise ValueError("training_examples must be nonnegative")
-        if training_examples == 0:
-            return self
-        return self.advance_cycle(training_examples=training_examples)
+        return self.advance_cycle(training_examples=training_examples, resample=False)
 
-    def advance_cycle(self, *, training_examples: int) -> Self:
+    def advance_cycle(self, *, training_examples: int, resample: bool = True) -> Self:
         """Start a recorded cycle, resetting evidence/ancestry even without training.
 
         Save this cycle's filtered belief in the real-run history BEFORE calling
-        this method. A zero-example boundary changes only bookkeeping, with an
-        identity latent transition: no fictitious process noise or learning.
+        this method. A zero-example boundary applies the notebook's n = 0
+        transition -- the noise-only step for Model B (drift 0, decay^0 = 1, both
+        noises), a redraw at the unchanged total for Model A.
+
+        Particles are systematically resampled once here, on every real boundary,
+        before the predict step: the notebook's weight-then-resample for the cycle
+        just ended. `parent_indices` records the selection for ancestral smoothing.
         """
         if training_examples < 0:
             raise ValueError("training_examples must be nonnegative")
         values, weights = self.arrays()
+        resampling_count = self.resampling_count
+        parents = np.arange(self.state_count, dtype=INDEX_DTYPE)
+        if resample and self.engine == "particle":
+            rng = make_rng(seed=self.seed, stream=self.resampling_count, tag=0x434F4D50524553)
+            positions = (rng.random() + np.arange(self.state_count)) / self.state_count
+            cumulative = np.cumsum(weights)
+            cumulative[-1] = 1.0
+            parents = np.searchsorted(cumulative, positions, side="right").astype(INDEX_DTYPE)
+            values = values[parents]
+            weights = np.full(self.state_count, 1.0 / self.state_count)
+            resampling_count += 1
         total = self.total_training_examples + training_examples
         updates: dict[str, object] = {
             "cycle_index": self.cycle_index + 1,
@@ -219,12 +229,14 @@ class BayesianSkillBelief(SkillBelief):
             "incoming_training_examples": training_examples,
             "cycle_successes": 0,
             "cycle_failures": 0,
-            "process_transition_count": self.process_transition_count + int(training_examples > 0),
+            # Every real boundary consumes one process-noise stream now, including
+            # the n = 0 step, so idle cycles draw distinct deterministic noise.
+            "process_transition_count": self.process_transition_count + 1,
+            "resampling_count": resampling_count,
         }
         if self.engine == "particle":
-            updates["parent_indices"] = np.arange(self.state_count, dtype=INDEX_DTYPE).tobytes()
-        if training_examples == 0:
-            return self.model_copy(update=updates)
+            updates["parent_indices"] = parents.tobytes()
+            updates["state_weights"] = np.ascontiguousarray(weights, dtype=FLOAT_DTYPE).tobytes()
         if self.engine == "grid":
             projected = grid_predict(
                 model=self.model_name,

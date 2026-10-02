@@ -9,7 +9,6 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.competence_inference import (
     BayesianSkillBelief,
-    InferenceConfig,
     create_bayesian_prior,
 )
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -27,7 +26,7 @@ Engine = Literal["particle", "grid"]
 @pytest.mark.parametrize("model", ["global_curve", "local_trend"])
 @pytest.mark.parametrize("engine", ["particle", "grid"])
 @pytest.mark.parametrize("success", [False, True])
-def test_hypothetical_update_keeps_exact_weights_but_online_resampling_is_unchanged(
+def test_outcome_update_keeps_exact_weights_online_and_in_search(
     *, model: Model, engine: Engine, success: bool
 ) -> None:
     prior = create_bayesian_prior(
@@ -35,7 +34,6 @@ def test_hypothetical_update_keeps_exact_weights_but_online_resampling_is_unchan
         engine=engine,
         seed=0,
         num_particles=128,
-        config=InferenceConfig(resample_ess_fraction=1.0),
     )
     values, weights = prior.arrays()
     competence = prior.competence_values()
@@ -43,7 +41,9 @@ def test_hypothetical_update_keeps_exact_weights_but_online_resampling_is_unchan
     expected = weights * likelihood
     expected /= expected.sum()
     before = prior.model_dump_json()
-    planned = prior.condition_outcome(success=success, resample=False)
+    # Online and imagined updates are the same call now: resampling happens only at a
+    # real cycle boundary, so neither ever carries resampling noise.
+    planned = prior.condition_outcome(success=success)
     assert np.array_equal(planned.arrays()[0], values)
     assert np.array_equal(planned.arrays()[1], expected)
     assert planned.parent_indices == prior.parent_indices
@@ -51,19 +51,12 @@ def test_hypothetical_update_keeps_exact_weights_but_online_resampling_is_unchan
     assert planned.cost_belief == prior.cost_belief
     assert planned.cycle_successes == int(success)
     assert planned.cycle_failures == int(not success)
-    online = prior.condition_outcome(success=success)
     assert prior.model_dump_json() == before
-    if engine == "particle":
-        assert online.resampling_count == prior.resampling_count + 1
-        assert online.parent_indices != prior.parent_indices
-        assert np.allclose(online.arrays()[1], np.full(128, 1 / 128))
-    else:
-        assert online == planned
 
 
 @pytest.mark.parametrize("model", ["global_curve", "local_trend"])
 @pytest.mark.parametrize("engine", ["particle", "grid"])
-def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_history(
+def test_fixed_controller_value_is_only_its_clock_and_cost_after_low_ess_history(
     *, model: Model, engine: Engine
 ) -> None:
     env = Tossing3DEnvironment(scene_bg=False)
@@ -83,7 +76,6 @@ def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_histor
         # This includes the measured B/particle counterexample: after five
         # failures, resampling a hypothetical child invented gain > action cost.
         for _ in range(6):
-            root = practice_model.J(belief_state=state, summed_cost=0, num_samples=1)
             outcomes = practice_model.outcomes(
                 environment_state=make_tossing3d_search_state(
                     state=state, true_atoms=ground.preconditions
@@ -99,7 +91,16 @@ def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_histor
                 for probability, branch, _ in outcomes
             )
             cost = sum(probability * branch.accumulated_cost for probability, branch, _ in outcomes)
-            assert value == pytest.approx(root - 0.0003 * cost, abs=1e-14)
+            # A fixed controller's attempt still carries no S/F value in expectation;
+            # its only effect beyond the cost is advancing its own training clock.
+            pending = dict(state.pending_examples)
+            pending[name] = pending.get(name, 0) + 1
+            clock_only = practice_model.J(
+                belief_state=state.model_copy(update={"pending_examples": pending}),
+                summed_cost=0,
+                num_samples=1,
+            )
+            assert value == pytest.approx(clock_only - 0.0003 * cost, abs=1e-14)
             before = state.skill_beliefs[name]
             assert isinstance(before, BayesianSkillBelief)
             for _, branch, _ in outcomes:
@@ -129,7 +130,6 @@ def test_toss_forecast_also_retains_support_without_resampling(*, model: Model) 
         engine="particle",
         seed=0,
         num_particles=128,
-        config=InferenceConfig(resample_ess_fraction=1.0),
     )
     beliefs = dict(method.pomdp_state.skill_beliefs)
     beliefs[TOSS_SKILL] = prior
@@ -142,6 +142,4 @@ def test_toss_forecast_also_retains_support_without_resampling(*, model: Model) 
     assert len(outcomes) == 2
     for _, branch, atoms in outcomes:
         success = toss.add_effects <= atoms
-        assert branch.skill_beliefs[TOSS_SKILL] == prior.condition_outcome(
-            success=success, resample=False
-        )
+        assert branch.skill_beliefs[TOSS_SKILL] == prior.condition_outcome(success=success)

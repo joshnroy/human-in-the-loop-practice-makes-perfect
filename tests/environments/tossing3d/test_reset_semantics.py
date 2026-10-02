@@ -15,7 +15,8 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_succe
 @pytest.mark.parametrize("gripper", ["open", "holding", "closed_empty"])
 def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_index, gripper):
     env = Tossing3DEnvironment(layout=layout)
-    reset = Tossing3DSkillProvider(env=env).movables_reset_skills()[reset_index]
+    provider = Tossing3DSkillProvider(env=env, offer_non_human_reset=True)
+    reset = provider.movables_reset_skills()[reset_index]
     empty = GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,))
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
     closed = GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube))
@@ -41,7 +42,7 @@ def test_classical_plan_opens_gripper_after_resetting_a_held_cube(*, layout, res
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 
     env = Tossing3DEnvironment(layout=layout)
-    provider = Tossing3DSkillProvider(env=env)
+    provider = Tossing3DSkillProvider(env=env, offer_non_human_reset=True)
     reset = provider.movables_reset_skills()[reset_index]
     opened = next(skill for skill in provider.skills() if skill.name == "OpenGripper")
     before = reset.preconditions | frozenset({

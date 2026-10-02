@@ -8,14 +8,13 @@ from collections.abc import Iterable
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PRACTICE_BUDGET,
-    RESET_SKILLS,
     TOSS_SKILL,
 )
 from .tossing3d_deployment_model import (
@@ -29,11 +28,11 @@ from .tossing3d_observation_model import (
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
-    apply_success_effects,
     make_tossing3d_search_state,
     transition_outcomes,
 )
 from .types.belief_state import Tossing3DBeliefState
+from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
@@ -49,9 +48,18 @@ class Tossing3DPracticeModel(BaseModel):
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
     deployment_horizon: int = Field(default=4, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
+    # (symbolic state, ground action) pairs whose parameter pool starved this
+    # session (see EesMethod.record_starved_parameter_pool). Masked in
+    # get_valid_actions so a re-run of the search *chooses again* rather than
+    # deterministically re-picking an action that cannot be dispatched. Excluded
+    # from dumps: session-scoped scratch, not part of the learned model.
+    starved_pools: tuple[tuple[frozenset[GroundAtom], GroundSkill], ...] = Field(
+        default=(), exclude=True
+    )
 
     _rng: np.random.Generator = PrivateAttr()
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
@@ -183,13 +191,23 @@ class Tossing3DPracticeModel(BaseModel):
         success: bool,
         was_random_exploration: bool,
         observed_cost: float | None = None,
+        consultation: SamplerConsultation | None = None,
     ) -> Tossing3DBeliefState:
-        """Apply any belief observation associated with a practiced skill."""
+        """Apply any belief observation associated with a practiced skill.
+
+        With a `consultation`, `competence_evidence` decides whether the outcome
+        conditions competence; without one (a reset) the attempt is not
+        epsilon-random and is admitted."""
         return self._skill_belief_models[ground_skill].observe_outcome(
             state=state,
             success=success,
             was_random_exploration=was_random_exploration,
             observed_cost=observed_cost,
+            condition_competence=(
+                None
+                if consultation is None
+                else self.competence_evidence.admits(consultation=consultation)
+            ),
         )
 
     def observe_training_example(
@@ -201,27 +219,18 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
-        """Return applicable actions except dominated symbolic reset self-loops.
+        """Return every applicable action not masked by an observed starved pool.
 
-        A known-success reset that changes no atom only spends nonnegative cost
-        and an action slot in this abstract model. Real geometry randomization
-        may have value that this symbolic state does not represent; pruning here
-        makes no claim of global optimality in the physical simulator.
+        A reset whose symbolic effect changes no atom is still offered: it
+        re-randomizes the geometry, which the abstract state does not represent,
+        so whether that is worth its cost is the planner's choice.
         """
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
             ground_skill
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
-            and (
-                ground_skill.skill.name not in RESET_SKILLS
-                or apply_success_effects(
-                    true_atoms=environment_state.true_atoms,
-                    ground_skill=ground_skill,
-                    effects=self._effects,
-                )
-                != environment_state.true_atoms
-            )
+            and (environment_state.true_atoms, ground_skill) not in self.starved_pools
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
@@ -319,6 +328,7 @@ class Tossing3DPracticeModel(BaseModel):
             exploration_epsilon=self.exploration_epsilon,
             random_toss_competence=self.random_toss_competence,
             failure_effect_counts=self.failure_effect_counts,
+            competence_evidence=self.competence_evidence,
         )
 
     def sample_next_states(

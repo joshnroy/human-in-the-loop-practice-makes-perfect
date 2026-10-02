@@ -27,25 +27,31 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
+    PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import (
-    MAX_TOSS_ROTATION,
     TOSS_DISTANCE_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
-    WAYPOINT_TOLERANCE,
     Tossing3DSkills,
+)
+from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    TossDirectionChoice,
+    TossDirectionSelector,
 )
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -55,14 +61,26 @@ from .observations import INITIAL_ATOMS, state
 _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
 
-# The four bounds the composed toss draws from, in slot order, so the sampler tests can
-# be written once over all four rather than once per dial.
+# The three bounds the composed toss draws from, in slot order, so the sampler tests can
+# be written once over all three rather than once per dial.
 _TOSS_BOUNDS = (
     TOSS_DISTANCE_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
 )
+
+
+@pytest.fixture
+def _west_stand(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hand-built states carry no simulator geometry: stub the direction choice."""
+
+    def select_for_state(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", select_for_state)
 
 
 # The exact lifted signature of each operator, in declaration order. Pinned as a literal
@@ -80,7 +98,7 @@ _TOSS_BOUNDS = (
 # `(robot, target, held, barrier)` for the composed toss -- so a ground skill built here
 # can be handed to upstream's controller unpermuted.
 _EXPECTED_PARAMETERS = {
-    "PickCube": ("robot", "cube", "barrier", "side"),
+    "PickCube": ("robot", "cube", "barrier", "side", "bin"),
     "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier", "side"),
 }
 
@@ -92,7 +110,7 @@ def _every_skill() -> tuple:
 def _pick_cube() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.PICK_CUBE,
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot, _ENV.bin),
     )
 
 
@@ -201,6 +219,11 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=CUBE_AT_SIDE,
             variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(
+            predicate=PICK_PLANNABLE,
+            variables=(_SKILLS._robot, _SKILLS._cube),
+        ),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -211,9 +234,10 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
-    assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube)
+    assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube, _SKILLS._bin)
     assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
@@ -228,6 +252,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=BIN_AT_SIDE,
             variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
@@ -238,6 +263,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=CUBE_AT_SIDE,
             variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
@@ -246,7 +272,11 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
 
 def test_only_toss_replaces_a_functional_side_fact() -> None:
     assert _SKILLS.PICK_CUBE.ignore_effects == frozenset()
-    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({CUBE_AT_SIDE})
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({
+        CUBE_AT_SIDE,
+        GRASP_CLEAR,
+        PICK_PLANNABLE,
+    })
 
 
 def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
@@ -287,6 +317,10 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_AT_SIDE,
+        GRASP_CLEAR,
+        PICKUP_UNBLOCKED,
+        BIN_ON_GROUND,
+        PICK_PLANNABLE,
     )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
@@ -311,59 +345,42 @@ def test_the_pick_takes_no_continuous_parameters_at_all() -> None:
     assert _SKILLS.PICK_CUBE.param_dim == 0
 
 
-def test_the_composed_toss_carries_all_four_dials() -> None:
-    """Standoff and yaw used to belong to `MoveToThrowPose`, speed and millisecond to
-    `Toss`. One controller now takes all four, so every learned parameter in this domain
-    belongs to this one skill."""
-    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 4
-
-
-def test_the_rotation_bound_is_computed_from_the_waypoint_tolerance_not_typed() -> None:
-    """Upstream derives `MAX_TARGET_ROTATION` from `WAYPOINT_TOLERANCE` and the largest
-    standoff -- the widest yaw about the bin that still leaves the base within half the
-    tolerance of the bin's axis -- and this module reproduces the derivation rather than
-    the number it currently produces. A literal here would go stale silently if upstream
-    retuned either input."""
-    assert (
-        pytest.approx(float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1])))
-        == MAX_TOSS_ROTATION
-    )
-    assert TOSS_ROTATION_BOUNDS == (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
+def test_the_composed_toss_carries_three_learned_dials() -> None:
+    """Standoff used to belong to `MoveToThrowPose`, speed and millisecond to `Toss`. One
+    controller now takes all of them, plus a stand direction the controller chooses
+    itself (`toss_direction.py`), so the learned parameters are these three."""
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 3
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
     assert Tossing3DSkills.compute_action(
         ground_skill=_pick_cube(), params=np.zeros(0), state=state()
     ) == pytest.approx([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0])
-    assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([1.35, 0.01, 140.0, 792.0]), state=state()
-    ) == pytest.approx([
-        Tossing3DEnvironment.move_to_toss_location_and_toss_id,
-        1.35,
-        0.01,
-        140.0,
-        792.0,
-    ])
 
 
-def test_the_toss_parameters_land_in_slots_one_through_four_in_order() -> None:
-    """Four dials in four slots is four chances to transpose a pair, and a transposition
-    of speed and millisecond typechecks. Encoded from four mutually distinguishable
-    values, so any permutation fails."""
-    action = Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([1.31, -0.007, 128.5, 733.0]), state=state()
-    )
-    assert list(action[1:]) == pytest.approx([1.31, -0.007, 128.5, 733.0])
-
-
-def test_every_action_matches_the_declared_action_space() -> None:
-    for ground_skill, params in (
-        (_pick_cube(), np.zeros(0)),
-        (_toss(), np.array([1.35, 0.0, 140.0, 792.0])),
-    ):
-        action = Tossing3DSkills.compute_action(
-            ground_skill=ground_skill, params=params, state=state()
+def test_the_toss_is_not_encoded_here_rather_than_without_a_direction() -> None:
+    """The toss's action needs the state-chosen stand direction, which only
+    `Tossing3DToss` supplies; encoding it here would silently throw head-on."""
+    with pytest.raises(ValueError, match="Unknown skill"):
+        Tossing3DSkills.compute_action(
+            ground_skill=_toss(), params=np.array([1.35, 140.0, 792.0]), state=state()
         )
+
+
+def test_the_toss_parameters_land_in_their_slots_in_order(*, _west_stand) -> None:
+    """Three dials around a direction slot is three chances to transpose a pair, and a
+    transposition of speed and millisecond typechecks. Encoded from mutually
+    distinguishable values, so any permutation fails."""
+    action = Tossing3DToss.compute_action(params=np.array([1.31, 128.5, 733.0]), state=state())
+    assert list(action[1:]) == pytest.approx([1.31, 0.0, 128.5, 733.0])
+
+
+def test_every_action_matches_the_declared_action_space(*, _west_stand) -> None:
+    pick = Tossing3DSkills.compute_action(
+        ground_skill=_pick_cube(), params=np.zeros(0), state=state()
+    )
+    toss = Tossing3DToss.compute_action(params=np.array([1.35, 140.0, 792.0]), state=state())
+    for action in (pick, toss):
         assert action.shape == Tossing3DEnvironment.action_space.shape
 
 
@@ -382,7 +399,7 @@ def test_sampling_the_toss_here_raises_rather_than_supplying_stale_candidates() 
         Tossing3DSkills.sample_params(ground_skill=_toss(), rng=np.random.default_rng(0))
 
 
-@pytest.mark.parametrize("slot", range(4))
+@pytest.mark.parametrize("slot", range(3))
 def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) -> None:
     """Each dial in bounds, and each one a real draw rather than a constant dressed as
     one -- a sampler that returned a bound's midpoint in some slot would pass a
@@ -398,10 +415,10 @@ def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) 
     assert max(draws) - min(draws) > (high - low) / 2
 
 
-def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
+def test_the_three_same_side_toss_dials_are_drawn_independently() -> None:
     """A sampler that wrote one draw into several slots, or derived one from another,
     would pass every single-slot test above while collapsing the space onto a line or a
-    plane. Pinned as near-zero rank correlation between all six pairs."""
+    plane. Pinned as near-zero rank correlation between all three pairs."""
     from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 
     rng = np.random.default_rng(0)
@@ -410,19 +427,22 @@ def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
     ])
     ranks = np.argsort(np.argsort(draws, axis=0), axis=0)
     correlations = np.corrcoef(ranks, rowvar=False)
-    off_diagonal = correlations[~np.eye(4, dtype=bool)]
+    off_diagonal = correlations[~np.eye(3, dtype=bool)]
     assert np.max(np.abs(off_diagonal)) < 0.15
 
 
 def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     """Candidate support spans the far-bin clearance requirement and short throws.
 
-    The same-side sampler is the one whose independent distance draw must span both;
-    the barrier layout's wide proposal covers the far-bin requirement with its fixed
-    standoff instead, having dropped short throws by design with the proposal choice.
+    The same-side recovery sampler must span both regimes. The barrier layout's
+    wide proposal draws standoff down to its derived floor -- max(controller
+    floor, nearest far bin minus the measured legal standing line), which the
+    graded receiver region clamps to the controller's own 1.25 -- and never
+    below it.
     """
     from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
     from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+        WIDE_TOSS_STANDOFF_BOUNDS,
         WideLongRangeTossProposal,
     )
 
@@ -430,18 +450,21 @@ def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     distances = [SameSideSkills.sample_params(ground_skill=_toss(), rng=rng)[0] for _ in range(200)]
     assert any(distance > 2.425 + 0.05 for distance in distances)
     assert any(distance < 1.45 for distance in distances)
-    assert WideLongRangeTossProposal.sample(rng=rng)[0] > 2.425 + 0.05
+    wide_distances = [float(WideLongRangeTossProposal.sample(rng=rng)[0]) for _ in range(200)]
+    assert any(distance > 2.425 + 0.05 for distance in wide_distances)
+    assert any(distance < WIDE_TOSS_STANDOFF_BOUNDS[0] + 0.2 for distance in wide_distances)
+    assert all(distance >= WIDE_TOSS_STANDOFF_BOUNDS[0] for distance in wide_distances)
 
 
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot, _ENV.bin),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
     with pytest.raises(ValueError, match="Unknown skill"):
-        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(4), state=state())
+        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(3), state=state())
 
 
 def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
@@ -493,7 +516,12 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     provider = Tossing3DSkillProvider(env=env)
-    atoms = {("OnGround", ("cube_0",)), ("MovableIsDownX", ("cube_0", "cuboid_barrier"))}
+    atoms = {
+        ("OnGround", ("cube_0",)),
+        ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+        ("BinOnGround", ("bin_0",)),
+        ("PickPlannable", ("robot", "cube_0")),
+    }
     if inside:
         atoms.add(("MovableInGoalRegion", ("cube_0",)))
     if not closed:
@@ -522,7 +550,7 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
         )
 
 
-def test_ees_implicitly_retrieves_after_hits_and_misses() -> None:
+def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
     """Replay observed atom states through real EES, without injecting a plan/target."""
     from hitl_pmp.core.problem.tasks.types import Goal, Task
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
@@ -583,3 +611,56 @@ def test_rim_support_uses_bin_frame_and_rejects_non_support(*, yaw: float) -> No
         zip(("qx", "qy", "qz", "qw"), Rotation.from_euler("x", np.pi).as_quat(), strict=True)
     )
     assert not RimGeometry.supported(cube=cube, bin_=bin_ | tipped, wall_thickness=0.01)
+
+
+def test_grasp_clear_is_observed_state_and_the_toss_leaves_it_to_observation() -> None:
+    """GraspClear is no longer a gate: PickPlannable replaced it in the pick (see
+    test_pick_plannable.py), so no skill conditions on it. It stays in the vocabulary
+    as observed state -- the toss cannot promise the landing is clear of the walls
+    (functional update, like CubeAtSide), and the paid reset re-establishes it, its
+    cube region sitting >= 1.7 m from either bin destination region."""
+    from hitl_pmp.environments.tossing3d.predicates import GRASP_CLEAR
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    pick = _SKILLS.PICK_CUBE
+    assert _SKILLS._bin in pick.parameters
+    for skill in _every_skill():
+        assert not any(atom.predicate == GRASP_CLEAR for atom in skill.preconditions), skill.name
+    assert GRASP_CLEAR in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects
+    provider = Tossing3DSkillProvider(env=_ENV)
+    assert GRASP_CLEAR in provider.predicates()
+    reset = provider.human_cube_bin_reset_skill()
+    assert any(atom.predicate == GRASP_CLEAR for atom in reset.skill.add_effects)
+
+
+def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() -> None:
+    """An OBSERVED grasp-planner refusal is information, not a mask: PickCube stays
+    applicable in a state without PickupUnblocked, so whether to retry the pick, toss
+    or pay for a reset is the planner's choice. The channel itself survives -- the toss
+    and both paid resets still add it back, since each really moves the cube."""
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    unblocked = LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
+    assert unblocked not in _SKILLS.PICK_CUBE.preconditions
+    assert unblocked in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects
+    provider = Tossing3DSkillProvider(env=_ENV)
+    assert PICKUP_UNBLOCKED in provider.predicates()
+    for reset in provider.movables_reset_skills():
+        assert any(atom.predicate == PICKUP_UNBLOCKED for atom in reset.skill.add_effects)
+
+    refused = frozenset(
+        atom
+        for atom in SkillGrounder.all_possible_ground_atoms(
+            objects=provider.objects(), predicates=provider.predicates()
+        )
+        if atom.predicate in {HAND_EMPTY, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
+        or (
+            atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
+            and atom.objects[-1] == Tossing3DSides.robot
+        )
+    )
+    assert not any(atom.predicate == PICKUP_UNBLOCKED for atom in refused)
+    applicable = SkillGrounder.applicable_ground_skills(
+        skills=provider.skills(), objects=provider.objects(), true_atoms=refused
+    )
+    assert any(ground.skill == _SKILLS.PICK_CUBE for ground in applicable)

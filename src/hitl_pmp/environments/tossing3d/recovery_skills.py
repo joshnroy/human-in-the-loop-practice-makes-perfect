@@ -13,6 +13,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     HAND_EMPTY,
@@ -20,17 +21,13 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     ROBOT_AT_SIDE,
     Tossing3DAtoms,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
-from hitl_pmp.environments.tossing3d.skills import (
-    TOSS_DISTANCE_BOUNDS,
-    TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
-    TOSS_SPEED_BOUNDS,
-    Tossing3DSkills,
-)
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
 ON_BIN_RIM = Predicate(
     name="OnBinRim",
@@ -50,7 +47,11 @@ ON_FLOOR = Predicate(
 
 
 class SameSideSkills:
-    """Operators for floor and bin recovery, with unchanged toss parameter bounds."""
+    """Operators for floor and bin recovery. The toss is the barrier layout's own."""
+
+    # Literally the barrier layout's toss pipeline, not a copy of it: same dimension,
+    # bounds, proposal, direction selection, action encoding and classifier row.
+    TOSS: ClassVar[type[Tossing3DToss]] = Tossing3DToss
 
     _robot: ClassVar[Variable] = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
@@ -65,14 +66,21 @@ class SameSideSkills:
         LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
         LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
     })
+    # Every robot skill needs the bin upright on the floor (see `predicates.BIN_ON_GROUND`).
+    _bin_on_ground: ClassVar[LiftedAtom] = LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,))
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+    # All three picks dispatch through the barrier layout's one pick controller, so
+    # each requires that its planner finds a plan (see `predicates.PICK_PLANNABLE`).
+    _plannable: ClassVar[LiftedAtom] = LiftedAtom(
+        predicate=PICK_PLANNABLE, variables=(_robot, _cube)
+    )
 
     _rim: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_BIN_RIM, variables=(_cube, _bin))
 
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _rim}) | _same_robot_side,
+        preconditions=frozenset({_empty, _rim, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -86,7 +94,7 @@ class SameSideSkills:
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _floor}) | _same_robot_side,
+        preconditions=frozenset({_empty, _floor, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -99,7 +107,7 @@ class SameSideSkills:
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _inside}) | _same_robot_side,
+        preconditions=frozenset({_empty, _inside, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -111,8 +119,8 @@ class SameSideSkills:
     )
     OPEN: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        parameters=(_robot, _cube),
-        preconditions=frozenset({_closed}),
+        parameters=(_robot, _cube, _bin),
+        preconditions=frozenset({_closed, _bin_on_ground}),
         add_effects=frozenset({
             _empty,
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
@@ -135,15 +143,7 @@ class SameSideSkills:
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            # The same-side layout keeps its historical independent-bounds toss draw
-            # (measured baselines depend on this stream); the barrier layout's toss
-            # candidates come from WideLongRangeTossProposal via the provider instead.
-            return np.array([
-                rng.uniform(*TOSS_DISTANCE_BOUNDS),
-                rng.uniform(*TOSS_ROTATION_BOUNDS),
-                rng.uniform(*TOSS_SPEED_BOUNDS),
-                rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
-            ])
+            return SameSideSkills.TOSS.sample_params(rng=rng)
         if ground_skill.skill in SameSideSkills.skills():
             return np.zeros(0)
         raise ValueError(f"Unknown skill: {ground_skill.skill.name}")
@@ -151,9 +151,7 @@ class SameSideSkills:
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return Tossing3DSkills.compute_action(
-                ground_skill=ground_skill, params=params, state=state
-            )
+            return SameSideSkills.TOSS.compute_action(params=params, state=state)
         ids = {
             SameSideSkills.PICK_FLOOR: Tossing3DEnvironment.pick_cube_id,
             SameSideSkills.PICK_BIN: Tossing3DEnvironment.pick_cube_from_bin_id,

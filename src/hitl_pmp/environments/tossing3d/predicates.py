@@ -73,8 +73,11 @@ hold them to upstream's.
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 
+from .bin_on_ground import KB_BIN_ON_GROUND
 from .environment import Tossing3DEnvironment
+from .pick_plannable import KB_PICK_PLANNABLE
 from .sides import Tossing3DSides
+from .types import KB_PICKUP_BLOCKED
 
 
 class Tossing3DAtoms:
@@ -193,9 +196,57 @@ REACHABLE = Predicate(
     ),
 )
 
+# Upright and resting on the floor. Local, like `GraspClear`, but evaluated at the
+# boundary (`KinderBackend.abstract_atoms`) because it reads the bin's orientation, which
+# the flat state does not carry; see `bin_on_ground.py` for the classifier and for why
+# upstream's `OnGround` cannot back it. Every robot skill requires it, so a tipped bin
+# leaves only the resets, which re-place the bin upright.
+BIN_ON_GROUND = Predicate(
+    name="BinOnGround",
+    types=(Tossing3DEnvironment.bin_type,),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_BIN_ON_GROUND, objects=(objects[0],)
+    ),
+)
 
-def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
-    """Whether ``x_object`` is on the named robot-relative halfspace."""
+# The pick controller's own planner finds a plan from this state: a dry run of its
+# grasp, base and arm planning, made at the boundary (`KinderBackend.abstract_atoms`)
+# and looked up here. It is what PickCube requires in place of `GraspClear`: a fitted
+# clearance describes the one geometry it was fitted to, and the planner it
+# approximates is available to ask. See `pick_plannable.py` for when the dry run is
+# made and what the atom is when it is not.
+PICK_PLANNABLE = Predicate(
+    name="PickPlannable",
+    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_PICK_PLANNABLE, objects=(objects[0], objects[1])
+    ),
+)
+
+
+# The face-to-face clearance a cube on the robot's side needs from the barrier for the
+# live pick to be planned and to hold. Measured by a dense scan at the pick controller
+# (2026-09-27; seed-125 scene, cube moved, gap stepped by 2.5 mm from 0 to 0.10 m) over
+# nine configurations: y in {-1.5, -0.615, 0, 0.6, 1.5} at the scene's own cube yaw
+# (34 deg), yaw 0 and 45 deg at y = 0, and two other robot start poses. Every
+# configuration refused ("No collision-free cube grasp") at gaps <= 0.0425 m, and every
+# one planned and held at every gap >= 0.0625 m; in between the result depends on yaw
+# (axis-aligned cubes hold from 0.05 m, 45-degree ones from 0.0625 m, since a corner
+# reaches 0.010 m closer) and some planned picks ran but did not hold. Only the approach
+# from -x has a base pose there, and the Robotiq palm meets the barrier on the descent.
+# The gap is measured from the axis-aligned half-width, like the footprint test below,
+# so the constant is the yaw-worst-case one.
+BARRIER_GRASP_CLEARANCE_M = 0.0625
+
+
+def _same_barrier_side(
+    *, state: State, x_object: Object, side: Object, robot_side_margin: float = 0.0
+) -> bool:
+    """Whether ``x_object`` is on the named robot-relative halfspace.
+
+    ``robot_side_margin`` widens the excluded band on the robot's side only: an object
+    closer to the barrier than footprint contact plus the margin is on neither side.
+    """
     robot_x = state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_x")
     barrier_x = state.get(obj=Tossing3DEnvironment.barrier, feature_name="x")
     object_x = state.get(obj=x_object, feature_name="x")
@@ -215,7 +266,9 @@ def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
         return False
     same_as_robot = object_delta * robot_delta > 0.0
     if side == Tossing3DSides.robot:
-        return same_as_robot
+        # Exactly the margin counts (the measured 0.0625 m gap held live); the epsilon
+        # keeps float32 scene features from flipping that boundary.
+        return same_as_robot and abs(object_delta) >= clearance + robot_side_margin - 1e-6
     if side == Tossing3DSides.opposite:
         return object_delta * robot_delta < 0.0
     raise ValueError(f"unknown Tossing3D side object {side.name!r}")
@@ -238,8 +291,13 @@ CUBE_AT_SIDE = Predicate(
         Tossing3DEnvironment.barrier_type,
         Tossing3DSides.type,
     ),
+    # On the robot's side only within grasping range: a cube inside the barrier's
+    # grasp band is on neither side, so no pick applies (see BARRIER_GRASP_CLEARANCE_M).
     holds=lambda state, objects: _same_barrier_side(
-        state=state, x_object=objects[0], side=objects[2]
+        state=state,
+        x_object=objects[0],
+        side=objects[2],
+        robot_side_margin=BARRIER_GRASP_CLEARANCE_M,
     ),
 )
 
@@ -252,5 +310,123 @@ BIN_AT_SIDE = Predicate(
     ),
     holds=lambda state, objects: _same_barrier_side(
         state=state, x_object=objects[0], side=objects[2]
+    ),
+)
+
+
+# The bin's physical outer footprint half-extent. Not a state feature: the bin's
+# `x_min..z_max` features carry the SCORING box, which is strictly inside the walls
+# and whose width varies with the scene (0.15 m in the stock task, 0.22 m after a
+# bin relocation), so it cannot stand in for the walls. The 0.30 m footprint is the
+# one `test_the_live_scoring_window_lies_inside_the_bins_live_footprint` measures
+# against the compiled model, so this constant cannot drift from the scene unnoticed.
+BIN_FOOTPRINT_HALF_M = 0.15
+
+# The lateral clearance a graspable cube needs from the bin's footprint planes.
+# Measured at the live pick controller by bisection (2026-09-22 trap diagnosis): a
+# cube whose face sits 0.040 m inside the footprint plane is REFUSED ("No
+# collision-free cube grasp", zero steps) and one at 0.050 m is planned and picked.
+# The boundary decomposes into upstream's named `GRASP_OBSTACLE_CLEARANCE = 0.01`
+# (kinder_models `parameterized_skills.PickCubeController`, the mesh distance the
+# grasp planner reserves from non-target obstacles, added by upstream c18056d2) plus
+# the ~0.04 m wall band between the scoring box and the footprint that the 2F-85's
+# fingers must clear -- the composite is what the bisection measures directly. The
+# original home for this classifier would be upstream `state_abstractions`, like the
+# five classifier-backed predicates; keeping it local follows #346's side-atom
+# precedent, and migrating it upstream is deliberate follow-up work. That bisection
+# was one in-bin configuration (bin at (-0.5, 0), axis offset); the dense in-bin scan
+# behind `IN_BIN_GRASP_CLEARANCE_M` superseded it there, so this now governs only
+# cubes outside the footprint.
+GRASP_CLEARANCE_M = 0.05
+
+# The bin's wall thickness: the installed task JSON's `bin_0.wall_thickness`, which
+# `test_the_bin_wall_thickness_matches_the_installed_task` pins against the pin.
+BIN_WALL_THICKNESS_M = 0.02
+
+# The clearance an in-bin cube's faces need from the bin's INNER wall faces for the
+# top-down grasp to fit, since the gripper descends inside 0.20 m walls. The
+# outside-the-bin `GRASP_CLEARANCE_M` does not transfer: EXP-22's scoring tosses left
+# cubes 0.035-0.043 m from the inner walls, which passed it against the outer plane,
+# and every grasp yaw was refused ("No collision-free cube grasp"), mostly by the outer
+# finger or the Robotiq base meeting a wall on the descent. Measured by a dense scan at
+# the live pick controller (2026-09-27; kindergarden f0d554b; 3621 picks): cube on the
+# floor of an upright bin, offset from the centre along +-x, +-y and the four
+# diagonals (0-0.10 m at 10 mm and 5 mm, 2.5 mm near the boundary), cube yaw 0, 34 and
+# 45 deg, seven robot-start and bin placements in the robot-side reset region (bin yaw
+# 180), four of them EXP-22's frozen ones. The grasp planner refused at gaps up to
+# 0.060 m (yaw-0 diagonals, in all seven placements; near a corner there is no
+# grasp axis with a wall far away) and at none from 0.0625 m; at >= 0.0625 m 1367/1389
+# picks were planned and held. Axis offsets alone can be picked closer, down to
+# 0.030 m in some placements, so this worst case is conservative there; a two-gap
+# rule was fitted and recovered few of those picks. What no clearance describes: 42
+# picks that passed the planner failed mid-execution when re-planned from the observed
+# cube pose (gaps 0.055-0.095 m, 20 of them >= 0.0625 m), and planned picks that did
+# not lift cluster at 0.045-0.055 m with two outliers at 0.0625 and 0.0675 m. Measured
+# from the axis-aligned half-width, like the rest of this predicate, so the constant
+# covers yaw.
+IN_BIN_GRASP_CLEARANCE_M = 0.0625
+
+
+def _grasp_clear(*, state: State, cube: Object, bin_: Object) -> bool:
+    """Whether a top-down grasp of the cube fits clear of the bin's walls.
+
+    Two-dimensional and lateral only. Inside the footprint, the smallest gap from a
+    cube face to an inner wall face must reach `IN_BIN_GRASP_CLEARANCE_M` (a cube in
+    the wall's own band has a negative gap). Outside it, the rectangle-to-rectangle
+    distance to the footprint must reach `GRASP_CLEARANCE_M`. A cube straddling the
+    footprint plane is never clear.
+    """
+    cube_half = state.get(obj=cube, feature_name="bb_x") / 2.0
+    inside_gaps: list[float] = []
+    outside_gaps: list[float] = []
+    straddles = 0
+    for axis in ("x", "y"):
+        delta = abs(state.get(obj=cube, feature_name=axis) - state.get(obj=bin_, feature_name=axis))
+        near_face = delta - cube_half
+        far_face = delta + cube_half
+        if far_face <= BIN_FOOTPRINT_HALF_M:
+            inside_gaps.append(BIN_FOOTPRINT_HALF_M - far_face)
+        elif near_face >= BIN_FOOTPRINT_HALF_M:
+            outside_gaps.append(near_face - BIN_FOOTPRINT_HALF_M)
+        else:
+            straddles += 1
+    if straddles and not outside_gaps:
+        # A wall passes through the cube's rectangle: touching, never clear.
+        return False
+    # Exactly the margin counts as clear (both measured margins held live); the
+    # epsilon keeps float arithmetic from flipping that boundary.
+    epsilon = 1e-9
+    if outside_gaps:
+        # Outside the footprint: rectangle-to-rectangle distance, to which only the
+        # axes actually beyond the footprint contribute.
+        distance = sum(gap**2 for gap in outside_gaps) ** 0.5
+        return distance >= GRASP_CLEARANCE_M - epsilon
+    inner_gap = min(inside_gaps) - BIN_WALL_THICKNESS_M
+    return inner_gap >= IN_BIN_GRASP_CLEARANCE_M - epsilon
+
+
+GRASP_CLEAR = Predicate(
+    name="GraspClear",
+    types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
+    holds=lambda state, objects: _grasp_clear(state=state, cube=objects[0], bin_=objects[1]),
+)
+
+
+# The complement of the environment's observed "PickupBlocked" marker (see
+# `types.KB_PICKUP_BLOCKED`): true unless a dispatched pick was refused by the
+# grasp planner at this cube position and nothing has moved the cube since. The
+# positive-complement shape follows NOT_HOLDING's precedent, because operator
+# preconditions here are positive atoms. GraspClear prunes the geometrically
+# predictable refusals; this catches the observed remainder -- the planner's
+# acceptance boundary is configuration-dependent (measured 2026-09-22: the same
+# 0.052 m face gap is accepted at open floor and refused across the whole western
+# strip x <= -1.0), so no geometric constant can reproduce its mesh check exactly.
+# It is observed state only: PickCube does not require it, so a refused pick stays
+# retryable and whether to retry is the planner's choice.
+PICKUP_UNBLOCKED = Predicate(
+    name="PickupUnblocked",
+    types=(Tossing3DEnvironment.cube_type,),
+    holds=lambda state, objects: (
+        not Tossing3DAtoms.holds(state=state, name=KB_PICKUP_BLOCKED, objects=objects)
     ),
 )

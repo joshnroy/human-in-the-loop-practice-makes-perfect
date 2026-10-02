@@ -92,6 +92,7 @@ renderer for.
 import copy
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -100,6 +101,7 @@ from typing import Any, ClassVar
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
 from .types import AbstractAtom, PlanarCollisionBox, TossFeasibilityGeometry
 
 logger = logging.getLogger(__name__)
@@ -327,6 +329,8 @@ class KinderBackend(BaseModel):
     # A single joint-motor actuation, not a multi-phase trajectory -- generous headroom
     # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
     open_gripper_step_limit: ClassVar[int] = 100
+    # Verdicts kept by `pick_cube_plan_failure`. A run visits a few thousand states.
+    pick_plan_cache_size: ClassVar[int] = 4096
 
     task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
@@ -357,11 +361,21 @@ class KinderBackend(BaseModel):
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
+    # The robot's base pose right after the seeded scene reset: where a movables reset
+    # sends the robot when it stands on every clear bin placement (see
+    # `reset_cube_and_bin`). Measured clear of the robot-side block and the cube's
+    # spawn gap (`test_the_scene_start_and_spawn_strip_picks_never_empty_the_block`).
+    _start_robot_pose: tuple[float, float, float] | None = PrivateAttr(default=None)
     # Upstream's `Tossing3DStateAbstractor`: the five predicates' actual implementation.
     # Held here for the backend's whole lifetime rather than on a `State`, because
     # `Tossing3DEnvironment` deep-copies states and deep-copying this would clone the
     # PyBullet client it does forward kinematics through.
     _abstractor: Any = PrivateAttr(default=None)
+    # `pick_cube_plan_failure`'s verdicts, keyed by the exact state they were planned
+    # from. The verdict is a pure function of that state, so an entry never goes stale;
+    # the bound only caps memory. Evaluation episodes restart from the same few seeded
+    # scenes every cycle, which is where most of the hits come from.
+    _pick_plan_failures: OrderedDict[bytes, str | None] = PrivateAttr(default_factory=OrderedDict)
 
     @staticmethod
     def configure_headless_rendering(
@@ -490,6 +504,12 @@ class KinderBackend(BaseModel):
         observation, _ = self._env.reset(seed=seed)
         self._state = self._env.observation_space.devectorize(observation)
         self._robot_name = next(iter(self._state.get_objects(self.api().robot_type))).name
+        robot = self._state.get_object_from_name(self._robot_name)
+        self._start_robot_pose = (
+            float(self._state.get(robot, "pos_base_x")),
+            float(self._state.get(robot, "pos_base_y")),
+            float(self._state.get(robot, "pos_base_rot")),
+        )
         return self.observe()
 
     def close(self) -> None:
@@ -670,6 +690,41 @@ class KinderBackend(BaseModel):
             return None
 
     @staticmethod
+    def toss_base_plan_failure(*, snapshot: Any, distance: float, rotation: float) -> str | None:
+        """Ask pinned KINDER's own base planner for a path to a toss stand.
+
+        Mirrors `MoveToTossLocationAndTossController._plan_base_motion` exactly -- the
+        float32 parameter cast, `get_target_robot_pose_from_parameters`, the world
+        sampling bounds, `seed=0` and the held cube excluded from collision -- so a
+        stand this accepts is one the controller's own `reset` will plan. Returns `None`
+        when a plan exists, else the reason.
+        """
+        from kinder_models.dynamic3d.utils import (
+            WORLD_X_BOUNDS,
+            WORLD_Y_BOUNDS,
+            get_overhead_object_se2_pose,
+            get_target_robot_pose_from_parameters,
+            run_base_motion_planning,
+        )
+
+        controller_params = np.asarray([distance, rotation], dtype=np.float32)
+        bin_pose = get_overhead_object_se2_pose(
+            snapshot, snapshot.get_object_from_name(KinderBackend.bin_name)
+        )
+        target = get_target_robot_pose_from_parameters(
+            bin_pose, controller_params[0], controller_params[1]
+        )
+        plan = run_base_motion_planning(
+            state=snapshot,
+            target_base_pose=target,
+            x_bounds=WORLD_X_BOUNDS,
+            y_bounds=WORLD_Y_BOUNDS,
+            seed=0,
+            disable_collision_objects=[KinderBackend.cube_name],
+        )
+        return None if plan is not None else "base_motion_plan_failed"
+
+    @staticmethod
     def snapshot_to_plain(*, snapshot: Any) -> dict[str, list[float]]:
         """A `snapshot()` (or a `drain_substep_states()` element), as plain
         `{object_name: [floats]}` -- JSON/pickle-safe, no KINDER `Object`/`Type`
@@ -708,16 +763,164 @@ class KinderBackend(BaseModel):
         overrides preserve that support through KINDER's footprint-based partial
         reset, without changing the task or its collision checks. Sampling uses the
         live scene's RNG and moves the bin-attached goal region with the bin.
+
+        KINDER's sampler reserves everything but the robot, so the bin's centre
+        ranges are first cut down by `BinPlacementRules` (robot footprint, cube spawn
+        gap) and the placed bin is checked against the same rules afterwards.
+
+        When the robot stands where it leaves the region no clear bin centre at all
+        (a far-side toss stand, or a failed pick, can cover the whole robot-side
+        block), the robot first moves back to its scene-start pose, as it would be
+        asked to step aside for a person resetting the scene. Only then is a region
+        with still no clear placement an error. A reset with room leaves the robot
+        exactly where it is, and neither destination is treated differently.
         """
         object_centric = self._object_centric()
+        config = object_centric.task_config
+        robot_aabb = self._robot_aabb(snapshot=self._require_state())
+        cube_spawn = self._ground_region_rects(
+            object_centric=object_centric, object_name=self.cube_name
+        )
+        placement, bin_region_name = self._initial_state_placement(
+            object_centric=object_centric, object_name=self.bin_name
+        )
+        region = bin_region
+        if region is None and placement == "on":
+            region = config["regions"][bin_region_name]
+        selected = {}
+        if region is not None:
+            try:
+                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                    object_centric=object_centric,
+                    region=region,
+                    robot_aabb=robot_aabb,
+                    cube_spawn=cube_spawn,
+                )
+            except BinPlacementViolationError as blocked:
+                logger.warning(
+                    "robot at %r blocks every bin placement; moving it to its scene-start "
+                    "pose %r before the reset (%s)",
+                    robot_aabb,
+                    self._start_robot_pose,
+                    blocked,
+                )
+                self._move_robot_to_start_pose()
+                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                    object_centric=object_centric,
+                    region=region,
+                    robot_aabb=self._robot_aabb(snapshot=self._require_state()),
+                    cube_spawn=cube_spawn,
+                )
         regions, overrides = self._movables_reset_regions(
             object_centric=object_centric,
             object_names=(self.cube_name, self.bin_name),
-            selected_regions={} if bin_region is None else {self.bin_name: bin_region},
+            selected_regions=selected,
         )
         object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
         self._state = object_centric._get_current_state()  # noqa: SLF001
+        placed = self._require_state()
+        bin_box = self._bin_aabb(snapshot=placed)
+        BinPlacementRules.check(
+            bin_aabb=bin_box,
+            robot_aabb=self._robot_aabb(snapshot=placed),
+            cube_spawn=cube_spawn,
+            context=f"after reset_cube_and_bin (bin_region={bin_region!r})",
+        )
         return self.observe()
+
+    def _move_robot_to_start_pose(self) -> None:
+        """Put the robot base back at its scene-start pose, at rest. The arm keeps its
+        configuration; the cube and bin are about to be re-placed by the caller."""
+        if self._start_robot_pose is None:
+            raise RuntimeError("no scene-start robot pose recorded; reset the scene first")
+        snapshot = self.snapshot()
+        robot = snapshot.get_object_from_name(self._robot_name)
+        for axis, value in zip(("x", "y", "rot"), self._start_robot_pose, strict=True):
+            snapshot.set(robot, f"pos_base_{axis}", value)
+            snapshot.set(robot, f"vel_base_{axis}", 0.0)
+        self.restore(snapshot=snapshot)
+
+    def _bin_region_clear_of_robot_and_cube(
+        self,
+        *,
+        object_centric: Any,
+        region: Mapping[str, Any],
+        robot_aabb: Rect,
+        cube_spawn: tuple[Rect, ...],
+    ) -> dict[str, Any]:
+        """The bin's centre region with the forbidden zones removed, one disjoint
+        rectangle per piece, each keeping its source range's yaw."""
+        half = self._object_half_extent(object_centric=object_centric, object_name=self.bin_name)
+        yaw_ranges = region.get("yaw_ranges", [(0.0, 360.0)] * len(region["ranges"]))
+        ranges: list[Rect] = []
+        yaws: list[tuple[float, float]] = []
+        for extent, (low, high) in zip(region["ranges"], yaw_ranges, strict=True):
+            if low == high:
+                footprint = BinPlacementRules.aabb(
+                    center=(0.0, 0.0),
+                    size=(2 * float(half[0]), 2 * float(half[1])),
+                    yaw=float(np.deg2rad(low)),
+                )
+                bin_half = (footprint[2], footprint[3])
+            else:
+                radius = float(np.linalg.norm(half))
+                bin_half = (radius, radius)
+            pieces = BinPlacementRules.free_centre_ranges(
+                ranges=((float(extent[0]), float(extent[1]), float(extent[2]), float(extent[3])),),
+                robot_aabb=robot_aabb,
+                cube_spawn=cube_spawn,
+                bin_half=bin_half,
+                clearance=KINDER_PLACEMENT_CLEARANCE,
+            )
+            ranges += pieces
+            yaws += [(low, high)] * len(pieces)
+        if not ranges:
+            raise BinPlacementViolationError(
+                f"no bin placement in {region['ranges']!r} is clear of the robot "
+                f"{robot_aabb!r} and {BinPlacementRules.CUBE_SPAWN_MIN_GAP_M} m from the cube "
+                f"spawn region {cube_spawn!r}"
+            )
+        return {
+            **region,
+            "ranges": [list(r) for r in ranges],
+            "yaw_ranges": [list(y) for y in yaws],
+        }
+
+    @staticmethod
+    def _object_half_extent(*, object_centric: Any, object_name: str) -> np.ndarray:
+        config = object_centric.task_config
+        obj = object_centric._objects_dict[object_name]  # noqa: SLF001
+        object_config = config["objects"][obj.REGISTERED_NAME].get(object_name, {})
+        bounds = obj.get_bounding_box_from_config(np.zeros(3, dtype=np.float32), object_config)
+        return (np.asarray(bounds[3:5], dtype=float) - np.asarray(bounds[:2], dtype=float)) / 2
+
+    @staticmethod
+    def _ground_region_rects(*, object_centric: Any, object_name: str) -> tuple[Rect, ...]:
+        """The 2D ranges of the region an object spawns in at full reset."""
+        _, region_name = KinderBackend._initial_state_placement(
+            object_centric=object_centric, object_name=object_name
+        )
+        region = object_centric.task_config["regions"][region_name]
+        return tuple(
+            (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+            for r in region["ranges"]
+            if len(r) == 4
+        )
+
+    def _robot_aabb(self, *, snapshot: Any) -> Rect:
+        geometry = self.toss_feasibility_geometry(snapshot=snapshot)
+        if geometry is None:
+            raise RuntimeError("cannot read the robot footprint, so bin placement is unenforceable")
+        return BinPlacementRules.aabb(
+            center=geometry.robot_pose[:2], size=geometry.robot_size, yaw=geometry.robot_pose[2]
+        )
+
+    def _bin_aabb(self, *, snapshot: Any) -> Rect:
+        geometry = self.toss_feasibility_geometry(snapshot=snapshot)
+        if geometry is None:
+            raise RuntimeError("cannot read the bin footprint, so bin placement is unverifiable")
+        (box,) = (o for o in geometry.obstacles if o.name == self.bin_name)
+        return BinPlacementRules.aabb(center=box.center, size=(box.width, box.height), yaw=box.yaw)
 
     @staticmethod
     def _movables_reset_regions(
@@ -847,6 +1050,11 @@ class KinderBackend(BaseModel):
         Object names are translated to *this domain's* on the way out. KINDER resolves
         the robot's name from the robot config at reset; this domain's `Object` is the
         literal `"robot"`. Everything else already agrees.
+
+        Three atoms are this domain's own rather than upstream's: `OnBinRim`,
+        `BinOnGround` and `PickPlannable`. The last is the one that is not geometry
+        read off `state`: it is a dry run of the pick controller's planning from
+        `state` (`pick_cube_plan_failure`), equally pure in its argument.
         """
         if self._abstractor is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
@@ -880,6 +1088,25 @@ class KinderBackend(BaseModel):
             wall_thickness=bin_object.wall_thickness,
         ):
             atoms |= frozenset({("OnBinRim", (self.cube_name, self.bin_name))})
+        from .bin_on_ground import KB_BIN_ON_GROUND, BinOnGroundGeometry
+
+        if BinOnGroundGeometry.holds(bin_=features[self.bin_name]):
+            atoms |= frozenset({(KB_BIN_ON_GROUND, (self.bin_name,))})
+        from .pick_plannable import KB_PICK_PLANNABLE, PickPlannableGate
+
+        # See `pick_plannable.py` for the three cases and why each is what it is.
+        if ("Holding", (self.robot_atom_name, self.cube_name)) in atoms:
+            plannable = True
+        elif PickPlannableGate.cube_across_barrier(
+            robot_x=features[kinder_robot]["pos_base_x"],
+            cube=features[self.cube_name],
+            barrier=features[self.barrier_name],
+        ):
+            plannable = False
+        else:
+            plannable = self.pick_cube_plan_failure(state=subject) is None
+        if plannable:
+            atoms |= frozenset({(KB_PICK_PLANNABLE, (self.robot_atom_name, self.cube_name))})
         return atoms
 
     def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
@@ -1020,40 +1247,14 @@ class KinderBackend(BaseModel):
         `assert plan is not None`, which `Exception` would have caught -- so both kinds
         arrive here and both must be reported rather than propagated.
         """
-        api = self.api()
         state = self._require_state()
-        factory = {
-            "tossing": api.tossing_controllers,
-            "shelf": api.shelf_controllers,
-        }
-        if module not in factory:
-            raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
-        if module == "tossing" and key == "pick_cube" and pybullet_sim is None:
-            from kinder_models.dynamic3d.utils import PyBulletSim
-            from pybullet_helpers.geometry import Pose
-
-            obj = state.get_object_from_name(self.bin_name)
-            bin_object = self._object_centric().get_object(self.bin_name)
-            pybullet_sim = PyBulletSim(state)
-            pybullet_sim.add_bin(
-                name=self.bin_name,
-                pose=Pose(
-                    tuple(state.get(obj, f) for f in ("x", "y", "z")),
-                    tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
-                ),
-                length=bin_object.length,
-                width=bin_object.width,
-                height=bin_object.height,
-                wall_thickness=bin_object.wall_thickness,
-            )
-        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
-        if module == "tossing":
-            kwargs["init_constant_state"] = state
-        lifted = factory[module](self._env.action_space, **kwargs)
-        if key not in lifted:
-            raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
-        objects = tuple(state.get_object_from_name(name) for name in object_names)
-        controller = lifted[key].ground(objects)
+        controller = self._ground_controller(
+            module=module,
+            key=key,
+            object_names=object_names,
+            state=state,
+            pybullet_sim=pybullet_sim,
+        )
 
         try:
             controller.reset(state, params)
@@ -1104,6 +1305,111 @@ class KinderBackend(BaseModel):
             limit,
         )
         return ControllerRun(steps=limit, terminated=False)
+
+    def _ground_controller(
+        self,
+        *,
+        module: str,
+        key: str,
+        object_names: Sequence[str],
+        state: Any,
+        pybullet_sim: Any = None,
+    ) -> Any:
+        """One upstream controller, grounded on `state` and not yet reset.
+
+        The single place a controller is built, so a dispatched skill and
+        `pick_cube_plan_failure`'s dry run cannot come to differ in their collision
+        model: `pick_cube` plans in `_pick_collision_sim(state)` either way.
+        """
+        api = self.api()
+        factory = {
+            "tossing": api.tossing_controllers,
+            "shelf": api.shelf_controllers,
+        }
+        if module not in factory:
+            raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
+        if module == "tossing" and key == "pick_cube" and pybullet_sim is None:
+            pybullet_sim = self._pick_collision_sim(state=state)
+        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
+        if module == "tossing":
+            kwargs["init_constant_state"] = state
+        lifted = factory[module](self._env.action_space, **kwargs)
+        if key not in lifted:
+            raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
+        objects = tuple(state.get_object_from_name(name) for name in object_names)
+        return lifted[key].ground(objects)
+
+    def _pick_collision_sim(self, *, state: Any) -> Any:
+        """The pick's planning scene: a PyBullet client built fresh from `state`, with
+        the bin added at the pose `state` gives it."""
+        from kinder_models.dynamic3d.utils import PyBulletSim
+        from pybullet_helpers.geometry import Pose
+
+        obj = state.get_object_from_name(self.bin_name)
+        bin_object = self._object_centric().get_object(self.bin_name)
+        pybullet_sim = PyBulletSim(state)
+        pybullet_sim.add_bin(
+            name=self.bin_name,
+            pose=Pose(
+                tuple(state.get(obj, f) for f in ("x", "y", "z")),
+                tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+            ),
+            length=bin_object.length,
+            width=bin_object.width,
+            height=bin_object.height,
+            wall_thickness=bin_object.wall_thickness,
+        )
+        return pybullet_sim
+
+    def pick_cube_plan_failure(self, *, state: Any = None) -> str | None:
+        """Dry-run the pick controller's planning from `state` (default: the live one).
+
+        `None` when the controller finds a complete plan, else the reason it gave. This
+        is `run_pick_cube` up to and including `controller.reset` and nothing after it:
+        the same construction (`_ground_controller`), the same state, the same call. No
+        `env.step` is made, so MuJoCo is not advanced; the planning happens in a
+        PyBullet client of its own; and upstream seeds every planning call with a
+        constant and a generator local to that call, so no shared random stream moves
+        either.
+
+        Cached on the exact bytes of `state`: the verdict is a pure function of it.
+
+        The client is closed here rather than left to collection. A dispatched pick's
+        is released by `PyBulletSim`'s finalizer, but the controller class upstream
+        builds per grounding sits in a reference cycle, so that waits for the cyclic
+        collector -- measured at up to 22 clients alive at once across 400 dry runs.
+        `PyBulletSim.close()` runs that same finalizer once and marks it spent, so this
+        is not the double disconnect the module docstring warns against.
+        """
+        subject = self._require_state() if state is None else state
+        key = b"".join(
+            obj.name.encode() + b"\0" + np.asarray(subject[obj]).tobytes()
+            for obj in sorted(subject, key=lambda obj: obj.name)
+        )
+        if key in self._pick_plan_failures:
+            self._pick_plan_failures.move_to_end(key)
+            return self._pick_plan_failures[key]
+        pybullet_sim = self._pick_collision_sim(state=subject)
+        failure: str | None = None
+        try:
+            controller = self._ground_controller(
+                module="tossing",
+                key="pick_cube",
+                object_names=(self.robot_name, self.cube_name, self.barrier_name),
+                state=subject,
+                pybullet_sim=pybullet_sim,
+            )
+            controller.reset(subject, None)
+        except BaseException as exc:  # noqa: BLE001  (see `run_controller`)
+            if isinstance(exc, KeyboardInterrupt | SystemExit):
+                raise
+            failure = f"{type(exc).__name__}: {exc}"
+        finally:
+            pybullet_sim.close()
+        self._pick_plan_failures[key] = failure
+        while len(self._pick_plan_failures) > self.pick_plan_cache_size:
+            self._pick_plan_failures.popitem(last=False)
+        return failure
 
     def run_pick_cube(self) -> ControllerRun:
         """Run upstream's single floor-or-bin cube pickup controller.

@@ -54,6 +54,39 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         prefix="human-reset-cost-",
         when=("env", "tossing3d"),
     ),
+    # Named only when off. The default arm reuses runs recorded before the flag
+    # existed, so its name must stay what it was; the ablation says so explicitly.
+    RunNameField(
+        dest="human_reset",
+        toggle=("", "no-human-reset"),
+        when=("env", "tossing3d"),
+    ),
+    # EES's and POMDP's own flag, absent on every other method. Named only when off,
+    # for the same reason as `human_reset`.
+    RunNameField(dest="ees_reset_gate", toggle=("", "no-ees-reset-gate"), optional=True),
+    # EES's predicators-fidelity switches. Each is named only when it departs from its
+    # default, so every run recorded before a flag existed keeps its name.
+    RunNameField(
+        dest="reproduce_predicators_explore_target_only",
+        toggle=("explore-target-only", ""),
+        optional=True,
+    ),
+    RunNameField(
+        dest="reproduce_predicators_seen_task_order",
+        toggle=("first-seen-tasks", ""),
+        optional=True,
+    ),
+    RunNameField(
+        dest="reproduce_predicators_skip_perfect", toggle=("skip-perfect", ""), optional=True
+    ),
+    RunNameField(
+        dest="reproduce_predicators_random_when_stranded",
+        toggle=("random-when-stranded", ""),
+        optional=True,
+    ),
+    # The goal-pursuit schedule, named only off its default (1/1 pursues every period).
+    RunNameField(dest="goal_pursuit_init_cycles", prefix="goal-init-", omit_value=1, optional=True),
+    RunNameField(dest="goal_pursuit_interval", prefix="goal-every-", omit_value=1, optional=True),
     RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",
@@ -94,9 +127,7 @@ class RunNamer:
         translation is precisely where an axis of variation goes missing without
         anybody noticing. One source, one table, one place to add a field."""
         tokens = [
-            token
-            for field in RUN_NAME_FIELDS
-            if (token := RunNamer._token(field=field, args=args)) is not None
+            token for field in RUN_NAME_FIELDS if (token := RunNamer._token(field=field, args=args))
         ]
         return "-".join(tokens)
 
@@ -120,6 +151,8 @@ class RunNamer:
                 "under one name."
             )
         value = getattr(args, field.dest)
+        if field.omit_value is not None and value == field.omit_value:
+            return None
         if value is None and field.none_token is not None:
             return field.none_token
         if field.toggle is not None:

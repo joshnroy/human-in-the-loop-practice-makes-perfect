@@ -111,3 +111,11 @@ class Tossing3DState(State):
 
     # What upstream's `Tossing3DStateAbstractor` said held, for this state.
     abstract_atoms: frozenset[AbstractAtom] | None = None
+
+
+# The observed pickup-infeasibility marker the environment injects into a state's
+# abstract atom set after a dispatched pick was REFUSED by the grasp planner. It is
+# named here, in this module's data layer, because both the producer (the
+# environment) and the consumer (predicates.PICKUP_UNBLOCKED) need the one name and
+# importing either from the other would cycle.
+KB_PICKUP_BLOCKED = "PickupBlocked"

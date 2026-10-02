@@ -1,0 +1,310 @@
+# Vendored verbatim from docs/from_tom/competence_models.ipynb (the authoritative
+# working-tree copy in the main checkout on 2026-09-25, which differs from the committed
+# copy only in formatting). Notebook sha256: 24a23f0f99ea63fcf5dfd056dc12adb4e3be7241f990fdaec3297d0c2a82eef1
+# Cells (0-indexed, all cell types): 1, 5, 7, 9, 11, 16. Plotting cells omitted.
+
+# ---- cell 1 ----
+import numpy as np
+import matplotlib.pyplot as plt
+from abc import ABC, abstractmethod
+from scipy.stats import beta as beta_dist, norm
+from scipy.special import logsumexp
+
+rng = np.random.default_rng(0)
+plt.rcParams["figure.dpi"] = 110
+
+# ---- cell 5 ----
+class CompetenceModel(ABC):
+    '''Generative model of one skill's competence across learning cycles.
+
+    Latent per-cycle state z_j (an array row); competence C_j = competence(z_j).
+    Transitions are indexed by data counts: z_{j+1} ~ p(z' | z_j, m_from, m_to),
+    where m_from, m_to are the data counts entering cycles j and j+1.
+    '''
+    name = "abstract"
+
+    # ---- sampling view (particle engines, prior visualization) ----
+    @abstractmethod
+    def sample_initial(self, size, rng): ...          # -> z [size, d]
+    @abstractmethod
+    def sample_transition(self, z, m_from, m_to, rng): ...   # -> z' [size, d]
+    @abstractmethod
+    def competence(self, z): ...                      # -> c [size] in [0,1]
+
+    # ---- discrete view (grid engines) ----
+    @abstractmethod
+    def grid_states(self): ...                        # -> Z [S, d]
+    @abstractmethod
+    def grid_initial(self): ...                       # -> p [S], sums to 1
+    @abstractmethod
+    def grid_predict(self, belief, m_from, m_to): ... # -> p' [S] = belief pushed through the transition
+    @abstractmethod
+    def grid_predict_T(self, v, m_from, m_to): ...    # -> [S]: transpose of grid_predict, v[z] -> sum_z' T(z->z') v[z'] (smoothing only)
+
+
+class InferenceEngine(ABC):
+    '''Bayesian filter over learning cycles. This is the interface EES consumes.'''
+    def __init__(self, model: CompetenceModel):
+        self.model = model
+        self.m_last = None
+
+    @abstractmethod
+    def update(self, m, n, s): ...          # ingest cycle (m data entering, n attempts, s successes)
+    @abstractmethod
+    def estimate(self): ...                 # -> (values, weights): belief over current competence
+    @abstractmethod
+    def extrapolate(self, m_next): ...      # -> (values, weights): belief over competence with m_next data
+
+    # Not used by EES; only for plots and diagnostics.
+    @abstractmethod
+    def history(self): ...                  # -> list over past cycles of (values, weights): SMOOTHED beliefs P(C_j | all data)
+
+
+def summarize(values, weights, q=(0.05, 0.95)):
+    '''mean and quantiles of a weighted sample'''
+    order = np.argsort(values)
+    v, w = values[order], weights[order] / weights.sum()
+    cdf = np.cumsum(w)
+    lo, hi = v[np.searchsorted(cdf, q[0])], v[min(np.searchsorted(cdf, q[1]), len(v) - 1)]
+    return float(v @ w), float(lo), float(hi)
+
+def bernoulli_lik(c, n, s):
+    return c ** s * (1.0 - c) ** (n - s)
+
+# ---- cell 7 ----
+class GridEngine(InferenceEngine):
+    '''Exact forward filtering on the model's discretized state space (plus an optional backward pass).'''
+    def __init__(self, model):
+        super().__init__(model)
+        self.Z = model.grid_states()
+        self.c = model.competence(self.Z)
+        self.belief = None
+        self.filtered, self.liks, self.ms = [], [], []       # forward quantities kept for smoothing
+
+    def _predicted(self, m_to):
+        if self.belief is None:
+            return self.model.grid_initial()
+        return self.model.grid_predict(self.belief, self.m_last, m_to)
+
+    def update(self, m, n, s):
+        lik = bernoulli_lik(self.c, n, s)
+        b = self._predicted(m) * lik
+        self.belief, self.m_last = b / b.sum(), m
+        self.filtered.append(self.belief); self.liks.append(lik); self.ms.append(m)
+
+    def estimate(self):
+        return self.c, (self.belief if self.belief is not None else self.model.grid_initial())
+
+    def extrapolate(self, m_next):
+        return self.c, self._predicted(m_next)
+
+    def history(self):
+        # Backward messages: beta_J = 1;  beta_j[z] = sum_z' T_j(z -> z') lik_{j+1}[z'] beta_{j+1}[z'].
+        # Smoothed belief: P(z_j | all data) ∝ filtered_j[z] beta_j[z].
+        J = len(self.filtered)
+        beta = np.ones_like(self.c)
+        out = [None] * J
+        for j in range(J - 1, -1, -1):
+            sm = self.filtered[j] * beta
+            out[j] = (self.c, sm / sm.sum())
+            if j > 0:
+                beta = self.model.grid_predict_T(self.liks[j] * beta, self.ms[j - 1], self.ms[j])
+        return out
+
+
+class ParticleEngine(InferenceEngine):
+    '''Bootstrap particle filter (propagate, weight, systematic resample).'''
+    def __init__(self, model, n_particles=20000, rng=rng):
+        super().__init__(model)
+        self.N, self.rng = n_particles, rng
+        self.z = None
+        self.hist_z, self.hist_idx = [], []                  # pre-resampling particles and resampling indices, per cycle
+
+    def _predicted(self, m_to):
+        if self.z is None:
+            return self.model.sample_initial(self.N, self.rng)
+        return self.model.sample_transition(self.z, self.m_last, m_to, self.rng)
+
+    def update(self, m, n, s):
+        z = self._predicted(m)
+        w = bernoulli_lik(self.model.competence(z), n, s)
+        w = w / w.sum()
+        u = (self.rng.random() + np.arange(self.N)) / self.N              # systematic resampling
+        idx = np.searchsorted(np.cumsum(w), u)
+        self.z, self.m_last = z[idx], m
+        self.hist_z.append(z); self.hist_idx.append(idx)
+
+    def estimate(self):
+        z = self.z if self.z is not None else self.model.sample_initial(self.N, self.rng)
+        return self.model.competence(z), np.full(self.N, 1.0 / self.N)
+
+    def extrapolate(self, m_next):
+        return self.model.competence(self._predicted(m_next)), np.full(self.N, 1.0 / self.N)
+
+    def history(self):
+        # Ancestral tracing: follow each surviving particle back through the resampling indices.
+        # The set of distinct ancestors shrinks going backward (path degeneracy), so early cycles are
+        # represented by few distinct values; backward simulation would fix this at extra cost.
+        J = len(self.hist_z)
+        out = [None] * J
+        anc = np.arange(self.N)
+        for j in range(J - 1, -1, -1):
+            anc = self.hist_idx[j][anc]
+            out[j] = (self.model.competence(self.hist_z[j][anc]), np.full(self.N, 1.0 / self.N))
+        return out
+
+# ---- cell 9 ----
+def beta_from_mode(mu, kappa):
+    mu = np.clip(mu, 1e-3, 1 - 1e-3)
+    return mu * (kappa - 2) + 1, (1 - mu) * (kappa - 2) + 1
+
+
+class GlobalCurveModel(CompetenceModel):
+    name = "A: global curve"
+
+    def __init__(self, K=25, phi0=np.linspace(0, 1, 11), phi1=np.linspace(0, 1, 11),
+                 phi2=(0.02, 0.05, 0.1, 0.2, 0.4, 0.8), kappa=(6.0, 24.0, 96.0)):
+        self.K = K
+        self.C_GRID = (np.arange(K) + 0.5) / K
+        self.PHI = np.array([(a, b, r, k) for a in phi0 for b in phi1 for r in phi2 for k in kappa if b >= a - 1e-12])
+        self.phi2_range, self.kappa_range = (min(phi2), max(phi2)), (min(kappa), max(kappa))
+
+    @staticmethod
+    def mode_fn(phi, m):
+        a, b, r = phi[..., 0], phi[..., 1], phi[..., 2]
+        return a + (b - a) * (1.0 - np.exp(-r * np.asarray(m)))
+
+    # ---- sampling view: continuous prior; phi0 <= phi1 uniform, phi2 and kappa log-uniform
+    def sample_initial(self, size, rng):
+        phi0 = rng.random(size)
+        phi1 = phi0 + (1 - phi0) * rng.random(size)
+        phi2 = np.exp(rng.uniform(*np.log(self.phi2_range), size))
+        kappa = np.exp(rng.uniform(*np.log(self.kappa_range), size))
+        phi = np.stack([phi0, phi1, phi2, kappa], axis=1)
+        return self.sample_transition(np.column_stack([phi, np.zeros(size)]), None, 0, rng)
+
+    def sample_transition(self, z, m_from, m_to, rng):
+        a, b = beta_from_mode(self.mode_fn(z, m_to), z[:, 3])
+        return np.column_stack([z[:, :4], rng.beta(a, b)])
+
+    def competence(self, z):
+        return z[:, 4]
+
+    # ---- discrete view: phi on its grid (uniform weights), C on K bins
+    def _cycle_prior_table(self, m):
+        a, b = beta_from_mode(self.mode_fn(self.PHI, m), self.PHI[:, 3])
+        pdf = beta_dist.pdf(self.C_GRID[None, :], a[:, None], b[:, None])
+        return pdf / pdf.sum(axis=1, keepdims=True)                      # [P, K]
+
+    def grid_states(self):
+        P = len(self.PHI)
+        return np.column_stack([np.repeat(self.PHI, self.K, axis=0), np.tile(self.C_GRID, P)])
+
+    def grid_initial(self):
+        return (self._cycle_prior_table(0) / len(self.PHI)).ravel()
+
+    def grid_predict(self, belief, m_from, m_to):
+        post_phi = belief.reshape(len(self.PHI), self.K).sum(axis=1)     # marginalize C_j; phi is static
+        return (post_phi[:, None] * self._cycle_prior_table(m_to)).ravel()
+
+    def grid_predict_T(self, v, m_from, m_to):
+        u = (v.reshape(len(self.PHI), self.K) * self._cycle_prior_table(m_to)).sum(axis=1)   # [P]
+        return np.repeat(u, self.K)                                       # independent of C_j
+
+
+model_A = GlobalCurveModel()
+print(f"Model A grid: {len(model_A.PHI)} phi configurations x {model_A.K} competence bins = {len(model_A.grid_states())} states")
+
+# ---- cell 11 ----
+def discretize_normal(mean, sigma, edges):
+    '''Mass of N(mean, sigma) in each bin of `edges`, with mass outside the range folded into the end bins.
+    mean: [...]; returns [..., len(edges)-1].'''
+    cdf = norm.cdf((edges[None, :] - mean[..., None]) / sigma)
+    cdf[..., 0], cdf[..., -1] = 0.0, 1.0
+    return np.diff(cdf, axis=-1)
+
+
+class LocalTrendModel(CompetenceModel):
+    name = "B: local trend"
+
+    def __init__(self, K=25, E=16, eta_max=0.15, rho=0.9, sigma_k=0.03, sigma_e=0.005,
+                 kappa0_prior=(2.0, 1.0), eta0_sigma=0.05):
+        self.rho, self.sigma_k, self.sigma_e = rho, sigma_k, sigma_e
+        self.kappa0_prior, self.eta0_sigma = kappa0_prior, eta0_sigma
+        self.K, self.E = K, E
+        # grids include the boundary values 0 (and 1 for kappa) exactly, so that "no learning" is representable
+        self.K_GRID, self.k_edges = self._grid_with_edges(0.0, 1.0, K)
+        self.E_GRID, self.e_edges = self._grid_with_edges(0.0, eta_max, E)
+        self._cache = {}
+
+    @staticmethod
+    def _grid_with_edges(lo, hi, n):
+        g = np.linspace(lo, hi, n)
+        mid = 0.5 * (g[1:] + g[:-1])
+        return g, np.concatenate([[lo - 1.0], mid, [hi + 1.0]])   # outer edges are only placeholders (mass is folded in)
+
+    # ---- sampling view
+    def sample_initial(self, size, rng):
+        kappa = rng.beta(*self.kappa0_prior, size)
+        eta = np.abs(rng.normal(0, self.eta0_sigma, size))
+        return np.column_stack([kappa, eta])
+
+    def sample_transition(self, z, m_from, m_to, rng):
+        n = m_to - m_from
+        kappa = np.clip(z[:, 0] + n * z[:, 1] + rng.normal(0, self.sigma_k, len(z)), 0, 1)
+        eta = np.maximum(self.rho ** n * z[:, 1] + rng.normal(0, self.sigma_e, len(z)), 0)
+        return np.column_stack([kappa, eta])
+
+    def competence(self, z):
+        return z[:, 0]
+
+    # ---- discrete view: state index = k * E + e
+    def grid_states(self):
+        return np.array([(k, e) for k in self.K_GRID for e in self.E_GRID])
+
+    def grid_initial(self):
+        pk = beta_dist.pdf(self.K_GRID, *self.kappa0_prior); pk /= pk.sum()
+        pe = norm.pdf(self.E_GRID, 0, self.eta0_sigma); pe /= pe.sum()
+        return np.outer(pk, pe).ravel()
+
+    def _transition_ops(self, n):
+        if n not in self._cache:
+            mean_k = self.K_GRID[:, None] + n * self.E_GRID[None, :]                # [K, E]
+            Pk = discretize_normal(mean_k, self.sigma_k, self.k_edges)               # [K, E, K']
+            Pe = discretize_normal(self.rho ** n * self.E_GRID, self.sigma_e, self.e_edges)   # [E, E']
+            self._cache[n] = (Pk, Pe)
+        return self._cache[n]
+
+    def grid_predict(self, belief, m_from, m_to):
+        Pk, Pe = self._transition_ops(m_to - m_from)
+        b = belief.reshape(self.K, self.E)
+        return np.einsum("ke,kej,ei->ji", b, Pk, Pe).ravel()
+
+    def grid_predict_T(self, v, m_from, m_to):
+        Pk, Pe = self._transition_ops(m_to - m_from)
+        return np.einsum("ji,kej,ei->ke", v.reshape(self.K, self.E), Pk, Pe).ravel()
+
+
+model_B = LocalTrendModel()
+print(f"Model B grid: {model_B.K} competence bins x {model_B.E} learning-rate bins = {len(model_B.grid_states())} states")
+
+# ---- cell 16 ----
+TRUE = {   # (phi0, phi1, phi2) of the ground-truth competence curve
+    "Always fails":          (0.0, 0.0, 0.10),
+    "Always succeeds":       (1.0, 1.0, 0.10),
+    "Noisy, not improving":  (0.5, 0.5, 0.10),
+    "Noisy, improving":      (0.1, 0.9, 0.12),
+}
+true_curve = lambda name, m: float(GlobalCurveModel.mode_fn(np.array(TRUE[name]), m))
+
+def simulate(name, n_cycles=12, rng=rng):
+    cycles, outcomes, m = [], [], 0
+    for _ in range(n_cycles):
+        n = int(rng.integers(1, 5))
+        s_k = rng.random(n) < true_curve(name, m)
+        cycles.append((m, n, int(s_k.sum()))); outcomes.append(s_k.astype(int)); m += n
+    return cycles, outcomes
+
+DATA = {name: simulate(name) for name in TRUE}
+for name, (cyc, _) in DATA.items():
+    print(f"{name:24s} (m, n, s): {cyc}")

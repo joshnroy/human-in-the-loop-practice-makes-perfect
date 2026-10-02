@@ -37,6 +37,7 @@ class Namespaces:
             "two_way_ledge": False,
             "unsplit_skills": False,
             "human_reset_practice_cost": 5.0,
+            "human_reset": True,
             "num_cycles": 100,
         }
         fields.update(overrides)
@@ -69,6 +70,37 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
 def test_default_human_reset_cost_is_named() -> None:
     name = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     assert "human-reset-cost-5-0" in name
+
+
+def test_a_run_without_the_human_reset_says_so_and_the_default_name_is_unchanged() -> None:
+    """The with-reset arm reuses runs named before the flag existed, so the default
+    keeps its old name and only the ablation gains a token."""
+    default = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", human_reset=False))
+    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
+    assert ablated == (
+        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-human-reset-c100-seed3"
+    )
+
+
+def test_missing_tossing3d_human_reset_flag_raises() -> None:
+    args = Namespaces.ees_tossingroom(env="tossing3d")
+    del args.human_reset
+    with pytest.raises(ValueError, match="human-reset"):
+        RunNamer.name(args=args)
+
+
+def test_a_run_without_the_ees_reset_gate_says_so_and_the_default_name_is_unchanged() -> None:
+    """Default-on runs predate the flag, so only the ablation gains a token; a method
+    that never registers the flag names nothing."""
+    default = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", ees_reset_gate=True))
+    ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", ees_reset_gate=False))
+    unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert default == unregistered
+    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
+    assert ablated == (
+        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-ees-reset-gate-c100-seed3"
+    )
 
 
 def test_missing_tossing3d_human_reset_cost_raises() -> None:
@@ -179,3 +211,35 @@ def test_omitted_linear_lambda_names_the_effective_hard_budget_objective() -> No
     )
     assert "-hard-budget-" in name
     assert "linear-lambda-none" not in name
+
+
+@pytest.mark.parametrize(
+    ("dest", "token"),
+    [
+        ("reproduce_predicators_explore_target_only", "explore-target-only"),
+        ("reproduce_predicators_seen_task_order", "first-seen-tasks"),
+        ("reproduce_predicators_skip_perfect", "skip-perfect"),
+        ("reproduce_predicators_random_when_stranded", "random-when-stranded"),
+    ],
+)
+def test_a_predicators_fidelity_flag_is_named_only_when_on(*, dest: str, token: str) -> None:
+    """Off is the default every earlier run was recorded under, so its name must not
+    change; on gains a token so the two arms cannot collide under one name."""
+    off = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: False}))
+    on = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: True}))
+    unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert off == unregistered
+    assert on == off.replace("-c100-seed3", f"-{token}-c100-seed3")
+
+
+@pytest.mark.parametrize(
+    ("dest", "value", "token"),
+    [("goal_pursuit_init_cycles", 2, "goal-init-2"), ("goal_pursuit_interval", 5, "goal-every-5")],
+)
+def test_a_goal_pursuit_schedule_flag_is_named_only_off_its_default(
+    *, dest: str, value: int, token: str
+) -> None:
+    unset = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: 1}))
+    set_ = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: value}))
+    assert unset == RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert set_ == unset.replace("-c100-seed3", f"-{token}-c100-seed3")

@@ -125,7 +125,9 @@ class RandomSkillsMethod(Method):
             )
         ground_skill = ground_skills[int(self._rng.integers(len(ground_skills)))]
 
-        params = provider.sample_params(ground_skill=ground_skill, rng=self._rng)
+        params = provider.sample_params_at_state(
+            ground_skill=ground_skill, rng=self._rng, state=state
+        )
         action = provider.compute_action(ground_skill=ground_skill, params=params, state=state)
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
         label = f"{ground_skill.skill.name}({objects_desc})"

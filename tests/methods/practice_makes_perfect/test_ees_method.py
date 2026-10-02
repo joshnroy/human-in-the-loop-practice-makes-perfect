@@ -24,7 +24,7 @@ from hitl_pmp.environments.ballring.predicates import (
 from hitl_pmp.environments.ballring.skill_provider import BallRingSkillProvider
 from hitl_pmp.environments.ballring.tasks import BallRingTasks
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
+from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON, ROBOT_IN_CELL
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
@@ -606,11 +606,13 @@ def test_random_exploration_attempts_do_not_touch_competence_by_default() -> Non
 
 
 def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
-    """predicators calls observe() unconditionally (active_sampler_explorer.py:407)
-    and then again under `if not exploration_indicator` (:442-443), so a greedy
-    attempt lands twice and a random one lands once -- the suppression its own
-    comment describes never actually takes effect. The flag exists to measure what
-    that bug costs, since the paper's published curve contains it."""
+    """What the flag does: a greedy attempt lands twice and a random one once.
+
+    The name is historical and wrong. At reference/predicators 5bd3f5bd,
+    `_update_ground_op_hist` calls observe() once, only under
+    `if not exploration_indicator` -- this port's default. So the flag departs from
+    predicators rather than reproducing it; this test pins what it does, not what
+    predicators does."""
     method, env = _build(seed=1)
     skill = _turn_on_light(env=env)
 
@@ -623,10 +625,10 @@ def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
 
 
 def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
-    """Why the bug slows learning: with random attempts counted at half the weight
-    of greedy ones, a skill the robot has actually mastered still reads as mediocre
-    (its random attempts keep failing), so `skip_perfect` never fires and EES keeps
-    spending transitions re-practicing it."""
+    """What the flag costs: with random attempts counted at half the weight of
+    greedy ones, a skill the robot has actually mastered still reads as mediocre (its
+    random attempts keep failing). Not a predicators behaviour -- see the test
+    above."""
     buggy, env = _build()
     buggy.reproduce_predicators_double_observe = True
     fixed, _ = _build()
@@ -649,8 +651,8 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
 
 def test_predicators_matching_flag_defaults() -> None:
     """The port defaults toward matching predicators, with two documented exceptions.
-    practice_target_history is ON (a clean match). double_observe stays OFF (it is null
-    on the success curve but corrupts competence). explore_target_only stays OFF
+    practice_target_history is ON (a clean match). double_observe is OFF, which is
+    what matches predicators (it observes once, never twice). explore_target_only stays OFF
     because it is coupled to a horizon cap this port lacks -- ON alone starves
     goal-directed learning (see its field comment)."""
     method, _ = _build()
@@ -1404,7 +1406,11 @@ class _CubeBinCapableSkillProvider(LightSwitchSkillProvider):
 
 
 def _cube_bin_reset_build(
-    *, human_reset_practice_cost: float = 0.01, grid_size: int = 3, seed: int = 0
+    *,
+    human_reset_practice_cost: float = 0.01,
+    grid_size: int = 3,
+    seed: int = 0,
+    reset_cost_gate: bool = True,
 ) -> tuple[EesMethod, LightSwitchEnvironment]:
     env = LightSwitchEnvironment(grid_size=grid_size)
     method = EesMethod(
@@ -1413,6 +1419,7 @@ def _cube_bin_reset_build(
             env=env, human_reset_practice_cost=human_reset_practice_cost
         ),
         seed=seed,
+        reset_cost_gate=reset_cost_gate,
     )
     return method, env
 
@@ -1550,6 +1557,114 @@ def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_f
     assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 
+class _ShortcutResetSkillProvider(LightSwitchSkillProvider):
+    """A reset that competes with ordinary skills: it puts the robot in cell 2,
+    which two MoveRobots also reach from cell 0. So a goal of `RobotInCell(robot,
+    cell2)` has both a reset-free plan and a one-step reset plan, and which one Fast
+    Downward returns is decided by cost alone.
+
+    Every grounding is priced, as Tossing3D's own provider does: plan_to offers the
+    planner the lifted skill, so an unpriced grounding would fall back to
+    default_cost() and undercut the cost under test."""
+
+    human_reset_practice_cost: float
+
+    def human_cube_bin_reset_skill(self) -> GroundSkill:
+        return self.human_cube_bin_reset_skills()[2]
+
+    def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
+        robot_var = Variable(name="robot", type=LightSwitchEnvironment.robot_type)
+        cell_var = Variable(name="cell", type=LightSwitchEnvironment.cell_type)
+        skill = Skill(
+            name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+            parameters=(robot_var, cell_var),
+            preconditions=frozenset(),
+            add_effects=frozenset({
+                LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot_var, cell_var))
+            }),
+            delete_effects=frozenset(),
+            param_dim=0,
+            practice_cost=self.human_reset_practice_cost,
+        )
+        return tuple(
+            GroundSkill(skill=skill, objects=(self.env.robot, cell))
+            for cell in self.env.get_cells()
+        )
+
+
+def _shortcut_reset_plan(*, human_reset_practice_cost: float) -> list[str]:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=_ShortcutResetSkillProvider(
+            env=env, human_reset_practice_cost=human_reset_practice_cost
+        ),
+        seed=0,
+        reset_cost_gate=False,
+    )
+    init_atoms = method.abstract_state(
+        state=env.build_initial_state(light_level=0.0, light_target=0.5)
+    )
+    goal = frozenset({GroundAtom(predicate=ROBOT_IN_CELL, objects=(env.robot, env.get_cells()[2]))})
+    assert not goal <= init_atoms, "the fixture must start with the robot elsewhere"
+    plan = method.plan_to(
+        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+    )
+    return [ground.skill.name for ground in plan]
+
+
+def test_the_reset_cost_gate_is_on_by_default() -> None:
+    """Default on, so every existing run keeps the gate it was measured under."""
+    method, _env = _cube_bin_reset_build()
+    assert method.reset_cost_gate is True
+
+
+def test_with_the_gate_on_a_reset_at_cost_5_is_declined_when_it_is_the_only_route() -> None:
+    """EXP-17's configuration: cost 5 is far above every competence-derived cost, so
+    the gate declines it and the stranded robot stays stuck."""
+    method, env = _cube_bin_reset_build(human_reset_practice_cost=5.0)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(
+            init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+        )
+
+
+def test_with_the_gate_off_a_stranded_state_plans_through_a_reset_at_cost_5() -> None:
+    """Same stranded fixture as above, gate off: the reset is the only route, so it is
+    taken regardless of its price."""
+    method, env = _cube_bin_reset_build(human_reset_practice_cost=5.0, reset_cost_gate=False)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert max(method.skill_costs().values(), default=method.default_cost()) < 5.0
+
+    plan = method.plan_to(
+        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+    )
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_with_the_gate_off_a_reset_free_plan_still_beats_a_reset_at_cost_5() -> None:
+    """Turning the gate off must not make the reset free: Fast Downward still
+    minimises total cost, so two cheap MoveRobots beat one reset at 5."""
+    assert _shortcut_reset_plan(human_reset_practice_cost=5.0) == ["MoveRobot", "MoveRobot"]
+
+
+def test_with_the_gate_off_a_reset_cheaper_than_the_reset_free_plan_wins() -> None:
+    """The companion to the test above, so it cannot pass merely because the reset is
+    never chosen when an alternative exists: price the reset below two moves and it
+    wins. The choice is made by cost, in both directions."""
+    assert _shortcut_reset_plan(human_reset_practice_cost=0.001) == [
+        ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+    ]
+
+
 def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_reset() -> None:
     """Once the plan's next step is ask_for_reset_cube_bin_only, step() must intercept
     it before execute_ground_skill -- no controller call, no competence model created
@@ -1606,3 +1721,523 @@ def test_get_task_policy_never_raises_the_cube_bin_reset_even_when_it_alone_reac
     for _ in range(5):
         action = policy(state)
         assert action.label == "no-op (no plan)"
+
+
+def test_tossing3d_practice_offers_no_non_human_reset(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """EES's practice planner sees only the human reset, never its relabelled duplicate."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
+    offered: dict[str, set[str]] = {}
+
+    def capture(  # noqa: PLR0917 (stands in for a method, so `self` is positional)
+        self: EesMethod, *, skills: tuple[Skill, ...], ground_skill_costs: dict, **_: object
+    ) -> list[GroundSkill]:
+        offered["skills"] = {skill.name for skill in skills}
+        offered["costed"] = {ground.skill.name for ground in ground_skill_costs}
+        return []
+
+    monkeypatch.setattr(EesMethod, "_plan_or_raise", capture)
+    method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
+    assert ASK_FOR_RESET_CUBE_BIN_ONLY_NAME in offered["skills"]
+    assert not any("non_human_reset" in name for name in offered["skills"] | offered["costed"])
+    assert not any(
+        "non_human_reset" in reset.skill.name
+        for reset in method.skill_provider.movables_reset_skills()
+    )
+
+
+def test_tossing3d_practice_without_the_human_reset_offers_none(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the human reset switched off, EES's practice planner sees no reset at all
+    and the method no longer claims it may ask a human for help."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+    )
+    offered: dict[str, set[str]] = {}
+
+    def capture(  # noqa: PLR0917 (stands in for a method, so `self` is positional)
+        self: EesMethod, *, skills: tuple[Skill, ...], ground_skill_costs: dict, **_: object
+    ) -> list[GroundSkill]:
+        offered["skills"] = {skill.name for skill in skills}
+        offered["costed"] = {ground.skill.name for ground in ground_skill_costs}
+        return []
+
+    monkeypatch.setattr(EesMethod, "_plan_or_raise", capture)
+    method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
+    assert not any("reset" in name for name in offered["skills"] | offered["costed"])
+    assert method.may_request_human_help() is False
+
+
+def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
+    """An observed grasp-planner refusal removes PickupUnblocked but does not mask the
+    pick: from the refused state Fast Downward may still plan PickCube, so retrying is
+    a choice EES's own costs make rather than one the operator model forbids."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.predicates import (
+        BIN_AT_SIDE,
+        BIN_ON_GROUND,
+        CUBE_AT_SIDE,
+        GRASP_CLEAR,
+        HAND_EMPTY,
+        IN_BIN,
+        NOT_HOLDING,
+        ON_GROUND,
+        PICK_PLANNABLE,
+        ROBOT_AT_SIDE,
+    )
+    from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
+    robot, cube, bin_, barrier = env.robot, env.cube, env.bin, env.barrier
+    refused = frozenset({
+        GroundAtom(predicate=HAND_EMPTY, objects=(robot,)),
+        GroundAtom(predicate=ON_GROUND, objects=(cube,)),
+        GroundAtom(predicate=NOT_HOLDING, objects=(robot, cube)),
+        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(robot, barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
+        GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
+        GroundAtom(predicate=PICK_PLANNABLE, objects=(robot, cube)),
+        GroundAtom(predicate=BIN_ON_GROUND, objects=(bin_,)),
+        # Deliberately NOT PickupUnblocked: the refusal was observed.
+    })
+    goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(cube, bin_))})
+
+    plan = method.plan_to(init_atoms=refused, goal=goal, costs={})
+
+    assert [ground.skill.name for ground in plan] == ["PickCube", "MoveToTossLocationAndToss"]
+
+
+# ------------------------------------------- predicators-fidelity flags (active_sampler_
+# explorer.py at reference/predicators 5bd3f5bd)
+
+
+class _PlanToSpyEesMethod(EesMethod):
+    """Records every goal `plan_to` is asked for and plans nothing, so a test can see
+    which seen tasks a scoring refresh situates against without running Fast
+    Downward."""
+
+    planned_goals: list[frozenset[GroundAtom]] = []
+
+    def plan_to(
+        self,
+        *,
+        init_atoms: frozenset[GroundAtom],
+        goal: frozenset[GroundAtom],
+        costs: dict[GroundSkill, float],
+        practicing: bool = False,
+    ) -> list[GroundSkill]:
+        del init_atoms, costs, practicing
+        self.planned_goals.append(goal)
+        return []
+
+
+def _seen_goals_scored(*, seen_task_order: bool) -> tuple[list[int], int]:
+    """Index of each seen task a refresh plans for, out of twelve seen in order."""
+    env = LightSwitchEnvironment(grid_size=13)
+    method = _PlanToSpyEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        planned_goals=[],
+        reproduce_predicators_seen_task_order=seen_task_order,
+    )
+    state = env.build_initial_state(light_level=0.0, light_target=0.5)
+    cells = env.get_cells()
+    goals = [
+        frozenset({GroundAtom(predicate=ADJACENT, objects=(cells[i], cells[i]))}) for i in range(12)
+    ]
+    for goal in goals:
+        method.record_seen_task(init_atoms=method.abstract_state(state=state), goal=goal)
+    method.refresh_planning_progress_plans()
+    return [goals.index(goal) for goal in method.planned_goals], method.planning_progress_max_tasks
+
+
+def test_scoring_situates_against_the_most_recent_seen_tasks_by_default() -> None:
+    """The port's original reading of the paper text, kept as the default so every
+    earlier run is unchanged."""
+    indices, max_tasks = _seen_goals_scored(seen_task_order=False)
+    assert max_tasks == 10
+    assert indices == list(range(2, 12))
+
+
+def test_the_seen_task_order_flag_situates_against_the_first_seen_tasks() -> None:
+    """predicators' `_score_ground_op_planning_progress` takes
+    `sorted(self._seen_train_task_idxs)[:max_num_tasks]` ("Don't randomize"). This loop
+    draws a never-repeating train stream, so the lowest indices are the earliest seen."""
+    indices, _max_tasks = _seen_goals_scored(seen_task_order=True)
+    assert indices == list(range(10))
+
+
+def _skip_perfect_build(*, skip_perfect: bool) -> tuple[EesMethod, LightSwitchEnvironment]:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        reproduce_predicators_skip_perfect=skip_perfect,
+    )
+    _record_one_seen_task(method=method, env=env)
+    return method, env
+
+
+def test_skip_perfect_is_off_by_default() -> None:
+    method, _env = _build()
+    assert method.reproduce_predicators_skip_perfect is False
+    assert method.reproduce_predicators_seen_task_order is False
+
+
+def test_skip_perfect_scores_a_perfect_skill_negative_infinity() -> None:
+    """predicators' `active_sampler_explorer_skip_perfect` (default True): a ground op
+    whose `_ground_op_hist` success rate is exactly 1.0 scores `-np.inf`, before any
+    planning or UCB bonus."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    skill = _turn_on_light(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=skill, success=True)
+    score_calls = method._score_calls
+
+    assert method.score_ground_skill(ground_skill=skill) == -math.inf
+    # predicators returns before `_get_task_plan_for_task`, so the replan counter
+    # does not advance for a skipped op.
+    assert method._score_calls == score_calls
+
+
+def test_skip_perfect_reads_the_all_attempts_history() -> None:
+    """The rate is `_ground_op_hist`'s, which includes epsilon-random attempts. A skill
+    whose greedy attempts all succeed but whose random ones fail is not perfect there,
+    so it is scored normally."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    skill = _turn_on_light(env=env)
+    _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=5)
+    assert method.competence_model(ground_skill=skill).num_observations == 5
+
+    assert math.isfinite(method.score_ground_skill(ground_skill=skill))
+
+
+def test_skip_perfect_ranks_a_perfect_skill_last_but_keeps_it_a_candidate() -> None:
+    """predicators sorts every op in `_ground_op_hist` by score and yields them all
+    (`generate_goals`), so a `-inf` op is tried only after every finite one is
+    unreachable -- it is ranked last, not removed. Recorded as declined_perfect."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    perfect = _turn_on_light(env=env)
+    imperfect = _move_robot_backwards(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=perfect, success=True)
+    method.observe_outcome(ground_skill=imperfect, success=True)
+    method.observe_outcome(ground_skill=imperfect, success=False)
+
+    ranked = method.choose_practice_target()
+
+    assert ranked == [imperfect, perfect]
+    assert method.practice_target_outcomes()["TurnOnLight"].num_declined_perfect == 1
+    assert method.practice_target_outcomes()["TurnOnLight"].num_scored == 0
+    assert method.practice_target_outcomes()["MoveRobot"].num_scored == 1
+
+
+def test_target_only_exploration_with_goal_pursuit_horizon_zero_still_explores() -> None:
+    """The documented deadlock needs an uncapped goal phase that never ends, so practice
+    (the only place target-only exploration fires) never starts. At horizon 0 the goal
+    phase ends on the first practice step, so exploration and sampler training data
+    begin at once.
+
+    TurnOnLight is made a candidate up front: EES's candidates are only ground skills
+    it has already executed, and at horizon 0 on Light Switch nothing else ever puts
+    the one parameterized skill there -- with or without this flag."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        reproduce_predicators_explore_target_only=True,
+        goal_pursuit_horizon=0,
+    )
+    method.observe_outcome(ground_skill=_turn_on_light(env=env), success=False)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    policy = method.get_practice_policy(task=task)
+    state = env.get_current_state()
+    for _ in range(20):
+        state = env.take_action(action=policy(state).action)
+
+    assert sum(sampler.num_observations for sampler in method._samplers.values()) > 0
+
+
+def test_a_perfect_candidate_selected_as_the_last_resort_keeps_its_tally_consistent() -> None:
+    """Ranked last is not removed: when the perfect candidate is the only one, it is
+    selected. Its tally then reads declined_perfect=1, selected=1, and differencing it
+    (what method_runner does per window) must not trip the tally's own validator."""
+    from hitl_pmp.core.method.types import PracticeTargetTally
+
+    method, env = _skip_perfect_build(skip_perfect=True)
+    perfect = _turn_on_light(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=perfect, success=True)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    init_atoms = method.abstract_state(
+        state=env.build_initial_state(light_level=0.0, light_target=0.5)
+    )
+
+    plan = episode._practice_plan(true_atoms=init_atoms)
+
+    assert plan[-1] == perfect
+    tally = method.practice_target_outcomes()["TurnOnLight"]
+    assert (tally.num_declined_perfect, tally.num_selected) == (1, 1)
+    window = tally.minus(previous=PracticeTargetTally())
+    assert window.num_selected == 1
+
+
+# ------------------------------------------- stranded -> random (predicators'
+# `_option_policy` for...else: "No reachable goal found. Switching to random exploration.")
+
+
+class _SelectionCountingEesMethod(EesMethod):
+    """Counts practice-candidate selections, so a test can see that random mode stops
+    asking for them."""
+
+    selections: int = 0
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        self.selections += 1
+        return super().select_skill_to_practice(true_atoms=true_atoms)
+
+
+def _random_when_stranded_run(
+    *, flag: bool, steps: int, unreachable_candidate: bool = False
+) -> tuple[_SelectionCountingEesMethod, LightSwitchEnvironment, _EesEpisode, list[tuple]]:
+    """Practice from an empty history (predicators' first episode, where
+    `_ground_op_hist` yields no goal), recording (label, preconditions held,
+    random_mode) per step."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _SelectionCountingEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=0,
+        reproduce_predicators_random_when_stranded=flag,
+    )
+    if unreachable_candidate:
+        cells = env.get_cells()
+        # Adjacent(cell2, cell0) never holds, so no plan reaches this candidate.
+        never = GroundSkill(
+            skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[2], cells[0])
+        )
+        method.observe_outcome(ground_skill=never, success=False)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    method.get_practice_policy(task=task)
+    episode = method._practice_episode
+    assert episode is not None
+    state = env.get_current_state()
+    trace: list[tuple] = []
+    for _ in range(steps):
+        atoms = method.abstract_state(state=state)
+        labeled = episode.step(state=state)
+        dispatched = episode._pending
+        assert dispatched is not None
+        trace.append((labeled.label, dispatched.preconditions <= atoms, episode._random_mode))
+        state = env.take_action(action=labeled.action)
+    return method, env, episode, trace
+
+
+def test_random_when_stranded_is_off_by_default() -> None:
+    method, _env = _build()
+    assert method.reproduce_predicators_random_when_stranded is False
+
+
+def test_without_the_flag_an_empty_history_bootstraps_one_step_at_a_time() -> None:
+    """The original behaviour: one random applicable skill, then back to scoring (a
+    selected candidate's plan can span several steps, so selections are not one per
+    step)."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=False, steps=4)
+    assert not any(random_mode for _label, _held, random_mode in trace)
+    assert not any(label.startswith("random: ") for label, _held, _mode in trace)
+    assert method.selections > 1
+
+
+def test_an_empty_history_switches_to_random_mode_for_the_rest_of_the_episode() -> None:
+    """No practice goal can be generated, so predicators goes random -- and stays
+    random: `using_random` is checked first on every later call, so no candidate is
+    ever selected again this episode, even once history exists."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=12)
+    assert all(random_mode for _label, _held, random_mode in trace)
+    assert method.selections == 1
+    assert all(label.startswith("random: ") for label, _held, _mode in trace)
+
+
+def test_an_unreachable_candidate_also_switches_to_random_mode() -> None:
+    method, _env, _episode, trace = _random_when_stranded_run(
+        flag=True, steps=3, unreachable_candidate=True
+    )
+    assert all(random_mode for _label, _held, random_mode in trace)
+    assert method.selections == 1
+    assert method.practice_target_outcomes()["MoveRobot"].num_unreachable == 1
+
+
+def test_random_mode_draws_only_initiable_skills() -> None:
+    """Initiable = the skill's symbolic preconditions hold in the observed state."""
+    _method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=30)
+    assert all(held for _label, held, _mode in trace)
+
+
+def test_random_mode_attempts_update_competence_and_become_sampler_data() -> None:
+    """predicators returns `(self._get_random_option(state), False)`: the indicator is
+    False, so `_update_ground_op_hist` observes the outcome into competence, and the
+    segment joins the sampler's training data like any other."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=40)
+    parameterized = [ground for ground in method._competence_models if ground.skill.param_dim > 0]
+    assert parameterized, "40 random steps on Light Switch should reach a parameterized skill"
+    observed = sum(method.competence_model(ground_skill=g).num_observations for g in parameterized)
+    attempts = sum(len(method._all_attempt_outcomes[g]) for g in parameterized)
+    assert observed == attempts > 0
+    assert sum(sampler.num_observations for sampler in method._samplers.values()) == attempts
+    tallies = method.practice_outcomes()
+    assert all(tally.num_random_attempts == 0 for tally in tallies.values())
+    assert len(trace) == 40
+
+
+# ------------------------------------------- goal-pursuit schedule (predicators'
+# active_sampler_learning_approach._create_explorer: pursue_task_goal_first when
+# cycle < active_sampler_learning_init_cycles_to_pursue_goal or cycle % interval == 0)
+
+
+def _scheduled_goal_phases(*, init_cycles: int, interval: int, cycles: int = 11) -> list[bool]:
+    """Whether each practice period's episode starts in the goal phase."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=100,
+        goal_pursuit_init_cycles=init_cycles,
+        goal_pursuit_interval=interval,
+    )
+    tasks = LightSwitchTasks(env=env, seed=0)
+    phases = []
+    for _ in range(cycles):
+        method.get_practice_policy(task=tasks.sample_train_task())
+        assert method._practice_episode is not None
+        phases.append(not method._practice_episode._goal_phase_done)
+    return phases
+
+
+def test_goal_pursuit_runs_every_cycle_by_default() -> None:
+    method, _env = _build()
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == (1, 1)
+    assert _scheduled_goal_phases(init_cycles=1, interval=1) == [True] * 11
+
+
+def test_predicators_goal_pursuit_schedule_fires_on_cycles_zero_five_and_ten() -> None:
+    """init 1, interval 5: cycle 0 (< 1), then every cycle divisible by 5."""
+    phases = _scheduled_goal_phases(init_cycles=1, interval=5)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 5, 10]
+
+
+def test_goal_pursuit_init_cycles_alone_pursues_only_the_first_cycles() -> None:
+    phases = _scheduled_goal_phases(init_cycles=2, interval=100)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 1]
+
+
+def test_a_scheduled_goal_phase_is_still_capped_by_the_horizon() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=2,
+        goal_pursuit_init_cycles=1,
+        goal_pursuit_interval=5,
+    )
+    method.get_practice_policy(task=LightSwitchTasks(env=env, seed=0).sample_train_task())
+    episode = method._practice_episode
+    assert episode is not None and episode._goal_phase_done is False
+    for _ in range(2):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
+    episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is True
+
+
+def test_evaluation_episodes_ignore_the_goal_pursuit_schedule() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_init_cycles=0,
+        goal_pursuit_interval=100,
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    assert episode._goal_phase_done is False
+
+
+def test_a_non_pursuing_period_still_records_its_task_as_seen() -> None:
+    """predicators adds the task to `_seen_train_task_idxs` at the top of its option
+    policy whatever `pursue_task_goal_first` is (carried over from 46379575)."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_init_cycles=1,
+        goal_pursuit_interval=5,
+    )
+    tasks = LightSwitchTasks(env=env, seed=0)
+    for _ in range(2):
+        method.get_practice_policy(task=tasks.sample_train_task())
+    assert method._practice_episode is not None
+    assert method._practice_episode._goal_phase_done is True
+    assert len(method._seen_tasks) == 2
+
+
+def _unreachable_goal_episode(*, flag: bool) -> tuple[_SelectionCountingEesMethod, list[tuple]]:
+    """A pursued goal no plan reaches: Adjacent(cell0, cell0) never holds."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _SelectionCountingEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=100,
+        reproduce_predicators_random_when_stranded=flag,
+    )
+    state = env.build_initial_state(light_level=0.0, light_target=0.5)
+    cell0 = env.get_cells()[0]
+    goal = Goal(atoms=frozenset({ADJACENT(state=state, objects=(cell0, cell0))}))
+    env.set_state(state=state)
+    method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+    episode = method._practice_episode
+    assert episode is not None
+    current = env.get_current_state()
+    trace = []
+    for _ in range(3):
+        labeled = episode.step(state=current)
+        trace.append((labeled.label, episode._random_mode))
+        current = env.take_action(action=labeled.action)
+    return method, trace
+
+
+def test_a_failed_goal_plan_enters_random_mode_under_the_flag() -> None:
+    """predicators' `for goal in generate_goals()` for...else covers the assigned-task
+    goal too: no plan to it means random options for the rest of the episode."""
+    method, trace = _unreachable_goal_episode(flag=True)
+    assert all(random_mode for _label, random_mode in trace)
+    assert all(label.startswith("random: ") for label, _mode in trace)
+    assert method.selections == 0
+
+
+def test_without_the_flag_a_failed_goal_plan_falls_through_to_practice() -> None:
+    method, trace = _unreachable_goal_episode(flag=False)
+    assert not any(random_mode for _label, random_mode in trace)
+    assert method.selections >= 1

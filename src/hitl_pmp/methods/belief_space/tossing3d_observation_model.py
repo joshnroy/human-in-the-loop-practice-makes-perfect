@@ -46,30 +46,34 @@ class SkillBeliefModel:
         was_random_exploration: bool,
         observed_cost: float | None = None,
         resample: bool = True,
+        condition_competence: bool | None = None,
     ) -> Tossing3DBeliefState:
+        """`condition_competence` is the `CompetenceEvidence` decision for this
+        attempt; left as None it falls back to excluding epsilon-random attempts."""
         assert resample or observed_cost is None, "imagined updates do not observe execution costs"
         if self.skill is None:
             return state
         skill_name = self.skill.name
         if skill_name not in state.skill_beliefs:
             return state
+        if condition_competence is None:
+            condition_competence = not was_random_exploration
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
         if observed_cost is not None and isinstance(
             belief, (ParticleFilterBelief, BayesianSkillBelief)
         ):
             belief = (
-                belief.condition_cost(observed_cost=observed_cost)
-                if was_random_exploration
-                else belief.condition_execution(success=success, observed_cost=observed_cost)
+                belief.condition_execution(success=success, observed_cost=observed_cost)
+                if condition_competence
+                else belief.condition_cost(observed_cost=observed_cost)
             )
-        elif not was_random_exploration:
-            belief = condition_skill_belief(belief=belief, success=success, resample=resample)
+        elif condition_competence:
+            belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
-        if was_random_exploration:
-            return state.model_copy(update={"skill_beliefs": skill_beliefs})
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
+            # The notebook's m: every attempt is a data point, success or failure.
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         return state.model_copy(
             update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
@@ -92,8 +96,11 @@ class SkillBeliefModel:
 
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
+    # Fixed controllers advance their training clock once per attempt, as the notebook
+    # counts m for every skill; only the toss's clock is fed by sampler examples.
     Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
         skill=Tossing3DSkills.PICK_CUBE,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
     Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -101,6 +108,7 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     ),
     Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
         skill=Tossing3DSkills.OPEN_GRIPPER,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
 }
 
@@ -114,7 +122,11 @@ def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     if ground_skill.skill.name == OPEN_GRIPPER_SKILL:
         return SKILL_BELIEF_MODELS[Tossing3DSkills.OPEN_GRIPPER]
     if ground_skill.skill.name in RESET_SKILLS:
-        return SkillBeliefModel(skill=ground_skill.skill)
+        # Human and robot resets alike: every completed reset is one attempt (a reset
+        # that fails raises and aborts the run, so only successes are ever observed).
+        return SkillBeliefModel(
+            skill=ground_skill.skill, example_source=PracticeExampleSource.OUTCOME
+        )
     return SKILL_BELIEF_MODELS.get(
         ground_skill.skill,
         SkillBeliefModel(skill=ground_skill.skill),
@@ -188,12 +200,8 @@ def mean_cost(*, belief: ParticleFilterBelief | BayesianSkillBelief) -> float:
     return belief.mean_cost()
 
 
-def condition_skill_belief(
-    *, belief: ConcreteSkillBelief, success: bool, resample: bool = True
-) -> ConcreteSkillBelief:
+def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
-    if isinstance(belief, BayesianSkillBelief):
-        return belief.condition_outcome(success=success, resample=resample)
     return belief.condition_outcome(success=success)
 
 
@@ -212,18 +220,15 @@ def refit_belief_state(
 ) -> Tossing3DBeliefState:
     """Apply the configured transition; S/F is the only competence evidence.
 
+    The training clock is the notebook's m: every attempt that entered the
+    sampler's training data advances it, whether or not the fit was one-class.
     Real cycle boundaries also reset evidence and ancestry bookkeeping when no
-    training occurred. A hypothetical zero-example forecast remains an identity.
-    Tracked one-class samplers defer learning credit until both labels exist;
-    their first mixed-class refit uses the whole retained training set.
+    training occurred, and a zero-example forecast is still a predict step.
     """
     assert learning_rate_process_noise_std >= 0.0
     refitted_beliefs: dict[str, ConcreteSkillBelief] = {}
     for skill_name, belief in state.skill_beliefs.items():
         count = state.pending_examples.get(skill_name, 0)
-        training = state.sampler_training.get(skill_name)
-        if training is not None:
-            count = training.refit_examples
         refitted: ConcreteSkillBelief
         if isinstance(belief, BayesianSkillBelief):
             refitted = (

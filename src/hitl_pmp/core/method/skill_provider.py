@@ -70,6 +70,16 @@ class SkillProvider(BaseModel, abc.ABC):
         features (see `EesMethod.execute_ground_skill`)."""
         raise NotImplementedError
 
+    def sample_params_at_state(
+        self, *, ground_skill: GroundSkill, rng: np.random.Generator, state: State
+    ) -> np.ndarray:
+        """The draw a decision actually uses, at the state it is made in. Defaults to
+        the state-free `sample_params`; a domain overrides it when the support itself
+        depends on the scene (Tossing3D's per-bin feasible standoff band), so that the
+        support is set before drawing rather than enforced by rejecting draws."""
+        del state
+        return self.sample_params(ground_skill=ground_skill, rng=rng)
+
     @abc.abstractmethod
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -109,6 +119,13 @@ class SkillProvider(BaseModel, abc.ABC):
         both a training observation and a candidate being scored -- i.e. it is a pure
         function of `(ground_skill, state, params)`."""
         return None
+
+    def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
+        """Named values `compute_action` chose itself rather than took from the sampled
+        parameters, so logs can carry them as their own fields (Tossing3D's stand
+        direction). Empty by default: most domains' actions are their parameters."""
+        del ground_skill, action
+        return {}
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         """A domain-specific ground skill for `HumanCubeBinResetRequested`: offered

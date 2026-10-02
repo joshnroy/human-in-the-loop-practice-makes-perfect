@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
     RESET_SKILL,
+    RESET_SKILLS,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -26,6 +27,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -34,10 +36,15 @@ from hitl_pmp.planning.grounding import SkillGrounder
 def _build(**kwargs: object) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
     reset_cost = float(kwargs.pop("human_reset_practice_cost", 5.0))
+    offer_non_human_reset = bool(kwargs.pop("offer_non_human_reset", False))
     config = {"pomdp_search_depth": 2, **kwargs}
     return Tossing3DPomdpMethod(
         env=env,
-        skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=reset_cost),
+        skill_provider=Tossing3DSkillProvider(
+            env=env,
+            human_reset_practice_cost=reset_cost,
+            offer_non_human_reset=offer_non_human_reset,
+        ),
         seed=0,
         **config,
     )
@@ -198,6 +205,35 @@ def test_action_value_diagnostics_distinguish_parameterized_reset_destinations()
     assert any("opposite_side" in key for key in reset_keys)
 
 
+def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() -> None:
+    """The belief-space planner chooses the reset side itself: every offered reset
+    mechanism is in its action set once per destination, and both destinations are
+    applicable from the same real state."""
+    method = _build(offer_non_human_reset=True)
+    model = method._pomdp_model  # noqa: SLF001
+    # The model grounds over every possible atom, so the robot-side variable is also
+    # bound to the opposite side; those groundings are never applicable (RobotAtSide
+    # holds only for the robot's own side) and are not destinations.
+    resets = [
+        g
+        for g in model.ground_skills
+        if g.skill.name in RESET_SKILLS and g.objects[-2].name == "robot_side"
+    ]
+    assert sorted((g.skill.name, g.objects[-1].name) for g in resets) == sorted(
+        (name, side) for name in RESET_SKILLS for side in ("robot_side", "opposite_side")
+    )
+    pick = _grounding(method=method, name=PICK_SKILL)
+    state = make_tossing3d_search_state(
+        state=method.pomdp_state, true_atoms=pick.preconditions | resets[0].preconditions
+    )
+    offered = {
+        (g.skill.name, g.objects[-1].name)
+        for g in model.get_valid_actions(environment_state=state)
+        if g.skill.name in RESET_SKILLS
+    }
+    assert {side for _name, side in offered} == {"robot_side", "opposite_side"}
+
+
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
     method = _build()
     assert {skill.evaluate_practice_cost() for skill in method.skills()} == {1.0}
@@ -221,7 +257,7 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
         belief=before.skill_beliefs[PICK_SKILL]
     )
-    assert after.pending_examples.get(PICK_SKILL, 0) == 0
+    assert after.pending_examples.get(PICK_SKILL, 0) == 1
     assert isinstance(after.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert isinstance(before.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
@@ -350,11 +386,20 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
-    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
+
+
+def test_practice_offers_only_the_human_reset() -> None:
+    method = _build()
+    assert [skill.name for skill in method.human_skills()] == [RESET_SKILL]
+    assert NON_HUMAN_RESET_SKILL not in method.pomdp_state.skill_beliefs
+    offered = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert RESET_SKILL in offered
+    assert not any("non_human_reset" in name for name in offered)
 
 
 def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
-    method = _build()
+    method = _build(offer_non_human_reset=True)
     reset_skill = next(
         skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
     )
@@ -382,7 +427,8 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
     assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
-    assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 0
+    assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 1
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
@@ -429,7 +475,6 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
         "ask_for_reset_cube_bin_only (belief mean)",
-        "non_human_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]
@@ -462,7 +507,7 @@ def test_end_cycle_logs_training_counts_without_learning_rate_observations(
 
 
 def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
-    method = _build()
+    method = _build(offer_non_human_reset=True)
     human = method.pomdp_state.skill_beliefs[RESET_SKILL]
     automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
 
@@ -473,3 +518,100 @@ def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
         f"{RESET_SKILL} (belief mean)",
         f"{NON_HUMAN_RESET_SKILL} (belief mean)",
     }
+
+
+def test_a_granted_movables_reset_clears_the_starved_pool_record() -> None:
+    """A starved pool is keyed on a symbolic state, but its cause is geometry: after a
+    movables reset the bin is somewhere else, so last placement's starvations are no
+    longer evidence. Both registries -- EES's selection filter and the search model's
+    action mask -- are cleared, not only at a new session."""
+    method = _build()
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    atoms = toss.preconditions
+    method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
+    assert method.starved_ground_skills(true_atoms=atoms) == {toss}
+    assert method._pomdp_model.starved_pools  # noqa: SLF001
+    reset = method.skill_provider.human_cube_bin_reset_skills()[1]
+    method.record_action_cost(ground_skill=reset)
+    method.observe_help_granted(state=Tossing3DState.model_construct())
+    assert method.starved_ground_skills(true_atoms=atoms) == frozenset()
+    assert method._pomdp_model.starved_pools == ()  # noqa: SLF001
+
+
+def test_practice_without_the_human_reset_offers_and_models_no_reset() -> None:
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+        pomdp_search_depth=2,
+    )
+    assert method.human_skills() == ()
+    assert not (RESET_SKILLS & set(method.pomdp_state.skill_beliefs))
+    offered = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert not (RESET_SKILLS & offered)
+    assert method.may_request_human_help() is False
+
+
+def test_removing_the_human_reset_leaves_every_other_prior_unchanged() -> None:
+    """Priors are seeded by position; the reset is appended last, so dropping it must
+    not reseed the robot skills' beliefs."""
+    env = Tossing3DEnvironment(scene_bg=False)
+    without = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+        pomdp_search_depth=2,
+    )
+    with_reset = _build()
+    for name, belief in without.pomdp_state.skill_beliefs.items():
+        assert with_reset.pomdp_state.skill_beliefs[name] == belief
+
+
+def test_the_goal_pursuit_schedule_reaches_the_belief_space_planner() -> None:
+    """Tossing3DPomdpMethod inherits EES's goal phase, so the schedule gates it the
+    same way: with predicators' init 1 / interval 5, periods 0 and 5 open in the goal
+    phase and the rest go straight to the belief-space selection."""
+    method = _build(goal_pursuit_horizon=100, goal_pursuit_init_cycles=1, goal_pursuit_interval=5)
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    goal = Goal(atoms=frozenset(a for a in toss.add_effects if a.predicate.name == "InBin"))
+    phases = []
+    for _ in range(7):
+        method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+        assert method._practice_episode is not None
+        phases.append(not method._practice_episode._goal_phase_done)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 5]
+
+
+def test_the_belief_space_planner_skips_goal_pursuit_by_default() -> None:
+    method = _build()
+    assert method.goal_pursuit_horizon == 0
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == (1, 1)
+
+
+def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_planner() -> None:
+    """Under --reproduce-predicators-random-when-stranded EES goes random when its goal
+    plan fails; our planner keeps its own behaviour and falls through to practice
+    selection (here a depth-0 search, which stops)."""
+    method = _build(
+        pomdp_search_depth=0,
+        goal_pursuit_horizon=100,
+        reproduce_predicators_random_when_stranded=True,
+    )
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    goal = Goal(atoms=frozenset(a for a in toss.add_effects if a.predicate.name == "InBin"))
+    policy = method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+    with pytest.raises(InteractionComplete):
+        policy(state)
+    episode = method._practice_episode
+    assert episode is not None
+    assert episode._goal_phase_done is True
+    assert episode._random_mode is False

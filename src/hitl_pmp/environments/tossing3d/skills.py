@@ -15,7 +15,7 @@ controller. Here the operator half is the `Skill` below and the controller half 
 | --- | --- | --- |
 | `Pick` (distance, rotation) | `pick_shelf` | `PickCube`, **no parameters** |
 | `MoveToThrowPose` (standoff) | `move_to_target` | folded into the toss |
-| `Toss` (speed, ms) | `move_arm_to_conf`, `toss` | `MoveToTossLocationAndToss`, four |
+| `Toss` (speed, ms) | `move_arm_to_conf`, `toss` | `MoveToTossLocationAndToss`, three |
 
 Upstream composed the base move and the throw so that **no predicate has to name the pose
 between them**. On the pick, upstream's `PickCubeController` exposes `sample_parameters`
@@ -41,7 +41,9 @@ Two consequences worth stating rather than discovering:
 
 ## Every continuous bound below is upstream's
 
-`MoveToTossLocationAndTossController` declares all four on itself. The current simulation
+`MoveToTossLocationAndTossController` declares all four of its arguments' bounds on
+itself; three are learned here (standoff, speed, release) and the fourth, the
+rotation about the bin, is chosen per state (`toss_direction.py`). The current simulation
 range extends the standoff to 2.6 m, release speed to 420 deg/s, and release timing down
 to 400 ms so the farther default receivers have feasible release poses and trajectories.
 The low-level toss profile keeps its 140 deg/s default; the composed simulation controller
@@ -102,13 +104,17 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from .environment import Tossing3DEnvironment
 from .predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
+    PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
 from .sides import Tossing3DSides
@@ -118,16 +124,10 @@ from .sides import Tossing3DSides
 # practice. These bounds cover candidates, not guaranteed scoring distances.
 TOSS_DISTANCE_BOUNDS = (1.25, 2.6)
 
-# Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), how close
-# `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.
-WAYPOINT_TOLERANCE = 4 * 1e-2
-
-# Upstream's `TARGET_ROTATION_BOUNDS`: the widest yaw about the bin that still leaves the
-# base within half of `WAYPOINT_TOLERANCE` of the bin's axis at the largest standoff.
-# Computed from the two constants above rather than written as a literal, exactly as
-# upstream computes it, so a bump to either cannot silently drift out of sync.
-MAX_TOSS_ROTATION = float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1]))
-TOSS_ROTATION_BOUNDS = (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
+# There is no rotation bound: the toss no longer samples a yaw. The controller's
+# rotation argument is one of four bin-relative right angles chosen per state by
+# `toss_direction.TossDirectionSelector` (see that module for the rule). This
+# supersedes the local +-pi/2 widening of upstream's `TARGET_ROTATION_BOUNDS`.
 
 # Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
 # module's docstring for why the degree convention is kept and where it is converted.
@@ -164,14 +164,27 @@ class Tossing3DSkills:
         name="PickCube",
         # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
         # barrier is unused by the controller and present so the operator can say the
-        # cube is still on this side of it.
-        parameters=(_robot, _cube, _barrier, _side),
+        # cube is still on this side of it. The bin comes last, appended after #346's
+        # side for the same reason the side was: BinOnGround has to name the bin, and
+        # appending preserves upstream's prefix order.
+        parameters=(_robot, _cube, _barrier, _side, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # The barrier is one-way: see this module's docstring, choice 1.
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
             LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            # The controller's own planner finds a plan from here. A pick it would
+            # refuse at dispatch moves nothing, so retrying it is a loop the planners
+            # never leave; without this atom only the paid reset applies. It replaces
+            # GraspClear, whose fitted clearances each described one refusal geometry
+            # and blocked cubes the controller does pick.
+            LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
+            # Every robot skill requires the bin upright on the floor.
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+            # Deliberately NOT PickupUnblocked: an observed refusal is information,
+            # not a mask. A pick that was planned and then failed while executing
+            # stays retryable, and is one more failed attempt.
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({
@@ -190,6 +203,7 @@ class Tossing3DSkills:
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
@@ -198,12 +212,23 @@ class Tossing3DSkills:
             # Measured upstream on 20 throws: 15/15 that scored left the cube on a face.
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            # The toss relocates the cube, so a refusal observed at its old
+            # position no longer describes it -- a true add, not a forget.
+            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
         }),
-        ignore_effects=frozenset({CUBE_AT_SIDE}),
-        param_dim=4,
+        # GraspClear and PickPlannable join CubeAtSide as functional updates: whether
+        # the landed cube can be picked is a fact of the physics, re-read from
+        # observation rather than promised by the operator model. BinOnGround is
+        # deliberately neither deleted nor ignored: a toss can tip the bin, but
+        # modelling that would make every imagined post-toss plan require a reset, so
+        # the planners assume the bin stays upright and replan from the observed state
+        # when it does not.
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE}),
+        # [standoff, speed, release]; the stand direction is the controller's choice.
+        param_dim=3,
         practice_cost=1.0,
     )
 
@@ -215,8 +240,13 @@ class Tossing3DSkills:
     # no-op and opening while genuinely holding a cube is not modeled incorrectly.
     OPEN_GRIPPER: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        parameters=(_robot, _cube),
-        preconditions=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
+        # The bin is appended, as #346 appended side and bin parameters, so the
+        # BinOnGround precondition every robot skill carries can name it.
+        parameters=(_robot, _cube, _bin),
+        preconditions=frozenset({
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+        }),
         add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
         delete_effects=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
         param_dim=0,
@@ -230,9 +260,7 @@ class Tossing3DSkills:
         State-independent by the `SkillProvider` contract: a learned sampler generates
         many candidates from this and then picks among them using the state.
 
-        The toss is deliberately absent: its candidates come from
-        `WideLongRangeTossProposal` via `Tossing3DSkillProvider.sample_params` on the
-        barrier layout, and from `SameSideSkills.sample_params` on the same-side one,
+        The toss is deliberately absent: both layouts draw it through `Tossing3DToss`,
         so a toss draw reaching this sampler is a routing bug worth failing loudly on.
         """
         skill = ground_skill.skill
@@ -244,26 +272,16 @@ class Tossing3DSkills:
 
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
-        """Realize a (ground skill, parameters) pair as this domain's five-slot vector.
+        """Realize a parameterless skill as this domain's five-slot vector.
 
-        `state` is unused: the four toss parameters are bin-relative standoff, bin-relative
-        yaw, joint-path speed, and release time rather than world coordinates.
+        The toss is absent for the same reason as in `sample_params`: its action needs
+        the state-chosen stand direction, which only `Tossing3DToss.compute_action`
+        supplies.
         """
-        del state
+        del state, params
         skill = ground_skill.skill
         if skill == Tossing3DSkills.PICK_CUBE:
             return np.array([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
-        if skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return np.array(
-                [
-                    Tossing3DEnvironment.move_to_toss_location_and_toss_id,
-                    float(params[0]),
-                    float(params[1]),
-                    float(params[2]),
-                    float(params[3]),
-                ],
-                dtype=float,
-            )
         if skill == Tossing3DSkills.OPEN_GRIPPER:
             return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

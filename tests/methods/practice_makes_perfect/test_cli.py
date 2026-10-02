@@ -139,6 +139,37 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], True), (["--ees-reset-gate"], True), (["--no-ees-reset-gate"], False)],
+)
+def test_the_ees_reset_gate_flag_parses_and_reaches_ees(
+    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Parsed by --method ees and handed to the EesMethod the factory builds, so
+    --no-ees-reset-gate is not silently dropped between argparse and plan_to."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    args = _build_ees_parser().parse_args(argv)
+    assert args.ees_reset_gate is expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert method.reset_cost_gate is expected
+
+
 def test_ees_does_not_register_domain_owned_reset_cost() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
@@ -189,3 +220,115 @@ def test_non_tossing3d_cli_rejects_the_domain_owned_reset_cost() -> None:
                 "0.1",
             ]
         )
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("reproduce-predicators-seen-task-order", "reproduce_predicators_seen_task_order"),
+        ("reproduce-predicators-skip-perfect", "reproduce_predicators_skip_perfect"),
+        (
+            "reproduce-predicators-explore-target-only",
+            "reproduce_predicators_explore_target_only",
+        ),
+        (
+            "reproduce-predicators-random-when-stranded",
+            "reproduce_predicators_random_when_stranded",
+        ),
+    ],
+)
+@pytest.mark.parametrize(("prefix", "expected"), [(None, False), ("", True), ("no-", False)])
+def test_the_predicators_fidelity_flags_parse_and_reach_ees(
+    *, flag: str, field: str, prefix: str | None, expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each flag defaults off, so every earlier run keeps its behaviour, and is handed
+    to the EesMethod the factory builds rather than dropped between argparse and the
+    method."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    argv = [] if prefix is None else [f"--{prefix}{flag}"]
+    args = _build_ees_parser().parse_args(argv)
+    assert getattr(args, field) is expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert getattr(method, field) is expected
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], False), (["--defer-rendering"], True), (["--no-defer-rendering"], False)],
+)
+def test_ees_on_tossing3d_honours_the_defer_rendering_flag(
+    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EES renders in-run by default, as it always has; --defer-rendering reaches
+    Tossing3DCli.run_method, which then builds no renderer. POMDP forces it on
+    regardless, and is not this flag's business."""
+    from hitl_pmp.cli import Cli
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+
+    seen: list[bool] = []
+
+    def _run_method(*, args: argparse.Namespace, **_kwargs: object) -> None:
+        seen.append(args.defer_rendering)
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", "ees", *argv])
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize("method_name", ["ees", "pomdp"])
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], (1, 1)),
+        (["--goal-pursuit-init-cycles", "1", "--goal-pursuit-interval", "5"], (1, 5)),
+    ],
+)
+def test_the_goal_pursuit_schedule_flags_reach_both_methods(
+    *,
+    method_name: str,
+    argv: list[str],
+    expected: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hitl_pmp.cli import Cli
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+
+    built: list[object] = []
+
+    def _run_method(*, method_factory: object, **_kwargs: object) -> None:
+        env = Tossing3DEnvironment(scene_bg=False)
+        built.append(
+            method_factory(  # type: ignore[operator]
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", method_name, *argv])
+    (method,) = built
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == expected  # type: ignore[attr-defined]
