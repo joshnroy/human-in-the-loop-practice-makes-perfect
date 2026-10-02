@@ -249,21 +249,12 @@ jobs:
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
-      - name: Cache apt packages
-        id: cache-apt
-        uses: actions/cache@v4
-        with:
-          path: /tmp/apt-packages
-          key: apt-packages-${{ runner.os }}-mesa-blas-v1
-      - name: Install LAPACK BLAS, and OSMESA
+      - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          if [ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -d --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
-            mkdir -p /tmp/apt-packages
-            cp /var/cache/apt/archives/*.deb /tmp/apt-packages/
-          fi
-          sudo dpkg -i /tmp/apt-packages/*.deb
+          # Resolve against this runner image; cached .deb files can require
+          # exact library versions that have changed on ubuntu-latest.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -322,21 +313,12 @@ jobs:
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
-      - name: Cache apt packages
-        id: cache-apt
-        uses: actions/cache@v4
-        with:
-          path: /tmp/apt-packages
-          key: apt-packages-${{ runner.os }}-mesa-blas-v1
-      - name: Install LAPACK BLAS, and OSMESA
+      - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          if [ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -d --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
-            mkdir -p /tmp/apt-packages
-            cp /var/cache/apt/archives/*.deb /tmp/apt-packages/
-          fi
-          sudo dpkg -i /tmp/apt-packages/*.deb
+          # Resolve against this runner image; cached .deb files can require
+          # exact library versions that have changed on ubuntu-latest.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
       - uses: actions/checkout@v4
         with:
           submodules: recursive

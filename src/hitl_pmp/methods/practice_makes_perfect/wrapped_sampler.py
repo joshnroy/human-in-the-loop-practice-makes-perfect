@@ -66,7 +66,7 @@ exactly equal scores, but "cannot discriminate" is the broader property."""
 import contextlib
 import copy
 import math
-from collections.abc import Iterator
+from collections.abc import Generator
 
 import numpy as np
 import torch
@@ -101,7 +101,7 @@ class SingleThreadedTorch:
 
     @staticmethod
     @contextlib.contextmanager
-    def scope() -> Iterator[None]:
+    def scope() -> Generator[None, None, None]:
         previous = torch.get_num_threads()
         torch.set_num_threads(1)
         try:
