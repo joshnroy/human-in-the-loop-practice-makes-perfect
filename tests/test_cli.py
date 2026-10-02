@@ -74,6 +74,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
     assert set(ENVIRONMENTS) == {
         "ballring",
         "lightswitch",
+        "sweep_drawer3d",
         "tossing3d",
         "tossingroom",
     }

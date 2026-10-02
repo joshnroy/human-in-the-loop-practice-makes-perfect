@@ -19,6 +19,6 @@ def test_approved_supports_are_bounded_and_nondegenerate():
         bounds = np.array(provider.stock_parameter_bounds[skill.name])
         assert len(np.unique(draws, axis=0)) == 24
         assert np.all(draws >= bounds[:, 0]) and np.all(draws <= bounds[:, 1])
-    provider.stock_parameter_bounds["OpenDrawer"] = ((.8, .8), (-4., -3.))
+    provider.stock_parameter_bounds["OpenDrawer"] = ((0.8, 0.8), (-4.0, -3.0))
     with pytest.raises(ValueError, match="degenerate"):
         provider.validate_trainable_support()
