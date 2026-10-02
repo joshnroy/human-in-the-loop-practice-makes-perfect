@@ -106,13 +106,22 @@ passes that interpreter into the sweep, while keeping worktree-local imports.
 ### Runtime configuration and execution
 
 [The example runtime configuration](runtime.example.json) contains placeholders,
-not selected models or credentials. Set the Docker image and Robocode checkout, choose the coding
-and multimodal models, and set the vision endpoint. The vision schema follows
-Robocode's `OpenAICompatibleClient`: `provider`, `model`, `base_url`, and
-`api_key_env`. An empty `api_key_env` is for a keyless local server; for a hosted
-endpoint, supply the **name** of an existing credential environment variable.
-Do not put secret values in the JSON. The coding backend can be `codex` or
-`claude`; its model, budget and turn limit are explicit experiment settings.
+not selected models or credentials. Set the Docker image and Robocode checkout,
+and choose the coding model. The coding backend can be `codex` or `claude`; its
+model, budget and turn limit are explicit experiment settings.
+
+Vision's `robocode_broker` provider inherits that backend and model unless
+explicitly overridden. It sends inline images through Robocode's fixed inference
+broker using the existing host login; no additional API key or arbitrary endpoint
+is needed. This image-preserving adapter is distinct from Robocode's default CLI
+text-completion client, which cannot accept these multimodal messages unchanged.
+The host retains exact request/response evidence for each visual judgment.
+
+For a separately configured multimodal service, the original `openai_compatible`
+provider remains available with `model`, `base_url`, and `api_key_env`. An empty
+`api_key_env` is for a keyless local server; for a hosted endpoint, supply the
+**name** of an existing credential environment variable. Do not put secret values
+in the JSON.
 
 The protocol first hashes and snapshots the runtime configuration and external
 input bundle. It then invokes the exact disconnected policy launcher with a
@@ -182,11 +191,11 @@ camera images match the earlier probe. The [separate result](python311-result.js
 records package versions and image hashes; the images above also illustrate this
 repeat. This remains trusted numeric execution, with no generated-policy result.
 
-Robocode can load the existing coding-provider login. That does not supply the
+At this stage Robocode could load the existing coding-provider login. That did not supply the
 separate OpenAI-compatible VLM client with API credentials: none were configured,
 and neither local endpoint checked (ports 8000 and 11434) was serving a model.
-An explicit VLM configuration is still required. No inference request or
-generated-code execution has been performed by this follow-up.
+An explicit VLM configuration was still required. No inference request or
+generated-code execution had been performed by this setup follow-up.
 
 ### Docker validation on October 2
 
@@ -204,6 +213,28 @@ A genuine generation attempt was prepared with the external task, robot API,
 generation prompt and resolved input bundle, capped at $2 and 20 turns. Automatic
 approval review rejected launching it because explicit permission is required
 for sending that experiment content to the fixed Codex inference destination.
-The user was asked to approve that payload and destination. No model call ran.
-The VLM endpoint/model and credential configuration remain a separate dependency
-for the full practice loop.
+The user was asked to approve that payload and destination. No model call ran
+before that approval.
+
+### Approved generation and Robocode vision follow-up
+
+After approval, the first launch failed during Codex CLI startup: Docker had
+created its configuration directory as a root-owned parent of the sessions bind
+mount. Mounting a fresh user-owned CLI configuration directory fixes startup,
+preserves the existing session logs for accounting, and retains the strict
+isolation checks. The [offline before/after probe](docker-cli-startup.json)
+shows the CLI initialization handshake succeeds after this change.
+
+The corrected launch reached the model. It returned a
+[generation limitation](generation-limitation.json), not a valid policy library:
+actual sample observations, camera calibration and robot geometry were missing.
+The [recorded result](generation-result.json) distinguishes this from a working
+generated skill. No robot execution, visual judgment or code-learning result was
+obtained, and no second paid generation attempt was started.
+
+The `robocode_broker` vision provider now reuses the chosen coding backend's host
+authentication while preserving images. Both supported request protocols pass
+Robocode's real request validator with an actual simulator image; this was offline
+validation, not a live VLM call. The combined focused suite passes **73/73 tests**.
+The next generation requires a documented sensor/robot-specification bundle;
+RGB versus RGB-D is an explicit pending input-contract decision.

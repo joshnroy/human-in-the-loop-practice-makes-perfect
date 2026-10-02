@@ -1,0 +1,64 @@
+{
+  "evaluations": [
+    [
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      1
+    ]
+  ],
+  "practice_session_ends": [
+    {
+      "cycle_index": 0,
+      "reason": "interaction_complete",
+      "actions_executed": 1,
+      "action_limit": 3
+    }
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InBin(cube_0, bin_0)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 1,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InBin(cube_0, bin_0)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 0,
+  "planning_failures_per_cycle": [
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    0,
+    0
+  ],
+  "practice_outcomes_per_cycle": [
+    {},
+    {}
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {},
+    {}
+  ],
+  "num_human_interventions_recorded": 0,
+  "summed_human_cost_recorded": 0.0,
+  "task_name": "default"
+}

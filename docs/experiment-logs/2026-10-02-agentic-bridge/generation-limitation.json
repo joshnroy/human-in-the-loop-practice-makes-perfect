@@ -1,0 +1,13 @@
+{
+  "status": "blocked",
+  "artifact_type": "generation_limitation",
+  "library_generated": false,
+  "reason": "The supplied material describes an observation envelope but includes no actual rendered frame, calibrated image-to-world mapping, arm kinematics, or documented runtime object-localization features. Joint proprioception alone does not locate the cube or bin or establish a grasp. The isolated controller cannot call the VLM. A grounded pick/toss implementation cannot be supplied from this information without guessing geometry or motion.",
+  "feasible_subset": "Opening the gripper can be implemented using the documented absolute gripper command. That alone does not implement the requested library.",
+  "needed_to_continue": [
+    "Representative actual rendered observations and the concrete action_spec object.",
+    "Documented camera calibration and robot arm geometry/joint conventions sufficient to implement image-based localization and joint-space control, or explicitly documented runtime perception features with coordinate frames and units.",
+    "A runnable execution interface for checking controller behavior against the fixed visual contracts across seeds."
+  ],
+  "validation": "No robot execution was performed. This JSON is a diagnostic, not a schema-version-1 option library, and must not be accepted as one."
+}

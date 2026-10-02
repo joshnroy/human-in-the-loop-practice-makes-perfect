@@ -1,0 +1,107 @@
+{
+  "environment": "Tossing3D",
+  "observation_mode": "object_state",
+  "seed": 0,
+  "generation": {
+    "valid": true,
+    "clusters": 10,
+    "robot_options": 3,
+    "human_options": 2,
+    "edges": 59,
+    "backend": "codex",
+    "model": "gpt-6-astra",
+    "broker": "Robocode",
+    "network": "none in Docker; fixed model broker only"
+  },
+  "default_run": {
+    "observation_probability_weight": 0.1,
+    "practice_actions": 0,
+    "stop_reason": "planner_stop",
+    "changed_files": [],
+    "evaluation_successes": [
+      0,
+      0
+    ],
+    "evaluation_trials": [
+      1,
+      1
+    ]
+  },
+  "cycle_smoke": {
+    "observation_probability_weight": 0.0,
+    "linear_cost_lambda": null,
+    "hard_budget": 20,
+    "practice_actions": 1,
+    "practice_pick_success": false,
+    "destination": null,
+    "stop_reason": "unresolved destination / interaction_complete",
+    "practice_control_periods": 230,
+    "evidence_count": 1,
+    "changed_files": [
+      "policies/pick.py"
+    ],
+    "evaluation_successes": [
+      0,
+      0
+    ],
+    "evaluation_trials": [
+      1,
+      1
+    ],
+    "evaluation_pick_success": [
+      true,
+      true
+    ],
+    "evaluation_pick_control_periods": [
+      174,
+      94
+    ],
+    "evaluation_toss_success": [
+      false,
+      false
+    ],
+    "evaluation_toss_control_periods": [
+      122,
+      71
+    ],
+    "practice_resets_after_initialization": 0,
+    "human_interventions": 0
+  },
+  "limits": [
+    "Single-seed workflow smoke test, not a learning-effectiveness result.",
+    "The default configuration does not collect practice data in this scene.",
+    "Generated cluster coverage can abstain after a real skill failure; uncertain labels are not coerced.",
+    "No claim that shorter pick execution generalizes or constitutes statistically established improvement."
+  ],
+  "validation": {
+    "full_regression_passed": 2892,
+    "full_regression_skipped": 2,
+    "full_regression_expected_failures": 1,
+    "subsequent_focused_passed": 246,
+    "native_FK_checks_passed": 1
+  },
+  "provenance": {
+    "kindergarden_commit": "f0d554b7b14731f33d55111f99a37f0ae2853e48",
+    "robocode_commit": "0ff81725221822613718dd3c4ba0351fb512aa54",
+    "docker_image": "sha256:712a0a55dc7fc61cb30ab043a79f176f524c937885437bf084f7abb95ed9f531",
+    "raw_artifacts": "/tmp/hitl-agentic-tossing3d/artifacts/agentic-object-state-cycle",
+    "run3_protocol_input_note": "Run3 snapshots precede the documentation-only clarification of shared timestamps; runtime observations already include simulation_time_s and clock metadata."
+  },
+  "artifact_sha256": {
+    "evaluation-judgments.json": "635afe387b485c12f9848b914acc038918b3b22aa1c0471f19eae4cf58d7b4a5",
+    "smoke-stats.json": "26b3eced51e376128850d1e0d7ec6948c5e4cc6443b95f634e7dd66d371c6fde",
+    "practice-judgments.json": "c7079be4a7f84c30e4789aab0b8da290ecffcfe7d3795ef49524b27dede3322d",
+    "policy-revision.json": "561bc23afd30a3411af14b57f1bd5d6b2462abf66d4fb8f97fac00f126d226d5",
+    "revision-metadata.json": "b82a178cb864cc13a5691798bf12ff84d43a0746d7a7ed99bce146ff5a5b2224",
+    "default-objective-stats.json": "991891d7e29d41eaacaf38f03ad058e7f6624517f6c9560925cedd1178339dd1",
+    "search-diagnostic.json": "dac6f92a08d2ed439d6f4a48a8f9a41f5d272f642c5f3814bbcc95e8219859df",
+    "human_input.json": "afff132e70454d0de7e07705d0c39af8be0181ff9dc5267e6510dc21297baf24",
+    "robot_spec.json": "c1c4baa64fcd9cb1373b5c935c590e8bd1cf90c17a2932ec427a740b43fc8dc5",
+    "initial_observation.json": "7a3993b3774aabd6ccebf0a0d434a4a56229b3c5785df50823080b0b11d3b4e1",
+    "initial_library.json": "3d6e0b63154902d63d8deb04ae80c1153ce839dfa5a2ef8dead81d68985d39bf",
+    "practice.mp4": "35b95aee1398a5284b517af8d2dd615448d0b06b604c3fc5ccae2e709cadaf3a",
+    "evaluation-before.mp4": "c592929603425a18c9c113e49371b759422b17295625d6a1f55f71babcdba519",
+    "evaluation-after.mp4": "cad0e2d52ffa512673a3ea687fb0c1d18d8a1cd68be2a3c8ef3e80a225382c19",
+    "cycle-outcomes.png": "8942516a81a01630b0c27660b5ac79f7691c5574113b5e2a70b898544dd2b5ff"
+  }
+}

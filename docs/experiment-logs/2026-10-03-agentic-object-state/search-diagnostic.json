@@ -1,0 +1,285 @@
+{
+  "source": "run2/agentic-options/0/initial_library.json",
+  "seed": 0,
+  "num_particles": 256,
+  "model": "local_trend",
+  "linear_cost_lambda": null,
+  "hard_budget": 20.0,
+  "initial_cluster": "free_far",
+  "stop_value": 0.4903215910872191,
+  "initial_beliefs": {
+    "PickCube": {
+      "competence": 0.6441241923227314,
+      "learning_rate": 0.03353984575596733,
+      "cost": 1.9987221927867096
+    },
+    "MoveToTossLocationAndToss": {
+      "competence": 0.6467000353078489,
+      "learning_rate": 0.040776868806601516,
+      "cost": 1.99872219278671
+    },
+    "OpenGripper": {
+      "competence": 0.6632172646251624,
+      "learning_rate": 0.04112593962900274,
+      "cost": 1.9987221927867098
+    },
+    "ask_for_reset_cube_bin_only": {
+      "competence": 0.673205214705638,
+      "learning_rate": 0.041401093133916086,
+      "cost": 1.9987221927867096
+    }
+  },
+  "actions": {
+    "pick": {
+      "outcomes": [
+        {
+          "destination": "held_far",
+          "outcome": "success",
+          "p": 0.6441241923227314,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "PickCube": 1
+          },
+          "stop_after_refit": 0.5534139637988855
+        },
+        {
+          "destination": "partial_far",
+          "outcome": "failure",
+          "p": 0.17793790383863428,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "PickCube": 1
+          },
+          "stop_after_refit": 0.42178121731700446
+        },
+        {
+          "destination": "free_far",
+          "outcome": "failure",
+          "p": 0.12455653268704399,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "PickCube": 1
+          },
+          "stop_after_refit": 0.42178121731700446
+        },
+        {
+          "destination": "lost_far",
+          "outcome": "failure",
+          "p": 0.053381371151590286,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "PickCube": 1
+          },
+          "stop_after_refit": 0.42178121731700446
+        }
+      ],
+      "expected_stop_after_action": 0.506569053827869,
+      "expected_gain": 0.016247462740649865,
+      "transition_entropy": 1.0063785344726852,
+      "penalty_at_0_1": 0.10063785344726853,
+      "q_depth1_weight_0_1": 0.4059312003806005
+    },
+    "reset_cube_far": {
+      "outcomes": [
+        {
+          "destination": "free_far",
+          "outcome": "success",
+          "p": 1.0,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "stop_after_refit": 0.4903215910872191
+        }
+      ],
+      "expected_stop_after_action": 0.4903215910872191,
+      "expected_gain": 0.0,
+      "transition_entropy": -0.0,
+      "penalty_at_0_1": -0.0,
+      "q_depth1_weight_0_1": 0.4903215910872191
+    },
+    "reset_cube_and_bin_near": {
+      "outcomes": [
+        {
+          "destination": "free_near",
+          "outcome": "success",
+          "p": 1.0,
+          "cost": 1.9987221927867096,
+          "pending_examples": {
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "stop_after_refit": 0.4903215910872191
+        }
+      ],
+      "expected_stop_after_action": 0.4903215910872191,
+      "expected_gain": 0.0,
+      "transition_entropy": -0.0,
+      "penalty_at_0_1": -0.0,
+      "q_depth1_weight_0_1": 0.4903215910872191
+    }
+  },
+  "searches": [
+    {
+      "weight": 0.1,
+      "depth": 1,
+      "status": "completed",
+      "value": 0.4903215910872191,
+      "action": {},
+      "elapsed_seconds": 0.002128827036358416,
+      "root_action_values": {
+        "pick": 0.4059312003806004,
+        "reset_cube_far": 0.4903215910872191,
+        "reset_cube_and_bin_near": 0.4903215910872191
+      },
+      "search_nodes": {
+        "expanded_nodes": 1,
+        "unique_nodes": 7,
+        "cache_hits": 0
+      }
+    },
+    {
+      "weight": 0.1,
+      "depth": 3,
+      "status": "completed",
+      "value": 0.4903215910872191,
+      "action": {},
+      "elapsed_seconds": 0.04930028901435435,
+      "root_action_values": {
+        "pick": 0.4059312003806004,
+        "reset_cube_far": 0.4903215910872191,
+        "reset_cube_and_bin_near": 0.4903215910872191
+      },
+      "search_nodes": {
+        "expanded_nodes": 38,
+        "unique_nodes": 169,
+        "cache_hits": 50
+      }
+    },
+    {
+      "weight": 0.1,
+      "depth": 4,
+      "status": "completed",
+      "value": 0.4903215910872191,
+      "action": {},
+      "elapsed_seconds": 0.20011905301362276,
+      "root_action_values": {
+        "pick": 0.4059312003806004,
+        "reset_cube_far": 0.4903215910872191,
+        "reset_cube_and_bin_near": 0.4903215910872191
+      },
+      "search_nodes": {
+        "expanded_nodes": 169,
+        "unique_nodes": 659,
+        "cache_hits": 303
+      }
+    },
+    {
+      "weight": 0.0,
+      "depth": 1,
+      "status": "completed",
+      "value": 0.506569053827869,
+      "action": {
+        "option_id": "pick"
+      },
+      "elapsed_seconds": 0.0035066589480265975,
+      "root_action_values": {
+        "pick": 0.506569053827869,
+        "reset_cube_far": 0.4903215910872191,
+        "reset_cube_and_bin_near": 0.4903215910872191
+      },
+      "search_nodes": {
+        "expanded_nodes": 1,
+        "unique_nodes": 7,
+        "cache_hits": 0
+      }
+    },
+    {
+      "weight": 0.0,
+      "depth": 3,
+      "status": "completed",
+      "value": 0.5390572961520361,
+      "action": {
+        "option_id": "pick"
+      },
+      "elapsed_seconds": 0.04848240397404879,
+      "root_action_values": {
+        "pick": 0.5390572961520361,
+        "reset_cube_far": 0.5311501072365585,
+        "reset_cube_and_bin_near": 0.5311501072365585
+      },
+      "search_nodes": {
+        "expanded_nodes": 38,
+        "unique_nodes": 169,
+        "cache_hits": 50
+      }
+    },
+    {
+      "weight": 0.0,
+      "depth": 4,
+      "status": "completed",
+      "value": 0.5538644562438594,
+      "action": {
+        "option_id": "pick"
+      },
+      "elapsed_seconds": 0.2016253659967333,
+      "root_action_values": {
+        "pick": 0.5538644562438594,
+        "reset_cube_far": 0.5390572961520361,
+        "reset_cube_and_bin_near": 0.5449453486076775
+      },
+      "search_nodes": {
+        "expanded_nodes": 169,
+        "unique_nodes": 659,
+        "cache_hits": 303
+      }
+    },
+    {
+      "weight": 0.1,
+      "depth": 6,
+      "status": "completed",
+      "value": 0.4903215910872191,
+      "action": {},
+      "elapsed_seconds": 2.4933076549787074,
+      "root_action_values": {
+        "pick": 0.4059312003806004,
+        "reset_cube_far": 0.4903215910872191,
+        "reset_cube_and_bin_near": 0.4903215910872191
+      },
+      "search_nodes": {
+        "expanded_nodes": 2295,
+        "unique_nodes": 7534,
+        "cache_hits": 5547
+      }
+    },
+    {
+      "weight": 0.0,
+      "depth": 6,
+      "status": "completed",
+      "value": 0.5872860759060942,
+      "action": {
+        "option_id": "pick"
+      },
+      "elapsed_seconds": 2.509110469953157,
+      "root_action_values": {
+        "pick": 0.5872860759060942,
+        "reset_cube_far": 0.5735517433643513,
+        "reset_cube_and_bin_near": 0.5801535311764457
+      },
+      "search_nodes": {
+        "expanded_nodes": 2295,
+        "unique_nodes": 7534,
+        "cache_hits": 5547
+      }
+    }
+  ],
+  "diagnosis": {
+    "cause": "Default observation_probability_weight=0.1 subtracts expected observation surprise (transition entropy), overwhelming projected learning gain. Reset actions tie STOP and ties choose STOP.",
+    "equation": "Q_h(b,k,a)=sum_o p(o)*(V_(h-1)(b_o,k_o)-[-weight*log p(o)]). Thus Q = E[V] - weight*H(outcomes).",
+    "learning_forecast": "A pending PickCube example raises expected refit deployment value by 0.016247462740649865; belief forecast is active.",
+    "depth_check": "Horizon 3, 4 and 6 all select STOP at weight=0.1; deeper horizon alone does not resolve initial stop.",
+    "minimum_faithful_configuration": "Set observation_probability_weight=0 explicitly for the unshaped expected-deployment-value objective. Keep linear_cost_lambda=None and PRACTICE_BUDGET=20. All checked depths then select pick. No configuration or code changed by this diagnostic.",
+    "scientific_caveat": "This explains the initial decision, not competence improvement. The live complete practice/revision/evaluation cycle remains to be run under the explicitly documented unshaped objective.",
+    "partition_sensitivity": "The penalty depends on the full success/failure destination distribution; splitting a failure into several generated destination clusters increases penalty even when skill-success probability is unchanged.",
+    "cost_note": "The learner estimates all initial action costs from a prior with mean about 1.99872, including human reset options. Configured executed costs differ; this is not why the initial action loses, since all compared initial actions remain within the hard budget."
+  }
+}

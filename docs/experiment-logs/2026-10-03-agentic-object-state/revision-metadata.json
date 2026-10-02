@@ -1,0 +1,8 @@
+{
+  "previous_digest": "ba0f29e2884e403e9545ba6f02704b56e577dff25e44ef928b2c2b37a1ef47bb",
+  "digest": "e3319bc1a114dcb6b5c0b6abd6ae65a5d2dd775e3ab0afb223d1ac45e5c139a4",
+  "changed_files": [
+    "policies/pick.py"
+  ],
+  "evidence_count": 1
+}

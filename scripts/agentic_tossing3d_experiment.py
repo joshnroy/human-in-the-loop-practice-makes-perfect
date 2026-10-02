@@ -31,14 +31,22 @@ class AgenticExperimentProtocol:
         parser.add_argument("--num-cycles", type=int, default=2)
         parser.add_argument("--max-steps-per-interaction", type=int, default=10)
         parser.add_argument("--num-test-tasks", type=int, default=2)
+        parser.add_argument("--observation-probability-weight", type=float, default=0.1)
         parser.add_argument("--human-reset", action=argparse.BooleanOptionalAction, default=True)
         parser.add_argument("--human-reset-practice-cost", type=float, default=5.0)
         parser.add_argument("--memory-max", default="8G")
+        parser.add_argument("--runtime-max-seconds", type=int, default=2700)
         parser.add_argument("--preflight-only", action="store_true")
         parser.add_argument("--library", type=Path)
         args = parser.parse_args()
         if (
-            min(args.max_workers, args.num_seeds, args.num_cycles, args.max_steps_per_interaction)
+            min(
+                args.max_workers,
+                args.num_seeds,
+                args.num_cycles,
+                args.max_steps_per_interaction,
+                args.runtime_max_seconds,
+            )
             < 1
         ):
             parser.error("workers, seeds, cycles and session action limit must be positive")
@@ -63,6 +71,7 @@ class AgenticExperimentProtocol:
         )
         output = args.results_root / "protocol"
         output.mkdir(parents=True, exist_ok=False)
+        runtime.vision = runtime.resolved_vision(artifact_dir=args.results_root / "vision-runtime")
         snapshot = output / "runtime.json"
         snapshot.write_text(runtime.model_dump_json(indent=2))
         (output / "protocol.json").write_text(json.dumps(vars(args), default=str, indent=2) + "\n")
@@ -93,8 +102,8 @@ class AgenticExperimentProtocol:
             for value in (runtime.coding.model, str(runtime.vision.get("model", "")))
         ):
             raise ValueError("Choose explicit coding and vision models before running a sweep")
-        if runtime.vision.get("provider") != "openai_compatible":
-            raise ValueError("The VLM integration requires an openai_compatible vision provider")
+        if runtime.vision.get("provider") not in {"openai_compatible", "robocode_broker"}:
+            raise ValueError("The VLM requires an image-preserving Robocode vision provider")
         key_variable = runtime.vision.get("api_key_env")
         if key_variable and not os.environ.get(key_variable):
             raise ValueError("The configured vision credential environment variable is missing")
@@ -129,13 +138,27 @@ class AgenticExperimentProtocol:
             str(args.num_cycles),
             "--max-steps-per-interaction",
             str(args.max_steps_per_interaction),
+            "--agentic-observation-probability-weight",
+            str(args.observation_probability_weight),
         ]
         if args.library is not None:
             method += ["--agentic-library", str(output / "library.json")]
         command = [
             "systemd-run",
             "--user",
-            "--scope",
+            "--wait",
+            "--collect",
+            "--unit",
+            "hitl-agentic-" + uuid.uuid4().hex[:12],
+            "--working-directory",
+            str(root),
+            "--setenv=PYTHONPATH=" + environment["PYTHONPATH"],
+            "--setenv=DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1",
+            "--setenv=MUJOCO_GL=egl",
+            "-p",
+            f"RuntimeMaxSec={args.runtime_max_seconds}",
+            "-p",
+            "MemorySwapMax=0",
             "-p",
             f"MemoryMax={args.memory_max}",
             "-p",
@@ -162,6 +185,7 @@ class AgenticExperimentProtocol:
             "seeds": list(range(args.num_seeds)),
             "max_workers": args.max_workers,
             "memory_max": args.memory_max,
+            "runtime_max_seconds": args.runtime_max_seconds,
             "command": command,
             "note": (
                 "Seeds fix simulation randomness; provider completions are archived, "
