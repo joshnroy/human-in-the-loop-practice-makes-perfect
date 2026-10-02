@@ -93,6 +93,7 @@ class SweepDrawerSession(BaseModel):
     """One seeded episode of SweepIntoDrawer3D-o5 with a per-tick state log."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    ENV_ID: ClassVar[str] = SweepDrawerScene.ENV_ID
 
     seed: int
     log_path: Path | None = None
@@ -118,7 +119,7 @@ class SweepDrawerSession(BaseModel):
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
         kinder = KinderImports.load()
         self._env = kinder.make(
-            SweepDrawerScene.ENV_ID, render_mode="rgb_array", allow_state_access=True
+            self.ENV_ID, render_mode="rgb_array", allow_state_access=True
         )
         obs, _ = self._env.reset(seed=self.seed)
         self._state = self._env.observation_space.devectorize(obs)
@@ -133,7 +134,7 @@ class SweepDrawerSession(BaseModel):
             self._write(
                 record={
                     "kind": "header",
-                    "env": SweepDrawerScene.ENV_ID,
+                    "env": self.ENV_ID,
                     "seed": self.seed,
                     "logged_objects": logged,
                     "features": {
@@ -239,7 +240,7 @@ class SweepDrawerSession(BaseModel):
         ]
         return {
             "kind": "header",
-            "env": SweepDrawerScene.ENV_ID,
+            "env": self.ENV_ID,
             "seed": self.seed,
             "nq": int(m.nq),
             "joints": joints,

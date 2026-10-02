@@ -9,6 +9,7 @@ having touched the world.
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from pybullet_helpers.geometry import Pose
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 from shapely.affinity import translate
 from shapely.geometry import Polygon
@@ -569,39 +570,89 @@ class Primitives(BaseModel):
             )
         raise ExecutionError(f"no collision-free wiper parking pose inside {region}")
 
-    def recover_wiper(self) -> str:
-        """Grasp the observed handle and verify that it follows a physical lift."""
+    def wiper_handle_geometry(self) -> tuple[int, int]:
         import mujoco
-        from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
-        from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
 
-        m, data = self.session.mj_model, self.session.mj_data
+        m = self.session.mj_model
         body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, S.WIPER)
-        # The long, narrow handle is distinguishable from the wide blade by local x.
         handle = max(
             (g for g in range(m.ngeom) if m.geom_bodyid[g] == body),
             key=lambda g: float(m.geom_size[g][0] / m.geom_size[g][1]),
         )
-        center = np.array(data.geom_xpos[handle])
-        handle_axes = np.array(data.geom_xmat[handle]).reshape(3, 3)
-        axis = handle_axes[:, 0]
-        yaw = float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
-        before = self.session.position(name=S.WIPER).copy()
-        wiper = Pose(tuple(before), self.session.quaternion(name=S.WIPER))
-        set_pose(self.scene.wiper_body, wiper, self.scene.cid)
-        rejected: dict[str, int] = {}
+        return handle, 0
+
+    def wiper_in_hand(self, *, gripper: np.ndarray, wiper: np.ndarray) -> bool:
+        return WiperHold.in_hand(gripper=gripper, wiper=wiper)
+
+    def wiper_grasp_point(
+        self, *, center: np.ndarray, axis: np.ndarray, along: float
+    ) -> np.ndarray:
+        return center + along * axis
+
+    def wiper_grasp_standoff(self) -> float:
+        """Distance behind the grasp point along negative end-effector approach."""
+        return 0.035
+
+    def wiper_grasp_offsets(self) -> tuple[float, ...]:
+        return 0.0, 0.03, 0.06
+
+    def wiper_approach_angles(self) -> tuple[float, ...]:
+        return 0.0, 0.4, 0.7, 1.0, 1.57, 1.9
+
+    def wiper_stow_goal(self) -> np.ndarray:
+        return np.asarray(S.HOME)
+
+    def wiper_pickup_carry_goal(self) -> np.ndarray:
+        """Keep shared pickup completion at its existing stow posture."""
+        return self.wiper_stow_goal()
+
+    def wiper_grasp_yaw(self, *, axis: np.ndarray) -> float:
+        return float(np.arctan2(axis[1], axis[0]) + np.pi / 2)
+
+    def wiper_pick_targets_after_navigation(
+        self, *, hover: Pose, target: Pose, along: float, approach: np.ndarray
+    ) -> tuple[Pose, Pose]:
+        """Shared default preserves the already checked native pickup targets."""
+        del along, approach
+        return hover, target
+
+    def wiper_pickup_descent_clear(self, *, start: np.ndarray, path: list[np.ndarray]) -> bool:
+        """Environment-specific pickup geometry validation; shared behavior unchanged."""
+        return True
+
+    def wiper_grasp_orientations(self, *, axis: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Ordered grasp frames; the shared lateral/overhead search is unchanged."""
+        yaw = self.wiper_grasp_yaw(axis=axis)
         orientations = []
         for azimuth in np.linspace(yaw, yaw + 2 * np.pi, 8, endpoint=False):
-            for angle in (0.0, 0.4, 0.7, 1.0, 1.57, 1.9):
+            for angle in self.wiper_approach_angles():
                 closing = np.array([np.cos(azimuth), np.sin(azimuth), 0.0])
                 toward = np.array([np.sin(azimuth), -np.cos(azimuth), 0.0])
                 approach = np.sin(angle) * toward + np.array([0.0, 0.0, -np.cos(angle)])
                 orientations.append((closing, approach))
-        for along in (0.0, 0.03, 0.06):
-            grasp_point = center + along * axis
+        return orientations
+
+    def recover_wiper(self) -> str:
+        """Grasp the observed handle and verify that it follows a physical lift."""
+        from pybullet_helpers.geometry import Pose, multiply_poses, set_pose
+        from pybullet_helpers.ikfast.utils import ikfast_closest_inverse_kinematics
+
+        data = self.session.mj_data
+        # The long, narrow handle is distinguishable from the wide blade by local x.
+        handle, handle_axis = self.wiper_handle_geometry()
+        center = np.array(data.geom_xpos[handle])
+        handle_axes = np.array(data.geom_xmat[handle]).reshape(3, 3)
+        axis = handle_axes[:, handle_axis]
+        before = self.session.position(name=S.WIPER).copy()
+        wiper = Pose(tuple(before), self.session.quaternion(name=S.WIPER))
+        set_pose(self.scene.wiper_body, wiper, self.scene.cid)
+        rejected: dict[str, int] = {}
+        orientations = self.wiper_grasp_orientations(axis=axis)
+        for along in self.wiper_grasp_offsets():
+            grasp_point = self.wiper_grasp_point(center=center, axis=axis, along=along)
             for closing, approach in orientations:
                 goal = Pose(
-                    tuple(grasp_point - approach * 0.035),
+                    tuple(grasp_point - approach * self.wiper_grasp_standoff()),
                     Orientations.from_axes(closing=closing, approach=approach),
                 )
                 hover = Pose(tuple(np.asarray(goal.position) - approach * 0.08), goal.orientation)
@@ -613,7 +664,7 @@ class Primitives(BaseModel):
                     base = path[-1]
                     self.scene.sync(base=base)
                     bodies = self.scene.bodies()
-                    self.scene.robot.set_joints(self.scene.fingers(arm=S.HOME))
+                    self.scene.robot.set_joints(self.scene.planning_fingers(arm=S.HOME))
                     solutions = ikfast_closest_inverse_kinematics(
                         self.scene.robot,
                         world_from_target=hover,
@@ -622,7 +673,7 @@ class Primitives(BaseModel):
                     for solution in solutions[:4]:
                         q_h = np.asarray(solution[:7], dtype=float)
                         if self.scene.in_collision(
-                            joints=self.scene.fingers(arm=q_h),
+                            joints=self.scene.planning_fingers(arm=q_h),
                             bodies=bodies,
                         ):
                             continue
@@ -632,7 +683,9 @@ class Primitives(BaseModel):
                             bodies=bodies,
                             max_jump=0.6,
                         )
-                        if down is None:
+                        if down is None or not self.wiper_pickup_descent_clear(
+                            start=q_h, path=down
+                        ):
                             continue
                         reach = self.scene.plan_arm(
                             goal=q_h,
@@ -650,6 +703,9 @@ class Primitives(BaseModel):
                     self.motion.set_gripper(command=0.0)
                     if not self.motion.drive(path=path, grip=0.0):
                         raise ExecutionError("wiper pickup base did not converge")
+                    hover, goal = self.wiper_pick_targets_after_navigation(
+                        hover=hover, target=goal, along=along, approach=approach
+                    )
                     redo = self.resolve_at_actual_base(
                         hover=hover,
                         target=goal,
@@ -660,6 +716,10 @@ class Primitives(BaseModel):
                     if redo is None:
                         raise ExecutionError("wiper pickup unavailable at actual base pose")
                     reach, down = redo
+                    if not self.wiper_pickup_descent_clear(
+                        start=np.asarray(reach[-1]) if reach else self.session.arm(), path=down
+                    ):
+                        raise ExecutionError("Native non-pad/tool collision blocks pickup descent")
                     if not self.motion.follow(path=reach, grip=0.0):
                         raise ExecutionError("wiper pickup approach did not converge")
                     if not self.motion.follow(path=down, grip=0.0, final_tol=0.006):
@@ -691,7 +751,7 @@ class Primitives(BaseModel):
                             )
                             if segment is None or any(
                                 self.scene.in_collision(
-                                    joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                                    joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                                     bodies=bodies,
                                     held=self.scene.wiper_body,
                                     held_tf=held_tf,
@@ -711,7 +771,7 @@ class Primitives(BaseModel):
                         raise ExecutionError("wiper pickup lift did not converge")
                     after = self.session.position(name=S.WIPER)
                     ee = np.asarray(self.scene.ee_now().position)
-                    if after[2] < before[2] + 0.05 or not WiperHold.in_hand(
+                    if after[2] < before[2] + 0.05 or not self.wiper_in_hand(
                         gripper=ee, wiper=after
                     ):
                         raise ExecutionError(
@@ -726,7 +786,7 @@ class Primitives(BaseModel):
                         Pose(tuple(after), self.session.quaternion(name=S.WIPER)),
                     )
                     stow = self.scene.plan_arm(
-                        goal=S.HOME,
+                        goal=self.wiper_pickup_carry_goal(),
                         bodies=self.scene.bodies(),
                         held=self.scene.wiper_body,
                         held_tf=held_now,
@@ -737,7 +797,7 @@ class Primitives(BaseModel):
                     # while still converging; retain its exact endpoint tolerance.
                     if not self.motion.follow(path=stow, grip=1.0, max_ticks=1200):
                         raise ExecutionError("recovered wiper stow did not converge")
-                    if not WiperHold.in_hand(
+                    if not self.wiper_in_hand(
                         gripper=np.asarray(self.scene.ee_now().position),
                         wiper=self.session.position(name=S.WIPER),
                     ):
@@ -783,7 +843,7 @@ class Primitives(BaseModel):
                     )
                     if lift is None or any(
                         self.scene.in_collision(
-                            joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                            joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                             bodies=bodies,
                             held=self.scene.wiper_body,
                             held_tf=held_tf,
@@ -844,7 +904,7 @@ class Primitives(BaseModel):
                 )
                 if down is None or any(
                     self.scene.in_collision(
-                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                         bodies=bodies,
                         held=self.scene.wiper_body,
                         held_tf=held_tf,
@@ -886,7 +946,7 @@ class Primitives(BaseModel):
                 carry, down = redo
                 if any(
                     self.scene.in_collision(
-                        joints=self.scene.fingers(arm=q, state=G.CLOSED_PB),
+                        joints=self.scene.planning_fingers(arm=q, state=G.CLOSED_PB),
                         bodies=bodies,
                         held=self.scene.wiper_body,
                         held_tf=held_tf,
@@ -989,7 +1049,7 @@ class Primitives(BaseModel):
                 everything = self.scene.bodies()
                 q_pre = self.scene.ik(pose=pre, seed=S.HOME)
                 if q_pre is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_pre), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_pre), bodies=everything
                 ):
                     rejected["pre"] = rejected.get("pre", 0) + 1
                     continue
@@ -1103,7 +1163,7 @@ class Primitives(BaseModel):
                 )
                 q_h = self.scene.ik(pose=hover, seed=S.HOME)
                 if q_h is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_h, state=k.pb), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_h, state=k.pb), bodies=everything
                 ):
                     rejected["hover"] = rejected.get("hover", 0) + 1
                     continue
@@ -1118,7 +1178,9 @@ class Primitives(BaseModel):
                     rejected["descent"] = rejected.get("descent", 0) + 1
                     continue
                 if self.scene.in_collision(
-                    joints=self.scene.fingers(arm=down[-1], state=ShutHand.state(held=held)),
+                    joints=self.scene.planning_fingers(
+                        arm=down[-1], state=ShutHand.state(held=held)
+                    ),
                     bodies=bystanders,
                     margin=ShutHand.MARGIN,
                 ):
@@ -1475,7 +1537,7 @@ class Primitives(BaseModel):
                 everything = self.scene.bodies()
                 q_h = self.scene.ik(pose=Pose((g[0], g[1], hz), q), seed=S.HOME)
                 if q_h is None or self.scene.in_collision(
-                    joints=self.scene.fingers(arm=q_h), bodies=everything
+                    joints=self.scene.planning_fingers(arm=q_h), bodies=everything
                 ):
                     rejected["hover"] = rejected.get("hover", 0) + 1
                     continue
