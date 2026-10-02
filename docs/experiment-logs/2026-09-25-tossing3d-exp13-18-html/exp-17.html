@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXP-17 — Baselines — is the human reset needed, and is our planner better than EES?</title>
+<style>
+table.mini { border-collapse:collapse; } table.mini td { padding:2px 10px 2px 0; border:none; vertical-align:top; } .overview ul { margin:0; padding-left:18px; } .overview li { margin:2px 0; }
+:root { --bg:#f6f7f9; --card:#fff; --text:#1b1e24; --muted:#5d6472; --border:#dde1e7; --accent:#0072B2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; } }
+:root[data-theme="dark"] { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,sans-serif; }
+header { padding:20px 16px 8px; max-width:1400px; margin:auto; }
+h1 { margin:0; font-size:1.5rem; } .sub { color:var(--muted); margin:4px 0 0; }
+nav { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--border);
+       display:flex; gap:6px; overflow-x:auto; padding:8px 16px; }
+nav a { white-space:nowrap; color:var(--text); text-decoration:none; padding:5px 10px; border:1px solid var(--border);
+         border-radius:999px; font-size:.85rem; background:var(--card); }
+nav a:hover { border-color:var(--accent); color:var(--accent); }
+main { max-width:1400px; margin:auto; padding:0 16px 48px; }
+section { scroll-margin-top:12px; padding-top:18px; }
+h2 { font-size:1.25rem; margin:0; } h3 { font-size:1.02rem; margin:10px 0 2px; }
+.exp { margin-top:34px; scroll-margin-top:12px; }
+.sep { border-top:3px solid var(--accent); padding-top:10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; }
+.tag { background:var(--accent); color:#fff; font-weight:700; font-size:.8rem; padding:2px 8px; border-radius:6px; }
+.date { color:var(--muted); font-size:.9rem; }
+.meta { border-collapse:collapse; margin:8px 0 4px; max-width:1100px; font-size:.9rem; }
+.meta th { text-align:left; vertical-align:top; color:var(--muted); font-weight:600; padding:3px 14px 3px 0; white-space:nowrap; }
+.meta td { padding:3px 0; }
+.overview { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:10px; padding:12px 16px; margin-top:16px; }
+.cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:18px; }
+.overview ol { margin:4px 0 0; padding-left:20px; font-size:.9rem; } .overview li { margin:3px 0; }
+.empty { color:var(--muted); font-style:italic; padding:8px 0; } .blurb { color:var(--muted); margin:0 0 10px; max-width:980px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); gap:12px; }
+.card { display:flex; flex-direction:column; background:var(--card); border:1px solid var(--border); border-radius:10px;
+         overflow:hidden; text-decoration:none; color:var(--text); }
+.card:hover { border-color:var(--accent); }
+.card img, .card video { width:100%; aspect-ratio:16/9; object-fit:contain; background:#fff; display:block; }
+.card video { background:#000; }
+.page { aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; font-size:1.3rem; color:var(--accent);
+         background:linear-gradient(135deg,var(--card),var(--bg)); }
+.cap { padding:8px 10px; font-size:.88rem; }
+ul.dec { margin:0; padding-left:18px; } ul.dec li { margin:2px 0; }
+a.title { color:var(--text); text-decoration:none; } a.title:hover { color:var(--accent); text-decoration:underline; } .more { margin:4px 0 0; font-size:.9rem; } .more a { color:var(--accent); } header .sep h1 { font-size:1.35rem; }
+.pending .page { color:var(--muted); } .pending .page::after { content:" — still rendering"; font-size:.85rem; }
+@media (max-width:640px) { .meta, .meta > tbody, .meta tr, .meta th, .meta td { display:block; } .meta th { white-space:normal; padding:8px 0 0; }
+  .overview { padding:10px; } .overview td { overflow-wrap:anywhere; } }
+body { overflow-wrap:break-word; }
+</style><style>.nc{color:var(--muted,#666)} .card.nc{opacity:.65} .card.nc code{font-size:.75rem;overflow-wrap:anywhere} .snap{background:#fff4d6;color:#4a3b00;border:1px solid #e8d48a;border-radius:8px;padding:6px 10px;margin:8px 0;font-size:.9rem}</style></head><body>
+<header><p class="snap">Committed snapshot of the live Tossing3D experiment log, taken 2026-09-27 10:45. This copy covers EXP-13 to EXP-18 only. Files that were not committed with it are shown as plain text, marked “not committed”.</p><p class="sub"><a href="index.html">← Experiment log</a></p><div class="sep"><span class="tag">EXP-17</span><span class="date">2026-09-27</span><h1>Baselines — is the human reset needed, and is our planner better than EES?</h1></div></header>
+<main><article class="exp"><table class="meta"><tr><th>Question</th><td>(a) Does practice need the human reset skill at all? (b) Does our belief-space planner beat the paper&#x27;s EES method on the same task?</td></tr><tr><th>Hypothesis</th><td>Pre-registered. (a) Without the human reset, both methods get stuck: once the cube is stranded far-side or lands in the bin there is no way out, so eval stops improving early (by construction, which is the point to show). (b) With the reset available, our planner (EXP-15, λ = 3e-6) reaches a similar or higher eval than EES at lower human-reset cost, because it chooses reset sides and when to stop; EES has no cost trade-off.</td></tr><tr><th>Arms</th><td>1: EES with the human reset. 2: EES without it. 3: our planner without it, Model A and Model B at λ = 3e-6. Reference: our planner with it = EXP-15&#x27;s λ = 3e-6 arms (reused). Seeds 0–2 paired; 50 cycles × 20 actions, ε = 0.5, far-side practice start, human reset cost 5, practice-reset-policy never. Code 4d045c1f (#378) for the with-reset arms; the no-reset arms use a new --no-human-reset flag (draft PR #379 on #378, 98f91497; with the flag on, stats.json is byte-identical to 4d045c1f for both pomdp and EES).</td></tr><tr><th>EES with-reset arm is invalid (found 09:55)</th><td>EES never uses the human reset here, so its with-reset arm is identical to its no-reset arm (same evals and transitions, seed for seed). Our EES port only accepts a planned reset if its cost (5) is at most the largest skill cost, and EES&#x27;s skill costs are −log(competence) ≈ 0.05–1.8, so a cost-5 reset is always declined; after its first toss strands the cube past the barrier, EES stops practising for the rest of the run (1–2 tosses per run). This ceiling came from #273 and is our addition; predicators has no human reset and resets the scene every cycle (our --practice-reset-policy scheduled). Question (a) for EES and question (b) need re-running once this is resolved.</td></tr><tr><th>Comparability caveat</th><td>EES is the paper&#x27;s method as published, not an ablation of ours: it scores practice by planning progress on the evaluation tasks it has seen (the far-side eval distribution), has its own competence model, and has no practice-cost weight λ; our planner never sees the eval tasks.</td></tr><tr><th>Results TL;DR</th><td><b>(a) Supported: without the human reset, our planner gets stuck — 2–12 practice actions per 50-cycle run, eval (mean of the last 5) 0.73/10 vs 7.87 (Model A) and 8.33 (Model B) with the reset (EXP-15, same seeds): +7.1 and +7.6, paired t p = 0.004 and &lt; 0.001. Models A and B are identical without the reset: they strand before the model matters. (b) Not answerable from this run: EES never used the reset at cost 5 (its reset-cost check rejects it), so its with-reset arm is identical to its no-reset arm (1.80/10, 2–4 practice actions per run). Our planner with the reset beats this EES by +6.5 (p &lt; 0.001), but that EES isn&#x27;t really using resets — see EXP-18 for EES with a usable reset.</b></td></tr><tr><th>Status</th><td>Done (10:30) — 12/12 runs finished, 0 failures. (b) continues in EXP-18.</td></tr><tr><th>Decisions after this experiment</th><td><ul class="dec"><li><b>2026-09-27</b>: No scheduled (free, every-cycle) resets for EES: it gets the same far-side starts and planner-chosen human resets as our method. EES is fixed to work under that protocol (EXP-18).</li></ul></td></tr></table><section id="exp17-results"><h3>EXP-17 results</h3><p class="blurb">Eval per cycle for each arm; faint = per seed.</p><div class="grid"><a class="card" href="../2026-09-25-tossing3d-exp17-eval-curves.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp17-eval-curves.png" alt="Eval tasks solved: our planner with vs without the human reset, and EES"><span class="cap">Eval tasks solved: our planner with vs without the human reset, and EES</span></a></div></section><section id="committed"><h3>Committed with this log</h3><p class="blurb">The figures and clips from this experiment that are committed to the repository (PNGs downscaled to ≤ 300 KB).</p><div class="grid"><a class="card" href="../2026-09-25-tossing3d-exp17-eval-curves.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp17-eval-curves.png" alt="EXP-17 eval tasks solved: our planner with vs without the human reset, and EES"><span class="cap">EXP-17 eval tasks solved: our planner with vs without the human reset, and EES</span></a></div></section></article></main>
+<script>
+document.querySelectorAll('[data-check]').forEach(a => {
+  fetch(a.getAttribute('href'), {method:'HEAD'}).then(r => { if (!r.ok) a.classList.add('pending'); })
+    .catch(() => a.classList.add('pending'));
+});
+document.querySelectorAll('.card video').forEach(v => v.addEventListener('click', e => e.preventDefault()));
+</script></body></html>

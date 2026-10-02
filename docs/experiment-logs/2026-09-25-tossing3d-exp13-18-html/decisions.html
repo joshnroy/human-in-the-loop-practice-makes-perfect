@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decisions log</title>
+<style>
+table.mini { border-collapse:collapse; } table.mini td { padding:2px 10px 2px 0; border:none; vertical-align:top; } .overview ul { margin:0; padding-left:18px; } .overview li { margin:2px 0; }
+:root { --bg:#f6f7f9; --card:#fff; --text:#1b1e24; --muted:#5d6472; --border:#dde1e7; --accent:#0072B2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; } }
+:root[data-theme="dark"] { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,sans-serif; }
+header { padding:20px 16px 8px; max-width:1400px; margin:auto; }
+h1 { margin:0; font-size:1.5rem; } .sub { color:var(--muted); margin:4px 0 0; }
+nav { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--border);
+       display:flex; gap:6px; overflow-x:auto; padding:8px 16px; }
+nav a { white-space:nowrap; color:var(--text); text-decoration:none; padding:5px 10px; border:1px solid var(--border);
+         border-radius:999px; font-size:.85rem; background:var(--card); }
+nav a:hover { border-color:var(--accent); color:var(--accent); }
+main { max-width:1400px; margin:auto; padding:0 16px 48px; }
+section { scroll-margin-top:12px; padding-top:18px; }
+h2 { font-size:1.25rem; margin:0; } h3 { font-size:1.02rem; margin:10px 0 2px; }
+.exp { margin-top:34px; scroll-margin-top:12px; }
+.sep { border-top:3px solid var(--accent); padding-top:10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; }
+.tag { background:var(--accent); color:#fff; font-weight:700; font-size:.8rem; padding:2px 8px; border-radius:6px; }
+.date { color:var(--muted); font-size:.9rem; }
+.meta { border-collapse:collapse; margin:8px 0 4px; max-width:1100px; font-size:.9rem; }
+.meta th { text-align:left; vertical-align:top; color:var(--muted); font-weight:600; padding:3px 14px 3px 0; white-space:nowrap; }
+.meta td { padding:3px 0; }
+.overview { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:10px; padding:12px 16px; margin-top:16px; }
+.cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:18px; }
+.overview ol { margin:4px 0 0; padding-left:20px; font-size:.9rem; } .overview li { margin:3px 0; }
+.empty { color:var(--muted); font-style:italic; padding:8px 0; } .blurb { color:var(--muted); margin:0 0 10px; max-width:980px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); gap:12px; }
+.card { display:flex; flex-direction:column; background:var(--card); border:1px solid var(--border); border-radius:10px;
+         overflow:hidden; text-decoration:none; color:var(--text); }
+.card:hover { border-color:var(--accent); }
+.card img, .card video { width:100%; aspect-ratio:16/9; object-fit:contain; background:#fff; display:block; }
+.card video { background:#000; }
+.page { aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; font-size:1.3rem; color:var(--accent);
+         background:linear-gradient(135deg,var(--card),var(--bg)); }
+.cap { padding:8px 10px; font-size:.88rem; }
+ul.dec { margin:0; padding-left:18px; } ul.dec li { margin:2px 0; }
+a.title { color:var(--text); text-decoration:none; } a.title:hover { color:var(--accent); text-decoration:underline; } .more { margin:4px 0 0; font-size:.9rem; } .more a { color:var(--accent); } header .sep h1 { font-size:1.35rem; }
+.pending .page { color:var(--muted); } .pending .page::after { content:" — still rendering"; font-size:.85rem; }
+@media (max-width:640px) { .meta, .meta > tbody, .meta tr, .meta th, .meta td { display:block; } .meta th { white-space:normal; padding:8px 0 0; }
+  .overview { padding:10px; } .overview td { overflow-wrap:anywhere; } }
+body { overflow-wrap:break-word; }
+</style><style>.nc{color:var(--muted,#666)} .card.nc{opacity:.65} .card.nc code{font-size:.75rem;overflow-wrap:anywhere} .snap{background:#fff4d6;color:#4a3b00;border:1px solid #e8d48a;border-radius:8px;padding:6px 10px;margin:8px 0;font-size:.9rem}</style></head><body>
+<header><p class="snap">Committed snapshot of the live Tossing3D experiment log, taken 2026-09-27 10:45. This copy covers EXP-13 to EXP-18 only. Files that were not committed with it are shown as plain text, marked “not committed”.</p><p class="sub"><a href="index.html">← Experiment log</a></p><h1>Running decisions log</h1><p class="sub">Every design decision, oldest first, with the experiment it followed.</p></header>
+<main><section class="overview"><table class="meta"><tr><th>Date</th><th>Decision</th><th>Followed</th></tr><tr><th>2026-09-25</th><td>Practice starts with the bin on the far side, and the planner chooses whether to reset and to which side. Nothing is forced: the planner must choose intelligently, not be made to make the right decision. (Reverses #366&#x27;s forced same-side practice.)</td><td><span class="nc" title="not committed: exp-12.html">after EXP-12</span><br><span class="date"></span></td></tr><tr><th>2026-09-25</th><td>Canonical practice-cost weight λ = 3e-6 for all methods (from EXP-12).</td><td><span class="nc" title="not committed: exp-12.html">after EXP-12</span><br><span class="date"></span></td></tr><tr><th>2026-09-25</th><td>Toss competence is updated only from non-ε throws (non_epsilon evidence), matching the paper&#x27;s code.</td><td><span class="nc" title="not committed: exp-07b.html">after EXP-07b</span><br><span class="date"></span></td></tr><tr><th>2026-09-26</th><td>The duplicate &#x27;automatic&#x27; reset (a relabelled human reset) is disabled, and the planner no longer prunes resets that wouldn&#x27;t change the state (#376, #377).</td><td><a href="exp-13.html">after EXP-13</a><br><span class="date">Letting the planner choose the practice reset side</span></td></tr><tr><th>2026-09-26</th><td>No special-casing of skills with knowledge the planner couldn&#x27;t have: no stationary competence for fixed controllers, no side-dependent toss competence, and no model that learns a skill &#x27;isn&#x27;t improving&#x27; — the robot cannot know which skills will improve before practising them.</td><td><a href="exp-14.html">after EXP-14</a><br><span class="date">Sanity check + 2x2</span></td></tr><tr><th>2026-09-26</th><td>The search&#x27;s random-toss success rate stays fixed at 0.25 (observed 7.9%); accepted as is.</td><td><a href="exp-14.html">after EXP-14</a><br><span class="date">Sanity check + 2x2</span></td></tr><tr><th>2026-09-26</th><td>Grid engine matches Tom&#x27;s notebook discretisation exactly (#378).</td><td><a href="exp-14.html">after EXP-14</a><br><span class="date">Sanity check + 2x2</span></td></tr><tr><th>2026-09-27</th><td>No scheduled (free, every-cycle) resets for EES: it gets the same far-side starts and planner-chosen human resets as our method. EES is fixed to work under that protocol (EXP-18).</td><td><a href="exp-17.html">after EXP-17</a><br><span class="date">Baselines</span></td></tr></table></section></main>
+<script>
+document.querySelectorAll('[data-check]').forEach(a => {
+  fetch(a.getAttribute('href'), {method:'HEAD'}).then(r => { if (!r.ok) a.classList.add('pending'); })
+    .catch(() => a.classList.add('pending'));
+});
+document.querySelectorAll('.card video').forEach(v => v.addEventListener('click', e => e.preventDefault()));
+</script></body></html>
