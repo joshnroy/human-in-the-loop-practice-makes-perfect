@@ -282,6 +282,26 @@ def _build_split() -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:
     return practice, evaluation, method, Metrics()
 
 
+def test_preinitialized_practice_survives_generation_and_evaluation() -> None:
+    practice, evaluation, method, metrics = _build_split()
+    practice.hard_reset()
+    practice.env.set_state(state=_state(x=37.0))
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+        practice_initialized=True,
+    )
+    assert practice.env.hard_reset_count == 1
+    assert practice.env.pre_action_xs == [37.0, 38.0]
+    assert evaluation.env.hard_reset_count == 1
+
+
 def _build_split_with(
     *, tasks_type: type[_FakeTasks]
 ) -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:

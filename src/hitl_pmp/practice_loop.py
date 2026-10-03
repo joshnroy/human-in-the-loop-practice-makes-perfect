@@ -295,6 +295,7 @@ class PracticeLoop:
         max_steps_per_interaction: int,
         num_test_tasks: int,
         evaluation_problem: Problem | None = None,
+        practice_initialized: bool = False,
         practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
         practice_reset_interval: int | None = None,
         on_cycle_end: Callable[[], None] | None = None,
@@ -388,7 +389,14 @@ class PracticeLoop:
         # a caller buys by passing a distinct one, and why every domain that has not
         # been migrated stays byte-identical by omitting it.
         eval_problem = evaluation_problem if evaluation_problem is not None else problem
-        problem.hard_reset()
+        if practice_initialized:
+            if practice_reset_policy is not PracticeResetPolicy.NEVER:
+                raise ValueError("Preinitialized practice requires the never-reset policy")
+            # Generation may inspect an already spawned world. Keep that exact
+            # world for practice, rather than quietly replacing its initial state.
+            problem.get_current_state()
+        else:
+            problem.hard_reset()
         if eval_problem is not problem:
             # Its own one-time reset: a fresh Environment has no current_state at all
             # until something installs one. Guarded on identity rather than called
