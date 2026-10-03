@@ -28,6 +28,7 @@ from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
+from hitl_pmp.methods.agentic_options.cli import AgenticOptionsCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import (
     EesCli,
@@ -59,6 +60,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
 
 
 METHODS: dict[str, type[MethodCli]] = {
+    "agentic-options": AgenticOptionsCli,
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
     "ees": EesCli,
