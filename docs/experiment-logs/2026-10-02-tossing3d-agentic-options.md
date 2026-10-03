@@ -264,3 +264,65 @@ Next scientific issues are generated-state coverage after failures, controller
 reliability, and the choice of uncertainty penalty. The complete-cycle smoke does
 not resolve these. Top-down-plus-robot and robot-only camera conditions remain
 unimplemented. Packed-4 remains with the separate agent.
+
+
+### October 3 readout and classifier coverage diagnosis
+
+The saved run contains one practice action, one code revision, and before/after
+evaluation, rather than a sustained practice sequence. Its complete-cycle result
+establishes execution wiring; it does not establish readiness for the skill A/B.
+
+![Recorded learning readout](2026-10-03-agentic-object-state/learning-readout.png)
+
+![Final skill estimates](2026-10-03-agentic-object-state/skill-estimates.png)
+
+![Recorded action sequence](2026-10-03-agentic-object-state/action-chart.png)
+
+Only two evaluation checkpoints and one final belief snapshot were recorded. The
+uncertainty bars are model belief intervals, not across-seed error bars. Values
+and limitations are saved in [readout.json](2026-10-03-agentic-object-state/readout.json)
+and the [actual final belief](2026-10-03-agentic-object-state/final-belief.json).
+
+After Pick, the classifier returned `cluster_id: null`: the cube remained on the
+floor near the tool, while separation from the fingers and unobstructed access
+were not established. The generated free state requires separation and access;
+the partial-grasp state requires closed or partly closed fingers. An open-command
+failed approach near the cube therefore has no clearly supported description.
+The tiny remaining measured velocity also interacts poorly with definitions that
+reject motion without a settling tolerance. This is a valid abstention and a
+coverage/evidence issue, not a malformed model response.
+
+A separate implementation gap is now explicit: `_settle` returns before
+`learner_belief.observe` whenever the destination is unknown, even when skill
+failure is already known. The coding learner received its one trajectory, but
+the competence learner assimilated zero examples. Session model transitions can
+still change belief values; they must not be presented as learned evidence.
+Decouple outcome learning from destination learning, define an evidence-supported
+recovery path for this failed approach, and verify sustained sessions before A/B.
+
+For a skill-only comparison, both implementations must share abstraction,
+judgments, task seeds, search objective, budgets and human actions. Comparing the
+current generated-state method directly with the native predicate method would
+also change those interfaces. The present launcher runs only `agentic-options`;
+a paired skill-backend comparison is not wired yet.
+
+
+[Watch the annotated practice session, 68.5 seconds](2026-10-03-agentic-object-state/practice-annotated.mp4).
+The video uses the original camera footage with pauses, enlarged views, and
+per-step measurements. It distinguishes logged physical facts, actual model
+outputs, and the contract audit. No simulator rerun or generated imagery is used.
+Source hashes, frame alignment and pause annotations are in
+[video provenance](2026-10-03-agentic-object-state/practice-annotated.json);
+[aligned measurements](2026-10-03-agentic-object-state/annotation-measurements.json)
+contain each of the 230 logged control steps. The original renderer repeats the
+final skill-state caption over intermediate frames; that caption is excluded.
+
+The full audit confirms all 230 gripper commands were open, cube height never
+exceeded its initial 0.024892 m, and Pick ended at its own 230-step stopping limit.
+Its code can stop in any phase without withdrawal, but its failure edges list
+only partial-grasp (0.50), free (0.35), and lost (0.15) destinations.
+OpenGripper has edges only from partial-grasp states; both human options require
+a resolved source. All ten descriptions, five contracts and 59 edges remained
+identical after the revision; only the Pick controller changed. Null is defensible
+under the strict evidence requirements, not proof of physical irrecoverability.
+See [structured audit](2026-10-03-agentic-object-state/classifier-audit.json).

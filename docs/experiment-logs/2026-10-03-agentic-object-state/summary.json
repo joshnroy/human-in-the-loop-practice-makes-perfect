@@ -102,6 +102,16 @@
     "practice.mp4": "35b95aee1398a5284b517af8d2dd615448d0b06b604c3fc5ccae2e709cadaf3a",
     "evaluation-before.mp4": "c592929603425a18c9c113e49371b759422b17295625d6a1f55f71babcdba519",
     "evaluation-after.mp4": "cad0e2d52ffa512673a3ea687fb0c1d18d8a1cd68be2a3c8ef3e80a225382c19",
-    "cycle-outcomes.png": "8942516a81a01630b0c27660b5ac79f7691c5574113b5e2a70b898544dd2b5ff"
+    "cycle-outcomes.png": "8942516a81a01630b0c27660b5ac79f7691c5574113b5e2a70b898544dd2b5ff",
+    "final-belief.json": "cc861851935900e66cbc73097afcb79b43bac87549d2ca19a2b1478c1ca10ac6",
+    "readout.json": "89b2ee4cc942bdab580f8c14fc3efb63c6a04615a0fe47022fe520f4ff36f35d",
+    "learning-readout.png": "3ce1554f564874c77bff300fd3ac5f295e9799e8a2df84fa425f0b43f181e7f9",
+    "skill-estimates.png": "ba4213783384f12403f447c5fd0d4c23f56e5a0e609302e1e6f26ec504d7bc7b",
+    "action-chart.png": "350eeb9bead2e53ee26d13f5004b44982bf96174285936c19b00c858d965ff61",
+    "annotation-measurements.json": "87e587e77e4093dc94a6b89e148f77f2299924bdb13bd0a8dbc2253c41327432",
+    "classifier-audit.json": "0e8c61d4e3007b5d8ec0ff7f7fba42dd6b05eefdb2f7ee03567dbfe654741f62",
+    "practice-annotated.json": "1ced782303c7644b0bdddd0a853398b4fd3a1cde8e9dffe82ca51d5475b39699",
+    "practice-annotated-preview.png": "beddab8213f1026c79dbbb577ad65604185bb2ab723881a6c7df51d8c2ab12fc",
+    "practice-annotated.mp4": "d2a29e2a2d8aca83e7e5a25e0df1a07e8e1dffe4d03c228aaa6a381d08e2417c"
   }
 }

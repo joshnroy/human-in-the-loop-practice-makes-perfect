@@ -1,0 +1,77 @@
+{
+  "duration_s": 68.5,
+  "fps": 10,
+  "size": [
+    1280,
+    720
+  ],
+  "source_video_sha256": "35b95aee1398a5284b517af8d2dd615448d0b06b604c3fc5ccae2e709cadaf3a",
+  "source_trajectory_sha256": "6e20b53b106bdf5ec7eb90e7ba68c241d493412b88b73e49435e2520416162d9",
+  "alignment": "Frames0..229 correspond to logged control steps1..230; frames230..255 are final-state holds. Initial observation at simulation_time_s=1.0 has no video frame. Original text overlays are not used.",
+  "pause_annotations": [
+    {
+      "start_s": 0.0,
+      "duration_s": 5,
+      "source_frame": 0,
+      "control_step": 1,
+      "title": "1. One Pick attempt begins",
+      "label": "LOGGED FACTS",
+      "annotation": "The cube starts on the floor, on the robot side of the barrier. The bin is across the barrier. The gripper is commanded open."
+    },
+    {
+      "start_s": 15.0,
+      "duration_s": 6,
+      "source_frame": 99,
+      "control_step": 100,
+      "title": "2. The tool is close, but the cube has not lifted",
+      "label": "LOGGED FACTS",
+      "annotation": "At step 100, the tool is about 5.6 cm from the cube center. The cube remains at floor level. No close command has been issued."
+    },
+    {
+      "start_s": 27.5,
+      "duration_s": 7,
+      "source_frame": 229,
+      "control_step": 230,
+      "title": "3. Pick reaches its 230-step stopping limit",
+      "label": "LOGGED FACTS",
+      "annotation": "All 230 commands kept the gripper OPEN. The cube never rose above its initial height. The controller ended without withdrawing from the cube."
+    },
+    {
+      "start_s": 34.5,
+      "duration_s": 8,
+      "source_frame": 229,
+      "control_step": 230,
+      "title": "4. The model can judge failure, but not the next state",
+      "label": "ACTUAL MODEL OUTPUT",
+      "annotation": "Termination: true\nPick success: false\nState cluster: null\nReason: finger separation and clear top access were not established."
+    },
+    {
+      "start_s": 42.5,
+      "duration_s": 9,
+      "source_frame": 229,
+      "control_step": 230,
+      "title": "5. The generated state definitions leave a gap",
+      "label": "CONTRACT AUDIT",
+      "annotation": "FREE requires the cube to be clear of the fingers.\nPARTIAL GRASP requires closed or partly closed fingers.\nThis open-gripper endpoint fits neither with sufficient evidence."
+    },
+    {
+      "start_s": 51.5,
+      "duration_s": 8,
+      "source_frame": 229,
+      "control_step": 230,
+      "title": "6. Why practice cannot continue",
+      "label": "ALGORITHM BEHAVIOR",
+      "annotation": "OpenGripper is connected only to partial-grasp states. Human help also requires a resolved state. There is no recovery route from null; the session ends."
+    },
+    {
+      "start_s": 59.5,
+      "duration_s": 9,
+      "source_frame": 229,
+      "control_step": 230,
+      "title": "7. What still happened after the session",
+      "label": "RECORDED FOLLOW-UP",
+      "annotation": "The coding agent received this trajectory and revised Pick. The competence update was skipped because the destination was unknown. Task evaluation stayed 0/1 before and after."
+    }
+  ],
+  "rendering": "Original video pixels cropped/enlarged; per-step numeric state from logged step observations. No simulator rerun, generated imagery, or invented ground-truth labels."
+}
