@@ -1,0 +1,110 @@
+[
+  {
+    "option_id": "pick",
+    "execution": {
+      "steps": 174,
+      "controller_done": true,
+      "trajectory_path": "trajectory-c4a4a69a729445eb9a85e068701d8815.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The attempt has ended at step 174. Lift verification is supported by the elevated cube following the tool across steps 172\u2013174 with an approximately constant 0.0123 m vertical offset, after already being lifted at step 129."
+    },
+    "success": {
+      "value": true,
+      "reason": "The cube rose from its original support height of 0.025 m to 0.220 m. Across steps 172\u2013174 it translated and rotated with the hand during continued lifting, maintaining a stable tool-relative pose about 0.012 m from the pinch site, supporting secure carriage rather than closing alone."
+    }
+  },
+  {
+    "option_id": "toss",
+    "execution": {
+      "steps": 122,
+      "controller_done": true,
+      "trajectory_path": "trajectory-b0d12f3e9f394cdc9768f5d73354cc5a.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The cube is separated from the hand and settled on the floor at z\u22480.0249 m, with negligible linear and angular velocity and unchanged pose across steps 120\u2013122. Release and settling have finished, including this dropped-cube result."
+    },
+    "success": {
+      "value": false,
+      "reason": "The cube is stationary at (1.486, 1.345, 0.025) m, outside the bin: its x offset from the bin center is 0.351 m, exceeding the bin's 0.150 m half-width. Recent frames confirm it remains there, not supported inside the bin."
+    }
+  },
+  {
+    "option_id": "pick",
+    "execution": {
+      "steps": 89,
+      "controller_done": true,
+      "trajectory_path": "trajectory-616db34602ad42ec816358e01579cce0.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The attempt has ended after lifting the cube from floor level to z=0.221 m. Across steps 87\u201389, the elevated cube moved with the tool while maintaining an approximately 0.014 m vertical offset, providing lift verification."
+    },
+    "success": {
+      "value": true,
+      "reason": "The cube rose from its initial center height of 0.0249 m to 0.2214 m, clearly off its support. Across distinct steps 87\u201389 it rose with the pinch site, maintaining an approximately 14 mm vertical offset, small lateral offset, and stable tool-relative orientation. This sustained co-motion supports a secure grasp rather than closing alone."
+    }
+  },
+  {
+    "option_id": "toss",
+    "execution": {
+      "steps": 98,
+      "controller_done": true,
+      "trajectory_path": "trajectory-b7b49bb896404956b1783313f471be2b.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The cube is separated from the hand and settled on the floor at z\u22480.0249 m. Its pose remains essentially unchanged across steps 96\u201398, with linear and angular velocities decaying to nearly zero, supporting that release and settling have finished."
+    },
+    "success": {
+      "value": false,
+      "reason": "The cube is stationary at approximately (1.134, 2.232, 0.025) m, well outside the bin centered at (1.837, 1.447) m with a 0.30 by 0.30 m footprint. It has settled outside the bin, not in its interior."
+    }
+  },
+  {
+    "option_id": "pick",
+    "execution": {
+      "steps": 94,
+      "controller_done": true,
+      "trajectory_path": "trajectory-ea7be00525ba458f9a052b37664e2de8.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The attempt has stopped with controller_done true. The cube is lifted above the floor and follows the tool across steps 92\u201394 with a nearly constant relative offset, supporting completed lift verification."
+    },
+    "success": {
+      "value": true,
+      "reason": "The cube rose from z=0.0249 m to 0.2186 m, clear of its previous support. Across distinct lift observations at steps 92\u201394, it rose with the pinch site while maintaining a stable relative orientation and approximately 0.0176 m separation, supporting a secure grasp rather than closing alone."
+    }
+  },
+  {
+    "option_id": "toss",
+    "execution": {
+      "steps": 71,
+      "controller_done": true,
+      "trajectory_path": "trajectory-4dffcda43c564899b9ea9fc2567f954e.jsonl",
+      "error": null,
+      "seed": 0
+    },
+    "termination": {
+      "value": true,
+      "reason": "The cube is separated from the hand and settled on the floor at z\u22480.0249 m. Its pose is unchanged across steps 69\u201371, with negligible linear and angular velocities, showing release and settling have finished."
+    },
+    "success": {
+      "value": false,
+      "reason": "The cube is stationary outside the bin: its y-position is 1.972 m versus the bin's 1.447 m, a 0.525 m offset exceeding the bin's 0.150 m half-width. It has not settled in the bin interior."
+    }
+  }
+]

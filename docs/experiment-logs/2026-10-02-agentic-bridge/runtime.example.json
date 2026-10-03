@@ -1,0 +1,21 @@
+{
+  "coding": {
+    "sandbox": {
+      "image": "hitl-agentic-strict:latest",
+      "robocode_checkout": "/absolute/path/to/robocode-with-isolated-transport",
+      "container_python": "/opt/robocode-strict/bin/python",
+      "timeout_seconds": 120,
+      "artifact_dir": "artifacts/agentic-runtime"
+    },
+    "artifact_dir": "artifacts/agentic-coding",
+    "backend": "codex",
+    "model": "CHOOSE_CODING_MODEL",
+    "max_budget_usd": 2.0,
+    "max_turns": 20,
+    "reasoning_effort": "",
+    "system_prompt": ""
+  },
+  "vision": {
+    "provider": "robocode_broker"
+  }
+}

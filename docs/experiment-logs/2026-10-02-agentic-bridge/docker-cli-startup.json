@@ -1,0 +1,12 @@
+{
+  "False": {
+    "returncode": 0,
+    "stdout": "{\"/home/node\": {\"uid\": 1000, \"mode\": \"0o755\", \"write\": true}, \"/home/node/.codex\": {\"uid\": 0, \"mode\": \"0o755\", \"write\": false}, \"/home/node/.codex/sessions\": {\"uid\": 1000, \"mode\": \"0o755\", \"write\": true}, \"returncode\": 1, \"stdout\": \"\", \"stderr\": \"WARNING: proceeding, even though we could not create PATH aliases: Permission denied (os error 13)\\nError: failed to initialize sqlite state runtime under /home/node/.codex: failed to initialize state runtime at /home/node/.codex\\n\"}\n",
+    "stderr": ""
+  },
+  "True": {
+    "returncode": 0,
+    "stdout": "{\"/home/node\": {\"uid\": 1000, \"mode\": \"0o755\", \"write\": true}, \"/home/node/.codex\": {\"uid\": 1000, \"mode\": \"0o755\", \"write\": true}, \"/home/node/.codex/sessions\": {\"uid\": 1000, \"mode\": \"0o755\", \"write\": true}, \"returncode\": 0, \"stdout\": \"{\\\"id\\\":1,\\\"result\\\":{\\\"userAgent\\\":\\\"offline-startup-probe/0.153.4 (Debian 12.0.0; x86_64) unknown (offline-startup-probe; 0.1)\\\",\\\"codexHome\\\":\\\"/home/node/.codex\\\",\\\"platformFamily\\\":\\\"unix\\\",\\\"platformOs\\\":\\\"linux\\\"}}\\n\", \"stderr\": \"\\u001b[2m2026-10-02T23:34:39.737570Z\\u001b[0m \\u001b[31mERROR\\u001b[0m \\u001b[2mcodex_app_server\\u001b[0m\\u001b[2m:\\u001b[0m Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.\\n\"}\n",
+    "stderr": ""
+  }
+}

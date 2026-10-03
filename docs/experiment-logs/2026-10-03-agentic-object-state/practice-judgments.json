@@ -1,0 +1,62 @@
+[
+  {
+    "event": "classification",
+    "judgment": {
+      "cluster_id": "free_far",
+      "reason": "The barrier\u2019s thin axis is world x: the base and cube are on its x<1.30 m side, while the bin is across it at x=2.105 m. The cube is stationary on the floor, outside the bin, well separated from the open gripper, and unobstructed from above in the measured scene."
+    }
+  },
+  {
+    "event": "decision",
+    "cluster": "free_far",
+    "value": 0.5390572961520361,
+    "action": {
+      "option_id": "pick"
+    },
+    "cost": 0.0
+  },
+  {
+    "event": "initiation",
+    "option": "pick",
+    "judgment": {
+      "value": true,
+      "reason": "The cube is settled on the floor with negligible velocities at x=0.525 m, on the robot side of the x=1.30 m barrier and outside the bin, with no enclosing obstruction. The pinch site is about 0.67 m away, supporting an empty, disengaged gripper; the gripper command is open."
+    }
+  },
+  {
+    "event": "execution",
+    "source": "free_far",
+    "option_id": "pick",
+    "termination": {
+      "value": true,
+      "reason": "The bounded attempt stopped after 230 steps with controller_done true and the robot nearly stationary. The cube remains at floor level (center z approximately 0.023 m), with no observed lift or established carrying, satisfying the stopped-without-carrying termination condition."
+    },
+    "success": {
+      "value": false,
+      "reason": "The cube remains at support level: its current center height is 0.0228 m for a 0.05 m cube, versus 0.0249 m initially. Across the supplied observations it does not lift clear or travel with the tool during a lift, so the required secure lifted carry is not achieved."
+    },
+    "destination": {
+      "cluster_id": null,
+      "reason": "The bin is across the x=1.30 m barrier from the base and cube. The cube remains at floor height, only about 5.7 cm from the pinch site, with slight ongoing motion. The open gripper command and supplied tool pose do not establish finger separation or unobstructed top access, and history shows no lift or secure carrying. No description is fully established."
+    },
+    "cost": 1.0,
+    "execution": {
+      "steps": 230,
+      "controller_done": true,
+      "trajectory_path": "trajectory-ed638bcc65264e91af7cc122ef45aace.jsonl",
+      "error": null,
+      "seed": 0
+    }
+  },
+  {
+    "event": "revision",
+    "revision": {
+      "previous_digest": "ba0f29e2884e403e9545ba6f02704b56e577dff25e44ef928b2c2b37a1ef47bb",
+      "digest": "e3319bc1a114dcb6b5c0b6abd6ae65a5d2dd775e3ab0afb223d1ac45e5c139a4",
+      "changed_files": [
+        "policies/pick.py"
+      ],
+      "evidence_count": 1
+    }
+  }
+]

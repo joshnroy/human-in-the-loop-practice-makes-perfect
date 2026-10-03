@@ -1,0 +1,140 @@
+{
+  "probe_kind": "trusted numeric host bridge, not generated-policy success",
+  "seed": 125,
+  "through_relay": true,
+  "dependency_paths": {
+    "kinder": "/tmp/hitl-agentic-tossing3d/reference/kindergarden/src/kinder/__init__.py",
+    "kinder_models": "/tmp/hitl-agentic-tossing3d/reference/kinder-baselines/kinder-models/src/kinder_models/__init__.py"
+  },
+  "action_spec": {
+    "shape": [
+      18
+    ],
+    "low": [
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      0.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0
+    ],
+    "high": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      1.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0
+    ],
+    "position_mode": "delta",
+    "base": {
+      "indices": [
+        0,
+        1,
+        2
+      ],
+      "coordinates": "world x/y/yaw",
+      "units": [
+        "m",
+        "m",
+        "rad"
+      ]
+    },
+    "arm_position": {
+      "indices": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "units": "rad"
+    },
+    "gripper": {
+      "index": 10,
+      "open": 0.0,
+      "closed": 1.0
+    },
+    "arm_velocity": {
+      "indices": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "units": "rad/s"
+    },
+    "control_frequency_hz": 10.0,
+    "schedule_rows": 100,
+    "schedule_timestep_s": 0.001,
+    "step_limit": 2
+  },
+  "observation_keys": [
+    "images",
+    "image_views",
+    "proprioception",
+    "control_step",
+    "action_spec"
+  ],
+  "proprioception_keys": [
+    "pos_base_x",
+    "pos_base_y",
+    "pos_base_rot",
+    "pos_arm_joint1",
+    "pos_arm_joint2",
+    "pos_arm_joint3",
+    "pos_arm_joint4",
+    "pos_arm_joint5",
+    "pos_arm_joint6",
+    "pos_arm_joint7",
+    "pos_gripper",
+    "vel_base_x",
+    "vel_base_y",
+    "vel_base_rot",
+    "vel_arm_joint1",
+    "vel_arm_joint2",
+    "vel_arm_joint3",
+    "vel_arm_joint4",
+    "vel_arm_joint5",
+    "vel_arm_joint6",
+    "vel_arm_joint7",
+    "vel_gripper",
+    "gripper_command"
+  ],
+  "control_steps": 2,
+  "option_steps": 1.0,
+  "base_x_before": -0.027972321542299262,
+  "base_x_after": -0.023620206204228205,
+  "last_controller_steps": [
+    2
+  ]
+}

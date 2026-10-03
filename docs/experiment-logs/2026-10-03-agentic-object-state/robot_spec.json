@@ -1,0 +1,472 @@
+{
+  "schema_version": 1,
+  "robot_name": "robot",
+  "length_unit": "m",
+  "angle_unit": "rad",
+  "quaternion_order": "wxyz",
+  "kinematic_chain": {
+    "root_frame": "world",
+    "transform_order": "For each link, apply its fixed parent-relative position/quaternion, then its joints in listed order. A hinge rotates about its local axis through position_m by q-reference_position; a slide translates along its local axis by q-reference_position. Apply the tool's fixed parent-relative transform last.",
+    "links": [
+      {
+        "name": "robot_base_link",
+        "parent": "world",
+        "position_m": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "quaternion_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_x",
+            "type": "slide",
+            "axis": [
+              1.0,
+              0.0,
+              0.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_base_x",
+            "velocity_key": "vel_base_x"
+          },
+          {
+            "name": "robot_joint_y",
+            "type": "slide",
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_base_y",
+            "velocity_key": "vel_base_y"
+          },
+          {
+            "name": "robot_joint_th",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_base_rot",
+            "velocity_key": "vel_base_rot"
+          }
+        ]
+      },
+      {
+        "name": "robot_gen3/base_link",
+        "parent": "robot_base_link",
+        "position_m": [
+          0.1199,
+          0.0,
+          0.3948
+        ],
+        "quaternion_wxyz": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "joints": []
+      },
+      {
+        "name": "robot_shoulder_link",
+        "parent": "robot_gen3/base_link",
+        "position_m": [
+          0.0,
+          0.0,
+          0.15643
+        ],
+        "quaternion_wxyz": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_1",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_arm_joint1",
+            "velocity_key": "vel_arm_joint1"
+          }
+        ]
+      },
+      {
+        "name": "robot_half_arm_1_link",
+        "parent": "robot_shoulder_link",
+        "position_m": [
+          0.0,
+          0.005375,
+          -0.12838
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_2",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": [
+              -2.24,
+              2.24
+            ],
+            "position_key": "pos_arm_joint2",
+            "velocity_key": "vel_arm_joint2"
+          }
+        ]
+      },
+      {
+        "name": "robot_half_arm_2_link",
+        "parent": "robot_half_arm_1_link",
+        "position_m": [
+          0.0,
+          -0.21038,
+          -0.006375
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_3",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_arm_joint3",
+            "velocity_key": "vel_arm_joint3"
+          }
+        ]
+      },
+      {
+        "name": "robot_forearm_link",
+        "parent": "robot_half_arm_2_link",
+        "position_m": [
+          0.0,
+          0.006375,
+          -0.21038
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_4",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": [
+              -2.57,
+              2.57
+            ],
+            "position_key": "pos_arm_joint4",
+            "velocity_key": "vel_arm_joint4"
+          }
+        ]
+      },
+      {
+        "name": "robot_spherical_wrist_1_link",
+        "parent": "robot_forearm_link",
+        "position_m": [
+          0.0,
+          -0.20843,
+          -0.006375
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_5",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_arm_joint5",
+            "velocity_key": "vel_arm_joint5"
+          }
+        ]
+      },
+      {
+        "name": "robot_spherical_wrist_2_link",
+        "parent": "robot_spherical_wrist_1_link",
+        "position_m": [
+          0.0,
+          0.00017505,
+          -0.10593
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_6",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": [
+              -2.09,
+              2.09
+            ],
+            "position_key": "pos_arm_joint6",
+            "velocity_key": "vel_arm_joint6"
+          }
+        ]
+      },
+      {
+        "name": "robot_bracelet_link",
+        "parent": "robot_spherical_wrist_2_link",
+        "position_m": [
+          0.0,
+          -0.10593,
+          -0.00017505
+        ],
+        "quaternion_wxyz": [
+          0.7071067811865475,
+          -0.7071067811865475,
+          0.0,
+          0.0
+        ],
+        "joints": [
+          {
+            "name": "robot_joint_7",
+            "type": "hinge",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "position_m": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "reference_position": 0.0,
+            "limits": null,
+            "position_key": "pos_arm_joint7",
+            "velocity_key": "vel_arm_joint7"
+          }
+        ]
+      }
+    ],
+    "tool": {
+      "name": "robot_pinch_site",
+      "parent": "robot_bracelet_link",
+      "position_m": [
+        0.0,
+        0.0,
+        -0.181525
+      ],
+      "quaternion_wxyz": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "gripper": {
+    "position_key": "pos_gripper",
+    "velocity_key": "vel_gripper",
+    "command_key": "gripper_command",
+    "limits": [
+      0.0,
+      0.8
+    ],
+    "command_open": 0.0,
+    "command_closed": 1.0
+  },
+  "action_spec": {
+    "shape": [
+      18
+    ],
+    "low": [
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      0.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0
+    ],
+    "high": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      1.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0
+    ],
+    "position_mode": "delta",
+    "base": {
+      "indices": [
+        0,
+        1,
+        2
+      ],
+      "coordinates": "world x/y/yaw",
+      "units": [
+        "m",
+        "m",
+        "rad"
+      ]
+    },
+    "arm_position": {
+      "indices": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "units": "rad"
+    },
+    "gripper": {
+      "index": 10,
+      "open": 0.0,
+      "closed": 1.0
+    },
+    "arm_velocity": {
+      "indices": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "units": "rad/s"
+    },
+    "control_frequency_hz": 10.0,
+    "schedule_rows": 100,
+    "schedule_timestep_s": 0.001,
+    "step_limit": 1000
+  }
+}

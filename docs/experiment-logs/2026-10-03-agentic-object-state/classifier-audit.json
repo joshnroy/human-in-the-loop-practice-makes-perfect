@@ -1,0 +1,36 @@
+{
+  "registry_size": 10,
+  "option_count": 5,
+  "edge_count": 59,
+  "pick_failure_destinations": [
+    {
+      "source": "free_far",
+      "option_id": "pick",
+      "outcome": "failure",
+      "destination": "partial_far",
+      "probability": 0.5
+    },
+    {
+      "source": "free_far",
+      "option_id": "pick",
+      "outcome": "failure",
+      "destination": "free_far",
+      "probability": 0.35
+    },
+    {
+      "source": "free_far",
+      "option_id": "pick",
+      "outcome": "failure",
+      "destination": "lost_far",
+      "probability": 0.15
+    }
+  ],
+  "actual_classifier_result": {
+    "cluster_id": null
+  },
+  "defensible_abstention": "Under the generated strict descriptions and supplied observation, null is justified. It does not establish physical irrecoverability.",
+  "coverage_gap": "Original Pick can stop with open fingers near the cube; free requires separation/clear top access, partial requires closed or partly closed fingers.",
+  "evidence_limits": "Pinch pose and gripper driver angle do not provide calibrated finger-surface geometry. Final cube speed is about 0.228 mm/s; this alone is weak evidence against settled state.",
+  "algorithm_gap": "No null-resolution route; robot recovery starts only at partial clusters, human actions require resolved clusters. Known failure is also blocked from competence update by unresolved destination.",
+  "revision_scope": "Only policies/pick.py changes. All state descriptions, option contracts, and edges remain unchanged."
+}

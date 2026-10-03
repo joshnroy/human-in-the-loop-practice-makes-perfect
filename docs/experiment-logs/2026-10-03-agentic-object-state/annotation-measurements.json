@@ -1,0 +1,5062 @@
+[
+  {
+    "source_video_frame": 0,
+    "control_step": 1,
+    "simulation_time_s": 1.0999999999999344,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      8.921590411095795e-18,
+      3.013324672940849e-17,
+      1.7274966967499518e-15
+    ],
+    "pinch_position_m": [
+      0.28221716592516993,
+      0.02958065870498151,
+      0.6083041211829938
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00294288572485929
+  },
+  {
+    "source_video_frame": 1,
+    "control_step": 2,
+    "simulation_time_s": 1.1999999999999234,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -5.097054260917561e-18,
+      2.3427296812163543e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.313514780144843,
+      0.03783206837720417,
+      0.6110239340177335
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002936142423472463
+  },
+  {
+    "source_video_frame": 2,
+    "control_step": 3,
+    "simulation_time_s": 1.2999999999999123,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.4638519347399875e-17,
+      3.1605912769883595e-17,
+      1.7236109331044227e-15
+    ],
+    "pinch_position_m": [
+      0.33465084128663564,
+      0.0470767633748706,
+      0.615296255761931
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002934251547718019
+  },
+  {
+    "source_video_frame": 3,
+    "control_step": 4,
+    "simulation_time_s": 1.3999999999999013,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.3516688728849333e-17,
+      1.8551154782308375e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.3485675939944929,
+      0.055804568474439376,
+      0.6187142682574688
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002930091582258858
+  },
+  {
+    "source_video_frame": 4,
+    "control_step": 5,
+    "simulation_time_s": 1.4999999999998903,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.3226823135514826e-17,
+      1.77341385651224e-17,
+      1.7258313240965314e-15
+    ],
+    "pinch_position_m": [
+      0.36453731561261943,
+      0.06525898550074515,
+      0.6225952753740719
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029277384821337384
+  },
+  {
+    "source_video_frame": 5,
+    "control_step": 6,
+    "simulation_time_s": 1.5999999999998793,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.0412832284338596e-17,
+      2.2204194471218134e-17,
+      1.7274966967499518e-15
+    ],
+    "pinch_position_m": [
+      0.3786543551125583,
+      0.07138076749844209,
+      0.6258624527698287
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002925695551936968
+  },
+  {
+    "source_video_frame": 6,
+    "control_step": 7,
+    "simulation_time_s": 1.6999999999998683,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1130119633220526e-17,
+      1.855831651205186e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.3937334234253598,
+      0.07388929853048869,
+      0.6288509907130995
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002923943569054923
+  },
+  {
+    "source_video_frame": 7,
+    "control_step": 8,
+    "simulation_time_s": 1.7999999999998573,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.8127330435244945e-17,
+      8.917264463287295e-19,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.4081577556631255,
+      0.07856859635889171,
+      0.6318218627828297
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029225916056053705
+  },
+  {
+    "source_video_frame": 8,
+    "control_step": 9,
+    "simulation_time_s": 1.8999999999998463,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.0544061017549274e-17,
+      4.3174165985335696e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.4225095810000266,
+      0.08758309893658917,
+      0.6350163760228268
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029207328957096897
+  },
+  {
+    "source_video_frame": 9,
+    "control_step": 10,
+    "simulation_time_s": 1.9999999999998352,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.025031263841944e-17,
+      4.628717088517286e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.43677915513450155,
+      0.09336779503990796,
+      0.637844406506936
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029189228233461924
+  },
+  {
+    "source_video_frame": 10,
+    "control_step": 11,
+    "simulation_time_s": 2.0999999999998686,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.794558412766443e-17,
+      1.3728295591610811e-17,
+      1.7213904362331956e-15
+    ],
+    "pinch_position_m": [
+      0.45021130816205895,
+      0.10602891210148523,
+      0.6410403637995675
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029167995477702813
+  },
+  {
+    "source_video_frame": 11,
+    "control_step": 12,
+    "simulation_time_s": 2.199999999999902,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -7.984850553590731e-18,
+      1.720598043528484e-17,
+      1.7241660573222295e-15
+    ],
+    "pinch_position_m": [
+      0.46349432439241667,
+      0.11667238222857643,
+      0.6439741905382368
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029143568992976683
+  },
+  {
+    "source_video_frame": 12,
+    "control_step": 13,
+    "simulation_time_s": 2.2999999999999354,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.955957066707177e-17,
+      4.3114076276917394e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.4769023142314001,
+      0.12686889642762278,
+      0.6469101010673212
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029117994831180634
+  },
+  {
+    "source_video_frame": 13,
+    "control_step": 14,
+    "simulation_time_s": 2.399999999999969,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.9502074997054435e-17,
+      3.0314773169194475e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.4901922749056209,
+      0.13732921888286798,
+      0.64988777325159
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029089153759719417
+  },
+  {
+    "source_video_frame": 14,
+    "control_step": 15,
+    "simulation_time_s": 2.500000000000002,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.7088641556671743e-17,
+      2.823661753777545e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.5039114488235796,
+      0.14546212247862692,
+      0.652656262721591
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00290583405431665
+  },
+  {
+    "source_video_frame": 15,
+    "control_step": 16,
+    "simulation_time_s": 2.6000000000000356,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.361012622366271e-17,
+      2.0955725809608174e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.5173597730694784,
+      0.15527603453768424,
+      0.6556533998846714
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002902479217563557
+  },
+  {
+    "source_video_frame": 16,
+    "control_step": 17,
+    "simulation_time_s": 2.700000000000069,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.0277343660066757e-18,
+      2.1433586395118833e-17,
+      1.7274966967499518e-15
+    ],
+    "pinch_position_m": [
+      0.5311072165887967,
+      0.16314439952609114,
+      0.65842314400531
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028989284131487082
+  },
+  {
+    "source_video_frame": 17,
+    "control_step": 18,
+    "simulation_time_s": 2.8000000000001024,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.2259236058606435e-17,
+      1.4927756283468842e-17,
+      1.731382460395481e-15
+    ],
+    "pinch_position_m": [
+      0.5448695813616939,
+      0.17107367673935528,
+      0.6612219043709608
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00289516634539256
+  },
+  {
+    "source_video_frame": 18,
+    "control_step": 19,
+    "simulation_time_s": 2.900000000000136,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.4989846114608297e-17,
+      2.167788095414657e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.5587883554982327,
+      0.1779867654138427,
+      0.6638745554896992
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002891282133114735
+  },
+  {
+    "source_video_frame": 19,
+    "control_step": 20,
+    "simulation_time_s": 3.000000000000169,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -5.0463092945973314e-17,
+      3.435386632178886e-17,
+      1.7258313240965314e-15
+    ],
+    "pinch_position_m": [
+      0.5727410801528037,
+      0.18458339776708227,
+      0.6664790737453365
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028872407414804956
+  },
+  {
+    "source_video_frame": 20,
+    "control_step": 21,
+    "simulation_time_s": 3.1000000000002026,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -9.151248836365017e-18,
+      2.7662198505000252e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.5868356433202072,
+      0.1904063993886207,
+      0.6689465763075917
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028830303653520416
+  },
+  {
+    "source_video_frame": 21,
+    "control_step": 22,
+    "simulation_time_s": 3.200000000000236,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -5.384038784178546e-18,
+      2.401581265693787e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.6009191864363489,
+      0.19587889074032716,
+      0.6713209278125605
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028787578513927185
+  },
+  {
+    "source_video_frame": 22,
+    "control_step": 23,
+    "simulation_time_s": 3.3000000000002694,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -9.45625679799292e-18,
+      2.1983439818062432e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.6150363510198201,
+      0.20082376176297845,
+      0.6735583886157255
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028743327457275594
+  },
+  {
+    "source_video_frame": 23,
+    "control_step": 24,
+    "simulation_time_s": 3.400000000000303,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.3037179572377856e-17,
+      2.2855587623075067e-17,
+      1.7274966967499518e-15
+    ],
+    "pinch_position_m": [
+      0.6286194196859088,
+      0.2052229289320297,
+      0.6751711747157031
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028696725011828858
+  },
+  {
+    "source_video_frame": 24,
+    "control_step": 25,
+    "simulation_time_s": 3.500000000000336,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.5569600462334463e-17,
+      5.4213877259146013e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.6395576926528956,
+      0.20837330070316673,
+      0.6739500574813324
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002864610175253464
+  },
+  {
+    "source_video_frame": 25,
+    "control_step": 26,
+    "simulation_time_s": 3.6000000000003696,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -6.083519667355943e-18,
+      1.4980057259239344e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.649673874925989,
+      0.21097077527654942,
+      0.6715616051232369
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002861877962893457
+  },
+  {
+    "source_video_frame": 26,
+    "control_step": 27,
+    "simulation_time_s": 3.700000000000403,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      1.1075040571362764e-18,
+      5.406905116877778e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.6582779427971177,
+      0.21265699601729432,
+      0.6674284163206909
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002859118026857764
+  },
+  {
+    "source_video_frame": 27,
+    "control_step": 28,
+    "simulation_time_s": 3.8000000000004364,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.657249574368968e-17,
+      2.453352845872256e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.6651131649370453,
+      0.21362612187769886,
+      0.6613944792694575
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00285735406209982
+  },
+  {
+    "source_video_frame": 28,
+    "control_step": 29,
+    "simulation_time_s": 3.9000000000004698,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -4.623507422301366e-18,
+      2.869532558338306e-17,
+      1.7263864483143382e-15
+    ],
+    "pinch_position_m": [
+      0.6722778054453363,
+      0.2142492376587828,
+      0.6553526568604146
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028567654147769934
+  },
+  {
+    "source_video_frame": 29,
+    "control_step": 30,
+    "simulation_time_s": 4.000000000000503,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.2262184130309574e-17,
+      2.0125441615396847e-17,
+      1.7225006846688091e-15
+    ],
+    "pinch_position_m": [
+      0.6784711189895809,
+      0.21420501823003096,
+      0.64834495144518
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028558236240673446
+  },
+  {
+    "source_video_frame": 30,
+    "control_step": 31,
+    "simulation_time_s": 4.100000000000447,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -6.988035876918391e-18,
+      2.939683099110968e-17,
+      1.7252761998787247e-15
+    ],
+    "pinch_position_m": [
+      0.6845768455468693,
+      0.21362152396746087,
+      0.6409962899850119
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002855497382678207
+  },
+  {
+    "source_video_frame": 31,
+    "control_step": 32,
+    "simulation_time_s": 4.200000000000392,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.815787837751494e-17,
+      1.3805032309856743e-17,
+      1.731382460395481e-15
+    ],
+    "pinch_position_m": [
+      0.6899350570232895,
+      0.21253480139039543,
+      0.632952784900014
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002855292971690719
+  },
+  {
+    "source_video_frame": 32,
+    "control_step": 33,
+    "simulation_time_s": 4.300000000000336,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      1.889702174388364e-18,
+      3.678979659329115e-18,
+      1.7286069451855654e-15
+    ],
+    "pinch_position_m": [
+      0.6950937165161344,
+      0.211060554910374,
+      0.6246176686423712
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002855423430064089
+  },
+  {
+    "source_video_frame": 33,
+    "control_step": 34,
+    "simulation_time_s": 4.400000000000281,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1793270330304288e-17,
+      2.2570283103638177e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.6997115901297873,
+      0.2092503868793435,
+      0.6158553577316979
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028557119011850475
+  },
+  {
+    "source_video_frame": 34,
+    "control_step": 35,
+    "simulation_time_s": 4.500000000000226,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.7609808355972004e-17,
+      2.823673334306121e-17,
+      1.7286069451855654e-15
+    ],
+    "pinch_position_m": [
+      0.7040887539164542,
+      0.20717378832959638,
+      0.6068824454252336
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002856154894561632
+  },
+  {
+    "source_video_frame": 35,
+    "control_step": 36,
+    "simulation_time_s": 4.60000000000017,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.3174909280270998e-17,
+      1.8762623505907557e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.706841543302212,
+      0.2046408669340935,
+      0.5967541422260387
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028568505054116324
+  },
+  {
+    "source_video_frame": 36,
+    "control_step": 37,
+    "simulation_time_s": 4.700000000000115,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.566835077597386e-17,
+      7.044113263057444e-17,
+      1.7263864483143382e-15
+    ],
+    "pinch_position_m": [
+      0.7106609303508972,
+      0.20221890475412987,
+      0.5873893140443557
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002857798558568713
+  },
+  {
+    "source_video_frame": 37,
+    "control_step": 38,
+    "simulation_time_s": 4.800000000000059,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -5.478892660354798e-17,
+      1.3900108449463588e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.7135250827912013,
+      0.19964639615023858,
+      0.5775961723020113
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00285856076862981
+  },
+  {
+    "source_video_frame": 38,
+    "control_step": 39,
+    "simulation_time_s": 4.900000000000004,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0507605010909044e-17,
+      2.9477739181184715e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.7148628625668114,
+      0.19779765105180452,
+      0.5668943631266596
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028597541656403195
+  },
+  {
+    "source_video_frame": 39,
+    "control_step": 40,
+    "simulation_time_s": 4.9999999999999485,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0259664239741174e-17,
+      1.8245016891963725e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.715272551802296,
+      0.19600643618867192,
+      0.5557100866186724
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028617618241780656
+  },
+  {
+    "source_video_frame": 40,
+    "control_step": 41,
+    "simulation_time_s": 5.099999999999893,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.1221220845487234e-17,
+      3.1780279134287323e-17,
+      1.7263864483143382e-15
+    ],
+    "pinch_position_m": [
+      0.7146633088056533,
+      0.19457051502805003,
+      0.5439845053965712
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028642274157137616
+  },
+  {
+    "source_video_frame": 41,
+    "control_step": 42,
+    "simulation_time_s": 5.199999999999838,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.550459564671637e-17,
+      2.0700040973545583e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.7133889463048164,
+      0.19315998761292832,
+      0.5320116074557182
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002867206429646506
+  },
+  {
+    "source_video_frame": 42,
+    "control_step": 43,
+    "simulation_time_s": 5.299999999999782,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.2024615376842506e-17,
+      1.7967453128699106e-17,
+      1.7252761998787247e-15
+    ],
+    "pinch_position_m": [
+      0.7106537062202554,
+      0.1911856157857626,
+      0.5193047370846359
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002870505886923573
+  },
+  {
+    "source_video_frame": 43,
+    "control_step": 44,
+    "simulation_time_s": 5.399999999999727,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.85493646012144e-17,
+      3.9010638398833736e-17,
+      1.723055808886616e-15
+    ],
+    "pinch_position_m": [
+      0.708206327753178,
+      0.18991792560556128,
+      0.5068948733192236
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002873840090713723
+  },
+  {
+    "source_video_frame": 44,
+    "control_step": 45,
+    "simulation_time_s": 5.499999999999671,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.9145795072338045e-17,
+      2.7383757930286328e-17,
+      1.7258313240965314e-15
+    ],
+    "pinch_position_m": [
+      0.7050109680761257,
+      0.18851107362013236,
+      0.4944056513442039
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028774248160136286
+  },
+  {
+    "source_video_frame": 45,
+    "control_step": 46,
+    "simulation_time_s": 5.599999999999616,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.145040794005571e-17,
+      2.697788687348616e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.7017092424629219,
+      0.18738685216737644,
+      0.48199154095055646
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002880898884378062
+  },
+  {
+    "source_video_frame": 46,
+    "control_step": 47,
+    "simulation_time_s": 5.6999999999995605,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.484652863942895e-17,
+      3.473501791316349e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.6978000589833061,
+      0.18612539825293878,
+      0.4695464394448883
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002884545241451912
+  },
+  {
+    "source_video_frame": 47,
+    "control_step": 48,
+    "simulation_time_s": 5.799999999999505,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.514494215496517e-17,
+      4.6593297194988934e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.6936300069090373,
+      0.18491871687663272,
+      0.4571305073869549
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028880429489175374
+  },
+  {
+    "source_video_frame": 48,
+    "control_step": 49,
+    "simulation_time_s": 5.89999999999945,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -4.242322743702229e-18,
+      2.2488610598677142e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.6890069289792067,
+      0.18360170027355133,
+      0.44475936218283185
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028915967785702232
+  },
+  {
+    "source_video_frame": 49,
+    "control_step": 50,
+    "simulation_time_s": 5.999999999999394,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1930269637716546e-17,
+      3.1883421939227785e-17,
+      1.7247210756609179e-15
+    ],
+    "pinch_position_m": [
+      0.6840976415065927,
+      0.18227011079882058,
+      0.43245034443749686
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028949874674012313
+  },
+  {
+    "source_video_frame": 50,
+    "control_step": 51,
+    "simulation_time_s": 6.099999999999339,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.5642903391609277e-17,
+      1.8379986298152777e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.6788245037991416,
+      0.18084796265984784,
+      0.4202342284176494
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002898346081657467
+  },
+  {
+    "source_video_frame": 51,
+    "control_step": 52,
+    "simulation_time_s": 6.199999999999283,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.867705300140335e-17,
+      5.120060056268069e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.672640472966679,
+      0.17886447192027383,
+      0.40792120764511974
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002901638594006838
+  },
+  {
+    "source_video_frame": 52,
+    "control_step": 53,
+    "simulation_time_s": 6.299999999999228,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.1070146395020184e-17,
+      2.5459113785667345e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.6668662198005015,
+      0.177322239868379,
+      0.395894115605346
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002904601984543045
+  },
+  {
+    "source_video_frame": 53,
+    "control_step": 54,
+    "simulation_time_s": 6.399999999999173,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.7552570766305784e-17,
+      1.732304468993457e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.6606303284206129,
+      0.17561268062944776,
+      0.38405261316127604
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002907601721019245
+  },
+  {
+    "source_video_frame": 54,
+    "control_step": 55,
+    "simulation_time_s": 6.499999999999117,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1595477383772446e-17,
+      2.057449646325596e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.654345480462099,
+      0.17402489640068097,
+      0.37234755345136084
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029103048508451845
+  },
+  {
+    "source_video_frame": 55,
+    "control_step": 56,
+    "simulation_time_s": 6.599999999999062,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.6032119831707894e-17,
+      4.286830437331564e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.6476346068925095,
+      0.17227219512545378,
+      0.3607975222577381
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002913016644947032
+  },
+  {
+    "source_video_frame": 56,
+    "control_step": 57,
+    "simulation_time_s": 6.699999999999006,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.491643863607948e-17,
+      2.998941656449777e-17,
+      1.7247210756609179e-15
+    ],
+    "pinch_position_m": [
+      0.6407458569231991,
+      0.17051829635819174,
+      0.3493740306972536
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029154746161244877
+  },
+  {
+    "source_video_frame": 57,
+    "control_step": 58,
+    "simulation_time_s": 6.799999999998951,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.0577763664427134e-17,
+      4.882016666565519e-17,
+      1.7213904362331956e-15
+    ],
+    "pinch_position_m": [
+      0.6335293417474627,
+      0.1686466634887867,
+      0.3381252497242209
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002917878748389058
+  },
+  {
+    "source_video_frame": 58,
+    "control_step": 59,
+    "simulation_time_s": 6.8999999999988955,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -8.336264174763471e-18,
+      1.2978175952103836e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.6254271497171445,
+      0.1664053032766752,
+      0.32695354665849186
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029201671097608874
+  },
+  {
+    "source_video_frame": 59,
+    "control_step": 60,
+    "simulation_time_s": 6.99999999999884,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.4561313293249806e-17,
+      5.988516319643003e-17,
+      1.7236109331044227e-15
+    ],
+    "pinch_position_m": [
+      0.6177224474304394,
+      0.1644030724386455,
+      0.31598149525790603
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029221046247188747
+  },
+  {
+    "source_video_frame": 60,
+    "control_step": 61,
+    "simulation_time_s": 7.099999999998785,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1388502732441265e-17,
+      1.690461206835217e-17,
+      1.7319375846132877e-15
+    ],
+    "pinch_position_m": [
+      0.6096613392134436,
+      0.16227419306638444,
+      0.305273828800119
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002924060486391775
+  },
+  {
+    "source_video_frame": 61,
+    "control_step": 62,
+    "simulation_time_s": 7.199999999998729,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0833365279744677e-17,
+      1.4269338713850108e-17,
+      1.731382460395481e-15
+    ],
+    "pinch_position_m": [
+      0.6016004787064134,
+      0.16019950728844018,
+      0.29472017790835403
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029257060546031407
+  },
+  {
+    "source_video_frame": 62,
+    "control_step": 63,
+    "simulation_time_s": 7.299999999998674,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -4.269439792133249e-17,
+      4.256723379140349e-17,
+      1.7286069451855654e-15
+    ],
+    "pinch_position_m": [
+      0.5931918483295389,
+      0.1579966419147966,
+      0.2843983082185696
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029273282252238564
+  },
+  {
+    "source_video_frame": 63,
+    "control_step": 64,
+    "simulation_time_s": 7.399999999998618,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.919314950804548e-17,
+      1.3574348180627954e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.5846374730024624,
+      0.1557741413749301,
+      0.2742375539673209
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002928680775099757
+  },
+  {
+    "source_video_frame": 64,
+    "control_step": 65,
+    "simulation_time_s": 7.499999999998563,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1942277818668978e-17,
+      2.308055758863234e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.5758112785514043,
+      0.15345543674415135,
+      0.26430479224732356
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029299552060444694
+  },
+  {
+    "source_video_frame": 65,
+    "control_step": 66,
+    "simulation_time_s": 7.5999999999985075,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.660542414951419e-17,
+      2.1153670130192113e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.5667953638413664,
+      0.15109248717199075,
+      0.2545565307953419
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002930999010426071
+  },
+  {
+    "source_video_frame": 66,
+    "control_step": 67,
+    "simulation_time_s": 7.699999999998452,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1865889343460931e-17,
+      1.2186961152584614e-17,
+      1.7324927088310945e-15
+    ],
+    "pinch_position_m": [
+      0.5575462366993594,
+      0.14865103147553305,
+      0.24503650701401986
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029319273293396484
+  },
+  {
+    "source_video_frame": 67,
+    "control_step": 68,
+    "simulation_time_s": 7.799999999998397,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -3.2996545654650594e-17,
+      2.651183346403908e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.5494887874701918,
+      0.146528128035377,
+      0.2383048579376588
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029369602301341823
+  },
+  {
+    "source_video_frame": 68,
+    "control_step": 69,
+    "simulation_time_s": 7.899999999998341,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0515889224743762e-17,
+      1.899504306006148e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.5438002749962023,
+      0.14504833632525163,
+      0.2326091700817496
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029351600689029806
+  },
+  {
+    "source_video_frame": 69,
+    "control_step": 70,
+    "simulation_time_s": 7.999999999998286,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.1895091965558093e-17,
+      4.603833510458221e-17,
+      1.7286069451855654e-15
+    ],
+    "pinch_position_m": [
+      0.539148855180207,
+      0.14381255112262645,
+      0.22863943029034578
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029364380446125523
+  },
+  {
+    "source_video_frame": 70,
+    "control_step": 71,
+    "simulation_time_s": 8.099999999998408,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -6.487934472687713e-18,
+      2.762167161806883e-17,
+      1.7263864483143382e-15
+    ],
+    "pinch_position_m": [
+      0.5358764359128061,
+      0.1429600739684885,
+      0.22530928612871576
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029349458500324346
+  },
+  {
+    "source_video_frame": 71,
+    "control_step": 72,
+    "simulation_time_s": 8.19999999999853,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.3418176480977943e-17,
+      2.4342492750614663e-17,
+      1.7263864483143382e-15
+    ],
+    "pinch_position_m": [
+      0.5487555672140706,
+      0.14620369680650863,
+      0.21417272112905233
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002921327758239383
+  },
+  {
+    "source_video_frame": 72,
+    "control_step": 73,
+    "simulation_time_s": 8.299999999998652,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.191480963206793e-17,
+      2.2358139400659153e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.5507941181623104,
+      0.14584644249603618,
+      0.2069992722860133
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029357040109791524
+  },
+  {
+    "source_video_frame": 73,
+    "control_step": 74,
+    "simulation_time_s": 8.399999999998775,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0671766448095705e-17,
+      1.572821069043028e-17,
+      1.7258313240965314e-15
+    ],
+    "pinch_position_m": [
+      0.559624638190451,
+      0.14797728558989132,
+      0.19742614131713015
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002929149087130357
+  },
+  {
+    "source_video_frame": 74,
+    "control_step": 75,
+    "simulation_time_s": 8.499999999998897,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -7.577654353449252e-18,
+      1.6011232191376524e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.5619919732639801,
+      0.14801388234512217,
+      0.18908723119842932
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029333458043098613
+  },
+  {
+    "source_video_frame": 75,
+    "control_step": 76,
+    "simulation_time_s": 8.599999999999019,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -9.427125151180028e-18,
+      2.312462811730794e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.5672807821315295,
+      0.14953828012472178,
+      0.1798337886620513
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002930801019926896
+  },
+  {
+    "source_video_frame": 76,
+    "control_step": 77,
+    "simulation_time_s": 8.699999999999141,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -7.937740136163998e-18,
+      1.2639719288046126e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.5692586688989452,
+      0.14983822508779052,
+      0.1709248671845572
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029321343429796654
+  },
+  {
+    "source_video_frame": 77,
+    "control_step": 78,
+    "simulation_time_s": 8.799999999999264,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -2.836076742155231e-17,
+      2.3798783625261107e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.572647863756247,
+      0.1508911955027841,
+      0.16167129194335747
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00293125506220549
+  },
+  {
+    "source_video_frame": 78,
+    "control_step": 79,
+    "simulation_time_s": 8.899999999999386,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.670969357444895e-17,
+      2.6357488179181587e-17,
+      1.7308273361776741e-15
+    ],
+    "pinch_position_m": [
+      0.5742150498707651,
+      0.1512016665779717,
+      0.1524840912948923
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029316632607581765
+  },
+  {
+    "source_video_frame": 79,
+    "control_step": 80,
+    "simulation_time_s": 8.999999999999508,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.255678615983156e-17,
+      2.6943759055773446e-17,
+      1.7286069451855654e-15
+    ],
+    "pinch_position_m": [
+      0.5764210043180086,
+      0.15191507024785228,
+      0.14315602892482068
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029313991918766685
+  },
+  {
+    "source_video_frame": 80,
+    "control_step": 81,
+    "simulation_time_s": 9.09999999999963,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -9.58692900089976e-18,
+      1.6411473456927658e-17,
+      1.7280518209677586e-15
+    ],
+    "pinch_position_m": [
+      0.5775602239988452,
+      0.1521775771996633,
+      0.13381905958620618
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029315226373721253
+  },
+  {
+    "source_video_frame": 81,
+    "control_step": 82,
+    "simulation_time_s": 9.199999999999752,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -6.403369896151008e-17,
+      9.001494569343315e-17,
+      1.7302722119598673e-15
+    ],
+    "pinch_position_m": [
+      0.5798645718736833,
+      0.15271169049558345,
+      0.12451922144314101
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029315475140253774
+  },
+  {
+    "source_video_frame": 82,
+    "control_step": 83,
+    "simulation_time_s": 9.299999999999875,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -6.855586062875175e-18,
+      2.907316183486258e-17,
+      1.726941572532145e-15
+    ],
+    "pinch_position_m": [
+      0.5805657215578599,
+      0.1527871753174143,
+      0.11513258587169062
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029313603524791735
+  },
+  {
+    "source_video_frame": 83,
+    "control_step": 84,
+    "simulation_time_s": 9.399999999999997,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -4.19723685082472e-17,
+      7.68236450021438e-17,
+      1.7297170877420606e-15
+    ],
+    "pinch_position_m": [
+      0.5816565552123677,
+      0.1531418711756911,
+      0.10571119196779588
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029314391868684613
+  },
+  {
+    "source_video_frame": 84,
+    "control_step": 85,
+    "simulation_time_s": 9.500000000000119,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.1263998815362233e-17,
+      2.458977177729249e-17,
+      1.7241660573222295e-15
+    ],
+    "pinch_position_m": [
+      0.5818382716550791,
+      0.15318233455086397,
+      0.09624892377827513
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029314009398958593
+  },
+  {
+    "source_video_frame": 85,
+    "control_step": 86,
+    "simulation_time_s": 9.600000000000241,
+    "cube_position_m": [
+      0.5251865983009338,
+      0.1401199996471405,
+      0.02489224448800087
+    ],
+    "cube_linear_velocity_m_s": [
+      -1.0007553651105424e-17,
+      2.279823753684554e-17,
+      1.7291620694033722e-15
+    ],
+    "pinch_position_m": [
+      0.580125686937417,
+      0.1528140700067535,
+      0.086887396159546
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029315997056185553
+  },
+  {
+    "source_video_frame": 86,
+    "control_step": 87,
+    "simulation_time_s": 9.700000000000363,
+    "cube_position_m": [
+      0.5253121852874756,
+      0.14020924270153046,
+      0.02442258782684803
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0006003143498674035,
+      0.002476343186572194,
+      0.0073669482953846455
+    ],
+    "pinch_position_m": [
+      0.5773554361045481,
+      0.15137423621103097,
+      0.07914841522196012
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0016950480235299375
+  },
+  {
+    "source_video_frame": 87,
+    "control_step": 88,
+    "simulation_time_s": 9.800000000000486,
+    "cube_position_m": [
+      0.5250684022903442,
+      0.1402546465396881,
+      0.024766484275460243
+    ],
+    "cube_linear_velocity_m_s": [
+      -0.002491529332473874,
+      0.0005703726201318204,
+      -0.00040143317892216146
+    ],
+    "pinch_position_m": [
+      0.5723128277653795,
+      0.14979366371333738,
+      0.0698212794225613
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0020538168826660067
+  },
+  {
+    "source_video_frame": 88,
+    "control_step": 89,
+    "simulation_time_s": 9.900000000000608,
+    "cube_position_m": [
+      0.5247691869735718,
+      0.1401733160018921,
+      0.02451329119503498
+    ],
+    "cube_linear_velocity_m_s": [
+      -0.0015884387539699674,
+      -0.0022625222336500883,
+      -0.01448424719274044
+    ],
+    "pinch_position_m": [
+      0.5653283574897409,
+      0.14800205163480043,
+      0.061531363707155284
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00426892300379765
+  },
+  {
+    "source_video_frame": 89,
+    "control_step": 90,
+    "simulation_time_s": 10.00000000000073,
+    "cube_position_m": [
+      0.52496737241745,
+      0.14004449546337128,
+      0.023509476333856583
+    ],
+    "cube_linear_velocity_m_s": [
+      0.002390844514593482,
+      0.00039631471736356616,
+      -0.0035414090380072594
+    ],
+    "pinch_position_m": [
+      0.565701200097613,
+      0.1476901020616479,
+      0.059826380555575404
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.005348483817046777
+  },
+  {
+    "source_video_frame": 90,
+    "control_step": 91,
+    "simulation_time_s": 10.100000000000852,
+    "cube_position_m": [
+      0.5252583622932434,
+      0.14002543687820435,
+      0.022914137691259384
+    ],
+    "cube_linear_velocity_m_s": [
+      0.002013690769672394,
+      0.0004971931339241564,
+      -0.0031060725450515747
+    ],
+    "pinch_position_m": [
+      0.5664068565944773,
+      0.1476532871402904,
+      0.059011023441911115
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.004255903830906549
+  },
+  {
+    "source_video_frame": 91,
+    "control_step": 92,
+    "simulation_time_s": 10.200000000000975,
+    "cube_position_m": [
+      0.5253815650939941,
+      0.14008089900016785,
+      0.02276725135743618
+    ],
+    "cube_linear_velocity_m_s": [
+      0.000736874237190932,
+      0.0004965983680449426,
+      -0.00067056471016258
+    ],
+    "pinch_position_m": [
+      0.5666975596882992,
+      0.14775183619097956,
+      0.0588315594292981
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003480931090477413
+  },
+  {
+    "source_video_frame": 92,
+    "control_step": 93,
+    "simulation_time_s": 10.300000000001097,
+    "cube_position_m": [
+      0.5254583954811096,
+      0.1401204764842987,
+      0.022697240114212036
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0005606471095234156,
+      0.0003989983524661511,
+      -0.00037917913869023323
+    ],
+    "pinch_position_m": [
+      0.566903807601348,
+      0.1478044682527456,
+      0.05870966509533879
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003028861643444804
+  },
+  {
+    "source_video_frame": 93,
+    "control_step": 94,
+    "simulation_time_s": 10.400000000001219,
+    "cube_position_m": [
+      0.5254998207092285,
+      0.1401580572128296,
+      0.022675281390547752
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00029547736630775034,
+      0.0003683599061332643,
+      -0.00012054578837705776
+    ],
+    "pinch_position_m": [
+      0.5670053080662429,
+      0.1478593791701514,
+      0.0586716317928854
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002806391007440318
+  },
+  {
+    "source_video_frame": 94,
+    "control_step": 95,
+    "simulation_time_s": 10.500000000001341,
+    "cube_position_m": [
+      0.5255282521247864,
+      0.14019018411636353,
+      0.02266586385667324
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0002604070759844035,
+      0.0003390912897884846,
+      -5.37839878234081e-05
+    ],
+    "pinch_position_m": [
+      0.5670864691860569,
+      0.14789806888583162,
+      0.05863655952741026
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002703794725967642
+  },
+  {
+    "source_video_frame": 95,
+    "control_step": 96,
+    "simulation_time_s": 10.600000000001463,
+    "cube_position_m": [
+      0.5255506634712219,
+      0.14022353291511536,
+      0.02266310527920723
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00019537370826583356,
+      0.0003520067548379302,
+      -2.10257221624488e-05
+    ],
+    "pinch_position_m": [
+      0.5671399378094215,
+      0.1479470137300534,
+      0.05862415573098331
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026575217716715716
+  },
+  {
+    "source_video_frame": 96,
+    "control_step": 97,
+    "simulation_time_s": 10.700000000001586,
+    "cube_position_m": [
+      0.5255696177482605,
+      0.1402556151151657,
+      0.022662542760372162
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00019384657207410783,
+      0.00034317528479732573,
+      -5.998491815262241e-06
+    ],
+    "pinch_position_m": [
+      0.5671905075567727,
+      0.147991934192609,
+      0.058608915483136265
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026399215975429994
+  },
+  {
+    "source_video_frame": 97,
+    "control_step": 98,
+    "simulation_time_s": 10.800000000001708,
+    "cube_position_m": [
+      0.5255873203277588,
+      0.1402890980243683,
+      0.02266301028430462
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00016954101738519967,
+      0.0003567194798961282,
+      -2.561234623499331e-06
+    ],
+    "pinch_position_m": [
+      0.567230389269595,
+      0.14804543484302826,
+      0.05860339680879714
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002633478628587983
+  },
+  {
+    "source_video_frame": 98,
+    "control_step": 99,
+    "simulation_time_s": 10.90000000000183,
+    "cube_position_m": [
+      0.5256037712097168,
+      0.1403222531080246,
+      0.022663835436105728
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00017188761557918042,
+      0.0003530025132931769,
+      1.3482290341926273e-06
+    ],
+    "pinch_position_m": [
+      0.5672701155382578,
+      0.1480979875567839,
+      0.058595689705190745
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026335953967116777
+  },
+  {
+    "source_video_frame": 99,
+    "control_step": 100,
+    "simulation_time_s": 11.000000000001952,
+    "cube_position_m": [
+      0.5256197452545166,
+      0.14035631716251373,
+      0.022664818912744522
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00015966482169460505,
+      0.0003618535411078483,
+      9.973892929338035e-07
+    ],
+    "pinch_position_m": [
+      0.5673043973079241,
+      0.14815615652856584,
+      0.05859308152752274
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002635669213970881
+  },
+  {
+    "source_video_frame": 100,
+    "control_step": 101,
+    "simulation_time_s": 11.100000000002074,
+    "cube_position_m": [
+      0.5256351232528687,
+      0.14039026200771332,
+      0.02266583777964115
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00016111087461467832,
+      0.00035964068956673145,
+      2.3225691165862372e-06
+    ],
+    "pinch_position_m": [
+      0.5673386665567922,
+      0.1482141884018916,
+      0.05858929546283831
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026394673000278757
+  },
+  {
+    "source_video_frame": 101,
+    "control_step": 102,
+    "simulation_time_s": 11.200000000002197,
+    "cube_position_m": [
+      0.5256502628326416,
+      0.1404247134923935,
+      0.022666875272989273
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001540747471153736,
+      0.0003647190460469574,
+      1.7577440303284675e-06
+    ],
+    "pinch_position_m": [
+      0.5673697953269575,
+      0.14827566257105276,
+      0.058588384374179875
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002643569208758988
+  },
+  {
+    "source_video_frame": 102,
+    "control_step": 103,
+    "simulation_time_s": 11.300000000002319,
+    "cube_position_m": [
+      0.5256650447845459,
+      0.1404591053724289,
+      0.0226678978651762
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00015452956722583622,
+      0.000363059836672619,
+      2.3306693037739024e-06
+    ],
+    "pinch_position_m": [
+      0.5674007927839787,
+      0.14833720141960674,
+      0.05858692168377591
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026482621948924747
+  },
+  {
+    "source_video_frame": 103,
+    "control_step": 104,
+    "simulation_time_s": 11.400000000002441,
+    "cube_position_m": [
+      0.5256796479225159,
+      0.1404937356710434,
+      0.02266891673207283
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00015020220598671585,
+      0.00036566072958521545,
+      1.9557689938665135e-06
+    ],
+    "pinch_position_m": [
+      0.5674298851547257,
+      0.14840079099850575,
+      0.05858712466007235
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002653001497890682
+  },
+  {
+    "source_video_frame": 104,
+    "control_step": 105,
+    "simulation_time_s": 11.500000000002563,
+    "cube_position_m": [
+      0.5256940126419067,
+      0.14052830636501312,
+      0.022669920697808266
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00015006170724518597,
+      0.0003642233496066183,
+      2.244567212983384e-06
+    ],
+    "pinch_position_m": [
+      0.5674587791901046,
+      0.1484644578425734,
+      0.0585871018707427
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002658004499378558
+  },
+  {
+    "source_video_frame": 105,
+    "control_step": 106,
+    "simulation_time_s": 11.600000000002685,
+    "cube_position_m": [
+      0.5257082581520081,
+      0.14056296646595,
+      0.022670919075608253
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00014726162771694362,
+      0.00036527003976516426,
+      2.0288553059799597e-06
+    ],
+    "pinch_position_m": [
+      0.5674864856530464,
+      0.14852930965704944,
+      0.0585880568743041
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026630261991480325
+  },
+  {
+    "source_video_frame": 106,
+    "control_step": 107,
+    "simulation_time_s": 11.700000000002808,
+    "cube_position_m": [
+      0.5257222652435303,
+      0.14059753715991974,
+      0.022671904414892197
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001468224509153515,
+      0.00036391912726685405,
+      2.183151536883088e-06
+    ],
+    "pinch_position_m": [
+      0.5675139835678327,
+      0.14859419370298949,
+      0.058588939366470305
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026681835993292023
+  },
+  {
+    "source_video_frame": 107,
+    "control_step": 108,
+    "simulation_time_s": 11.80000000000293,
+    "cube_position_m": [
+      0.5257362127304077,
+      0.14063212275505066,
+      0.02267288602888584
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001448955008527264,
+      0.0003640039067249745,
+      2.070351229122025e-06
+    ],
+    "pinch_position_m": [
+      0.5675407188660305,
+      0.1486597268427495,
+      0.05859040318888123
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026733622344579954
+  },
+  {
+    "source_video_frame": 108,
+    "control_step": 109,
+    "simulation_time_s": 11.900000000003052,
+    "cube_position_m": [
+      0.5257499814033508,
+      0.14066660404205322,
+      0.02267385832965374
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00014432324678637087,
+      0.0003626780235208571,
+      2.1531977836275473e-06
+    ],
+    "pinch_position_m": [
+      0.5675672625934822,
+      0.14872523546158978,
+      0.05859185893257288
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026786143864131703
+  },
+  {
+    "source_video_frame": 109,
+    "control_step": 110,
+    "simulation_time_s": 12.000000000003174,
+    "cube_position_m": [
+      0.5257636904716492,
+      0.140701025724411,
+      0.02267482690513134
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00014291775005403906,
+      0.00036217604065313935,
+      2.0947170469298726e-06
+    ],
+    "pinch_position_m": [
+      0.5675933053204796,
+      0.148791062094208,
+      0.058593662102998545
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026838838752991077
+  },
+  {
+    "source_video_frame": 110,
+    "control_step": 111,
+    "simulation_time_s": 12.100000000003297,
+    "cube_position_m": [
+      0.525777280330658,
+      0.14073534309864044,
+      0.022675789892673492
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00014228497457224876,
+      0.0003608419792726636,
+      2.142774746971554e-06
+    ],
+    "pinch_position_m": [
+      0.5676191781139757,
+      0.14885681167250817,
+      0.05859548099653908
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026891946518133062
+  },
+  {
+    "source_video_frame": 111,
+    "control_step": 112,
+    "simulation_time_s": 12.200000000003419,
+    "cube_position_m": [
+      0.525790810585022,
+      0.1407695710659027,
+      0.022676749154925346
+    ],
+    "cube_linear_velocity_m_s": [
+      0.000141194075695239,
+      0.0003599837073124945,
+      2.1122059479239397e-06
+    ],
+    "pinch_position_m": [
+      0.567644711886834,
+      0.14892267397255474,
+      0.05859750742529238
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026945165149877682
+  },
+  {
+    "source_video_frame": 112,
+    "control_step": 113,
+    "simulation_time_s": 12.300000000003541,
+    "cube_position_m": [
+      0.5258042216300964,
+      0.14080369472503662,
+      0.022677702829241753
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00014054201892577112,
+      0.0003586358798202127,
+      2.1412092792161275e-06
+    ],
+    "pinch_position_m": [
+      0.5676700980413024,
+      0.14898841749897,
+      0.05859955464540276
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0026998597526214346
+  },
+  {
+    "source_video_frame": 113,
+    "control_step": 114,
+    "simulation_time_s": 12.400000000003663,
+    "cube_position_m": [
+      0.5258175730705261,
+      0.14083771407604218,
+      0.02267865464091301
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013963408127892762,
+      0.0003575620648916811,
+      2.1281709905451862e-06
+    ],
+    "pinch_position_m": [
+      0.5676952427355344,
+      0.14905414704541242,
+      0.05860172652004533
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027052095458498303
+  },
+  {
+    "source_video_frame": 114,
+    "control_step": 115,
+    "simulation_time_s": 12.500000000003785,
+    "cube_position_m": [
+      0.525830864906311,
+      0.14087159931659698,
+      0.022679602727293968
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001389792305417359,
+      0.00035620026756078005,
+      2.1473774722835515e-06
+    ],
+    "pinch_position_m": [
+      0.5677202585514682,
+      0.14911972598648474,
+      0.05860391689192418
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002710569431901519
+  },
+  {
+    "source_video_frame": 115,
+    "control_step": 116,
+    "simulation_time_s": 12.600000000003908,
+    "cube_position_m": [
+      0.5258440375328064,
+      0.14090536534786224,
+      0.022680548951029778
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001381883048452437,
+      0.0003549930697772652,
+      2.1409891814982984e-06
+    ],
+    "pinch_position_m": [
+      0.5677450965998914,
+      0.14918520991868972,
+      0.058606180244980155
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027159304073639495
+  },
+  {
+    "source_video_frame": 116,
+    "control_step": 117,
+    "simulation_time_s": 12.70000000000403,
+    "cube_position_m": [
+      0.5258572101593018,
+      0.14093901216983795,
+      0.02268149144947529
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013752712402492762,
+      0.0003536188742145896,
+      2.1600474156002747e-06
+    ],
+    "pinch_position_m": [
+      0.5677698166640881,
+      0.14925051930221653,
+      0.05860845976751938
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027212975740470787
+  },
+  {
+    "source_video_frame": 117,
+    "control_step": 118,
+    "simulation_time_s": 12.800000000004152,
+    "cube_position_m": [
+      0.5258702635765076,
+      0.1409725397825241,
+      0.02268243208527565
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013681572454515845,
+      0.00035233606467954814,
+      2.1532944174396107e-06
+    ],
+    "pinch_position_m": [
+      0.567794400908941,
+      0.1493156854511749,
+      0.05861077890534411
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027266600978909407
+  },
+  {
+    "source_video_frame": 118,
+    "control_step": 119,
+    "simulation_time_s": 12.900000000004274,
+    "cube_position_m": [
+      0.5258832573890686,
+      0.14100593328475952,
+      0.022683370858430862
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013615998614113778,
+      0.00035095663042739034,
+      2.1692287646146724e-06
+    ],
+    "pinch_position_m": [
+      0.5678188782717123,
+      0.1493806614798452,
+      0.05861311012708148
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027320229081389475
+  },
+  {
+    "source_video_frame": 119,
+    "control_step": 120,
+    "simulation_time_s": 13.000000000004396,
+    "cube_position_m": [
+      0.5258961915969849,
+      0.1410391926765442,
+      0.022684305906295776
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013547907292377204,
+      0.0003496249846648425,
+      2.1717353320127586e-06
+    ],
+    "pinch_position_m": [
+      0.5678432398831796,
+      0.14944546210015205,
+      0.058615464122244776
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027373825290666625
+  },
+  {
+    "source_video_frame": 120,
+    "control_step": 121,
+    "simulation_time_s": 13.100000000004519,
+    "cube_position_m": [
+      0.5259090065956116,
+      0.1410723328590393,
+      0.02268523909151554
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013483871589414775,
+      0.0003482414176687598,
+      2.1804844436701387e-06
+    ],
+    "pinch_position_m": [
+      0.5678675060714456,
+      0.14951006069490544,
+      0.05861782392786241
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002742738236451821
+  },
+  {
+    "source_video_frame": 121,
+    "control_step": 122,
+    "simulation_time_s": 13.200000000004641,
+    "cube_position_m": [
+      0.5259218215942383,
+      0.14110533893108368,
+      0.022686170414090157
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013417156878858805,
+      0.00034688663436099887,
+      2.190051418438088e-06
+    ],
+    "pinch_position_m": [
+      0.5678916672515189,
+      0.1495744659827274,
+      0.05862019795176235
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002748091456892695
+  },
+  {
+    "source_video_frame": 122,
+    "control_step": 123,
+    "simulation_time_s": 13.300000000004763,
+    "cube_position_m": [
+      0.5259345769882202,
+      0.1411382108926773,
+      0.022687099874019623
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013354852853808552,
+      0.0003455021360423416,
+      2.1928406113147503e-06
+    ],
+    "pinch_position_m": [
+      0.5679157430875115,
+      0.1496386617028389,
+      0.05862257163465395
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002753436721064552
+  },
+  {
+    "source_video_frame": 123,
+    "control_step": 124,
+    "simulation_time_s": 13.400000000004885,
+    "cube_position_m": [
+      0.5259472131729126,
+      0.1411709487438202,
+      0.02268802560865879
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013290483911987394,
+      0.00034413510002195835,
+      2.198827587562846e-06
+    ],
+    "pinch_position_m": [
+      0.5679397265352144,
+      0.14970265307861877,
+      0.0586249511132447
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002758774563362406
+  },
+  {
+    "source_video_frame": 124,
+    "control_step": 125,
+    "simulation_time_s": 13.500000000005008,
+    "cube_position_m": [
+      0.525959849357605,
+      0.14120356738567352,
+      0.02268895134329796
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013226894952822477,
+      0.0003427493793424219,
+      2.2103788523963885e-06
+    ],
+    "pinch_position_m": [
+      0.5679636226813106,
+      0.14976642843677324,
+      0.05862733137683465
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027641080579050782
+  },
+  {
+    "source_video_frame": 125,
+    "control_step": 126,
+    "simulation_time_s": 13.60000000000513,
+    "cube_position_m": [
+      0.5259724259376526,
+      0.14123603701591492,
+      0.022689875215291977
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013164740812499076,
+      0.00034138039336539805,
+      2.211470246038516e-06
+    ],
+    "pinch_position_m": [
+      0.5679874368006619,
+      0.14982999224387386,
+      0.05862971039464221
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027694315119617566
+  },
+  {
+    "source_video_frame": 126,
+    "control_step": 127,
+    "simulation_time_s": 13.700000000005252,
+    "cube_position_m": [
+      0.5259848833084106,
+      0.14126838743686676,
+      0.022690795361995697
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013102202501613647,
+      0.00033999726292677224,
+      2.2195633846422425e-06
+    ],
+    "pinch_position_m": [
+      0.5680111689404238,
+      0.1498933388419457,
+      0.05863208739081782
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002774746945956002
+  },
+  {
+    "source_video_frame": 127,
+    "control_step": 128,
+    "simulation_time_s": 13.800000000005374,
+    "cube_position_m": [
+      0.5259973406791687,
+      0.14130060374736786,
+      0.022691713646054268
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00013038930774200708,
+      0.00033862554118968546,
+      2.229347956017591e-06
+    ],
+    "pinch_position_m": [
+      0.5680348170727875,
+      0.14995646753227285,
+      0.05863446393665683
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002780056554588659
+  },
+  {
+    "source_video_frame": 128,
+    "control_step": 129,
+    "simulation_time_s": 13.900000000005496,
+    "cube_position_m": [
+      0.5260096788406372,
+      0.1413326859474182,
+      0.02269263006746769
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001297795242862776,
+      0.0003372495120856911,
+      2.231201960967155e-06
+    ],
+    "pinch_position_m": [
+      0.5680583893781636,
+      0.15001937835307572,
+      0.058636834428020784
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0027853556419067827
+  },
+  {
+    "source_video_frame": 129,
+    "control_step": 130,
+    "simulation_time_s": 14.000000000005619,
+    "cube_position_m": [
+      0.5260219573974609,
+      0.14136463403701782,
+      0.02269354648888111
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012914637045469135,
+      0.0003358794201631099,
+      2.2432118385040667e-06
+    ],
+    "pinch_position_m": [
+      0.568081879056005,
+      0.15008206868608148,
+      0.05863920432130304
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002790648864594634
+  },
+  {
+    "source_video_frame": 130,
+    "control_step": 131,
+    "simulation_time_s": 14.10000000000574,
+    "cube_position_m": [
+      0.5260342359542847,
+      0.1413964480161667,
+      0.022694459185004234
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012852966028731316,
+      0.0003345066506881267,
+      2.250484158139443e-06
+    ],
+    "pinch_position_m": [
+      0.5681052910283819,
+      0.1501445393588302,
+      0.05864156898308395
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002795935133506031
+  },
+  {
+    "source_video_frame": 131,
+    "control_step": 132,
+    "simulation_time_s": 14.200000000005863,
+    "cube_position_m": [
+      0.5260463953018188,
+      0.141428142786026,
+      0.022695370018482208
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012792058987542987,
+      0.0003331429325044155,
+      2.251452087875805e-06
+    ],
+    "pinch_position_m": [
+      0.5681286297009397,
+      0.15020678884526958,
+      0.058643927558707565
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002801209858288934
+  },
+  {
+    "source_video_frame": 132,
+    "control_step": 133,
+    "simulation_time_s": 14.300000000005985,
+    "cube_position_m": [
+      0.526058554649353,
+      0.14145970344543457,
+      0.022696280851960182
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012729673471767455,
+      0.00033177866134792566,
+      2.262758016513544e-06
+    ],
+    "pinch_position_m": [
+      0.5681518889138448,
+      0.1502688190601188,
+      0.05864628285140863
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028064774619886127
+  },
+  {
+    "source_video_frame": 133,
+    "control_step": 134,
+    "simulation_time_s": 14.400000000006107,
+    "cube_position_m": [
+      0.5260705947875977,
+      0.1414911299943924,
+      0.022697187960147858
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012669313582591712,
+      0.0003304183774162084,
+      2.264167051180266e-06
+    ],
+    "pinch_position_m": [
+      0.5681750767893998,
+      0.15033062771887287,
+      0.05864863026521511
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002811733776624442
+  },
+  {
+    "source_video_frame": 134,
+    "control_step": 135,
+    "simulation_time_s": 14.50000000000623,
+    "cube_position_m": [
+      0.5260826349258423,
+      0.14152243733406067,
+      0.022698093205690384
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012606797099579126,
+      0.0003290603344794363,
+      2.275589849887183e-06
+    ],
+    "pinch_position_m": [
+      0.5681981853529048,
+      0.15039221630229527,
+      0.058650974983216364
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028169835089460137
+  },
+  {
+    "source_video_frame": 135,
+    "control_step": 136,
+    "simulation_time_s": 14.600000000006352,
+    "cube_position_m": [
+      0.5260945558547974,
+      0.141553595662117,
+      0.02269899658858776
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012546988727990538,
+      0.0003277076466474682,
+      2.2758260911359685e-06
+    ],
+    "pinch_position_m": [
+      0.568221224684736,
+      0.15045358346228965,
+      0.0586533104856643
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002822221317074918
+  },
+  {
+    "source_video_frame": 136,
+    "control_step": 137,
+    "simulation_time_s": 14.700000000006474,
+    "cube_position_m": [
+      0.5261064171791077,
+      0.1415846347808838,
+      0.02269989810883999
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012484351464081556,
+      0.00032635434763506055,
+      2.2884755708219018e-06
+    ],
+    "pinch_position_m": [
+      0.5682441843139143,
+      0.1505147312394484,
+      0.058655643894737736
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028274532174901584
+  },
+  {
+    "source_video_frame": 137,
+    "control_step": 138,
+    "simulation_time_s": 14.800000000006596,
+    "cube_position_m": [
+      0.526118278503418,
+      0.14161555469036102,
+      0.022700799629092216
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001242364087374881,
+      0.0003250067529734224,
+      2.294035539307515e-06
+    ],
+    "pinch_position_m": [
+      0.5682670715807957,
+      0.1505756570668094,
+      0.05865796997263098
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028326770937717456
+  },
+  {
+    "source_video_frame": 138,
+    "control_step": 139,
+    "simulation_time_s": 14.900000000006719,
+    "cube_position_m": [
+      0.5261300206184387,
+      0.1416463404893875,
+      0.022701695561408997
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012363441055640578,
+      0.0003236667544115335,
+      2.295613967362442e-06
+    ],
+    "pinch_position_m": [
+      0.5682898881154105,
+      0.15063636532070646,
+      0.05866028921147337
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002837888660129634
+  },
+  {
+    "source_video_frame": 139,
+    "control_step": 140,
+    "simulation_time_s": 15.00000000000684,
+    "cube_position_m": [
+      0.5261417627334595,
+      0.14167699217796326,
+      0.022702593356370926
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012301716196816415,
+      0.00032232466037385166,
+      2.305740963493008e-06
+    ],
+    "pinch_position_m": [
+      0.5683126290442243,
+      0.15069685236080577,
+      0.05866260385443722
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028430929094213644
+  },
+  {
+    "source_video_frame": 140,
+    "control_step": 141,
+    "simulation_time_s": 15.100000000006963,
+    "cube_position_m": [
+      0.5261533856391907,
+      0.14170750975608826,
+      0.022703485563397408
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012241913645993918,
+      0.0003209879796486348,
+      2.3076777324604336e-06
+    ],
+    "pinch_position_m": [
+      0.5683353005754677,
+      0.15075712059084165,
+      0.058664910182986335
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028482861520277877
+  },
+  {
+    "source_video_frame": 141,
+    "control_step": 142,
+    "simulation_time_s": 15.200000000007085,
+    "cube_position_m": [
+      0.5261649489402771,
+      0.1417379081249237,
+      0.02270437963306904
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012180036719655618,
+      0.00031965371454134583,
+      2.3181596588983666e-06
+    ],
+    "pinch_position_m": [
+      0.5683578958065173,
+      0.15081716911613854,
+      0.05866721307897457
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002853472692931514
+  },
+  {
+    "source_video_frame": 142,
+    "control_step": 143,
+    "simulation_time_s": 15.300000000007207,
+    "cube_position_m": [
+      0.5261765122413635,
+      0.1417681872844696,
+      0.02270526997745037
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012119486927986145,
+      0.0003183239314239472,
+      2.3250331651070155e-06
+    ],
+    "pinch_position_m": [
+      0.568380419067949,
+      0.15087699873241928,
+      0.05866950936152299
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002858651431687957
+  },
+  {
+    "source_video_frame": 143,
+    "control_step": 144,
+    "simulation_time_s": 15.40000000000733,
+    "cube_position_m": [
+      0.5261879563331604,
+      0.14179833233356476,
+      0.022706158459186554
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00012059850996593013,
+      0.0003170018317177892,
+      2.324880597370793e-06
+    ],
+    "pinch_position_m": [
+      0.5684028739995557,
+      0.15093661110050735,
+      0.05867179792491686
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028638175305384173
+  },
+  {
+    "source_video_frame": 144,
+    "control_step": 145,
+    "simulation_time_s": 15.500000000007452,
+    "cube_position_m": [
+      0.5261994004249573,
+      0.14182834327220917,
+      0.022707045078277588
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011998297850368544,
+      0.0003156775201205164,
+      2.336351599296904e-06
+    ],
+    "pinch_position_m": [
+      0.568425253781165,
+      0.1509960048973122,
+      0.05867408251503228
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002868976788010552
+  },
+  {
+    "source_video_frame": 145,
+    "control_step": 146,
+    "simulation_time_s": 15.600000000007574,
+    "cube_position_m": [
+      0.5262107253074646,
+      0.14185823500156403,
+      0.022707929834723473
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011939008254557848,
+      0.0003143587673548609,
+      2.336598754482111e-06
+    ],
+    "pinch_position_m": [
+      0.5684475661175641,
+      0.1510551809702284,
+      0.05867635818903069
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002874124800409753
+  },
+  {
+    "source_video_frame": 146,
+    "control_step": 147,
+    "simulation_time_s": 15.700000000007696,
+    "cube_position_m": [
+      0.5262220501899719,
+      0.14188800752162933,
+      0.022708812728524208
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011877420183736831,
+      0.0003130448458250612,
+      2.347790086787427e-06
+    ],
+    "pinch_position_m": [
+      0.5684698030391082,
+      0.151114140487173,
+      0.05867863088871858
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002879265941520967
+  },
+  {
+    "source_video_frame": 147,
+    "control_step": 148,
+    "simulation_time_s": 15.800000000007818,
+    "cube_position_m": [
+      0.5262332558631897,
+      0.1419176459312439,
+      0.022709693759679794
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011818556959042326,
+      0.00031173473689705133,
+      2.347580448258668e-06
+    ],
+    "pinch_position_m": [
+      0.5684919743292703,
+      0.15117288227813408,
+      0.05868089400369478
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028843951420890984
+  },
+  {
+    "source_video_frame": 148,
+    "control_step": 149,
+    "simulation_time_s": 15.90000000000794,
+    "cube_position_m": [
+      0.5262444019317627,
+      0.14194715023040771,
+      0.02271057292819023
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011756858293665573,
+      0.00031042718910612166,
+      2.3591619537910447e-06
+    ],
+    "pinch_position_m": [
+      0.5685140693176218,
+      0.15123140968380888,
+      0.05868315478047187
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028895179763636885
+  },
+  {
+    "source_video_frame": 149,
+    "control_step": 150,
+    "simulation_time_s": 16.00000000000806,
+    "cube_position_m": [
+      0.5262555480003357,
+      0.14197655022144318,
+      0.02271145023405552
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011696890578605235,
+      0.0003091201651841402,
+      2.364951797062531e-06
+    ],
+    "pinch_position_m": [
+      0.5685360951372537,
+      0.1512897176048965,
+      0.05868540832236499
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002894633340421007
+  },
+  {
+    "source_video_frame": 150,
+    "control_step": 151,
+    "simulation_time_s": 16.100000000007828,
+    "cube_position_m": [
+      0.5262665748596191,
+      0.1420058161020279,
+      0.022712325677275658
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001163766864920035,
+      0.00030782658723182976,
+      2.364639840379823e-06
+    ],
+    "pinch_position_m": [
+      0.5685580533899998,
+      0.15134781356932814,
+      0.0586876547087809
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0028997360540382834
+  },
+  {
+    "source_video_frame": 151,
+    "control_step": 152,
+    "simulation_time_s": 16.200000000007595,
+    "cube_position_m": [
+      0.5262776017189026,
+      0.14203494787216187,
+      0.022713199257850647
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011576611723285168,
+      0.00030652646091766655,
+      2.375954409217229e-06
+    ],
+    "pinch_position_m": [
+      0.5685799384212403,
+      0.15140569291703299,
+      0.05868989704593927
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029048320209421477
+  },
+  {
+    "source_video_frame": 152,
+    "control_step": 153,
+    "simulation_time_s": 16.300000000007362,
+    "cube_position_m": [
+      0.5262885689735413,
+      0.14206397533416748,
+      0.022714070975780487
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011517718667164445,
+      0.0003052344545722008,
+      2.3758309453114634e-06
+    ],
+    "pinch_position_m": [
+      0.5686017574855902,
+      0.15146335712719874,
+      0.058692130840950374
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029099168785833842
+  },
+  {
+    "source_video_frame": 153,
+    "control_step": 154,
+    "simulation_time_s": 16.40000000000713,
+    "cube_position_m": [
+      0.5262994170188904,
+      0.14209286868572235,
+      0.022714940831065178
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011457877553766593,
+      0.0003039487055502832,
+      2.3808352125342935e-06
+    ],
+    "pinch_position_m": [
+      0.5686235070217184,
+      0.15152080915569435,
+      0.058694359037372495
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029149909766050803
+  },
+  {
+    "source_video_frame": 154,
+    "control_step": 155,
+    "simulation_time_s": 16.500000000006896,
+    "cube_position_m": [
+      0.5263102650642395,
+      0.14212164282798767,
+      0.02271580882370472
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011397099297028035,
+      0.0003026602207683027,
+      2.391397401879658e-06
+    ],
+    "pinch_position_m": [
+      0.5686451842886018,
+      0.15157804504902916,
+      0.058696583052050416
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029200589540605243
+  },
+  {
+    "source_video_frame": 155,
+    "control_step": 156,
+    "simulation_time_s": 16.600000000006663,
+    "cube_position_m": [
+      0.5263209939002991,
+      0.14215028285980225,
+      0.022716674953699112
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011338371405145153,
+      0.000301381282042712,
+      2.391227553744102e-06
+    ],
+    "pinch_position_m": [
+      0.568666795466135,
+      0.15163506946968422,
+      0.05869879884003601
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029251158583672573
+  },
+  {
+    "source_video_frame": 156,
+    "control_step": 157,
+    "simulation_time_s": 16.70000000000643,
+    "cube_position_m": [
+      0.5263317227363586,
+      0.14217881858348846,
+      0.022717541083693504
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011277319572400302,
+      0.00030010074260644615,
+      2.4027840481721796e-06
+    ],
+    "pinch_position_m": [
+      0.5686883335776967,
+      0.15169187911632256,
+      0.05870101193424421
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029301667622917502
+  },
+  {
+    "source_video_frame": 157,
+    "control_step": 158,
+    "simulation_time_s": 16.800000000006197,
+    "cube_position_m": [
+      0.5263423919677734,
+      0.14220722019672394,
+      0.0227184034883976
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011219028237974271,
+      0.000298830185784027,
+      2.4021776425797725e-06
+    ],
+    "pinch_position_m": [
+      0.5687098074698933,
+      0.1517484771565656,
+      0.058703215969360206
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029352060686994043
+  },
+  {
+    "source_video_frame": 158,
+    "control_step": 159,
+    "simulation_time_s": 16.900000000005964,
+    "cube_position_m": [
+      0.5263529419898987,
+      0.14223550260066986,
+      0.022719264030456543
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011159169662278146,
+      0.0002975590468849987,
+      2.4074747670965735e-06
+    ],
+    "pinch_position_m": [
+      0.5687312120609931,
+      0.15180486356213893,
+      0.05870541527791531
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029402354504455682
+  },
+  {
+    "source_video_frame": 159,
+    "control_step": 160,
+    "simulation_time_s": 17.00000000000573,
+    "cube_position_m": [
+      0.5263634920120239,
+      0.14226366579532623,
+      0.02272012270987034
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011098854156443849,
+      0.0002962912549264729,
+      2.417312089164625e-06
+    ],
+    "pinch_position_m": [
+      0.568752545430437,
+      0.15186103727683767,
+      0.058707609994716276
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002945258825383956
+  },
+  {
+    "source_video_frame": 160,
+    "control_step": 161,
+    "simulation_time_s": 17.100000000005497,
+    "cube_position_m": [
+      0.5263739824295044,
+      0.14229170978069305,
+      0.022720979526638985
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00011040356184821576,
+      0.000295029953122139,
+      2.4169512471416965e-06
+    ],
+    "pinch_position_m": [
+      0.5687738140241897,
+      0.15191700031136354,
+      0.05870979711890495
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002950270895107381
+  },
+  {
+    "source_video_frame": 161,
+    "control_step": 162,
+    "simulation_time_s": 17.200000000005264,
+    "cube_position_m": [
+      0.5263844132423401,
+      0.14231961965560913,
+      0.02272183448076248
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010980915249092504,
+      0.0002937719109468162,
+      2.4222674710472347e-06
+    ],
+    "pinch_position_m": [
+      0.568795014827973,
+      0.151972752628581,
+      0.05871197874167572
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002955273103381764
+  },
+  {
+    "source_video_frame": 162,
+    "control_step": 163,
+    "simulation_time_s": 17.30000000000503,
+    "cube_position_m": [
+      0.5263947248458862,
+      0.14234742522239685,
+      0.02272268757224083
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001092168313334696,
+      0.00029251340311020613,
+      2.4271946585940896e-06
+    ],
+    "pinch_position_m": [
+      0.5688161479788798,
+      0.15202829447549085,
+      0.05871415419863102
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029602664376041023
+  },
+  {
+    "source_video_frame": 163,
+    "control_step": 164,
+    "simulation_time_s": 17.4000000000048,
+    "cube_position_m": [
+      0.5264050364494324,
+      0.14237511157989502,
+      0.022723540663719177
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010861356713576242,
+      0.0002912635391112417,
+      2.436695922369836e-06
+    ],
+    "pinch_position_m": [
+      0.5688372098579645,
+      0.15208362648362697,
+      0.05871632647507524
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029652535622505262
+  },
+  {
+    "source_video_frame": 164,
+    "control_step": 165,
+    "simulation_time_s": 17.500000000004565,
+    "cube_position_m": [
+      0.5264152884483337,
+      0.14240266382694244,
+      0.022724390029907227
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010803196346387267,
+      0.00029001536313444376,
+      2.437119746900862e-06
+    ],
+    "pinch_position_m": [
+      0.5688582081181826,
+      0.15213874902976035,
+      0.05871849070003771
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029702298449667394
+  },
+  {
+    "source_video_frame": 165,
+    "control_step": 166,
+    "simulation_time_s": 17.600000000004332,
+    "cube_position_m": [
+      0.5264254808425903,
+      0.1424301117658615,
+      0.022725237533450127
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010743754683062434,
+      0.00028877105796709657,
+      2.442050572426524e-06
+    ],
+    "pinch_position_m": [
+      0.5688791385268667,
+      0.1521936622714349,
+      0.05872065015964836
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029751968828544387
+  },
+  {
+    "source_video_frame": 166,
+    "control_step": 167,
+    "simulation_time_s": 17.7000000000041,
+    "cube_position_m": [
+      0.5264356136322021,
+      0.14245742559432983,
+      0.022726083174347878
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010685070446925238,
+      0.0002875312929973006,
+      2.4458327061438467e-06
+    ],
+    "pinch_position_m": [
+      0.5689000028654663,
+      0.15224836807293612,
+      0.058722802907824195
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029801541648178977
+  },
+  {
+    "source_video_frame": 167,
+    "control_step": 168,
+    "simulation_time_s": 17.800000000003866,
+    "cube_position_m": [
+      0.5264456868171692,
+      0.1424846351146698,
+      0.02272692695260048
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010625850700307637,
+      0.0002862929250113666,
+      2.451087993904366e-06
+    ],
+    "pinch_position_m": [
+      0.5689208003089365,
+      0.15230286404554869,
+      0.058724950764395656
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002985102657157902
+  },
+  {
+    "source_video_frame": 168,
+    "control_step": 169,
+    "simulation_time_s": 17.900000000003633,
+    "cube_position_m": [
+      0.5264557003974915,
+      0.14251172542572021,
+      0.02272777073085308
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010567116987658665,
+      0.0002850614837370813,
+      2.455105232002097e-06
+    ],
+    "pinch_position_m": [
+      0.5689415313865434,
+      0.15235715402452646,
+      0.058727092420817195
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002990041901674904
+  },
+  {
+    "source_video_frame": 169,
+    "control_step": 170,
+    "simulation_time_s": 18.0000000000034,
+    "cube_position_m": [
+      0.526465654373169,
+      0.14253869652748108,
+      0.022728610783815384
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001050806968123652,
+      0.0002838314394466579,
+      2.4604348709544865e-06
+    ],
+    "pinch_position_m": [
+      0.5689621959192044,
+      0.1524112361907116,
+      0.05872922912872228
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0029949722231590414
+  },
+  {
+    "source_video_frame": 170,
+    "control_step": 171,
+    "simulation_time_s": 18.100000000003167,
+    "cube_position_m": [
+      0.5264755487442017,
+      0.1425655484199524,
+      0.022729448974132538
+    ],
+    "cube_linear_velocity_m_s": [
+      0.0001044932723743841,
+      0.0002826059062499553,
+      2.464295448589837e-06
+    ],
+    "pinch_position_m": [
+      0.5689827944252245,
+      0.1524651117826811,
+      0.058731359899070135
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.002999893598077963
+  },
+  {
+    "source_video_frame": 171,
+    "control_step": 172,
+    "simulation_time_s": 18.200000000002934,
+    "cube_position_m": [
+      0.5264853835105896,
+      0.14259228110313416,
+      0.022730287164449692
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010390468378318474,
+      0.0002813834580592811,
+      2.468896354912431e-06
+    ],
+    "pinch_position_m": [
+      0.5690033268192347,
+      0.1525187806434296,
+      0.05873348548333182
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030048060865264436
+  },
+  {
+    "source_video_frame": 172,
+    "control_step": 173,
+    "simulation_time_s": 18.3000000000027,
+    "cube_position_m": [
+      0.5264951586723328,
+      0.14261889457702637,
+      0.022731121629476547
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010331665544072166,
+      0.000280164327705279,
+      2.4741764264035737e-06
+    ],
+    "pinch_position_m": [
+      0.5690237928629815,
+      0.1525722440960001,
+      0.05873560570023423
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003009710258346757
+  },
+  {
+    "source_video_frame": 173,
+    "control_step": 174,
+    "simulation_time_s": 18.400000000002468,
+    "cube_position_m": [
+      0.5265048742294312,
+      0.14264540374279022,
+      0.022731956094503403
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010272985673509538,
+      0.00027894918457604945,
+      2.4779528757790104e-06
+    ],
+    "pinch_position_m": [
+      0.569044193610364,
+      0.15262550084029647,
+      0.05873772056698853
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030146055254865333
+  },
+  {
+    "source_video_frame": 174,
+    "control_step": 175,
+    "simulation_time_s": 18.500000000002235,
+    "cube_position_m": [
+      0.5265145897865295,
+      0.14267179369926453,
+      0.02273278683423996
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010214371286565438,
+      0.0002777396875899285,
+      2.4826185835991055e-06
+    ],
+    "pinch_position_m": [
+      0.5690645283731508,
+      0.15267855444343365,
+      0.05873983010787601
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030194918591208257
+  },
+  {
+    "source_video_frame": 175,
+    "control_step": 176,
+    "simulation_time_s": 18.600000000002,
+    "cube_position_m": [
+      0.5265241861343384,
+      0.14269806444644928,
+      0.022733615711331367
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010156982170883566,
+      0.0002765327808447182,
+      2.4808389298414113e-06
+    ],
+    "pinch_position_m": [
+      0.5690848024257199,
+      0.15273140275140895,
+      0.05874193173719014
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003024365598069403
+  },
+  {
+    "source_video_frame": 176,
+    "control_step": 177,
+    "simulation_time_s": 18.70000000000177,
+    "cube_position_m": [
+      0.5265337228775024,
+      0.14272421598434448,
+      0.022734444588422775
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010097400809172541,
+      0.00027532820240594447,
+      2.4904129531932995e-06
+    ],
+    "pinch_position_m": [
+      0.5691050072341242,
+      0.1527840477147137,
+      0.05874403048682994
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003029232465668051
+  },
+  {
+    "source_video_frame": 177,
+    "control_step": 178,
+    "simulation_time_s": 18.800000000001535,
+    "cube_position_m": [
+      0.5265432596206665,
+      0.14275026321411133,
+      0.022735271602869034
+    ],
+    "cube_linear_velocity_m_s": [
+      0.00010039038897957653,
+      0.0002741256612353027,
+      2.4951341401902027e-06
+    ],
+    "pinch_position_m": [
+      0.5691251473835318,
+      0.15283648763137975,
+      0.05874612339023258
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030340917769582252
+  },
+  {
+    "source_video_frame": 178,
+    "control_step": 179,
+    "simulation_time_s": 18.900000000001302,
+    "cube_position_m": [
+      0.526552677154541,
+      0.14277619123458862,
+      0.022736094892024994
+    ],
+    "cube_linear_velocity_m_s": [
+      9.981609036913142e-05,
+      0.00027293304447084665,
+      2.4939802187873283e-06
+    ],
+    "pinch_position_m": [
+      0.5691452258462393,
+      0.15288872639369436,
+      0.05874820931803515
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003038939144266894
+  },
+  {
+    "source_video_frame": 179,
+    "control_step": 180,
+    "simulation_time_s": 19.00000000000107,
+    "cube_position_m": [
+      0.5265620350837708,
+      0.14280200004577637,
+      0.022736918181180954
+    ],
+    "cube_linear_velocity_m_s": [
+      9.922314347932115e-05,
+      0.0002717378083616495,
+      2.502905999790528e-06
+    ],
+    "pinch_position_m": [
+      0.5691652367087825,
+      0.1529407609063618,
+      0.05875029205328522
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030437795192189048
+  },
+  {
+    "source_video_frame": 180,
+    "control_step": 181,
+    "simulation_time_s": 19.100000000000836,
+    "cube_position_m": [
+      0.5265713930130005,
+      0.14282768964767456,
+      0.022737739607691765
+    ],
+    "cube_linear_velocity_m_s": [
+      9.863997547654435e-05,
+      0.00027054769452661276,
+      2.5074914447031915e-06
+    ],
+    "pinch_position_m": [
+      0.5691851824004577,
+      0.15299259363084505,
+      0.05875236936244424
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003048612544206777
+  },
+  {
+    "source_video_frame": 181,
+    "control_step": 182,
+    "simulation_time_s": 19.200000000000603,
+    "cube_position_m": [
+      0.5265806317329407,
+      0.1428532749414444,
+      0.022738557308912277
+    ],
+    "cube_linear_velocity_m_s": [
+      9.806644084164873e-05,
+      0.00026936232461594045,
+      2.50693415182468e-06
+    ],
+    "pinch_position_m": [
+      0.5692050674587619,
+      0.15304422335656218,
+      0.058754439810455306
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030534343153369604
+  },
+  {
+    "source_video_frame": 182,
+    "control_step": 183,
+    "simulation_time_s": 19.30000000000037,
+    "cube_position_m": [
+      0.5265898704528809,
+      0.14287875592708588,
+      0.02273937501013279
+    ],
+    "cube_linear_velocity_m_s": [
+      9.747544390847906e-05,
+      0.000268180767307058,
+      2.5151143745461013e-06
+    ],
+    "pinch_position_m": [
+      0.5692248845732417,
+      0.15309565318558951,
+      0.058756507171837
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030582490327927536
+  },
+  {
+    "source_video_frame": 183,
+    "control_step": 184,
+    "simulation_time_s": 19.400000000000137,
+    "cube_position_m": [
+      0.5265990495681763,
+      0.1429041177034378,
+      0.022740190848708153
+    ],
+    "cube_linear_velocity_m_s": [
+      9.6906915132422e-05,
+      0.0002670037792995572,
+      2.5135966552625177e-06
+    ],
+    "pinch_position_m": [
+      0.5692446425065016,
+      0.15314688132826232,
+      0.05875856651528516
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030630520026761554
+  },
+  {
+    "source_video_frame": 184,
+    "control_step": 185,
+    "simulation_time_s": 19.499999999999904,
+    "cube_position_m": [
+      0.5266081094741821,
+      0.14292936027050018,
+      0.022741004824638367
+    ],
+    "cube_linear_velocity_m_s": [
+      9.63245693128556e-05,
+      0.0002658299636095762,
+      2.518007477192441e-06
+    ],
+    "pinch_position_m": [
+      0.5692643357117081,
+      0.153197910569992,
+      0.05876062150886985
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030678453307225904
+  },
+  {
+    "source_video_frame": 185,
+    "control_step": 186,
+    "simulation_time_s": 19.59999999999967,
+    "cube_position_m": [
+      0.526617169380188,
+      0.1429544985294342,
+      0.02274181693792343
+    ],
+    "cube_linear_velocity_m_s": [
+      9.573547868058085e-05,
+      0.00026465512928552926,
+      2.5270892365369946e-06
+    ],
+    "pinch_position_m": [
+      0.5692839619200197,
+      0.15324873859597105,
+      0.058762672890671136
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030726332319586363
+  },
+  {
+    "source_video_frame": 186,
+    "control_step": 187,
+    "simulation_time_s": 19.699999999999438,
+    "cube_position_m": [
+      0.5266261696815491,
+      0.14297951757907867,
+      0.022742627188563347
+    ],
+    "cube_linear_velocity_m_s": [
+      9.516641875961795e-05,
+      0.0002634906559251249,
+      2.5252777504647383e-06
+    ],
+    "pinch_position_m": [
+      0.5693035283279736,
+      0.15329936735002792,
+      0.05876471710238404
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030774100752777016
+  },
+  {
+    "source_video_frame": 187,
+    "control_step": 188,
+    "simulation_time_s": 19.799999999999205,
+    "cube_position_m": [
+      0.5266351103782654,
+      0.1430044323205948,
+      0.022743435576558113
+    ],
+    "cube_linear_velocity_m_s": [
+      9.458608838031068e-05,
+      0.00026232548407278955,
+      2.5298663786088582e-06
+    ],
+    "pinch_position_m": [
+      0.5693230308913192,
+      0.15334979748223365,
+      0.05876675672010462
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030821777246451973
+  },
+  {
+    "source_video_frame": 188,
+    "control_step": 189,
+    "simulation_time_s": 19.899999999998972,
+    "cube_position_m": [
+      0.5266439914703369,
+      0.14302922785282135,
+      0.02274424210190773
+    ],
+    "cube_linear_velocity_m_s": [
+      9.401040733791888e-05,
+      0.0002611659874673933,
+      2.5326244212919846e-06
+    ],
+    "pinch_position_m": [
+      0.5693424711805842,
+      0.15340002884648737,
+      0.0587687905424803
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003086935972704361
+  },
+  {
+    "source_video_frame": 189,
+    "control_step": 190,
+    "simulation_time_s": 19.99999999999874,
+    "cube_position_m": [
+      0.5266528129577637,
+      0.14305391907691956,
+      0.022745046764612198
+    ],
+    "cube_linear_velocity_m_s": [
+      9.343178680865094e-05,
+      0.000260007829638198,
+      2.5366837235196726e-06
+    ],
+    "pinch_position_m": [
+      0.5693618480165138,
+      0.15345006217720983,
+      0.058770819650053846
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003091685572486419
+  },
+  {
+    "source_video_frame": 190,
+    "control_step": 191,
+    "simulation_time_s": 20.099999999998506,
+    "cube_position_m": [
+      0.5266615748405457,
+      0.1430785059928894,
+      0.022745849564671516
+    ],
+    "cube_linear_velocity_m_s": [
+      9.285575652029365e-05,
+      0.00025885566719807684,
+      2.5399936021130998e-06
+    ],
+    "pinch_position_m": [
+      0.5693811624120001,
+      0.15349989763868244,
+      0.058772843408756825
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0030964263141304337
+  },
+  {
+    "source_video_frame": 191,
+    "control_step": 192,
+    "simulation_time_s": 20.199999999998273,
+    "cube_position_m": [
+      0.5266702771186829,
+      0.1431029736995697,
+      0.022746650502085686
+    ],
+    "cube_linear_velocity_m_s": [
+      9.227941336575896e-05,
+      0.00025770708452910185,
+      2.543289610912325e-06
+    ],
+    "pinch_position_m": [
+      0.5694004142409459,
+      0.15354953608749874,
+      0.05877486233868762
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031011578936185153
+  },
+  {
+    "source_video_frame": 192,
+    "control_step": 193,
+    "simulation_time_s": 20.29999999999804,
+    "cube_position_m": [
+      0.5266789197921753,
+      0.14312733709812164,
+      0.022747449576854706
+    ],
+    "cube_linear_velocity_m_s": [
+      9.17026845854707e-05,
+      0.00025656004436314106,
+      2.5472372726653703e-06
+    ],
+    "pinch_position_m": [
+      0.569419603381821,
+      0.1535989771239126,
+      0.05877687629143688
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031058811652334363
+  },
+  {
+    "source_video_frame": 193,
+    "control_step": 194,
+    "simulation_time_s": 20.399999999997807,
+    "cube_position_m": [
+      0.526687502861023,
+      0.14315159618854523,
+      0.022748248651623726
+    ],
+    "cube_linear_velocity_m_s": [
+      9.112706902669743e-05,
+      0.0002554187085479498,
+      2.5504737095616292e-06
+    ],
+    "pinch_position_m": [
+      0.5694387297900076,
+      0.15364822277279036,
+      0.05877888537862175
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031105957542607097
+  },
+  {
+    "source_video_frame": 194,
+    "control_step": 195,
+    "simulation_time_s": 20.499999999997573,
+    "cube_position_m": [
+      0.5266960263252258,
+      0.14317573606967926,
+      0.022749044001102448
+    ],
+    "cube_linear_velocity_m_s": [
+      9.055147529579699e-05,
+      0.0002542805450502783,
+      2.5544977688696235e-06
+    ],
+    "pinch_position_m": [
+      0.5694577939796798,
+      0.15369727224208554,
+      0.058780889743855536
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031153017076301667
+  },
+  {
+    "source_video_frame": 195,
+    "control_step": 196,
+    "simulation_time_s": 20.59999999999734,
+    "cube_position_m": [
+      0.5267045497894287,
+      0.14319977164268494,
+      0.02274983935058117
+    ],
+    "cube_linear_velocity_m_s": [
+      8.997616532724351e-05,
+      0.00025314438971690834,
+      2.5576111966074677e-06
+    ],
+    "pinch_position_m": [
+      0.5694767956429486,
+      0.1537461263402438,
+      0.05878288926653155
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003119999310153463
+  },
+  {
+    "source_video_frame": 196,
+    "control_step": 197,
+    "simulation_time_s": 20.699999999997107,
+    "cube_position_m": [
+      0.526712954044342,
+      0.14322370290756226,
+      0.022750630974769592
+    ],
+    "cube_linear_velocity_m_s": [
+      8.941303531173617e-05,
+      0.00025201463722623885,
+      2.5561587335687364e-06
+    ],
+    "pinch_position_m": [
+      0.569495739442193,
+      0.15379478546008402,
+      0.05878488157791639
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031246851455451136
+  },
+  {
+    "source_video_frame": 197,
+    "control_step": 198,
+    "simulation_time_s": 20.799999999996874,
+    "cube_position_m": [
+      0.5267212986946106,
+      0.14324751496315002,
+      0.022751422598958015
+    ],
+    "cube_linear_velocity_m_s": [
+      8.882951806299388e-05,
+      0.0002508863981347531,
+      2.563755970186321e-06
+    ],
+    "pinch_position_m": [
+      0.5695146174262785,
+      0.15384325154676093,
+      0.05878687139562372
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031293638331150323
+  },
+  {
+    "source_video_frame": 198,
+    "control_step": 199,
+    "simulation_time_s": 20.89999999999664,
+    "cube_position_m": [
+      0.5267296433448792,
+      0.14327122271060944,
+      0.02275221049785614
+    ],
+    "cube_linear_velocity_m_s": [
+      8.82565145730041e-05,
+      0.00024975917767733335,
+      2.567942374298582e-06
+    ],
+    "pinch_position_m": [
+      0.5695334342310653,
+      0.1538915208470303,
+      0.058788855950218044
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003134035310577409
+  },
+  {
+    "source_video_frame": 199,
+    "control_step": 200,
+    "simulation_time_s": 20.999999999996408,
+    "cube_position_m": [
+      0.5267378687858582,
+      0.1432948261499405,
+      0.022752998396754265
+    ],
+    "cube_linear_velocity_m_s": [
+      8.769371925154701e-05,
+      0.0002486415614839643,
+      2.5654212549852673e-06
+    ],
+    "pinch_position_m": [
+      0.569552192353897,
+      0.15393959879477973,
+      0.05879083392311546
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031386952522442285
+  },
+  {
+    "source_video_frame": 200,
+    "control_step": 201,
+    "simulation_time_s": 21.099999999996175,
+    "cube_position_m": [
+      0.5267460942268372,
+      0.1433183252811432,
+      0.02275378443300724
+    ],
+    "cube_linear_velocity_m_s": [
+      8.711079863132909e-05,
+      0.0002475222572684288,
+      2.5746735445864033e-06
+    ],
+    "pinch_position_m": [
+      0.5695708853359784,
+      0.15398748332902223,
+      0.058792809497004966
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003143348866746565
+  },
+  {
+    "source_video_frame": 201,
+    "control_step": 202,
+    "simulation_time_s": 21.199999999995942,
+    "cube_position_m": [
+      0.5267542600631714,
+      0.14334172010421753,
+      0.022754568606615067
+    ],
+    "cube_linear_velocity_m_s": [
+      8.65518522914499e-05,
+      0.0002464100543875247,
+      2.571738605183782e-06
+    ],
+    "pinch_position_m": [
+      0.5695895214054741,
+      0.15403517523874866,
+      0.05879477738732036
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031479912147462873
+  },
+  {
+    "source_video_frame": 202,
+    "control_step": 203,
+    "simulation_time_s": 21.29999999999571,
+    "cube_position_m": [
+      0.5267623066902161,
+      0.1433650106191635,
+      0.022755349054932594
+    ],
+    "cube_linear_velocity_m_s": [
+      8.597943815402687e-05,
+      0.0002453012275509536,
+      2.5751619432412554e-06
+    ],
+    "pinch_position_m": [
+      0.5696080958840888,
+      0.15408267599681688,
+      0.05879674124422046
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031526238164828776
+  },
+  {
+    "source_video_frame": 203,
+    "control_step": 204,
+    "simulation_time_s": 21.399999999995476,
+    "cube_position_m": [
+      0.5267703533172607,
+      0.14338818192481995,
+      0.02275613136589527
+    ],
+    "cube_linear_velocity_m_s": [
+      8.54011086630635e-05,
+      0.00024419298279099166,
+      2.5822378120210487e-06
+    ],
+    "pinch_position_m": [
+      0.569626606457007,
+      0.1541299843287705,
+      0.05879870169589407
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003157250254091615
+  },
+  {
+    "source_video_frame": 204,
+    "control_step": 205,
+    "simulation_time_s": 21.499999999995243,
+    "cube_position_m": [
+      0.5267783403396606,
+      0.14341126382350922,
+      0.02275690995156765
+    ],
+    "cube_linear_velocity_m_s": [
+      8.483842975692824e-05,
+      0.00024308917636517435,
+      2.5820395421760622e-06
+    ],
+    "pinch_position_m": [
+      0.5696450587866301,
+      0.1541771010651403,
+      0.05880065587972283
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003161867114546433
+  },
+  {
+    "source_video_frame": 205,
+    "control_step": 206,
+    "simulation_time_s": 21.59999999999501,
+    "cube_position_m": [
+      0.5267862677574158,
+      0.14343422651290894,
+      0.02275768667459488
+    ],
+    "cube_linear_velocity_m_s": [
+      8.42697627376765e-05,
+      0.00024199290783144534,
+      2.5839576665021013e-06
+    ],
+    "pinch_position_m": [
+      0.5696634506550109,
+      0.15422402813864267,
+      0.05880260544573884
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031664740885853663
+  },
+  {
+    "source_video_frame": 206,
+    "control_step": 207,
+    "simulation_time_s": 21.699999999994777,
+    "cube_position_m": [
+      0.5267941355705261,
+      0.1434570848941803,
+      0.02275846153497696
+    ],
+    "cube_linear_velocity_m_s": [
+      8.370155410375446e-05,
+      0.00024089372891467065,
+      2.587129301900859e-06
+    ],
+    "pinch_position_m": [
+      0.569681782517069,
+      0.1542707632974083,
+      0.05880454997181661
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031710723849910664
+  },
+  {
+    "source_video_frame": 207,
+    "control_step": 208,
+    "simulation_time_s": 21.799999999994544,
+    "cube_position_m": [
+      0.5268019437789917,
+      0.1434798538684845,
+      0.02275923453271389
+    ],
+    "cube_linear_velocity_m_s": [
+      8.313254511449486e-05,
+      0.00023980218975339085,
+      2.589876430647564e-06
+    ],
+    "pinch_position_m": [
+      0.5697000530438563,
+      0.15431731030940907,
+      0.05880648994978466
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003175662331017869
+  },
+  {
+    "source_video_frame": 208,
+    "control_step": 209,
+    "simulation_time_s": 21.89999999999431,
+    "cube_position_m": [
+      0.5268096923828125,
+      0.14350250363349915,
+      0.02276000566780567
+    ],
+    "cube_linear_velocity_m_s": [
+      8.256632281700149e-05,
+      0.00023871456505730748,
+      2.5921312953869347e-06
+    ],
+    "pinch_position_m": [
+      0.5697182643777005,
+      0.15436366684107727,
+      0.058808425053394786
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003180242915696193
+  },
+  {
+    "source_video_frame": 209,
+    "control_step": 210,
+    "simulation_time_s": 21.999999999994078,
+    "cube_position_m": [
+      0.5268174409866333,
+      0.14352506399154663,
+      0.022760776802897453
+    ],
+    "cube_linear_velocity_m_s": [
+      8.199707372114062e-05,
+      0.00023762746423017234,
+      2.5955985165637685e-06
+    ],
+    "pinch_position_m": [
+      0.5697364142334507,
+      0.1544098358074092,
+      0.05881035583705688
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031848155738046957
+  },
+  {
+    "source_video_frame": 210,
+    "control_step": 211,
+    "simulation_time_s": 22.099999999993845,
+    "cube_position_m": [
+      0.5268250703811646,
+      0.14354750514030457,
+      0.022761544212698936
+    ],
+    "cube_linear_velocity_m_s": [
+      8.144225284922868e-05,
+      0.00023654875985812396,
+      2.5929844014171977e-06
+    ],
+    "pinch_position_m": [
+      0.5697545086172113,
+      0.15445581629631958,
+      0.05881227942599801
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031893761830861364
+  },
+  {
+    "source_video_frame": 211,
+    "control_step": 212,
+    "simulation_time_s": 22.19999999999361,
+    "cube_position_m": [
+      0.526832640171051,
+      0.14356985688209534,
+      0.02276231162250042
+    ],
+    "cube_linear_velocity_m_s": [
+      8.086428715614602e-05,
+      0.000235467086895369,
+      2.6009545308625093e-06
+    ],
+    "pinch_position_m": [
+      0.5697725389687562,
+      0.15450160838474383,
+      0.05881420111094263
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031939304011229584
+  },
+  {
+    "source_video_frame": 212,
+    "control_step": 213,
+    "simulation_time_s": 22.29999999999338,
+    "cube_position_m": [
+      0.5268402099609375,
+      0.14359208941459656,
+      0.022763075307011604
+    ],
+    "cube_linear_velocity_m_s": [
+      8.030054596019909e-05,
+      0.00023439418873749673,
+      2.6035227165266406e-06
+    ],
+    "pinch_position_m": [
+      0.5697905100675844,
+      0.15454721259638457,
+      0.058816117421034014
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0031984768878415668
+  },
+  {
+    "source_video_frame": 213,
+    "control_step": 214,
+    "simulation_time_s": 22.399999999993145,
+    "cube_position_m": [
+      0.5268476605415344,
+      0.14361423254013062,
+      0.02276383899152279
+    ],
+    "cube_linear_velocity_m_s": [
+      7.974296750035137e-05,
+      0.00023332165437750518,
+      2.601344249342219e-06
+    ],
+    "pinch_position_m": [
+      0.5698084239175918,
+      0.154592630960103,
+      0.0588180277504807
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032030124733538044
+  },
+  {
+    "source_video_frame": 214,
+    "control_step": 215,
+    "simulation_time_s": 22.499999999992912,
+    "cube_position_m": [
+      0.5268551111221313,
+      0.14363627135753632,
+      0.022764600813388824
+    ],
+    "cube_linear_velocity_m_s": [
+      7.916794857010245e-05,
+      0.0002322548534721136,
+      2.609420789667638e-06
+    ],
+    "pinch_position_m": [
+      0.5698262750136663,
+      0.15463786194135432,
+      0.058819935725823225
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032075416380644775
+  },
+  {
+    "source_video_frame": 215,
+    "control_step": 216,
+    "simulation_time_s": 22.59999999999268,
+    "cube_position_m": [
+      0.5268625020980835,
+      0.14365820586681366,
+      0.02276535890996456
+    ],
+    "cube_linear_velocity_m_s": [
+      7.86155869718641e-05,
+      0.00023119006073102355,
+      2.606246880532126e-06
+    ],
+    "pinch_position_m": [
+      0.5698440705676354,
+      0.15468290742820903,
+      0.05882183647596484
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00321205976195628
+  },
+  {
+    "source_video_frame": 216,
+    "control_step": 217,
+    "simulation_time_s": 22.699999999992446,
+    "cube_position_m": [
+      0.5268697738647461,
+      0.14368005096912384,
+      0.0227661170065403
+    ],
+    "cube_linear_velocity_m_s": [
+      7.805017230566591e-05,
+      0.00023013078316580504,
+      2.6085633635375416e-06
+    ],
+    "pinch_position_m": [
+      0.5698618064460866,
+      0.15472776761833368,
+      0.058823733233411696
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003216568437362678
+  },
+  {
+    "source_video_frame": 217,
+    "control_step": 218,
+    "simulation_time_s": 22.799999999992213,
+    "cube_position_m": [
+      0.5268770456314087,
+      0.14370177686214447,
+      0.022766875103116035
+    ],
+    "cube_linear_velocity_m_s": [
+      7.747823838144541e-05,
+      0.00022907218954060227,
+      2.61610853158345e-06
+    ],
+    "pinch_position_m": [
+      0.569879479716035,
+      0.15477244310347496,
+      0.05882562720939183
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.00322107113437138
+  },
+  {
+    "source_video_frame": 218,
+    "control_step": 219,
+    "simulation_time_s": 22.89999999999198,
+    "cube_position_m": [
+      0.5268842577934265,
+      0.14372341334819794,
+      0.022767629474401474
+    ],
+    "cube_linear_velocity_m_s": [
+      7.692260987823829e-05,
+      0.00022801740851718932,
+      2.6147679363930365e-06
+    ],
+    "pinch_position_m": [
+      0.5698970970136054,
+      0.1548169320862175,
+      0.058827515053521906
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032255643102037717
+  },
+  {
+    "source_video_frame": 219,
+    "control_step": 220,
+    "simulation_time_s": 22.999999999991747,
+    "cube_position_m": [
+      0.5268914103507996,
+      0.14374494552612305,
+      0.022768381983041763
+    ],
+    "cube_linear_velocity_m_s": [
+      7.6360120147001e-05,
+      0.0002269693504786119,
+      2.6164582322962815e-06
+    ],
+    "pinch_position_m": [
+      0.5699146547342462,
+      0.15486123930097861,
+      0.05882939862656483
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003230048121060024
+  },
+  {
+    "source_video_frame": 220,
+    "control_step": 221,
+    "simulation_time_s": 23.099999999991514,
+    "cube_position_m": [
+      0.5268985033035278,
+      0.1437663733959198,
+      0.022769132629036903
+    ],
+    "cube_linear_velocity_m_s": [
+      7.579928205814213e-05,
+      0.00022592053574044257,
+      2.6185944079770707e-06
+    ],
+    "pinch_position_m": [
+      0.5699321543436128,
+      0.15490536146043765,
+      0.058831277313914104
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032345230686654882
+  },
+  {
+    "source_video_frame": 221,
+    "control_step": 222,
+    "simulation_time_s": 23.19999999999128,
+    "cube_position_m": [
+      0.5269055366516113,
+      0.1437877118587494,
+      0.022769883275032043
+    ],
+    "cube_linear_velocity_m_s": [
+      7.523671229137108e-05,
+      0.00022487736714538187,
+      2.62096659753297e-06
+    ],
+    "pinch_position_m": [
+      0.5699495945984696,
+      0.15494930088876988,
+      0.058833151855244514
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003238989694228444
+  },
+  {
+    "source_video_frame": 222,
+    "control_step": 223,
+    "simulation_time_s": 23.299999999991048,
+    "cube_position_m": [
+      0.52691251039505,
+      0.14380894601345062,
+      0.022770630195736885
+    ],
+    "cube_linear_velocity_m_s": [
+      7.467596151400357e-05,
+      0.00022383793839253485,
+      2.6236789381073322e-06
+    ],
+    "pinch_position_m": [
+      0.5699669760725642,
+      0.1549930582052658,
+      0.05883502194897533
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003243447883420027
+  },
+  {
+    "source_video_frame": 223,
+    "control_step": 224,
+    "simulation_time_s": 23.399999999990815,
+    "cube_position_m": [
+      0.5269194841384888,
+      0.1438300758600235,
+      0.022771377116441727
+    ],
+    "cube_linear_velocity_m_s": [
+      7.411473779939115e-05,
+      0.0002228013181593269,
+      2.6253781015839195e-06
+    ],
+    "pinch_position_m": [
+      0.5699842991564047,
+      0.15503663218982175,
+      0.058836887814181144
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032478975271570025
+  },
+  {
+    "source_video_frame": 224,
+    "control_step": 225,
+    "simulation_time_s": 23.49999999999058,
+    "cube_position_m": [
+      0.5269263386726379,
+      0.1438511162996292,
+      0.02277212031185627
+    ],
+    "cube_linear_velocity_m_s": [
+      7.356497371802106e-05,
+      0.00022176846687216312,
+      2.623284444780438e-06
+    ],
+    "pinch_position_m": [
+      0.57000156703004,
+      0.15508002556220876,
+      0.058838746959492094
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003252336162572919
+  },
+  {
+    "source_video_frame": 225,
+    "control_step": 226,
+    "simulation_time_s": 23.59999999999035,
+    "cube_position_m": [
+      0.5269331932067871,
+      0.14387205243110657,
+      0.022772863507270813
+    ],
+    "cube_linear_velocity_m_s": [
+      7.299533172044903e-05,
+      0.00022073964646551758,
+      2.6294385406799847e-06
+    ],
+    "pinch_position_m": [
+      0.5700187736313055,
+      0.15512323641131756,
+      0.058840604195651375
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003256767622036801
+  },
+  {
+    "source_video_frame": 226,
+    "control_step": 227,
+    "simulation_time_s": 23.699999999990116,
+    "cube_position_m": [
+      0.5269399285316467,
+      0.14389289915561676,
+      0.022773604840040207
+    ],
+    "cube_linear_velocity_m_s": [
+      7.244828157126904e-05,
+      0.0002197120920754969,
+      2.6268985493516084e-06
+    ],
+    "pinch_position_m": [
+      0.5700359255084877,
+      0.15516626771744985,
+      0.05884245400794158
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003261188671714834
+  },
+  {
+    "source_video_frame": 227,
+    "control_step": 228,
+    "simulation_time_s": 23.799999999989883,
+    "cube_position_m": [
+      0.5269466638565063,
+      0.1439136415719986,
+      0.02277434431016445
+    ],
+    "cube_linear_velocity_m_s": [
+      7.187606388470158e-05,
+      0.00021869134798180312,
+      2.63419656221231e-06
+    ],
+    "pinch_position_m": [
+      0.570053015190199,
+      0.15520911768757711,
+      0.058844302975058826
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032656033064628483
+  },
+  {
+    "source_video_frame": 228,
+    "control_step": 229,
+    "simulation_time_s": 23.89999999998965,
+    "cube_position_m": [
+      0.5269533395767212,
+      0.14393427968025208,
+      0.022775081917643547
+    ],
+    "cube_linear_velocity_m_s": [
+      7.133120379876345e-05,
+      0.00021766986174043268,
+      2.6310019620723324e-06
+    ],
+    "pinch_position_m": [
+      0.5700700508230275,
+      0.15525178860481093,
+      0.05884614406391675
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.003270007639706347
+  },
+  {
+    "source_video_frame": 229,
+    "control_step": 230,
+    "simulation_time_s": 23.999999999989416,
+    "cube_position_m": [
+      0.5269598960876465,
+      0.1439548283815384,
+      0.022775817662477493
+    ],
+    "cube_linear_velocity_m_s": [
+      7.076912879711017e-05,
+      0.00021665541862603277,
+      2.63355286733713e-06
+    ],
+    "pinch_position_m": [
+      0.5700870276406229,
+      0.15529427946397825,
+      0.0588479823460932
+    ],
+    "gripper_command": 0.0,
+    "measured_gripper_driver_rad": 0.0032744030776636697
+  }
+]

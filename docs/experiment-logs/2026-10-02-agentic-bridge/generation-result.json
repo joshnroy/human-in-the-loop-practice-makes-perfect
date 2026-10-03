@@ -1,0 +1,16 @@
+{
+  "status": "model_completed_with_generation_limitation",
+  "backend": "codex",
+  "model": "gpt-6-astra",
+  "library_generated": false,
+  "simulation_executed": false,
+  "vlm_judgments": 0,
+  "image": "sha256:712a0a55dc7fc61cb30ab043a79f176f524c937885437bf084f7abb95ed9f531",
+  "budgets": {
+    "usd_stop_threshold": 2.0,
+    "completed_agent_messages": 20,
+    "timeout_seconds": 900
+  },
+  "coding_result_error": "Disconnected coding learner failed: Codex stopped without confirming high confidence in the solution",
+  "note": "Cost threshold is checked after each authoritative response-usage record; an in-flight response may overshoot. No follow-up generation attempt has been started."
+}

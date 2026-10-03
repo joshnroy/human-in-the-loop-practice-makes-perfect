@@ -1,0 +1,16 @@
+{
+  "steps": 2,
+  "controller_done": false,
+  "trajectory_path": "local run artifact; actual endpoint images and actions retained in the experiment worktree",
+  "error": null,
+  "seed": 0,
+  "probe_kind": "trusted numeric Docker policy; not generated skill success",
+  "base_x_before": -0.027972321542299262,
+  "base_x_after": -0.023620206204228205,
+  "option_steps": 1.0,
+  "image_views": [
+    "task_overview",
+    "robot_wrist"
+  ],
+  "image": "sha256:712a0a55dc7fc61cb30ab043a79f176f524c937885437bf084f7abb95ed9f531"
+}

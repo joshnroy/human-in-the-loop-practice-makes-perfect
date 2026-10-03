@@ -1,0 +1,530 @@
+{
+  "manifest": {
+    "schema_version": 1,
+    "revision": "object-state-feedback-v1",
+    "clusters": [
+      {
+        "cluster_id": "free_near",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the robot side of the barrier. The cube is settled outside the bin on the robot side, unobstructed from above in the measured scene, with the gripper disengaged and empty, whether open or closed; the cube is separated from the fingers. Its location is consistent with a base approach and top grasp without crossing the barrier; do not infer hidden clearance. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "held_near",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the robot side of the barrier. The cube is lifted clear of its support and securely carried between the fingers: observed lift or transport shows the cube following the tool with a stable relative pose. A close command, finger position, or one proximity sample alone is insufficient. The cube is not resting in the bin. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "partial_near",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the robot side of the barrier. The gripper is closed or partly closed after a grasp attempt, but secure carrying has not been established. The cube remains at or between the fingers, trapped, slipping, or still supported there; the fingers obstruct separation. A settled cube separated from an empty gripper belongs to the free or lost scene instead. It is not a settled successful bin placement. Opening the fingers is the next recovery action. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "inside_near",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the robot side of the barrier. The cube has been released, is stationary relative to the bin, and is physically contained within its open interior, below its rim and supported inside. It is disengaged from the fingers. The upright bin and exposed cube are on the accessible robot side, permitting a top approach for retrieval. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "lost_near",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the robot side of the barrier. The released cube is settled outside the bin, separated from the empty gripper, and lies across the barrier or in an observably obstructed location unavailable to the supplied top-grasp recovery. This excludes a cube visibly accessible on the robot side and excludes a cube inside the bin. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "free_far",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the opposite side of the barrier. The cube is settled outside the bin on the robot side, unobstructed from above in the measured scene, with the gripper disengaged and empty, whether open or closed; the cube is separated from the fingers. Its location is consistent with a base approach and top grasp without crossing the barrier; do not infer hidden clearance. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "held_far",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the opposite side of the barrier. The cube is lifted clear of its support and securely carried between the fingers: observed lift or transport shows the cube following the tool with a stable relative pose. A close command, finger position, or one proximity sample alone is insufficient. The cube is not resting in the bin. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "partial_far",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the opposite side of the barrier. The gripper is closed or partly closed after a grasp attempt, but secure carrying has not been established. The cube remains at or between the fingers, trapped, slipping, or still supported there; the fingers obstruct separation. A settled cube separated from an empty gripper belongs to the free or lost scene instead. It is not a settled successful bin placement. Opening the fingers is the next recovery action. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "inside_far",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the opposite side of the barrier. The cube has been released, is stationary relative to the bin, and is physically contained within its open interior, below its rim and supported inside. It is disengaged from the fingers. Retrieval would require crossing the barrier and is unavailable to these robot skills. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      },
+      {
+        "cluster_id": "lost_far",
+        "description": "Use current labeled object-state measurements and robot kinematics; compare sides along the thin horizontal axis of the oriented barrier. The robot side is the half-space containing the mobile base. Bounding boxes have full local dimensions. The bin is on the opposite side of the barrier. The released cube is settled outside the bin, separated from the empty gripper, and lies across the barrier or in an observably obstructed location unavailable to the supplied top-grasp recovery. This excludes a cube visibly accessible on the robot side and excludes a cube inside the bin. If motion, occlusion, missing evidence, or ambiguous geometry prevents this distinction, leave the scene unresolved."
+      }
+    ],
+    "options": [
+      {
+        "option_id": "pick",
+        "belief_skill": "PickCube",
+        "initiation": "Cube settled and exposed on the robot side, either outside the bin or retrievable inside the near-side bin; gripper empty and disengaged; the policy opens it before approaching.",
+        "termination": "Lift and verification have finished, or the bounded approach/grasp attempt has stopped without establishing carrying.",
+        "success": "Cube lifted clear of its previous support and carried securely between the fingers with a stable tool-relative pose over multiple observations during lift; closing alone is insufficient.",
+        "controller": "policies/pick.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 235,
+        "parameters": {}
+      },
+      {
+        "option_id": "toss",
+        "belief_skill": "MoveToTossLocationAndToss",
+        "initiation": "Cube securely held following a demonstrated lift or transport; bin opening and barrier are measured.",
+        "termination": "Release and settling have finished, or transport/launch has stopped or reached its bound, including retained or dropped cubes.",
+        "success": "After release the cube settles physically inside the open bin, below the rim and supported in its interior, disengaged from the fingers. A release or transient flight over the bin is insufficient; no native scoring-region flag is used.",
+        "controller": "policies/toss.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 265,
+        "parameters": {}
+      },
+      {
+        "option_id": "open_gripper",
+        "belief_skill": "OpenGripper",
+        "initiation": "Unsuccessful or partial grasp, without demonstrated secure carrying, requiring finger opening.",
+        "termination": "Opening and settling have finished or the bounded recovery attempt stops.",
+        "success": "Fingers are open and the cube is disengaged, no longer trapped or carried by the gripper; recovery need not leave it reachable.",
+        "controller": "policies/open_gripper.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 65,
+        "parameters": {}
+      },
+      {
+        "option_id": "reset_cube_far",
+        "belief_skill": "ask_for_reset_cube_bin_only",
+        "initiation": "Any resolved scene in this registry where external rearrangement is chosen.",
+        "termination": "The external human intervention has completed.",
+        "success": "The cube is returned free and recoverable on the robot side, disengaged from the gripper; the bin is across the barrier.",
+        "controller": null,
+        "human_destination": "free_far",
+        "cost": 5.0,
+        "max_steps": 1,
+        "parameters": {}
+      },
+      {
+        "option_id": "reset_cube_and_bin_near",
+        "belief_skill": "ask_for_reset_cube_bin_only",
+        "initiation": "Any resolved scene in this registry where external rearrangement is chosen.",
+        "termination": "The external human intervention has completed.",
+        "success": "The cube is returned free and recoverable on the robot side, disengaged from the gripper; the bin is also on the robot side.",
+        "controller": null,
+        "human_destination": "free_near",
+        "cost": 5.0,
+        "max_steps": 1,
+        "parameters": {}
+      }
+    ],
+    "edges": [
+      {
+        "source": "free_near",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "held_near",
+        "probability": 1.0
+      },
+      {
+        "source": "free_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "partial_near",
+        "probability": 0.5
+      },
+      {
+        "source": "free_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "free_near",
+        "probability": 0.35
+      },
+      {
+        "source": "free_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "lost_near",
+        "probability": 0.15
+      },
+      {
+        "source": "inside_near",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "held_near",
+        "probability": 1.0
+      },
+      {
+        "source": "inside_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "partial_near",
+        "probability": 0.5
+      },
+      {
+        "source": "inside_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "inside_near",
+        "probability": 0.3
+      },
+      {
+        "source": "inside_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "free_near",
+        "probability": 0.15
+      },
+      {
+        "source": "inside_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "lost_near",
+        "probability": 0.05
+      },
+      {
+        "source": "held_near",
+        "option_id": "toss",
+        "outcome": "success",
+        "destination": "inside_near",
+        "probability": 1.0
+      },
+      {
+        "source": "held_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "free_near",
+        "probability": 0.3
+      },
+      {
+        "source": "held_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "lost_near",
+        "probability": 0.4
+      },
+      {
+        "source": "held_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "partial_near",
+        "probability": 0.15
+      },
+      {
+        "source": "held_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "held_near",
+        "probability": 0.15
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 0.65
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "lost_near",
+        "probability": 0.25
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "inside_near",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "partial_near",
+        "probability": 0.6
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "held_near",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "free_near",
+        "probability": 0.15
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "lost_near",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "inside_near",
+        "probability": 0.05
+      },
+      {
+        "source": "free_far",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "held_far",
+        "probability": 1.0
+      },
+      {
+        "source": "free_far",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "partial_far",
+        "probability": 0.5
+      },
+      {
+        "source": "free_far",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "free_far",
+        "probability": 0.35
+      },
+      {
+        "source": "free_far",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "lost_far",
+        "probability": 0.15
+      },
+      {
+        "source": "held_far",
+        "option_id": "toss",
+        "outcome": "success",
+        "destination": "inside_far",
+        "probability": 1.0
+      },
+      {
+        "source": "held_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "free_far",
+        "probability": 0.3
+      },
+      {
+        "source": "held_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "lost_far",
+        "probability": 0.4
+      },
+      {
+        "source": "held_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "partial_far",
+        "probability": 0.15
+      },
+      {
+        "source": "held_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "held_far",
+        "probability": 0.15
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 0.65
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "lost_far",
+        "probability": 0.25
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "inside_far",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "partial_far",
+        "probability": 0.6
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "held_far",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "free_far",
+        "probability": 0.15
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "lost_far",
+        "probability": 0.1
+      },
+      {
+        "source": "partial_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "inside_far",
+        "probability": 0.05
+      },
+      {
+        "source": "free_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "free_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "held_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "held_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "partial_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "partial_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "inside_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "inside_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "lost_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "lost_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "free_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "free_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "held_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "held_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "partial_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "partial_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "inside_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "inside_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      },
+      {
+        "source": "lost_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "free_far",
+        "probability": 1.0
+      },
+      {
+        "source": "lost_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "free_near",
+        "probability": 1.0
+      }
+    ]
+  },
+  "controllers": {
+    "policies/pick.py": "import math\nimport numpy as np\nfrom scipy.spatial.transform import Rotation\n\nCHAIN = {'root_frame': 'world', 'transform_order': \"For each link, apply its fixed parent-relative position/quaternion, then its joints in listed order. A hinge rotates about its local axis through position_m by q-reference_position; a slide translates along its local axis by q-reference_position. Apply the tool's fixed parent-relative transform last.\", 'links': [{'name': 'robot_base_link', 'parent': 'world', 'position_m': [0.0, 0.0, 0.0], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_x', 'type': 'slide', 'axis': [1.0, 0.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_x', 'velocity_key': 'vel_base_x'}, {'name': 'robot_joint_y', 'type': 'slide', 'axis': [0.0, 1.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_y', 'velocity_key': 'vel_base_y'}, {'name': 'robot_joint_th', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_rot', 'velocity_key': 'vel_base_rot'}]}, {'name': 'robot_gen3/base_link', 'parent': 'robot_base_link', 'position_m': [0.1199, 0.0, 0.3948], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': []}, {'name': 'robot_shoulder_link', 'parent': 'robot_gen3/base_link', 'position_m': [0.0, 0.0, 0.15643], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_1', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint1', 'velocity_key': 'vel_arm_joint1'}]}, {'name': 'robot_half_arm_1_link', 'parent': 'robot_shoulder_link', 'position_m': [0.0, 0.005375, -0.12838], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_2', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.24, 2.24], 'position_key': 'pos_arm_joint2', 'velocity_key': 'vel_arm_joint2'}]}, {'name': 'robot_half_arm_2_link', 'parent': 'robot_half_arm_1_link', 'position_m': [0.0, -0.21038, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_3', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint3', 'velocity_key': 'vel_arm_joint3'}]}, {'name': 'robot_forearm_link', 'parent': 'robot_half_arm_2_link', 'position_m': [0.0, 0.006375, -0.21038], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_4', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.57, 2.57], 'position_key': 'pos_arm_joint4', 'velocity_key': 'vel_arm_joint4'}]}, {'name': 'robot_spherical_wrist_1_link', 'parent': 'robot_forearm_link', 'position_m': [0.0, -0.20843, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_5', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint5', 'velocity_key': 'vel_arm_joint5'}]}, {'name': 'robot_spherical_wrist_2_link', 'parent': 'robot_spherical_wrist_1_link', 'position_m': [0.0, 0.00017505, -0.10593], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_6', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.09, 2.09], 'position_key': 'pos_arm_joint6', 'velocity_key': 'vel_arm_joint6'}]}, {'name': 'robot_bracelet_link', 'parent': 'robot_spherical_wrist_2_link', 'position_m': [0.0, -0.10593, -0.00017505], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_7', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint7', 'velocity_key': 'vel_arm_joint7'}]}], 'tool': {'name': 'robot_pinch_site', 'parent': 'robot_bracelet_link', 'position_m': [0.0, 0.0, -0.181525], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0]}}\n\ndef rot(q):\n    return Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()\n\ndef fk(p, q=None):\n    frames={'world':(np.eye(3),np.zeros(3))}; axes=[]; pivots=[]\n    for link in CHAIN['links']:\n        r,t=frames[link['parent']]; t=t+r@np.array(link['position_m']); r=r@rot(link['quaternion_wxyz'])\n        for j in link['joints']:\n            key=j['position_key']; value=p[key]\n            if q is not None and key.startswith('pos_arm_joint'): value=q[int(key[-1])-1]\n            value-=j['reference_position']; axis=np.array(j['axis']); pivot=np.array(j['position_m'])\n            if key.startswith('pos_arm_joint'):\n                axes.append(r@axis); pivots.append(t+r@pivot)\n            if j['type']=='slide': t=t+r@axis*value\n            else:\n                rr=Rotation.from_rotvec(axis*value).as_matrix(); t=t+r@(pivot-rr@pivot); r=r@rr\n        frames[link['name']]=(r,t)\n    tool=CHAIN['tool']; r,t=frames[tool['parent']]; t=t+r@np.array(tool['position_m']); r=r@rot(tool['quaternion_wxyz'])\n    jac=np.array([np.cross(a,t-v) for a,v in zip(axes,pivots)]).T\n    return t,r,jac,np.array(axes).T\n\nLIMITS=[j['limits'] for l in CHAIN['links'] for j in l['joints'] if j['position_key'].startswith('pos_arm_joint')]\n\ndef joints(p): return np.array([p['pos_arm_joint'+str(i)] for i in range(1,8)])\n\ndef ik(p,target,desired):\n    q=joints(p)\n    for _ in range(30):\n        t,r,j,w=fk(p,q); e=np.r_[np.array(target)-t, .35*Rotation.from_matrix(desired@r.T).as_rotvec()]\n        if np.linalg.norm(e)<.003: break\n        a=np.vstack((j,.35*w)); dq=a.T@np.linalg.solve(a@a.T+.002*np.eye(6),e)\n        q+=np.clip(dq,-.18,.18)\n        for k,lim in enumerate(LIMITS):\n            if lim is not None: q[k]=np.clip(q[k],lim[0]+.005,lim[1]-.005)\n    return q\n\ndef find(o,prefix):\n    return next(x['features'] for x in o['objects'] if x['name'].startswith(prefix))\n\ndef xyz(f): return np.array([f[k] for k in ('x','y','z')])\ndef velocity(f): return np.array([f[k] for k in ('vx','vy','vz')])\ndef orientation(yaw): return Rotation.from_euler('z',yaw).as_matrix()@np.diag([1.,-1.,-1.])\n\ndef barrier(o):\n    b=find(o,'collider:cuboid_barrier'); r=rot([b[k] for k in ('qw','qx','qy','qz')]); dims=np.array([b['bb_x'],b['bb_y'],b['bb_z']]); n=r[:,int(np.argmin(dims[:2]))]; return xyz(b),n,float(min(dims[:2]))/2\n\ndef safe_base(o,target):\n    p=o['proprioception']; b,n,h=barrier(o); current=np.array([p['pos_base_x'],p['pos_base_y'],0.]); s=1 if np.dot(current-b,n)>=0 else -1\n    goal=np.r_[target[:2],0.]; d=s*np.dot(goal-b,n)\n    if d<h+.42: goal+=s*n*(h+.42-d)\n    return goal[:2]\n\ndef output(o,m,a,done=False):\n    s=o['action_spec']; a=np.clip(a,np.array(s['low']),np.array(s['high']))\n    return {'action':a.tolist(),'memory':m,'done':bool(done)}\n\ndef servo(o,a,target,desired):\n    p=o['proprioception']; q=ik(p,target,desired); a[3:10]=np.clip(q-joints(p),-.09,.09)\n    return float(np.linalg.norm(fk(p)[0]-target))\n\ndef policy(observation,memory,parameters):\n    o=observation; m=dict(memory); p=o['proprioception']; a=np.zeros(18); phase=m.get('phase','approach'); count=m.get('count',0)+1; m['count']=count\n    c=find(o,'cube_'); cp=xyz(c); tool,r,_,_=fk(p)\n    yaw=math.atan2(2*(c['qw']*c['qz']+c['qx']*c['qy']),1-2*(c['qy']**2+c['qz']**2)); desired=orientation(yaw)\n    if phase=='approach':\n        # Place the base half a metre from the measured cube, on its present side.\n        if 'base_target' not in m:\n            d=np.array([p['pos_base_x'],p['pos_base_y']])-cp[:2]; d/=max(np.linalg.norm(d),1e-6)\n            m['base_target']=safe_base(o,cp[:2]+.50*d).tolist()\n        delta=np.array(m['base_target'])-np.array([p['pos_base_x'],p['pos_base_y']]); a[:2]=np.clip(delta,-.045,.045)\n        target=cp+np.array([0,0,.19]); err=servo(o,a,target,desired)\n        if np.linalg.norm(delta)<.025 and err<.025: phase='descend'; m['age']=0\n    elif phase=='descend':\n        err=servo(o,a,cp,desired)\n        if err<.012: phase='close'; m['age']=0; m['grasp_z']=float(cp[2]); m['grasp_target']=cp.tolist()\n    elif phase=='close':\n        a[10]=1; servo(o,a,np.array(m['grasp_target']),desired)\n        if m.get('age',0)>=9: phase='lift'; m['age']=0; m['lift_target']=(np.array(m['grasp_target'])+np.array([0,0,.22])).tolist()\n    elif phase=='lift':\n        a[10]=1; err=servo(o,a,np.array(m['lift_target']),desired)\n        relative=cp-tool; old=np.array(m.get('relative',relative.tolist())); stable=np.linalg.norm(relative-old)<.014\n        m['relative']=relative.tolist()\n        held=cp[2]>m['grasp_z']+.12 and np.linalg.norm(relative)<.065 and stable\n        m['verified']=m.get('verified',0)+1 if held else 0\n        if m['verified']>=5 and err<.03: return output(o,m,a,True)\n        if m.get('age',0)>55: return output(o,m,a,True)\n    m['phase']=phase; m['age']=m.get('age',0)+1\n    return output(o,m,a,count>=230)\n",
+    "policies/toss.py": "import math\nimport numpy as np\nfrom scipy.spatial.transform import Rotation\n\nCHAIN = {'root_frame': 'world', 'transform_order': \"For each link, apply its fixed parent-relative position/quaternion, then its joints in listed order. A hinge rotates about its local axis through position_m by q-reference_position; a slide translates along its local axis by q-reference_position. Apply the tool's fixed parent-relative transform last.\", 'links': [{'name': 'robot_base_link', 'parent': 'world', 'position_m': [0.0, 0.0, 0.0], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_x', 'type': 'slide', 'axis': [1.0, 0.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_x', 'velocity_key': 'vel_base_x'}, {'name': 'robot_joint_y', 'type': 'slide', 'axis': [0.0, 1.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_y', 'velocity_key': 'vel_base_y'}, {'name': 'robot_joint_th', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_rot', 'velocity_key': 'vel_base_rot'}]}, {'name': 'robot_gen3/base_link', 'parent': 'robot_base_link', 'position_m': [0.1199, 0.0, 0.3948], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': []}, {'name': 'robot_shoulder_link', 'parent': 'robot_gen3/base_link', 'position_m': [0.0, 0.0, 0.15643], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_1', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint1', 'velocity_key': 'vel_arm_joint1'}]}, {'name': 'robot_half_arm_1_link', 'parent': 'robot_shoulder_link', 'position_m': [0.0, 0.005375, -0.12838], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_2', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.24, 2.24], 'position_key': 'pos_arm_joint2', 'velocity_key': 'vel_arm_joint2'}]}, {'name': 'robot_half_arm_2_link', 'parent': 'robot_half_arm_1_link', 'position_m': [0.0, -0.21038, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_3', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint3', 'velocity_key': 'vel_arm_joint3'}]}, {'name': 'robot_forearm_link', 'parent': 'robot_half_arm_2_link', 'position_m': [0.0, 0.006375, -0.21038], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_4', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.57, 2.57], 'position_key': 'pos_arm_joint4', 'velocity_key': 'vel_arm_joint4'}]}, {'name': 'robot_spherical_wrist_1_link', 'parent': 'robot_forearm_link', 'position_m': [0.0, -0.20843, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_5', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint5', 'velocity_key': 'vel_arm_joint5'}]}, {'name': 'robot_spherical_wrist_2_link', 'parent': 'robot_spherical_wrist_1_link', 'position_m': [0.0, 0.00017505, -0.10593], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_6', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.09, 2.09], 'position_key': 'pos_arm_joint6', 'velocity_key': 'vel_arm_joint6'}]}, {'name': 'robot_bracelet_link', 'parent': 'robot_spherical_wrist_2_link', 'position_m': [0.0, -0.10593, -0.00017505], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_7', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint7', 'velocity_key': 'vel_arm_joint7'}]}], 'tool': {'name': 'robot_pinch_site', 'parent': 'robot_bracelet_link', 'position_m': [0.0, 0.0, -0.181525], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0]}}\n\ndef rot(q):\n    return Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()\n\ndef fk(p, q=None):\n    frames={'world':(np.eye(3),np.zeros(3))}; axes=[]; pivots=[]\n    for link in CHAIN['links']:\n        r,t=frames[link['parent']]; t=t+r@np.array(link['position_m']); r=r@rot(link['quaternion_wxyz'])\n        for j in link['joints']:\n            key=j['position_key']; value=p[key]\n            if q is not None and key.startswith('pos_arm_joint'): value=q[int(key[-1])-1]\n            value-=j['reference_position']; axis=np.array(j['axis']); pivot=np.array(j['position_m'])\n            if key.startswith('pos_arm_joint'):\n                axes.append(r@axis); pivots.append(t+r@pivot)\n            if j['type']=='slide': t=t+r@axis*value\n            else:\n                rr=Rotation.from_rotvec(axis*value).as_matrix(); t=t+r@(pivot-rr@pivot); r=r@rr\n        frames[link['name']]=(r,t)\n    tool=CHAIN['tool']; r,t=frames[tool['parent']]; t=t+r@np.array(tool['position_m']); r=r@rot(tool['quaternion_wxyz'])\n    jac=np.array([np.cross(a,t-v) for a,v in zip(axes,pivots)]).T\n    return t,r,jac,np.array(axes).T\n\nLIMITS=[j['limits'] for l in CHAIN['links'] for j in l['joints'] if j['position_key'].startswith('pos_arm_joint')]\n\ndef joints(p): return np.array([p['pos_arm_joint'+str(i)] for i in range(1,8)])\n\ndef ik(p,target,desired):\n    q=joints(p)\n    for _ in range(30):\n        t,r,j,w=fk(p,q); e=np.r_[np.array(target)-t, .35*Rotation.from_matrix(desired@r.T).as_rotvec()]\n        if np.linalg.norm(e)<.003: break\n        a=np.vstack((j,.35*w)); dq=a.T@np.linalg.solve(a@a.T+.002*np.eye(6),e)\n        q+=np.clip(dq,-.18,.18)\n        for k,lim in enumerate(LIMITS):\n            if lim is not None: q[k]=np.clip(q[k],lim[0]+.005,lim[1]-.005)\n    return q\n\ndef find(o,prefix):\n    return next(x['features'] for x in o['objects'] if x['name'].startswith(prefix))\n\ndef xyz(f): return np.array([f[k] for k in ('x','y','z')])\ndef velocity(f): return np.array([f[k] for k in ('vx','vy','vz')])\ndef orientation(yaw): return Rotation.from_euler('z',yaw).as_matrix()@np.diag([1.,-1.,-1.])\n\ndef barrier(o):\n    b=find(o,'collider:cuboid_barrier'); r=rot([b[k] for k in ('qw','qx','qy','qz')]); dims=np.array([b['bb_x'],b['bb_y'],b['bb_z']]); n=r[:,int(np.argmin(dims[:2]))]; return xyz(b),n,float(min(dims[:2]))/2\n\ndef safe_base(o,target):\n    p=o['proprioception']; b,n,h=barrier(o); current=np.array([p['pos_base_x'],p['pos_base_y'],0.]); s=1 if np.dot(current-b,n)>=0 else -1\n    goal=np.r_[target[:2],0.]; d=s*np.dot(goal-b,n)\n    if d<h+.42: goal+=s*n*(h+.42-d)\n    return goal[:2]\n\ndef output(o,m,a,done=False):\n    s=o['action_spec']; a=np.clip(a,np.array(s['low']),np.array(s['high']))\n    return {'action':a.tolist(),'memory':m,'done':bool(done)}\n\ndef servo(o,a,target,desired):\n    p=o['proprioception']; q=ik(p,target,desired); a[3:10]=np.clip(q-joints(p),-.09,.09)\n    return float(np.linalg.norm(fk(p)[0]-target))\n\ndef policy(observation,memory,parameters):\n    o=observation; m=dict(memory); p=o['proprioception']; a=np.zeros(18); a[10]=1\n    m['count']=m.get('count',0)+1; phase=m.get('phase','transport'); c=find(o,'cube_'); b=find(o,'bin_'); cp=xyz(c); bp=xyz(b); tool,r,j,w=fk(p)\n    bc,n,h=barrier(o); base=np.array([p['pos_base_x'],p['pos_base_y'],0.]); side=1 if np.dot(base-bc,n)>0 else -1; far=side*np.dot(bp-bc,n)<0\n    if phase=='transport':\n        if 'base_target' not in m:\n            d=base[:2]-bp[:2]; d/=max(np.linalg.norm(d),1e-6)\n            m['base_target']=safe_base(o,bp[:2]+.55*d).tolist(); m['carry_r']=r.tolist(); m['carry_offset']=(tool-base).tolist()\n        delta=np.array(m['base_target'])-base[:2]; a[:2]=np.clip(delta,-.035,.035)\n        target=base+np.array(m['carry_offset']); target[2]=max(.48,target[2]); servo(o,a,target,np.array(m['carry_r']))\n        if np.linalg.norm(cp-tool)>.14: return output(o,m,a,True)\n        if np.linalg.norm(delta)<.025: phase='ready'; m['age']=0\n    elif phase=='ready':\n        d=bp[:2]-base[:2]; direction=d/max(np.linalg.norm(d),1e-6); yaw=math.atan2(direction[1],direction[0]); m['yaw']=yaw\n        target=np.r_[base[:2]+.48*direction,max(.80 if far else .55,bp[2]+b['bb_z']+.30)]\n        if not far: target[:2]=bp[:2]-.10*direction\n        err=servo(o,a,target,orientation(yaw))\n        if err<.025:\n            phase='launch'; m['age']=0; m['launch_q']=joints(p).tolist()\n        if np.linalg.norm(cp-tool)>.14: return output(o,m,a,True)\n    elif phase=='launch':\n        # Solve ballistic velocity to the measured opening, then drive the Jacobian.\n        landing_z=bp[2]+b['bb_z']+.5*c['bb_z']; distance=np.linalg.norm(bp[:2]-cp[:2])\n        flight=max(.22,min(.65,distance/1.5)); desired_v=np.r_[(bp[:2]-cp[:2])/flight,(landing_z-cp[2]+4.905*flight*flight)/flight]\n        mat=np.vstack([j,.12*w]); qv=mat.T@np.linalg.solve(mat@mat.T+.004*np.eye(6),np.r_[desired_v+(1.0 if far else 0.0)*(desired_v-velocity(c)),np.zeros(3)])\n        qv=np.clip(qv,-10,10); a[3:10]=np.clip(qv*.07,-.1,.1); a[11:18]=qv\n        for k,lim in enumerate(LIMITS):\n            if lim and (joints(p)[k]+qv[k]*.12<lim[0] or joints(p)[k]+qv[k]*.12>lim[1]): a[3+k]=0; a[11+k]=0\n        v=velocity(c); disc=v[2]**2+19.62*(cp[2]-landing_z)\n        flight_measured=(v[2]+math.sqrt(disc))/9.81 if disc>=0 else -1\n        prediction=cp[:2]+v[:2]*flight_measured\n        # Feedback release requires a descending intersection with the bin opening.\n        good=flight_measured>.06 and np.linalg.norm(prediction-bp[:2])<.065\n        if good or m.get('age',0)>=9:\n            a[10]=0; phase='settle'; m['age']=0; m['rest_q']=joints(p).tolist()\n            # Keep measured launch motion while the fingers begin opening.\n            follow=np.array([p['vel_arm_joint'+str(i)] for i in range(1,8)])\n            for k,lim in enumerate(LIMITS):\n                if lim and not lim[0]+.01<joints(p)[k]+.2*follow[k]<lim[1]-.01: follow[k]=0\n            m['release_qv']=follow.tolist(); a[11:18]=follow; a[3:10]=np.clip(follow/o['action_spec']['control_frequency_hz'],-.1,.1)\n    else:\n        a[10]=0\n        if m.get('age',0)<=2 and np.linalg.norm(cp-tool)<.09:\n            follow=np.array(m.get('release_qv',[0.]*7)); a[11:18]=follow; a[3:10]=np.clip(follow/o['action_spec']['control_frequency_hz'],-.1,.1); m['rest_q']=joints(p).tolist()\n        else: a[3:10]=np.clip(np.array(m['rest_q'])-joints(p),-.07,.07)\n        if m.get('age',0)>12 and np.linalg.norm(velocity(c))<.06: return output(o,m,a,True)\n        if m.get('age',0)>45: return output(o,m,a,True)\n    m['age']=m.get('age',0)+1; m['phase']=phase\n    return output(o,m,a,m['count']>=260)\n",
+    "policies/open_gripper.py": "import math\nimport numpy as np\nfrom scipy.spatial.transform import Rotation\n\nCHAIN = {'root_frame': 'world', 'transform_order': \"For each link, apply its fixed parent-relative position/quaternion, then its joints in listed order. A hinge rotates about its local axis through position_m by q-reference_position; a slide translates along its local axis by q-reference_position. Apply the tool's fixed parent-relative transform last.\", 'links': [{'name': 'robot_base_link', 'parent': 'world', 'position_m': [0.0, 0.0, 0.0], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_x', 'type': 'slide', 'axis': [1.0, 0.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_x', 'velocity_key': 'vel_base_x'}, {'name': 'robot_joint_y', 'type': 'slide', 'axis': [0.0, 1.0, 0.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_y', 'velocity_key': 'vel_base_y'}, {'name': 'robot_joint_th', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_base_rot', 'velocity_key': 'vel_base_rot'}]}, {'name': 'robot_gen3/base_link', 'parent': 'robot_base_link', 'position_m': [0.1199, 0.0, 0.3948], 'quaternion_wxyz': [1.0, 0.0, 0.0, 0.0], 'joints': []}, {'name': 'robot_shoulder_link', 'parent': 'robot_gen3/base_link', 'position_m': [0.0, 0.0, 0.15643], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0], 'joints': [{'name': 'robot_joint_1', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint1', 'velocity_key': 'vel_arm_joint1'}]}, {'name': 'robot_half_arm_1_link', 'parent': 'robot_shoulder_link', 'position_m': [0.0, 0.005375, -0.12838], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_2', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.24, 2.24], 'position_key': 'pos_arm_joint2', 'velocity_key': 'vel_arm_joint2'}]}, {'name': 'robot_half_arm_2_link', 'parent': 'robot_half_arm_1_link', 'position_m': [0.0, -0.21038, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_3', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint3', 'velocity_key': 'vel_arm_joint3'}]}, {'name': 'robot_forearm_link', 'parent': 'robot_half_arm_2_link', 'position_m': [0.0, 0.006375, -0.21038], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_4', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.57, 2.57], 'position_key': 'pos_arm_joint4', 'velocity_key': 'vel_arm_joint4'}]}, {'name': 'robot_spherical_wrist_1_link', 'parent': 'robot_forearm_link', 'position_m': [0.0, -0.20843, -0.006375], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_5', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint5', 'velocity_key': 'vel_arm_joint5'}]}, {'name': 'robot_spherical_wrist_2_link', 'parent': 'robot_spherical_wrist_1_link', 'position_m': [0.0, 0.00017505, -0.10593], 'quaternion_wxyz': [0.7071067811865475, 0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_6', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': [-2.09, 2.09], 'position_key': 'pos_arm_joint6', 'velocity_key': 'vel_arm_joint6'}]}, {'name': 'robot_bracelet_link', 'parent': 'robot_spherical_wrist_2_link', 'position_m': [0.0, -0.10593, -0.00017505], 'quaternion_wxyz': [0.7071067811865475, -0.7071067811865475, 0.0, 0.0], 'joints': [{'name': 'robot_joint_7', 'type': 'hinge', 'axis': [0.0, 0.0, 1.0], 'position_m': [0.0, 0.0, 0.0], 'reference_position': 0.0, 'limits': None, 'position_key': 'pos_arm_joint7', 'velocity_key': 'vel_arm_joint7'}]}], 'tool': {'name': 'robot_pinch_site', 'parent': 'robot_bracelet_link', 'position_m': [0.0, 0.0, -0.181525], 'quaternion_wxyz': [0.0, 1.0, 0.0, 0.0]}}\n\ndef rot(q):\n    return Rotation.from_quat([q[1],q[2],q[3],q[0]]).as_matrix()\n\ndef fk(p, q=None):\n    frames={'world':(np.eye(3),np.zeros(3))}; axes=[]; pivots=[]\n    for link in CHAIN['links']:\n        r,t=frames[link['parent']]; t=t+r@np.array(link['position_m']); r=r@rot(link['quaternion_wxyz'])\n        for j in link['joints']:\n            key=j['position_key']; value=p[key]\n            if q is not None and key.startswith('pos_arm_joint'): value=q[int(key[-1])-1]\n            value-=j['reference_position']; axis=np.array(j['axis']); pivot=np.array(j['position_m'])\n            if key.startswith('pos_arm_joint'):\n                axes.append(r@axis); pivots.append(t+r@pivot)\n            if j['type']=='slide': t=t+r@axis*value\n            else:\n                rr=Rotation.from_rotvec(axis*value).as_matrix(); t=t+r@(pivot-rr@pivot); r=r@rr\n        frames[link['name']]=(r,t)\n    tool=CHAIN['tool']; r,t=frames[tool['parent']]; t=t+r@np.array(tool['position_m']); r=r@rot(tool['quaternion_wxyz'])\n    jac=np.array([np.cross(a,t-v) for a,v in zip(axes,pivots)]).T\n    return t,r,jac,np.array(axes).T\n\nLIMITS=[j['limits'] for l in CHAIN['links'] for j in l['joints'] if j['position_key'].startswith('pos_arm_joint')]\n\ndef joints(p): return np.array([p['pos_arm_joint'+str(i)] for i in range(1,8)])\n\ndef ik(p,target,desired):\n    q=joints(p)\n    for _ in range(30):\n        t,r,j,w=fk(p,q); e=np.r_[np.array(target)-t, .35*Rotation.from_matrix(desired@r.T).as_rotvec()]\n        if np.linalg.norm(e)<.003: break\n        a=np.vstack((j,.35*w)); dq=a.T@np.linalg.solve(a@a.T+.002*np.eye(6),e)\n        q+=np.clip(dq,-.18,.18)\n        for k,lim in enumerate(LIMITS):\n            if lim is not None: q[k]=np.clip(q[k],lim[0]+.005,lim[1]-.005)\n    return q\n\ndef find(o,prefix):\n    return next(x['features'] for x in o['objects'] if x['name'].startswith(prefix))\n\ndef xyz(f): return np.array([f[k] for k in ('x','y','z')])\ndef velocity(f): return np.array([f[k] for k in ('vx','vy','vz')])\ndef orientation(yaw): return Rotation.from_euler('z',yaw).as_matrix()@np.diag([1.,-1.,-1.])\n\ndef barrier(o):\n    b=find(o,'collider:cuboid_barrier'); r=rot([b[k] for k in ('qw','qx','qy','qz')]); dims=np.array([b['bb_x'],b['bb_y'],b['bb_z']]); n=r[:,int(np.argmin(dims[:2]))]; return xyz(b),n,float(min(dims[:2]))/2\n\ndef safe_base(o,target):\n    p=o['proprioception']; b,n,h=barrier(o); current=np.array([p['pos_base_x'],p['pos_base_y'],0.]); s=1 if np.dot(current-b,n)>=0 else -1\n    goal=np.r_[target[:2],0.]; d=s*np.dot(goal-b,n)\n    if d<h+.42: goal+=s*n*(h+.42-d)\n    return goal[:2]\n\ndef output(o,m,a,done=False):\n    s=o['action_spec']; a=np.clip(a,np.array(s['low']),np.array(s['high']))\n    return {'action':a.tolist(),'memory':m,'done':bool(done)}\n\ndef servo(o,a,target,desired):\n    p=o['proprioception']; q=ik(p,target,desired); a[3:10]=np.clip(q-joints(p),-.09,.09)\n    return float(np.linalg.norm(fk(p)[0]-target))\n\ndef policy(observation,memory,parameters):\n    o=observation; m=dict(memory); a=np.zeros(18); m['count']=m.get('count',0)+1\n    p=o['proprioception']; c=find(o,'cube_'); tool=fk(p)[0]\n    # Open in place first so an unsupported cube can settle without being dragged.\n    if m['count']>10:\n        if 'target' not in m: m['target']=(tool+np.array([0,0,.12])).tolist(); m['rotation']=fk(p)[1].tolist()\n        servo(o,a,np.array(m['target']),np.array(m['rotation']))\n    separated=np.linalg.norm(xyz(c)-tool)>.08\n    return output(o,m,a,(m['count']>=20 and p['pos_gripper']<.12 and separated and np.linalg.norm(velocity(c))<.08) or m['count']>=60)\n"
+  }
+}

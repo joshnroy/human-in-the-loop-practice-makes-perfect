@@ -1,0 +1,351 @@
+{
+  "observation_mode": "object_state",
+  "proprioception": {
+    "pos_base_x": -0.027972321542299262,
+    "pos_base_y": 0.028827678396320357,
+    "pos_base_rot": -0.07776552456607128,
+    "pos_arm_joint1": 1.0820651922871956e-10,
+    "pos_arm_joint2": -0.3490659055404083,
+    "pos_arm_joint3": 3.141592655387484,
+    "pos_arm_joint4": -2.5481806005247365,
+    "pos_arm_joint5": -2.759635443110074e-10,
+    "pos_arm_joint6": -0.8726646314879724,
+    "pos_arm_joint7": 1.5707963267945868,
+    "pos_gripper": 0.002932284110399094,
+    "vel_base_x": 5.705426135799269e-13,
+    "vel_base_y": -6.069049648124999e-14,
+    "vel_base_rot": -1.775671291311843e-13,
+    "vel_arm_joint1": 1.479341378717468e-11,
+    "vel_arm_joint2": -6.699101407115828e-09,
+    "vel_arm_joint3": 1.799386947962666e-10,
+    "vel_arm_joint4": 1.1578347830060104e-08,
+    "vel_arm_joint5": -2.969023614072071e-11,
+    "vel_arm_joint6": 9.154729214353622e-10,
+    "vel_arm_joint7": 1.8428540587770048e-13,
+    "vel_gripper": 1.4107360511878189e-06,
+    "gripper_command": 0.0,
+    "pos_tool_x": 0.221741991067023,
+    "pos_tool_y": 0.010723465844158394,
+    "pos_tool_z": 0.6034641577001572,
+    "quat_tool_x": 0.733612488847366,
+    "quat_tool_y": 0.6786713017800888,
+    "quat_tool_z": 0.02369977775141223,
+    "quat_tool_w": 0.02561837000721307
+  },
+  "control_step": 0,
+  "simulation_time_s": 0.9999999999999453,
+  "action_spec": {
+    "shape": [
+      18
+    ],
+    "low": [
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      -0.10000000149011612,
+      0.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0,
+      -12.0
+    ],
+    "high": [
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      0.10000000149011612,
+      1.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0,
+      12.0
+    ],
+    "position_mode": "delta",
+    "base": {
+      "indices": [
+        0,
+        1,
+        2
+      ],
+      "coordinates": "world x/y/yaw",
+      "units": [
+        "m",
+        "m",
+        "rad"
+      ]
+    },
+    "arm_position": {
+      "indices": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "units": "rad"
+    },
+    "gripper": {
+      "index": 10,
+      "open": 0.0,
+      "closed": 1.0
+    },
+    "arm_velocity": {
+      "indices": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "units": "rad/s"
+    },
+    "control_frequency_hz": 10.0,
+    "schedule_rows": 100,
+    "schedule_timestep_s": 0.001,
+    "step_limit": 1000
+  },
+  "objects": [
+    {
+      "name": "bin_0",
+      "type": "mujoco_movable_object",
+      "features": {
+        "x": 2.104966402053833,
+        "y": -1.753318190574646,
+        "z": -2.452500069693997e-08,
+        "qw": 1.0,
+        "qx": 0.0,
+        "qy": 0.0,
+        "qz": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": -2.086996934852684e-16,
+        "wx": 0.0,
+        "wy": 0.0,
+        "wz": 0.0,
+        "bb_x": 0.30000001192092896,
+        "bb_y": 0.30000001192092896,
+        "bb_z": 0.20000000298023224
+      }
+    },
+    {
+      "name": "collider:cuboid_barrier:9",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": 1.2999999523162842,
+        "y": 0.0,
+        "z": 0.10000000149011612,
+        "qw": 1.0,
+        "qx": 0.0,
+        "qy": 0.0,
+        "qz": 0.0,
+        "bb_x": 0.05999999865889549,
+        "bb_y": 10.0,
+        "bb_z": 0.20000000298023224
+      }
+    },
+    {
+      "name": "collider:tossing_room:3",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": -1.25,
+        "y": 2.25,
+        "z": 1.5,
+        "qw": 0.6532814502716064,
+        "qx": 0.6532814502716064,
+        "qy": 0.27059808373451233,
+        "qz": 0.27059808373451233,
+        "bb_x": 2.119999885559082,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "collider:tossing_room:4",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": -1.25,
+        "y": -2.25,
+        "z": 1.5,
+        "qw": 0.6532814502716064,
+        "qx": 0.6532814502716064,
+        "qy": -0.27059808373451233,
+        "qz": -0.27059808373451233,
+        "bb_x": 2.119999885559082,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "collider:tossing_room:5",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": 1.850000023841858,
+        "y": 3.0,
+        "z": 1.5,
+        "qw": 0.7071067690849304,
+        "qx": 0.7071067690849304,
+        "qy": 0.0,
+        "qz": 0.0,
+        "bb_x": 4.699999809265137,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "collider:tossing_room:6",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": 1.850000023841858,
+        "y": -3.0,
+        "z": 1.5,
+        "qw": -0.7071067690849304,
+        "qx": 0.7071067690849304,
+        "qy": 0.0,
+        "qz": 0.0,
+        "bb_x": 4.699999809265137,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "collider:tossing_room:7",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": -2.0,
+        "y": 0.0,
+        "z": 1.5,
+        "qw": 0.5,
+        "qx": 0.5,
+        "qy": 0.5,
+        "qz": 0.5,
+        "bb_x": 3.0,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "collider:tossing_room:8",
+      "type": "mujoco_static_collider",
+      "features": {
+        "x": 4.199999809265137,
+        "y": 0.0,
+        "z": 1.5,
+        "qw": 0.5,
+        "qx": 0.5,
+        "qy": -0.5,
+        "qz": -0.5,
+        "bb_x": 6.0,
+        "bb_y": 3.0,
+        "bb_z": 0.019999999552965164
+      }
+    },
+    {
+      "name": "cube_0",
+      "type": "mujoco_movable_object",
+      "features": {
+        "x": 0.5251865983009338,
+        "y": 0.1401199996471405,
+        "z": 0.02489224448800087,
+        "qw": 0.9578262567520142,
+        "qx": 3.314744325071497e-17,
+        "qy": 1.0072128332804989e-17,
+        "qz": 0.2873480021953583,
+        "vx": -1.637221877377834e-17,
+        "vy": 1.6603586154193098e-17,
+        "vz": 1.7574726633576895e-15,
+        "wx": -5.563444746464253e-16,
+        "wy": 1.0796331576540065e-16,
+        "wz": -1.049124698262562e-28,
+        "bb_x": 0.05000000074505806,
+        "bb_y": 0.05000000074505806,
+        "bb_z": 0.05000000074505806
+      }
+    },
+    {
+      "name": "cuboid_barrier",
+      "type": "mujoco_fixture",
+      "features": {
+        "x": 1.2999999523162842,
+        "y": 0.0,
+        "z": 0.10000000149011612,
+        "qw": 1.0,
+        "qx": 0.0,
+        "qy": 0.0,
+        "qz": 0.0
+      }
+    },
+    {
+      "name": "robot",
+      "type": "mujoco_tidybot_robot",
+      "features": {
+        "pos_base_x": -0.027972321542299262,
+        "pos_base_y": 0.028827678396320357,
+        "pos_base_rot": -0.07776552456607128,
+        "pos_arm_joint1": 1.0820651922871956e-10,
+        "pos_arm_joint2": -0.3490659055404083,
+        "pos_arm_joint3": 3.141592655387484,
+        "pos_arm_joint4": -2.5481806005247365,
+        "pos_arm_joint5": -2.759635443110074e-10,
+        "pos_arm_joint6": -0.8726646314879724,
+        "pos_arm_joint7": 1.5707963267945868,
+        "pos_gripper": 0.002932284110399094,
+        "vel_base_x": 5.705426135799269e-13,
+        "vel_base_y": -6.069049648124999e-14,
+        "vel_base_rot": -1.775671291311843e-13,
+        "vel_arm_joint1": 1.479341378717468e-11,
+        "vel_arm_joint2": -6.699101407115828e-09,
+        "vel_arm_joint3": 1.799386947962666e-10,
+        "vel_arm_joint4": 1.1578347830060104e-08,
+        "vel_arm_joint5": -2.969023614072071e-11,
+        "vel_arm_joint6": 9.154729214353622e-10,
+        "vel_arm_joint7": 1.8428540587770048e-13,
+        "vel_gripper": 1.4107360511878189e-06,
+        "gripper_command": 0.0,
+        "pos_tool_x": 0.221741991067023,
+        "pos_tool_y": 0.010723465844158394,
+        "pos_tool_z": 0.6034641577001572,
+        "quat_tool_x": 0.733612488847366,
+        "quat_tool_y": 0.6786713017800888,
+        "quat_tool_z": 0.02369977775141223,
+        "quat_tool_w": 0.02561837000721307
+      }
+    }
+  ],
+  "state_spec": {
+    "position_frame": "world",
+    "length_unit": "m",
+    "angle_unit": "rad",
+    "quaternion_order": "wxyz",
+    "linear_velocity_unit": "m/s",
+    "linear_velocity_frame": "world",
+    "angular_velocity_unit": "rad/s",
+    "angular_velocity_frame": "object-local",
+    "bounding_box": "full object-frame dimensions",
+    "simulation_time_s": "Physical simulation clock in seconds, shared by every bridge to this world and monotonic between world initializations; use to order samples",
+    "control_step": "Bridge-local dispatched control-period count for option budgeting; not a global timeline and may remain zero for an observation-only bridge",
+    "tool_pose": "pos_tool_x/y/z and quat_tool_w/x/y/z describe the robot pinch site in the world frame, from calibrated robot forward kinematics and measured base/joint positions; not contact or grasp labels",
+    "robot_gripper": "pos_gripper is measured driver-joint radians; gripper_command is normalized actuator command"
+  }
+}

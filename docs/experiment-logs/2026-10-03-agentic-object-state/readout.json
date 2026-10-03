@@ -1,0 +1,74 @@
+{
+  "evaluation_points": [
+    [
+      0,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      1
+    ]
+  ],
+  "final_skill_beliefs": [
+    {
+      "skill": "PickCube",
+      "mean": 0.6433619006915008,
+      "credible_interval_95": [
+        0.10846572636296051,
+        0.9863153819289292
+      ],
+      "total_training_examples": 0,
+      "cycle_successes": 0,
+      "cycle_failures": 0
+    },
+    {
+      "skill": "MoveToTossLocationAndToss",
+      "mean": 0.6458982353657201,
+      "credible_interval_95": [
+        0.12540326861123888,
+        0.9857535340493331
+      ],
+      "total_training_examples": 0,
+      "cycle_successes": 0,
+      "cycle_failures": 0
+    },
+    {
+      "skill": "OpenGripper",
+      "mean": 0.6637473923259443,
+      "credible_interval_95": [
+        0.17882602048826102,
+        0.9938888166254519
+      ],
+      "total_training_examples": 0,
+      "cycle_successes": 0,
+      "cycle_failures": 0
+    },
+    {
+      "skill": "ask_for_reset_cube_bin_only",
+      "mean": 0.6725967390512129,
+      "credible_interval_95": [
+        0.16164198218671183,
+        1.0
+      ],
+      "total_training_examples": 0,
+      "cycle_successes": 0,
+      "cycle_failures": 0
+    }
+  ],
+  "practice_actions": [
+    {
+      "skill": "PickCube",
+      "success": false,
+      "control_periods": 230,
+      "destination": null
+    }
+  ],
+  "code_revision_evidence_count": 1,
+  "limits": [
+    "Only two evaluation checkpoints from one seed; no learning-curve inference.",
+    "Only a final belief snapshot was logged; no estimated-competence time series.",
+    "Known Pick failure was not assimilated because destination was unknown. Code learner still received the trajectory."
+  ]
+}
