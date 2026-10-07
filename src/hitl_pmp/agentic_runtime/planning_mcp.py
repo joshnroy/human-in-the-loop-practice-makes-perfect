@@ -9,7 +9,7 @@ import importlib.util
 import json
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +85,7 @@ def call(*, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def silence_tool_stdout() -> Iterator[None]:
+def silence_tool_stdout() -> Generator[None, None, None]:
     """Protect JSON-RPC from both Python prints and extension-library stdout."""
     sys.stdout.flush()
     saved = os.dup(1)
