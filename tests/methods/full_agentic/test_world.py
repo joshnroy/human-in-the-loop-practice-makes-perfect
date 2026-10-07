@@ -67,7 +67,48 @@ class WorldTests(unittest.TestCase):
         response = self.world.dispatch(request=help_request)
         self.assertEqual(response, self.world.dispatch(request=help_request))
         self.assertEqual(self.bridge.helps, 1)
-        self.assertEqual(self.world.observation()["accumulated_cost"], 6)
+        self.assertEqual(self.world.observation()["accumulated_cost"], 2)
+
+    def test_direct_steps_and_help_require_no_trial_boundaries(self):
+        self.world.configure_measurements(budget=2000, interval=2000)
+        for _ in range(1001):
+            response = self.world.dispatch(request=self.request("step", action=[0] * 18))
+            self.assertIn("result", response)
+        self.world.dispatch(request=self.request("request_help", intervention_id="reset_cube_far"))
+        self.world.dispatch(request=self.request("finish_adaptation"))
+        self.assertEqual(self.world.counted_steps, 1002)
+        self.assertEqual(self.world.observation()["accumulated_cost"], 1002)
+
+    def test_failed_human_attempt_is_priced_once_with_its_own_duration(self):
+        from hitl_pmp.core.practice_costs import ChargeFunction, HumanCharge, PracticeCosts
+
+        self.world.configure_measurements(
+            budget=10,
+            interval=3,
+            costs=PracticeCosts(
+                human_skills={
+                    "reset_cube_and_bin_near": HumanCharge(
+                        cost=ChargeFunction(value=7), duration=ChargeFunction(value=3)
+                    )
+                },
+                human_weight=2,
+            ),
+        )
+        self.bridge.reset_movables = lambda **kwargs: False
+        request = self.request("request_help", intervention_id="reset_cube_and_bin_near")
+        response = self.world.dispatch(request=request)
+        self.assertIn("error", response)
+        self.assertEqual(response, self.world.dispatch(request=request))
+        self.assertEqual(self.world.counted_steps, 3)
+        self.assertEqual(self.world.observation()["accumulated_cost"], 14)
+        self.assertEqual(self.world.measurements[-1]["human_cost"], 7)
+        self.assertEqual(self.world.human_by_side["robot_side"], 1)
+
+    def test_initial_measurement_needs_no_supplied_controller(self):
+        (self.world.workspace / "approach.py").unlink()
+        self.world.configure_measurements(budget=10, interval=2)
+        self.assertFalse(self.world.measurements[0]["controller_present"])
+        self.assertEqual(self.world.measurements[0]["physical_cost"], 0)
 
     def test_stale_request_and_id_collision_rejected(self):
         start = self.request("begin_trial")

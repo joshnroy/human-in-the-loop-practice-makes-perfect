@@ -95,6 +95,45 @@ class PracticeClock(BaseModel):
             self.on_progress()
 
 
+class EvaluationStopping:
+    @staticmethod
+    def reached(*, records: list[dict[str, Any]], patience: int = 3) -> bool:
+        if patience <= 0:
+            return False
+        streak = 0
+        previous = None
+        for record in records:
+            if not record.get("complete", True):
+                streak = 0
+                continue
+            step = record["practice_steps"]
+            if step == previous:
+                continue
+            previous = step
+            perfect = record.get("num_solved") == record.get("num_total") == 10
+            streak = streak + 1 if perfect else 0
+            if streak >= patience:
+                return True
+        return False
+
+    @staticmethod
+    def completed(*, futures: list[Any]) -> list[dict[str, Any]]:
+        records = []
+        for record, future in futures:
+            if not future.done():
+                break  # Never skip an unfinished earlier evaluation.
+            try:
+                result = future.result()
+                if isinstance(result, list):
+                    result = dict(
+                        num_solved=sum(t["solved"] for t in result), num_total=len(result)
+                    )
+                records.append({**record, **result})
+            except Exception:
+                records.append({**record, "complete": False})
+        return records
+
+
 class EvaluationClock(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     budget: int = Field(gt=0)
@@ -342,6 +381,7 @@ class StepPracticeRunner:
         futures: list[tuple[dict[str, Any], Any]] = []
         started = time.monotonic()
         endpoint = "running"
+        early_stop = False
         problem.hard_reset()
         cost_path = getattr(args, "practice_cost_config", None)
         accounting = (
@@ -352,6 +392,10 @@ class StepPracticeRunner:
                 raise ValueError(
                     "Configure human durations in the cost file, not --human-skill-steps"
                 )
+            from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
+
+            cost_bridge = Tossing3DAgenticBridge(env=problem.env, observation_mode="object_state")
+            accounting.set_observation_provider(provider=cost_bridge.observe)
             method.configure_practice_accounting(accounting=accounting)
             StepFiles.json(
                 path=output / "practice_costs.json", value=accounting.costs.model_dump(mode="json")
@@ -359,6 +403,11 @@ class StepPracticeRunner:
         pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
 
         def status() -> None:
+            nonlocal early_stop
+            early_stop = EvaluationStopping.reached(
+                records=EvaluationStopping.completed(futures=futures),
+                patience=getattr(args, "stop_after_perfect_evaluations", 0),
+            )
             StepFiles.json(
                 path=output / "status.json",
                 value={
@@ -433,6 +482,9 @@ class StepPracticeRunner:
                 "evaluation_process": "spawn",
                 "evaluation_feedback": False,
                 "normalized_costs": accounting is not None,
+                "stop_after_perfect_evaluations": getattr(
+                    args, "stop_after_perfect_evaluations", 0
+                ),
                 "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
             },
         )
@@ -461,7 +513,8 @@ class StepPracticeRunner:
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
                 for action_index in range(args.max_steps_per_interaction):
-                    if clock.steps >= clock.budget:
+                    status()
+                    if clock.steps >= clock.budget or early_stop:
                         break
                     method.observe_practice_action_budget(
                         remaining_actions=args.max_steps_per_interaction - action_index
@@ -552,6 +605,9 @@ class StepPracticeRunner:
                     )
                     if interrupted:
                         break
+                if early_stop:
+                    endpoint = "three_perfect_evaluations"
+                    break
                 if clock.steps >= clock.budget:
                     endpoint = "practice_step_budget"
                     break

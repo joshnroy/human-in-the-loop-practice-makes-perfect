@@ -39,15 +39,8 @@ class PracticeEnvironment:
     def observe(self) -> Any:
         return self.request("observe")
 
-    def begin_trial(self) -> Any:
-        """Snapshot current Python files; charge one robot attempt (max 1000 steps)."""
-        return self.request("begin_trial")
-
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- supplied RoboCode client/interface contract
         return self.request("step", action=action)
-
-    def end_trial(self) -> Any:
-        return self.request("end_trial")
 
     def request_help(self, intervention_id: Any) -> Any:  # noqa: PLR0917 -- supplied RoboCode client/interface contract
         return self.request("request_help", intervention_id=intervention_id)

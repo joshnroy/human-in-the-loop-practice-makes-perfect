@@ -156,3 +156,48 @@ def test_snapshot_freezes_sampler_without_refitting_or_sharing_rng():
         restored._samplers["test"]._classifier._input_shift,
         sampler._classifier._input_shift,
     )
+
+
+def test_early_stop_requires_three_consecutive_complete_distinct_perfect_sweeps():
+    from hitl_pmp.step_protocol import EvaluationStopping
+
+    def perfect(step):  # noqa: PLR0917 -- test record builder
+        return dict(practice_steps=step, num_solved=10, num_total=10, complete=True)
+
+    assert EvaluationStopping.reached(records=[perfect(1700), perfect(3400), perfect(5100)])
+    assert not EvaluationStopping.reached(records=[perfect(1700), perfect(1700), perfect(3400)])
+    assert not EvaluationStopping.reached(
+        records=[
+            perfect(1700),
+            dict(practice_steps=3400, complete=False),
+            perfect(5100),
+            perfect(6800),
+        ]
+    )
+    assert not EvaluationStopping.reached(
+        records=[
+            perfect(1700),
+            dict(practice_steps=3400, num_solved=9, num_total=10),
+            perfect(5100),
+        ]
+    )
+    assert not EvaluationStopping.reached(
+        records=[dict(practice_steps=s, num_solved=1, num_total=1) for s in range(3)]
+    )
+
+
+def test_early_stop_waits_for_preceding_pending_evaluations():
+    from concurrent.futures import Future
+
+    from hitl_pmp.step_protocol import EvaluationStopping
+
+    pending = Future()
+    later = Future()
+    later.set_result(dict(num_solved=10, num_total=10, complete=True))
+    futures = [(dict(practice_steps=1700), pending), (dict(practice_steps=3400), later)]
+    assert EvaluationStopping.completed(futures=futures) == []
+    pending.set_exception(RuntimeError("evaluation failed"))
+    records = EvaluationStopping.completed(futures=futures)
+    assert not records[0]["complete"]
+    assert records[1]["num_solved"] == 10
+    assert not EvaluationStopping.reached(records=records)

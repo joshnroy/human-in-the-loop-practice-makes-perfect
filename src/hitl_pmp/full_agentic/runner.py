@@ -1,10 +1,10 @@
 """Single-seed full-agent pilot: live persistent practice and frozen evaluation."""
 
 import argparse
-import hashlib
 import json
 import multiprocessing
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -21,10 +21,11 @@ from hitl_pmp.agentic_runtime.sandbox import (
     RobotRelay,
     SandboxSettings,
 )
+from hitl_pmp.core.practice_costs import PracticeCosts
 from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
-from hitl_pmp.step_protocol import EvaluationClock
+from hitl_pmp.step_protocol import EvaluationClock, EvaluationStopping
 
 from .world import Files, Server, World
 
@@ -81,6 +82,30 @@ class DeadlineTransport(RobocodeDockerTransport):
 
 class FullAgenticRunner:
     @staticmethod
+    def validate_runtime(*, settings: SandboxSettings) -> None:
+        """Fail closed if an operator selects the old robot-planning image."""
+        container = DockerContainer(settings=settings)
+        name = f"hitl-full-preflight-{time.time_ns()}"
+        with tempfile.TemporaryDirectory(prefix="hitl-runtime-check-") as temporary:
+            command = container.command(
+                name=name,
+                work_dir=Path(temporary),
+                argv=[
+                    "-c",
+                    "import importlib.util,pathlib; "
+                    "assert not pathlib.Path('/opt/hitl-planning').exists(), "
+                    "'Planning assets exposed'; "
+                    "assert all(importlib.util.find_spec(n) is None for n in "
+                    "['pybullet','mujoco','kinder','kinder_models']), "
+                    "'Simulator or planning module exposed'",
+                ],
+            )
+            try:
+                subprocess.run(command, check=True, timeout=30, capture_output=True)
+            finally:
+                container.remove(name=name)
+
+    @staticmethod
     def evaluate(
         *,
         submission: Path,
@@ -91,6 +116,16 @@ class FullAgenticRunner:
         seed: int = 0,
     ) -> list[dict[str, Any]]:
         output.mkdir(parents=True, exist_ok=True)
+        if not (submission / "approach.py").is_file():
+            records = [
+                dict(task=i, solved=False, steps=0, error="missing_controller")
+                for i in range(count)
+            ]
+            Files.atomic_json(
+                path=output / "results.json",
+                value=dict(tasks=records, num_solved=0, num_total=count, complete=True),
+            )
+            return records
         env = Tossing3DEnvironment()
         tasks = Tossing3DTasks(env=env, seed=seed)
         results = []
@@ -161,23 +196,32 @@ class FullAgenticRunner:
         return results
 
     @staticmethod
+    def task_prompt(*, costs: PracticeCosts) -> str:
+        prompt = (HERE / "task_prompt.md").read_text()
+        if costs == PracticeCosts():
+            return prompt
+        start = prompt.index("Initial function values and fixed weights:")
+        end = prompt.index("w_H weights human cost", start)
+        description = (
+            "Configured cost and duration functions "
+            "(constant value unless a host function is named):\n```json\n"
+            + costs.model_dump_json(indent=2)
+            + "\n```\nThe host returns current robot-step prices "
+            "and per-human-skill price/duration quotes.\n"
+        )
+        prompt = prompt[:start] + description + prompt[end:]
+        return prompt.replace(
+            "both equal to 1 initially", "specified in the configuration below"
+        ).replace(
+            "with dₕ(e) = 1 for each human skill",
+            "using the configured duration of each human skill",
+        )
+
+    @staticmethod
     def initial_files(*, workspace: Any, bridge: Any) -> None:
-        library = json.loads((HERE / "initial_library.json").read_text())
-        for name, code in library["controllers"].items():
-            target = workspace / name
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(code)
-        shutil.copyfile(Path(__file__).with_name("env_client.py"), workspace / "env_client.py")
-        shutil.copyfile(Path(__file__).with_name("initial_approach.py"), workspace / "approach.py")
-        shutil.copyfile(
-            Path(__file__).with_name("example_trial.py"), workspace / "example_trial.py"
-        )
-        Files.atomic_json(path=workspace / "robot_spec.json", value=bridge.robot_spec())
+        shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
         Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
-        Files.atomic_json(path=workspace / "initial_library.json", value=library)
-        (workspace / "robot_api.md").write_text(
-            (Path(__file__).with_name("robot_api.md")).read_text()
-        )
+        shutil.copyfile(HERE / "robot_api.md", workspace / "robot_api.md")
 
     @staticmethod
     def main() -> None:
@@ -187,6 +231,8 @@ class FullAgenticRunner:
         parser.add_argument("--practice-step-budget", type=int, default=85000)
         parser.add_argument("--measurement-interval-steps", type=int, default=1700)
         parser.add_argument("--human-skill-steps", type=int, default=1)
+        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
+        parser.add_argument("--practice-cost-config", type=Path, default=None)
         parser.add_argument("--evaluation-control-steps", type=int, default=500)
         parser.add_argument("--num-test-tasks", type=int, default=10)
         parser.add_argument("--seed", type=int, default=0)
@@ -205,6 +251,9 @@ class FullAgenticRunner:
             )
         ):
             raise ValueError("Budgets and intervals must be positive")
+        costs = PracticeCosts.load(path=args.practice_cost_config)
+        if args.human_skill_steps != 1:
+            raise ValueError("Configure per-skill durations in --practice-cost-config")
         output = args.output.resolve()
         output.mkdir(parents=True, exist_ok=False)
         workspace = output / "coding" / "sandbox"
@@ -215,13 +264,14 @@ class FullAgenticRunner:
             seed=args.seed,
             adaptation_hours=args.hours,
             max_model_cost_usd=args.model_budget,
-            robot_trial_cost=1,
-            human_request_cost=5,
-            max_trial_steps=1000,
+            cost_functions=costs.model_dump(mode="json"),
             max_trials=None,
             max_control_steps=args.practice_step_budget,
             max_human_requests=None,
-            objective="autonomous_success_probability - 3e-6 * (robot_trials + 5 * human_requests)",
+            objective=(
+                "E[autonomous_success] - lambda * "
+                "(sum_robot_step_cost + human_weight * sum_human_skill_cost)"
+            ),
             evaluation=dict(
                 num_tasks=args.num_test_tasks,
                 control_steps=args.evaluation_control_steps,
@@ -229,14 +279,13 @@ class FullAgenticRunner:
                 asynchronous=True,
             ),
             human_skill_steps=args.human_skill_steps,
+            stop_after_perfect_evaluations=args.stop_after_perfect_evaluations,
             practice_reset="initialization only; subsequent repositioning via charged human tools",
-            initial_library_sha256=hashlib.sha256(
-                (HERE / "initial_library.json").read_bytes()
-            ).hexdigest(),
             learning_schedule="agent chooses updates; measurement does not trigger learning",
         )
         Files.atomic_json(path=output / "protocol.json", value=protocol)
         settings = SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text()))
+        FullAgenticRunner.validate_runtime(settings=settings)
         sys.path.insert(0, str(settings.robocode_checkout.resolve() / "src"))
         settings = settings.model_copy(
             update={"artifact_dir": output / "execution", "timeout_seconds": 60}
@@ -245,6 +294,7 @@ class FullAgenticRunner:
         pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
         futures = []
         socket_dir = Path(tempfile.mkdtemp(prefix="hitl-full-sock-", dir="/tmp"))
+        early_stop = False
         coder_error = []
         coder_result = []
         world = None
@@ -255,7 +305,11 @@ class FullAgenticRunner:
                 env=env, observation_mode="object_state", step_limit=2**63 - 1
             )
             FullAgenticRunner.initial_files(workspace=workspace, bridge=bridge)
-            Files.snapshot(workspace=workspace, destination=output / "initial_submission")
+            Files.snapshot(
+                workspace=workspace,
+                destination=output / "initial_submission",
+                require_controller=False,
+            )
             deadline = time.monotonic() + args.hours * 3600 if args.hours else float("inf")
             world = World(bridge=bridge, workspace=workspace, output=output, deadline=deadline)
 
@@ -276,14 +330,15 @@ class FullAgenticRunner:
                 interval=args.measurement_interval_steps,
                 human_steps=args.human_skill_steps,
                 callback=queue_measurement,
+                costs=costs,
             )
-            prompt = (HERE / "task_prompt.md").read_text()
+            prompt = FullAgenticRunner.task_prompt(costs=costs)
             prompt += (
                 f"\nPractice has a total budget of {args.practice_step_budget} counted steps: "
-                f"one per robot control period, {args.human_skill_steps} per human invocation. "
+                "one per robot control period plus each human skill's configured duration. "
                 "The host takes frozen deployment snapshots every "
                 f"{args.measurement_interval_steps} "
-                "steps without ending a trial, resetting the world, "
+                "steps without resetting the world "
                 "or requesting a learning update. "
                 "Evaluation results are never returned. "
                 "Stop gracefully when the remaining budget is zero.\n"
@@ -346,8 +401,13 @@ class FullAgenticRunner:
                     if time.monotonic() - last_status > 30:
                         world.status(phase="adapting")
                         last_status = time.monotonic()
+                    early_stop = EvaluationStopping.reached(
+                        records=EvaluationStopping.completed(futures=futures),
+                        patience=args.stop_after_perfect_evaluations,
+                    )
                     if (
-                        time.monotonic() >= deadline
+                        early_stop
+                        or time.monotonic() >= deadline
                         or (output / "STOP").exists()
                         or world.uncertain
                         or world.counted_steps >= args.practice_step_budget
@@ -359,9 +419,13 @@ class FullAgenticRunner:
                 thread.join(timeout=5)
             if world.submission is None:
                 world.submission = output / "submission"
-                Files.snapshot(workspace=workspace, destination=world.submission)
+                Files.snapshot(
+                    workspace=workspace, destination=world.submission, require_controller=False
+                )
             endpoint = (
-                "practice_step_budget"
+                "three_perfect_evaluations"
+                if early_stop
+                else "practice_step_budget"
                 if world.counted_steps >= args.practice_step_budget
                 else "agent_submission"
                 if world.finished

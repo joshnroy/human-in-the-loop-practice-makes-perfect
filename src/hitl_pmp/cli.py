@@ -81,6 +81,7 @@ class Cli:
     @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--practice-step-budget", type=int, default=None)
+        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
         parser.add_argument(
             "--practice-cost-config",
             type=Path,
