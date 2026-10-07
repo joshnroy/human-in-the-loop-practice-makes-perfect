@@ -10,6 +10,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
+    RESET_SKILL,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -149,13 +150,18 @@ def transition_outcomes(
             effects=effects,
             failure_effect_counts=failure_effect_counts,
         )
+    if action.skill.name == RESET_SKILL:
+        return binary_outcomes(
+            state=state,
+            true_atoms=environment_state.true_atoms,
+            ground_skill=action,
+            probability=mean_competence(belief=state.skill_beliefs[RESET_SKILL]),
+            cost=cost,
+            effects=effects,
+            failure_effect_counts=failure_effect_counts,
+        )
     if action.skill.name in RESET_SKILLS:
-        # The reset API either completes successfully or raises and aborts the
-        # run. Its empirical performance telemetry is not uncertain dynamics.
-        # Real completions still update S/F, costs and refits, but a forecast must
-        # not invent evidence about a known mechanism or move its cost posterior.
-        # It does advance the reset's training clock, exactly as the real
-        # completion will, so search forecasts the same m it will observe.
+        # The optional non-human reset retains its deterministic mechanism.
         pending = dict(state.pending_examples)
         pending[action.skill.name] = pending.get(action.skill.name, 0) + 1
         return (

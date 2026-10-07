@@ -686,16 +686,36 @@ def test_human_reset_observation_updates_its_joint_belief_without_training_credi
     assert observed.pending_examples.get(RESET_SKILL, 0) == 1
 
 
-def test_human_reset_transition_uses_known_success_without_hypothetical_evidence() -> None:
+def test_human_reset_transition_uses_posterior_competence() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
     outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
-    assert [outcome[0] for outcome in outcomes] == [1.0]
+    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
+    assert [outcome[0] for outcome in outcomes] == pytest.approx([competence, 1 - competence])
     estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SKILL])
     assert all(outcome[1].accumulated_cost == pytest.approx(estimated_cost) for outcome in outcomes)
-    assert outcomes[0][1].skill_beliefs == state.skill_beliefs
-    # No S/F evidence is invented, but the reset's clock advances as the real one will.
-    assert outcomes[0][1].pending_examples == {**state.pending_examples, RESET_SKILL: 1}
+    assert all(
+        outcome[1].pending_examples == {**state.pending_examples, RESET_SKILL: 1}
+        for outcome in outcomes
+    )
+    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SKILL]) > competence
+    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SKILL]) < competence
+
+
+@pytest.mark.parametrize("engine", ["grid", "particle"])
+def test_human_reset_uses_bayesian_competence_without_mutating_prior(*, engine: str) -> None:
+    model = _domain_model(reset_cost=0.25)
+    state = make_default_tossing3d_belief(
+        include_human_reset=True, model="local_trend", engine=engine, num_particles=32
+    )
+    original = state.model_dump_json()
+    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
+    outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
+    assert [p for p, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
+    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SKILL]) > competence
+    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SKILL]) < competence
+    assert all(s.pending_examples[RESET_SKILL] == 1 for _, s, _ in outcomes)
+    assert state.model_dump_json() == original
 
 
 def test_human_reset_refit_preserves_performance_without_synthetic_learning() -> None:

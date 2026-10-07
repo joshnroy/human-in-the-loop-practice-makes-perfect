@@ -1,0 +1,13 @@
+{
+  "reason": "User requested cancellation and fresh runs after correcting human-reset success probability in the POMDP planner.",
+  "cancelled_at": "2026-10-07T11:33:55-04:00",
+  "timezone": "America/New_York",
+  "jobs": {
+    "ees": 15178962,
+    "pomdp": 15178972
+  },
+  "scheduler_state": "CANCELLED",
+  "source_root": "/scratch/gpfs/TSILVER/jr2860/experiments/step-matched-20261007",
+  "raw_status_note": "Raw status.json retains its last persisted running phase. Cancellation is recorded here separately; curves include completed evaluations only.",
+  "endpoint_note": "Practice endpoints are the last persisted counters, not a claim about partially executed controller actions at interruption."
+}

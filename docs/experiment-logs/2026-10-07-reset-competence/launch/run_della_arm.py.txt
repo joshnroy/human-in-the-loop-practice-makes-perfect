@@ -1,0 +1,17 @@
+import json
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+
+root = Path(__file__).resolve().parent
+arm = sys.argv[1]
+assert arm in ("ees", "pddl")
+args = json.loads((root / (arm + "-arguments.json")).read_text())
+method = args[args.index("--method") + 1]
+for flag in ("--env", "--method"):
+    index = args.index(flag)
+    del args[index:index + 2]
+command = [sys.executable, "scripts/run_sweep.py", "--env", "tossing3d", "--methods", method, "--num-seeds", "1", "--max-workers", "1", "--results-root", str(root / "results"), "--shared-args", shlex.join(args)]
+(root / (arm + "-resolved-command.json")).write_text(json.dumps(command, indent=2) + "\n")
+subprocess.run(command, check=True)

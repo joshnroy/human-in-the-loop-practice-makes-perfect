@@ -1,0 +1,12 @@
+{
+  "image": "sha256:28dac9393aea908e327533b5cc48995f5fe73da4a662593e40e87d1cd6914ddd",
+  "robocode_checkout": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/full-agent-step-20261007/source/robocode",
+  "container_python": "/opt/robocode-strict/bin/python",
+  "timeout_seconds": 120.0,
+  "artifact_dir": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/full-agent-step-20261007/execution",
+  "seed": 0,
+  "memory_mb": 4096,
+  "cpus": 2.0,
+  "resource_pool_dir": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/handoff-2026-10-03-agentic-claude50/resource-pool",
+  "cgroup_parent": null
+}

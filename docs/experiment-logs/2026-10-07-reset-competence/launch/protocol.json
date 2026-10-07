@@ -1,0 +1,104 @@
+{
+  "status": "della_running_workstation_withheld",
+  "launch_submitted": true,
+  "practice_counter": {
+    "robot_unit": "one low-level controller step, common control timestep",
+    "human_skill_steps": 1,
+    "human_skill_steps_configurable": true,
+    "evaluation_excluded": true,
+    "planner_costs_unchanged": true
+  },
+  "measurement_interval_steps": 1700,
+  "practice_step_budget": 85000,
+  "measurement_intervals": 50,
+  "evaluation": {
+    "num_tasks": 10,
+    "low_level_steps_per_episode": 500,
+    "baseline": true,
+    "final_endpoint": true,
+    "shared_task_instances": true,
+    "separate_environment": true,
+    "immutable_snapshots": true,
+    "asynchronous": true,
+    "evaluation_feedback_to_training": false,
+    "measurement_does_not_trigger_learning": true
+  },
+  "learning_schedule": "Preserve existing EES/PDDL session boundaries; full agent chooses its own updates.",
+  "seed": 0,
+  "num_seeds_per_method": 1,
+  "arms": [
+    {
+      "method": "ees",
+      "host": "della",
+      "source_configuration": "ees-gpoff/results/ees-lamcost5/ees/0/config_snapshot.json"
+    },
+    {
+      "method": "pddl",
+      "host": "della",
+      "source_configuration": "gpoff/results/local_trend-lam3e-6/pomdp/0/config_snapshot.json"
+    },
+    {
+      "method": "full-agentic",
+      "host": "workstation",
+      "model_budget_usd": 20,
+      "initial_policy": "original full-agent-20261006 bootstrap; no learned pilot policy"
+    }
+  ],
+  "early_termination": "Record actual endpoint and reason; no extrapolated evaluations.",
+  "calibration": {
+    "source_runs": 12,
+    "machines": [
+      "workstation",
+      "della"
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "old_cycles_per_run": 50,
+    "session_summary": {
+      "n": 600,
+      "total": 1003673,
+      "mean": 1672.7883333333334,
+      "median": 1634.0,
+      "min": 225,
+      "max": 2494,
+      "p90": 1987,
+      "p95": 2093,
+      "p99": 2229
+    },
+    "evaluation_summary": {
+      "n": 6120,
+      "total": 1326634,
+      "mean": 216.7702614379085,
+      "median": 211.0,
+      "min": 155,
+      "max": 476,
+      "p90": 254,
+      "p95": 258,
+      "p99": 425
+    },
+    "verification": "Every episode mapped to recorded skill blocks by timestamps and names; per-cycle robot action counts and total human counts agree with saved stats."
+  },
+  "della_check": {
+    "ssh": "passed",
+    "credentials_refresh_needed": false,
+    "python": "present",
+    "fast_downward": "present",
+    "read_only": true
+  },
+  "implementation_requirements": [
+    "Count physical steps inside skills, exclude reset mechanics from robot count and charge human once.",
+    "Serialize complete deployment policy versions at exact measurement thresholds without future training evidence.",
+    "Do not terminate or reset practice for measurement.",
+    "Keep learning interval events separate from measurement events.",
+    "Apply common native scoring and low-level evaluation horizon to all three arms.",
+    "Report actual endpoints if practice or model budget stops a run."
+  ],
+  "note": "User authorized implementation and Della EES/PDDL launch. New workstation run explicitly withheld.",
+  "della_jobs": {
+    "ees": 15178962,
+    "pddl": 15178972
+  }
+}
