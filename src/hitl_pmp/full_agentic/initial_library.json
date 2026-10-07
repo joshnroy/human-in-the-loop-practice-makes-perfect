@@ -1,0 +1,393 @@
+{
+  "manifest": {
+    "schema_version": 2,
+    "revision": "tossing3d-object-state-initial-r0",
+    "clusters": [
+      {
+        "cluster_id": "cube_free_robot_side_bin_far",
+        "description": "Pickup-ready scene with the bin across the barrier. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube (0.05 m) rests motionless (speed below about 0.05 m/s) on the floor on the robot side with its centre at least about 0.12 m short of the barrier face and away from the room walls, so the mobile base can drive up to it; it is not inside the bin and nothing is holding it. The gripper is open (gripper_command near 0 and finger position below about 0.1 rad) and the pinch site is not touching the cube. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright on the opposite side of the barrier, its centre at x > 1.33 m. "
+      },
+      {
+        "cluster_id": "cube_free_robot_side_bin_near",
+        "description": "Pickup-ready scene with the bin on the robot's own side. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube (0.05 m) rests motionless (speed below about 0.05 m/s) on the floor on the robot side with its centre at least about 0.12 m short of the barrier face and away from the room walls, so the mobile base can drive up to it; it is not inside the bin and nothing is holding it. The gripper is open (gripper_command near 0 and finger position below about 0.1 rad) and the pinch site is not touching the cube. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright (orientation within about 15 degrees of level) entirely on the robot side, its centre at x < 1.12 m. The cube is outside the bin footprint."
+      },
+      {
+        "cluster_id": "cube_held_bin_far",
+        "description": "The robot carries the cube while the bin is across the barrier. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The gripper is commanded closed (gripper_command at least 0.5) with fingers stopped short of full closure, the cube centre lies within about 0.06 m of the pinch site, and the cube is lifted clear of every support (cube centre at least 0.08 m above the floor and not resting on the bin, barrier, or robot). Securely carried means the cube moves with the hand: across chronological samples spanning at least 0.3 s of simulation time during which the pinch site moved at least 0.03 m, the cube-to-pinch-site offset changed by less than about 0.02 m; alternatively the cube is suspended at rest well above the floor with no support beneath it, which only the gripper can explain. Without such temporal or support evidence, membership is unresolved rather than assumed. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright on the opposite side of the barrier, its centre at x > 1.33 m. "
+      },
+      {
+        "cluster_id": "cube_held_bin_near",
+        "description": "The robot carries the cube while the bin is on the robot side. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The gripper is commanded closed (gripper_command at least 0.5) with fingers stopped short of full closure, the cube centre lies within about 0.06 m of the pinch site, and the cube is lifted clear of every support (cube centre at least 0.08 m above the floor and not resting on the bin, barrier, or robot). Securely carried means the cube moves with the hand: across chronological samples spanning at least 0.3 s of simulation time during which the pinch site moved at least 0.03 m, the cube-to-pinch-site offset changed by less than about 0.02 m; alternatively the cube is suspended at rest well above the floor with no support beneath it, which only the gripper can explain. Without such temporal or support evidence, membership is unresolved rather than assumed. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright (orientation within about 15 degrees of level) entirely on the robot side, its centre at x < 1.12 m. "
+      },
+      {
+        "cluster_id": "grasp_failed_bin_far",
+        "description": "An unsuccessful or partial grasp with the bin across the barrier. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The gripper is commanded closed or partly closed (gripper_command at least 0.5, or finger position above about 0.1 rad) but the cube is not securely carried: it rests on the floor on the robot side or on the floor of a robot-side bin, near or under the hand, possibly pinched without being lifted, or the fingers closed fully on nothing while the cube lies elsewhere on the robot side. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright on the opposite side of the barrier, its centre at x > 1.33 m. "
+      },
+      {
+        "cluster_id": "grasp_failed_bin_near",
+        "description": "An unsuccessful or partial grasp with the bin on the robot side. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The gripper is commanded closed or partly closed (gripper_command at least 0.5, or finger position above about 0.1 rad) but the cube is not securely carried: it rests on the floor on the robot side or on the floor of a robot-side bin, near or under the hand, possibly pinched without being lifted, or the fingers closed fully on nothing while the cube lies elsewhere on the robot side. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright (orientation within about 15 degrees of level) entirely on the robot side, its centre at x < 1.12 m. "
+      },
+      {
+        "cluster_id": "cube_in_bin_far",
+        "description": "Task accomplished but not retrievable: the cube lies in the bin across the barrier. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube rests motionless inside the bin: its centre lies within the bin's interior footprint (within about 0.12 m of the bin centre along both bin axes) and below the rim height, and it is not in the gripper (pinch site more than about 0.1 m away and gripper open). The bin is upright. This is the generated containment judgement, not the simulator's smaller native scoring region. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright on the opposite side of the barrier, its centre at x > 1.33 m. The robot cannot drive past the barrier, so it cannot retrieve the cube for another attempt."
+      },
+      {
+        "cluster_id": "cube_in_bin_near",
+        "description": "Task accomplished and retrievable: the cube lies in the bin on the robot side. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube rests motionless inside the bin: its centre lies within the bin's interior footprint (within about 0.12 m of the bin centre along both bin axes) and below the rim height, and it is not in the gripper (pinch site more than about 0.1 m away and gripper open). The bin is upright. This is the generated containment judgement, not the simulator's smaller native scoring region. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright (orientation within about 15 degrees of level) entirely on the robot side, its centre at x < 1.12 m. The robot can drive to the bin and reach down into it to pick the cube up again."
+      },
+      {
+        "cluster_id": "cube_beyond_barrier_bin_far",
+        "description": "Missed toss with the cube lost across the barrier while the bin is also across the barrier. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube rests motionless on the opposite side of the barrier (centre x > 1.33 m), or on top of the barrier, and outside the bin, so none of the robot skills can reach it; the gripper is open and empty. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright on the opposite side of the barrier, its centre at x > 1.33 m. "
+      },
+      {
+        "cluster_id": "cube_beyond_barrier_bin_near",
+        "description": "Missed toss with the cube lost across the barrier while the bin is on the robot side. The low barrier is the static wall centred at world x = 1.30 m (0.06 m thick, 0.2 m tall, spanning the room in y); the robot side is x < 1.27 m and the opposite side is x > 1.33 m. The cube rests motionless on the opposite side of the barrier (centre x > 1.33 m), or on top of the barrier, and outside the bin, so none of the robot skills can reach it; the gripper is open and empty. The bin (0.3 x 0.3 x 0.2 m open box whose origin is at its base) stands upright (orientation within about 15 degrees of level) entirely on the robot side, its centre at x < 1.12 m. "
+      }
+    ],
+    "options": [
+      {
+        "option_id": "pick",
+        "belief_skill": "PickCube",
+        "initiation": "The cube rests motionless and free on the robot side of the barrier (x < 1.27 m), either on the floor away from the barrier face and walls or on the floor of an upright robot-side bin, the gripper is open and not holding anything, and the cube and bin poses are present in the observation.",
+        "success_termination": "The attempt has ended with the cube lifted clear of its support (centre at least 0.08 m above the floor and above any bin floor) and securely carried: the gripper is closed short of full closure, the cube stays within about 0.06 m of the pinch site, and across samples spanning at least 0.3 s in which the hand moved at least 0.03 m the cube-to-pinch-site offset stayed within about 0.02 m. A closed gripper or a nearby cube alone does not establish success.",
+        "failure_termination": "The attempt has ended and the cube is demonstrably not securely carried: the cube rests on the floor or bin floor (not lifted), its offset from the pinch site grew by more than about 0.02 m while the hand moved, it fell away from the hand, or the fingers closed fully with the cube elsewhere.",
+        "controller": "policies/pick.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 300,
+        "parameters": {
+          "base_standoff_m": 0.55,
+          "pregrasp_height_m": 0.12,
+          "grasp_z_offset_m": 0.005,
+          "lift_height_m": 0.2,
+          "empty_close_rad": 0.74
+        }
+      },
+      {
+        "option_id": "toss",
+        "belief_skill": "MoveToTossLocationAndToss",
+        "initiation": "The cube is securely carried by the closed gripper (it has moved with the hand over time, or hangs at rest in mid-air with no support beneath it), the robot base is on the robot side, and the bin pose is present in the observation and the bin stands upright.",
+        "success_termination": "The attempt has ended with the cube released (gripper open, pinch site more than about 0.1 m from the cube) and resting motionless inside the upright bin: cube centre within about 0.12 m of the bin centre along both bin axes and below the rim height. A released cube alone is not success; the native scoring region is not used.",
+        "failure_termination": "The attempt has ended with the cube at rest outside the bin (on the floor on either side of the barrier, on the barrier, or on the bin rim), with the bin knocked over, or with the cube still in the gripper because release did not happen.",
+        "controller": "policies/toss.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 400,
+        "parameters": {
+          "drop_standoff_m": 0.62,
+          "max_drop_reach_m": 0.8,
+          "throw_clearance_m": 0.5,
+          "drop_tool_height_m": 0.42,
+          "aim_height_m": 0.15,
+          "release_lead_s": 0.015,
+          "omega_margin": 1.08,
+          "planned_release_j2": -1.0
+        }
+      },
+      {
+        "option_id": "open_gripper",
+        "belief_skill": "OpenGripper",
+        "initiation": "The gripper is closed or partly closed (gripper_command at least 0.5 or finger position above about 0.1 rad) and the cube is not securely carried: it rests on the floor or on a bin floor on the robot side, possibly pinched without being lifted.",
+        "success_termination": "The attempt has ended with the gripper open (finger position below about 0.1 rad), the pinch site at least about 0.08 m from the cube, and the cube resting motionless on the floor or a bin floor, free of the hand.",
+        "failure_termination": "The attempt has ended with the gripper still closed or partly closed, the cube still trapped in or moving with the hand, or the hand still in contact with the cube (pinch site within about 0.04 m of the cube centre).",
+        "controller": "policies/open_gripper.py",
+        "human_destination": null,
+        "cost": 1.0,
+        "max_steps": 120,
+        "parameters": {
+          "retreat_lift_m": 0.15
+        }
+      },
+      {
+        "option_id": "reset_cube_far",
+        "belief_skill": "ask_for_reset_cube_bin_only",
+        "initiation": "Robot manipulation is paused, the gripper is open and not holding the cube, so a person can reposition the cube and the bin.",
+        "success_termination": "The intervention has ended with the cube resting free on the floor in the robot-side pickup area and the bin upright on the opposite side of the barrier; the arm configuration and gripper state are unchanged (the base may have been returned to its scene-start pose).",
+        "failure_termination": "The intervention has ended without that arrangement, for example the cube is not on the robot side or the bin is not across the barrier.",
+        "controller": null,
+        "human_destination": "cube_free_robot_side_bin_far",
+        "cost": 5.0,
+        "max_steps": 1,
+        "parameters": {}
+      },
+      {
+        "option_id": "reset_cube_and_bin_near",
+        "belief_skill": "ask_for_reset_cube_bin_only",
+        "initiation": "Robot manipulation is paused, the gripper is open and not holding the cube, so a person can reposition the cube and the bin.",
+        "success_termination": "The intervention has ended with the cube resting free on the floor in the robot-side pickup area and the bin upright on the robot side, outside the cube's position; the arm configuration and gripper state are unchanged (the base may have been returned to its scene-start pose).",
+        "failure_termination": "The intervention has ended without that arrangement, for example the cube or the bin is not on the robot side.",
+        "controller": null,
+        "human_destination": "cube_free_robot_side_bin_near",
+        "cost": 5.0,
+        "max_steps": 1,
+        "parameters": {}
+      }
+    ],
+    "edges": [
+      {
+        "source": "cube_free_robot_side_bin_far",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "cube_held_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_free_robot_side_bin_far",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "grasp_failed_bin_far",
+        "probability": 0.6
+      },
+      {
+        "source": "cube_free_robot_side_bin_far",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 0.4
+      },
+      {
+        "source": "cube_free_robot_side_bin_near",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "cube_held_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_free_robot_side_bin_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "grasp_failed_bin_near",
+        "probability": 0.6
+      },
+      {
+        "source": "cube_free_robot_side_bin_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 0.4
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "pick",
+        "outcome": "success",
+        "destination": "cube_held_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "grasp_failed_bin_near",
+        "probability": 0.45
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "cube_in_bin_near",
+        "probability": 0.45
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "pick",
+        "outcome": "failure",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 0.1
+      },
+      {
+        "source": "cube_held_bin_far",
+        "option_id": "toss",
+        "outcome": "success",
+        "destination": "cube_in_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_held_bin_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_beyond_barrier_bin_far",
+        "probability": 0.55
+      },
+      {
+        "source": "cube_held_bin_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 0.3
+      },
+      {
+        "source": "cube_held_bin_far",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_held_bin_far",
+        "probability": 0.15
+      },
+      {
+        "source": "cube_held_bin_near",
+        "option_id": "toss",
+        "outcome": "success",
+        "destination": "cube_in_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_held_bin_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 0.7
+      },
+      {
+        "source": "cube_held_bin_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_held_bin_near",
+        "probability": 0.15
+      },
+      {
+        "source": "cube_held_bin_near",
+        "option_id": "toss",
+        "outcome": "failure",
+        "destination": "cube_beyond_barrier_bin_near",
+        "probability": 0.15
+      },
+      {
+        "source": "grasp_failed_bin_far",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "grasp_failed_bin_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "grasp_failed_bin_far",
+        "probability": 0.85
+      },
+      {
+        "source": "grasp_failed_bin_far",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "cube_held_bin_far",
+        "probability": 0.15
+      },
+      {
+        "source": "grasp_failed_bin_near",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 0.85
+      },
+      {
+        "source": "grasp_failed_bin_near",
+        "option_id": "open_gripper",
+        "outcome": "success",
+        "destination": "cube_in_bin_near",
+        "probability": 0.15
+      },
+      {
+        "source": "grasp_failed_bin_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "grasp_failed_bin_near",
+        "probability": 0.85
+      },
+      {
+        "source": "grasp_failed_bin_near",
+        "option_id": "open_gripper",
+        "outcome": "failure",
+        "destination": "cube_held_bin_near",
+        "probability": 0.15
+      },
+      {
+        "source": "cube_free_robot_side_bin_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_free_robot_side_bin_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_free_robot_side_bin_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_free_robot_side_bin_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_in_bin_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_in_bin_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_in_bin_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_beyond_barrier_bin_far",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_beyond_barrier_bin_far",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_beyond_barrier_bin_near",
+        "option_id": "reset_cube_far",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_far",
+        "probability": 1.0
+      },
+      {
+        "source": "cube_beyond_barrier_bin_near",
+        "option_id": "reset_cube_and_bin_near",
+        "outcome": "success",
+        "destination": "cube_free_robot_side_bin_near",
+        "probability": 1.0
+      }
+    ]
+  },
+  "controllers": {
+    "policies/pick.py": "import math\nimport numpy as np\n\n# Static kinematic constants embedded from robot_spec.json (TidyBot base + Kinova Gen3 arm).\n# Each entry: (fixed position, fixed quaternion wxyz, joint key or None).\n_CHAIN = [\n    ((0.1199, 0.0, 0.3948), (1.0, 0.0, 0.0, 0.0), None),\n    ((0.0, 0.0, 0.15643), (0.0, 1.0, 0.0, 0.0), 0),\n    ((0.0, 0.005375, -0.12838), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 1),\n    ((0.0, -0.21038, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 2),\n    ((0.0, 0.006375, -0.21038), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 3),\n    ((0.0, -0.20843, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 4),\n    ((0.0, 0.00017505, -0.10593), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 5),\n    ((0.0, -0.10593, -0.00017505), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 6),\n]\n_TOOL = ((0.0, 0.0, -0.181525), (0.0, 1.0, 0.0, 0.0))\nJOINT_LIMITS = [None, (-2.24, 2.24), None, (-2.57, 2.57), None, (-2.09, 2.09), None]\nARM_KEYS = [\"pos_arm_joint%d\" % i for i in range(1, 8)]\nARM_VEL_KEYS = [\"vel_arm_joint%d\" % i for i in range(1, 8)]\nBARRIER_X = 1.3\nDT = 0.1\n\n\ndef quat_to_mat(q):\n    w, x, y, z = q\n    return np.array([\n        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],\n        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],\n        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],\n    ])\n\n\n_FIXED = [(np.array(p), quat_to_mat(q), j) for p, q, j in _CHAIN]\n_TOOL_P = np.array(_TOOL[0])\n_TOOL_R = quat_to_mat(_TOOL[1])\n\n\ndef rotz(a):\n    c, s = math.cos(a), math.sin(a)\n    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])\n\n\ndef fk_base(q):\n    \"\"\"Tool position and rotation in the mobile-base frame for arm joints q.\"\"\"\n    p = np.zeros(3)\n    r = np.eye(3)\n    for fp, fr, j in _FIXED:\n        p = p + r @ fp\n        r = r @ fr\n        if j is not None:\n            r = r @ rotz(q[j])\n    p = p + r @ _TOOL_P\n    r = r @ _TOOL_R\n    return p, r\n\n\ndef base_pose(obs):\n    pr = obs[\"proprioception\"]\n    return pr[\"pos_base_x\"], pr[\"pos_base_y\"], pr[\"pos_base_rot\"]\n\n\ndef fk_world(q, base):\n    bx, by, th = base\n    p, r = fk_base(q)\n    rb = rotz(th)\n    return rb @ p + np.array([bx, by, 0.0]), rb @ r\n\n\ndef world_to_base(pt, base):\n    bx, by, th = base\n    return rotz(-th) @ (np.asarray(pt, dtype=float) - np.array([bx, by, 0.0]))\n\n\ndef arm_q(obs):\n    pr = obs[\"proprioception\"]\n    return np.array([pr[k] for k in ARM_KEYS], dtype=float)\n\n\ndef rot_err(r_cur, r_des):\n    e = r_des @ r_cur.T\n    ang = np.array([e[2, 1] - e[1, 2], e[0, 2] - e[2, 0], e[1, 0] - e[0, 1]]) * 0.5\n    return ang\n\n\ndef clamp_limits(q):\n    q = np.array(q, dtype=float)\n    for i, lim in enumerate(JOINT_LIMITS):\n        if lim is not None:\n            q[i] = min(max(q[i], lim[0] + 0.02), lim[1] - 0.02)\n    return q\n\n\ndef ik_base(p_des, r_des, q0, iters=60, w_rot=0.5, q_rest=None, tol=2e-3):\n    \"\"\"Damped least-squares IK in the base frame; returns (q, position_error_m).\"\"\"\n    q = clamp_limits(q0)\n    eps = 1e-5\n    for _ in range(iters):\n        p, r = fk_base(q)\n        ep = p_des - p\n        er = rot_err(r, r_des) if r_des is not None else np.zeros(3)\n        err = np.concatenate([ep, w_rot * er]) if r_des is not None else ep\n        if np.linalg.norm(ep) < tol and (r_des is None or np.linalg.norm(er) < 0.02):\n            break\n        n = len(err)\n        jac = np.zeros((n, 7))\n        for i in range(7):\n            dq = q.copy()\n            dq[i] += eps\n            p2, r2 = fk_base(dq)\n            col = (p2 - p) / eps\n            if r_des is not None:\n                col_r = rot_err(r, r2) / eps\n                col = np.concatenate([col, w_rot * col_r])\n            jac[:, i] = col\n        lam = 0.05\n        jjt = jac @ jac.T + lam * lam * np.eye(n)\n        step = jac.T @ np.linalg.solve(jjt, err)\n        if q_rest is not None:\n            null = np.eye(7) - jac.T @ np.linalg.solve(jjt, jac)\n            step = step + 0.1 * null @ (np.asarray(q_rest) - q)\n        nrm = np.linalg.norm(step)\n        if nrm > 0.3:\n            step = step * (0.3 / nrm)\n        q = clamp_limits(q + step)\n    p, _ = fk_base(q)\n    return q, float(np.linalg.norm(p_des - p))\n\n\ndef wrap(a):\n    return (a + math.pi) % (2 * math.pi) - math.pi\n\n\ndef find_object(obs, prefix):\n    for o in obs.get(\"objects\", []) or []:\n        if str(o.get(\"name\", \"\")).startswith(prefix):\n            return o[\"features\"]\n    return None\n\n\ndef make_action(base_d=(0.0, 0.0, 0.0), arm_d=None, grip=0.0, arm_v=None, bmax=0.06, amax=0.1):\n    a = [0.0] * 18\n    a[0] = float(np.clip(base_d[0], -bmax, bmax))\n    a[1] = float(np.clip(base_d[1], -bmax, bmax))\n    a[2] = float(np.clip(base_d[2], -0.08, 0.08))\n    if arm_d is not None:\n        for i in range(7):\n            a[3 + i] = float(np.clip(arm_d[i], -amax, amax))\n    a[10] = float(min(max(grip, 0.0), 1.0))\n    if arm_v is not None:\n        for i in range(7):\n            a[11 + i] = float(np.clip(arm_v[i], -12.0, 12.0))\n    return a\n\n\ndef arm_toward(q_cur, q_goal, amax=0.08):\n    d = np.asarray(q_goal, dtype=float) - np.asarray(q_cur, dtype=float)\n    for i in (0, 2, 4, 6):\n        d[i] = wrap(d[i])\n    return np.clip(d, -amax, amax)\n\n\ndef base_toward(base, goal_xy, goal_th, vmax=0.05):\n    bx, by, th = base\n    dx, dy = goal_xy[0] - bx, goal_xy[1] - by\n    dist = math.hypot(dx, dy)\n    if dist > vmax:\n        dx, dy = dx * vmax / dist, dy * vmax / dist\n    dth = wrap(goal_th - th)\n    return (dx, dy, float(np.clip(dth, -0.08, 0.08))), dist, abs(wrap(goal_th - th))\n\n\n# ---------------- PickCube controller ----------------\nCARRY_Q = [0.0, -0.35, math.pi, -2.55, 0.0, -0.87, math.pi / 2]\nTOP_DOWN = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])\n\n\ndef _choose_approach(obs, cube, standoff):\n    bx, by, th = base_pose(obs)\n    bin_f = find_object(obs, \"bin\")\n    best, best_score = None, 1e9\n    for k in range(16):\n        phi = -math.pi + k * math.pi / 8\n        px, py = cube[\"x\"] - standoff * math.cos(phi), cube[\"y\"] - standoff * math.sin(phi)\n        if px > BARRIER_X - 0.42 or px < -1.6 or abs(py) > 2.5 or (px < -0.7 and abs(py) > 1.6):\n            continue\n        score = math.hypot(px - bx, py - by) + 0.3 * abs(wrap(phi - th))\n        if bin_f is not None and bin_f[\"x\"] < BARRIER_X:\n            c = np.array([bin_f[\"x\"], bin_f[\"y\"]])\n            a, b = np.array([bx, by]), np.array([px, py])\n            if np.linalg.norm(b - c) < 0.5:\n                continue\n            seg = b - a\n            t = float(np.clip(np.dot(c - a, seg) / max(np.dot(seg, seg), 1e-9), 0.0, 1.0))\n            if np.linalg.norm(a + t * seg - c) < 0.5:\n                score += 2.0\n        if score < best_score:\n            best, best_score = phi, score\n    return best\n\n\ndef _grasp_rot(obs, cube):\n    _, _, th = base_pose(obs)\n    yaw = 2.0 * math.atan2(cube[\"qz\"], cube[\"qw\"])\n    rel = wrap(yaw - th)\n    rel = (rel + math.pi / 4) % (math.pi / 2) - math.pi / 4\n    return rotz(rel) @ TOP_DOWN\n\n\ndef policy(observation, memory, parameters):\n    obs = observation\n    mem = dict(memory or {})\n    standoff = float(parameters.get(\"base_standoff_m\", 0.55))\n    pre_h = float(parameters.get(\"pregrasp_height_m\", 0.12))\n    z_off = float(parameters.get(\"grasp_z_offset_m\", 0.005))\n    lift_h = float(parameters.get(\"lift_height_m\", 0.20))\n    empty_close = float(parameters.get(\"empty_close_rad\", 0.74))\n    pr = obs[\"proprioception\"]\n    q = arm_q(obs)\n    base = base_pose(obs)\n    t = float(obs.get(\"simulation_time_s\", 0.0))\n    cube = find_object(obs, \"cube\")\n    phase = mem.get(\"phase\", \"start\")\n    mem[\"n\"] = int(mem.get(\"n\", 0)) + 1\n    if cube is None:\n        return {\"action\": make_action(grip=float(pr.get(\"gripper_command\", 0.0))), \"memory\": mem, \"done\": True}\n    cpos = np.array([cube[\"x\"], cube[\"y\"], cube[\"z\"]])\n    bin_f = find_object(obs, \"bin\")\n    if bin_f is not None and abs(cube[\"x\"] - bin_f[\"x\"]) < 0.15 and abs(cube[\"y\"] - bin_f[\"y\"]) < 0.15:\n        # Cube inside the bin: clear the rim before descending and keep the base off the bin.\n        pre_h = max(pre_h, bin_f[\"z\"] + bin_f.get(\"bb_z\", 0.2) + 0.12 - cpos[2])\n        standoff = max(standoff, 0.6)\n    tool = np.array([pr[\"pos_tool_x\"], pr[\"pos_tool_y\"], pr[\"pos_tool_z\"]])\n\n    def out(action, done=False):\n        mem[\"phase\"] = phase\n        return {\"action\": action, \"memory\": mem, \"done\": done}\n\n    if phase == \"start\":\n        mem[\"phi\"] = _choose_approach(obs, cube, standoff)\n        if mem[\"phi\"] is None or cube[\"x\"] > BARRIER_X:\n            phase = \"abort\"\n            return out(make_action(grip=0.0), True)\n        phase = \"retract\"\n    if phase == \"retract\":\n        d = arm_toward(q, CARRY_Q)\n        if np.max(np.abs(d)) < 0.02:\n            phase = \"drive\"\n        return out(make_action(arm_d=d, grip=0.0))\n    if phase == \"drive\":\n        phi = mem[\"phi\"]\n        goal = (cube[\"x\"] - standoff * math.cos(phi), cube[\"y\"] - standoff * math.sin(phi))\n        bd, dist, dth = base_toward(base, goal, phi)\n        if dist < 0.015 and dth < 0.02:\n            phase = \"pregrasp\"\n            mem[\"steps_in_phase\"] = 0\n            return out(make_action(arm_d=arm_toward(q, CARRY_Q), grip=0.0))\n        return out(make_action(base_d=bd, arm_d=arm_toward(q, CARRY_Q), grip=0.0))\n    if phase in (\"pregrasp\", \"descend\"):\n        mem[\"steps_in_phase\"] = int(mem.get(\"steps_in_phase\", 0)) + 1\n        rdes = _grasp_rot(obs, cube)\n        z = cpos[2] + (pre_h if phase == \"pregrasp\" else z_off)\n        target = world_to_base([cpos[0], cpos[1], z], base)\n        seed = np.array(mem.get(\"q_goal\", list(q)))\n        qg, err = ik_base(target, rdes, seed, iters=40, q_rest=CARRY_Q)\n        mem[\"q_goal\"] = [float(v) for v in qg]\n        d = arm_toward(q, qg, amax=0.08 if phase == \"pregrasp\" else 0.04)\n        if err > 0.03 and mem[\"steps_in_phase\"] > 5:\n            phase = \"abort\"\n            return out(make_action(grip=0.0), True)\n        if np.max(np.abs(d)) < 0.01 or mem[\"steps_in_phase\"] > 60:\n            phase = \"descend\" if phase == \"pregrasp\" else \"close\"\n            mem[\"steps_in_phase\"] = 0\n        return out(make_action(arm_d=d, grip=0.0))\n    if phase == \"close\":\n        mem[\"steps_in_phase\"] = int(mem.get(\"steps_in_phase\", 0)) + 1\n        if mem[\"steps_in_phase\"] >= 8 and abs(pr.get(\"vel_gripper\", 0.0)) < 0.05:\n            if pr[\"pos_gripper\"] > empty_close:\n                phase = \"failed_empty\"\n                return out(make_action(grip=1.0), True)\n            phase = \"lift\"\n            mem[\"steps_in_phase\"] = 0\n            mem[\"cube_z0\"] = float(cpos[2])\n            mem[\"lift_goal\"] = [float(tool[0]), float(tool[1]), float(tool[2] + lift_h)]\n        return out(make_action(grip=1.0))\n    if phase == \"lift\":\n        mem[\"steps_in_phase\"] = int(mem.get(\"steps_in_phase\", 0)) + 1\n        _, rcur = fk_base(q)\n        target = world_to_base(mem[\"lift_goal\"], base)\n        qg, _ = ik_base(target, rcur, q, iters=30)\n        d = arm_toward(q, qg, amax=0.05)\n        if np.max(np.abs(d)) < 0.01 or mem[\"steps_in_phase\"] > 40:\n            phase = \"verify\"\n            mem[\"steps_in_phase\"] = 0\n            mem[\"offset0\"] = [float(v) for v in (cpos - tool)]\n            mem[\"tool0\"] = [float(v) for v in tool]\n            mem[\"t0\"] = t\n        return out(make_action(arm_d=d, grip=1.0))\n    if phase == \"verify\":\n        # Move the hand to the carry pose and require the cube to follow it.\n        mem[\"steps_in_phase\"] = int(mem.get(\"steps_in_phase\", 0)) + 1\n        off = cpos - tool\n        drift = float(np.linalg.norm(off - np.array(mem[\"offset0\"])))\n        lifted = cpos[2] - mem[\"cube_z0\"] > 0.5 * lift_h\n        moved = float(np.linalg.norm(tool - np.array(mem[\"tool0\"])))\n        if drift > 0.03 or not lifted or float(np.linalg.norm(off)) > 0.06:\n            phase = \"failed_slip\"\n            return out(make_action(grip=1.0), True)\n        d = arm_toward(q, CARRY_Q, amax=0.06)\n        if np.max(np.abs(d)) < 0.02 and moved > 0.05 and t - mem[\"t0\"] > 0.5:\n            phase = \"held\"\n            return out(make_action(grip=1.0), True)\n        if mem[\"steps_in_phase\"] > 60:\n            phase = \"held\" if moved > 0.05 else \"failed_slip\"\n            return out(make_action(grip=1.0), True)\n        return out(make_action(arm_d=d, grip=1.0))\n    grip = 1.0 if phase in (\"held\", \"failed_empty\", \"failed_slip\") else 0.0\n    return out(make_action(grip=grip), True)\n",
+    "policies/toss.py": "import math\nimport numpy as np\n\n# Static kinematic constants embedded from robot_spec.json (TidyBot base + Kinova Gen3 arm).\n# Each entry: (fixed position, fixed quaternion wxyz, joint key or None).\n_CHAIN = [\n    ((0.1199, 0.0, 0.3948), (1.0, 0.0, 0.0, 0.0), None),\n    ((0.0, 0.0, 0.15643), (0.0, 1.0, 0.0, 0.0), 0),\n    ((0.0, 0.005375, -0.12838), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 1),\n    ((0.0, -0.21038, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 2),\n    ((0.0, 0.006375, -0.21038), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 3),\n    ((0.0, -0.20843, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 4),\n    ((0.0, 0.00017505, -0.10593), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 5),\n    ((0.0, -0.10593, -0.00017505), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 6),\n]\n_TOOL = ((0.0, 0.0, -0.181525), (0.0, 1.0, 0.0, 0.0))\nJOINT_LIMITS = [None, (-2.24, 2.24), None, (-2.57, 2.57), None, (-2.09, 2.09), None]\nARM_KEYS = [\"pos_arm_joint%d\" % i for i in range(1, 8)]\nARM_VEL_KEYS = [\"vel_arm_joint%d\" % i for i in range(1, 8)]\nBARRIER_X = 1.3\nDT = 0.1\n\n\ndef quat_to_mat(q):\n    w, x, y, z = q\n    return np.array([\n        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],\n        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],\n        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],\n    ])\n\n\n_FIXED = [(np.array(p), quat_to_mat(q), j) for p, q, j in _CHAIN]\n_TOOL_P = np.array(_TOOL[0])\n_TOOL_R = quat_to_mat(_TOOL[1])\n\n\ndef rotz(a):\n    c, s = math.cos(a), math.sin(a)\n    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])\n\n\ndef fk_base(q):\n    \"\"\"Tool position and rotation in the mobile-base frame for arm joints q.\"\"\"\n    p = np.zeros(3)\n    r = np.eye(3)\n    for fp, fr, j in _FIXED:\n        p = p + r @ fp\n        r = r @ fr\n        if j is not None:\n            r = r @ rotz(q[j])\n    p = p + r @ _TOOL_P\n    r = r @ _TOOL_R\n    return p, r\n\n\ndef base_pose(obs):\n    pr = obs[\"proprioception\"]\n    return pr[\"pos_base_x\"], pr[\"pos_base_y\"], pr[\"pos_base_rot\"]\n\n\ndef fk_world(q, base):\n    bx, by, th = base\n    p, r = fk_base(q)\n    rb = rotz(th)\n    return rb @ p + np.array([bx, by, 0.0]), rb @ r\n\n\ndef world_to_base(pt, base):\n    bx, by, th = base\n    return rotz(-th) @ (np.asarray(pt, dtype=float) - np.array([bx, by, 0.0]))\n\n\ndef arm_q(obs):\n    pr = obs[\"proprioception\"]\n    return np.array([pr[k] for k in ARM_KEYS], dtype=float)\n\n\ndef rot_err(r_cur, r_des):\n    e = r_des @ r_cur.T\n    ang = np.array([e[2, 1] - e[1, 2], e[0, 2] - e[2, 0], e[1, 0] - e[0, 1]]) * 0.5\n    return ang\n\n\ndef clamp_limits(q):\n    q = np.array(q, dtype=float)\n    for i, lim in enumerate(JOINT_LIMITS):\n        if lim is not None:\n            q[i] = min(max(q[i], lim[0] + 0.02), lim[1] - 0.02)\n    return q\n\n\ndef ik_base(p_des, r_des, q0, iters=60, w_rot=0.5, q_rest=None, tol=2e-3):\n    \"\"\"Damped least-squares IK in the base frame; returns (q, position_error_m).\"\"\"\n    q = clamp_limits(q0)\n    eps = 1e-5\n    for _ in range(iters):\n        p, r = fk_base(q)\n        ep = p_des - p\n        er = rot_err(r, r_des) if r_des is not None else np.zeros(3)\n        err = np.concatenate([ep, w_rot * er]) if r_des is not None else ep\n        if np.linalg.norm(ep) < tol and (r_des is None or np.linalg.norm(er) < 0.02):\n            break\n        n = len(err)\n        jac = np.zeros((n, 7))\n        for i in range(7):\n            dq = q.copy()\n            dq[i] += eps\n            p2, r2 = fk_base(dq)\n            col = (p2 - p) / eps\n            if r_des is not None:\n                col_r = rot_err(r, r2) / eps\n                col = np.concatenate([col, w_rot * col_r])\n            jac[:, i] = col\n        lam = 0.05\n        jjt = jac @ jac.T + lam * lam * np.eye(n)\n        step = jac.T @ np.linalg.solve(jjt, err)\n        if q_rest is not None:\n            null = np.eye(7) - jac.T @ np.linalg.solve(jjt, jac)\n            step = step + 0.1 * null @ (np.asarray(q_rest) - q)\n        nrm = np.linalg.norm(step)\n        if nrm > 0.3:\n            step = step * (0.3 / nrm)\n        q = clamp_limits(q + step)\n    p, _ = fk_base(q)\n    return q, float(np.linalg.norm(p_des - p))\n\n\ndef wrap(a):\n    return (a + math.pi) % (2 * math.pi) - math.pi\n\n\ndef find_object(obs, prefix):\n    for o in obs.get(\"objects\", []) or []:\n        if str(o.get(\"name\", \"\")).startswith(prefix):\n            return o[\"features\"]\n    return None\n\n\ndef make_action(base_d=(0.0, 0.0, 0.0), arm_d=None, grip=0.0, arm_v=None, bmax=0.06, amax=0.1):\n    a = [0.0] * 18\n    a[0] = float(np.clip(base_d[0], -bmax, bmax))\n    a[1] = float(np.clip(base_d[1], -bmax, bmax))\n    a[2] = float(np.clip(base_d[2], -0.08, 0.08))\n    if arm_d is not None:\n        for i in range(7):\n            a[3 + i] = float(np.clip(arm_d[i], -amax, amax))\n    a[10] = float(min(max(grip, 0.0), 1.0))\n    if arm_v is not None:\n        for i in range(7):\n            a[11 + i] = float(np.clip(arm_v[i], -12.0, 12.0))\n    return a\n\n\ndef arm_toward(q_cur, q_goal, amax=0.08):\n    d = np.asarray(q_goal, dtype=float) - np.asarray(q_cur, dtype=float)\n    for i in (0, 2, 4, 6):\n        d[i] = wrap(d[i])\n    return np.clip(d, -amax, amax)\n\n\ndef base_toward(base, goal_xy, goal_th, vmax=0.05):\n    bx, by, th = base\n    dx, dy = goal_xy[0] - bx, goal_xy[1] - by\n    dist = math.hypot(dx, dy)\n    if dist > vmax:\n        dx, dy = dx * vmax / dist, dy * vmax / dist\n    dth = wrap(goal_th - th)\n    return (dx, dy, float(np.clip(dth, -0.08, 0.08))), dist, abs(wrap(goal_th - th))\n\n\n# ---------------- MoveToTossLocationAndToss controller ----------------\nCARRY_Q = [0.0, -0.35, math.pi, -2.55, 0.0, -0.87, math.pi / 2]\nWIND_Q = [0.0, -1.6, math.pi, 0.0, 0.0, 0.0, math.pi / 2]\nTOP_DOWN = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])\nG = 9.81\n\n\ndef _landing_err(p, v, bin_xy, u, z_aim):\n    # Signed along-throw distance between the predicted ballistic crossing of z_aim and the bin centre.\n    a, b, c = -0.5 * G, v[2], p[2] - z_aim\n    disc = b * b - 4 * a * c\n    if disc < 0:\n        return -10.0\n    tl = (-b - math.sqrt(disc)) / (2 * a)\n    if tl <= 0:\n        return -10.0\n    land = np.array([p[0] + v[0] * tl, p[1] + v[1] * tl])\n    return float(np.dot(land - np.asarray(bin_xy), u))\n\n\ndef _plan_omega(base, bin_xy, u, z_aim, release_j2, margin):\n    q = np.array(WIND_Q)\n    q[1] = release_j2\n    p0, _ = fk_world(q, base)\n    q2 = q.copy()\n    q2[1] += 1e-4\n    p1, _ = fk_world(q2, base)\n    col = (p1 - p0) / 1e-4\n    for k in range(80):\n        w = 1.0 + 0.1 * k\n        if _landing_err(p0, col * w, bin_xy, u, z_aim) >= 0.0:\n            return min(w * margin, 11.0)\n    return 9.0\n\n\ndef _plan(obs, bin_f, par):\n    bx, by, _ = base_pose(obs)\n    bxy = np.array([bin_f[\"x\"], bin_f[\"y\"]])\n    if bin_f[\"x\"] < BARRIER_X:\n        d = bxy - np.array([bx, by])\n        n = float(np.linalg.norm(d))\n        u = d / n if n > 1e-6 else np.array([1.0, 0.0])\n        g = bxy - par[\"drop_standoff_m\"] * u\n        g[0] = min(g[0], BARRIER_X - 0.42)\n        g[1] = float(np.clip(g[1], -2.4, 2.4))\n        mode = \"drop\"\n    else:\n        g = np.array([BARRIER_X - 0.42, float(np.clip(bin_f[\"y\"], -1.8, 1.8))])\n        mode = \"drop\" if np.linalg.norm(bxy - g) <= par[\"max_drop_reach_m\"] else \"throw\"\n        if mode == \"throw\":\n            g[0] = BARRIER_X - par[\"throw_clearance_m\"]\n    yaw = math.atan2(bxy[1] - g[1], bxy[0] - g[0])\n    return mode, [float(g[0]), float(g[1])], float(yaw)\n\n\ndef policy(observation, memory, parameters):\n    obs = observation\n    mem = dict(memory or {})\n    par = {\n        \"drop_standoff_m\": float(parameters.get(\"drop_standoff_m\", 0.62)),\n        \"max_drop_reach_m\": float(parameters.get(\"max_drop_reach_m\", 0.80)),\n        \"throw_clearance_m\": float(parameters.get(\"throw_clearance_m\", 0.50)),\n    }\n    drop_z = float(parameters.get(\"drop_tool_height_m\", 0.42))\n    z_aim = float(parameters.get(\"aim_height_m\", 0.15))\n    lead = float(parameters.get(\"release_lead_s\", 0.02))\n    margin = float(parameters.get(\"omega_margin\", 1.08))\n    release_j2 = float(parameters.get(\"planned_release_j2\", -1.0))\n    pr = obs[\"proprioception\"]\n    q = arm_q(obs)\n    base = base_pose(obs)\n    t = float(obs.get(\"simulation_time_s\", 0.0))\n    cube = find_object(obs, \"cube\")\n    bin_f = find_object(obs, \"bin\")\n    tool = np.array([pr[\"pos_tool_x\"], pr[\"pos_tool_y\"], pr[\"pos_tool_z\"]])\n    phase = mem.get(\"phase\", \"start\")\n    mem[\"k\"] = int(mem.get(\"k\", 0)) + 1\n\n    def out(action, done=False):\n        mem[\"phase\"] = phase\n        return {\"action\": action, \"memory\": mem, \"done\": done}\n\n    if cube is None or bin_f is None:\n        return out(make_action(grip=float(pr.get(\"gripper_command\", 0.0))), True)\n    cpos = np.array([cube[\"x\"], cube[\"y\"], cube[\"z\"]])\n    cvel = np.array([cube[\"vx\"], cube[\"vy\"], cube[\"vz\"]])\n    held_now = float(np.linalg.norm(cpos - tool)) < 0.07\n\n    def next_phase(name):\n        mem[\"k\"] = 0\n        return name\n\n    if phase in (\"start\", \"carry\", \"drive\", \"drop_reach\", \"wind\") and not held_now:\n        phase = \"lost_grasp\"\n        return out(make_action(grip=1.0), True)\n    if phase == \"start\":\n        mode, goal, yaw = _plan(obs, bin_f, par)\n        mem.update({\"mode\": mode, \"goal\": goal, \"yaw\": yaw, \"swings\": 0})\n        phase = next_phase(\"carry\")\n    if phase == \"carry\":\n        d = arm_toward(q, CARRY_Q, amax=0.06)\n        if np.max(np.abs(d)) < 0.02 or mem[\"k\"] > 50:\n            phase = next_phase(\"drive\")\n        return out(make_action(arm_d=d, grip=1.0))\n    if phase == \"drive\":\n        bd, dist, dth = base_toward(base, mem[\"goal\"], mem[\"yaw\"], vmax=0.05)\n        if (dist < 0.02 and dth < 0.02) or mem[\"k\"] > 150:\n            mem[\"yaw\"] = math.atan2(bin_f[\"y\"] - base[1], bin_f[\"x\"] - base[0])\n            phase = next_phase(\"drop_reach\" if mem[\"mode\"] == \"drop\" else \"wind\")\n        return out(make_action(base_d=bd, arm_d=arm_toward(q, CARRY_Q, 0.04), grip=1.0))\n    if phase == \"drop_reach\":\n        bd, _, _ = base_toward(base, (base[0], base[1]), mem[\"yaw\"])\n        target = world_to_base([bin_f[\"x\"], bin_f[\"y\"], drop_z], base)\n        seed = np.array(mem.get(\"q_goal\", list(q)))\n        qg, err = ik_base(target, TOP_DOWN, seed, iters=40, q_rest=CARRY_Q)\n        mem[\"q_goal\"] = [float(v) for v in qg]\n        d = arm_toward(q, qg, amax=0.05)\n        if np.max(np.abs(d)) < 0.01 or mem[\"k\"] > 60:\n            phase = next_phase(\"release_hold\")\n        return out(make_action(base_d=bd, arm_d=d, grip=1.0))\n    if phase == \"release_hold\":\n        if mem[\"k\"] > 10:\n            phase = next_phase(\"retract\")\n        return out(make_action(grip=0.0))\n    if phase == \"wind\":\n        bd, _, _ = base_toward(base, (base[0], base[1]), mem[\"yaw\"])\n        d = arm_toward(q, WIND_Q, amax=0.06)\n        if (np.max(np.abs(d)) < 0.01 and abs(pr[\"vel_arm_joint2\"]) < 0.05) or mem[\"k\"] > 80:\n            bxy = [bin_f[\"x\"], bin_f[\"y\"]]\n            u = np.array([math.cos(base[2]), math.sin(base[2])])\n            mem[\"omega\"] = mem.get(\"omega_next\") or _plan_omega(base, bxy, u, z_aim, release_j2, margin)\n            mem[\"u\"] = [float(u[0]), float(u[1])]\n            mem[\"prev_err\"] = None\n            mem[\"swings\"] = int(mem.get(\"swings\", 0)) + 1\n            phase = next_phase(\"swing\")\n        return out(make_action(base_d=bd, arm_d=d, grip=1.0))\n    if phase == \"swing\":\n        w = float(mem[\"omega\"])\n        u = np.array(mem[\"u\"])\n        err = _landing_err(cpos, cvel, (bin_f[\"x\"], bin_f[\"y\"]), u, z_aim)\n        prev = mem.get(\"prev_err\")\n        mem[\"prev_err\"] = err\n        row = make_action(grip=1.0)\n        lag = w - pr[\"vel_arm_joint2\"]\n        row[4] = float(np.clip(0.02 + 0.05 * max(lag, 0.0), 0.0, 0.1))\n        row[12] = float(w)\n        hold = arm_toward(q, WIND_Q, amax=0.05)\n        for i in (0, 2, 3, 4, 5, 6):\n            row[3 + i] = float(hold[i])\n        rel_k = None\n        if held_now and cvel[2] > 0.0 and float(np.dot(cvel[:2], u)) > 0.3:\n            if err >= 0.0:\n                rel_k = 0\n            elif prev is not None and err > prev:\n                rate = (err - prev) / DT\n                tc = -err / rate - lead\n                if tc < DT:\n                    rel_k = int(max(0.0, tc) * 1000.0)\n        if rel_k is not None:\n            n = int(obs[\"action_spec\"].get(\"schedule_rows\", 100))\n            rel_k = min(rel_k, n - 1)\n            sched = []\n            for i in range(n):\n                r = list(row)\n                r[10] = 1.0 if i < rel_k else 0.0\n                sched.append(r)\n            mem[\"release_t\"] = t + rel_k / 1000.0\n            phase = next_phase(\"brake\")\n            return {\"action\": {\"schedule\": sched}, \"memory\": dict(mem, phase=phase), \"done\": False}\n        if q[1] > -0.25 or mem[\"k\"] > 40:\n            # Swing ended without a predicted crossing: brake, wind up again faster.\n            mem[\"omega_next\"] = min(w * 1.3, 11.0)\n            phase = next_phase(\"brake_hold\" if mem[\"swings\"] < 3 else \"abort_brake\")\n        return out(row)\n    if phase in (\"brake_hold\", \"abort_brake\"):\n        if mem[\"k\"] > 8:\n            if phase == \"abort_brake\":\n                phase = next_phase(\"gave_up\")\n                return out(make_action(grip=1.0), True)\n            phase = next_phase(\"wind\")\n        return out(make_action(grip=1.0))\n    if phase == \"brake\":\n        if mem[\"k\"] > 8:\n            phase = next_phase(\"retract\")\n        return out(make_action(grip=0.0))\n    if phase == \"retract\":\n        d = arm_toward(q, CARRY_Q, amax=0.06)\n        if np.max(np.abs(d)) < 0.02 or mem[\"k\"] > 60:\n            phase = next_phase(\"settle\")\n            mem[\"still_since\"] = None\n        return out(make_action(arm_d=d, grip=0.0))\n    if phase == \"settle\":\n        # Wait for the cube to come to rest so the final observation shows where it ended.\n        if float(np.linalg.norm(cvel)) < 0.03:\n            if mem.get(\"still_since\") is None:\n                mem[\"still_since\"] = t\n            if t - mem[\"still_since\"] >= 0.5:\n                phase = \"finished\"\n                return out(make_action(grip=0.0), True)\n        else:\n            mem[\"still_since\"] = None\n        if mem[\"k\"] > 50:\n            phase = \"finished\"\n            return out(make_action(grip=0.0), True)\n        return out(make_action(grip=0.0))\n    grip = 0.0 if phase == \"finished\" else 1.0\n    return out(make_action(grip=grip), True)\n",
+    "policies/open_gripper.py": "import math\nimport numpy as np\n\n# Static kinematic constants embedded from robot_spec.json (TidyBot base + Kinova Gen3 arm).\n# Each entry: (fixed position, fixed quaternion wxyz, joint key or None).\n_CHAIN = [\n    ((0.1199, 0.0, 0.3948), (1.0, 0.0, 0.0, 0.0), None),\n    ((0.0, 0.0, 0.15643), (0.0, 1.0, 0.0, 0.0), 0),\n    ((0.0, 0.005375, -0.12838), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 1),\n    ((0.0, -0.21038, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 2),\n    ((0.0, 0.006375, -0.21038), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 3),\n    ((0.0, -0.20843, -0.006375), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 4),\n    ((0.0, 0.00017505, -0.10593), (0.7071067811865475, 0.7071067811865475, 0.0, 0.0), 5),\n    ((0.0, -0.10593, -0.00017505), (0.7071067811865475, -0.7071067811865475, 0.0, 0.0), 6),\n]\n_TOOL = ((0.0, 0.0, -0.181525), (0.0, 1.0, 0.0, 0.0))\nJOINT_LIMITS = [None, (-2.24, 2.24), None, (-2.57, 2.57), None, (-2.09, 2.09), None]\nARM_KEYS = [\"pos_arm_joint%d\" % i for i in range(1, 8)]\nARM_VEL_KEYS = [\"vel_arm_joint%d\" % i for i in range(1, 8)]\nBARRIER_X = 1.3\nDT = 0.1\n\n\ndef quat_to_mat(q):\n    w, x, y, z = q\n    return np.array([\n        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],\n        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],\n        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],\n    ])\n\n\n_FIXED = [(np.array(p), quat_to_mat(q), j) for p, q, j in _CHAIN]\n_TOOL_P = np.array(_TOOL[0])\n_TOOL_R = quat_to_mat(_TOOL[1])\n\n\ndef rotz(a):\n    c, s = math.cos(a), math.sin(a)\n    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])\n\n\ndef fk_base(q):\n    \"\"\"Tool position and rotation in the mobile-base frame for arm joints q.\"\"\"\n    p = np.zeros(3)\n    r = np.eye(3)\n    for fp, fr, j in _FIXED:\n        p = p + r @ fp\n        r = r @ fr\n        if j is not None:\n            r = r @ rotz(q[j])\n    p = p + r @ _TOOL_P\n    r = r @ _TOOL_R\n    return p, r\n\n\ndef base_pose(obs):\n    pr = obs[\"proprioception\"]\n    return pr[\"pos_base_x\"], pr[\"pos_base_y\"], pr[\"pos_base_rot\"]\n\n\ndef fk_world(q, base):\n    bx, by, th = base\n    p, r = fk_base(q)\n    rb = rotz(th)\n    return rb @ p + np.array([bx, by, 0.0]), rb @ r\n\n\ndef world_to_base(pt, base):\n    bx, by, th = base\n    return rotz(-th) @ (np.asarray(pt, dtype=float) - np.array([bx, by, 0.0]))\n\n\ndef arm_q(obs):\n    pr = obs[\"proprioception\"]\n    return np.array([pr[k] for k in ARM_KEYS], dtype=float)\n\n\ndef rot_err(r_cur, r_des):\n    e = r_des @ r_cur.T\n    ang = np.array([e[2, 1] - e[1, 2], e[0, 2] - e[2, 0], e[1, 0] - e[0, 1]]) * 0.5\n    return ang\n\n\ndef clamp_limits(q):\n    q = np.array(q, dtype=float)\n    for i, lim in enumerate(JOINT_LIMITS):\n        if lim is not None:\n            q[i] = min(max(q[i], lim[0] + 0.02), lim[1] - 0.02)\n    return q\n\n\ndef ik_base(p_des, r_des, q0, iters=60, w_rot=0.5, q_rest=None, tol=2e-3):\n    \"\"\"Damped least-squares IK in the base frame; returns (q, position_error_m).\"\"\"\n    q = clamp_limits(q0)\n    eps = 1e-5\n    for _ in range(iters):\n        p, r = fk_base(q)\n        ep = p_des - p\n        er = rot_err(r, r_des) if r_des is not None else np.zeros(3)\n        err = np.concatenate([ep, w_rot * er]) if r_des is not None else ep\n        if np.linalg.norm(ep) < tol and (r_des is None or np.linalg.norm(er) < 0.02):\n            break\n        n = len(err)\n        jac = np.zeros((n, 7))\n        for i in range(7):\n            dq = q.copy()\n            dq[i] += eps\n            p2, r2 = fk_base(dq)\n            col = (p2 - p) / eps\n            if r_des is not None:\n                col_r = rot_err(r, r2) / eps\n                col = np.concatenate([col, w_rot * col_r])\n            jac[:, i] = col\n        lam = 0.05\n        jjt = jac @ jac.T + lam * lam * np.eye(n)\n        step = jac.T @ np.linalg.solve(jjt, err)\n        if q_rest is not None:\n            null = np.eye(7) - jac.T @ np.linalg.solve(jjt, jac)\n            step = step + 0.1 * null @ (np.asarray(q_rest) - q)\n        nrm = np.linalg.norm(step)\n        if nrm > 0.3:\n            step = step * (0.3 / nrm)\n        q = clamp_limits(q + step)\n    p, _ = fk_base(q)\n    return q, float(np.linalg.norm(p_des - p))\n\n\ndef wrap(a):\n    return (a + math.pi) % (2 * math.pi) - math.pi\n\n\ndef find_object(obs, prefix):\n    for o in obs.get(\"objects\", []) or []:\n        if str(o.get(\"name\", \"\")).startswith(prefix):\n            return o[\"features\"]\n    return None\n\n\ndef make_action(base_d=(0.0, 0.0, 0.0), arm_d=None, grip=0.0, arm_v=None, bmax=0.06, amax=0.1):\n    a = [0.0] * 18\n    a[0] = float(np.clip(base_d[0], -bmax, bmax))\n    a[1] = float(np.clip(base_d[1], -bmax, bmax))\n    a[2] = float(np.clip(base_d[2], -0.08, 0.08))\n    if arm_d is not None:\n        for i in range(7):\n            a[3 + i] = float(np.clip(arm_d[i], -amax, amax))\n    a[10] = float(min(max(grip, 0.0), 1.0))\n    if arm_v is not None:\n        for i in range(7):\n            a[11 + i] = float(np.clip(arm_v[i], -12.0, 12.0))\n    return a\n\n\ndef arm_toward(q_cur, q_goal, amax=0.08):\n    d = np.asarray(q_goal, dtype=float) - np.asarray(q_cur, dtype=float)\n    for i in (0, 2, 4, 6):\n        d[i] = wrap(d[i])\n    return np.clip(d, -amax, amax)\n\n\ndef base_toward(base, goal_xy, goal_th, vmax=0.05):\n    bx, by, th = base\n    dx, dy = goal_xy[0] - bx, goal_xy[1] - by\n    dist = math.hypot(dx, dy)\n    if dist > vmax:\n        dx, dy = dx * vmax / dist, dy * vmax / dist\n    dth = wrap(goal_th - th)\n    return (dx, dy, float(np.clip(dth, -0.08, 0.08))), dist, abs(wrap(goal_th - th))\n\n\n# ---------------- OpenGripper controller ----------------\nCARRY_Q = [0.0, -0.35, math.pi, -2.55, 0.0, -0.87, math.pi / 2]\n\n\ndef policy(observation, memory, parameters):\n    obs = observation\n    mem = dict(memory or {})\n    lift = float(parameters.get(\"retreat_lift_m\", 0.15))\n    pr = obs[\"proprioception\"]\n    q = arm_q(obs)\n    base = base_pose(obs)\n    tool = np.array([pr[\"pos_tool_x\"], pr[\"pos_tool_y\"], pr[\"pos_tool_z\"]])\n    phase = mem.get(\"phase\", \"open\")\n    mem[\"k\"] = int(mem.get(\"k\", 0)) + 1\n\n    def out(action, done=False):\n        mem[\"phase\"] = phase\n        return {\"action\": action, \"memory\": mem, \"done\": done}\n\n    if phase == \"open\":\n        # Hold the arm still while the fingers open, so the cube is not flung.\n        if mem[\"k\"] >= 8 and pr[\"pos_gripper\"] < 0.1 and abs(pr.get(\"vel_gripper\", 0.0)) < 0.05:\n            phase = \"lift\"\n            mem[\"k\"] = 0\n            mem[\"lift_goal\"] = [float(tool[0]), float(tool[1]), float(min(tool[2] + lift, 1.0))]\n        elif mem[\"k\"] > 25:\n            phase = \"lift\"\n            mem[\"k\"] = 0\n            mem[\"lift_goal\"] = [float(tool[0]), float(tool[1]), float(min(tool[2] + lift, 1.0))]\n        return out(make_action(grip=0.0))\n    if phase == \"lift\":\n        _, rcur = fk_base(q)\n        qg, _ = ik_base(world_to_base(mem[\"lift_goal\"], base), rcur, q, iters=30)\n        d = arm_toward(q, qg, amax=0.05)\n        if np.max(np.abs(d)) < 0.01 or mem[\"k\"] > 30:\n            phase = \"retract\"\n            mem[\"k\"] = 0\n        return out(make_action(arm_d=d, grip=0.0))\n    if phase == \"retract\":\n        d = arm_toward(q, CARRY_Q, amax=0.06)\n        if np.max(np.abs(d)) < 0.02 or mem[\"k\"] > 60:\n            phase = \"finished\"\n            return out(make_action(grip=0.0), True)\n        return out(make_action(arm_d=d, grip=0.0))\n    return out(make_action(grip=0.0), True)\n"
+  }
+}
