@@ -1,0 +1,366 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 0,
+    "robot_steps": 0,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 0,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_sha256": "e243fa69e313e78432d65b38392141ccf51cec7f3dfb3a898cd03d6c0706b8e6"
+  },
+  {
+    "index": 1,
+    "practice_steps": 1700,
+    "robot_steps": 1699,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 16,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_sha256": "97bcc3ca8ca9a2645997e2fcf33160ae687b42650e78edf44751caae19bde169"
+  },
+  {
+    "index": 2,
+    "practice_steps": 3400,
+    "robot_steps": 3399,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 30,
+    "learning_updates": 1,
+    "session_index": 1,
+    "policy_sha256": "035358fa8705ad944882f35091267e07bcf5b53cf2985018c470d705d153e20b"
+  },
+  {
+    "index": 3,
+    "practice_steps": 5100,
+    "robot_steps": 5099,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 48,
+    "learning_updates": 2,
+    "session_index": 2,
+    "policy_sha256": "5a68f7f3958bbbfe842243187e0473dc8d4faaaf11281cb1b8e32b8b31d6624c"
+  },
+  {
+    "index": 4,
+    "practice_steps": 6800,
+    "robot_steps": 6798,
+    "human_invocations": 2,
+    "human_resets_by_destination": {
+      "robot_side": 2,
+      "opposite_side": 0
+    },
+    "robot_invocations": 63,
+    "learning_updates": 3,
+    "session_index": 3,
+    "policy_sha256": "32e79916b23e2906a83fd1518f46e426a8ddcf51caedad8ee2e893f80487402d"
+  },
+  {
+    "index": 5,
+    "practice_steps": 8500,
+    "robot_steps": 8495,
+    "human_invocations": 5,
+    "human_resets_by_destination": {
+      "robot_side": 2,
+      "opposite_side": 3
+    },
+    "robot_invocations": 80,
+    "learning_updates": 4,
+    "session_index": 4,
+    "policy_sha256": "d760dd49044a33ba8ae3f8a57001016fe7e851bbafe141bfceb5f0eb33d03906"
+  },
+  {
+    "index": 6,
+    "practice_steps": 10200,
+    "robot_steps": 10194,
+    "human_invocations": 6,
+    "human_resets_by_destination": {
+      "robot_side": 3,
+      "opposite_side": 3
+    },
+    "robot_invocations": 94,
+    "learning_updates": 5,
+    "session_index": 5,
+    "policy_sha256": "033c0fa2d878a4e720099b8b510763217c9cfce7fa7abd30c496f23250d6474c"
+  },
+  {
+    "index": 7,
+    "practice_steps": 11900,
+    "robot_steps": 11893,
+    "human_invocations": 7,
+    "human_resets_by_destination": {
+      "robot_side": 4,
+      "opposite_side": 3
+    },
+    "robot_invocations": 109,
+    "learning_updates": 6,
+    "session_index": 6,
+    "policy_sha256": "31d0e4a2f8b8ce7733db2e1df8b3fccc2554046dc5c3de3502aa0e15492712a2"
+  },
+  {
+    "index": 8,
+    "practice_steps": 13600,
+    "robot_steps": 13593,
+    "human_invocations": 7,
+    "human_resets_by_destination": {
+      "robot_side": 4,
+      "opposite_side": 3
+    },
+    "robot_invocations": 123,
+    "learning_updates": 6,
+    "session_index": 6,
+    "policy_sha256": "1c4f179552008f5cfcbd987e35b2a8895b1c7b514ddee29e5aa296381f633e59"
+  },
+  {
+    "index": 9,
+    "practice_steps": 15300,
+    "robot_steps": 15290,
+    "human_invocations": 10,
+    "human_resets_by_destination": {
+      "robot_side": 7,
+      "opposite_side": 3
+    },
+    "robot_invocations": 139,
+    "learning_updates": 7,
+    "session_index": 7,
+    "policy_sha256": "eaac75eb0bf3d6c74219e406438a4110f86601737987be454069822654b07378"
+  },
+  {
+    "index": 10,
+    "practice_steps": 17000,
+    "robot_steps": 16988,
+    "human_invocations": 12,
+    "human_resets_by_destination": {
+      "robot_side": 9,
+      "opposite_side": 3
+    },
+    "robot_invocations": 154,
+    "learning_updates": 8,
+    "session_index": 8,
+    "policy_sha256": "e90a1c6e85410e2dce39eb470d28d89bbf0aa4e7f3ebc589298c479813440ef3"
+  },
+  {
+    "index": 11,
+    "practice_steps": 18700,
+    "robot_steps": 18685,
+    "human_invocations": 15,
+    "human_resets_by_destination": {
+      "robot_side": 12,
+      "opposite_side": 3
+    },
+    "robot_invocations": 171,
+    "learning_updates": 9,
+    "session_index": 9,
+    "policy_sha256": "78483728b37767455ad4fc530462bf2f7b3735caa8c2bb258099033b0b2f2f5e"
+  },
+  {
+    "index": 12,
+    "practice_steps": 20400,
+    "robot_steps": 20382,
+    "human_invocations": 18,
+    "human_resets_by_destination": {
+      "robot_side": 15,
+      "opposite_side": 3
+    },
+    "robot_invocations": 186,
+    "learning_updates": 10,
+    "session_index": 10,
+    "policy_sha256": "cc5a76009f97276efd8de568a91351bcf4b1f3d5f8f6e25c432a15c8c271ecd9"
+  },
+  {
+    "index": 13,
+    "practice_steps": 22100,
+    "robot_steps": 22079,
+    "human_invocations": 21,
+    "human_resets_by_destination": {
+      "robot_side": 18,
+      "opposite_side": 3
+    },
+    "robot_invocations": 202,
+    "learning_updates": 11,
+    "session_index": 11,
+    "policy_sha256": "ea712ff90be380477ae5e52754d6c682eb009e3ddb01a800487f56f2e374f36e"
+  },
+  {
+    "index": 14,
+    "practice_steps": 23800,
+    "robot_steps": 23776,
+    "human_invocations": 24,
+    "human_resets_by_destination": {
+      "robot_side": 21,
+      "opposite_side": 3
+    },
+    "robot_invocations": 218,
+    "learning_updates": 12,
+    "session_index": 12,
+    "policy_sha256": "caef08b812745f5aa1d28d26729fd406a48781ec3c9640c273c8b671cf4efaf2"
+  },
+  {
+    "index": 15,
+    "practice_steps": 25500,
+    "robot_steps": 25475,
+    "human_invocations": 25,
+    "human_resets_by_destination": {
+      "robot_side": 22,
+      "opposite_side": 3
+    },
+    "robot_invocations": 231,
+    "learning_updates": 13,
+    "session_index": 13,
+    "policy_sha256": "57026f5bb4a582e811f80cf4168209d5f1cb5b5e78b9b1a24d493e6f301ef20f"
+  },
+  {
+    "index": 16,
+    "practice_steps": 27200,
+    "robot_steps": 27172,
+    "human_invocations": 28,
+    "human_resets_by_destination": {
+      "robot_side": 25,
+      "opposite_side": 3
+    },
+    "robot_invocations": 247,
+    "learning_updates": 14,
+    "session_index": 14,
+    "policy_sha256": "2fe18f145250ce730905a500f57e369c54200b14d2df3edb9472689d3df88246"
+  },
+  {
+    "index": 17,
+    "practice_steps": 28900,
+    "robot_steps": 28869,
+    "human_invocations": 31,
+    "human_resets_by_destination": {
+      "robot_side": 28,
+      "opposite_side": 3
+    },
+    "robot_invocations": 261,
+    "learning_updates": 15,
+    "session_index": 15,
+    "policy_sha256": "4927eae4d52418b5a8c71339f91e09f939d969417778f8afef945307cbd7d6dd"
+  },
+  {
+    "index": 18,
+    "practice_steps": 30600,
+    "robot_steps": 30569,
+    "human_invocations": 31,
+    "human_resets_by_destination": {
+      "robot_side": 28,
+      "opposite_side": 3
+    },
+    "robot_invocations": 275,
+    "learning_updates": 15,
+    "session_index": 15,
+    "policy_sha256": "85c933c1e4e9bf026bbaab80ba440d416f40cd7d5646958fd7cdc2b375c0be71"
+  },
+  {
+    "index": 19,
+    "practice_steps": 32300,
+    "robot_steps": 32266,
+    "human_invocations": 34,
+    "human_resets_by_destination": {
+      "robot_side": 31,
+      "opposite_side": 3
+    },
+    "robot_invocations": 293,
+    "learning_updates": 16,
+    "session_index": 16,
+    "policy_sha256": "8d97a4114ae3d7a91ddad33fd63fb6f37ac65e3e692e8a235133150bd353a488"
+  },
+  {
+    "index": 20,
+    "practice_steps": 34000,
+    "robot_steps": 33964,
+    "human_invocations": 36,
+    "human_resets_by_destination": {
+      "robot_side": 33,
+      "opposite_side": 3
+    },
+    "robot_invocations": 308,
+    "learning_updates": 17,
+    "session_index": 17,
+    "policy_sha256": "50e24294fe47eba17dc869c9884f2847e0603a9a491d48decf62bb42f0149e85"
+  },
+  {
+    "index": 21,
+    "practice_steps": 35700,
+    "robot_steps": 35661,
+    "human_invocations": 39,
+    "human_resets_by_destination": {
+      "robot_side": 35,
+      "opposite_side": 4
+    },
+    "robot_invocations": 322,
+    "learning_updates": 18,
+    "session_index": 18,
+    "policy_sha256": "4ffb37306a9122565086eac51254cbbd7b5803d4549b06a9070097c398e51f13"
+  },
+  {
+    "index": 22,
+    "practice_steps": 37400,
+    "robot_steps": 37358,
+    "human_invocations": 42,
+    "human_resets_by_destination": {
+      "robot_side": 38,
+      "opposite_side": 4
+    },
+    "robot_invocations": 337,
+    "learning_updates": 19,
+    "session_index": 19,
+    "policy_sha256": "3c76579658be27c2352dac2a41a4eace17ca7e587ac1e6afd054764ead299873"
+  },
+  {
+    "index": 23,
+    "practice_steps": 39100,
+    "robot_steps": 39056,
+    "human_invocations": 44,
+    "human_resets_by_destination": {
+      "robot_side": 40,
+      "opposite_side": 4
+    },
+    "robot_invocations": 353,
+    "learning_updates": 20,
+    "session_index": 20,
+    "policy_sha256": "682e342e131ea6c04457c9756c0f1d585331e6953a446f5864af324bdf6ac712"
+  },
+  {
+    "index": 24,
+    "practice_steps": 40800,
+    "robot_steps": 40752,
+    "human_invocations": 48,
+    "human_resets_by_destination": {
+      "robot_side": 44,
+      "opposite_side": 4
+    },
+    "robot_invocations": 369,
+    "learning_updates": 21,
+    "session_index": 21,
+    "policy_sha256": "b9973546b0af6253a6b5ee85226c23559ad88cf6499a5312b23d89a72a336c3b"
+  },
+  {
+    "index": 25,
+    "practice_steps": 42500,
+    "robot_steps": 42450,
+    "human_invocations": 50,
+    "human_resets_by_destination": {
+      "robot_side": 46,
+      "opposite_side": 4
+    },
+    "robot_invocations": 382,
+    "learning_updates": 22,
+    "session_index": 22,
+    "policy_sha256": "bb40a9e160ac56fc17b0498eafb018984994f062ecbcac99066e8900a7702553"
+  }
+]
