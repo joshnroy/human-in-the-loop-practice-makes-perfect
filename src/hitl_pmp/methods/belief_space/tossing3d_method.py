@@ -15,6 +15,7 @@ from hitl_pmp.core.method.types import (
     SamplerConsultation,
     Skill,
 )
+from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -113,6 +114,7 @@ class Tossing3DPomdpMethod(EesMethod):
     )
     pomdp_learning_time_scale: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    robot_duration_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -122,9 +124,59 @@ class Tossing3DPomdpMethod(EesMethod):
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
+    _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
+
+    def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
+        super().configure_practice_accounting(accounting=accounting)
+        self.pomdp_linear_cost_lambda = accounting.costs.objective_lambda
+        self._pomdp_model = self._pomdp_model.model_copy(
+            update={"linear_cost_lambda": self.pomdp_linear_cost_lambda}
+        )
+        self._refresh_execution_forecasts()
+
+    def _refresh_execution_forecasts(self) -> None:
+        accounting = self._practice_accounting
+        if accounting is None:
+            return
+        price = accounting.robot_charge().cost
+        humans = self.skill_provider.human_cube_bin_reset_skills()
+        estimates = {}
+        for ground in self._pomdp_model.ground_skills:
+            durations = self._execution_durations.get(ground, [])
+            duration = (
+                sum(durations) / len(durations) if durations else self.robot_duration_prior_steps
+            )
+            estimates[str(ground)] = (
+                self.practice_action_cost(ground_skill=ground)
+                if ground in humans
+                else duration * price
+            )
+        self._pomdp_state = self._pomdp_state.model_copy(
+            update={"expected_execution_costs": estimates}
+        )
+
+    def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
+        if self._practice_accounting is None:
+            return
+        ground = self._execution_ground_skill
+        assert ground is not None, "execution without dispatch"
+        if complete and ground not in self.skill_provider.human_cube_bin_reset_skills():
+            self._execution_durations.setdefault(ground, []).append(steps)
+        self._pomdp_state = self._pomdp_state.model_copy(
+            update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
+        )
+        self._refresh_execution_forecasts()
+        self.record_diagnostic(
+            event="execution_cost",
+            skill=str(ground),
+            cost=cost,
+            steps=steps,
+            complete=complete,
+            summed_cost=self._pomdp_state.accumulated_cost,
+        )
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -143,6 +195,11 @@ class Tossing3DPomdpMethod(EesMethod):
         }
 
     def practice_skill_costs(self) -> dict[str, float]:
+        if self._practice_accounting is not None:
+            return {
+                name + " (execution forecast)": cost
+                for name, cost in self._pomdp_state.expected_execution_costs.items()
+            }
         return {
             skill_name + " (belief mean)": mean_cost(belief=belief)
             for skill_name, belief in self._pomdp_state.skill_beliefs.items()
@@ -319,7 +376,9 @@ class Tossing3DPomdpMethod(EesMethod):
             skill_name, consultation = pending
             assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
             assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
-        configured_cost_observation = ground_skill.evaluate_practice_cost()
+        configured_cost_observation = (
+            ground_skill.evaluate_practice_cost() if self._practice_accounting is None else None
+        )
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
@@ -343,7 +402,9 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=configured_cost_observation,
-            cost_observation_source="configured_practice_cost",
+            cost_observation_source="configured_practice_cost"
+            if self._practice_accounting is None
+            else "host_control_steps",
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -366,7 +427,10 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
-        action_cost = ground_skill.evaluate_practice_cost()
+        super().record_action_cost(ground_skill=ground_skill)
+        action_cost = (
+            ground_skill.evaluate_practice_cost() if self._practice_accounting is None else 0.0
+        )
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
@@ -417,7 +481,9 @@ class Tossing3DPomdpMethod(EesMethod):
         super().observe_help_granted(state=state)
         reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
-        observed_cost = reset.evaluate_practice_cost()
+        observed_cost = (
+            reset.evaluate_practice_cost() if self._practice_accounting is None else None
+        )
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=reset,
@@ -434,7 +500,9 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=observed_cost,
-            cost_observation_source="configured_practice_cost",
+            cost_observation_source="configured_practice_cost"
+            if self._practice_accounting is None
+            else "host_control_steps",
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -497,6 +565,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._cycle_index += 1
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        self._refresh_execution_forecasts()
         self._decision_index += 1
         trace = SearchTrace()
         model: BeliefSpaceModel[

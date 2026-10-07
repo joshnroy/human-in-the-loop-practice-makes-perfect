@@ -10,6 +10,42 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.step_protocol import DeploymentSnapshot, PracticeClock
 
 
+def test_clock_uses_prepared_per_skill_duration_and_actual_robot_cost():
+    from hitl_pmp.core.practice_costs import (
+        ChargeFunction,
+        HumanCharge,
+        PracticeAccounting,
+        PracticeCosts,
+    )
+
+    ledger = PracticeAccounting(
+        costs=PracticeCosts(
+            robot_step=ChargeFunction(value=2),
+            human_skills={
+                "near": HumanCharge(cost=ChargeFunction(value=7), duration=ChargeFunction(value=3))
+            },
+        )
+    )
+    seen = []
+    clock = PracticeClock(
+        budget=5,
+        interval=2,
+        accounting=ledger,
+        on_measure=lambda: seen.append((clock.steps, ledger.total_cost)),
+    )
+    clock.robot_active = True
+    clock.before_robot_step()
+    clock.after_robot_step()
+    clock.robot_active = False
+    charge = clock.before_human(skill="near")
+    clock.human_invoked(charge=charge)
+    assert seen == [(4, 9)]
+    assert clock.steps == ledger.practice_steps == 4
+    with pytest.raises(ControlStepLimitReached):
+        clock.before_human(skill="near")
+    assert ledger.total_cost == 9
+
+
 def test_tossing_snapshot_with_observed_competence_round_trips():
     from hitl_pmp.core.method.types import GroundSkill
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
