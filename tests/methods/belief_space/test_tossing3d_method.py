@@ -63,6 +63,53 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
     )
 
 
+def test_normalized_cost_uses_real_duration_and_forecasts_future_execution():
+    from hitl_pmp.core.practice_costs import PracticeAccounting
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+
+    method = _build(pomdp_num_particles=32)
+    method.configure_practice_accounting(accounting=PracticeAccounting())
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.record_action_cost(ground_skill=pick)
+    assert method.pomdp_state.accumulated_cost == 0
+    method.observe_execution_cost(cost=240, steps=240, complete=True)
+    assert method.pomdp_state.accumulated_cost == 240
+    assert estimated_action_cost(state=method.pomdp_state, action=pick) == 240
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=12, steps=12, complete=False)
+    assert method.pomdp_state.accumulated_cost == 252
+    assert estimated_action_cost(state=method.pomdp_state, action=pick) == 240
+
+
+def test_normalized_human_cost_is_per_grounded_destination():
+    from hitl_pmp.core.practice_costs import (
+        ChargeFunction,
+        HumanCharge,
+        PracticeAccounting,
+        PracticeCosts,
+    )
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+
+    method = _build(pomdp_num_particles=32)
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                human_skills={
+                    "reset_cube_far": HumanCharge(cost=ChargeFunction(value=9)),
+                    "reset_cube_and_bin_near": HumanCharge(cost=ChargeFunction(value=2)),
+                },
+            )
+        )
+    )
+    resets = method.skill_provider.human_cube_bin_reset_skills()
+    assert len(resets) == 2
+    for reset in resets:
+        side = method.skill_provider.movables_reset_destination(ground_skill=reset)
+        expected = 2 if side == "robot_side" else 9
+        assert method.practice_action_cost(ground_skill=reset) == expected
+        assert estimated_action_cost(state=method.pomdp_state, action=reset) == expected
+
+
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
     # The sampled belief and newly available reset choices may change which applicable
     # action wins; this regression is about using the supplied symbolic state lazily.

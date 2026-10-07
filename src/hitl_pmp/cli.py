@@ -81,6 +81,12 @@ class Cli:
     @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--practice-step-budget", type=int, default=None)
+        parser.add_argument(
+            "--practice-cost-config",
+            type=Path,
+            default=None,
+            help="Shared step-cost JSON; enables normalized execution costs.",
+        )
         parser.add_argument("--measurement-interval-steps", type=int, default=1700)
         parser.add_argument("--human-skill-steps", type=int, default=1)
         parser.add_argument("--evaluation-control-steps", type=int, default=500)
