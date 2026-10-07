@@ -9,14 +9,20 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
+    RESET_SKILL,
     RESET_SKILLS,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
-from hitl_pmp.methods.belief_space.tossing3d_observation_model import mean_cost, refit_belief_state
+from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+    mean_competence,
+    mean_cost,
+    refit_belief_state,
+)
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
@@ -65,8 +71,10 @@ def _reset(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
     )
 
 
-@pytest.mark.parametrize("reset_name", sorted(RESET_SKILLS))
-def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_name: str) -> None:
+@pytest.mark.parametrize("reset_name", [NON_HUMAN_RESET_SKILL])
+def test_non_human_reset_success_remains_known_even_with_zero_performance_posterior(
+    *, reset_name: str
+) -> None:
     method = _method(offer_non_human_reset=True)
     model = method._pomdp_model  # noqa: SLF001
     reset = _reset(method=method, name=reset_name)
@@ -94,6 +102,104 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
         )[0][2]
         == 1.0
     )
+
+
+@pytest.mark.parametrize("competence", [0.0, 0.2, 1.0])
+def test_human_reset_forecasts_success_and_failure_from_competence(*, competence: float) -> None:
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    reset = _reset(method=method, name=RESET_SKILL)
+    belief = WeightedHypothesisBelief(
+        hypotheses=(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(competence=competence, learning_rate=0.0),
+                probability=1.0,
+            ),
+        )
+    )
+    state = method.pomdp_state.model_copy(
+        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+    )
+    before = reset.preconditions | frozenset({_atom(method=method, name="Holding")})
+    outcomes = model.outcomes(
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
+        state=state,
+        action=reset,
+    )
+    assert [p for p, _, _ in outcomes] == pytest.approx([
+        p for p in (competence, 1 - competence) if p > 0
+    ])
+    for _, next_state, after in outcomes:
+        if after != before:
+            assert reset.add_effects <= after
+            assert _atom(method=method, name="Holding") not in after
+        else:
+            assert competence < 1
+        assert next_state.pending_examples == {**state.pending_examples, RESET_SKILL: 1}
+        assert next_state.accumulated_cost == pytest.approx(reset.evaluate_practice_cost())
+    assert (outcomes[0][2] != before) == (competence > 0)
+    assert state.skill_beliefs[RESET_SKILL] == belief
+
+
+def test_human_reset_conditions_only_its_own_hypothetical_belief() -> None:
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    reset = _reset(method=method, name=RESET_SKILL)
+    belief = WeightedHypothesisBelief(
+        hypotheses=tuple(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(competence=k, learning_rate=0.0), probability=0.5
+            )
+            for k in (0.2, 0.8)
+        )
+    )
+    state = method.pomdp_state.model_copy(
+        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+    )
+    outcomes = model.outcomes(
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=reset.preconditions),
+        state=state,
+        action=reset,
+    )
+    assert [p for p, _, _ in outcomes] == pytest.approx([0.5, 0.5])
+    assert [
+        mean_competence(belief=s.skill_beliefs[RESET_SKILL]) for _, s, _ in outcomes
+    ] == pytest.approx([0.68, 0.32])
+    for _, next_state, _ in outcomes:
+        assert {k: v for k, v in next_state.skill_beliefs.items() if k != RESET_SKILL} == {
+            k: v for k, v in state.skill_beliefs.items() if k != RESET_SKILL
+        }
+    assert state.skill_beliefs[RESET_SKILL] == belief
+
+
+@pytest.mark.parametrize("learning_rate", [0.0, 0.1])
+def test_human_learning_changes_next_reset_forecast_after_refit(*, learning_rate: float) -> None:
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    reset = _reset(method=method, name=RESET_SKILL)
+    belief = WeightedHypothesisBelief(
+        hypotheses=(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(competence=0.2, learning_rate=learning_rate),
+                probability=1.0,
+            ),
+        )
+    )
+    state = method.pomdp_state.model_copy(
+        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+    )
+    _, after, atoms = model.outcomes(
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=reset.preconditions),
+        state=state,
+        action=reset,
+    )[0]
+    refitted = refit_belief_state(state=after)
+    outcomes = model.outcomes(
+        environment_state=make_tossing3d_search_state(state=refitted, true_atoms=atoms),
+        state=refitted,
+        action=reset,
+    )
+    assert outcomes[0][0] == pytest.approx(0.2 + learning_rate)
 
 
 @pytest.mark.parametrize("reset_name", sorted(RESET_SKILLS))
