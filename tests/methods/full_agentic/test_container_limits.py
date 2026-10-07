@@ -11,6 +11,7 @@ from hitl_pmp.full_agentic.runner import FullAgenticRunner
 
 def endpoint(**overrides: bool) -> str:
     flags = dict(
+        early_stop=False,
         practice_exhausted=False,
         finished=False,
         coder_oom_killed=False,
@@ -31,6 +32,12 @@ def test_oom_kill_is_the_endpoint_even_with_an_unresolved_step() -> None:
     assert endpoint(coder_oom_killed=True, practice_exhausted=True) == "practice_step_budget"
     assert endpoint(coder_oom_killed=True, finished=True) == "agent_submission"
     assert endpoint() == "model_budget_or_cli_end"
+
+
+def test_three_perfect_evaluations_is_the_endpoint_when_it_stopped_the_run() -> None:
+    # The early stop ends the loop before the budget or any later cause is reached.
+    assert endpoint(early_stop=True) == "three_perfect_evaluations"
+    assert endpoint(early_stop=True, practice_exhausted=True) == "three_perfect_evaluations"
 
 
 @pytest.mark.parametrize("oom", [True, False, None])
