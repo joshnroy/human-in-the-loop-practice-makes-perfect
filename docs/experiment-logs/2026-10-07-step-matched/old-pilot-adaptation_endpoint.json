@@ -1,0 +1,6 @@
+{
+  "endpoint": "agent_submission",
+  "agent_finished": true,
+  "coder_exception": false,
+  "coding_success": true
+}
