@@ -1,0 +1,16 @@
+{
+  "phase": "complete",
+  "updated_unix": 1791381112.274177,
+  "world_version": 34203,
+  "robot_trials": 112,
+  "control_steps": 33877,
+  "human_requests": 101,
+  "physical_cost": 617,
+  "trial_active": false,
+  "agent_finished": true,
+  "unresolved_execution": false,
+  "endpoint": "agent_submission",
+  "baseline_solved": 0,
+  "final_solved": 10,
+  "evaluation_tasks": 10
+}

@@ -1,0 +1,348 @@
+{
+  "pilot_counted_steps": 33978,
+  "prior_runs": [
+    {
+      "machine": "workstation",
+      "method": "ees",
+      "seed": 0,
+      "before": {
+        "cycle": 22,
+        "steps": 33879,
+        "human_resets": 115,
+        "solved": 5
+      },
+      "after": {
+        "cycle": 23,
+        "steps": 35405,
+        "human_resets": 121,
+        "solved": 7
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 77166,
+        "human_resets": 282,
+        "solved": 7
+      },
+      "first_perfect": {
+        "cycle": 15,
+        "steps": 23075,
+        "human_resets": 71,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "workstation",
+      "method": "ees",
+      "seed": 1,
+      "before": {
+        "cycle": 21,
+        "steps": 32634,
+        "human_resets": 107,
+        "solved": 4
+      },
+      "after": {
+        "cycle": 22,
+        "steps": 34170,
+        "human_resets": 113,
+        "solved": 5
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 77805,
+        "human_resets": 272,
+        "solved": 9
+      },
+      "first_perfect": {
+        "cycle": 14,
+        "steps": 21534,
+        "human_resets": 70,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "workstation",
+      "method": "ees",
+      "seed": 2,
+      "before": {
+        "cycle": 22,
+        "steps": 33784,
+        "human_resets": 116,
+        "solved": 5
+      },
+      "after": {
+        "cycle": 23,
+        "steps": 35422,
+        "human_resets": 121,
+        "solved": 9
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 76788,
+        "human_resets": 282,
+        "solved": 10
+      },
+      "first_perfect": {
+        "cycle": 46,
+        "steps": 70520,
+        "human_resets": 258,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "workstation",
+      "method": "pddl",
+      "seed": 0,
+      "before": {
+        "cycle": 17,
+        "steps": 33512,
+        "human_resets": 33,
+        "solved": 3
+      },
+      "after": {
+        "cycle": 18,
+        "steps": 35659,
+        "human_resets": 34,
+        "solved": 3
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 92545,
+        "human_resets": 141,
+        "solved": 5
+      },
+      "first_perfect": null
+    },
+    {
+      "machine": "workstation",
+      "method": "pddl",
+      "seed": 1,
+      "before": {
+        "cycle": 19,
+        "steps": 33879,
+        "human_resets": 56,
+        "solved": 9
+      },
+      "after": {
+        "cycle": 20,
+        "steps": 35649,
+        "human_resets": 59,
+        "solved": 7
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 88293,
+        "human_resets": 161,
+        "solved": 10
+      },
+      "first_perfect": {
+        "cycle": 24,
+        "steps": 42738,
+        "human_resets": 71,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "workstation",
+      "method": "pddl",
+      "seed": 2,
+      "before": {
+        "cycle": 17,
+        "steps": 33127,
+        "human_resets": 36,
+        "solved": 8
+      },
+      "after": {
+        "cycle": 18,
+        "steps": 35145,
+        "human_resets": 38,
+        "solved": 7
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 89671,
+        "human_resets": 144,
+        "solved": 8
+      },
+      "first_perfect": {
+        "cycle": 36,
+        "steps": 66372,
+        "human_resets": 95,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "ees",
+      "seed": 0,
+      "before": {
+        "cycle": 22,
+        "steps": 33541,
+        "human_resets": 122,
+        "solved": 4
+      },
+      "after": {
+        "cycle": 23,
+        "steps": 35049,
+        "human_resets": 128,
+        "solved": 8
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 76449,
+        "human_resets": 293,
+        "solved": 9
+      },
+      "first_perfect": {
+        "cycle": 25,
+        "steps": 37894,
+        "human_resets": 141,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "ees",
+      "seed": 1,
+      "before": {
+        "cycle": 22,
+        "steps": 33639,
+        "human_resets": 120,
+        "solved": 6
+      },
+      "after": {
+        "cycle": 23,
+        "steps": 35312,
+        "human_resets": 126,
+        "solved": 5
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 76980,
+        "human_resets": 282,
+        "solved": 10
+      },
+      "first_perfect": {
+        "cycle": 19,
+        "steps": 29219,
+        "human_resets": 103,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "ees",
+      "seed": 2,
+      "before": {
+        "cycle": 22,
+        "steps": 33905,
+        "human_resets": 120,
+        "solved": 8
+      },
+      "after": {
+        "cycle": 23,
+        "steps": 35517,
+        "human_resets": 125,
+        "solved": 4
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 77315,
+        "human_resets": 284,
+        "solved": 10
+      },
+      "first_perfect": {
+        "cycle": 36,
+        "steps": 55307,
+        "human_resets": 202,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "pddl",
+      "seed": 0,
+      "before": {
+        "cycle": 18,
+        "steps": 33939,
+        "human_resets": 37,
+        "solved": 8
+      },
+      "after": {
+        "cycle": 19,
+        "steps": 35597,
+        "human_resets": 41,
+        "solved": 5
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 88212,
+        "human_resets": 145,
+        "solved": 9
+      },
+      "first_perfect": {
+        "cycle": 41,
+        "steps": 72224,
+        "human_resets": 117,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "pddl",
+      "seed": 1,
+      "before": {
+        "cycle": 19,
+        "steps": 33829,
+        "human_resets": 51,
+        "solved": 5
+      },
+      "after": {
+        "cycle": 20,
+        "steps": 35556,
+        "human_resets": 54,
+        "solved": 5
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 90805,
+        "human_resets": 140,
+        "solved": 6
+      },
+      "first_perfect": {
+        "cycle": 31,
+        "steps": 55729,
+        "human_resets": 85,
+        "solved": 10
+      }
+    },
+    {
+      "machine": "della",
+      "method": "pddl",
+      "seed": 2,
+      "before": {
+        "cycle": 17,
+        "steps": 31899,
+        "human_resets": 45,
+        "solved": 7
+      },
+      "after": {
+        "cycle": 18,
+        "steps": 34013,
+        "human_resets": 46,
+        "solved": 7
+      },
+      "final": {
+        "cycle": 50,
+        "steps": 91644,
+        "human_resets": 144,
+        "solved": 6
+      },
+      "first_perfect": {
+        "cycle": 36,
+        "steps": 66951,
+        "human_resets": 97,
+        "solved": 10
+      }
+    }
+  ]
+}
