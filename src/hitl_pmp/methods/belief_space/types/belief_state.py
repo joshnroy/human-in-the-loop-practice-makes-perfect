@@ -61,4 +61,7 @@ class Tossing3DBeliefState(BaseModel):
     skill_beliefs: dict[str, ConcreteSkillBelief]
     pending_examples: dict[str, Annotated[int, Field(ge=0)]] = Field(default_factory=dict)
     sampler_training: dict[str, SamplerTrainingState] = Field(default_factory=dict)
+    expected_execution_costs: dict[str, Annotated[float, Field(ge=0, allow_inf_nan=False)]] = Field(
+        default_factory=dict
+    )
     accumulated_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)

@@ -86,6 +86,12 @@ class Cli:
             default=None,
         )
         parser.add_argument(
+            "--practice-cost-config",
+            type=Path,
+            default=None,
+            help="Shared step-cost JSON; enables normalized execution costs.",
+        )
+        parser.add_argument(
             "--measurement-interval-steps",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1700,

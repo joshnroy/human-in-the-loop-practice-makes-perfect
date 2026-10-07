@@ -39,6 +39,8 @@ def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -
     particle count at every depth, so planning deliberately uses its posterior
     mean and holds that estimate fixed within one search.
     """
+    if str(action) in state.expected_execution_costs:
+        return state.expected_execution_costs[str(action)]
     belief = state.skill_beliefs.get(action.skill.name)
     if isinstance(belief, (ParticleFilterBelief, BayesianSkillBelief)):
         return belief.mean_cost()
