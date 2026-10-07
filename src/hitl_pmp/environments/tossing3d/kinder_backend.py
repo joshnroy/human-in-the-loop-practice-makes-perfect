@@ -93,13 +93,15 @@ import copy
 import logging
 import os
 from collections import OrderedDict
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
+
+from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
 from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
 from .types import AbstractAtom, PlanarCollisionBox, TossFeasibilityGeometry
@@ -223,6 +225,10 @@ def _build_state_collection_class() -> Any:
             return super().reset(**kwargs)
 
         def step(self, action: Any) -> Any:  # noqa: PLR0917 (gymnasium's own signature)
+            before = getattr(self, "before_control_step", None)
+            after = getattr(self, "after_control_step", None)
+            if before is not None:
+                before()
             output = super().step(action)
             # `.unwrapped` is `TidyBot3DEnv`, which delegates render() to its own
             # `_object_centric_env` (see that class's own `render()`) -- the object-
@@ -231,6 +237,11 @@ def _build_state_collection_class() -> Any:
             unwrapped: Any = self.unwrapped
             object_centric = unwrapped._object_centric_env  # noqa: SLF001
             self.state_list.append(object_centric._get_current_state())  # noqa: SLF001
+            if after is not None:
+                try:
+                    after()
+                except Exception as exc:
+                    raise ControlStepObserverFailed() from exc
             return output
 
         def drain(self) -> list[Any]:
@@ -359,6 +370,8 @@ class KinderBackend(BaseModel):
     _raw_env: Any = PrivateAttr(default=None)
     # What gets stepped: `_raw_env`, or a `RenderCollection` around it while recording.
     _env: Any = PrivateAttr(default=None)
+    _before_control_step: Callable[[], None] | None = PrivateAttr(default=None)
+    _after_control_step: Callable[[], None] | None = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
     # The robot's base pose right after the seeded scene reset: where a movables reset
@@ -590,6 +603,18 @@ class KinderBackend(BaseModel):
             else self._raw_env
         )
         self._env = self.api().state_collection(inner)
+        self._env.before_control_step = self._before_control_step
+        self._env.after_control_step = self._after_control_step
+
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
+        """Observe real controller steps; rebuilding a scene preserves the callbacks."""
+        self._before_control_step = before
+        self._after_control_step = after
+        if self._env is not None:
+            self._env.before_control_step = before
+            self._env.after_control_step = after
 
     def snapshot(self) -> Any:
         """An opaque handle to the live simulator state, restorable by `restore`.
@@ -1259,7 +1284,13 @@ class KinderBackend(BaseModel):
         try:
             controller.reset(state, params)
         except BaseException as exc:  # noqa: BLE001  (any planner failure is a failed skill)
-            if isinstance(exc, KeyboardInterrupt | SystemExit):
+            if isinstance(
+                exc,
+                KeyboardInterrupt
+                | SystemExit
+                | ControlStepLimitReached
+                | ControlStepObserverFailed,
+            ):
                 raise
             logger.debug(
                 "run_controller: %s/%s reset() raised %s: %s",
@@ -1275,7 +1306,13 @@ class KinderBackend(BaseModel):
                 action = controller.step()
                 observation, _, _, _, _ = self._env.step(action)
             except BaseException as exc:  # noqa: BLE001  (same reasoning as above)
-                if isinstance(exc, KeyboardInterrupt | SystemExit):
+                if isinstance(
+                    exc,
+                    KeyboardInterrupt
+                    | SystemExit
+                    | ControlStepLimitReached
+                    | ControlStepObserverFailed,
+                ):
                     raise
                 logger.debug(
                     "run_controller: %s/%s step() raised at step=%d: %s: %s",
@@ -1401,7 +1438,13 @@ class KinderBackend(BaseModel):
             )
             controller.reset(subject, None)
         except BaseException as exc:  # noqa: BLE001  (see `run_controller`)
-            if isinstance(exc, KeyboardInterrupt | SystemExit):
+            if isinstance(
+                exc,
+                KeyboardInterrupt
+                | SystemExit
+                | ControlStepLimitReached
+                | ControlStepObserverFailed,
+            ):
                 raise
             failure = f"{type(exc).__name__}: {exc}"
         finally:
