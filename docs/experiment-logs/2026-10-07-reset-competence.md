@@ -1,5 +1,7 @@
 # Human-reset competence correction and Della restart — 2026-10-07
 
+**Later launch note (2026-10-07, 12:25 p.m. EDT):** The user authorized the workstation full-agentic run after reboot. Its [launch record](2026-10-07-full-agentic-launch.md) records the fixed CI annotation, frozen source, startup correction and active service. Earlier no-launch statements below describe the original capture.
+
 Human-reset forecasts in the POMDP practice planner previously used success
 probability 1 even though the method maintained a posterior over human competence
 κ and learning rate η. The planner now branches with success probability E[κ]

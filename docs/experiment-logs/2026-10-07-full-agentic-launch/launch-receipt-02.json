@@ -1,0 +1,13 @@
+{
+  "service": "hitl-full-agent-step-20261007-02.service",
+  "launched_utc": "2026-10-07T16:24:51.449247+00:00",
+  "source_commit": "5a073c449aef909e3747270b3f3a97e882d61f30",
+  "backend": "RoboCode / Claude Code OAuth",
+  "model": "claude-opus-5-5",
+  "model_budget_usd": 20,
+  "practice_step_budget": 85000,
+  "output": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/full-agent-step-20261007/run-02",
+  "preflight_model_cost_usd": 0,
+  "systemd_result": "Running as unit: hitl-full-agent-step-20261007-02.service; invocation ID: 5bea9b6e09d74320ba7d1b28356e2853",
+  "previous_attempt": "Stopped before broker startup; Unix socket path too long; zero model calls and practice steps"
+}

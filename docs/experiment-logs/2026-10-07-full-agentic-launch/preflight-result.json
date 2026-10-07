@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "model_calls": 0,
+  "practice_steps": 2,
+  "measurement_steps": [
+    0,
+    1,
+    2
+  ],
+  "socket": "passed",
+  "evaluation": [
+    {
+      "task": 0,
+      "seed": 357381689,
+      "solved": false,
+      "steps": 5,
+      "error": null
+    }
+  ],
+  "imports": "frozen source",
+  "claude_auth_present": true
+}

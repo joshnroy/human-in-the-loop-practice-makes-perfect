@@ -1,5 +1,7 @@
 # Tossing3D: controller-step-matched practice, seed 0
 
+**Later launch note (2026-10-07, 12:25 p.m. EDT):** The user authorized the workstation full-agentic run after reboot. Its [launch record](2026-10-07-full-agentic-launch.md) records the fixed CI annotation, frozen source, startup correction and active service. Earlier no-launch statements below describe the original capture.
+
 **Later status note (2026-10-07, 11:33:55 EDT):** Both runs below were cancelled at the user's request after confirming the POMDP planner forced human-reset success to 1. The [correction and restart record](2026-10-07-reset-competence.md) contains a separate final capture, graphs, and replacement job IDs. The original capture and its numbers below are retained.
 
 EES and PDDL are running on Della under the common physical-experience protocol.

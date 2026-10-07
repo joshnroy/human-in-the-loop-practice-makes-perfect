@@ -1,0 +1,73 @@
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from hitl_pmp.agentic_runtime.sandbox import SandboxSettings, DockerContainer
+from hitl_pmp.agentic_runtime.docker_cli import RobocodeDockerTransport
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
+from hitl_pmp.full_agentic.runner import FullAgenticRunner
+from hitl_pmp.full_agentic.world import World, Server
+
+ROOT=Path(__file__).resolve().parent
+
+def main():
+    settings=SandboxSettings.model_validate(json.loads((ROOT/'sandbox.json').read_text()))
+    sys.path.insert(0,str(settings.robocode_checkout/'src'))
+    RobocodeDockerTransport(sandbox=settings,backend='claude',subagent_policy='legacy').modules()
+    assert os.environ.get('CLAUDE_CODE_OAUTH_TOKEN'), 'Claude auth unavailable'
+    import hitl_pmp,kinder,kinder_models
+    for module in (hitl_pmp,kinder,kinder_models):
+        assert Path(module.__file__).is_relative_to(ROOT/'source'), module.__file__
+    output=ROOT/'preflight';output.mkdir()
+    work=output/'workspace';work.mkdir()
+    env=Tossing3DEnvironment(scene_bg=False)
+    try:
+        env.hard_reset()
+        bridge=Tossing3DAgenticBridge(env=env,observation_mode='object_state',step_limit=100)
+        FullAgenticRunner.initial_files(workspace=work,bridge=bridge)
+        world=World(bridge=bridge,workspace=work,output=output,deadline=float('inf'))
+        world.configure_measurements(budget=10,interval=1,human_steps=1)
+        first=world.dispatch(request={'operation':'begin_trial','request_id':'begin','expected_version':0})
+        assert 'result' in first,first
+        command={'operation':'step','request_id':'step','expected_version':1,'action':[0.0]*18}
+        result=world.dispatch(request=command)
+        assert world.dispatch(request=command)==result and world.steps==1,result
+        world.dispatch(request={'operation':'end_trial','request_id':'end','expected_version':2})
+        result=world.dispatch(request={'operation':'request_help','request_id':'help','expected_version':3,'intervention_id':'reset_cube_far'})
+        assert world.counted_steps==2 and world.help_requests==1,result
+        assert [m['practice_steps'] for m in world.measurements]==[0,1,2]
+        with tempfile.TemporaryDirectory(prefix='hitl-preflight-sock-',dir='/tmp') as socket_root:
+            mounted=settings.model_copy(update={'live_tools_dir':Path(socket_root)})
+            container=DockerContainer(settings=mounted)
+            name='hitl-step-preflight-'+str(os.getpid())
+            shutil.copyfile(settings.transport_source(),work/'transport.py')
+            (work/'transport.json').write_text(json.dumps({'listeners':[],'strict_blackbox':True}))
+            (work/'socket_check.py').write_text('from env_client import make_env\nenv=make_env()\nassert env.observe()["world_version"]==4\nprint("socket passed")\n')
+            with Server(path=Path(socket_root)/'world.sock',world=world) as server:
+                process=subprocess.Popen(container.command(name=name,work_dir=work,argv=['/sandbox/transport.py','/sandbox/transport.json',settings.container_python,'/sandbox/socket_check.py']),stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+                try:
+                    deadline=time.monotonic()+60
+                    while process.poll() is None and time.monotonic()<deadline:
+                        server.handle_request()
+                    assert process.poll() is not None,'Socket smoke timeout'
+                    stdout,stderr=process.communicate()
+                    assert process.returncode==0 and 'socket passed' in stdout,stderr
+                finally:
+                    container.remove(name=name)
+                    if process.poll() is None:process.kill();process.wait()
+        initial=Path(world.measurements[0]['snapshot'])
+        results=FullAgenticRunner.evaluate(submission=initial,settings=settings,output=output/'evaluation',count=1,budget=5,seed=0)
+        assert len(results)==1 and results[0]['steps']<=5 and results[0]['error'] is None,results
+        report={'passed':True,'model_calls':0,'practice_steps':2,'measurement_steps':[0,1,2],'socket':'passed','evaluation':results,'imports':'frozen source','claude_auth_present':True}
+        (ROOT/'preflight-result.json').write_text(json.dumps(report,indent=2)+'\n')
+        print(json.dumps(report),flush=True)
+        world.db.close()
+    finally:
+        env.close()
+
+if __name__=='__main__':main()
