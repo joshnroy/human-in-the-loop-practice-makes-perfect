@@ -27,7 +27,11 @@ def main() -> None:
             action = approach.get_action(observation)
             if action is None:
                 break
-            observation = Relay.request(payload={"operation": "step", "action": action})
+            # The wire protocol uses JSON; controllers may return NumPy vectors
+            # or schedules. Keep values/shape unchanged and validation in the relay.
+            observation = Relay.request(
+                payload={"operation": "step", "action": np.asarray(action).tolist()}
+            )
         Relay.request(payload={"operation": "finish", "done": True})
     except BaseException as exc:
         Relay.request(
