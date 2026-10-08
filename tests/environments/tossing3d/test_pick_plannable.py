@@ -303,11 +303,27 @@ def test_an_imagined_reset_makes_the_pick_applicable() -> None:
     atoms = _pickable_atoms(provider=provider)
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     for reset in model.get_valid_actions(environment_state=search_state):
-        ((probability, next_state, after),) = model.outcomes(
+        from hitl_pmp.methods.belief_space.tossing3d_constants import RESET_SKILL
+        from hitl_pmp.methods.belief_space.tossing3d_observation_model import mean_competence
+
+        branches = model.outcomes(
             environment_state=search_state, state=method.pomdp_state, action=reset
         )
-        assert probability == pytest.approx(1.0)
-        assert _pick_plannable(provider=provider) in after
+        successful = [
+            branch for branch in branches if _pick_plannable(provider=provider) in branch[2]
+        ]
+        assert len(successful) == 1
+        probability, next_state, after = successful[0]
+        expected = (
+            mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL])
+            if reset.skill.name == RESET_SKILL
+            else 1.0
+        )
+        assert probability == pytest.approx(expected)
+        assert sum(branch[0] for branch in branches) == pytest.approx(1.0)
+        for _, _, failed_after in branches:
+            if _pick_plannable(provider=provider) not in failed_after:
+                assert failed_after == atoms
         following = model.get_valid_actions(
             environment_state=make_tossing3d_search_state(state=next_state, true_atoms=after)
         )

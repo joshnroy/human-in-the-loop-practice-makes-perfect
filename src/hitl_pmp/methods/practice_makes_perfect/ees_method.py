@@ -24,6 +24,7 @@ from hitl_pmp.core.method.types import (
     Skill,
     SkillPracticeTally,
 )
+from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
@@ -296,6 +297,8 @@ class EesMethod(Method):
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
 
+    _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
+    _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
     # Per ground skill, one bool per execution regardless of the epsilon-greedy
@@ -436,14 +439,28 @@ class EesMethod(Method):
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
 
-    def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
-        """Account for a practice action when it is dispatched, before its outcome.
+    def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
+        self._practice_accounting = accounting
 
-        Called for robot skills and human resets, but not STOP or evaluation
-        actions. EES does not track accumulated action cost, so its default is a
-        no-op. Cost-aware methods override this independently of observe_outcome.
-        """
-        del ground_skill
+    def practice_action_cost(self, *, ground_skill: GroundSkill) -> float:
+        if (
+            self._practice_accounting is not None
+            and ground_skill in self.skill_provider.human_cube_bin_reset_skills()
+        ):
+            destination = self.skill_provider.movables_reset_destination(ground_skill=ground_skill)
+            name = "reset_cube_and_bin_near" if destination == "robot_side" else "reset_cube_far"
+            return (
+                self._practice_accounting.costs.human_weight
+                * self._practice_accounting.human_charge(skill=name).cost
+            )
+        return ground_skill.evaluate_practice_cost()
+
+    def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
+        self._execution_ground_skill = ground_skill
+
+    def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
+        """Receive host-measured execution cost independently of outcome learning."""
+        del cost, steps, complete
 
     def current_competences(self) -> dict[GroundSkill, float]:
         """Every already-instantiated ground skill's `get_current_competence()` --
@@ -562,7 +579,8 @@ class EesMethod(Method):
                 ground_skill_costs = {
                     **ground_skill_costs,
                     **{
-                        ground: ground.evaluate_practice_cost() for ground in cube_bin_ground_skills
+                        ground: self.practice_action_cost(ground_skill=ground)
+                        for ground in cube_bin_ground_skills
                     },
                 }
 
@@ -578,7 +596,7 @@ class EesMethod(Method):
         # Position doesn't matter for the ceiling check, only that a reset
         # appears; `used[0]` is representative (a second reset back-to-back
         # would itself be pure waste, so at most one is ever load-bearing).
-        reset_cost = used[0].evaluate_practice_cost()
+        reset_cost = self.practice_action_cost(ground_skill=used[0])
         ceiling = max(costs.values(), default=self.default_cost())
         if reset_cost <= ceiling:
             return plan
@@ -1438,7 +1456,7 @@ class _EesEpisode:
                 # this "skill" has no controller/effects to score. self._pending
                 # stays untouched: nothing here for observe_pending to settle.
                 raise HumanCubeBinResetRequested(
-                    cost=ground_skill.evaluate_practice_cost(),
+                    cost=method.practice_action_cost(ground_skill=ground_skill),
                     destination=method.skill_provider.movables_reset_destination(
                         ground_skill=ground_skill
                     ),
