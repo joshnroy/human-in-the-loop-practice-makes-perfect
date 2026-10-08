@@ -91,3 +91,22 @@ def test_duration_is_a_positive_whole_number_of_counted_steps(*, duration):
 def test_unknown_human_skill_does_not_fall_back_to_a_price():
     with pytest.raises(ValueError, match="Unknown human skill"):
         PracticeAccounting().human_charge(skill="typo")
+
+
+def test_state_dependent_charge_receives_current_host_observation(*, monkeypatch):
+    import sys
+    import types
+
+    from hitl_pmp.core.practice_costs import ChargeFunction, PracticeAccounting, PracticeCosts
+
+    module = types.ModuleType("cost_observation_test")
+    module.price = lambda **kw: kw["context"]["observation"]["price"]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    state = {"price": 2}
+    accounting = PracticeAccounting(
+        costs=PracticeCosts(robot_step=ChargeFunction(function="cost_observation_test:price"))
+    )
+    accounting.set_observation_provider(provider=lambda: dict(state))
+    assert accounting.robot_charge().cost == 2
+    state["price"] = 9
+    assert accounting.robot_charge().cost == 9
