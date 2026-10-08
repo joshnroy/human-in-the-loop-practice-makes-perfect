@@ -249,11 +249,14 @@ class StepEvaluation:
                     solved=backend.check_goals(),
                 )
                 reason = "goal" if clock.solved else "step_budget"
-                damage_events = []
+                damage_events: list[dict[str, Any]] = []
 
                 def after_evaluation_step(
-                    *, backend=backend, clock=clock, damage_events=damage_events
-                ):
+                    *,
+                    backend: Any = backend,
+                    clock: EvaluationClock = clock,
+                    damage_events: list[dict[str, Any]] = damage_events,
+                ) -> None:
                     damage_events.extend(backend.drain_damage_events())
                     clock.after()
 
@@ -479,7 +482,7 @@ class StepPracticeRunner:
         )
         backend = problem.env.backend()
 
-        def damage_events():
+        def damage_events() -> list[dict[str, Any]]:
             impacts = backend.drain_damage_events()
             if impacts:
                 StepFiles.event(
