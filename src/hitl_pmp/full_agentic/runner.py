@@ -49,6 +49,7 @@ class EvaluationExecutor(DockerPolicyExecutor):
 class ScoreBridge:
     def __init__(self, *, bridge: Any, budget: int) -> None:
         self.bridge = bridge
+        self.damage_events = []
         self.clock = EvaluationClock(budget=budget, check_goal=bridge.env.backend().check_goals)
 
     @property
@@ -65,6 +66,7 @@ class ScoreBridge:
         if self.clock.solved or self.clock.steps >= self.clock.budget:
             raise RuntimeError("episode_finished")
         observation = self.bridge.step(action=action)
+        self.damage_events.extend(getattr(self.bridge, "damage_events", lambda: [])())
         self.clock.after()
         return observation
 
@@ -114,6 +116,8 @@ class FullAgenticRunner:
         count: int,
         budget: int = 500,
         seed: int = 0,
+        damage_cost: float | None = None,
+        mat_size: float = 4,
     ) -> list[dict[str, Any]]:
         output.mkdir(parents=True, exist_ok=True)
         if not (submission / "approach.py").is_file():
@@ -126,7 +130,7 @@ class FullAgenticRunner:
                 value=dict(tasks=records, num_solved=0, num_total=count, complete=True),
             )
             return records
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(damage_cost=damage_cost, mat_size=mat_size)
         tasks = Tossing3DTasks(env=env, seed=seed)
         results = []
         try:
@@ -173,6 +177,8 @@ class FullAgenticRunner:
                                 seed=task_seed,
                                 solved=bool(bridge.success),
                                 steps=bridge.clock.steps,
+                                damage_contacts=len(bridge.damage_events),
+                                damage_cost=sum(e["cost"] for e in bridge.damage_events),
                                 error=error,
                             )
                         )
@@ -218,6 +224,37 @@ class FullAgenticRunner:
         )
 
     @staticmethod
+    def variant_prompt(
+        *, prompt: str, variant: str, fragile: bool, mat_size: float, damage_cost: float
+    ) -> str:
+        if variant not in {"original", "new-wording"}:
+            raise ValueError("Unknown prompt variant")
+        if variant == "new-wording":
+            prompt += "\n" + (HERE / "continuation_cost_prompt.md").read_text()
+        if fragile:
+            prompt = prompt.replace("C = C_R + w_H C_H", "C = C_R + w_H C_H + C_D")
+            prompt += (
+                "\nThe cube is fragile. A protective squishy square mat of side "
+                f"{mat_size:g} m surrounds the bin, centered on and following "
+                "its x/y position and yaw. "
+                "The mat can overlap the wall and robot footprint. "
+                "It has no collision geometry "
+                "and does not change contact physics; its protection is modeled through cost. "
+                f"Each new cube impact on bare ground outside the mat costs {damage_cost:g} "
+                "under the configured damage_contact function. C_D is the sum of these damage "
+                "charges and is included in total practice cost C. "
+                "All robot steps and human "
+                "requests retain their configured costs. Contacts inside the mat, with the bin, "
+                "or with the wall add no damage charge. Initial placement and human placement "
+                "are exempt. Resting contact does not repeatedly charge; separate rebounds can. "
+                "Damage does not add practice steps. Deployment success still requires the cube "
+                "inside the bin. The host reports damage events and accumulated damage cost. "
+                "Include expected future damage alongside robot and human costs "
+                "in your decisions.\n"
+            )
+        return prompt
+
+    @staticmethod
     def initial_files(*, workspace: Any, bridge: Any) -> None:
         shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
         Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
@@ -235,6 +272,11 @@ class FullAgenticRunner:
         parser.add_argument("--practice-cost-config", type=Path, default=None)
         parser.add_argument("--evaluation-control-steps", type=int, default=500)
         parser.add_argument("--num-test-tasks", type=int, default=10)
+        parser.add_argument("--fragile-object", action="store_true")
+        parser.add_argument("--mat-size", type=float, default=4)
+        parser.add_argument(
+            "--prompt-variant", choices=("original", "new-wording"), default="original"
+        )
         parser.add_argument("--seed", type=int, default=0)
         parser.add_argument("--hours", type=float, default=None)
         parser.add_argument("--model-budget", type=float, default=20)
@@ -260,6 +302,9 @@ class FullAgenticRunner:
         workspace.mkdir(parents=True)
         protocol = dict(
             method="full-agent",
+            environment="FragileTossing3D" if args.fragile_object else "Tossing3D",
+            mat_size=args.mat_size,
+            prompt_variant=args.prompt_variant,
             status="step_matched",
             seed=args.seed,
             adaptation_hours=args.hours,
@@ -270,7 +315,7 @@ class FullAgenticRunner:
             max_human_requests=None,
             objective=(
                 "E[autonomous_success] - lambda * "
-                "(sum_robot_step_cost + human_weight * sum_human_skill_cost)"
+                "(sum_robot_step_cost + human_weight * sum_human_skill_cost + sum_damage_cost)"
             ),
             evaluation=dict(
                 num_tasks=args.num_test_tasks,
@@ -290,7 +335,10 @@ class FullAgenticRunner:
         settings = settings.model_copy(
             update={"artifact_dir": output / "execution", "timeout_seconds": 60}
         )
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(
+            damage_cost=costs.damage_contact.value if args.fragile_object else None,
+            mat_size=args.mat_size,
+        )
         pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
         futures = []
         socket_dir = Path(tempfile.mkdtemp(prefix="hitl-full-sock-", dir="/tmp"))
@@ -322,6 +370,8 @@ class FullAgenticRunner:
                     count=args.num_test_tasks,
                     budget=args.evaluation_control_steps,
                     seed=args.seed,
+                    damage_cost=env.damage_cost,
+                    mat_size=env.mat_size,
                 )
                 futures.append((record, future))
 
@@ -333,6 +383,13 @@ class FullAgenticRunner:
                 costs=costs,
             )
             prompt = FullAgenticRunner.task_prompt(costs=costs)
+            prompt = FullAgenticRunner.variant_prompt(
+                prompt=prompt,
+                variant=args.prompt_variant,
+                fragile=args.fragile_object,
+                mat_size=args.mat_size,
+                damage_cost=costs.damage_contact.value,
+            )
             prompt += (
                 f"\nPractice has a total budget of {args.practice_step_budget} counted steps: "
                 "one per robot control period plus each human skill's configured duration. "
@@ -383,9 +440,11 @@ class FullAgenticRunner:
                             success=result.success,
                             error=result.error,
                             total_cost_usd=result.total_cost_usd,
-                            generation_metrics=vars(result.generation_metrics)
-                            if result.generation_metrics
-                            else None,
+                            generation_metrics=(
+                                vars(result.generation_metrics)
+                                if result.generation_metrics
+                                else None
+                            ),
                         ),
                     )
                 except BaseException:
@@ -425,19 +484,31 @@ class FullAgenticRunner:
             endpoint = (
                 "three_perfect_evaluations"
                 if early_stop
-                else "practice_step_budget"
-                if world.counted_steps >= args.practice_step_budget
-                else "agent_submission"
-                if world.finished
-                else "unresolved_execution"
-                if world.uncertain
-                else "external_stop"
-                if (output / "STOP").exists()
-                else "wall_time_limit"
-                if time.monotonic() >= deadline
-                else "infrastructure_failure"
-                if coder_error
-                else "model_budget_or_cli_end"
+                else (
+                    "practice_step_budget"
+                    if world.counted_steps >= args.practice_step_budget
+                    else (
+                        "agent_submission"
+                        if world.finished
+                        else (
+                            "unresolved_execution"
+                            if world.uncertain
+                            else (
+                                "external_stop"
+                                if (output / "STOP").exists()
+                                else (
+                                    "wall_time_limit"
+                                    if time.monotonic() >= deadline
+                                    else (
+                                        "infrastructure_failure"
+                                        if coder_error
+                                        else "model_budget_or_cli_end"
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
             )
             Files.atomic_json(
                 path=output / "adaptation_endpoint.json",

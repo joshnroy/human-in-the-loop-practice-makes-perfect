@@ -50,3 +50,5 @@ Use the supplied interpreter to execute practice scripts:
 ```bash
 /opt/robocode-strict/bin/python your_script.py
 ```
+
+hint: in order to minimize human cost, consider practicing tosses on the robot side and then transferring it zero shot to the far side. when practicing tosses on the robot side, minimize human cost by picking up the cube after each toss (either from inside or outside the bin). parameterize your tossing controller in such a way that it will zero-shot transfer from same side to far side

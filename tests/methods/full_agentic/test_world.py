@@ -79,6 +79,21 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(self.world.counted_steps, 1002)
         self.assertEqual(self.world.observation()["accumulated_cost"], 1002)
 
+    def test_damage_is_charged_once_on_receipt_replay_and_logged_at_measurement(self):
+        from hitl_pmp.core.practice_costs import ChargeFunction, PracticeCosts
+
+        self.bridge.damage_events = lambda: [dict(event_id=1, cube="cube_0", cost=10)]
+        self.world.configure_measurements(
+            budget=10, interval=1, costs=PracticeCosts(damage_contact=ChargeFunction(value=10))
+        )
+        request = self.request("step", action=[0] * 18)
+        response = self.world.dispatch(request=request)
+        self.assertEqual(response, self.world.dispatch(request=request))
+        self.assertEqual(self.world.accounting.damage_cost, 10)
+        self.assertEqual(self.world.counted_steps, 1)
+        self.assertEqual(self.world.measurements[-1]["physical_cost"], 11)
+        self.assertEqual(self.world.observation()["last_damage_events"][0]["cost"], 10)
+
     def test_failed_human_attempt_is_priced_once_with_its_own_duration(self):
         from hitl_pmp.core.practice_costs import ChargeFunction, HumanCharge, PracticeCosts
 

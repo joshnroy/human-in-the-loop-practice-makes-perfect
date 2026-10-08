@@ -152,13 +152,19 @@ class Tossing3DPomdpMethod(EesMethod):
             estimates[str(ground)] = (
                 self.practice_action_cost(ground_skill=ground)
                 if ground in humans
-                else duration * price
+                else (
+                    sum(self._measured_execution_costs[ground])
+                    / len(self._measured_execution_costs[ground])
+                    if self._measured_execution_costs.get(ground)
+                    else duration * price
+                )
             )
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"expected_execution_costs": estimates}
         )
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
+        super().observe_execution_cost(cost=cost, steps=steps, complete=complete)
         if self._practice_accounting is None:
             return
         ground = self._execution_ground_skill
@@ -402,9 +408,11 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=configured_cost_observation,
-            cost_observation_source="configured_practice_cost"
-            if self._practice_accounting is None
-            else "host_control_steps",
+            cost_observation_source=(
+                "configured_practice_cost"
+                if self._practice_accounting is None
+                else "host_control_steps"
+            ),
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -500,9 +508,11 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=observed_cost,
-            cost_observation_source="configured_practice_cost"
-            if self._practice_accounting is None
-            else "host_control_steps",
+            cost_observation_source=(
+                "configured_practice_cost"
+                if self._practice_accounting is None
+                else "host_control_steps"
+            ),
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -637,9 +647,9 @@ class Tossing3DPomdpMethod(EesMethod):
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),
-            action="STOP"
-            if action == STOP_ACTION
-            else action.model_dump(mode="json", fallback=str),
+            action=(
+                "STOP" if action == STOP_ACTION else action.model_dump(mode="json", fallback=str)
+            ),
             value=value,
             horizon=horizon if planner.name == "expectimax" else None,
             remaining_practice_actions=self._remaining_practice_actions,

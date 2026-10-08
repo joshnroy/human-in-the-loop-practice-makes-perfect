@@ -43,7 +43,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from gymnasium.spaces import Box
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
@@ -89,6 +89,9 @@ class Tossing3DEnvironment(Environment):
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    damage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    mat_size: float = Field(default=4, gt=0, allow_inf_nan=False)
 
     # KINDER's `MujocoTidyBotRobotObjectType` carries 22 features; these are the four the
     # symbolic layer reads. `pos_gripper` is what upstream's own `HandEmpty`/`Holding`
@@ -238,8 +241,11 @@ class Tossing3DEnvironment(Environment):
                     f"this domain's symbolic layer describes the o1 scene, not "
                     f"{self.variant!r}; use --variant o1"
                 )
+            family = "FragileTossing3D" if self.damage_cost is not None else "Tossing3D"
             self._backend = KinderBackend(
-                env_id=f"kinder/Tossing3D-{self.variant}-v0",
+                env_id=f"kinder/{family}-{self.variant}-v0",
+                damage_cost=self.damage_cost,
+                mat_size=self.mat_size,
                 scene_bg=self.scene_bg,
                 task_config_path=self.layout.task_config_path(),
             )

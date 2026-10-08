@@ -345,6 +345,8 @@ class KinderBackend(BaseModel):
 
     task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
+    damage_cost: float | None = None
+    mat_size: float = 4
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
     render_mode: str = "rgb_array"
@@ -483,7 +485,11 @@ class KinderBackend(BaseModel):
 
                 env_spec = EnvSpec(
                     id=self.env_id,
-                    entry_point="kinder.envs.dynamic3d.envs:TidyBot3DEnv",
+                    entry_point=(
+                        "kinder.envs.dynamic3d.fragile_tossing:FragileTossing3DEnv"
+                        if self.damage_cost is not None
+                        else "kinder.envs.dynamic3d.envs:TidyBot3DEnv"
+                    ),
                     kwargs={
                         "task_config_path": str(self.task_config_path.resolve()),
                         "scene_render_camera": "task_view",
@@ -495,6 +501,11 @@ class KinderBackend(BaseModel):
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
                 allow_state_access=self.allow_state_access,
+                **(
+                    {"damage_cost": self.damage_cost, "mat_size": self.mat_size}
+                    if self.damage_cost is not None
+                    else {}
+                ),
             )
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))
@@ -1342,6 +1353,14 @@ class KinderBackend(BaseModel):
             limit,
         )
         return ControllerRun(steps=limit, terminated=False)
+
+    def drain_damage_events(self) -> list[dict[str, Any]]:
+        if self.damage_cost is None:
+            return []
+        env = self._object_centric()
+        events = list(env.last_damage_events)
+        env.last_damage_events = []
+        return events
 
     def _ground_controller(
         self,
