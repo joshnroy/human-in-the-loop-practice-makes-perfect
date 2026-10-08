@@ -73,3 +73,21 @@ def test_prompt_reports_configured_prices_without_stale_unit_equations():
     assert '"value": 7.0' in prompt
     assert "both equal to 1 initially" not in prompt
     assert r"c_h(e) \equiv 1" not in prompt
+
+
+@pytest.mark.parametrize("human_weight", [1, 20])
+def test_rendered_prompt_requests_logged_decision_summaries(*, human_weight):
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.full_agentic.runner import FullAgenticRunner
+
+    prompt = FullAgenticRunner.task_prompt(costs=PracticeCosts(human_weight=human_weight))
+    summary = next(line for line in prompt.splitlines() if '"Decision summary:"' in line)
+    assert "Before each practice batch" in summary
+    assert "switch strategy or choose to finish" in summary
+    assert "ordinary response" in summary
+    assert "chosen practice side and next action" in summary
+    assert "expected benefit" in summary
+    assert "robot/human cost tradeoff" in summary
+    assert "observations" in summary
+    assert "reason for any switch or stop" in summary
+    assert "uncertainty" in summary
