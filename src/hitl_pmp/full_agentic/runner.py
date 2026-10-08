@@ -49,7 +49,7 @@ class EvaluationExecutor(DockerPolicyExecutor):
 class ScoreBridge:
     def __init__(self, *, bridge: Any, budget: int) -> None:
         self.bridge = bridge
-        self.damage_events = []
+        self.damage_events: list[dict[str, Any]] = []
         self.clock = EvaluationClock(budget=budget, check_goal=bridge.env.backend().check_goals)
 
     @property
