@@ -91,3 +91,21 @@ def test_rendered_prompt_requests_logged_decision_summaries(*, human_weight):
     assert "observations" in summary
     assert "reason for any switch or stop" in summary
     assert "uncertainty" in summary
+
+
+@pytest.mark.parametrize("human_weight", [1, 100])
+def test_prompt_requests_future_cost_explanations_before_practice_decisions(*, human_weight):
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.full_agentic.runner import FullAgenticRunner
+
+    prompt = FullAgenticRunner.task_prompt(costs=PracticeCosts(human_weight=human_weight))
+    explanation = next(
+        line for line in prompt.splitlines() if line.startswith("For each practice decision")
+    )
+    assert "human reset" in explanation
+    assert "robot controller execution" in explanation
+    assert "expected subsequent robot steps and human requests" in explanation
+    assert "best alternative" in explanation
+    assert "expected deployment success" in explanation
+    assert "otherwise state what is unknown" in explanation
+    assert "before executing the decision" in explanation
