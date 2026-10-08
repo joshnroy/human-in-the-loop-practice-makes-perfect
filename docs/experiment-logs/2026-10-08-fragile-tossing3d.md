@@ -49,3 +49,13 @@ feedback to the coding agents and does not restart jobs automatically.
 PR dependencies: KINDER #206 → HITL #417 → this results PR. Existing KINDER #204
 and kinder-baselines #171 provide the previously used reset/controller APIs and
 include latest main. No existing experiments were killed or overwritten.
+
+## Post-launch review-only fixes
+
+Type annotations and new-file lint were corrected after launch. These do not alter
+experiment behavior; all four runs continue on the source commits recorded in
+source-versions.json (HITL 4edfaa641, KINDER f564e8c, controllers c18056d).
+KINDER CI additionally reports inherited lint/type failures in files outside the
+new variant (placement_samplers, action-space return types, and existing modules).
+The new environment module passes its focused type check. The integration's four
+new annotation errors were corrected, and 53 affected tests passed again.
