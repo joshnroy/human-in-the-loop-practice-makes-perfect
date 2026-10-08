@@ -1,0 +1,61 @@
+{
+  "environment": "FragileTossing3D",
+  "mat_size": 4,
+  "damage_cost": 10,
+  "human_cost": 100,
+  "seed": 0,
+  "practice_steps": 85000,
+  "measurement_interval": 1700,
+  "evaluation_tasks": 10,
+  "evaluation_steps": 500,
+  "stop_after_perfect_evaluations": 3,
+  "monitor_interval_seconds": 600,
+  "runs": [
+    {
+      "name": "ees-h100-d10",
+      "method": "ees",
+      "location": "della",
+      "arm": "ees",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-seed0-20261008/ees-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-seed0-20261008/ees-h100-d10/results/ees/0"
+    },
+    {
+      "name": "expectimax-h100-d10",
+      "method": "expectimax",
+      "location": "della",
+      "arm": "pddl",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-seed0-20261008/expectimax-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-seed0-20261008/expectimax-h100-d10/results/pomdp/0"
+    },
+    {
+      "name": "agentic-original-h100-d10",
+      "method": "agentic",
+      "prompt_variant": "original",
+      "location": "workstation",
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-original-h100-d10",
+      "result_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-original-h100-d10/run",
+      "unit": "hitl-fragile-original-h100-d10-seed0-20261008",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "model_budget": 20
+    },
+    {
+      "name": "agentic-new-wording-h100-d10",
+      "method": "agentic",
+      "prompt_variant": "new-wording",
+      "location": "workstation",
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-new-wording-h100-d10",
+      "result_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-new-wording-h100-d10/run",
+      "unit": "hitl-fragile-new-wording-h100-d10-seed0-20261008",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "model_budget": 20
+    }
+  ],
+  "source_versions": {
+    "hitl": "4edfaa641e6afc82545d9c0683ce89f619fb2b66",
+    "kindergarden": "f564e8c21e3b8f037aa2cbefc9e60da6e6fcba4a",
+    "kinder-baselines": "c18056d2f0530599630a9962d210bb2ef9e040d5",
+    "robocode_tree_sha256": "9f268a0e1da27faffbefc592883fec5a447c682df78dd50e0ca44dbdfa1502ff"
+  }
+}
