@@ -1,0 +1,10 @@
+SMOKE ees
+Running 1 runs with 1 workers (sweep 20261008T162858-0400-804262-4417a41f)...
+[ok] ees seed=0
+
+1/1 runs succeeded.
+SMOKE expectimax
+Running 1 runs with 1 workers (sweep 20261008T162925-0400-804567-f12b2b3a)...
+[ok] pomdp seed=0
+
+1/1 runs succeeded.

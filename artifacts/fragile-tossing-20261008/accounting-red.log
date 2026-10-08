@@ -1,0 +1,26 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____________ test_damage_is_additive_and_does_not_buy_experience ______________
+
+    def test_damage_is_additive_and_does_not_buy_experience():
+>       accounting = PracticeAccounting(costs=PracticeCosts(damage_contact=ChargeFunction(value=10)))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for PracticeCosts
+E       damage_contact
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=ChargeFunction(value=10.0, function=None), input_type=ChargeFunction]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+.codex-worktrees/fragile-tossing-integration/tests/core/test_damage_costs.py:7: ValidationError
+_____________ test_measurement_includes_damage_from_boundary_step ______________
+
+    def test_measurement_includes_damage_from_boundary_step():
+>       accounting = PracticeAccounting(costs=PracticeCosts(damage_contact=ChargeFunction(value=10)))
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for PracticeCosts
+E       damage_contact
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=ChargeFunction(value=10.0, function=None), input_type=ChargeFunction]
+E           For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden
+
+.codex-worktrees/fragile-tossing-integration/tests/core/test_damage_costs.py:18: ValidationError
+=========================== short test summary info ============================
+FAILED .codex-worktrees/fragile-tossing-integration/tests/core/test_damage_costs.py::test_damage_is_additive_and_does_not_buy_experience
+FAILED .codex-worktrees/fragile-tossing-integration/tests/core/test_damage_costs.py::test_measurement_includes_damage_from_boundary_step
+2 failed in 0.84s

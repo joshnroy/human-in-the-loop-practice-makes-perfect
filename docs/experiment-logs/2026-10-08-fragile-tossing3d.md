@@ -1,6 +1,11 @@
 # Fragile Tossing3D pilot — 2026-10-08
 
-Status: validated and prepared; production launch receipts will be appended.
+Status: all four production runs launched on October 8, 2026 around 16:40 EDT.
+Della EES job **15238998** and expectimax job **15238999** are running. Both local
+agentic systemd services are active; the original and new-wording variants each
+have a $20 model cap. Independent 600-second monitors are running on both hosts.
+Exact timestamps and service/job identities are in the launch receipts.
+No final learning results are available yet.
 
 | Method | Location | Seed | Human cost (each skill) | Damage cost | Mat |
 |---|---|---:|---:|---:|---|

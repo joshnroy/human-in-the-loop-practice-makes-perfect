@@ -1,0 +1,22 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_fragile_forecast_includes_observed_damage_without_counting_it_as_steps __
+
+    def test_fragile_forecast_includes_observed_damage_without_counting_it_as_steps():
+        from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts, ChargeFunction
+        from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+        method = _build(pomdp_num_particles=32)
+        method.configure_practice_accounting(accounting=PracticeAccounting(
+            costs=PracticeCosts(damage_contact=ChargeFunction(value=10))))
+        pick = _grounding(method=method, name=PICK_SKILL)
+        method.record_action_cost(ground_skill=pick)
+        method.observe_execution_cost(cost=30, steps=20, complete=True)
+>       assert estimated_action_cost(state=method.pomdp_state, action=pick) == 30
+E       assert 20.0 == 30
+E        +  where 20.0 = <function estimated_action_cost at 0x7af78f37f640>(state=Tossing3DBeliefState(skill_beliefs={'PickCube': BayesianSkillBelief(model_name='local_trend', engine='particle', confi...=())), Object(name='opposite_side', type=Type(name='tossing3d_side', feature_names=())))": 1.0}, accumulated_cost=30.0), action=GroundSkill(skill=Skill(name='PickCube', parameters=(Variable(name='robot', type=Type(name='tossing3d_robot', feature_...type=Type(name='tossing3d_bin', feature_names=('x', 'y', 'z', 'x_min', 'y_min', 'z_min', 'x_max', 'y_max', 'z_max'))))))
+E        +    where Tossing3DBeliefState(skill_beliefs={'PickCube': BayesianSkillBelief(model_name='local_trend', engine='particle', confi...=())), Object(name='opposite_side', type=Type(name='tossing3d_side', feature_names=())))": 1.0}, accumulated_cost=30.0) = Tossing3DPomdpMethod(env=Tossing3DEnvironment(current_state=None, damage_cost=None, mat_size=4, layout=<Tossing3DLayou...=0.005, pomdp_learning_time_scale=1.0, pomdp_linear_cost_lambda=3e-06, robot_duration_prior_steps=1, decision_log=None).pomdp_state
+
+.codex-worktrees/fragile-tossing-integration/tests/methods/belief_space/test_tossing3d_method.py:676: AssertionError
+=========================== short test summary info ============================
+FAILED .codex-worktrees/fragile-tossing-integration/tests/methods/belief_space/test_tossing3d_method.py::test_fragile_forecast_includes_observed_damage_without_counting_it_as_steps
+1 failed, 33 deselected in 0.84s

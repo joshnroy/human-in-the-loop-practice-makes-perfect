@@ -1,0 +1,32 @@
+{
+  "runs": [
+    {
+      "name": "agentic-original-h100-d10",
+      "method": "agentic",
+      "prompt_variant": "original",
+      "location": "workstation",
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-original-h100-d10",
+      "result_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-original-h100-d10/run",
+      "unit": "hitl-fragile-original-h100-d10-seed0-20261008",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "model_budget": 20,
+      "launched_unix": 1791492029.169406,
+      "service_response": "Running as unit: hitl-fragile-original-h100-d10-seed0-20261008.service; invocation ID: e4d371e8da33416884d40b7fcd5ffb47"
+    },
+    {
+      "name": "agentic-new-wording-h100-d10",
+      "method": "agentic",
+      "prompt_variant": "new-wording",
+      "location": "workstation",
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-new-wording-h100-d10",
+      "result_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-20261008/agentic-new-wording-h100-d10/run",
+      "unit": "hitl-fragile-new-wording-h100-d10-seed0-20261008",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "model_budget": 20,
+      "launched_unix": 1791492029.1822748,
+      "service_response": "Running as unit: hitl-fragile-new-wording-h100-d10-seed0-20261008.service; invocation ID: 056c7c51fefc4faeb42d76f3ceba2b92"
+    }
+  ]
+}

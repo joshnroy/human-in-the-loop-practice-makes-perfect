@@ -1,0 +1,15 @@
+
+==================================== ERRORS ====================================
+_ ERROR collecting .codex-worktrees/kindergarden-tossing3d-mat/tests/envs/dynamic3d/test_fragile_tossing.py _
+ImportError while importing test module '/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/.codex-worktrees/kindergarden-tossing3d-mat/tests/envs/dynamic3d/test_fragile_tossing.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/josh/miniconda3/envs/hitl-pmp/lib/python3.10/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+.codex-worktrees/kindergarden-tossing3d-mat/tests/envs/dynamic3d/test_fragile_tossing.py:5: in <module>
+    from kinder.envs.dynamic3d.fragile_tossing import DamageTracker, inside_mat
+E   ModuleNotFoundError: No module named 'kinder.envs.dynamic3d.fragile_tossing'
+=========================== short test summary info ============================
+ERROR .codex-worktrees/kindergarden-tossing3d-mat/tests/envs/dynamic3d/test_fragile_tossing.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.41s

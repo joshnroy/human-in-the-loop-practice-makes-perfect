@@ -1,0 +1,20 @@
+pybullet build time: Mar 13 2026 19:11:15
+Auto-download of MimicLabs assets is disabled via DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD environment variable. If you want to enable it, unset this variable or set it to a falsy value.
+{
+  "unchanged_physics": "identical qpos after reset and five robot steps",
+  "outside_impacts": [
+    {
+      "event_id": 1,
+      "cube": "cube_0",
+      "position": [
+        -1.0071100826830985,
+        -0.03463302938293882,
+        -0.0008883974999974141
+      ],
+      "simulation_time": 1.9464999999998411,
+      "cost": 10.0
+    }
+  ],
+  "inside_drop": "no damage",
+  "human_resets": "both sides follow bin and exempt placement"
+}
