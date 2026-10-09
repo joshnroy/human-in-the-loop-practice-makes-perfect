@@ -206,7 +206,14 @@ class DeploymentSnapshot:
 
 class StepEvaluation:
     @staticmethod
-    def run(*, snapshot: str, configuration: dict[str, Any], output: str) -> dict[str, Any]:
+    def run(
+        *,
+        snapshot: str,
+        configuration: dict[str, Any],
+        output: str,
+        prepare_problem: Callable[..., Any] | None = None,
+        restore_method: Callable[..., Any] = DeploymentSnapshot.restore,
+    ) -> dict[str, Any]:
         # Import here to avoid a cycle with the domain's CLI composition root.
         from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
         from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -217,6 +224,8 @@ class StepEvaluation:
         directory.mkdir(parents=True, exist_ok=False)
         raw = Path(snapshot).read_bytes()
         problem = Tossing3DCli.build_evaluation_problem(args=args)
+        if prepare_problem is not None:
+            problem = prepare_problem(problem=problem, configuration=configuration)
         writer = StateLogWriter(
             output_path=directory / "states.jsonl",
             header=StateLogHeader(
@@ -234,7 +243,7 @@ class StepEvaluation:
         try:
             problem.hard_reset()
             tasks = [problem.sample_test_task() for _ in range(args.num_test_tasks)]
-            method = DeploymentSnapshot.restore(
+            method = restore_method(
                 raw=raw,
                 env=problem.env,
                 provider=Tossing3DSkillProvider(env=problem.env, offer_human_reset=False),
@@ -369,8 +378,17 @@ class StepProtocolEntry:
 
 class StepPracticeRunner:
     @staticmethod
-    def run(*, args: argparse.Namespace, method: Any, problem: Any) -> Metrics:
-        if args.env != "tossing3d" or args.method not in {"ees", "pomdp"}:
+    def run(
+        *,
+        args: argparse.Namespace,
+        method: Any,
+        problem: Any,
+        encode_snapshot: Callable[..., bytes] = DeploymentSnapshot.encode,
+        evaluate_snapshot: Callable[..., dict[str, Any]] = StepEvaluation.run,
+        initialize: Callable[[], None] = lambda: None,
+        stop_exceptions: tuple[type[Exception], ...] = (),
+    ) -> Metrics:
+        if args.env != "tossing3d" or args.method not in {"ees", "pomdp", "pomdp-agentic-skills"}:
             raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
             raise ValueError(
@@ -442,7 +460,7 @@ class StepPracticeRunner:
             )
 
         def measure() -> None:
-            raw = DeploymentSnapshot.encode(method=method)
+            raw = encode_snapshot(method=method)
             index = len(records)
             path = output / "snapshots" / f"{index:04d}.pickle"
             path.write_bytes(raw)
@@ -463,7 +481,7 @@ class StepPracticeRunner:
             futures.append((
                 record,
                 pool.submit(
-                    StepEvaluation.run,
+                    evaluate_snapshot,
                     snapshot=str(path),
                     configuration=configuration,
                     output=str(output / "evaluations" / f"{index:04d}"),
@@ -520,6 +538,7 @@ class StepPracticeRunner:
             ).model_dump(mode="json"),
         )
         try:
+            initialize()
             measure()
             while clock.steps < clock.budget:
                 if (output / "STOP").exists():
@@ -661,6 +680,8 @@ class StepPracticeRunner:
                 status()
             if endpoint == "running":
                 endpoint = "practice_step_budget"
+        except stop_exceptions:
+            endpoint = "model_budget"
         except ControlStepLimitReached:
             endpoint = "remaining_budget_below_action_duration"
         except BaseException:
