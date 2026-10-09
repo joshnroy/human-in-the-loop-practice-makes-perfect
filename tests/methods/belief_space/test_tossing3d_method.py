@@ -662,3 +662,23 @@ def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_plan
     assert episode is not None
     assert episode._goal_phase_done is True
     assert episode._random_mode is False
+
+
+def test_fragile_forecast_includes_observed_damage_without_counting_it_as_steps():
+    from hitl_pmp.core.practice_costs import ChargeFunction, PracticeAccounting, PracticeCosts
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+
+    method = _build(pomdp_num_particles=32)
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(costs=PracticeCosts(damage_contact=ChargeFunction(value=10)))
+    )
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=30, steps=20, complete=True)
+    assert estimated_action_cost(state=method.pomdp_state, action=pick) == 30
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=20, steps=20, complete=True)
+    assert estimated_action_cost(state=method.pomdp_state, action=pick) == 25
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=3, steps=3, complete=False)
+    assert estimated_action_cost(state=method.pomdp_state, action=pick) == 25

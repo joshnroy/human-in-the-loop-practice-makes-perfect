@@ -99,6 +99,8 @@ class Tossing3DCli:
             "Upstream's own test seed, and the one every measured number in this "
             "domain's docs was taken at.",
         )
+        parser.add_argument("--fragile-object", action="store_true")
+        parser.add_argument("--mat-size", type=float, default=1)
         task_fields = Tossing3DTasks.model_fields
         parser.add_argument(
             "--test-env-seed-offset",
@@ -279,7 +281,14 @@ class Tossing3DCli:
         lazy, so the MuJoCo scene appears on first reset/step rather than here. That is
         what lets the tests above run on CI without the optional KINDER extra.
         """
+        from hitl_pmp.core.practice_costs import PracticeCosts
+
+        costs = PracticeCosts.load(path=getattr(args, "practice_cost_config", None))
         env = Tossing3DEnvironment(
+            damage_cost=(
+                costs.damage_contact.value if getattr(args, "fragile_object", False) else None
+            ),
+            mat_size=getattr(args, "mat_size", 1),
             layout=getattr(args, "layout", Tossing3DLayout.BARRIER),
             variant=args.variant,
             scene_bg=args.scene_bg,

@@ -110,6 +110,14 @@ class Tossing3DAgenticBridge(BaseModel):
             "simulation_time_s": simulation_time,
             "action_spec": self.action_spec(),
         }
+        if self.env.damage_cost is not None:
+            observation["fragile_object"] = dict(
+                mat_size=self.env.mat_size,
+                damage_cost_per_impact=self.env.damage_cost,
+                mat_attached_to="bin_0",
+                mat_frame="bin_xy_yaw",
+                mat_collision=False,
+            )
         if self.observation_mode == "object_state":
             observation["objects"] = self._objects(proprioception=proprioception)
             observation["state_spec"] = {
@@ -418,6 +426,9 @@ class Tossing3DAgenticBridge(BaseModel):
         observation, _, _, _, _ = backend._env.step(array)  # noqa: SLF001
         backend._state = backend._env.observation_space.devectorize(observation)  # noqa: SLF001
         return self.observe()
+
+    def damage_events(self) -> list[dict[str, Any]]:
+        return self.env.backend().drain_damage_events()
 
     def _robot(self) -> Any:
         # This host-only handle is never returned by any relay operation.

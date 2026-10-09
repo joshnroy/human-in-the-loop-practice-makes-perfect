@@ -299,6 +299,7 @@ class EesMethod(Method):
 
     _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
+    _measured_execution_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
     # Per ground skill, one bool per execution regardless of the epsilon-greedy
@@ -453,6 +454,9 @@ class EesMethod(Method):
                 self._practice_accounting.costs.human_weight
                 * self._practice_accounting.human_charge(skill=name).cost
             )
+        measured = self._measured_execution_costs.get(ground_skill, [])
+        if measured:
+            return sum(measured) / len(measured)
         return ground_skill.evaluate_practice_cost()
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
@@ -460,7 +464,16 @@ class EesMethod(Method):
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
         """Receive host-measured execution cost independently of outcome learning."""
-        del cost, steps, complete
+        del steps
+        if (
+            complete
+            and self._practice_accounting is not None
+            and self._practice_accounting.costs.damage_contact.value > 0
+            and self._execution_ground_skill is not None
+            and self._execution_ground_skill
+            not in self.skill_provider.human_cube_bin_reset_skills()
+        ):
+            self._measured_execution_costs.setdefault(self._execution_ground_skill, []).append(cost)
 
     def current_competences(self) -> dict[GroundSkill, float]:
         """Every already-instantiated ground skill's `get_current_competence()` --
@@ -1129,9 +1142,12 @@ class EesMethod(Method):
                 records_training_row=explore,
             )
 
-        return self._labeled_action(
-            ground_skill=ground_skill, params=params, state=state, record=record
-        ), record
+        return (
+            self._labeled_action(
+                ground_skill=ground_skill, params=params, state=state, record=record
+            ),
+            record,
+        )
 
     def execute_random_ground_skill(
         self, *, ground_skill: GroundSkill, state: State
@@ -1146,13 +1162,16 @@ class EesMethod(Method):
         sampler did not rank -- not EPSILON_RANDOM, which is what competence skips."""
         skill = ground_skill.skill
         if skill.param_dim == 0:
-            return self._labeled_action(
-                ground_skill=ground_skill,
-                params=np.zeros(0),
-                state=state,
-                record=None,
-                prefix="random: ",
-            ), None
+            return (
+                self._labeled_action(
+                    ground_skill=ground_skill,
+                    params=np.zeros(0),
+                    state=state,
+                    record=None,
+                    prefix="random: ",
+                ),
+                None,
+            )
         max_proposals = self.num_candidates * self.max_proposals_per_candidate
         rejected: dict[str, int] = {}
         params: np.ndarray | None = None
@@ -1193,13 +1212,16 @@ class EesMethod(Method):
             consultation=SamplerConsultation.UNINFORMATIVE,
             records_training_row=True,
         )
-        return self._labeled_action(
-            ground_skill=ground_skill,
-            params=params,
-            state=state,
-            record=record,
-            prefix="random: ",
-        ), record
+        return (
+            self._labeled_action(
+                ground_skill=ground_skill,
+                params=params,
+                state=state,
+                record=record,
+                prefix="random: ",
+            ),
+            record,
+        )
 
     def _labeled_action(
         self,

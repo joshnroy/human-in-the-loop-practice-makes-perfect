@@ -45,6 +45,7 @@ class PracticeClock(BaseModel):
     counted_human_steps: int = 0
     accounting: PracticeAccounting | None = None
     observation: Callable[[], Any] = lambda: None
+    damage_events: Callable[[], list[dict[str, Any]]] = lambda: []
     _robot_charge: ExecutionCharge | None = PrivateAttr(default=None)
     robot_active: bool = False
     on_measure: Callable[[], None]
@@ -66,6 +67,7 @@ class PracticeClock(BaseModel):
             if self.accounting is not None:
                 self.accounting.record(charge=self._robot_charge or self.accounting.robot_charge())
                 self._robot_charge = None
+                self.accounting.record_damage(events=self.damage_events())
             self.robot_steps += 1
             self._advanced(previous=previous)
 
@@ -247,7 +249,18 @@ class StepEvaluation:
                     solved=backend.check_goals(),
                 )
                 reason = "goal" if clock.solved else "step_budget"
-                backend.set_control_step_observers(before=clock.before, after=clock.after)
+                damage_events: list[dict[str, Any]] = []
+
+                def after_evaluation_step(
+                    *,
+                    backend: Any = backend,
+                    clock: EvaluationClock = clock,
+                    damage_events: list[dict[str, Any]] = damage_events,
+                ) -> None:
+                    damage_events.extend(backend.drain_damage_events())
+                    clock.after()
+
+                backend.set_control_step_observers(before=clock.before, after=after_evaluation_step)
                 try:
                     while not clock.solved and clock.steps < args.evaluation_control_steps:
                         action = policy(state)
@@ -280,6 +293,8 @@ class StepEvaluation:
                     "solved": clock.solved,
                     "steps": clock.steps,
                     "reason": reason,
+                    "damage_contacts": len(damage_events),
+                    "damage_cost": sum(e["cost"] for e in damage_events),
                 })
                 StepFiles.json(path=directory / "progress.json", value={"tasks": results})
             result = {
@@ -466,6 +481,16 @@ class StepPracticeRunner:
             accounting=accounting,
         )
         backend = problem.env.backend()
+
+        def damage_events() -> list[dict[str, Any]]:
+            impacts = backend.drain_damage_events()
+            if impacts:
+                StepFiles.event(
+                    path=events, event="damage", practice_step=clock.steps + 1, impacts=impacts
+                )
+            return impacts
+
+        clock.damage_events = damage_events
         backend.set_control_step_observers(
             before=clock.before_robot_step, after=clock.after_robot_step
         )

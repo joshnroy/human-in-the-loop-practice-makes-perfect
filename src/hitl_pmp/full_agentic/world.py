@@ -64,7 +64,11 @@ class World:
         self.accounting.set_observation_provider(provider=self.bridge.observe)
         self.on_measurement = callback
         self.clock = PracticeClock(
-            budget=budget, interval=interval, accounting=self.accounting, on_measure=self.measure
+            budget=budget,
+            interval=interval,
+            accounting=self.accounting,
+            on_measure=self.measure,
+            damage_events=getattr(self.bridge, "damage_events", lambda: []),
         )
         self.clock.robot_active = True
         self.measure()
@@ -136,6 +140,7 @@ class World:
             human_requests=self.help_requests,
             accumulated_cost=self.accounting.total_cost,
             robot_step_price=self.accounting.robot_charge().cost,
+            last_damage_events=self.accounting.last_damage_events,
             human_skill_quotes={
                 name: self.accounting.human_charge(skill=name).model_dump(mode="json")
                 for name in self.accounting.costs.human_skills
@@ -234,6 +239,9 @@ class World:
                 else:
                     assert charge is not None
                     self.accounting.record(charge=charge)
+                    self.accounting.record_damage(
+                        events=getattr(self.bridge, "damage_events", lambda: [])()
+                    )
             elif op == "end_trial":
                 self.active = False
             elif op == "request_help":

@@ -53,6 +53,7 @@ class PracticeCosts(BaseModel):
             "reset_cube_and_bin_near": HumanCharge(),
         }
     )
+    damage_contact: ChargeFunction = Field(default_factory=lambda: ChargeFunction(value=0))
     human_weight: float = Field(default=1, ge=0, allow_inf_nan=False)
     objective_lambda: float = Field(default=3e-6, ge=0, allow_inf_nan=False)
 
@@ -84,6 +85,9 @@ class PracticeAccounting(BaseModel):
     human_steps: int = 0
     robot_cost: float = 0
     human_cost: float = 0
+    damage_cost: float = 0
+    damage_contacts: int = 0
+    last_damage_events: list[dict[str, Any]] = Field(default_factory=list)
     human_invocations: dict[str, int] = Field(default_factory=dict)
 
     @property
@@ -92,7 +96,7 @@ class PracticeAccounting(BaseModel):
 
     @property
     def total_cost(self) -> float:
-        return self.robot_cost + self.costs.human_weight * self.human_cost
+        return self.robot_cost + self.costs.human_weight * self.human_cost + self.damage_cost
 
     def context(self, *, actor: str, skill: str, observation: Any = None) -> dict[str, Any]:
         return dict(
@@ -140,9 +144,27 @@ class PracticeAccounting(BaseModel):
             self.human_cost += charge.cost
             self.human_invocations[charge.skill] = self.human_invocations.get(charge.skill, 0) + 1
 
+    def record_damage(self, *, events: list[dict[str, Any]]) -> None:
+        self.last_damage_events = []
+        for event in events:
+            context = self.context(
+                actor="damage",
+                skill="ground_contact",
+                observation=(
+                    self._observation_provider() if self.costs.damage_contact.function else None
+                ),
+            )
+            context["impact"] = event
+            charge = self.costs.damage_contact.evaluate(context=context)
+            self.damage_cost += charge
+            self.damage_contacts += 1
+            self.last_damage_events.append({**event, "cost": charge})
+
     def summary(self) -> dict[str, Any]:
         return dict(
             robot_cost=self.robot_cost,
+            damage_cost=self.damage_cost,
+            damage_contacts=self.damage_contacts,
             human_cost=self.human_cost,
             physical_cost=self.total_cost,
             human_steps=self.human_steps,
