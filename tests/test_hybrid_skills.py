@@ -202,3 +202,29 @@ def test_learner_resumes_one_session_and_does_not_replenish_budget(tmp_path, mon
     with pytest.raises(ModelBudgetExhausted):
         learner.revise()
     assert len(calls) == 2
+
+
+def test_missing_planner_fails_before_sandbox_or_model_call(tmp_path, monkeypatch):
+    from hitl_pmp.full_agentic.runner import FullAgenticRunner
+    from hitl_pmp.hybrid_skills.runner import main
+    from hitl_pmp.planning.fast_downward import FastDownwardPlanner
+
+    monkeypatch.setattr(FastDownwardPlanner, "fd_dir", lambda: str(tmp_path / "missing"))
+    monkeypatch.setattr(
+        FullAgenticRunner,
+        "validate_runtime",
+        lambda **kwargs: pytest.fail("Must reject missing planner before initializing runtime"),
+    )
+    sandbox = tmp_path / "sandbox.json"
+    sandbox.write_text(json.dumps({"image": "fake", "robocode_checkout": str(tmp_path)}))
+    with pytest.raises(FileNotFoundError, match="fast-downward.py"):
+        main(argv=["--hybrid-sandbox", str(sandbox), "--output-dir", str(tmp_path / "out")])
+
+
+def test_prompt_states_actual_remaining_launch_budget():
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.hybrid_skills.learner import hybrid_prompt
+
+    prompt = hybrid_prompt(costs=PracticeCosts(), mat_size=1, budget=18.0443086)
+    assert "$18.0443 total model budget" in prompt
+    assert "$20" not in prompt

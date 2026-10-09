@@ -14,7 +14,7 @@ from hitl_pmp.step_protocol import StepFiles
 from .artifacts import ModelBudgetExhausted, SessionBudget, SkillBundle
 
 
-def hybrid_prompt(*, costs: PracticeCosts, mat_size: float) -> str:
+def hybrid_prompt(*, costs: PracticeCosts, mat_size: float, budget: float = 20) -> str:
     prompt = FullAgenticRunner.variant_prompt(
         prompt=FullAgenticRunner.task_prompt(costs=costs),
         variant="original",
@@ -70,7 +70,7 @@ briefly in your ordinary response; a no-change revision is permitted. This is a 
 bootstrap, not a previously learned controller. There is one $20 total model budget
 across initialization and all revisions, not $20 per revision.
 """
-    )
+    ).replace("$20", f"${budget:g}")
 
 
 class SkillLearner:
@@ -96,7 +96,7 @@ class SkillLearner:
         self.transport = DeadlineTransport(
             sandbox=settings, backend="claude", subagent_policy="legacy"
         )
-        self.prompt = hybrid_prompt(costs=costs, mat_size=env.mat_size)
+        self.prompt = hybrid_prompt(costs=costs, mat_size=env.mat_size, budget=budget)
         (output / "task_prompt.md").write_text(self.prompt)
         # Same coding tools and generic RoboCode system prompt, with the hybrid
         # ownership contract superseding the generic fresh-world/testing guidance.

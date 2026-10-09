@@ -15,6 +15,7 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle, Toss
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
 from hitl_pmp.full_agentic.runner import FullAgenticRunner
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
+from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.step_protocol import StepFiles, StepPracticeRunner
 
 from .artifacts import ModelBudgetExhausted, SkillBundle
@@ -75,6 +76,8 @@ def main(*, argv: list[str] | None = None) -> None:
         ]
     )
     args.method = "pomdp-agentic-skills"
+    # Deployment and the end-of-cycle plan refresh need this, even with expectimax.
+    FastDownwardPlanner._fast_downward_script()  # noqa: SLF001 -- fail before paid coding
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
