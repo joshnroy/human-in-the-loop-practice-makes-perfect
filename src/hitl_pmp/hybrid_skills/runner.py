@@ -76,7 +76,9 @@ def main(*, argv: list[str] | None = None) -> None:
     )
     args.method = "pomdp-agentic-skills"
     output = Path(args.output_dir).resolve()
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=True)
+    if any(output.iterdir()):
+        raise FileExistsError("Preserve the existing run; choose an empty output directory")
     args.output_dir = output
     settings = SandboxSettings.model_validate(json.loads(options.hybrid_sandbox.read_text()))
     settings = settings.model_copy(update={"artifact_dir": output / "practice_trajectories"})
