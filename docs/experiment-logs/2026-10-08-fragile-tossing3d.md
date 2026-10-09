@@ -186,3 +186,47 @@ Independent 600-second monitors run as workstation service
 `hitl-fragile-mat1-heavy-monitor-10m-20261008` and Della tmux session
 `fragile-mat1-heavy-monitor-10m-20261008`. No current results should yet be inferred
 from startup health. Earlier jobs/results were not overwritten or cancelled.
+
+
+## Confirmed structured-controller dependency regression
+
+The structured fragile results must not be interpreted as evidence against
+expectimax or EES. Investigation of the persistent 0/10 found that both fragile
+launch bundles froze controller commit c18056d2, which lacks the long-range
+controller present in the preceding successful non-fragile human-cost sweep.
+The old successful human-cost-100 expectimax run reached 10/10 repeatedly and
+finished at 9/10. The first 4 m/light-bin fragile batch was already all-zero,
+before the 1 m/heavy-bin changes.
+
+The earlier successful runtime's composed toss controller allows simulation-only
+max effort 3 (420 deg/s) and includes updated windup/held-object planning. The
+fragile bundles carry the older max effort 1 (140 deg/s) implementation. The HITL
+proposal still samples long-range speeds and standoffs. Requests such as 295.83
+deg/s are therefore silently capped by the older controller. Recorded evaluation
+throws fall short beyond the wall, after which `no_plan` is the expected terminal
+reason because human recovery is unavailable in evaluation.
+
+Matched diagnostic on held-out task seed 357381689, using the identical previously
+trained snapshot (SHA256 94eec61751a57c585701d19b49cea206c8fc705d1e4ae81c8b7ba5ef51b7d647):
+
+| Environment | Controller dependency | Result |
+|---|---|---|
+| Ordinary Tossing3D | frozen c18056d2 | fail, no_plan, 239 steps |
+| Fragile, 1 m mat / 100 kg bin | frozen c18056d2 | fail, no_plan, 239 steps |
+| Fragile, 1 m mat / 100 kg bin | previous successful runtime's controllers | success, 228 steps, zero damage |
+
+Only the controller package path changed between the last two diagnostic runs;
+there was no retraining or change to the saved policy, task, mat, or bin. This
+establishes the controller-version regression on a real matched task, while not
+isolating the speed cap from the other controller differences. The trained new
+sampler was present (202 examples, 68 positives at snapshot 24), so an empty or
+missing restored learner is not the explanation.
+
+The launch validation checked execution, accounting, and short smoke rollouts,
+but omitted a known-success long-range controller regression; that should have
+been caught before launching. Restore the correct long-range dependency, add a
+behavioral regression, and rerun affected EES/expectimax experiments. Both fragile
+batches are affected; full-agentic writes its own controller and is not affected
+by this fixed-controller mismatch. Production jobs were not altered during this
+read-only investigation. Diagnostic evidence is under
+`artifacts/fragile-tossing-mat1-heavy-20261008/failure-audit/`.

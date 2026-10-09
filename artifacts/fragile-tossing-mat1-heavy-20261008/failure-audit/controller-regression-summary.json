@@ -1,0 +1,56 @@
+{
+  "old-policy-normal": {
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "solved": false,
+        "steps": 239,
+        "reason": "no_plan",
+        "damage_contacts": 0,
+        "damage_cost": 0
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "policy_sha256": "94eec61751a57c585701d19b49cea206c8fc705d1e4ae81c8b7ba5ef51b7d647",
+    "elapsed_seconds": 10.166291981004179
+  },
+  "old-policy-fragile": {
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "solved": false,
+        "steps": 239,
+        "reason": "no_plan",
+        "damage_contacts": 1,
+        "damage_cost": 10.0
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "policy_sha256": "94eec61751a57c585701d19b49cea206c8fc705d1e4ae81c8b7ba5ef51b7d647",
+    "elapsed_seconds": 16.868252077008947
+  },
+  "old-policy-fragile-old-controller": {
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "solved": true,
+        "steps": 228,
+        "reason": "goal",
+        "damage_contacts": 0,
+        "damage_cost": 0
+      }
+    ],
+    "num_solved": 1,
+    "num_total": 1,
+    "policy_sha256": "94eec61751a57c585701d19b49cea206c8fc705d1e4ae81c8b7ba5ef51b7d647",
+    "elapsed_seconds": 16.293528594003874
+  }
+}
