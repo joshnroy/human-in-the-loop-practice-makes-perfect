@@ -346,6 +346,7 @@ class KinderBackend(BaseModel):
     task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
     damage_cost: float | None = None
+    uses_baseline_pick_controller: bool = True
     mat_size: float = 1
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
@@ -1128,6 +1129,9 @@ class KinderBackend(BaseModel):
 
         if BinOnGroundGeometry.holds(bin_=features[self.bin_name]):
             atoms |= frozenset({(KB_BIN_ON_GROUND, (self.bin_name,))})
+        if not self.uses_baseline_pick_controller:
+            return atoms
+
         from .pick_plannable import KB_PICK_PLANNABLE, PickPlannableGate
 
         # See `pick_plannable.py` for the three cases and why each is what it is.

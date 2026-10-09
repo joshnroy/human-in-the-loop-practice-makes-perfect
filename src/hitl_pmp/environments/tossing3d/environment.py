@@ -90,6 +90,11 @@ class Tossing3DEnvironment(Environment):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    @property
+    def uses_baseline_pick_controller(self) -> bool:
+        """Whether pickup feasibility is defined by the baseline motion planner."""
+        return True
+
     damage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     mat_size: float = Field(default=1, gt=0, allow_inf_nan=False)
 
@@ -246,6 +251,7 @@ class Tossing3DEnvironment(Environment):
                 env_id=f"kinder/{family}-{self.variant}-v0",
                 damage_cost=self.damage_cost,
                 mat_size=self.mat_size,
+                uses_baseline_pick_controller=self.uses_baseline_pick_controller,
                 scene_bg=self.scene_bg,
                 task_config_path=self.layout.task_config_path(),
             )

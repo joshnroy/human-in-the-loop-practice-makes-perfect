@@ -111,6 +111,7 @@ def test_snapshot_restores_code_without_executing_it(tmp_path):
     assert isinstance(restored, HybridDeploymentMethod)
     assert "must stay isolated" in env.bundle.files["skills.py"]
     assert not restored._samplers
+    assert all(p.name != "PickPlannable" for p in restored.predicates())
 
 
 def test_evidence_excludes_evaluation_and_host_diagnostics(tmp_path, monkeypatch):
@@ -228,3 +229,50 @@ def test_prompt_states_actual_remaining_launch_budget():
     prompt = hybrid_prompt(costs=PracticeCosts(), mat_size=1, budget=18.0443086)
     assert "$18.0443 total model budget" in prompt
     assert "$20" not in prompt
+
+
+@pytest.mark.parametrize("layout", ["barrier", "same-side"])
+def test_pick_feasibility_belongs_only_to_baseline_controller(layout):
+    from hitl_pmp.environments.tossing3d.predicates import PICK_PLANNABLE
+    from hitl_pmp.hybrid_skills.execution import HybridEnvironment
+
+    for env_type, expected in [(Tossing3DEnvironment, True), (HybridEnvironment, False)]:
+        env = env_type(layout=layout, scene_bg=False)
+        provider = Tossing3DSkillProvider(env=env, offer_non_human_reset=True)
+        assert (PICK_PLANNABLE in provider.predicates()) is expected
+        assert env.backend().uses_baseline_pick_controller is expected
+        skills = (*provider.skills(), *(g.skill for g in provider.movables_reset_skills()))
+        picks = [s for s in skills if s.name.startswith("PickCube")]
+        assert picks
+        for pick in picks:
+            assert any(a.predicate == PICK_PLANNABLE for a in pick.preconditions) is expected
+        if not expected:
+            for skill in skills:
+                assert PICK_PLANNABLE not in skill.ignore_effects
+                for atoms in (skill.preconditions, skill.add_effects, skill.delete_effects):
+                    assert all(a.predicate != PICK_PLANNABLE for a in atoms)
+            # Missing baseline feasibility must no longer suppress an otherwise valid pick.
+            universe = SkillGrounder.all_possible_ground_atoms(
+                objects=provider.objects(), predicates=provider.predicates()
+            )
+            applicable = SkillGrounder.applicable_ground_skills(
+                skills=provider.skills(), objects=provider.objects(), true_atoms=universe
+            )
+            assert any(g.skill.name.startswith("PickCube") for g in applicable)
+
+
+def test_hybrid_abstraction_never_calls_baseline_pick_planner(monkeypatch):
+    pytest.importorskip("kinder")
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+    from hitl_pmp.hybrid_skills.execution import HybridEnvironment
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Generated skills must not query the baseline pick planner")
+
+    monkeypatch.setattr(KinderBackend, "pick_cube_plan_failure", forbidden)
+    env = HybridEnvironment(scene_bg=False)
+    try:
+        env.reset_to_seed(seed=125)
+        assert all(name != "PickPlannable" for name, _ in env.backend().abstract_atoms())
+    finally:
+        env.close()

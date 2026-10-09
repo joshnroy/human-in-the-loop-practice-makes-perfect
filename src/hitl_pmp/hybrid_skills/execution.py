@@ -69,6 +69,10 @@ class SkillExecutor(DockerPolicyExecutor):
 
 
 class HybridEnvironment(Tossing3DEnvironment):
+    @property
+    def uses_baseline_pick_controller(self) -> bool:
+        return False
+
     executor: Any = Field(default=None, exclude=True)
     bundle: SkillBundle | None = None
 

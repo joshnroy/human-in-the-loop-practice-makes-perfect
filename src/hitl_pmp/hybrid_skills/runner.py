@@ -172,6 +172,7 @@ class GeneratedSkills:
                     effort="high",
                     model_budget=options.model_budget,
                     sampler="none",
+                    baseline_pick_feasibility=False,
                     exploration_epsilon=0,
                     physical_tests="planner_owned_and_counted",
                     extra_geometry_tools=False,
