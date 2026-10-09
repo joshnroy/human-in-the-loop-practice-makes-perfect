@@ -132,3 +132,55 @@ At the user’s request, the monitoring interval changed from 10 to 15 minutes
 `hitl-hybrid-expectimax-agentic-monitor-15m-20261009`. Only the monitor was restarted;
 the experiment continues uninterrupted. Completion and actionable-failure notifications
 remain enabled, with no routine notification when nothing needs attention.
+
+### Failed first attempt and replacement — October 9, 2026
+
+The first attempt stopped at 10:10 EDT, after 14 minutes 30 seconds. The frozen
+launch bundle omitted `FD_EXEC_PATH`, so the planner's default directory lookup pointed
+inside the artifact tree rather than at the installed Fast Downward checkout. Expectimax
+practice selection ran, but both held-out evaluation workers failed to initialize their
+structured deployment planner. The first end-of-cycle task-plan refresh then raised the
+same missing-file error. This was a launch configuration error, not learning failure.
+
+| First-attempt endpoint | Observed value |
+| --- | --- |
+| Counted practice steps | 2,732 (2,728 robot + 4 human) |
+| Human resets, any / same side / opposite side | 4 / 4 / 0 |
+| Bare-ground contacts | 18 |
+| Physical cost | 3,308 (2,728 robot + 400 human + 180 damage) |
+| Coding calls accepted | 2 (initial code and one revision) |
+| Fully completed host learning updates | 0; cycle refresh failed after code revision |
+| Held-out evaluations | N/A: both workers failed; these are not 0/10 scores |
+| Reported model cost | $1.9556914 |
+
+The failed attempt remains intact in its original artifact directory. Its observations
+and learned code are not reused in the replacement. These failure diagnostics are not
+a completed learning comparison.
+
+The replacement launched at **10:18:52 EDT**, seed 0, with a fresh interface bootstrap
+and **$20 for this experiment**, as explicitly clarified by the user. Its budget is not
+reduced by the failed attempt's spending. All scientific settings remain those in the
+Methods table. The runner now checks for Fast Downward before initializing the coding
+runtime, and the launch explicitly sets its installation path. A new unpaid frozen-bundle
+smoke completed 12/12 practice steps, one full cycle refresh, and four separate one-task
+evaluations without worker failures. Each evaluation actually executed 10/10 permitted
+control steps with the deliberately inert smoke controller. The hybrid/measurement test
+suite passed 20 tests, including a regression that rejects a missing planner before coding.
+
+| Replacement provenance | Value |
+| --- | --- |
+| HITL source | `e590cce93f158affd79459756bbd66fbab212d94` |
+| Fast Downward source | `9b81c7e422fdf7be9f73b96e9a7a969c483dd5d4` |
+| Fast Downward path | `/home/josh/Documents/repos/research/downward` |
+| Artifact directory | `artifacts/hybrid-expectimax-agentic-seed0-20261009-r2/` |
+| Run service | `hitl-hybrid-expectimax-agentic-seed0-20261009-r2` |
+| 15-minute monitor | `hitl-hybrid-expectimax-agentic-monitor-15m-20261009-r2` |
+| tmux view | `hybrid-expectimax-seed0-20261009-r2` |
+
+The simulator, baseline dependency, RoboCode tree and container image retain their
+previously recorded pins. At startup verification, the replacement service and monitor
+are active, and its stream confirms Opus 5.5. The monitor also checks evaluation-worker
+failure files, so a failed worker is reported before the whole run ends. No evaluation
+score is available at this checkpoint. First post-learning evaluation is provisionally
+expected 20–40 minutes after the replacement launch; the overall 6–12 hour estimate
+remains uncertain until successful learning cycles establish throughput.
