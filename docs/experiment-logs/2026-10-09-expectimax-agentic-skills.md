@@ -77,10 +77,12 @@ Neither smoke made a model call or supplies learned code to the experiment.
 The targeted planner/measurement suite passed 386 tests; the final hybrid and measurement
 checks passed 18 tests. Source type checking and dependency checks passed. The broader
 repository suite remains in progress at launch and has environment-regression failures.
-Two original-bin stiffness assertions and a fixed-seed bin-position assertion were
-reproduced against the unchanged frozen source from the preceding experiment. The
-remaining failures are being checked separately; this is not a claim of a clean full
-repository suite. No contact physics or task distribution was changed to satisfy tests.
+All six failures observed so far also reproduce against the unchanged frozen source
+from the preceding experiment: two original-bin stiffness assertions, a fixed-seed
+bin-position assertion, an evaluation-task snapshot assertion, and two old controller
+witness assertions. This is not a claim of a clean full repository suite. No contact
+physics or task distribution was changed to satisfy tests. Baseline reproduction logs
+are saved alongside the full-suite log in the runtime artifact directory.
 
 ### Launch record — October 9, 2026
 
