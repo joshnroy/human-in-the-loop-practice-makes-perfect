@@ -75,9 +75,10 @@ accounted for four cost units, and completed three separate one-task evaluations
 Neither smoke made a model call or supplies learned code to the experiment.
 
 The targeted planner/measurement suite passed 386 tests; the final hybrid and measurement
-checks passed 18 tests. Source type checking and dependency checks passed. The broader
-repository suite remains in progress at launch and has environment-regression failures.
-All six failures observed so far also reproduce against the unchanged frozen source
+checks passed 18 tests. Source type checking and dependency checks passed. The full
+repository suite completed with 2,901 passed, 6 failed, 3 skipped and 1 expected failure
+in 17 minutes. The final hybrid/measurement follow-up tests passed separately after the
+last source changes. All six failures reproduce against the unchanged frozen source
 from the preceding experiment: two original-bin stiffness assertions, a fixed-seed
 bin-position assertion, an evaluation-task snapshot assertion, and two old controller
 witness assertions. This is not a claim of a clean full repository suite. No contact
