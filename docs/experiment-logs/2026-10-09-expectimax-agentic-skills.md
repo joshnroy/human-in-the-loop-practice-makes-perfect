@@ -50,7 +50,7 @@ The initial source contains only an interface stub, not a previously learned con
 | Model | Claude Opus 5.5, high effort, persistent RoboCode conversation |
 | Model budget | $20 total across initialization and revisions |
 | Robot controller limits | Existing limits: pick 400, toss 1,000, open gripper 100 |
-| Monitoring | Workstation background monitor every 10 minutes |
+| Monitoring | Workstation background monitor every 15 minutes (updated after launch) |
 
 Generated robot policies replace the controllers for PickCube,
 MoveToTossLocationAndToss and OpenGripper. The robot skill identities and structured
@@ -124,3 +124,11 @@ three-perfect-evaluation endpoint and report the reason.
 Compare performance and same-/opposite-side cumulative resets against counted practice
 steps. Also inspect damage, controller revisions and cost forecasts. Preserve the actual
 endpoint if model cost, practice steps or early stopping ends the run; do not extend curves.
+
+### Monitoring update — October 9, 2026
+
+At the user’s request, the monitoring interval changed from 10 to 15 minutes
+(900 seconds). The replacement service is
+`hitl-hybrid-expectimax-agentic-monitor-15m-20261009`. Only the monitor was restarted;
+the experiment continues uninterrupted. Completion and actionable-failure notifications
+remain enabled, with no routine notification when nothing needs attention.
