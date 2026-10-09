@@ -1,0 +1,27 @@
+{
+  "note": "Observed endpoint coverage including conservative cube footprint; excludes flight/bounces and changed behavior. Bin may move in these old runs. Not smaller-mat success predictions.",
+  "agentic_original": {
+    "endpoints": 26,
+    "max_required_side_m": 3.0826095330792382,
+    "covered": {
+      "1": 24,
+      "1.5": 24,
+      "2": 25,
+      "2.5": 25,
+      "3": 25,
+      "4": 26
+    }
+  },
+  "expectimax": {
+    "endpoints": 288,
+    "max_required_side_m": 4.041887665777,
+    "covered": {
+      "1": 149,
+      "1.5": 177,
+      "2": 206,
+      "2.5": 238,
+      "3": 263,
+      "4": 287
+    }
+  }
+}
