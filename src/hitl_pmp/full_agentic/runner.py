@@ -117,7 +117,7 @@ class FullAgenticRunner:
         budget: int = 500,
         seed: int = 0,
         damage_cost: float | None = None,
-        mat_size: float = 4,
+        mat_size: float = 1,
     ) -> list[dict[str, Any]]:
         output.mkdir(parents=True, exist_ok=True)
         if not (submission / "approach.py").is_file():
@@ -273,7 +273,7 @@ class FullAgenticRunner:
         parser.add_argument("--evaluation-control-steps", type=int, default=500)
         parser.add_argument("--num-test-tasks", type=int, default=10)
         parser.add_argument("--fragile-object", action="store_true")
-        parser.add_argument("--mat-size", type=float, default=4)
+        parser.add_argument("--mat-size", type=float, default=1)
         parser.add_argument(
             "--prompt-variant", choices=("original", "new-wording"), default="original"
         )
