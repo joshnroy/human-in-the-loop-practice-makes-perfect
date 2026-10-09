@@ -70,9 +70,51 @@ Implementation validation: an unpaid simulator smoke executed 12/12 permitted ro
 steps, accounted for 12 cost units, completed four separate one-task evaluations, and
 performed one learning update. This verifies plumbing, not task competence.
 
-The seed-0 experiment has not launched at the time of this entry. Runtime artifacts are
-stored separately under `artifacts/hybrid-expectimax-agentic-seed0-20261009/`; its frozen
-source manifest, launch receipt, measurements and monitor history are authoritative.
+An additional interruption smoke stopped mid-controller at exactly 4/4 robot steps,
+accounted for four cost units, and completed three separate one-task evaluations.
+Neither smoke made a model call or supplies learned code to the experiment.
+
+The targeted planner/measurement suite passed 386 tests; the final hybrid and measurement
+checks passed 18 tests. Source type checking and dependency checks passed. The broader
+repository suite remains in progress at launch and has environment-regression failures.
+Two original-bin stiffness assertions and a fixed-seed bin-position assertion were
+reproduced against the unchanged frozen source from the preceding experiment. The
+remaining failures are being checked separately; this is not a claim of a clean full
+repository suite. No contact physics or task distribution was changed to satisfy tests.
+
+### Launch record — October 9, 2026
+
+The single seed-0 workstation run launched at 09:55 EDT. Its service is active and the
+RoboCode stream confirms Claude Opus 5.5 is responding during initial code generation.
+No practice or evaluation result is available at this launch checkpoint.
+
+| Provenance | Pinned value |
+| --- | --- |
+| HITL source | `f4dfe3418fe89f241a7161abc436b9713b075cb3` |
+| KINDER source | `ec4d4eadc877cf944aae49efb366300d7f72138c` |
+| kinder-baselines source | `527fb91f6a92069e2c0aa3166f5f524bd8e4f067` |
+| RoboCode source tree SHA-256 | `9f268a0e1da27faffbefc592883fec5a447c682df78dd50e0ca44dbdfa1502ff` |
+| Policy/coding image | `sha256:712a0a55dc7fc61cb30ab043a79f176f524c937885437bf084f7abb95ed9f531` |
+| Persistent run service | `hitl-hybrid-expectimax-agentic-seed0-20261009` |
+| Persistent monitor service | `hitl-hybrid-expectimax-agentic-monitor-10m-20261009` |
+| tmux journal view | `hybrid-expectimax-seed0-20261009` |
+
+The run uses the repository's sweep harness with one worker, a 15 GiB host memory cap,
+six-core CPU ceiling, and 4 GiB/two-core policy-container limits. The service survives
+terminal disconnection. The read-only monitor checks every 600 seconds, writes history,
+and reports completion or actionable failures; it does not restart experiments or feed
+held-out results into the learner. No additional Della or full-agentic run was launched.
+
+Runtime artifacts are stored under `artifacts/hybrid-expectimax-agentic-seed0-20261009/`.
+The frozen `source-versions.json`, `resolved-command.json`, `workstation-launch-receipt.json`,
+and `workstation-monitor-history.jsonl` record execution provenance. Results live under
+`results/pomdp-agentic-skills/0/`: configuration, exact prompts, coding streams, accepted
+revisions, practice trajectories, cost/step events, frozen evaluations, and timing.
+
+Initial planning estimate: 20–40 minutes to the first post-learning evaluation and
+6–12 hours for the run, conditional on planner/code-generation time and the $20 model
+ceiling. These are estimates, not observed runtimes. Stop at the actual budget or
+three-perfect-evaluation endpoint and report the reason.
 
 ## Recommendation
 
