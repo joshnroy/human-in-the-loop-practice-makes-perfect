@@ -69,7 +69,26 @@ class Tossing3DSkillProvider(SkillProvider):
     # otherwise stuck will take it at any price (see `EesMethod.plan_to`).
     offer_human_reset: bool = True
 
+    def _for_controller(self, *, skill: Skill) -> Skill:
+        """Drop baseline-only feasibility from generated-controller operators."""
+        if self.env.uses_baseline_pick_controller:
+            return skill
+        return skill.model_copy(
+            update={
+                **{
+                    field: frozenset(
+                        a for a in getattr(skill, field) if a.predicate != PICK_PLANNABLE
+                    )
+                    for field in ("preconditions", "add_effects", "delete_effects")
+                },
+                "ignore_effects": skill.ignore_effects - {PICK_PLANNABLE},
+            }
+        )
+
     def skills(self) -> tuple[Skill, ...]:
+        return tuple(self._for_controller(skill=s) for s in self._controller_skills())
+
+    def _controller_skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.skills()
         return (
@@ -83,6 +102,13 @@ class Tossing3DSkillProvider(SkillProvider):
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
+        return tuple(
+            p
+            for p in self._controller_predicates()
+            if self.env.uses_baseline_pick_controller or p != PICK_PLANNABLE
+        )
+
+    def _controller_predicates(self) -> tuple[Predicate, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return (
                 IN_BIN,
@@ -294,7 +320,7 @@ class Tossing3DSkillProvider(SkillProvider):
         )
         return tuple(
             GroundSkill(
-                skill=skill,
+                skill=self._for_controller(skill=skill),
                 objects=(
                     env.robot,
                     env.cube,
