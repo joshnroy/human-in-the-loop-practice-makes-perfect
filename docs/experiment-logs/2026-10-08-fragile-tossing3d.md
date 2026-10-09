@@ -230,3 +230,49 @@ batches are affected; full-agentic writes its own controller and is not affected
 by this fixed-controller mismatch. Production jobs were not altered during this
 read-only investigation. Diagnostic evidence is under
 `artifacts/fragile-tossing-mat1-heavy-20261008/failure-audit/`.
+
+
+## Corrected structured reruns — October 8, ~23:56 EDT
+
+User authorized rerunning the affected structured methods, reiterated monitoring
+every 10 minutes, and explicitly prohibited further agentic runs. Exactly two
+fresh seed-0 jobs were launched; no agentic jobs or model calls were launched.
+
+| Method | Replacement Della job | Replaces | Initial status |
+|---|---:|---:|---|
+| EES | 15256890 | 15251746 | running |
+| Expectimax | 15256891 | 15251747 | running |
+
+Cancelled the two invalid jobs above, retaining their artifacts. The original
+4 m batch is already finished; it was not relaunched because the current selected
+environment is 1 m. The completed agentic runs are retained.
+
+Frozen controller runtime is now **427ad6cdfcc79efb489ebabc8fd39d77e104bb4e**,
+the exact long-range/settled-windup/attached-grasp implementation from the earlier
+successful sweep (kinder-baselines PR #174). HITL eaca501fe and KINDER ec4d4ea are
+unchanged. Runtime throwing source files match the previously successful bundle.
+
+Same settings: 1 x 1 m mat, 100 kg bin, human cost 100, damage cost 10, robot cost
+1, human duration 1; 85,000 practice steps, evaluation every 1,700 steps, 10 tasks
+x 500 robot steps, stop after three consecutive 10/10 measurements. Expectimax
+remains grid 25 x 16, depth 6, observation penalty 0, lambda 3e-6.
+
+Prelaunch range guard failed against the old dependency as intended and passed
+against the replacement. The previously successful held-out policy solved task
+seed 357381689 in 228 robot steps with zero damage under the replacement's frozen
+1 m/heavy-bin environment. This saved-policy diagnostic is not training data for
+the fresh reruns. Both 40-step structured smoke runs passed. Swing, effort, and
+attachment/handoff regressions: 26 passed. One stale test had incorrectly tested
+the extended controller's speed range using the helper's default effort ceiling;
+it now explicitly passes the controller's simulation ceiling (test-only commit
+527fb91, pushed to existing PR #174). Runtime remains pinned to 427ad6c.
+
+Both Della job scripts run the controller range guard before starting training;
+their logs confirm it passed. The monitor runs independently in persistent Della
+tmux session `fragile-mat1-fixed-monitor-10m-20261008`, every 600 seconds, recording
+job state, progress, evaluation scores, resets, damage, and warnings. It does not
+restart jobs or launch agentic runs.
+
+Receipts, exact command arguments, source versions, validation evidence and
+monitor/launch scripts are in `artifacts/fragile-tossing-mat1-fixed-20261008/`.
+Remote root: `/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008`.

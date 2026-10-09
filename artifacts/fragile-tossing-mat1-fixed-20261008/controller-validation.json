@@ -1,0 +1,18 @@
+{
+  "complete": true,
+  "tasks": [
+    {
+      "task": 0,
+      "seed": 357381689,
+      "solved": true,
+      "steps": 228,
+      "reason": "goal",
+      "damage_contacts": 0,
+      "damage_cost": 0
+    }
+  ],
+  "num_solved": 1,
+  "num_total": 1,
+  "policy_sha256": "94eec61751a57c585701d19b49cea206c8fc705d1e4ae81c8b7ba5ef51b7d647",
+  "elapsed_seconds": 14.790863029993488
+}
