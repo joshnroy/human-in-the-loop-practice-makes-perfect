@@ -91,7 +91,7 @@ class Tossing3DEnvironment(Environment):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     damage_cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    mat_size: float = Field(default=4, gt=0, allow_inf_nan=False)
+    mat_size: float = Field(default=1, gt=0, allow_inf_nan=False)
 
     # KINDER's `MujocoTidyBotRobotObjectType` carries 22 features; these are the four the
     # symbolic layer reads. `pos_gripper` is what upstream's own `HandEmpty`/`Holding`

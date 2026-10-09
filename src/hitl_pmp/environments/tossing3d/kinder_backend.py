@@ -346,7 +346,7 @@ class KinderBackend(BaseModel):
     task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
     damage_cost: float | None = None
-    mat_size: float = 4
+    mat_size: float = 1
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
     render_mode: str = "rgb_array"

@@ -100,7 +100,7 @@ class Tossing3DCli:
             "domain's docs was taken at.",
         )
         parser.add_argument("--fragile-object", action="store_true")
-        parser.add_argument("--mat-size", type=float, default=4)
+        parser.add_argument("--mat-size", type=float, default=1)
         task_fields = Tossing3DTasks.model_fields
         parser.add_argument(
             "--test-env-seed-offset",
@@ -288,7 +288,7 @@ class Tossing3DCli:
             damage_cost=(
                 costs.damage_contact.value if getattr(args, "fragile_object", False) else None
             ),
-            mat_size=getattr(args, "mat_size", 4),
+            mat_size=getattr(args, "mat_size", 1),
             layout=getattr(args, "layout", Tossing3DLayout.BARRIER),
             variant=args.variant,
             scene_bg=args.scene_bg,

@@ -21,3 +21,18 @@ def test_both_variants_receive_same_damage_mechanics_and_objective():
     continuation = "When choosing a practice action, compare its immediate cost"
     assert continuation not in prompts[0]
     assert continuation in prompts[1]
+
+
+def test_default_fragile_environment_describes_one_meter_mat():
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+
+    env = Tossing3DEnvironment(damage_cost=10)
+    assert env.mat_size == 1
+    prompt = FullAgenticRunner.variant_prompt(
+        prompt="",
+        variant="original",
+        fragile=True,
+        mat_size=env.mat_size,
+        damage_cost=10,
+    )
+    assert "square mat of side 1 m" in prompt
