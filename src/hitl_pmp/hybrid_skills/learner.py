@@ -91,6 +91,7 @@ class SkillLearner:
         self.submission = self.workspace / "submission"
         self.submission.mkdir()
         shutil.copyfile(Path(__file__).with_name("bootstrap.py"), self.submission / "skills.py")
+        self.env.bundle = SkillBundle.read(directory=self.submission)
         self.calls = 0
         self.transport = DeadlineTransport(
             sandbox=settings, backend="claude", subagent_policy="legacy"

@@ -62,6 +62,8 @@ def test_agentic_toss_bypasses_sampler_but_counts_learning_evidence():
     action, record = method.execute_ground_skill(ground_skill=toss, state=None, explore=True)
     assert int(action.action[0]) == env.move_to_toss_location_and_toss_id
     assert record is None
+    assert action.label.startswith(TOSS_SKILL + "(")
+    assert "preconditions" not in action.label
     assert not method._samplers
     method.observe_outcome(ground_skill=toss, success=False)
     assert method._pomdp_state.pending_examples[TOSS_SKILL] == 1
@@ -189,6 +191,9 @@ def test_learner_resumes_one_session_and_does_not_replenish_budget(tmp_path, mon
         image="fake", robocode_checkout=tmp_path, artifact_dir=tmp_path / "trajectories"
     )
     learner = SkillLearner(output=tmp_path, env=env, settings=settings, costs=PracticeCosts())
+    # Even an exhausted initial coding call must leave an honest, evaluable bootstrap.
+    assert env.bundle is not None
+    assert env.bundle.files["skills.py"] == (learner.submission / "skills.py").read_text()
     learner.revise()
     learner.revise()
     assert [c.resume_previous_session for c in calls] == [False, True]

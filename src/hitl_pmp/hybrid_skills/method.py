@@ -21,7 +21,8 @@ def skill_action(*, ground_skill: GroundSkill) -> LabeledAction:
     }
     name = ground_skill.skill.name
     return LabeledAction(
-        action=np.array([names[name], 0, 0, 0, 0], dtype=float), label=str(ground_skill)
+        action=np.array([names[name], 0, 0, 0, 0], dtype=float),
+        label=f"{name}({', '.join(obj.name for obj in ground_skill.objects)})",
     )
 
 
