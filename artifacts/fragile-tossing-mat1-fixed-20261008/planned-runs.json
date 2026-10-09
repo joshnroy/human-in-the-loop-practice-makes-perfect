@@ -1,0 +1,33 @@
+{
+  "environment": "FragileTossing3D",
+  "mat_size": 1,
+  "bin_mass_kg": 100,
+  "damage_cost": 10,
+  "human_cost": 100,
+  "seed": 0,
+  "practice_steps": 85000,
+  "measurement_interval": 1700,
+  "evaluation_tasks": 10,
+  "evaluation_steps": 500,
+  "stop_after_perfect_evaluations": 3,
+  "monitor_interval_seconds": 600,
+  "runs": [
+    {
+      "name": "ees-h100-d10",
+      "method": "ees",
+      "location": "della",
+      "arm": "ees",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/ees-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/ees-h100-d10/results/ees/0"
+    },
+    {
+      "name": "expectimax-h100-d10",
+      "method": "expectimax",
+      "location": "della",
+      "arm": "pddl",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/expectimax-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/expectimax-h100-d10/results/pomdp/0"
+    }
+  ],
+  "controller_fix": "kinder-baselines 427ad6c / PR 174"
+}

@@ -1,0 +1,12 @@
+{
+  "image": "sha256:712a0a55dc7fc61cb30ab043a79f176f524c937885437bf084f7abb95ed9f531",
+  "robocode_checkout": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-mat1-heavy-20261008/source/robocode",
+  "container_python": "/opt/robocode-strict/bin/python",
+  "timeout_seconds": 120.0,
+  "artifact_dir": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-mat1-heavy-20261008/agentic-new-wording-h100-d10/execution",
+  "seed": 0,
+  "memory_mb": 4096,
+  "cpus": 2.0,
+  "resource_pool_dir": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/fragile-tossing-mat1-heavy-20261008/agentic-new-wording-h100-d10/resource-pool",
+  "cgroup_parent": null
+}

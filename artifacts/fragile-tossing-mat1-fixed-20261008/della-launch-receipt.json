@@ -1,0 +1,24 @@
+{
+  "runs": [
+    {
+      "name": "ees-h100-d10",
+      "method": "ees",
+      "location": "della",
+      "arm": "ees",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/ees-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/ees-h100-d10/results/ees/0",
+      "job_id": 15256890,
+      "launched_unix": 1791518169.4467337
+    },
+    {
+      "name": "expectimax-h100-d10",
+      "method": "expectimax",
+      "location": "della",
+      "arm": "pddl",
+      "directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/expectimax-h100-d10",
+      "result_directory": "/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008/expectimax-h100-d10/results/pomdp/0",
+      "job_id": 15256891,
+      "launched_unix": 1791518169.4685793
+    }
+  ]
+}
