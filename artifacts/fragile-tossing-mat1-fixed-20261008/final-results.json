@@ -1,0 +1,583 @@
+{
+  "checked_unix": 1791550774.0319326,
+  "interval_seconds": 600,
+  "runs": [
+    {
+      "name": "ees-h100-d10",
+      "state": "COMPLETED",
+      "terminal": true,
+      "status": {
+        "phase": "complete",
+        "updated_unix": 1791530124.184782,
+        "practice_steps": 85000,
+        "robot_steps": 84686,
+        "human_invocations": 314,
+        "human_resets_by_destination": {
+          "robot_side": 0,
+          "opposite_side": 314
+        },
+        "learning_updates": 54,
+        "session_index": 54,
+        "measurement_snapshots": 51,
+        "evaluations_completed": 51,
+        "elapsed_seconds": 11937.038049937692,
+        "robot_cost": 84686.0,
+        "damage_cost": 2900.0,
+        "damage_contacts": 290,
+        "human_cost": 31400.0,
+        "physical_cost": 118986.0,
+        "human_steps": 314,
+        "human_invocations_by_skill": {
+          "reset_cube_far": 314
+        }
+      },
+      "evaluations": [
+        {
+          "index": "0000",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0001",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0002",
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "index": "0003",
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "index": "0004",
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "index": "0005",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0006",
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "index": "0007",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0008",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0009",
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "index": "0010",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0011",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0012",
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "index": "0013",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0014",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0015",
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "index": "0016",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0017",
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "index": "0018",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0019",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0020",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0021",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0022",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0023",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0024",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0025",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0026",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0027",
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "index": "0028",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0029",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0030",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0031",
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "index": "0032",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0033",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0034",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0035",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0036",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0037",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0038",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0039",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0040",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0041",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0042",
+          "solved": 10,
+          "total": 10
+        },
+        {
+          "index": "0043",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0044",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0045",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0046",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0047",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0048",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0049",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0050",
+          "solved": 8,
+          "total": 10
+        }
+      ],
+      "warnings": []
+    },
+    {
+      "name": "expectimax-h100-d10",
+      "state": "COMPLETED",
+      "terminal": true,
+      "status": {
+        "phase": "complete",
+        "updated_unix": 1791534664.5658972,
+        "practice_steps": 85000,
+        "robot_steps": 84902,
+        "human_invocations": 98,
+        "human_resets_by_destination": {
+          "robot_side": 89,
+          "opposite_side": 9
+        },
+        "learning_updates": 43,
+        "session_index": 43,
+        "measurement_snapshots": 51,
+        "evaluations_completed": 51,
+        "elapsed_seconds": 16475.669086909853,
+        "robot_cost": 84902.0,
+        "damage_cost": 1700.0,
+        "damage_contacts": 170,
+        "human_cost": 9800.0,
+        "physical_cost": 96402.0,
+        "human_steps": 98,
+        "human_invocations_by_skill": {
+          "reset_cube_and_bin_near": 89,
+          "reset_cube_far": 9
+        }
+      },
+      "evaluations": [
+        {
+          "index": "0000",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0001",
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "index": "0002",
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "index": "0003",
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "index": "0004",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0005",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0006",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0007",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0008",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0009",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0010",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0011",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0012",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0013",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0014",
+          "solved": 5,
+          "total": 10
+        },
+        {
+          "index": "0015",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0016",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0017",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0018",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0019",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0020",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0021",
+          "solved": 6,
+          "total": 10
+        },
+        {
+          "index": "0022",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0023",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0024",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0025",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0026",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0027",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0028",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0029",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0030",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0031",
+          "solved": 10,
+          "total": 10
+        },
+        {
+          "index": "0032",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0033",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0034",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0035",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0036",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0037",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0038",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0039",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0040",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0041",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0042",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0043",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0044",
+          "solved": 10,
+          "total": 10
+        },
+        {
+          "index": "0045",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0046",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0047",
+          "solved": 9,
+          "total": 10
+        },
+        {
+          "index": "0048",
+          "solved": 7,
+          "total": 10
+        },
+        {
+          "index": "0049",
+          "solved": 8,
+          "total": 10
+        },
+        {
+          "index": "0050",
+          "solved": 9,
+          "total": 10
+        }
+      ],
+      "warnings": []
+    }
+  ]
+}

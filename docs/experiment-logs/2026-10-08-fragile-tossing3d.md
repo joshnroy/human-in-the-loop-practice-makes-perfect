@@ -276,3 +276,23 @@ restart jobs or launch agentic runs.
 Receipts, exact command arguments, source versions, validation evidence and
 monitor/launch scripts are in `artifacts/fragile-tossing-mat1-fixed-20261008/`.
 Remote root: `/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-fixed-seed0-20261008`.
+
+
+## Corrected run endpoints — October 9
+
+Both corrected Della runs completed cleanly at 85,000 practice steps, with all 51
+evaluations complete and no monitor warnings. Neither triggered the three-perfect
+evaluation early-stop rule. No additional agentic runs were launched.
+
+| Method | Final eval | Best eval | Human resets total / same / opposite | Damage contacts | Physical cost | Finished EDT | Duration |
+|---|---:|---:|---|---:|---:|---|---|
+| EES | 8/10 | 10/10 | 314 / 0 / 314 | 290 | 118,986 | Oct 9 03:15 | 3h19m |
+| Expectimax | 9/10 | 10/10 | 98 / 89 / 9 | 170 | 96,402 | Oct 9 04:31 | 4h35m |
+
+The recovery from persistent 0/10 after restoring the controller is consistent
+with the diagnosed dependency regression. These are single-seed results, and
+best score is not the final score. The retained agentic endpoints use different
+amounts of practice; raw totals are not equal-experience comparisons.
+
+Full endpoint status and evaluation histories are preserved in
+`artifacts/fragile-tossing-mat1-fixed-20261008/final-results.json`.
