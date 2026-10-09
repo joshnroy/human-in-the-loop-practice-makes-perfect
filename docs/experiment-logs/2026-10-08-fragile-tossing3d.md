@@ -146,3 +146,43 @@ trajectories; heavier-bin dynamics can change those trajectories. No EES landing
 coverage was measured here. Leave the default mat at 4 m pending the next size
 choice. Evidence and reproducible analysis: `artifacts/fragile-tossing-20261008/`
 `mat-size-audit.json` and `mat_size_audit.py`.
+
+
+## Authorized rerun: 1 x 1 m mat and 100 kg bin (October 8, ~21:04 EDT)
+
+User selected 1 x 1 m rather than the suggested 3 x 3 m and requested all four
+experiments again. These are fresh seed-0 runs, not continuations of learned
+agentic controllers. Preserve the previous 4 m/light-bin results separately.
+
+| Method | Location | Job/service | Initial state |
+|---|---|---|---|
+| EES | Della | 15251746 | running |
+| Expectimax | Della | 15251747 | running |
+| Full-agentic original | workstation | hitl-fragile-mat1-heavy-original-h100-d10-seed0-20261008 | adapting |
+| Full-agentic new wording | workstation | hitl-fragile-mat1-heavy-new-wording-h100-d10-seed0-20261008 | adapting |
+
+Changed: mat side 4 -> 1 m; bin mass 0.1 -> 100 kg. Each generated agentic task
+prompt explicitly describes the 1 m mat. Both practice and held-out evaluation
+use the same new environment. Ordinary Tossing3D is unchanged.
+
+Unchanged: human cost 100 per invocation; damage cost 10 per bare-ground contact
+onset; robot step cost 1; human duration 1; 85,000 practice steps; measurements
+every 1,700; 10 evaluation tasks with 500 robot steps each; early stop after three
+consecutive 10/10 evaluations. Expectimax uses grid 25 x 16, depth 6, observation
+penalty 0 and lambda 3e-6. Each agentic run uses Opus 5.5/high with its own $20 cap
+($40 combined), and the same original/new-wording prompt distinction.
+
+Validation: the new default/prompt regression failed on the prior 4 m default,
+then all 13 focused tests passed. Physical drops at 0.4 m from mat center were
+protected; at 0.6 m they incurred damage. Both structured 40-step smoke runs
+succeeded. The sandbox evaluation smoke ran without transport/serialization
+errors. Frozen runtime inspection confirmed 1 m mat extent and 100 kg bin mass.
+
+Frozen commits: HITL eaca501fe; KINDER ec4d4ea; controllers c18056d2.
+Commands, costs, launch receipts, runtime hashes, and smoke logs are retained in
+`artifacts/fragile-tossing-mat1-heavy-20261008/`. Remote root:
+`/scratch/gpfs/TSILVER/jr2860/experiments/fragile-tossing-mat1-heavy-seed0-20261008`.
+Independent 600-second monitors run as workstation service
+`hitl-fragile-mat1-heavy-monitor-10m-20261008` and Della tmux session
+`fragile-mat1-heavy-monitor-10m-20261008`. No current results should yet be inferred
+from startup health. Earlier jobs/results were not overwritten or cancelled.

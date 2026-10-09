@@ -1,0 +1,28 @@
+{
+  "robot_step": {
+    "value": 1
+  },
+  "human_skills": {
+    "reset_cube_far": {
+      "cost": {
+        "value": 100
+      },
+      "duration": {
+        "value": 1
+      }
+    },
+    "reset_cube_and_bin_near": {
+      "cost": {
+        "value": 100
+      },
+      "duration": {
+        "value": 1
+      }
+    }
+  },
+  "human_weight": 1,
+  "objective_lambda": 3e-06,
+  "damage_contact": {
+    "value": 10
+  }
+}
