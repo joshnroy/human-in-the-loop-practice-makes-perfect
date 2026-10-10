@@ -57,6 +57,14 @@ Evaluation spending is recorded in evaluation_model_cost.json; model_budget.json
 contains coding plus practice classification only. No evaluation evidence is supplied
 to the learner. The five Della A* runs are unaffected.
 
+Replacement launched 2026-10-10 16:57 EDT in persistent service
+`hitl-llcc-fragile-seed0-20261010-r2`, with a separate 30-minute monitor.
+Frozen corrected implementation: `bbdf4d8d39c090bf31fc9e37bd2f81708a41e6bc`.
+Fresh seed 0 and bootstrap; both service and monitor verified active.
+The stopped pilot reported $3.3525358 coding/practice and $1.2897564 evaluation
+cost ($4.6422922 total completed calls); an interrupted in-flight call may be
+unreported. These costs remain in the preserved pilot ledger, not the fresh run.
+
 ## Interpretation limits
 
 The generator owns state descriptions and applicability/effects, while the competence
