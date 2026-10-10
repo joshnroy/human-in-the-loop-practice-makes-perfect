@@ -41,7 +41,11 @@ and one shared resumed/fresh-call model budget; then implemented the adapters.
 both reset directions executed; no model calls in the smoke test.
 
 Launch artifacts: `artifacts/llcc-fragile-seed0-20261010/`.
-Experiment results are pending launch/initialization. Do not substitute LCCC results.
+Launched 2026-10-10 16:21 EDT (20:21 UTC), persistent workstation service
+`hitl-llcc-fragile-seed0-20261010`, with a separate 15-minute read-only monitor.
+Frozen implementation: `c27912d45f1514469511e87ec3c32a1826e7e189`.
+Startup protocol verified generated-language states and the intended planner, model,
+and budgets. Initial coding is running; no evaluation result yet. Do not substitute LCCC results.
 
 ## Interpretation limits
 
