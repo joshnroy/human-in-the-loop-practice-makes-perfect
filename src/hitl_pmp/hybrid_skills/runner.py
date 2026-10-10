@@ -29,6 +29,7 @@ def main(*, argv: list[str] | None = None) -> None:
     parser.add_argument("--hybrid-sandbox", type=Path, required=True)
     parser.add_argument("--model-budget", type=float, default=20)
     parser.add_argument("--hybrid-smoke", action="store_true")
+    parser.add_argument("--agentic-states", action="store_true")
     options, rest = parser.parse_known_args(argv)
     args = Cli.parse_args(
         argv=[
@@ -75,9 +76,20 @@ def main(*, argv: list[str] | None = None) -> None:
             *rest,
         ]
     )
-    args.method = "pomdp-agentic-skills"
+    args.method = (
+        "pomdp-agentic-skills-states" if options.agentic_states else "pomdp-agentic-skills"
+    )
+    if options.agentic_states and (
+        args.pomdp_solver != "expectimax" or args.practice_cost_config is None
+    ):
+        raise ValueError("LLCC requires expectimax and an explicit normalized cost configuration")
+    if options.agentic_states and options.hybrid_smoke:
+        raise ValueError(
+            "LLCC requires generated states; use the isolated integration fixture for smoke tests"
+        )
     # Deployment and the end-of-cycle plan refresh need this, even with expectimax.
-    FastDownwardPlanner._fast_downward_script()  # noqa: SLF001 -- fail before paid coding
+    if not options.agentic_states:
+        FastDownwardPlanner._fast_downward_script()  # noqa: SLF001 -- fail before paid coding
     output = Path(args.output_dir).resolve()
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -115,6 +127,28 @@ def main(*, argv: list[str] | None = None) -> None:
             base = method_factory(context)
             config = {key: getattr(base, key) for key in type(base).model_fields}
             method = HybridMethod(**config)
+            snapshot_type, evaluation_type = HybridSnapshot, HybridEvaluation
+            if options.agentic_states:
+                from hitl_pmp.agentic_states.classifier import LanguageClassifier
+                from hitl_pmp.agentic_states.execution import StatesEvaluation, StatesSnapshot
+                from hitl_pmp.agentic_states.method import SkillsStatesMethod
+
+                method = SkillsStatesMethod(**config)
+                classifier_configuration = dict(
+                    settings=settings.model_dump(mode="json"),
+                    output=str(output / "classifications"),
+                    budget_path=str(output / "model_budget.json"),
+                    budget_limit=options.model_budget,
+                )
+                method.classifier_configuration = classifier_configuration
+                method.classifier = LanguageClassifier(
+                    settings=settings,
+                    output=output / "classifications",
+                    budget_path=output / "model_budget.json",
+                    budget_limit=options.model_budget,
+                    phase="practice",
+                )
+                snapshot_type, evaluation_type = StatesSnapshot, StatesEvaluation
             writer = StateLogWriter(
                 output_path=output / "tossing3d_state_log.jsonl",
                 header=StateLogHeader(
@@ -148,7 +182,15 @@ class GeneratedSkills:
                     pass
 
             else:
-                learner = SkillLearner(
+                learner_type = SkillLearner
+                learner_options = {}
+                if options.agentic_states:
+                    from hitl_pmp.agentic_states.learner import SkillsStatesLearner
+
+                    learner_type = SkillsStatesLearner
+                    learner_options = {"on_accept": method.accept_manifest}
+                learner = learner_type(
+                    **learner_options,
                     output=output,
                     env=env,
                     settings=settings,
@@ -163,8 +205,24 @@ class GeneratedSkills:
                     method=args.method,
                     planner="expectimax",
                     depth=args.pomdp_search_depth,
-                    representation="fixed_structured",
-                    learned="robot_skill_code",
+                    representation="generated_language_states"
+                    if options.agentic_states
+                    else "fixed_structured",
+                    learned="robot_skill_code_and_language_states"
+                    if options.agentic_states
+                    else "robot_skill_code",
+                    classifier_model="claude-opus-5-5" if options.agentic_states else None,
+                    classifier_effort="low" if options.agentic_states else None,
+                    evaluation_classification_budget_scope="separate_uncapped_ledger"
+                    if options.agentic_states
+                    else "not_applicable",
+                    model_budget_scope="coding_and_practice_classification"
+                    if options.agentic_states
+                    else "coding",
+                    deployment_planner="language_graph_shortest_success_path"
+                    if options.agentic_states
+                    else "fixed_pddl",
+                    value_model="existing_pick_toss_open_competence_forecast",
                     prompt="original",
                     bootstrap="fresh_interface_only",
                     seed=args.seed,
@@ -187,8 +245,8 @@ class GeneratedSkills:
                     args=args,
                     method=method,
                     problem=problem,
-                    encode_snapshot=HybridSnapshot.encode,
-                    evaluate_snapshot=HybridEvaluation.run,
+                    encode_snapshot=snapshot_type.encode,
+                    evaluate_snapshot=evaluation_type.run,
                     initialize=initialize,
                     stop_exceptions=(ModelBudgetExhausted,),
                 )

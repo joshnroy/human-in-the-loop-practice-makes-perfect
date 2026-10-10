@@ -154,6 +154,9 @@ class SkillLearner:
         # Deliberately omit status.json, evaluation directories, symbolic labels,
         # belief diagnostics and any host source/simulator handles.
 
+    def validate_revision(self) -> None:
+        """Validate additional generated artifacts before publishing controller code."""
+
     def revise(self) -> None:
         if self.budget.exhausted:
             raise ModelBudgetExhausted()
@@ -169,6 +172,8 @@ class SkillLearner:
                 "Explain what you changed and why; no change is allowed."
             )
         )
+        if self.calls > 0:
+            prompt += getattr(self, "revision_instruction", "")
         config = launcher.SandboxConfig(
             sandbox_dir=self.workspace,
             init_files={},
@@ -213,6 +218,7 @@ class SkillLearner:
             if self.budget.exhausted:
                 raise ModelBudgetExhausted()
             raise RuntimeError(f"Coding revision failed: {result.error}")
+        self.validate_revision()
         bundle.write(directory=self.output / "revisions" / f"{self.calls:04d}")
         self.env.bundle = bundle
         StepFiles.json(
