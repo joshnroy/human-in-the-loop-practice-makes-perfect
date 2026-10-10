@@ -388,7 +388,12 @@ class StepPracticeRunner:
         initialize: Callable[[], None] = lambda: None,
         stop_exceptions: tuple[type[Exception], ...] = (),
     ) -> Metrics:
-        if args.env != "tossing3d" or args.method not in {"ees", "pomdp", "pomdp-agentic-skills"}:
+        if args.env != "tossing3d" or args.method not in {
+            "ees",
+            "pomdp",
+            "pomdp-agentic-skills",
+            "pomdp-agentic-skills-states",
+        }:
             raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
             raise ValueError(
@@ -663,7 +668,7 @@ class StepPracticeRunner:
                         action_limit=args.max_steps_per_interaction,
                     )
                 )
-                if actions == 0:
+                if actions == 0 and not getattr(method, "needs_representation_repair", False):
                     endpoint = "no_practice_action"
                     break
                 method.end_cycle()
@@ -691,8 +696,10 @@ class StepPracticeRunner:
         finally:
             backend.set_control_step_observers(before=None, after=None)
             clock.robot_active = False
-            if endpoint != "failed" and (
-                not records or records[-1]["practice_steps"] != clock.steps
+            if (
+                endpoint != "failed"
+                and getattr(method, "measurement_ready", True)
+                and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
                 measure()
             StepFiles.event(
