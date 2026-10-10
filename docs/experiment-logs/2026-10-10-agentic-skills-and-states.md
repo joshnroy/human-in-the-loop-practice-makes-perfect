@@ -21,8 +21,9 @@ comparison. This is a new run; the earlier POMDP + Agentic Skills result remains
 - Skill caps: pick 400, toss 1,000, open 100. Revisions after planner STOP or 20 actions;
   unknown language states may request a representation repair without taking an action.
 - RoboCode / Claude Code, Opus 5.5 high for coding, low for observation classification.
-  One shared $20 budget includes coding and all practice/evaluation classification.
-  Paid calls are serialized across practice/evaluation to prevent budget races.
+  One shared $20 adaptation budget includes coding and practice classification.
+  Evaluation classification is separately accounted and excluded from that limit.
+  Coding/practice paid calls are serialized to prevent adaptation-budget races.
 - Fresh interface-only bootstrap, original hybrid prompt/hint; no robot geometry or
   planning tools supplied. State schema is supplied; state descriptions/graph are generated.
 
@@ -42,10 +43,19 @@ both reset directions executed; no model calls in the smoke test.
 
 Launch artifacts: `artifacts/llcc-fragile-seed0-20261010/`.
 Launched 2026-10-10 16:21 EDT (20:21 UTC), persistent workstation service
-`hitl-llcc-fragile-seed0-20261010`, with a separate 15-minute read-only monitor.
+`hitl-llcc-fragile-seed0-20261010`, with a separate 30-minute read-only monitor.
 Frozen implementation: `c27912d45f1514469511e87ec3c32a1826e7e189`.
-Startup protocol verified generated-language states and the intended planner, model,
-and budgets. Initial coding is running; no evaluation result yet. Do not substitute LCCC results.
+This initial run was stopped and preserved after the user clarified that evaluation
+classification must not consume the adaptation budget. Its accounting included both
+phases and is superseded; do not use it as the corrected comparison result.
+
+Budget correction: three regression tests verify separate ledgers, invalid-phase
+rejection, and paid evaluation continuing after adaptation budget exhaustion while
+practice calls stop. All 405 relevant tests passed. The replacement uses a fresh
+bootstrap in artifacts/llcc-fragile-seed0-20261010-r2, preserving scientific settings.
+Evaluation spending is recorded in evaluation_model_cost.json; model_budget.json
+contains coding plus practice classification only. No evaluation evidence is supplied
+to the learner. The five Della A* runs are unaffected.
 
 ## Interpretation limits
 

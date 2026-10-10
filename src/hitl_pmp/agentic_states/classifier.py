@@ -17,8 +17,15 @@ class LanguageClassifier:
     def __init__(
         self, *, settings, output: Path, budget_path: Path, budget_limit: float, phase: str
     ):
+        if phase not in {"practice", "evaluation"}:
+            raise ValueError(f"Unknown classification phase: {phase}")
         self.settings, self.output, self.phase = settings, output, phase
-        self.budget_path, self.budget_limit = budget_path, budget_limit
+        self.budget_path = (
+            budget_path.with_name("evaluation_model_cost.json")
+            if phase == "evaluation"
+            else budget_path
+        )
+        self.budget_limit = None if phase == "evaluation" else budget_limit
         self.last_key = None
         self.last_result = None
 
@@ -50,12 +57,12 @@ class LanguageClassifier:
                 init_files={},
                 prompt=(
                     "Read observation.json and states.json. Classify this observation into "
-                    "exactly one"
+                    "exactly one "
                     "language-defined state. If none fits or membership is ambiguous, use null. "
                     "Write judgment.json with exactly cluster_id (string or null) and "
-                    "reason (a short"
+                    "reason (a short "
                     "explanation citing observed measurements). Do not infer success from "
-                    "the requested"
+                    "the requested "
                     "action or intention. Do not edit the input files or create controllers."
                 ),
                 system_prompt=(
@@ -66,7 +73,7 @@ class LanguageClassifier:
                 output_filename="judgment.json",
                 model="claude-opus-5-5",
                 effort="low",
-                max_budget_usd=budget.remaining,
+                max_budget_usd=budget.remaining if budget.remaining is not None else 0.0,
                 max_turns=0,
                 max_output_tokens=4096,
                 autocompact_pct=80,

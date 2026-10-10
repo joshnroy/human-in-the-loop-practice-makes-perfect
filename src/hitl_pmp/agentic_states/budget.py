@@ -1,4 +1,4 @@
-"""One serialized dollar budget shared by coding and held-out classifiers."""
+"""Serialized model-cost ledger with an optional adaptation spending limit."""
 
 import fcntl
 import json
@@ -10,7 +10,7 @@ from hitl_pmp.step_protocol import StepFiles
 
 
 class SharedBudget:
-    def __init__(self, *, path: Path, limit: float, session: str):
+    def __init__(self, *, path: Path, limit: float | None, session: str):
         self.path, self.limit, self.session = path, limit, session
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -36,11 +36,11 @@ class SharedBudget:
 
     @property
     def remaining(self):
-        return max(0, self.limit - self.spent)
+        return None if self.limit is None else max(0, self.limit - self.spent)
 
     @property
     def exhausted(self):
-        return self.remaining <= 0
+        return self.remaining is not None and self.remaining <= 0
 
     def record(self, *, cumulative):
         if cumulative is None or not math.isfinite(cumulative):

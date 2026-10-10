@@ -245,3 +245,89 @@ def test_unknown_endpoint_does_not_poison_competence():
     method.settle(cluster=None)
     assert method.pomdp_state.model_dump_json() == before
     assert not method._chain.counts
+
+
+def test_evaluation_ledger_does_not_reduce_adaptation_budget(tmp_path):
+    training = SharedBudget(path=tmp_path / "model_budget.json", limit=20, session="coding")
+    evaluation = SharedBudget(
+        path=tmp_path / "evaluation_model_cost.json", limit=None, session="eval-1"
+    )
+    with training.lock():
+        training.record(cumulative=19)
+    with evaluation.lock():
+        evaluation.record(cumulative=25)
+    assert training.remaining == 1
+    assert evaluation.spent == 25
+    assert evaluation.remaining is None
+    assert not evaluation.exhausted
+    with training.lock():
+        training.record(cumulative=20)
+    assert training.exhausted
+    assert not evaluation.exhausted
+
+
+def test_classifier_routes_evaluation_to_separate_uncapped_ledger(tmp_path):
+    from hitl_pmp.agentic_states.classifier import LanguageClassifier
+
+    common = dict(
+        settings=None,
+        output=tmp_path / "classifications",
+        budget_path=tmp_path / "model_budget.json",
+        budget_limit=20,
+    )
+    practice = LanguageClassifier(**common, phase="practice")
+    evaluation = LanguageClassifier(**common, phase="evaluation")
+    assert practice.budget_path == tmp_path / "model_budget.json"
+    assert practice.budget_limit == 20
+    assert evaluation.budget_path == tmp_path / "evaluation_model_cost.json"
+    assert evaluation.budget_limit is None
+    with pytest.raises(ValueError):
+        LanguageClassifier(**common, phase="typo")
+
+
+def test_paid_eval_still_runs_when_adaptation_exhausted(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import hitl_pmp.agentic_states.classifier as module
+    from hitl_pmp.hybrid_skills.artifacts import ModelBudgetExhausted
+
+    budget_path = tmp_path / "model_budget.json"
+    training = SharedBudget(path=budget_path, limit=20, session="coding")
+    training.record(cumulative=20)
+    before = budget_path.read_bytes()
+    calls = []
+
+    class Transport:
+        def __init__(self, **kwargs):
+            pass
+
+        def modules(self):
+            return (
+                SimpleNamespace(SandboxConfig=SimpleNamespace),
+                SimpleNamespace(create_backend=lambda settings: None),
+                SimpleNamespace(DictConfig=dict),
+            )
+
+        def run_with_recovery(self, *, config, **kwargs):
+            calls.append(config)
+            (config.sandbox_dir / "judgment.json").write_text(
+                '{"cluster_id": "loose", "reason": "cube is loose"}'
+            )
+            return SimpleNamespace(success=True, error=None, total_cost_usd=0.25)
+
+    monkeypatch.setattr(module, "DeadlineTransport", Transport)
+    common = dict(
+        settings=SimpleNamespace(robocode_checkout=tmp_path),
+        output=tmp_path / "classifications",
+        budget_path=budget_path,
+        budget_limit=20,
+    )
+    evaluation = module.LanguageClassifier(**common, phase="evaluation")
+    assert evaluation.classify(manifest=manifest(), observation={}).cluster_id == "loose"
+    assert calls[0].max_budget_usd == 0.0  # Native backend: no model-dollar cap.
+    assert budget_path.read_bytes() == before
+    assert json.loads(evaluation.budget_path.read_text())["spent"] == 0.25
+    practice = module.LanguageClassifier(**common, phase="practice")
+    with pytest.raises(ModelBudgetExhausted):
+        practice.classify(manifest=manifest(), observation={})
+    assert len(calls) == 1

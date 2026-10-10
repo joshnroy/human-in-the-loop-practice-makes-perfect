@@ -35,8 +35,9 @@ host human tools; they cannot execute generated reset code or select arbitrary p
 Robot action names remain PickCube, MoveToTossLocationAndToss and OpenGripper.
 Do not write a classifier or call a model inside get_action. Write the complete skill
 code AND state manifest before returning. Subsequent revisions may change either.
-The one experiment budget covers coding plus runtime classification in practice and
-evaluation; it does not replenish between calls. Classifier explanations from practice
+The adaptation budget covers coding plus runtime classification during practice;
+it does not replenish between calls. Evaluation classification is accounted for
+separately and does not consume this budget. Classifier explanations from practice
 are provided in evidence/; evaluation observations and explanations are withheld.
 """
 
@@ -78,7 +79,7 @@ class SkillsStatesLearner(SkillLearner):
         LanguageManifest.model_validate_json((self.submission / "states.json").read_text())
 
     def revise(self):
-        # The process lock also excludes simultaneous evaluation classification,
+        # The process lock serializes coding and practice classification,
         # so two Claude calls cannot each claim the remaining dollar budget.
         previous = self.env.bundle
         with self.budget.lock():

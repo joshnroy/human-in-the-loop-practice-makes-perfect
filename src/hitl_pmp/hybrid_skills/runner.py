@@ -213,7 +213,10 @@ class GeneratedSkills:
                     else "robot_skill_code",
                     classifier_model="claude-opus-5-5" if options.agentic_states else None,
                     classifier_effort="low" if options.agentic_states else None,
-                    model_budget_scope="coding_and_all_classification"
+                    evaluation_classification_budget_scope="separate_uncapped_ledger"
+                    if options.agentic_states
+                    else "not_applicable",
+                    model_budget_scope="coding_and_practice_classification"
                     if options.agentic_states
                     else "coding",
                     deployment_planner="language_graph_shortest_success_path"
