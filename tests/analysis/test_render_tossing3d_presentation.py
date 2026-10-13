@@ -2,8 +2,16 @@ from analysis.render_tossing3d_presentation import (
     _cycle_end_reason,
     _decision_values,
     _is_applicable,
+    _mean,
     reset_destination,
 )
+
+
+def test_means_read_the_llm_estimator_keys_like_the_belief_means() -> None:
+    llm = {"competences": {"PickCube (llm estimate)": 0.4}}
+    bayesian = {"competences": {"PickCube (belief mean)": 0.6}}
+    assert _mean(llm, field="competences", skill="PickCube") == 0.4
+    assert _mean(bayesian, field="competences", skill="PickCube") == 0.6
 
 
 def test_reset_destination_reads_the_bound_side_object() -> None:

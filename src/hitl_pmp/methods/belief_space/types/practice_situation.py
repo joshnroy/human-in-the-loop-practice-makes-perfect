@@ -21,6 +21,27 @@ class PracticeHistory(BaseModel):
     skill_totals: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
+class PracticeEvidence(BaseModel):
+    """Raw outcome records for a planner that estimates competence and cost itself.
+
+    Each list is in observation order and keyed like the candidates (or by skill name
+    for sampler training data). `scope` is `cumulative` for a fresh Claude session and
+    `since_previous_call` for a resumed one, in which case every list holds only what
+    was appended after the previous call and `failure_effects` carries only count
+    increments. `pending_training_examples` is always the current count of sampler
+    examples not yet fitted, not a delta."""
+
+    model_config = ConfigDict(frozen=True)
+
+    scope: str
+    attempt_outcomes: dict[str, list[bool]] = Field(default_factory=dict)
+    execution_durations: dict[str, list[int]] = Field(default_factory=dict)
+    measured_costs: dict[str, list[float]] = Field(default_factory=dict)
+    failure_effects: list[dict[str, Any]] = Field(default_factory=list)
+    sampler_training_examples: dict[str, list[bool]] = Field(default_factory=dict)
+    pending_training_examples: dict[str, int] = Field(default_factory=dict)
+
+
 class PracticeSituation(BaseModel):
     """Session bookkeeping the belief state does not carry, handed to one decision."""
 
@@ -36,3 +57,7 @@ class PracticeSituation(BaseModel):
     # `reset_cube_and_bin_near`), for the groundings a person would execute.
     human_names: dict[str, str] = Field(default_factory=dict)
     history: PracticeHistory
+    # Only for the `llm` estimator: what it reasons from, and the skill names its
+    # per-skill estimates must cover.
+    evidence: PracticeEvidence | None = None
+    estimate_skills: tuple[str, ...] = ()

@@ -507,6 +507,7 @@ def test_the_protocol_describes_the_arm() -> None:
         "memory": "resume",
         "budget_limit_usd": 20.0,
         "ledger_scope": "practice_only",
+        "estimator": "bayesian",
     }
 
 
