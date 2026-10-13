@@ -69,6 +69,29 @@ def test_the_wrapper_puts_this_checkout_on_the_python_path() -> None:
 
 
 @needs_conda
+@pytest.mark.skipif(
+    not (REPO_ROOT / "reference" / "kindergarden" / "src").is_dir(),
+    reason="reference/kindergarden is not populated in this checkout",
+)
+def test_the_wrapper_puts_this_checkouts_kindergarden_on_the_python_path() -> None:
+    """The same trap one level down. `kindergarden` is an editable install whose
+    `.pth` names the *main* checkout's `reference/kindergarden/src`, so a worktree
+    that has populated its own submodule still imports the main checkout's `kinder`
+    -- the tree that is read and the tree that is run differ. A PYTHONPATH entry
+    precedes every `.pth` entry, so the wrapper prepends this checkout's copy
+    whenever it exists."""
+    completed = subprocess.run(
+        [str(WRAPPER), "python", "-c", "import kinder; print(kinder.__file__)"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd="/",
+    )
+    resolved = Path(completed.stdout.strip())
+    assert resolved == REPO_ROOT / "reference" / "kindergarden" / "src" / "kinder" / "__init__.py"
+
+
+@needs_conda
 def test_the_wrapper_reports_its_environment_when_given_no_command() -> None:
     """The no-argument form doubles as the skill's sanity check, so it has to
     name the interpreter and the resolved import path, not just succeed."""

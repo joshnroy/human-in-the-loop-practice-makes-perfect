@@ -88,6 +88,16 @@ fi
 # checkout's src/ wins, which is the whole point.
 export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
+# The same trap, one level down: kindergarden is an editable install whose .pth
+# names the MAIN checkout's reference/kindergarden/src, so a worktree that has
+# populated its own submodule still imports the main checkout's `kinder`. A
+# PYTHONPATH entry precedes every .pth entry, so prepending this checkout's copy
+# makes the tree that is read the tree that is run. Skipped when the submodule
+# is not populated (an empty gitlink directory has no src/), in which case the
+# editable install's resolution stands and the hitl-env skill's check reports it.
+kinder_src="$REPO_ROOT/reference/kindergarden/src"
+[ -d "$kinder_src" ] && export PYTHONPATH="$kinder_src:$PYTHONPATH"
+
 # --- rendering backend -----------------------------------------------------
 # KINDER installs into THIS env now (the `tossing3d` extra), so a plain `pytest`
 # imports it, and the EGL pair has to be set here rather than in a second wrapper.
@@ -113,7 +123,7 @@ if [ "$#" -eq 0 ]; then
     echo "FD_EXEC_PATH  ${FD_EXEC_PATH:-<unset>}"
     echo "MUJOCO_GL     $MUJOCO_GL"
     python -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
-    python -c 'from importlib.util import find_spec; print("kinder        " + ("installed" if find_spec("kinder") else "<not installed -- tossing3d tests will skip>"))'
+    python -c 'import kinder; print("kinder        " + kinder.__file__)' 2>/dev/null || echo "kinder        <not installed -- tossing3d tests will skip>"
     exit 0
 fi
 
