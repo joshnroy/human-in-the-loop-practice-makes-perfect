@@ -374,6 +374,16 @@ def test_planner_flags_are_rejected_with_a_classical_solver(*, tmp_path: Path) -
         Tossing3DPomdpCli.run(args=args, env_cli=type("Tossing3DCli", (), {}))
 
 
+def test_the_llm_estimator_requires_the_llm_solver(*, tmp_path: Path) -> None:
+    args = _pomdp_args(argv=["--pomdp-estimator", "llm", "--output-dir", str(tmp_path)])
+    with pytest.raises(ValueError, match="--pomdp-estimator llm requires --pomdp-solver llm"):
+        Tossing3DPomdpCli.run(args=args, env_cli=type("Tossing3DCli", (), {}))
+
+
+def test_the_estimator_defaults_to_bayesian() -> None:
+    assert _pomdp_args(argv=[]).pomdp_estimator == "bayesian"
+
+
 def test_the_llm_flags_build_a_real_decision_client_without_docker(*, tmp_path: Path) -> None:
     from hitl_pmp.agentic_runtime.decision_client import DecisionClient
     from hitl_pmp.core.method.skill_provider import DomainContext
@@ -400,6 +410,8 @@ def test_the_llm_flags_build_a_real_decision_client_without_docker(*, tmp_path: 
             "claude-x",
             "--planner-effort",
             "medium",
+            "--pomdp-estimator",
+            "llm",
             "--pomdp-num-particles",
             "200",
             "--output-dir",
@@ -435,5 +447,7 @@ def test_the_llm_flags_build_a_real_decision_client_without_docker(*, tmp_path: 
     assert planner.ledger is not None
     assert planner.ledger.remaining == 7.5
     assert planner.protocol()["memory"] == "resume"
+    assert planner.protocol()["estimator"] == "llm"
+    assert method.pomdp_estimator == "llm"
     assert method.decision_log == output / "pomdp_decisions.jsonl"
     assert args.defer_rendering is True

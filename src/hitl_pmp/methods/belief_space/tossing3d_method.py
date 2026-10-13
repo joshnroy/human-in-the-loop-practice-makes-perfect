@@ -1,5 +1,6 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
+import json
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -8,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, PrivateAttr
 
-from hitl_pmp.agentic_runtime.types import PlannerMemory
+from hitl_pmp.agentic_runtime.types import PlannerMemory, SkillEstimate
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import (
     GroundSkill,
@@ -53,13 +54,16 @@ from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.particle_filter_belief import ParticleFilterBelief
-from .types.practice_situation import PracticeHistory, PracticeSituation
+from .types.practice_situation import PracticeEvidence, PracticeHistory, PracticeSituation
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
 from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
+
+# Suffix of the `llm` estimator's accessor keys, beside the posterior's " (belief mean)".
+LLM_ESTIMATE = " (llm estimate)"
 
 
 def make_belief_space_planner(
@@ -117,6 +121,12 @@ class Tossing3DPomdpMethod(EesMethod):
     planner_model: str = "claude-opus-5-5"
     planner_effort: str = "low"
     planner_history_window: int = Field(default=20, ge=1)
+    # `llm` (only with the `llm` solver): the planner also estimates competence and
+    # cost. The Bayesian belief is then never updated or shown; the planner reasons
+    # from raw outcomes and its stated estimates are what the logging accessors
+    # return. EES's own competence models and samplers, which deployment uses, learn
+    # exactly as they do under `bayesian`.
+    pomdp_estimator: Literal["bayesian", "llm"] = "bayesian"
     # Injected in place of the real client (tests); anything with `.decide`.
     planner_client: Any | None = Field(default=None, exclude=True, repr=False)
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
@@ -160,6 +170,13 @@ class Tossing3DPomdpMethod(EesMethod):
     _llm_history_sent: int = PrivateAttr(default=0)
     _llm_calls_this_session: int = PrivateAttr(default=0)
     _last_attempt_cost: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
+    # The `llm` estimator's raw evidence beyond what EES already keeps: sampler
+    # training labels per skill, how many of them the samplers have fitted, and how
+    # much of each evidence list a resumed Claude session has already been sent.
+    _llm_training_examples: dict[str, list[bool]] = PrivateAttr(default_factory=dict)
+    _llm_training_fitted: dict[str, int] = PrivateAttr(default_factory=dict)
+    _llm_evidence_sent: dict[str, dict[str, int]] = PrivateAttr(default_factory=dict)
+    _llm_failure_counts_sent: dict[str, int] = PrivateAttr(default_factory=dict)
 
     def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
         super().configure_practice_accounting(accounting=accounting)
@@ -221,19 +238,37 @@ class Tossing3DPomdpMethod(EesMethod):
         """Values from the last real decision, never an extra search for rendering."""
         return dict(self._practice_values)
 
+    def _llm_estimates(self) -> dict[str, SkillEstimate] | None:
+        """The `llm` estimator's latest stated estimates ({} before its first
+        decision), or None under the Bayesian estimator."""
+        if self.pomdp_estimator != "llm":
+            return None
+        planner = self.pomdp_planner
+        assert isinstance(planner, LlmPracticePlanner)
+        return planner.last_estimates
+
     def practice_skill_competences(self) -> dict[str, float]:
+        estimates = self._llm_estimates()
+        if estimates is not None:
+            return {name + LLM_ESTIMATE: e.competence for name, e in estimates.items()}
         return {
             skill_name + " (belief mean)": mean_competence(belief=belief)
             for skill_name, belief in self._pomdp_state.skill_beliefs.items()
         }
 
     def practice_skill_learning_rates(self) -> dict[str, float]:
+        estimates = self._llm_estimates()
+        if estimates is not None:
+            return {name + LLM_ESTIMATE: e.learning_rate for name, e in estimates.items()}
         return {
             skill_name + " (belief mean)": mean_learning_rate(belief=belief)
             for skill_name, belief in self._pomdp_state.skill_beliefs.items()
         }
 
     def practice_skill_costs(self) -> dict[str, float]:
+        estimates = self._llm_estimates()
+        if estimates is not None:
+            return {name + LLM_ESTIMATE: e.expected_cost for name, e in estimates.items()}
         if self._practice_accounting is not None:
             return {
                 name + " (execution forecast)": cost
@@ -246,9 +281,10 @@ class Tossing3DPomdpMethod(EesMethod):
         }
 
     def practice_skill_improvement_potentials(self) -> dict[str, float]:
-        """Expected advantage of each applicable skill over stopping now."""
+        """Expected advantage of each applicable skill over stopping now. Empty under
+        the `llm` estimator, which computes no value for anything."""
         stop_value = self._practice_values.get("STOP")
-        if stop_value is None:
+        if stop_value is None or self.pomdp_estimator == "llm":
             return {}
         return {
             name: value - stop_value
@@ -285,6 +321,8 @@ class Tossing3DPomdpMethod(EesMethod):
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:
+        if self.pomdp_estimator == "llm" and self.pomdp_solver != "llm":
+            raise ValueError("pomdp_estimator='llm' requires pomdp_solver='llm'")
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
@@ -350,6 +388,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 model=self.planner_model,
                 effort=self.planner_effort,
                 budget_limit_usd=self.planner_model_budget_usd,
+                estimator=self.pomdp_estimator,
             )
         if self.planner_sandbox is None or self.planner_output is None:
             raise ValueError(
@@ -363,6 +402,7 @@ class Tossing3DPomdpMethod(EesMethod):
             effort=self.planner_effort,
             budget_limit_usd=self.planner_model_budget_usd,
             memory=self.planner_memory,
+            estimator=self.pomdp_estimator,
         )
 
     @property
@@ -444,14 +484,15 @@ class Tossing3DPomdpMethod(EesMethod):
         configured_cost_observation = (
             ground_skill.evaluate_practice_cost() if self._practice_accounting is None else None
         )
-        self._pomdp_state = self._pomdp_model.observe_outcome(
-            state=self._pomdp_state,
-            ground_skill=ground_skill,
-            success=success,
-            was_random_exploration=was_random_exploration,
-            observed_cost=configured_cost_observation,
-            consultation=consultation,
-        )
+        if self.pomdp_estimator == "bayesian":
+            self._pomdp_state = self._pomdp_model.observe_outcome(
+                state=self._pomdp_state,
+                ground_skill=ground_skill,
+                success=success,
+                was_random_exploration=was_random_exploration,
+                observed_cost=configured_cost_observation,
+                consultation=consultation,
+            )
         self._llm_history.append({
             "type": "attempt",
             "session": self._cycle_index,
@@ -563,13 +604,14 @@ class Tossing3DPomdpMethod(EesMethod):
         observed_cost = (
             reset.evaluate_practice_cost() if self._practice_accounting is None else None
         )
-        self._pomdp_state = self._pomdp_model.observe_outcome(
-            state=self._pomdp_state,
-            ground_skill=reset,
-            success=True,
-            was_random_exploration=False,
-            observed_cost=observed_cost,
-        )
+        if self.pomdp_estimator == "bayesian":
+            self._pomdp_state = self._pomdp_model.observe_outcome(
+                state=self._pomdp_state,
+                ground_skill=reset,
+                success=True,
+                was_random_exploration=False,
+                observed_cost=observed_cost,
+            )
         self._pending_reset = None
         reset_id = LlmPracticePlanner.candidate_id(ground=reset)
         self._llm_history.append({
@@ -606,6 +648,9 @@ class Tossing3DPomdpMethod(EesMethod):
             sampler_input=sampler_input,
             success=success,
         )
+        if self.pomdp_estimator == "llm":
+            self._llm_training_examples.setdefault(skill_name, []).append(success)
+            return
         self._pomdp_state = self._pomdp_model.observe_training_example(
             state=self._pomdp_state, skill_name=skill_name, success=success
         )
@@ -620,6 +665,14 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
+        if self.pomdp_estimator == "llm":
+            # The samplers have just fitted every example so far; there is no
+            # belief to smooth or refit.
+            self._llm_training_fitted = {
+                name: len(labels) for name, labels in self._llm_training_examples.items()
+            }
+            self._cycle_index += 1
+            return
         training_examples = dict(self._pomdp_state.pending_examples)
         for skill_name, belief in self._pomdp_state.skill_beliefs.items():
             if isinstance(belief, BayesianSkillBelief):
@@ -744,7 +797,18 @@ class Tossing3DPomdpMethod(EesMethod):
                 "llm_call_index": decision.call_index,
                 "llm_cost_usd": decision.cost_usd,
                 "planner_memory": planner.memory.value,
+                "estimator": planner.estimator,
             }
+            if planner.estimator == "llm":
+                llm_fields["llm_estimates"] = {
+                    name: estimate.model_dump(mode="json")
+                    for name, estimate in planner.last_estimates.items()
+                }
+                self._llm_evidence_sent = {
+                    field: {key: len(values) for key, values in per_key.items()}
+                    for field, per_key in self._llm_evidence_lists().items()
+                }
+                self._llm_failure_counts_sent = self._llm_failure_counts()
             self._llm_history.append({
                 "type": "decision",
                 "session": self._cycle_index,
@@ -835,8 +899,7 @@ class Tossing3DPomdpMethod(EesMethod):
         the same window on a session's first call (a fresh Claude session), then only
         what happened since the previous call."""
         events = self._llm_history
-        resumed = self.planner_memory is PlannerMemory.resume and self._llm_calls_this_session > 0
-        if resumed:
+        if self._llm_resumed():
             scope, start = "since_previous_call", self._llm_history_sent
         else:
             decisions = [index for index, event in enumerate(events) if event["type"] == "decision"]
@@ -856,6 +919,87 @@ class Tossing3DPomdpMethod(EesMethod):
                 counts["successes"] += int(event["success"])
         return PracticeHistory(scope=scope, events=tuple(events[start:]), skill_totals=totals)
 
+    def _llm_resumed(self) -> bool:
+        """Whether this call continues a Claude session that has seen earlier calls."""
+        return self.planner_memory is PlannerMemory.resume and self._llm_calls_this_session > 0
+
+    def _llm_evidence_lists(self) -> dict[str, dict[str, list[Any]]]:
+        """Every per-key evidence list, cumulative."""
+
+        def by_candidate(*, lists: dict[GroundSkill, list[Any]]) -> dict[str, list[Any]]:
+            return {
+                LlmPracticePlanner.candidate_id(ground=ground): list(values)
+                for ground, values in lists.items()
+            }
+
+        return {
+            "attempt_outcomes": by_candidate(lists=self._all_attempt_outcomes),
+            "execution_durations": by_candidate(lists=self._execution_durations),
+            "measured_costs": by_candidate(lists=self._measured_execution_costs),
+            "sampler_training_examples": {
+                name: list(labels) for name, labels in self._llm_training_examples.items()
+            },
+        }
+
+    def _llm_failure_counts(self) -> dict[str, int]:
+        """Failure-effect counts keyed by everything but the count itself."""
+        return {
+            json.dumps(
+                {k: v for k, v in record.items() if k not in {"count", "context_total"}},
+                sort_keys=True,
+            ): int(str(record["count"]))
+            for record in EmpiricalFailureEffects.diagnostics(
+                counts=self._pomdp_model.failure_effect_counts
+            )
+        }
+
+    def _llm_evidence(self) -> PracticeEvidence | None:
+        """Raw evidence for the `llm` estimator: cumulative for a fresh Claude session,
+        only what was appended since the previous call for a resumed one."""
+        if self.pomdp_estimator != "llm":
+            return None
+        lists: dict[str, Any] = self._llm_evidence_lists()
+        failures: list[dict[str, Any]]
+        pending = {
+            name: len(labels) - self._llm_training_fitted.get(name, 0)
+            for name, labels in self._llm_training_examples.items()
+        }
+        pending = {name: count for name, count in pending.items() if count}
+        if not self._llm_resumed():
+            failures = EmpiricalFailureEffects.diagnostics(
+                counts=self._pomdp_model.failure_effect_counts
+            )
+            return PracticeEvidence(
+                scope="cumulative",
+                failure_effects=failures,
+                pending_training_examples=pending,
+                **lists,
+            )
+        sent = self._llm_evidence_sent
+        for field, per_key in lists.items():
+            already = sent.get(field, {})
+            lists[field] = {
+                key: values[already.get(key, 0) :]
+                for key, values in per_key.items()
+                if len(values) > already.get(key, 0)
+            }
+        failures = []
+        for key, count in self._llm_failure_counts().items():
+            new = count - self._llm_failure_counts_sent.get(key, 0)
+            if new > 0:
+                failures.append({**json.loads(key), "count": new})
+        return PracticeEvidence(
+            scope="since_previous_call",
+            failure_effects=failures,
+            pending_training_examples=pending,
+            **lists,
+        )
+
+    def _estimate_skills(self) -> tuple[str, ...]:
+        if self.pomdp_estimator != "llm":
+            return ()
+        return tuple(dict.fromkeys(g.skill.name for g in self._pomdp_model.ground_skills))
+
     def _llm_situation(self) -> PracticeSituation:
         return PracticeSituation(
             session_index=self._cycle_index,
@@ -866,4 +1010,6 @@ class Tossing3DPomdpMethod(EesMethod):
             configured_costs=self._configured_costs(),
             human_names=self._human_names(),
             history=self._llm_history_slice(),
+            evidence=self._llm_evidence(),
+            estimate_skills=self._estimate_skills(),
         )

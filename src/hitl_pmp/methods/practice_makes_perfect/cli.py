@@ -253,6 +253,14 @@ class Tossing3DPomdpCli(EesCli):
             "(same shape as the hybrid runs' sandbox.json). Only with --pomdp-solver llm.",
         )
         parser.add_argument(
+            "--pomdp-estimator",
+            choices=("bayesian", "llm"),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_estimator"].default,
+            help="Who estimates competence, learning rate and cost: the Bayesian belief "
+            "(bayesian), or the llm solver itself from raw outcome history (llm; the "
+            "belief is then never updated or shown). Only llm with --pomdp-solver llm.",
+        )
+        parser.add_argument(
             "--planner-model-budget",
             type=float,
             default=Tossing3DPomdpMethod.model_fields["planner_model_budget_usd"].default,
@@ -362,6 +370,8 @@ class Tossing3DPomdpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
+        if args.pomdp_estimator == "llm" and args.pomdp_solver != "llm":
+            raise ValueError("--pomdp-estimator llm requires --pomdp-solver llm")
         if args.pomdp_solver == "llm":
             if args.planner_sandbox is None:
                 raise ValueError("--pomdp-solver llm requires --planner-sandbox <json>")
@@ -431,6 +441,7 @@ class Tossing3DPomdpCli(EesCli):
                 planner_memory=PlannerMemory(args.planner_memory),
                 planner_model=args.planner_model,
                 planner_effort=args.planner_effort,
+                pomdp_estimator=args.pomdp_estimator,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None

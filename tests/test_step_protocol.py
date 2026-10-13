@@ -571,6 +571,7 @@ def test_the_llm_arm_ends_practice_on_model_budget_and_still_evaluates(
         "memory": "resume",
         "budget_limit_usd": 20.0,
         "ledger_scope": "practice_only",
+        "estimator": "bayesian",
     }
     assert method.policy_calls == 3
     assert [s["model_budget_remaining_usd"] for s in method.schedules] == [17.5] * 3

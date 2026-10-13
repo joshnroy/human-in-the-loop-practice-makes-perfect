@@ -338,6 +338,24 @@ def test_complete_estimates_are_returned_as_floats(fake):
     assert decision.estimates["MoveToTossLocationAndToss"].expected_cost == 30.0
 
 
+def test_named_estimate_keys_must_all_be_present_or_the_call_is_retried(fake):
+    partial = json.dumps({**GOOD, "estimates": {"PickCube": ESTIMATES["PickCube"]}})
+    fake.script.extend([(partial, 0.05, "sid-a"), (partial, 0.05, "sid-b")])
+    keys = ["PickCube", "MoveToTossLocationAndToss"]
+    with pytest.raises(DecisionError, match="MoveToTossLocationAndToss"):
+        decide(client(fake), require_estimates=True, estimate_keys=keys)
+    assert len(fake.calls) == 2
+    for key in keys:
+        assert key in fake.calls[0].prompt
+
+
+def test_named_estimate_keys_accept_a_complete_block(fake):
+    fake.script.append((json.dumps({**GOOD, "estimates": ESTIMATES}), 0.05, "sid-a"))
+    decision = decide(client(fake), require_estimates=True, estimate_keys=sorted(ESTIMATES))
+    assert decision.estimates is not None
+    assert set(decision.estimates) == set(ESTIMATES)
+
+
 def test_estimates_are_optional_when_not_required(fake):
     fake.script.append((json.dumps(GOOD), 0.05, "sid-a"))
     assert decide(client(fake)).estimates is None

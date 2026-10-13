@@ -118,7 +118,7 @@ def _mean(decision: dict[str, Any] | None, *, field: str, skill: str) -> float |
     values = decision.get(field)
     if not isinstance(values, dict):
         return None
-    for key in (f"{skill} (belief mean)", skill):
+    for key in (f"{skill} (belief mean)", f"{skill} (llm estimate)", skill):
         if key in values:
             return float(values[key])
     return None

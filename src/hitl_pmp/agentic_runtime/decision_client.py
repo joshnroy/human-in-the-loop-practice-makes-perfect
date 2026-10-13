@@ -72,7 +72,10 @@ class DecisionClient:
         candidate_ids: list[str],
         session_key: str,
         require_estimates: bool = False,
+        estimate_keys: list[str] | None = None,
     ) -> Decision:
+        """`estimate_keys`, with `require_estimates`, names every key the estimates block
+        must contain; a block missing one is rejected and retried like any other."""
         if not candidate_ids or len(set(candidate_ids)) != len(candidate_ids):
             raise ValueError("Candidate action ids must be nonempty and unique")
         if not session_key:
@@ -86,6 +89,7 @@ class DecisionClient:
                 candidate_ids=candidate_ids,
                 session_key=session_key,
                 require_estimates=require_estimates,
+                estimate_keys=estimate_keys,
                 attempt=attempt,
                 decision_index=decision_index,
                 rejection=rejection,
@@ -105,6 +109,7 @@ class DecisionClient:
         attempt: int,
         decision_index: int,
         rejection: str | None,
+        estimate_keys: list[str] | None = None,
     ) -> Decision | str:
         """Run one transport invocation and return the decision or why it was rejected."""
         index = self.calls
@@ -152,6 +157,7 @@ class DecisionClient:
                     require_estimates=require_estimates,
                     resumed=resumed,
                     rejection=rejection,
+                    estimate_keys=estimate_keys,
                 ),
                 system_prompt=self.SYSTEM_PROMPT,
                 output_filename="decision.json",
@@ -181,6 +187,7 @@ class DecisionClient:
                 path=work / "decision.json",
                 candidate_ids=candidate_ids,
                 require_estimates=require_estimates,
+                estimate_keys=estimate_keys,
             )
             StepFiles.json(
                 path=call_dir / "result.json",
@@ -220,7 +227,12 @@ class DecisionClient:
 
     @staticmethod
     def verdict(
-        *, result: Any, path: Path, candidate_ids: list[str], require_estimates: bool
+        *,
+        result: Any,
+        path: Path,
+        candidate_ids: list[str],
+        require_estimates: bool,
+        estimate_keys: list[str] | None = None,
     ) -> DecisionOutput | str:
         """Validate decision.json, or say why it is rejected; never repair it."""
         if not result.success:
@@ -235,6 +247,10 @@ class DecisionClient:
             return f"unknown action id {output.action_id!r}"
         if require_estimates and not output.estimates:
             return "decision.json lacks the required estimates block"
+        if require_estimates and estimate_keys:
+            missing = [key for key in estimate_keys if key not in (output.estimates or {})]
+            if missing:
+                return f"decision.json estimates lack the keys {missing}"
         return output
 
     @staticmethod
@@ -244,6 +260,7 @@ class DecisionClient:
         require_estimates: bool,
         resumed: bool,
         rejection: str | None,
+        estimate_keys: list[str] | None = None,
     ) -> str:
         parts = []
         if rejection is not None:
@@ -266,6 +283,8 @@ class DecisionClient:
                 "numeric keys competence, learning_rate and expected_cost, with an entry for "
                 "every skill the context describes."
             )
+            if estimate_keys:
+                parts.append(f"The estimates keys must include: {', '.join(estimate_keys)}.")
         else:
             parts[-1] += "."
         parts.append(
