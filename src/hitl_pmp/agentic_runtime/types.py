@@ -1,6 +1,7 @@
 """Validated language abstractions and generated-policy artifacts."""
 
 import math
+from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
@@ -268,3 +269,43 @@ class TerminalJudgment(BaseModel):
                 value=None if self.outcome is None else self.outcome == "success", reason=reason
             ).model_dump(),
         }
+
+
+class PlannerMemory(str, Enum):
+    """How much of its own history a decision-making Claude session keeps.
+
+    ``stateless`` starts a fresh session for every decision; ``resume`` continues the
+    session of the previous decision that shared a ``session_key``. The caller owns
+    session boundaries: the intended use is one Claude session per practice session
+    of at most 20 decisions, so a resumed context stays bounded.
+    """
+
+    stateless = "stateless"
+    resume = "resume"
+
+
+class Decision(BaseModel):
+    """One accepted practice decision, with what it cost and where it is recorded."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    action_id: str
+    reason: str
+    estimates: dict[str, "SkillEstimate"] | None
+    cost_usd: float
+    call_index: int
+
+
+class DecisionOutput(BaseModel):
+    """Exactly what the model writes to decision.json; nothing is filled in for it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    action_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    estimates: dict[str, "SkillEstimate"] | None = None
+
+
+class SkillEstimate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    competence: float = Field(allow_inf_nan=False)
+    learning_rate: float = Field(allow_inf_nan=False)
+    expected_cost: float = Field(allow_inf_nan=False)
