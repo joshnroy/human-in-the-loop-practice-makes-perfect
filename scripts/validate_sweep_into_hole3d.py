@@ -43,13 +43,19 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
 ENV_ID = "kinder/SweepIntoHole3D-o5-v0"
 PIT_X = (0.80, 1.25)
+PIT_Y = (-0.20, 0.20)
 # The drive-in lane runs down the middle of the pit: the caster track is narrower
 # than the opening, so both front wheels cross the rim together.
 DRIVE_IN_Y = 0.0
 DRIVE_IN_STEP_LIMIT = 300
+# The pick-from-pit check: one cube, dropped near the far side of the pit so the arm
+# has to reach across it, and the base parked this far behind the cube.
+PICK_CUBE = "cube_0"
+PICK_CUBE_XY = (1.10, 0.05)
+PICK_STANDOFF = 0.62
 CUBES = tuple(f"cube_{i}" for i in range(5))
 FRAME_SIZE = (640, 480)
-EPISODES = ("sweep_then_reset_cubes", "drive_in_then_reset_robot")
+EPISODES = ("sweep_then_reset_cubes", "drive_in_then_reset_robot", "pick_cube_out_of_pit")
 
 
 class StepBudgetExhausted(RuntimeError):
@@ -689,6 +695,9 @@ class HoleProbe:
                     robot_qpos_indices=self.robot_qpos_indices,
                 ),
             )
+        elif self.episode == "pick_cube_out_of_pit":
+            self.run_phase(name="drop_cube_into_pit", action=self.drop_cube_into_pit)
+            self.run_phase(name="pick_cube_out_of_pit", action=self.pick_cube_out_of_pit)
         else:
             raise ValueError(f"unknown episode {self.episode!r}")
         self.phase = "end"
@@ -746,6 +755,61 @@ class HoleProbe:
                 self.step(arm=arm, base=np.array([x, DRIVE_IN_Y, 0.0]), label=label)
             self.capture(label=f"stuck: {label}", keyframe=True)
         self.base_target = self.data.qpos[self.ba].copy()
+
+    def drop_cube_into_pit(self) -> None:
+        """Teleport one cube above the pit and let it settle on the pit floor."""
+        cube = self.core.get_object(PICK_CUBE)
+        cube.set_pose([*PICK_CUBE_XY, 0.05], [1.0, 0.0, 0.0, 0.0])
+        cube.set_velocity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        self.hold(count=self.plan.fps, label="cube_settles_in_pit")
+        if not self.core.cube_in_hole(PICK_CUBE):
+            raise RuntimeError("Dropped cube did not settle in the pit")
+
+    def pick_cube_out_of_pit(self) -> None:
+        """Top-down friction grasp of a pit cube from a base parked short of the rim,
+        then lift it out and set it on the floor beside the pit."""
+        position, quaternion = self.core.get_object(PICK_CUBE).get_pose()
+        cube_yaw = Rotation.from_quat(quaternion[[1, 2, 3, 0]]).as_euler("xyz")[2]
+        yaw = (cube_yaw + np.pi / 4) % (np.pi / 2) - np.pi / 4
+        rotation = Rotation.from_euler("z", yaw).as_matrix() @ np.diag([1.0, -1.0, -1.0])
+        self.grip = 0.0
+        self.move_base(target=[position[0] - PICK_STANDOFF, position[1], 0.0], label="park_at_rim")
+        if self.core.robot_stuck_in_hole():
+            raise RuntimeError("Parking for the pick put a wheel over the pit")
+        above = np.array([position[0], position[1], 0.15])
+        self.move(position=above, rotation=rotation, label="above_cube")
+        for z in np.linspace(0.15, position[2], 16):
+            self.move(position=[*position[:2], z], rotation=rotation, label="lower_into_pit")
+        self.grip = 1.0
+        self.hold(count=25, label="close_on_cube")
+        for z in np.linspace(position[2], 0.15, 16):
+            self.move(
+                position=[*position[:2], z],
+                rotation=rotation,
+                label="lift_out_of_pit",
+                position_tolerance=0.015,
+            )
+        lifted = self.core.get_object(PICK_CUBE).get_pose()[0]
+        self.capture(label=f"cube lifted to z={lifted[2]:.3f}", keyframe=True)
+        if lifted[2] < 0.05:
+            raise RuntimeError(f"Cube not lifted out of the pit (z={lifted[2]:.3f})")
+        place = np.array([position[0] - 0.1, PIT_Y[1] + 0.12, 0.15])
+        self.move(
+            position=place, rotation=rotation, label="carry_to_floor", position_tolerance=0.015
+        )
+        self.move(
+            position=[*place[:2], 0.02],
+            rotation=rotation,
+            label="lower_to_floor",
+            position_tolerance=0.015,
+        )
+        self.grip = 0.0
+        self.hold(count=25, label="release_on_floor")
+        self.move(position=place, rotation=rotation, label="retreat", position_tolerance=0.015)
+        placed = self.core.get_object(PICK_CUBE).get_pose()[0]
+        self.capture(label=f"cube on floor at z={placed[2]:.3f}", keyframe=True)
+        if self.core.cube_in_hole(PICK_CUBE) or placed[2] < 0.0:
+            raise RuntimeError("Cube did not end up on the floor outside the pit")
 
     def close(self) -> None:
         self.env.close()
