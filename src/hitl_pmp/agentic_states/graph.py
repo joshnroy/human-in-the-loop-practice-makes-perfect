@@ -1,19 +1,15 @@
 """Language-defined action applicability and observable outcome regions."""
 
 from collections import deque
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hitl_pmp.agentic_runtime.types import StateCluster
 
-Action = Literal[
-    "PickCube",
-    "MoveToTossLocationAndToss",
-    "OpenGripper",
-    "reset_cube_far",
-    "reset_cube_and_bin_near",
-]
+RobotAction = Literal["PickCube", "MoveToTossLocationAndToss", "OpenGripper"]
+HumanAction = Literal["reset_cube_far", "reset_cube_and_bin_near"]
+Action = Literal[RobotAction, HumanAction]
 HUMANS = {"reset_cube_far", "reset_cube_and_bin_near"}
 
 
@@ -29,12 +25,23 @@ class Edge(BaseModel):
         return {raw: 1.0} if isinstance(raw, str) else raw
 
 
+class RobotEdge(Edge):
+    action: RobotAction
+
+
 class LanguageManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    # A run that offers the human reset must represent both of its groundings; a
+    # run without it must never name them (see `RobotOnlyManifest`).
+    human_reset_offered: ClassVar[bool] = True
     revision: str = Field(min_length=1)
     clusters: tuple[StateCluster, ...]
     goal_clusters: tuple[str, ...]
     edges: tuple[Edge, ...]
+
+    @classmethod
+    def for_run(cls, *, human_reset_offered: bool) -> type["LanguageManifest"]:
+        return LanguageManifest if human_reset_offered else RobotOnlyManifest
 
     @model_validator(mode="after")
     def validate_graph(self):
@@ -61,9 +68,17 @@ class LanguageManifest(BaseModel):
                     not math.isfinite(v) or v <= 0 for v in distribution.values()
                 ) or not math.isclose(sum(distribution.values()), 1):
                     raise ValueError("Conditional probabilities must sum to one")
-        if not {e.action for e in self.edges} >= HUMANS:
+        if self.human_reset_offered and not {e.action for e in self.edges} >= HUMANS:
             raise ValueError("Both human reset skills must remain represented")
         return self
+
+
+# The manifest of a `--no-human-reset` run. The edge type rejects the reset actions by
+# construction, so the schema the coding model reads never names them. No docstring:
+# pydantic would publish it as the schema's description.
+class RobotOnlyManifest(LanguageManifest):
+    human_reset_offered = False
+    edges: tuple[RobotEdge, ...]
 
 
 class StateGraph:

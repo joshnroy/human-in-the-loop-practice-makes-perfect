@@ -331,3 +331,141 @@ def test_paid_eval_still_runs_when_adaptation_exhausted(tmp_path, monkeypatch):
     with pytest.raises(ModelBudgetExhausted):
         practice.classify(manifest=manifest(), observation={})
     assert len(calls) == 1
+
+
+def robot_only_manifest_raw():
+    raw = manifest().model_dump()
+    raw["edges"] = [e for e in raw["edges"] if not e["action"].startswith("reset_cube")]
+    return raw
+
+
+def test_manifest_requires_human_skills_only_when_the_reset_is_offered():
+    from hitl_pmp.agentic_states.graph import HUMANS
+
+    assert LanguageManifest.for_run(human_reset_offered=True) is LanguageManifest
+    robot_only = LanguageManifest.for_run(human_reset_offered=False)
+    accepted = robot_only.model_validate(robot_only_manifest_raw())
+    assert not {e.action for e in accepted.edges} & HUMANS
+    with pytest.raises(ValueError):
+        LanguageManifest.model_validate(robot_only_manifest_raw())
+    with pytest.raises(ValueError):
+        robot_only.model_validate(manifest().model_dump())
+    # The schema the coding model reads names only the actions the run offers.
+    enum = robot_only.model_json_schema()["$defs"]["RobotEdge"]["properties"]["action"]["enum"]
+    assert enum == ["PickCube", "MoveToTossLocationAndToss", "OpenGripper"]
+    unchanged = LanguageManifest.model_json_schema()["$defs"]["Edge"]["properties"]["action"]
+    assert unchanged["enum"] == [*enum, "reset_cube_far", "reset_cube_and_bin_near"]
+    assert "reset_cube" not in json.dumps(robot_only.model_json_schema())
+
+
+def test_chain_and_snapshot_accept_a_robot_only_graph_without_the_reset():
+    from hitl_pmp.agentic_states.execution import StatesSnapshot
+    from hitl_pmp.agentic_states.method import SkillsStatesMethod
+    from hitl_pmp.agentic_states.model import ClusterState
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.hybrid_skills.artifacts import SkillBundle
+    from hitl_pmp.hybrid_skills.execution import HybridEnvironment
+
+    env = HybridEnvironment(scene_bg=False)
+    env.bundle = SkillBundle(files={"skills.py": "pass"})
+    provider = Tossing3DSkillProvider(env=env, offer_human_reset=False)
+    method = SkillsStatesMethod(
+        env=env, skill_provider=provider, seed=0, pomdp_inference_engine="grid"
+    )
+    robot_only = LanguageManifest.for_run(human_reset_offered=False)
+    accepted = robot_only.model_validate(robot_only_manifest_raw())
+    method.accept_manifest(manifest=accepted)
+    assert set(method._chain.bindings) == {"PickCube", "MoveToTossLocationAndToss", "OpenGripper"}
+    valid = method._chain.get_valid_actions(environment_state=ClusterState(cluster_id="loose"))
+    assert [a.option_id for a in valid] == ["PickCube"]
+    with pytest.raises(ValueError, match="unbound"):
+        method.accept_manifest(manifest=manifest())
+    restored = StatesSnapshot.restore(
+        raw=StatesSnapshot.encode(method=method), env=env, provider=provider
+    )
+    assert isinstance(restored.graph.manifest, robot_only)
+    assert restored.graph.manifest.model_dump() == accepted.model_dump()
+    assert restored.graph.deployment_action(cluster="loose") == "PickCube"
+
+
+def test_language_learner_and_classifier_never_mention_a_human_without_the_reset(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    import hitl_pmp.agentic_states.classifier as classifier_module
+    from hitl_pmp.agentic_runtime.sandbox import SandboxSettings
+    from hitl_pmp.agentic_states.learner import STATE_CONTRACT, SkillsStatesLearner
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
+    from hitl_pmp.hybrid_skills import learner as learner_module
+    from hitl_pmp.hybrid_skills.execution import HybridEnvironment
+
+    assert SkillsStatesLearner.state_contract(human_reset_offered=True) == STATE_CONTRACT
+    assert "reset_cube_far" in STATE_CONTRACT and "human" in STATE_CONTRACT
+    contract = SkillsStatesLearner.state_contract(human_reset_offered=False)
+    assert "human" not in contract.lower() and "reset_cube" not in contract
+    assert "PickCube, MoveToTossLocationAndToss and OpenGripper" in contract
+    monkeypatch.setattr(Tossing3DAgenticBridge, "observe", lambda self: {"objects": []})
+    calls = []
+
+    class Transport:
+        def __init__(self, **kwargs):
+            pass
+
+        def modules(self):
+            return (
+                SimpleNamespace(SandboxConfig=lambda **kw: SimpleNamespace(**kw)),
+                SimpleNamespace(create_backend=lambda config: None),
+                SimpleNamespace(DictConfig=lambda x: x),
+            )
+
+        def run_with_recovery(self, *, config, **kwargs):
+            calls.append(config)
+            if config.output_filename == "judgment.json":
+                (config.sandbox_dir / "judgment.json").write_text(
+                    '{"cluster_id": "loose", "reason": "cube is loose"}'
+                )
+            else:
+                (config.sandbox_dir / "submission" / "states.json").write_text(
+                    json.dumps(robot_only_manifest_raw())
+                )
+            return SimpleNamespace(success=True, error=None, total_cost_usd=1)
+
+    monkeypatch.setattr(learner_module, "DeadlineTransport", Transport)
+    monkeypatch.setattr(classifier_module, "DeadlineTransport", Transport)
+    env = HybridEnvironment(scene_bg=False)
+    settings = SandboxSettings(
+        image="fake", robocode_checkout=tmp_path, artifact_dir=tmp_path / "trajectories"
+    )
+    accepted = []
+    learner = SkillsStatesLearner(
+        on_accept=lambda *, manifest: accepted.append(manifest),
+        output=tmp_path,
+        env=env,
+        settings=settings,
+        costs=PracticeCosts(),
+        human_reset_offered=False,
+    )
+    learner.revise()
+    assert len(accepted) == 1
+    assert accepted[0].__class__ is LanguageManifest.for_run(human_reset_offered=False)
+    for name in (
+        "task_prompt.md",
+        "system_prompt.md",
+        "coding/sandbox/STATE_CONTRACT.md",
+        "coding/sandbox/states.schema.json",
+        "coding/sandbox/evidence/accounting.json",
+    ):
+        text = (tmp_path / name).read_text().lower()
+        assert "human" not in text and "reset_cube" not in text, name
+    assert "human" not in (calls[0].prompt + calls[0].system_prompt).lower()
+    classifier = classifier_module.LanguageClassifier(
+        settings=SimpleNamespace(robocode_checkout=tmp_path),
+        output=tmp_path / "classifications",
+        budget_path=tmp_path / "model_budget.json",
+        budget_limit=20,
+        phase="practice",
+    )
+    assert classifier.classify(manifest=accepted[0], observation={}).cluster_id == "loose"
+    assert "human" not in (calls[1].prompt + calls[1].system_prompt).lower()

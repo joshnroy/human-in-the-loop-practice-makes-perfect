@@ -13,8 +13,135 @@ from hitl_pmp.step_protocol import StepFiles
 
 from .artifacts import ModelBudgetExhausted, SessionBudget, SkillBundle
 
+HUMAN_COST_FIELDS = {"human_skills", "human_weight"}
 
-def hybrid_prompt(*, costs: PracticeCosts, mat_size: float, budget: float = 20) -> str:
+
+class HumanFreePrompt:
+    """Rewrite a `--no-human-reset` prompt so the model is never told a human exists.
+
+    Every cut names the exact text it removes and fails loudly if that text has moved,
+    so a reworded source prompt cannot silently leak the human skills back in.
+    """
+
+    @staticmethod
+    def cut(*, prompt: str, old: str, new: str = "") -> str:
+        if old not in prompt:
+            raise ValueError(f"Prompt no longer contains: {old!r}")
+        return prompt.replace(old, new)
+
+    @staticmethod
+    def cut_span(*, prompt: str, start: str, end: str, new: str = "") -> str:
+        """Replace from `start` through the first `end` after it, inclusive."""
+        first = prompt.index(start)
+        last = prompt.index(end, first) + len(end)
+        return prompt[:first] + new + prompt[last:]
+
+    @staticmethod
+    def task(*, prompt: str, costs: PracticeCosts) -> str:
+        cut, cut_span = HumanFreePrompt.cut, HumanFreePrompt.cut_span
+        prompt = cut(
+            prompt=prompt,
+            old="A fixed expectimax planner selects skills and human interventions. ",
+            new="A fixed expectimax planner selects skills. ",
+        )
+        prompt = cut_span(prompt=prompt, start="Available human skills during practice:", end="\n")
+        prompt = cut(
+            prompt=prompt,
+            old=" Hₕ denotes dispatched invocations of human skill h; cₕ is its cost function "
+            "and dₕ its counted-duration function.",
+        )
+        prompt = cut(prompt=prompt, old="$$\nC_H = \\sum_h \\sum_{e\\in H_h} c_h(e)\n$$\n")
+        prompt = cut(prompt=prompt, old="C = C_R + w_H C_H", new="C = C_R")
+        prompt = cut(prompt=prompt, old="B = |R| + \\sum_h \\sum_{e\\in H_h} d_h(e)", new="B = |R|")
+        if costs == PracticeCosts():
+            prompt = cut(
+                prompt=prompt,
+                old="$$\nc_h(e) \\equiv 1 \\quad \\forall h\n$$\n"
+                "$$\nd_h(e) \\equiv 1 \\quad \\forall h\n$$\n$$\nw_H = 1\n$$\n",
+            )
+        else:
+            prompt = cut(
+                prompt=prompt,
+                old=costs.model_dump_json(indent=2),
+                new=costs.model_dump_json(indent=2, exclude=HUMAN_COST_FIELDS),
+            )
+            prompt = cut(
+                prompt=prompt,
+                old="The host returns current robot-step prices and per-human-skill "
+                "price/duration quotes.",
+                new="The host returns current robot-step prices.",
+            )
+        prompt = cut(prompt=prompt, old="w_H weights human cost relative to robot cost. ")
+        prompt = cut(
+            prompt=prompt, old=" Each dispatched human invocation counts once, including failure."
+        )
+        prompt = cut_span(
+            prompt=prompt,
+            start="Practice experience is B = robot control periods + Σdₕ(e), ",
+            end="human skill.",
+            new="Practice experience is B = robot control periods.",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="expected benefit and robot/human cost tradeoff",
+            new="expected benefit and robot cost tradeoff",
+        )
+        prompt = cut(prompt=prompt, old="(choosing a human reset, starting", new="(starting")
+        prompt = cut(
+            prompt=prompt,
+            old="expected subsequent robot steps and human requests for",
+            new="expected subsequent robot steps for",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="hint: in order to minimize human cost, consider practicing",
+            new="hint: consider practicing",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="minimize human cost by picking up the cube after each toss",
+            new="pick up the cube after each toss",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="All robot steps and human requests retain their configured costs.",
+            new="All robot steps retain their configured costs.",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="Initial placement and human placement are exempt.",
+            new="Initial placement is exempt.",
+        )
+        prompt = cut(
+            prompt=prompt,
+            old="alongside robot and human costs in your decisions",
+            new="alongside robot costs in your decisions",
+        )
+        return cut(
+            prompt=prompt,
+            old="Do not execute physical commands or human resets outside this "
+            "planner-controlled loop.\n"
+            "Both human skills described above remain available to the planner.\n",
+            new="Do not execute physical commands outside this planner-controlled loop.\n",
+        )
+
+    @staticmethod
+    def system(*, prompt: str) -> str:
+        prompt = HumanFreePrompt.cut(
+            prompt=prompt,
+            old="Robot control steps and human-skill invocations incur the specified costs.",
+            new="Robot control steps incur the specified costs.",
+        )
+        return HumanFreePrompt.cut(
+            prompt=prompt,
+            old="runs autonomously without human assistance or model calls.",
+            new="runs autonomously without model calls.",
+        )
+
+
+def hybrid_prompt(
+    *, costs: PracticeCosts, mat_size: float, budget: float = 20, human_reset_offered: bool = True
+) -> str:
     prompt = FullAgenticRunner.variant_prompt(
         prompt=FullAgenticRunner.task_prompt(costs=costs),
         variant="original",
@@ -37,7 +164,7 @@ def hybrid_prompt(*, costs: PracticeCosts, mat_size: float, budget: float = 20) 
         "When finished, commit your controller and call `env.finish_adaptation()`.",
         "When this revision is ready, commit the code and end your response.",
     )
-    return (
+    prompt = (
         prompt
         + """
 
@@ -71,6 +198,9 @@ bootstrap, not a previously learned controller. There is one $20 total model bud
 across initialization and all revisions, not $20 per revision.
 """
     ).replace("$20", f"${budget:g}")
+    if human_reset_offered:
+        return prompt
+    return HumanFreePrompt.task(prompt=prompt, costs=costs)
 
 
 class SkillLearner:
@@ -82,9 +212,11 @@ class SkillLearner:
         settings: SandboxSettings,
         costs: PracticeCosts,
         budget: float = 20,
+        human_reset_offered: bool = True,
     ) -> None:
         self.output, self.env, self.settings = output, env, settings
         self.costs = costs
+        self.human_reset_offered = human_reset_offered
         self.budget = SessionBudget(limit=budget)
         self.workspace = output / "coding/sandbox"
         self.workspace.mkdir(parents=True)
@@ -96,15 +228,25 @@ class SkillLearner:
         self.transport = DeadlineTransport(
             sandbox=settings, backend="claude", subagent_policy="legacy"
         )
-        self.prompt = hybrid_prompt(costs=costs, mat_size=env.mat_size, budget=budget)
+        self.prompt = hybrid_prompt(
+            costs=costs,
+            mat_size=env.mat_size,
+            budget=budget,
+            human_reset_offered=human_reset_offered,
+        )
         (output / "task_prompt.md").write_text(self.prompt)
+        self.system = self.system_prompt(human_reset_offered=human_reset_offered)
+        (output / "system_prompt.md").write_text(self.system)
+
+    @staticmethod
+    def system_prompt(*, human_reset_offered: bool) -> str:
         # Same coding tools and generic RoboCode system prompt, with the hybrid
         # ownership contract superseding the generic fresh-world/testing guidance.
-        self.system = (HERE / "system_prompt.md").read_text() + (
+        system = (HERE / "system_prompt.md").read_text() + (
             "\nThe HYBRID EXECUTION CONTRACT overrides who initiates physical testing: "
             "return a revision for the host planner to practice, then inspect its evidence.\n"
         )
-        (output / "system_prompt.md").write_text(self.system)
+        return system if human_reset_offered else HumanFreePrompt.system(prompt=system)
 
     def prepare_evidence(self) -> None:
         bridge = Tossing3DAgenticBridge(env=self.env, observation_mode="object_state")
@@ -142,7 +284,10 @@ class SkillLearner:
         StepFiles.json(
             path=evidence / "accounting.json",
             value={
-                "cost_functions": self.costs.model_dump(mode="json"),
+                "cost_functions": self.costs.model_dump(
+                    mode="json",
+                    exclude=None if self.human_reset_offered else HUMAN_COST_FIELDS,
+                ),
                 "counted_steps": counted_steps,
                 "remaining_practice_steps": max(0, 85000 - counted_steps),
                 "physical_cost": sum(
