@@ -387,7 +387,11 @@ class StepPracticeRunner:
         evaluate_snapshot: Callable[..., dict[str, Any]] = StepEvaluation.run,
         initialize: Callable[[], None] = lambda: None,
         stop_exceptions: tuple[type[Exception], ...] = (),
+        model_budget: Any | None = None,
     ) -> Metrics:
+        """`model_budget` is the run's model-cost ledger when it has one (anything with
+        a `remaining` attribute, e.g. `SharedBudget` or `SessionBudget`); its live
+        remaining amount is handed to the method before every practice decision."""
         if args.env != "tossing3d" or args.method not in {
             "ees",
             "pomdp",
@@ -567,6 +571,16 @@ class StepPracticeRunner:
                         break
                     method.observe_practice_action_budget(
                         remaining_actions=args.max_steps_per_interaction - action_index
+                    )
+                    method.observe_practice_schedule(
+                        step_budget=clock.budget,
+                        measurement_interval_steps=clock.interval,
+                        steps_used=clock.steps,
+                        model_budget_remaining_usd=(
+                            None
+                            if model_budget is None or model_budget.remaining is None
+                            else float(model_budget.remaining)
+                        ),
                     )
                     try:
                         action = policy(state)

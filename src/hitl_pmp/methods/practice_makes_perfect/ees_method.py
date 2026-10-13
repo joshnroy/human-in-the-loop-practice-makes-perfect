@@ -17,6 +17,7 @@ from hitl_pmp.core.method.types import (
     LabeledAction,
     ParameterSamplingDiagnostics,
     Policy,
+    PracticeSchedule,
     PracticeTargetTally,
     Rollout,
     SamplerConsultation,
@@ -298,6 +299,7 @@ class EesMethod(Method):
     sampler_max_train_iters: int = 10000
 
     _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
+    _practice_schedule: PracticeSchedule | None = PrivateAttr(default=None)
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
     _measured_execution_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _rng: np.random.Generator = PrivateAttr()
@@ -442,6 +444,25 @@ class EesMethod(Method):
 
     def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
         self._practice_accounting = accounting
+
+    def observe_practice_schedule(
+        self,
+        *,
+        step_budget: int,
+        measurement_interval_steps: int,
+        steps_used: int,
+        model_budget_remaining_usd: float | None,
+    ) -> None:
+        self._practice_schedule = PracticeSchedule(
+            step_budget=step_budget,
+            measurement_interval_steps=measurement_interval_steps,
+            steps_used=steps_used,
+            model_budget_remaining_usd=model_budget_remaining_usd,
+        )
+
+    def practice_schedule(self) -> PracticeSchedule | None:
+        """The latest schedule the step protocol handed over; None before the first."""
+        return self._practice_schedule
 
     def practice_action_cost(self, *, ground_skill: GroundSkill) -> float:
         if (

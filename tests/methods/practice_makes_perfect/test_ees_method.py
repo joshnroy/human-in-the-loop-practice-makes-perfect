@@ -8,6 +8,7 @@ from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LiftedAtom,
+    PracticeSchedule,
     SamplerConsultation,
     Skill,
     Variable,
@@ -2241,3 +2242,26 @@ def test_without_the_flag_a_failed_goal_plan_falls_through_to_practice() -> None
     method, trace = _unreachable_goal_episode(flag=False)
     assert not any(random_mode for _label, random_mode in trace)
     assert method.selections >= 1
+
+
+def test_practice_schedule_is_unset_until_observed_and_then_the_latest_values() -> None:
+    method, _ = _build()
+    assert method.practice_schedule() is None
+    method.observe_practice_schedule(
+        step_budget=85_000,
+        measurement_interval_steps=1_700,
+        steps_used=0,
+        model_budget_remaining_usd=None,
+    )
+    method.observe_practice_schedule(
+        step_budget=85_000,
+        measurement_interval_steps=1_700,
+        steps_used=1_700,
+        model_budget_remaining_usd=12.5,
+    )
+    assert method.practice_schedule() == PracticeSchedule(
+        step_budget=85_000,
+        measurement_interval_steps=1_700,
+        steps_used=1_700,
+        model_budget_remaining_usd=12.5,
+    )

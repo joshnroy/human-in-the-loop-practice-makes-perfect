@@ -618,6 +618,7 @@ class Tossing3DPomdpMethod(EesMethod):
         finally:
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
+        schedule = self.practice_schedule()
         self._practice_values = {}
         action_value_events = [
             event
@@ -653,6 +654,10 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=horizon if planner.name == "expectimax" else None,
             remaining_practice_actions=self._remaining_practice_actions,
+            practice_step_budget=schedule.step_budget if schedule else None,
+            measurement_interval_steps=schedule.measurement_interval_steps if schedule else None,
+            practice_steps_used=schedule.steps_used if schedule else None,
+            model_budget_remaining_usd=schedule.model_budget_remaining_usd if schedule else None,
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None

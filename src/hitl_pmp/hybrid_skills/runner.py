@@ -249,6 +249,7 @@ class GeneratedSkills:
                     evaluate_snapshot=evaluation_type.run,
                     initialize=initialize,
                     stop_exceptions=(ModelBudgetExhausted,),
+                    model_budget=None if learner is None else learner.budget,
                 )
             finally:
                 writer.close()
