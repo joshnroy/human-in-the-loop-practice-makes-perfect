@@ -323,8 +323,7 @@ class HoleProbe:
     def header(self) -> str:
         return (
             f"SweepIntoHole3D | {self.episode} | step {self.ticks} | {self.phase} | "
-            f"in hole {self.in_hole()}/5"
-            + (" | STUCK" if self.core.robot_stuck_in_hole() else "")
+            f"in hole {self.in_hole()}/5" + (" | STUCK" if self.core.robot_stuck_in_hole() else "")
         )
 
     def capture(self, *, label: str, keyframe: bool = False) -> None:
