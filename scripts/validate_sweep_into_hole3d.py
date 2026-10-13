@@ -43,6 +43,9 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
 ENV_ID = "kinder/SweepIntoHole3D-o5-v0"
 PIT_X = (0.80, 1.25)
+# Lateral offset of the drive-in lane, so the +y wheels pass over the opening.
+DRIVE_IN_Y = 0.1
+DRIVE_IN_STEP_LIMIT = 300
 CUBES = tuple(f"cube_{i}" for i in range(5))
 FRAME_SIZE = (640, 480)
 EPISODES = ("sweep_then_reset_cubes", "drive_in_then_reset_robot")
@@ -320,6 +323,7 @@ class HoleProbe:
         return (
             f"SweepIntoHole3D | {self.episode} | step {self.ticks} | {self.phase} | "
             f"in hole {self.in_hole()}/5"
+            + (" | STUCK" if self.core.robot_stuck_in_hole() else "")
         )
 
     def capture(self, *, label: str, keyframe: bool = False) -> None:
@@ -725,13 +729,27 @@ class HoleProbe:
         )
 
     def drive_into_pit(self) -> None:
-        """Base straight along +x through the near rim to the pit centre, arm held."""
+        """Drive along +x, offset in y, until a wheel crosses the near rim; then keep
+        commanding forward and backward to show the base is held.
+
+        The offset matters: the wheel track is wider than the pit, so a base centred
+        on it straddles the opening and never gets stuck.
+        """
         here = self.data.qpos[self.ba].copy()
-        self.move_base(target=[here[0], 0.0, 0.0], label="line_up_with_pit")
+        self.move_base(target=[here[0], DRIVE_IN_Y, 0.0], label="line_up_with_pit")
         self.capture(label="lined up with pit", keyframe=True)
         centre_x = (PIT_X[0] + PIT_X[1]) / 2
-        self.move_base(target=[centre_x, 0.0, 0.0], label="drive_over_rim")
-        self.hold(count=self.plan.fps, label="in_pit")
+        arm = self.arm_reference.copy()
+        for _ in range(DRIVE_IN_STEP_LIMIT):
+            self.step(arm=arm, base=np.array([centre_x, DRIVE_IN_Y, 0.0]), label="drive_over_rim")
+            if self.core.robot_stuck_in_hole():
+                break
+        self.capture(label="wheel over the rim: stuck", keyframe=True)
+        for label, x in (("still driving forward", centre_x + 1.0), ("trying to back out", -1.0)):
+            for _ in range(self.plan.fps):
+                self.step(arm=arm, base=np.array([x, DRIVE_IN_Y, 0.0]), label=label)
+            self.capture(label=f"stuck: {label}", keyframe=True)
+        self.base_target = self.data.qpos[self.ba].copy()
 
     def close(self) -> None:
         self.env.close()
