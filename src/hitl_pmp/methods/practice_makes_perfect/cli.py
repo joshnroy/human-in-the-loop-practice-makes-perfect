@@ -1,6 +1,8 @@
 import argparse
 import sys
+from pathlib import Path
 
+from hitl_pmp.agentic_runtime.types import PlannerMemory
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
@@ -237,9 +239,43 @@ class Tossing3DPomdpCli(EesCli):
         )
         parser.add_argument(
             "--pomdp-solver",
-            choices=("expectimax", "determinized_astar"),
+            choices=("expectimax", "determinized_astar", "llm"),
             default=Tossing3DPomdpMethod.model_fields["pomdp_solver"].default,
-            help="Belief-space traversal: exact expectimax or sampled best-first search.",
+            help="Belief-space traversal: exact expectimax, sampled best-first search, or "
+            "one Claude call per decision (llm) over the same candidates, beliefs and "
+            "stopping value. The llm solver needs --planner-sandbox and --output-dir.",
+        )
+        parser.add_argument(
+            "--planner-sandbox",
+            type=Path,
+            default=None,
+            help="SandboxSettings JSON for the Docker Claude CLI the llm solver calls "
+            "(same shape as the hybrid runs' sandbox.json). Only with --pomdp-solver llm.",
+        )
+        parser.add_argument(
+            "--planner-model-budget",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields["planner_model_budget_usd"].default,
+            help="Dollars the llm solver may spend on practice decisions per run; "
+            "evaluation makes no planner calls and is never charged.",
+        )
+        parser.add_argument(
+            "--planner-memory",
+            choices=[memory.value for memory in PlannerMemory],
+            default=Tossing3DPomdpMethod.model_fields["planner_memory"].default.value,
+            help="stateless: a fresh Claude session per decision, shown the recent "
+            "history window; resume: one Claude session per practice session, shown "
+            "only what happened since its previous decision.",
+        )
+        parser.add_argument(
+            "--planner-model",
+            default=Tossing3DPomdpMethod.model_fields["planner_model"].default,
+            help="Model the llm solver calls.",
+        )
+        parser.add_argument(
+            "--planner-effort",
+            default=Tossing3DPomdpMethod.model_fields["planner_effort"].default,
+            help="Reasoning effort for the llm solver's calls.",
         )
         parser.add_argument(
             "--pomdp-max-search-iterations",
@@ -326,6 +362,15 @@ class Tossing3DPomdpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
+        if args.pomdp_solver == "llm":
+            if args.planner_sandbox is None:
+                raise ValueError("--pomdp-solver llm requires --planner-sandbox <json>")
+            if args.output_dir is None:
+                raise ValueError(
+                    "--pomdp-solver llm requires --output-dir for its call records and ledger"
+                )
+        elif args.planner_sandbox is not None:
+            raise ValueError("--planner-sandbox is only meaningful with --pomdp-solver llm")
         # Preserve replayable simulator states, but do not render or encode frames in
         # the training process. POMDP runs reconstruct their diagnostic videos from
         # the state and decision logs after the experiment finishes.
@@ -380,6 +425,12 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
+                planner_sandbox=args.planner_sandbox,
+                planner_output=args.output_dir,
+                planner_model_budget_usd=args.planner_model_budget,
+                planner_memory=PlannerMemory(args.planner_memory),
+                planner_model=args.planner_model,
+                planner_effort=args.planner_effort,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None

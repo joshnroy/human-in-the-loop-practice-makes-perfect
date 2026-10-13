@@ -510,3 +510,91 @@ def test_a_method_that_ignores_the_schedule_still_runs(
     _run_schedule_protocol(method=method, output=tmp_path, monkeypatch=monkeypatch)
     assert method.policy_calls == 10
     assert json.loads((tmp_path / "status.json").read_text())["phase"] == "complete"
+
+
+# The LLM practice planner's step-protocol wiring: its model-cost ledger reaches the
+# schedule hook, exhaustion ends practice as `model_budget`, and evaluation still runs.
+
+
+class _LlmArmMethod(_RecordingMethod):
+    """A fake method that carries an LLM planner, like Tossing3DPomdpMethod does."""
+
+    pomdp_planner: Any = None
+    exhaust_at: int | None = None
+
+    def _act(self, *, state: State) -> LabeledAction:
+        if self.exhaust_at is not None and self.policy_calls + 1 == self.exhaust_at:
+            from hitl_pmp.hybrid_skills.artifacts import ModelBudgetExhausted
+
+            self.policy_calls += 1
+            raise ModelBudgetExhausted()
+        return super()._act(state=state)
+
+
+def _llm_planner(*, ledger: Any) -> Any:
+    from hitl_pmp.agentic_runtime.types import PlannerMemory
+    from hitl_pmp.methods.belief_space.llm_planner import LlmPracticePlanner
+
+    class NeverCalled:
+        def decide(self, **kwargs: Any) -> None:
+            raise AssertionError("the fake method never consults the planner")
+
+    return LlmPracticePlanner(
+        client=NeverCalled(),
+        memory=PlannerMemory.resume,
+        model="claude-opus-5-5",
+        effort="low",
+        budget_limit_usd=20,
+        ledger=ledger,
+    )
+
+
+def test_the_llm_arm_ends_practice_on_model_budget_and_still_evaluates(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hitl_pmp.agentic_states.budget import SharedBudget
+    from hitl_pmp.step_protocol import StepProtocolEntry
+
+    ledger = SharedBudget(path=tmp_path / "model_budget.json", limit=20, session="planner-0")
+    ledger.record(cumulative=2.5)
+    method = _LlmArmMethod(env=_ScheduleEnv(), exhaust_at=3)
+    method.pomdp_planner = _llm_planner(ledger=ledger)
+    options = StepProtocolEntry.planner_runner_options(method=method, output=tmp_path)
+    assert options["model_budget"] is ledger
+    metrics = _run_schedule_protocol(
+        method=method, output=tmp_path, monkeypatch=monkeypatch, **options
+    )
+    assert json.loads((tmp_path / "planner_protocol.json").read_text()) == {
+        "solver": "llm",
+        "model": "claude-opus-5-5",
+        "effort": "low",
+        "memory": "resume",
+        "budget_limit_usd": 20.0,
+        "ledger_scope": "practice_only",
+    }
+    assert method.policy_calls == 3
+    assert [s["model_budget_remaining_usd"] for s in method.schedules] == [17.5] * 3
+    events = [
+        json.loads(line) for line in (tmp_path / "step_events.jsonl").read_text().splitlines()
+    ]
+    end = next(event for event in events if event["event"] == "practice_end")
+    assert end["reason"] == "model_budget"
+    assert end["practice_steps"] == 2 * _STEPS_PER_ACTION
+    assert json.loads((tmp_path / "status.json").read_text())["phase"] == "complete"
+    # The initial measurement plus one per interval crossed by the two completed
+    # actions; every one of them was evaluated after practice ended on the budget.
+    assert len(metrics.evaluations) == 1 + 2 * (_STEPS_PER_ACTION // 1_700)
+    assert not (tmp_path / "failure.txt").exists()
+
+
+def test_classical_planners_get_no_runner_options_and_no_planner_protocol(
+    *, tmp_path: Path
+) -> None:
+    from hitl_pmp.step_protocol import StepProtocolEntry
+
+    method = _LlmArmMethod(env=_ScheduleEnv())
+    method.pomdp_planner = object()
+    assert StepProtocolEntry.planner_runner_options(method=method, output=tmp_path) == {}
+    plain = _PlainMethod(env=_ScheduleEnv())
+    assert StepProtocolEntry.planner_runner_options(method=plain, output=tmp_path) == {}
+    assert not (tmp_path / "planner_protocol.json").exists()

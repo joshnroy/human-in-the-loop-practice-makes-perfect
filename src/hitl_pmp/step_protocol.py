@@ -366,14 +366,33 @@ class StepProtocolEntry:
                     ),
                 )
                 try:
+                    method = method_factory(context)
                     StepPracticeRunner.run(
-                        args=args, method=method_factory(context), problem=problem
+                        args=args,
+                        method=method,
+                        problem=problem,
+                        **StepProtocolEntry.planner_runner_options(method=method, output=output),
                     )
                 finally:
                     writer.close()
                     problem.env.close()
 
         method_cli.run(args=args, env_cli=Tossing3DCli)
+
+    @staticmethod
+    def planner_runner_options(*, method: Any, output: Path) -> dict[str, Any]:
+        """What an LLM practice planner adds to the runner: its model-cost ledger, so
+        the schedule reports remaining dollars, and budget exhaustion as a reported
+        endpoint rather than a failure. Writes `planner_protocol.json` beside the run.
+        Empty for the classical solvers, whose runs change in nothing."""
+        from hitl_pmp.hybrid_skills.artifacts import ModelBudgetExhausted
+        from hitl_pmp.methods.belief_space.llm_planner import LlmPracticePlanner
+
+        planner = getattr(method, "pomdp_planner", None)
+        if not isinstance(planner, LlmPracticePlanner):
+            return {}
+        StepFiles.json(path=output / "planner_protocol.json", value=planner.protocol())
+        return {"stop_exceptions": (ModelBudgetExhausted,), "model_budget": planner.ledger}
 
 
 class StepPracticeRunner:

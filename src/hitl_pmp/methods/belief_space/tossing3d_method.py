@@ -2,11 +2,13 @@
 
 import time
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, PrivateAttr
 
+from hitl_pmp.agentic_runtime.types import PlannerMemory
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import (
     GroundSkill,
@@ -28,12 +30,14 @@ from .competence_inference import BayesianSkillBelief, InferenceConfig, smooth_h
 from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
+from .llm_planner import LlmPracticePlanner, make_llm_practice_planner
 from .planner import BeliefSpacePlanner
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
+    PRACTICE_BUDGET,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -49,6 +53,7 @@ from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.particle_filter_belief import ParticleFilterBelief
+from .types.practice_situation import PracticeHistory, PracticeSituation
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
@@ -63,13 +68,17 @@ def make_belief_space_planner(
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
     ),
-    solver: Literal["expectimax", "determinized_astar"],
+    solver: Literal["expectimax", "determinized_astar", "llm"],
     max_iterations: int,
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
+    llm_planner: Callable[[], LlmPracticePlanner] | None = None,
 ) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
-    """Return the injected planner or construct the configured planner once."""
+    """Return the injected planner or construct the configured planner once.
+
+    An unknown name is an error: this used to fall through to determinized A*, so a
+    misspelt solver silently ran a different algorithm."""
     if planner is not None:
         return planner
     if solver == "expectimax":
@@ -77,12 +86,17 @@ def make_belief_space_planner(
             use_model_j=True,
             observation_probability_weight=observation_probability_weight,
         )
-    return DeterminizedAStarPlanner(
-        max_iterations=max_iterations,
-        seed=seed,
-        observation_probability_weight=observation_probability_weight,
-        log_full_search_tree=log_full_search_tree,
-    )
+    if solver == "determinized_astar":
+        return DeterminizedAStarPlanner(
+            max_iterations=max_iterations,
+            seed=seed,
+            observation_probability_weight=observation_probability_weight,
+            log_full_search_tree=log_full_search_tree,
+        )
+    if solver == "llm":
+        assert llm_planner is not None, "the llm solver needs its planner factory"
+        return llm_planner()
+    raise ValueError(f"Unknown belief-space solver {solver!r}")
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -92,7 +106,19 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_log_full_search_tree: bool = False
-    pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
+    pomdp_solver: Literal["expectimax", "determinized_astar", "llm"] = "expectimax"
+    # The `llm` solver: a Claude call per decision through the Docker CLI client. The
+    # sandbox is the client's `SandboxSettings` JSON; the output directory holds the
+    # call records and the `model_budget.json` ledger, which practice alone charges.
+    planner_sandbox: Path | None = None
+    planner_output: Path | None = None
+    planner_model_budget_usd: float = Field(default=20.0, gt=0.0, allow_inf_nan=False)
+    planner_memory: PlannerMemory = PlannerMemory.stateless
+    planner_model: str = "claude-opus-5-5"
+    planner_effort: str = "low"
+    planner_history_window: int = Field(default=20, ge=1)
+    # Injected in place of the real client (tests); anything with `.decide`.
+    planner_client: Any | None = Field(default=None, exclude=True, repr=False)
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
@@ -128,6 +154,12 @@ class Tossing3DPomdpMethod(EesMethod):
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
+    # The compact session log an LLM planner is shown, and how much of it a resumed
+    # Claude session has already seen. Cost of the attempt whose outcome is pending.
+    _llm_history: list[dict[str, Any]] = PrivateAttr(default_factory=list)
+    _llm_history_sent: int = PrivateAttr(default=0)
+    _llm_calls_this_session: int = PrivateAttr(default=0)
+    _last_attempt_cost: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
 
     def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
         super().configure_practice_accounting(accounting=accounting)
@@ -169,6 +201,7 @@ class Tossing3DPomdpMethod(EesMethod):
             return
         ground = self._execution_ground_skill
         assert ground is not None, "execution without dispatch"
+        self._last_attempt_cost[ground] = cost
         if complete and ground not in self.skill_provider.human_cube_bin_reset_skills():
             self._execution_durations.setdefault(ground, []).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
@@ -294,6 +327,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+            llm_planner=self._make_llm_planner,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
@@ -308,6 +342,29 @@ class Tossing3DPomdpMethod(EesMethod):
             f"POMDP cost observations must be at most {COST_MAX}"
         )
 
+    def _make_llm_planner(self) -> LlmPracticePlanner:
+        if self.planner_client is not None:
+            return LlmPracticePlanner(
+                client=self.planner_client,
+                memory=self.planner_memory,
+                model=self.planner_model,
+                effort=self.planner_effort,
+                budget_limit_usd=self.planner_model_budget_usd,
+            )
+        if self.planner_sandbox is None or self.planner_output is None:
+            raise ValueError(
+                "pomdp_solver='llm' needs planner_sandbox and planner_output, "
+                "or an injected planner_client"
+            )
+        return make_llm_practice_planner(
+            sandbox=self.planner_sandbox,
+            output=self.planner_output,
+            model=self.planner_model,
+            effort=self.planner_effort,
+            budget_limit_usd=self.planner_model_budget_usd,
+            memory=self.planner_memory,
+        )
+
     @property
     def pomdp_state(self) -> Tossing3DBeliefState:
         return self._pomdp_state
@@ -315,6 +372,8 @@ class Tossing3DPomdpMethod(EesMethod):
     def get_practice_policy(self, *, task: Task) -> Policy:
         """Start a practice session without resetting the learned skill state."""
         self._remaining_practice_actions = None
+        self._llm_calls_this_session = 0
+        self._llm_history.append({"type": "session_start", "session": self._cycle_index})
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
@@ -393,6 +452,16 @@ class Tossing3DPomdpMethod(EesMethod):
             observed_cost=configured_cost_observation,
             consultation=consultation,
         )
+        self._llm_history.append({
+            "type": "attempt",
+            "session": self._cycle_index,
+            "decision": self._decision_index,
+            "action": LlmPracticePlanner.candidate_id(ground=ground_skill),
+            "skill": ground_skill.skill.name,
+            "success": success,
+            "random_exploration": was_random_exploration,
+            "cost": self._last_attempt_cost.pop(ground_skill, None),
+        })
         self.record_diagnostic(
             event="outcome",
             skill=ground_skill.skill.name,
@@ -442,6 +511,8 @@ class Tossing3DPomdpMethod(EesMethod):
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
+        if self._practice_accounting is None:
+            self._last_attempt_cost[ground_skill] = action_cost
         if ground_skill.skill.name in RESET_SKILLS:
             self._pending_reset = ground_skill
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
@@ -500,6 +571,16 @@ class Tossing3DPomdpMethod(EesMethod):
             observed_cost=observed_cost,
         )
         self._pending_reset = None
+        reset_id = LlmPracticePlanner.candidate_id(ground=reset)
+        self._llm_history.append({
+            "type": "human_reset",
+            "session": self._cycle_index,
+            "decision": self._decision_index,
+            "action": reset_id,
+            "human_name": self._human_names().get(reset_id),
+            "success": True,
+            "cost": self._last_attempt_cost.pop(reset, None),
+        })
         self.record_diagnostic(
             event="outcome",
             skill=reset.skill.name,
@@ -605,6 +686,17 @@ class Tossing3DPomdpMethod(EesMethod):
                     num_samples=self.pomdp_num_samples,
                     remaining_actions=self._remaining_practice_actions,
                 )
+            elif isinstance(planner, LlmPracticePlanner):
+                value, action = planner.solve(
+                    environment_state=search_state,
+                    belief_state=self._pomdp_state,
+                    summed_cost=self._pomdp_state.accumulated_cost,
+                    horizon=horizon,
+                    model=model,
+                    trace=trace,
+                    num_samples=self.pomdp_num_samples,
+                    situation=self._llm_situation(),
+                )
             else:
                 value, action = planner.solve(
                     environment_state=search_state,
@@ -631,13 +723,37 @@ class Tossing3DPomdpMethod(EesMethod):
         for event in trace.events:
             if event["node"] == 0 and event["event"] == "stop_value":
                 self._practice_values["STOP"] = event["value"]
-            elif event["node"] == 0 and event["event"] == "action_value":
+            elif (
+                event["node"] == 0
+                and event["event"] == "action_value"
+                # The LLM planner logs its candidates without a value.
+                and event["value"] is not None
+            ):
                 skill_name = event["action"]["skill"]["name"]
                 key = skill_name
                 if action_name_counts[skill_name] > 1:
                     objects = ", ".join(obj["name"] for obj in event["action"]["objects"])
                     key = f"{skill_name}({objects})"
                 self._practice_values[key] = event["value"]
+        llm_fields: dict[str, Any] = {}
+        if isinstance(planner, LlmPracticePlanner):
+            decision = planner.last_decision
+            assert decision is not None, "the LLM planner returned without a decision"
+            llm_fields = {
+                "llm_reason": decision.reason,
+                "llm_call_index": decision.call_index,
+                "llm_cost_usd": decision.cost_usd,
+                "planner_memory": planner.memory.value,
+            }
+            self._llm_history.append({
+                "type": "decision",
+                "session": self._cycle_index,
+                "decision": self._decision_index,
+                "action": decision.action_id,
+                "reason": decision.reason,
+            })
+            self._llm_history_sent = len(self._llm_history)
+            self._llm_calls_this_session += 1
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
@@ -672,6 +788,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 counts=self._pomdp_model.failure_effect_counts
             ),
             search=trace.events,
+            **llm_fields,
         )
         if isinstance(action, StopAction):
             assert action == STOP_ACTION
@@ -679,3 +796,74 @@ class Tossing3DPomdpMethod(EesMethod):
 
         self.record_practice_target(name=action.skill.name, field="scored")
         return [action]
+
+    def _human_names(self) -> dict[str, str]:
+        """Candidate id -> what the step protocol calls that human reset."""
+        names = {}
+        for reset in self.skill_provider.human_cube_bin_reset_skills():
+            side = self.skill_provider.movables_reset_destination(ground_skill=reset)
+            names[LlmPracticePlanner.candidate_id(ground=reset)] = (
+                "reset_cube_and_bin_near" if side == "robot_side" else "reset_cube_far"
+            )
+        return names
+
+    def _configured_costs(self) -> dict[str, Any]:
+        """The prices a decision is charged under, as configured for this run."""
+        accounting = self._practice_accounting
+        if accounting is not None:
+            return {
+                "source": "practice_cost_config",
+                **accounting.costs.model_dump(mode="json"),
+            }
+        resets = self.skill_provider.human_cube_bin_reset_skills()
+        return {
+            "source": "configured_practice_costs",
+            "objective_lambda": self.pomdp_linear_cost_lambda,
+            "hard_practice_budget": (
+                None if self.pomdp_linear_cost_lambda is not None else PRACTICE_BUDGET
+            ),
+            "human_reset_cost": resets[0].evaluate_practice_cost() if resets else None,
+            "robot_skill_costs": {
+                ground.skill.name: ground.evaluate_practice_cost()
+                for ground in self._pomdp_model.ground_skills
+                if ground.skill.name not in RESET_SKILLS
+            },
+        }
+
+    def _llm_history_slice(self) -> PracticeHistory:
+        """Stateless: the last `planner_history_window` decisions, every call. Resume:
+        the same window on a session's first call (a fresh Claude session), then only
+        what happened since the previous call."""
+        events = self._llm_history
+        resumed = self.planner_memory is PlannerMemory.resume and self._llm_calls_this_session > 0
+        if resumed:
+            scope, start = "since_previous_call", self._llm_history_sent
+        else:
+            decisions = [index for index, event in enumerate(events) if event["type"] == "decision"]
+            window = self.planner_history_window
+            start = decisions[-window] if len(decisions) > window else 0
+            scope = f"last_{window}_decisions"
+        totals: dict[str, dict[str, int]] = {}
+        for ground, outcomes in self._all_attempt_outcomes.items():
+            totals[LlmPracticePlanner.candidate_id(ground=ground)] = {
+                "attempts": len(outcomes),
+                "successes": sum(outcomes),
+            }
+        for event in events:
+            if event["type"] == "human_reset":
+                counts = totals.setdefault(event["action"], {"attempts": 0, "successes": 0})
+                counts["attempts"] += 1
+                counts["successes"] += int(event["success"])
+        return PracticeHistory(scope=scope, events=tuple(events[start:]), skill_totals=totals)
+
+    def _llm_situation(self) -> PracticeSituation:
+        return PracticeSituation(
+            session_index=self._cycle_index,
+            decision_index=self._decision_index,
+            session_key=f"session-{self._cycle_index}",
+            remaining_session_actions=self._remaining_practice_actions,
+            schedule=self.practice_schedule(),
+            configured_costs=self._configured_costs(),
+            human_names=self._human_names(),
+            history=self._llm_history_slice(),
+        )
