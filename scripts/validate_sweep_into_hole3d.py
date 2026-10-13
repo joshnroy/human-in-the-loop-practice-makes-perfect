@@ -53,6 +53,17 @@ DRIVE_IN_STEP_LIMIT = 300
 PICK_CUBE = "cube_0"
 PICK_CUBE_XY = (1.10, 0.05)
 PICK_STANDOFF = 0.62
+# The real TidyBot's front caster axis and the clearance kept from the rim.
+FRONT_CASTER_X = 0.190150
+RIM_CLEARANCE = 0.03
+# The task's `cubes_start` region, and how far behind a placement the base stands.
+START_REGION_X = (0.45, 0.60)
+START_REGION_Y = (-0.12, 0.12)
+PLACE_STANDOFF = 0.55
+# Release height for the pinch site; the held cube drops the last centimetre.
+PLACE_RELEASE_Z = 0.035
+# Grasp slightly above the cube's centre so the pad tips clear the pit floor.
+GRASP_ABOVE_CENTRE = 0.008
 CUBES = tuple(f"cube_{i}" for i in range(5))
 FRAME_SIZE = (640, 480)
 EPISODES = ("sweep_then_reset_cubes", "drive_in_then_reset_robot", "pick_cube_out_of_pit")
@@ -766,23 +777,38 @@ class HoleProbe:
             raise RuntimeError("Dropped cube did not settle in the pit")
 
     def pick_cube_out_of_pit(self) -> None:
-        """Top-down friction grasp of a pit cube from a base parked short of the rim,
-        then lift it out and set it on the floor beside the pit."""
+        """RemoveCubeFromHole with no free parameters: stand behind the cube, clamped so
+        the front casters stay short of the rim; top-down grasp; lift; back the base
+        off; place the cube at a uniformly random point of the cube start region."""
         position, quaternion = self.core.get_object(PICK_CUBE).get_pose()
         cube_yaw = Rotation.from_quat(quaternion[[1, 2, 3, 0]]).as_euler("xyz")[2]
-        yaw = (cube_yaw + np.pi / 4) % (np.pi / 2) - np.pi / 4
+        # At gripper yaw 0 the pads close along world x. Close parallel to the nearest
+        # wall, so the outer pad does not land on the rim: an x wall (near x0 or x1)
+        # wants closing along y, i.e. yaw near 90 degrees.
+        to_x_wall = min(position[0] - PIT_X[0], PIT_X[1] - position[0])
+        to_y_wall = min(position[1] - PIT_Y[0], PIT_Y[1] - position[1])
+        desired = np.pi / 2 if to_x_wall < to_y_wall else 0.0
+        candidates = [cube_yaw + n * np.pi / 2 for n in range(4)]
+        yaw = min(candidates, key=lambda a: abs((a - desired + np.pi / 2) % np.pi - np.pi / 2))
         rotation = Rotation.from_euler("z", yaw).as_matrix() @ np.diag([1.0, -1.0, -1.0])
         self.grip = 0.0
-        self.move_base(target=[position[0] - PICK_STANDOFF, position[1], 0.0], label="park_at_rim")
+        base_x = min(position[0] - PICK_STANDOFF, PIT_X[0] - FRONT_CASTER_X - RIM_CLEARANCE)
+        self.move_base(target=[base_x, position[1], 0.0], label="park_at_rim")
         if self.core.robot_stuck_in_hole():
             raise RuntimeError("Parking for the pick put a wheel over the pit")
         above = np.array([position[0], position[1], 0.15])
         self.move(position=above, rotation=rotation, label="above_cube")
-        for z in np.linspace(0.15, position[2], 16):
-            self.move(position=[*position[:2], z], rotation=rotation, label="lower_into_pit")
+        grasp_z = position[2] + GRASP_ABOVE_CENTRE
+        for z in np.linspace(0.15, grasp_z, 16):
+            self.move(
+                position=[*position[:2], z],
+                rotation=rotation,
+                label="lower_into_pit",
+                position_tolerance=0.012,
+            )
         self.grip = 1.0
         self.hold(count=25, label="close_on_cube")
-        for z in np.linspace(position[2], 0.15, 16):
+        for z in np.linspace(grasp_z, 0.15, 16):
             self.move(
                 position=[*position[:2], z],
                 rotation=rotation,
@@ -793,12 +819,16 @@ class HoleProbe:
         self.capture(label=f"cube lifted to z={lifted[2]:.3f}", keyframe=True)
         if lifted[2] < 0.05:
             raise RuntimeError(f"Cube not lifted out of the pit (z={lifted[2]:.3f})")
-        place = np.array([position[0] - 0.1, PIT_Y[1] + 0.12, 0.15])
+        rng = np.random.default_rng(self.plan.seed)
+        place_x = rng.uniform(*START_REGION_X)
+        place_y = rng.uniform(*START_REGION_Y)
+        self.move_base(target=[place_x - PLACE_STANDOFF, place_y, 0.0], label="back_off")
+        place = np.array([place_x, place_y, 0.15])
         self.move(
-            position=place, rotation=rotation, label="carry_to_floor", position_tolerance=0.015
+            position=place, rotation=rotation, label="carry_to_start", position_tolerance=0.015
         )
         self.move(
-            position=[*place[:2], 0.02],
+            position=[place_x, place_y, PLACE_RELEASE_Z],
             rotation=rotation,
             label="lower_to_floor",
             position_tolerance=0.015,
@@ -807,9 +837,13 @@ class HoleProbe:
         self.hold(count=25, label="release_on_floor")
         self.move(position=place, rotation=rotation, label="retreat", position_tolerance=0.015)
         placed = self.core.get_object(PICK_CUBE).get_pose()[0]
-        self.capture(label=f"cube on floor at z={placed[2]:.3f}", keyframe=True)
-        if self.core.cube_in_hole(PICK_CUBE) or placed[2] < 0.0:
-            raise RuntimeError("Cube did not end up on the floor outside the pit")
+        self.capture(label=f"cube placed at ({placed[0]:.2f},{placed[1]:.2f})", keyframe=True)
+        inside = (
+            START_REGION_X[0] - 0.02 <= placed[0] <= START_REGION_X[1] + 0.02
+            and START_REGION_Y[0] - 0.02 <= placed[1] <= START_REGION_Y[1] + 0.02
+        )
+        if self.core.cube_in_hole(PICK_CUBE) or not inside or placed[2] < 0.0:
+            raise RuntimeError(f"Cube not placed in the start region: {np.round(placed, 3)}")
 
     def close(self) -> None:
         self.env.close()
