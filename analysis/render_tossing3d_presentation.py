@@ -157,6 +157,10 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
         if event.get("event") == "stop_value":
             values["STOP"] = float(event["value"])
         elif event.get("event") == "action_value":
+            if event.get("value") is None:
+                # The LLM planner logs its candidates without a value; only its
+                # STOP value (model J) is a number worth drawing.
+                continue
             action = event.get("action", {})
             skill = action.get("skill", {}) if isinstance(action, dict) else {}
             if isinstance(skill, dict) and "name" in skill:

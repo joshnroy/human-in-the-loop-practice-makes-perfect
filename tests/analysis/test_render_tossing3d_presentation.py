@@ -39,6 +39,33 @@ def test_decision_values_preserve_all_logged_root_actions() -> None:
     }
 
 
+def test_decision_values_skip_unvalued_llm_choices() -> None:
+    """The LLM planner logs every candidate with ``value: null`` and marks its choice;
+    only STOP (model J) is a number, so that is the only value to render."""
+    decision = {
+        "action": {"skill": {"name": "PickCube"}},
+        "value": "NaN",
+        "search": [
+            {"event": "stop_value", "node": 0, "value": 0.5},
+            {
+                "event": "action_value",
+                "node": 0,
+                "action": {"skill": {"name": "PickCube"}},
+                "value": None,
+                "chosen": True,
+            },
+            {
+                "event": "action_value",
+                "node": 0,
+                "action": {"skill": {"name": "OpenGripper"}},
+                "value": None,
+                "chosen": False,
+            },
+        ],
+    }
+    assert _decision_values(decision) == {"STOP": 0.5}
+
+
 def test_cycle_end_reason_reports_stop() -> None:
     assert _cycle_end_reason({"action": "STOP"}) == "PRACTICE CYCLE ENDED — STOP SELECTED"
 

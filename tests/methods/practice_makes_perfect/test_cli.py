@@ -1,7 +1,9 @@
 import argparse
+import json
 import re
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -332,3 +334,106 @@ def test_the_goal_pursuit_schedule_flags_reach_both_methods(
     Cli.main(argv=["--env", "tossing3d", "--method", method_name, *argv])
     (method,) = built
     assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == expected  # type: ignore[attr-defined]
+
+
+# --pomdp-solver llm: the LCCC arm's flags and what they build.
+
+
+def _pomdp_args(*, argv: list[str]) -> argparse.Namespace:
+    return Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp", *argv])
+
+
+def _write_sandbox(*, path: Path, checkout: Path) -> Path:
+    path.write_text(
+        json.dumps({
+            "image": "sha256:abc",
+            "robocode_checkout": str(checkout),
+            "timeout_seconds": 5,
+        })
+    )
+    return path
+
+
+def test_the_llm_solver_requires_a_planner_sandbox(*, tmp_path: Path) -> None:
+    args = _pomdp_args(argv=["--pomdp-solver", "llm", "--output-dir", str(tmp_path)])
+    with pytest.raises(ValueError, match="--planner-sandbox"):
+        Tossing3DPomdpCli.run(args=args, env_cli=type("Tossing3DCli", (), {}))
+
+
+def test_the_llm_solver_requires_an_output_dir(*, tmp_path: Path) -> None:
+    sandbox = _write_sandbox(path=tmp_path / "sandbox.json", checkout=tmp_path)
+    args = _pomdp_args(argv=["--pomdp-solver", "llm", "--planner-sandbox", str(sandbox)])
+    with pytest.raises(ValueError, match="--output-dir"):
+        Tossing3DPomdpCli.run(args=args, env_cli=type("Tossing3DCli", (), {}))
+
+
+def test_planner_flags_are_rejected_with_a_classical_solver(*, tmp_path: Path) -> None:
+    sandbox = _write_sandbox(path=tmp_path / "sandbox.json", checkout=tmp_path)
+    args = _pomdp_args(argv=["--planner-sandbox", str(sandbox), "--output-dir", str(tmp_path)])
+    with pytest.raises(ValueError, match="--pomdp-solver llm"):
+        Tossing3DPomdpCli.run(args=args, env_cli=type("Tossing3DCli", (), {}))
+
+
+def test_the_llm_flags_build_a_real_decision_client_without_docker(*, tmp_path: Path) -> None:
+    from hitl_pmp.agentic_runtime.decision_client import DecisionClient
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+    from hitl_pmp.methods.belief_space.llm_planner import LlmPracticePlanner
+
+    sandbox = _write_sandbox(path=tmp_path / "sandbox.json", checkout=tmp_path)
+    output = tmp_path / "run"
+    args = _pomdp_args(
+        argv=[
+            "--pomdp-solver",
+            "llm",
+            "--planner-sandbox",
+            str(sandbox),
+            "--planner-model-budget",
+            "7.5",
+            "--planner-memory",
+            "resume",
+            "--planner-model",
+            "claude-x",
+            "--planner-effort",
+            "medium",
+            "--pomdp-num-particles",
+            "200",
+            "--output-dir",
+            str(output),
+        ]
+    )
+    built: list[Any] = []
+
+    class Tossing3DCli:
+        @staticmethod
+        def run_method(*, args: argparse.Namespace, method_factory: Any, **unused: Any) -> None:
+            del args, unused
+            env = Tossing3DEnvironment(scene_bg=False)
+            built.append(
+                method_factory(
+                    DomainContext(
+                        env=env,
+                        skill_provider=Tossing3DSkillProvider(env=env),
+                        oracle=Tossing3DOracle(env=env),
+                    )
+                )
+            )
+
+    Tossing3DPomdpCli.run(args=args, env_cli=Tossing3DCli)
+    (method,) = built
+    planner = method.pomdp_planner
+    assert isinstance(planner, LlmPracticePlanner)
+    assert isinstance(planner.client, DecisionClient)
+    assert planner.client.model == "claude-x"
+    assert planner.client.effort == "medium"
+    assert planner.client.budget_limit == 7.5
+    assert planner.client.ledger_path == output / "model_budget.json"
+    assert planner.ledger is not None
+    assert planner.ledger.remaining == 7.5
+    assert planner.protocol()["memory"] == "resume"
+    assert method.decision_log == output / "pomdp_decisions.jsonl"
+    assert args.defer_rendering is True
