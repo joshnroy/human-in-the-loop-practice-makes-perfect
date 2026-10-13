@@ -155,3 +155,24 @@ def test_plot_writes_both_figures(*, tmp_path: Path) -> None:
     written = FragileNoHumanReset.plot(curves=curves, output_dir=tmp_path, stem="fig")
     assert sorted(p.name for p in written) == ["fig-performance.png", "fig-raw-ground-hits.png"]
     assert all(p.stat().st_size > 0 for p in written)
+
+
+def _footer_arm(*, complete: bool) -> dict[str, object]:
+    return {"key": "ees", "human_reset": False, "complete": complete}
+
+
+def test_footer_omits_in_progress_note_when_every_run_is_complete() -> None:
+    curves = {"snapshot": "S", "arms": [_footer_arm(complete=True)]}
+    footer = FragileNoHumanReset.footer(curves=curves)
+    assert "Diamonds mark actual endpoints" in footer
+    assert "in progress" not in footer
+    assert "open circles" not in footer
+
+
+def test_footer_names_in_progress_runs_and_snapshot_when_any_is_running() -> None:
+    curves = {
+        "snapshot": "2026-10-13 11:04 EDT",
+        "arms": [_footer_arm(complete=True), _footer_arm(complete=False)],
+    }
+    footer = FragileNoHumanReset.footer(curves=curves)
+    assert "open circles mark runs still in progress at 2026-10-13 11:04 EDT" in footer

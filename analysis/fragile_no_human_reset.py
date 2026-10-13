@@ -289,6 +289,16 @@ class FragileNoHumanReset:
         return [(arms[0], float(x_mean[-1]), float(y_mean[-1]))]
 
     @staticmethod
+    def footer(*, curves: dict[str, Any]) -> str:
+        text = (
+            "Tossing3D fragile: 100 kg movable bin, human cost 100, damage cost 10. Seed 0 "
+            "unless n says otherwise. Diamonds mark actual endpoints"
+        )
+        if any(not arm["complete"] for arm in curves["arms"]):
+            return f"{text}; open circles mark runs still in progress at {curves['snapshot']}."
+        return f"{text}."
+
+    @staticmethod
     def plot(*, curves: dict[str, Any], output_dir: Path, stem: str) -> list[Path]:
         import matplotlib
 
@@ -391,10 +401,7 @@ class FragileNoHumanReset:
             fig.text(
                 0.01,
                 0.005,
-                "Tossing3D fragile: 100 kg movable bin, human cost 100, damage cost 10. Seed 0 "
-                "unless n says otherwise. Diamonds mark actual endpoints; open circles mark runs "
-                "still in progress at "
-                f"{curves['snapshot']}.",
+                FragileNoHumanReset.footer(curves=curves),
                 fontsize=8,
                 color="#555555",
             )

@@ -1,15 +1,15 @@
 # Fragile Tossing3D without the human reset skill (seed 0)
 
 **TL;DR.** Every completed arm of the fragile Tossing3D comparison was re-run from its own
-frozen source with the human reset skill removed from practice (`--no-human-reset`).
-The three structured planners stopped almost immediately: EES after 590/85,000 counted
-steps (final evaluation 1/10, the same as before any practice), POMDP Planner / expectimax
-and POMDP Planner / determinized A* after 221 steps each (0/10, down from 1/10 at step 0).
-In each case the robot tossed the cube across the wall and, with nobody to bring it back,
-had no admissible practice action left. The agentic arms do not share that failure mode:
-Full-Agentic / new wording finished at 12,435 steps with 10/10, practising short near-side
-tosses at the price of 345 raw-ground hits (86 with the human). Three agentic arms were
-still running when this entry was written; it will be updated when they finish.
+frozen source with the human reset skill removed from practice (`--no-human-reset`). All
+seven runs are complete. The reset-free hypothesis held for the three structured planners
+and failed for three of the four agentic learners. EES, POMDP Planner / expectimax and
+POMDP Planner / determinized A* stranded the cube across the wall within 590 counted steps
+and ended with 1/10, 0/10 and 0/10. Full-Agentic / original (7,389 steps), Full-Agentic /
+new wording (12,435 steps) and POMDP + Agentic Skills & States (15,121 steps) each reached
+10/10 without a human. POMDP + Agentic Skills was partial: 0/10 at every measurement up
+to 15,300 steps, then 5/10 at its 16,229-step endpoint only. The agentic runs paid in
+raw-ground hits instead of resets (67-345 hits against 23-97 with the human).
 
 ## Question / goal
 
@@ -40,9 +40,9 @@ planner no longer offered them; it is preserved under
 `artifacts/fragile-nohuman-lccc-20261013-aborted-prompt-still-described-human/ABORTED.json`
 and the relaunch uses the prompt-gating change.
 
-Method-code letters were reordered on 2026-10-13 to planner, estimator, states, skills, so
-POMDP + Agentic Skills is CCCL and POMDP + Agentic Skills & States is CCLL in prose. The
-artifact directories keep their older names (`lccc`, `llcc`) and are not renamed.
+Method codes follow the planner-first order adopted on 2026-10-13 (planner, estimator,
+states, skills): POMDP + Agentic Skills is CCCL and POMDP + Agentic Skills & States is
+CCLL. The artifact directories keep their older names (`lccc`, `llcc`) and are not renamed.
 
 ## Hypothesis
 
@@ -70,7 +70,7 @@ extend a curve past the step at which the run stopped. Report counts as `x/y`.
 | Step protocol | A run ends when a practice cycle executes zero actions (`no_practice_action`) |
 | Structured planners | EES; POMDP Planner with expectimax or determinized A*, depth 6, grid 25 x 16, local-trend beliefs, lambda 3e-6 |
 | Agentic learners | POMDP + Agentic Skills; POMDP + Agentic Skills & States; Full-Agentic with the original and the new-wording prompt; Claude Opus 5.5, $20 budget each |
-| Where | Della jobs 15486053 (EES), 15486054 (expectimax), 15486055 (A*), submitted 2026-10-13 10:01 EDT; the four agentic arms on the workstation |
+| Where | Della jobs 15486053 (EES), 15486054 (expectimax), 15486055 (A*), submitted 2026-10-13 10:01 EDT; the four agentic arms on the workstation, started 10:26-10:33 EDT |
 
 With-human comparators are the completed runs already reported: EES and expectimax from
 `experiments/fragile-tossing-mat1-fixed-seed0-20261008` on Della, A* from
@@ -84,8 +84,8 @@ Figures and the data behind them are built by `analysis/fragile_no_human_reset.p
 (tests in `tests/analysis/test_fragile_no_human_reset.py`): it reads each run's
 `status.json`, `step_evaluations.json` or `measurements` plus `evaluations/*/results.json`,
 and the practice event stream, checks that the damage events sum to the status total, and
-writes `curves.json` beside this entry before plotting. The in-progress arms are the
-snapshot recorded in that file; re-running the extraction moves them.
+writes `curves.json` beside this entry before plotting. `curves.json` was regenerated at
+2026-10-13 14:03 EDT, after every run had finished.
 
 ## Results
 
@@ -98,17 +98,20 @@ every no-human arm by construction.
 | Method | No human reset: final eval | Counted steps used (of 85,000) | Robot actions | Raw-ground hits | Endpoint | With human reset: final eval / resets / hits / steps |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
 | EES | 1/10 | 590 | 6 (3 picks, 3 tosses) | 4 | `no_practice_action` | 8/10 / 314 / 290 / 85,000 |
-| POMDP Planner / expectimax (CCCC) | 0/10 | 221 | 2 (1 pick, 1 toss) | 0 | `planner_stop`, then `no_practice_action` | 9/10 / 98 / 170 / 85,000 |
+| POMDP Planner / expectimax | 0/10 | 221 | 2 (1 pick, 1 toss) | 0 | `planner_stop`, then `no_practice_action` | 9/10 / 98 / 170 / 85,000 |
 | POMDP Planner / determinized A* | 0/10 | 221 | 2 (1 pick, 1 toss) | 0 | `planner_stop`, then `no_practice_action` | 8.2 +/- 0.84 of 10 (n=5) / 330.4 +/- 29.4 / 218.2 +/- 11.6 / 85,000 |
-| POMDP + Agentic Skills (CCCL) | running: 0/10, 0/10, 0/10 at 0, 1,700, 3,400 | 9,967 so far | 59 so far | 23 so far | in progress | 10/10 / 4 / 97 / 15,654 |
-| POMDP + Agentic Skills & States (CCLL) | running: 0/10, 0/10 at 0, 1,700 | 5,500 so far | 43 so far | 6 so far | in progress | 9/10 / 11 / 38 / 33,575 |
-| Full-Agentic / original | running: 0/10, 0/10 at 0, 1,700 | 2,778 so far | n/a | 16 so far | in progress | 10/10 / 18 / 23 / 11,340 |
+| POMDP + Agentic Skills (CCCL) | 5/10 | 16,229 | 106 | 97 | `no_practice_action` | 10/10 / 4 / 97 / 15,654 |
+| POMDP + Agentic Skills & States (CCLL) | 10/10 | 15,121 | 122 | 78 | `no_practice_action` | 9/10 / 11 / 38 / 33,575 |
+| Full-Agentic / original | 10/10 | 7,389 | n/a | 67 | `agent_submission` | 10/10 / 18 / 23 / 11,340 |
 | Full-Agentic / new wording | 10/10 | 12,435 | n/a | 345 | `agent_submission` | 10/10 / 7 / 86 / 7,467 |
 
 The A* row's with-human column is the mean and sample standard deviation over seeds 0-4
 (final evaluations 9, 8, 7, 8, 9 of 10; resets 310, 376, 330, 300, 336; hits 211, 212,
-238, 211, 219). The no-human A* arm is seed 0 only. The in-progress rows are the state at
-2026-10-13 11:04 EDT, the time `curves.json` was written; see "Still in progress" below.
+238, 211, 219). The no-human A* arm is seed 0 only.
+
+Model spend of the no-human agentic arms: POMDP + Agentic Skills $8.02 (7 calls),
+POMDP + Agentic Skills & States $15.26 adaptation (8 calls; evaluation classification is
+a separate ledger), Full-Agentic / original $12.64, Full-Agentic / new wording $4.54.
 
 ![Held-out tasks solved per seed against counted practice steps, no human reset dashed and with human reset solid](2026-10-13-fragile-no-human-reset/2026-10-13-fragile-no-human-reset-performance.png)
 
@@ -116,10 +119,22 @@ The A* row's with-human column is the mean and sample standard deviation over se
 
 Dashed lines are the no-human arms, solid the with-human comparators, in each method's
 colour; the five with-human A* seeds are the faint traces under the bold mean. Diamonds
-are actual endpoints; open circles are runs still in progress at the snapshot time. The
-no-human structured arms are the three short dashed segments in the bottom-left corner
-of the left panels, labelled individually because they are otherwise invisible at the
-85,000-step scale.
+are actual endpoints. The no-human structured arms are the three short dashed segments in
+the bottom-left corner of the left panels, labelled individually because they are
+otherwise invisible at the 85,000-step scale.
+
+### Evaluation trajectories of the agentic arms, no human reset
+
+| Method | Evaluations at 0, 1,700, 3,400, ... counted steps, then the endpoint |
+| --- | --- |
+| POMDP + Agentic Skills (CCCL) | 0/10 at each of 0 through 15,300 (10 measurements), then 5/10 at 16,229 |
+| POMDP + Agentic Skills & States (CCLL) | 0/10 at each of 0 through 10,200 (7 measurements), 9/10 at 11,900, 10/10 at 13,600, 10/10 at 15,121 |
+| Full-Agentic / original | 0, 0, 0, 0 of 10 at 0-5,100; 10/10 at 6,800; 10/10 at 7,389 |
+| Full-Agentic / new wording | 0, 0, 0 of 10 at 0-3,400; 10/10 at 5,100; 9/10, 9/10 at 6,800, 8,500; 10/10 at 10,200, 11,900, 12,435 |
+
+The POMDP + Agentic Skills 5/10 comes from the endpoint evaluation alone, after its last
+skill revision; no earlier measurement solved any task, so there is no evidence that
+level would hold.
 
 ### The robot strands itself
 
@@ -143,14 +158,6 @@ All three structured no-human runs end the same way, and the videos show it dire
   policy snapshots have the same SHA-256 as expectimax's at both measurements, so the
   two 0/10 results are the same evaluation run twice.
 
-Both videos end their practice segment with the robot parked on the near side of the
-wall and the cube out of reach:
-[EES, practice at 5x then the endpoint evaluation at 1x](2026-10-13-fragile-no-human-reset/ees-no-human-reset-practice-and-final-eval.mp4),
-[POMDP Planner / expectimax](2026-10-13-fragile-no-human-reset/expectimax-no-human-reset-practice-and-final-eval.mp4),
-[POMDP Planner / determinized A*](2026-10-13-fragile-no-human-reset/astar-no-human-reset-practice-and-final-eval.mp4).
-The videos are the Della renders (`artifacts/fragile-nohuman-20261013/videos/`, same
-pipeline as the with-human page), copied here byte for byte.
-
 ### Step-0 versus endpoint evaluation
 
 The step-0 evaluation is the untrained policy. EES scored 1/10 at step 0 and 1/10 at its
@@ -158,48 +165,47 @@ endpoint; one learning update over six actions did not change what the evaluatio
 could do. Both POMDP Planner arms scored 1/10 at step 0 and 0/10 at the endpoint: the
 single stranded toss updated the competence belief and the refit toss parameters, and the
 one task the untrained policy had solved (task 0, in 226 control steps) was no longer
-solved by the refit policy, which reported `no_plan` on all 10 tasks. With one seed and one evaluation each, a 1/10 to 0/10 change is
+solved by the refit policy, which reported `no_plan` on all 10 tasks. With one seed
+and one evaluation each, a 1/10 to 0/10 change is
 within what the evaluation's own variability can produce; no inference is supported beyond
-"no improvement".
+"no improvement". The four agentic arms all scored 0/10 at step 0.
 
-### Full-Agentic / new wording learned without a human
+### How the agentic arms practised without a human
 
-This arm finished while the entry was being written (service inactive, `Result=success`,
-`endpoint: agent_submission`, 12,435 counted steps, model cost $4.54 of the $20 budget).
-Its evaluations were 0/10, 0/10, 0/10 at 0, 1,700 and 3,400 steps, then 10/10 at 5,100,
-9/10 at 6,800, 9/10 at 8,500 and 10/10 at 10,200, 11,900 and 12,435. It got there by
-practising short tosses on its own side of the wall and never committing the cube across:
-345 raw-ground hits by the endpoint against 86 for the same prompt with the human, 80 of
-them before the first 10/10. That is a different trade from the one the with-human run
-made (7 human resets, 86 hits, 7,467 steps). Whether the learned controller generalises
-the way the with-human one did is what the endpoint evaluation measures, and it measured
-10/10; the hypothesis that reset-free practice learns little is contradicted for this arm.
+The agentic learners did not strand themselves early because they did not commit the cube
+across the wall while practising. Full-Agentic / new wording is the clearest case: its
+cube crossed the wall exactly once, on the last throw at step 12,427, and 64/67 of its
+recorded landings were at x < 1.0 m, on the robot's side; it calibrated its throw on
+near-side landings and then submitted. That trade shows in the hit counts: 345 raw-ground
+hits against 86 for the same prompt with the human. Full-Agentic / original used 67 hits
+(23 with the human) and fewer steps than its with-human run (7,389 against 11,340).
+POMDP + Agentic Skills & States reached 10/10 in fewer counted steps than its with-human
+run (15,121 against 33,575, which ended on the model budget at 9/10). These are single
+seeds; a second seed is needed before reading either step comparison as an effect.
 
-### Still in progress
+The landing-side figures for Full-Agentic / new wording are the coordinator's verified
+analysis of its `practice.jsonl`; they were not recomputed for this entry.
 
-Three arms were running when this entry was written, and it will be updated when they
-finish. Service start times are from `systemctl`; the receipts in each artifact
-directory agree.
-
-| Arm | Started (EDT) | Counted steps at 11:04 EDT | Evaluations so far | Raw-ground hits so far | Notes |
-| --- | --- | ---: | --- | ---: | --- |
-| Full-Agentic / original | 10:26 | 2,778 | 0/10 at 0; 0/10 at 1,700 | 16 | `artifacts/fragile-nohuman-fullagentic-20261013/original/run/` |
-| POMDP + Agentic Skills (CCCL) | 10:33 | 9,967 | 0/10 at 0, 1,700, 3,400; 6,800 pending | 23 | 59 skill invocations, 2 learning updates, $2.87 spent at 10:57 EDT; `artifacts/fragile-nohuman-lccc-20261013/` |
-| POMDP + Agentic Skills & States (CCLL) | 10:32 | 5,500 | 0/10 at 0, 1,700; 3,400 pending | 6 | 43 skill invocations, 1 learning update, $4.31 adaptation spend at 10:57 EDT; `artifacts/fragile-nohuman-llcc-20261013/` |
-
-Note: the two hybrid arms end their learning sessions on `session_action_cap`, not on a
-planner stop, so unlike the structured arms they are still choosing actions; the figures
-show their partial curves ending in open circles.
+Videos (practice at 5x, then the endpoint evaluation at 1x; Della and workstation renders
+from `artifacts/fragile-nohuman-20261013/videos/`, copied byte for byte):
+[EES](2026-10-13-fragile-no-human-reset/ees-no-human-reset-practice-and-final-eval.mp4),
+[POMDP Planner / expectimax](2026-10-13-fragile-no-human-reset/expectimax-no-human-reset-practice-and-final-eval.mp4),
+[POMDP Planner / determinized A*](2026-10-13-fragile-no-human-reset/astar-no-human-reset-practice-and-final-eval.mp4),
+[POMDP + Agentic Skills](2026-10-13-fragile-no-human-reset/hybrid-skills-no-human-reset-practice-and-final-eval.mp4),
+[POMDP + Agentic Skills & States](2026-10-13-fragile-no-human-reset/hybrid-skills-states-no-human-reset-practice-and-final-eval.mp4),
+[Full-Agentic / original](2026-10-13-fragile-no-human-reset/fullagentic-original-no-human-reset-practice-and-final-eval.mp4),
+[Full-Agentic / new wording](2026-10-13-fragile-no-human-reset/fullagentic-new-wording-no-human-reset-practice-and-final-eval.mp4).
 
 ## Recommendation
 
-The structured planners' dependence on the human reset is total in this scene: without it
-they execute one or three toss attempts and then have nothing admissible to do, so the
-with-human results for EES and the POMDP Planner should be read as results about the
-reset budget as much as about the planner. A planner that could learn to toss short on
-purpose, as the Full-Agentic new-wording policy did, would have had 84,000 more steps to
-use; that is a model gap to report, not a constraint to add. Treat the Full-Agentic
-new-wording result as one seed: its with-human counterpart also finished on an agent
-submission rather than three perfect evaluations, so a second seed of both conditions is
-the cheapest next check. Update this entry when the three in-progress arms finish, and
-re-run the extraction so the figures carry their actual endpoints.
+The reset-free hypothesis held for the structured planners and failed for the agentic
+learners. EES and both POMDP Planner solvers depend totally on the human reset in this
+scene: without it they execute one or three tosses and have nothing admissible left, so
+their with-human results are results about the reset budget as much as about the planner.
+A planner that could choose short, near-side practice tosses on purpose, as the
+Full-Agentic arms did, would have had 84,000 more steps to use; that is a model gap to
+report, not a constraint to add. Three agentic arms reached 10/10 without a human, so
+their with-human reset counts (7-18) measure convenience rather than necessity. Every arm
+here is one seed: before claiming that the agentic learners need no human, run a second
+seed of both conditions for Full-Agentic / new wording and POMDP + Agentic Skills & States,
+and treat POMDP + Agentic Skills' 5/10 as an endpoint-only observation.
