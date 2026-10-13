@@ -196,6 +196,7 @@ class GeneratedSkills:
                     settings=settings,
                     costs=costs,
                     budget=options.model_budget,
+                    human_reset_offered=args.human_reset,
                 )
                 initialize = learner.revise
                 method.revise_skills = learner.revise
@@ -205,6 +206,7 @@ class GeneratedSkills:
                     method=args.method,
                     planner="expectimax",
                     depth=args.pomdp_search_depth,
+                    human_reset_offered=args.human_reset,
                     representation="generated_language_states"
                     if options.agentic_states
                     else "fixed_structured",

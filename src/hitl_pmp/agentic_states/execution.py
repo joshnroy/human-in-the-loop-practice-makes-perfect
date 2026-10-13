@@ -13,7 +13,7 @@ from hitl_pmp.hybrid_skills.execution import prepare_problem
 from hitl_pmp.step_protocol import StepEvaluation
 
 from .classifier import LanguageClassifier
-from .graph import LanguageManifest, StateGraph
+from .graph import HUMANS, LanguageManifest, StateGraph
 
 
 class StatesDeployment:
@@ -71,9 +71,14 @@ class StatesSnapshot:
                 budget_limit=configuration["budget_limit"],
                 phase="evaluation",
             )
+        # An accepted manifest names both human groundings or neither, so the payload
+        # itself says which run produced it; recording a flag would change the bytes
+        # (and `policy_sha256`) of every snapshot taken with the reset offered.
+        offered = any(e["action"] in HUMANS for e in payload["manifest"]["edges"])
+        manifest_type = LanguageManifest.for_run(human_reset_offered=offered)
         return StatesDeployment(
             env=env,
-            manifest=LanguageManifest.model_validate(payload["manifest"]),
+            manifest=manifest_type.model_validate(payload["manifest"]),
             classifier=classifier,
         )
 

@@ -54,16 +54,37 @@ class SkillsStatesLearner(SkillLearner):
         self.budget = SharedBudget(
             path=self.output / "model_budget.json", limit=kwargs.get("budget", 20), session="coding"
         )
+        self.manifest_type = LanguageManifest.for_run(human_reset_offered=self.human_reset_offered)
+        self.state_contract_text = self.state_contract(human_reset_offered=self.human_reset_offered)
         self.prompt = (
             self.prompt.replace(
                 "The structured host retains its existing skill initiation/effect definitions.", ""
             )
-            + STATE_CONTRACT
+            + self.state_contract_text
         )
         (self.output / "task_prompt.md").write_text(self.prompt)
         StepFiles.json(
-            path=self.workspace / "states.schema.json", value=LanguageManifest.model_json_schema()
+            path=self.workspace / "states.schema.json",
+            value=self.manifest_type.model_json_schema(),
         )
+
+    @staticmethod
+    def state_contract(*, human_reset_offered: bool) -> str:
+        """The contract as written, or with every sentence about a human removed."""
+        if human_reset_offered:
+            return STATE_CONTRACT
+        contract = STATE_CONTRACT
+        for sentence in (
+            " No human\nskills are available at deployment.",
+            " Include both reset_cube_far and\n"
+            "reset_cube_and_bin_near, with their documented physical effects. These names "
+            "bind to\nhost human tools; they cannot execute generated reset code or select "
+            "arbitrary poses.",
+        ):
+            if sentence not in contract:
+                raise ValueError(f"State contract no longer contains: {sentence!r}")
+            contract = contract.replace(sentence, "")
+        return contract
 
     def prepare_evidence(self):
         super().prepare_evidence()
@@ -73,10 +94,10 @@ class SkillsStatesLearner(SkillLearner):
             "*/sandbox/judgment.json"
         ):
             shutil.copyfile(source, target / (source.parent.parent.name + ".json"))
-        (self.workspace / "STATE_CONTRACT.md").write_text(STATE_CONTRACT)
+        (self.workspace / "STATE_CONTRACT.md").write_text(self.state_contract_text)
 
     def validate_revision(self):
-        LanguageManifest.model_validate_json((self.submission / "states.json").read_text())
+        self.manifest_type.model_validate_json((self.submission / "states.json").read_text())
 
     def revise(self):
         # The process lock serializes coding and practice classification,
@@ -85,7 +106,7 @@ class SkillsStatesLearner(SkillLearner):
         with self.budget.lock():
             try:
                 super().revise()
-                manifest = LanguageManifest.model_validate_json(
+                manifest = self.manifest_type.model_validate_json(
                     (self.submission / "states.json").read_text()
                 )
                 self.on_accept(manifest=manifest)

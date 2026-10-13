@@ -136,6 +136,7 @@ def test_evidence_excludes_evaluation_and_host_diagnostics(tmp_path, monkeypatch
 
     learner.costs = PracticeCosts()
     learner.budget = SessionBudget(limit=20)
+    learner.human_reset_offered = True
     learner.prepare_evidence()
     evidence = "".join(p.read_text() for p in (workspace / "evidence").glob("*"))
     assert '"cost": 3' in evidence
@@ -276,3 +277,116 @@ def test_hybrid_abstraction_never_calls_baseline_pick_planner(monkeypatch):
         assert all(name != "PickPlannable" for name, _ in env.backend().abstract_atoms())
     finally:
         env.close()
+
+
+HUMAN_LANGUAGE = ("human", "reset_cube", "hₕ", "c_h", "d_h", "cₕ", "dₕ", "w_h", "intervention")
+
+
+def test_prompt_without_the_reset_never_mentions_a_human():
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.hybrid_skills.learner import SkillLearner, hybrid_prompt
+
+    configured = PracticeCosts.model_validate({
+        "human_skills": {
+            name: {"cost": {"value": 100}, "duration": {"value": 1}}
+            for name in ["reset_cube_far", "reset_cube_and_bin_near"]
+        }
+    })
+    for costs in (PracticeCosts(), configured):
+        prompt = hybrid_prompt(costs=costs, mat_size=1, budget=18, human_reset_offered=False)
+        for word in HUMAN_LANGUAGE:
+            assert word not in prompt.lower(), word
+        assert "hint: consider practicing tosses on the robot side" in prompt
+        assert "pick up the cube after each toss" in prompt
+        assert "C = C_R + C_D" in prompt and "B = |R|\n" in prompt
+        assert "Practice experience is B = robot control periods." in prompt
+        assert "fragile" in prompt and "GeneratedSkills" in prompt
+        assert "20 skill invocations" in prompt and "$18 total model budget" in prompt
+        assert "A fixed expectimax planner selects skills. You implement" in prompt
+    assert '"robot_step"' in prompt and '"damage_contact"' in prompt
+    system = SkillLearner.system_prompt(human_reset_offered=False)
+    assert "human" not in system.lower()
+    assert "Robot control steps incur the specified costs." in system
+    assert "without model calls" in system
+
+
+def test_prompt_with_the_reset_is_unchanged():
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.full_agentic.runner import HERE
+    from hitl_pmp.hybrid_skills.learner import SkillLearner, hybrid_prompt
+
+    prompt = hybrid_prompt(costs=PracticeCosts(), mat_size=1)
+    assert prompt == hybrid_prompt(costs=PracticeCosts(), mat_size=1, human_reset_offered=True)
+    assert "Available human skills during practice: `reset_cube_far`" in prompt
+    assert "Both human skills described above remain available to the planner." in prompt
+    assert "C = C_R + w_H C_H + C_D" in prompt
+    system = SkillLearner.system_prompt(human_reset_offered=True)
+    assert system.startswith((HERE / "system_prompt.md").read_text())
+    assert "human-skill invocations" in system
+
+
+@pytest.mark.parametrize("agentic_states", [True, False])
+@pytest.mark.parametrize("offered", [True, False])
+def test_runner_passes_the_human_reset_flag_to_both_hybrid_paths(
+    tmp_path, monkeypatch, offered, agentic_states
+):
+    from hitl_pmp.agentic_states.method import SkillsStatesMethod
+    from hitl_pmp.core.practice_costs import PracticeCosts
+    from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
+    from hitl_pmp.full_agentic.runner import FullAgenticRunner
+    from hitl_pmp.hybrid_skills import learner as learner_module
+    from hitl_pmp.hybrid_skills.runner import main
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+    from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
+    from hitl_pmp.planning.fast_downward import FastDownwardPlanner
+    from hitl_pmp.step_protocol import StepPracticeRunner
+
+    monkeypatch.setattr(Tossing3DAgenticBridge, "observe", lambda self: {"objects": []})
+    monkeypatch.setattr(FullAgenticRunner, "validate_runtime", lambda **kwargs: None)
+    monkeypatch.setattr(FastDownwardPlanner, "_fast_downward_script", lambda: None)
+    monkeypatch.setattr(learner_module, "DeadlineTransport", lambda **kwargs: None)
+    captured = {}
+
+    def run(*, args, env_cli):
+        env_cli.run_method(
+            method_factory=lambda ctx: Tossing3DPomdpMethod(
+                env=ctx.env,
+                skill_provider=ctx.skill_provider,
+                seed=args.seed,
+                pomdp_inference_engine=args.pomdp_inference_engine,
+                pomdp_solver=args.pomdp_solver,
+                exploration_epsilon=0,
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DPomdpCli, "run", run)
+    monkeypatch.setattr(StepPracticeRunner, "run", lambda **kwargs: captured.update(kwargs))
+    sandbox = tmp_path / "sandbox.json"
+    sandbox.write_text(json.dumps({"image": "fake", "robocode_checkout": str(tmp_path)}))
+    costs = tmp_path / "costs.json"
+    costs.write_text(PracticeCosts().model_dump_json())
+    out = tmp_path / "out"
+    main(
+        argv=[
+            "--hybrid-sandbox",
+            str(sandbox),
+            *(["--agentic-states"] if agentic_states else []),
+            "--practice-cost-config",
+            str(costs),
+            "--output-dir",
+            str(out),
+            *([] if offered else ["--no-human-reset"]),
+        ]
+    )
+    protocol = json.loads((out / "hybrid_protocol.json").read_text())
+    assert protocol["human_reset_offered"] is offered
+    method = captured["method"]
+    assert isinstance(method, SkillsStatesMethod) is agentic_states
+    assert method.skill_provider.offer_human_reset is offered
+    assert bool(method.skill_provider.human_cube_bin_reset_skills()) is offered
+    schema = out / "coding/sandbox/states.schema.json"
+    assert schema.exists() is agentic_states
+    if agentic_states:
+        assert ("reset_cube_far" in schema.read_text()) is offered
+    for name in ("task_prompt.md", "system_prompt.md"):
+        assert ("human" in (out / name).read_text().lower()) is offered, name
