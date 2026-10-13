@@ -24,9 +24,11 @@ class World:
         workspace: Path,
         output: Path,
         deadline: float,
+        human_reset: bool = True,
     ) -> None:
         self.bridge, self.workspace, self.output = bridge, workspace, output
         self.deadline = deadline
+        self.human_reset = human_reset
         self.version = self.steps = self.trials = self.help_requests = self.trial_steps = 0
         self.active = self.finished = self.uncertain = False
         self.accounting = PracticeAccounting()
@@ -144,6 +146,7 @@ class World:
             human_skill_quotes={
                 name: self.accounting.human_charge(skill=name).model_dump(mode="json")
                 for name in self.accounting.costs.human_skills
+                if self.human_reset
             },
             **self.accounting.summary(),
             remaining_trials=None,
@@ -210,6 +213,11 @@ class World:
         if op == "begin_trial" and self.active:
             raise ValueError("End the active trial first, or trial budget exhausted")
         if op == "request_help":
+            if not self.human_reset:
+                # Refused before any receipt or charge: the arm has no human to ask.
+                raise ValueError(
+                    "Human interventions are not offered in this run (--no-human-reset)"
+                )
             if request.get("intervention_id") not in {"reset_cube_far", "reset_cube_and_bin_near"}:
                 raise ValueError("Unknown human intervention")
             charge = self.accounting.human_charge(skill=request["intervention_id"])

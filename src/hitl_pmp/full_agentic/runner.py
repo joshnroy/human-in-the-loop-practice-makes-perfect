@@ -27,6 +27,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.step_protocol import EvaluationClock, EvaluationStopping
 
+from .human_reset_text import HumanResetText
 from .world import Files, Server, World
 
 HERE = Path(__file__).resolve().parent
@@ -202,19 +203,29 @@ class FullAgenticRunner:
         return results
 
     @staticmethod
-    def task_prompt(*, costs: PracticeCosts) -> str:
+    def task_prompt(*, costs: PracticeCosts, human_reset: bool = True) -> str:
         prompt = (HERE / "task_prompt.md").read_text()
+        if not human_reset:
+            prompt = HumanResetText.remove(text=prompt, replacements=HumanResetText.TASK_PROMPT)
         if costs == PracticeCosts():
             return prompt
         start = prompt.index("Initial function values and fixed weights:")
-        end = prompt.index("w_H weights human cost", start)
-        description = (
-            "Configured cost and duration functions "
-            "(constant value unless a host function is named):\n```json\n"
-            + costs.model_dump_json(indent=2)
-            + "\n```\nThe host returns current robot-step prices "
-            "and per-human-skill price/duration quotes.\n"
-        )
+        end = prompt.index("w_H weights human cost" if human_reset else "λ weights", start)
+        if human_reset:
+            description = (
+                "Configured cost and duration functions "
+                "(constant value unless a host function is named):\n```json\n"
+                + costs.model_dump_json(indent=2)
+                + "\n```\nThe host returns current robot-step prices "
+                "and per-human-skill price/duration quotes.\n"
+            )
+        else:
+            description = (
+                "Configured cost functions "
+                "(constant value unless a host function is named):\n```json\n"
+                + costs.model_dump_json(indent=2, exclude={"human_skills", "human_weight"})
+                + "\n```\nThe host returns current robot-step prices.\n"
+            )
         prompt = prompt[:start] + description + prompt[end:]
         return prompt.replace(
             "both equal to 1 initially", "specified in the configuration below"
@@ -225,15 +236,27 @@ class FullAgenticRunner:
 
     @staticmethod
     def variant_prompt(
-        *, prompt: str, variant: str, fragile: bool, mat_size: float, damage_cost: float
+        *,
+        prompt: str,
+        variant: str,
+        fragile: bool,
+        mat_size: float,
+        damage_cost: float,
+        human_reset: bool = True,
     ) -> str:
         if variant not in {"original", "new-wording"}:
             raise ValueError("Unknown prompt variant")
         if variant == "new-wording":
-            prompt += "\n" + (HERE / "continuation_cost_prompt.md").read_text()
+            continuation = (HERE / "continuation_cost_prompt.md").read_text()
+            if not human_reset:
+                continuation = HumanResetText.remove(
+                    text=continuation, replacements=HumanResetText.CONTINUATION
+                )
+            prompt += "\n" + continuation
         if fragile:
-            prompt = prompt.replace("C = C_R + w_H C_H", "C = C_R + w_H C_H + C_D")
-            prompt += (
+            total = "C = C_R + w_H C_H" if human_reset else "C = C_R"
+            prompt = prompt.replace(total + "\n", total + " + C_D\n")
+            damage = (
                 "\nThe cube is fragile. A protective squishy square mat of side "
                 f"{mat_size:g} m surrounds the bin, centered on and following "
                 "its x/y position and yaw. "
@@ -252,16 +275,77 @@ class FullAgenticRunner:
                 "Include expected future damage alongside robot and human costs "
                 "in your decisions.\n"
             )
+            if not human_reset:
+                damage = HumanResetText.remove(text=damage, replacements=HumanResetText.FRAGILE)
+            prompt += damage
         return prompt
 
     @staticmethod
-    def initial_files(*, workspace: Any, bridge: Any) -> None:
-        shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
-        Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
-        shutil.copyfile(HERE / "robot_api.md", workspace / "robot_api.md")
+    def system_prompt(*, human_reset: bool = True) -> str:
+        system = (HERE / "system_prompt.md").read_text()
+        if not human_reset:
+            system = HumanResetText.remove(text=system, replacements=HumanResetText.SYSTEM_PROMPT)
+        return system
 
     @staticmethod
-    def main() -> None:
+    def rendered_prompts(
+        *,
+        costs: PracticeCosts,
+        variant: str,
+        fragile: bool,
+        mat_size: float,
+        practice_step_budget: int,
+        measurement_interval_steps: int,
+        human_reset: bool = True,
+    ) -> tuple[str, str]:
+        """The (task, system) prompts exactly as the coding agent receives them."""
+        prompt = FullAgenticRunner.task_prompt(costs=costs, human_reset=human_reset)
+        prompt = FullAgenticRunner.variant_prompt(
+            prompt=prompt,
+            variant=variant,
+            fragile=fragile,
+            mat_size=mat_size,
+            damage_cost=costs.damage_contact.value,
+            human_reset=human_reset,
+        )
+        budget = (
+            f"\nPractice has a total budget of {practice_step_budget} counted steps: "
+            "one per robot control period plus each human skill's configured duration. "
+            "The host takes frozen deployment snapshots every "
+            f"{measurement_interval_steps} "
+            "steps without resetting the world "
+            "or requesting a learning update. "
+            "Evaluation results are never returned. "
+            "Stop gracefully when the remaining budget is zero.\n"
+        )
+        if not human_reset:
+            budget = HumanResetText.remove(text=budget, replacements=HumanResetText.BUDGET)
+        return prompt + budget, FullAgenticRunner.system_prompt(human_reset=human_reset)
+
+    @staticmethod
+    def initial_files(*, workspace: Any, bridge: Any, human_reset: bool = True) -> None:
+        if human_reset:
+            shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
+        else:
+            (workspace / "env_client.py").write_text(
+                HumanResetText.remove(
+                    text=(HERE / "env_client.py").read_text(),
+                    replacements=HumanResetText.ENV_CLIENT,
+                )
+            )
+        Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
+        if human_reset:
+            shutil.copyfile(HERE / "robot_api.md", workspace / "robot_api.md")
+        else:
+            (workspace / "robot_api.md").write_text(
+                HumanResetText.remove(
+                    text=(HERE / "robot_api.md").read_text(),
+                    replacements=HumanResetText.ROBOT_API,
+                )
+            )
+
+    @staticmethod
+    def parser() -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser()
         parser.add_argument("--output", type=Path, required=True)
         parser.add_argument("--sandbox-settings", type=Path, required=True)
@@ -280,27 +364,21 @@ class FullAgenticRunner:
         parser.add_argument("--seed", type=int, default=0)
         parser.add_argument("--hours", type=float, default=None)
         parser.add_argument("--model-budget", type=float, default=20)
-        args = parser.parse_args()
-        if any(
-            value <= 0
-            for value in (
-                args.practice_step_budget,
-                args.measurement_interval_steps,
-                args.human_skill_steps,
-                args.evaluation_control_steps,
-                args.num_test_tasks,
-                args.model_budget,
-            )
-        ):
-            raise ValueError("Budgets and intervals must be positive")
-        costs = PracticeCosts.load(path=args.practice_cost_config)
-        if args.human_skill_steps != 1:
-            raise ValueError("Configure per-skill durations in --practice-cost-config")
-        output = args.output.resolve()
-        output.mkdir(parents=True, exist_ok=False)
-        workspace = output / "coding" / "sandbox"
-        workspace.mkdir(parents=True)
-        protocol = dict(
+        parser.add_argument(
+            "--human-reset",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Offer the two human interventions (reset_cube_far, "
+            "reset_cube_and_bin_near) during practice. --no-human-reset withholds them "
+            "outright: the world refuses a request without charging it, and no prompt, "
+            "API document or client the agent sees mentions them. Evaluation never "
+            "offers them either way.",
+        )
+        return parser
+
+    @staticmethod
+    def protocol(*, args: argparse.Namespace, costs: PracticeCosts) -> dict[str, Any]:
+        return dict(
             method="full-agent",
             environment="FragileTossing3D" if args.fragile_object else "Tossing3D",
             mat_size=args.mat_size,
@@ -324,11 +402,42 @@ class FullAgenticRunner:
                 asynchronous=True,
             ),
             human_skill_steps=args.human_skill_steps,
+            human_reset=args.human_reset,
             stop_after_perfect_evaluations=args.stop_after_perfect_evaluations,
-            practice_reset="initialization only; subsequent repositioning via charged human tools",
+            practice_reset=(
+                "initialization only; subsequent repositioning via charged human tools"
+                if args.human_reset
+                else "initialization only; human repositioning withheld (--no-human-reset)"
+            ),
             learning_schedule="agent chooses updates; measurement does not trigger learning",
         )
-        Files.atomic_json(path=output / "protocol.json", value=protocol)
+
+    @staticmethod
+    def main() -> None:
+        args = FullAgenticRunner.parser().parse_args()
+        if any(
+            value <= 0
+            for value in (
+                args.practice_step_budget,
+                args.measurement_interval_steps,
+                args.human_skill_steps,
+                args.evaluation_control_steps,
+                args.num_test_tasks,
+                args.model_budget,
+            )
+        ):
+            raise ValueError("Budgets and intervals must be positive")
+        costs = PracticeCosts.load(path=args.practice_cost_config)
+        if args.human_skill_steps != 1:
+            raise ValueError("Configure per-skill durations in --practice-cost-config")
+        output = args.output.resolve()
+        output.mkdir(parents=True, exist_ok=False)
+        workspace = output / "coding" / "sandbox"
+        workspace.mkdir(parents=True)
+        Files.atomic_json(
+            path=output / "protocol.json",
+            value=FullAgenticRunner.protocol(args=args, costs=costs),
+        )
         settings = SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text()))
         FullAgenticRunner.validate_runtime(settings=settings)
         sys.path.insert(0, str(settings.robocode_checkout.resolve() / "src"))
@@ -352,14 +461,22 @@ class FullAgenticRunner:
             bridge = Tossing3DAgenticBridge(
                 env=env, observation_mode="object_state", step_limit=2**63 - 1
             )
-            FullAgenticRunner.initial_files(workspace=workspace, bridge=bridge)
+            FullAgenticRunner.initial_files(
+                workspace=workspace, bridge=bridge, human_reset=args.human_reset
+            )
             Files.snapshot(
                 workspace=workspace,
                 destination=output / "initial_submission",
                 require_controller=False,
             )
             deadline = time.monotonic() + args.hours * 3600 if args.hours else float("inf")
-            world = World(bridge=bridge, workspace=workspace, output=output, deadline=deadline)
+            world = World(
+                bridge=bridge,
+                workspace=workspace,
+                output=output,
+                deadline=deadline,
+                human_reset=args.human_reset,
+            )
 
             def queue_measurement(record: Any) -> Any:  # noqa: PLR0917 -- callback
                 future = pool.submit(
@@ -382,25 +499,15 @@ class FullAgenticRunner:
                 callback=queue_measurement,
                 costs=costs,
             )
-            prompt = FullAgenticRunner.task_prompt(costs=costs)
-            prompt = FullAgenticRunner.variant_prompt(
-                prompt=prompt,
+            prompt, system = FullAgenticRunner.rendered_prompts(
+                costs=costs,
                 variant=args.prompt_variant,
                 fragile=args.fragile_object,
                 mat_size=args.mat_size,
-                damage_cost=costs.damage_contact.value,
+                practice_step_budget=args.practice_step_budget,
+                measurement_interval_steps=args.measurement_interval_steps,
+                human_reset=args.human_reset,
             )
-            prompt += (
-                f"\nPractice has a total budget of {args.practice_step_budget} counted steps: "
-                "one per robot control period plus each human skill's configured duration. "
-                "The host takes frozen deployment snapshots every "
-                f"{args.measurement_interval_steps} "
-                "steps without resetting the world "
-                "or requesting a learning update. "
-                "Evaluation results are never returned. "
-                "Stop gracefully when the remaining budget is zero.\n"
-            )
-            system = (HERE / "system_prompt.md").read_text()
             (output / "task_prompt.md").write_text(prompt)
             (output / "system_prompt.md").write_text(system)
             coding_settings = settings.model_copy(update={"live_tools_dir": socket_dir})
