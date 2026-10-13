@@ -43,8 +43,9 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
 ENV_ID = "kinder/SweepIntoHole3D-o5-v0"
 PIT_X = (0.80, 1.25)
-# Lateral offset of the drive-in lane, so the +y wheels pass over the opening.
-DRIVE_IN_Y = 0.1
+# The drive-in lane runs down the middle of the pit: the caster track is narrower
+# than the opening, so both front wheels cross the rim together.
+DRIVE_IN_Y = 0.0
 DRIVE_IN_STEP_LIMIT = 300
 CUBES = tuple(f"cube_{i}" for i in range(5))
 FRAME_SIZE = (640, 480)
@@ -729,12 +730,8 @@ class HoleProbe:
         )
 
     def drive_into_pit(self) -> None:
-        """Drive along +x, offset in y, until a wheel crosses the near rim; then keep
-        commanding forward and backward to show the base is held.
-
-        The offset matters: the wheel track is wider than the pit, so a base centred
-        on it straddles the opening and never gets stuck.
-        """
+        """Drive along +x down the middle of the pit until a wheel crosses the near
+        rim; then keep commanding forward and backward to show the base is held."""
         here = self.data.qpos[self.ba].copy()
         self.move_base(target=[here[0], DRIVE_IN_Y, 0.0], label="line_up_with_pit")
         self.capture(label="lined up with pit", keyframe=True)
