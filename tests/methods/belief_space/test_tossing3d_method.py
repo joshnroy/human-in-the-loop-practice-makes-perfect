@@ -682,3 +682,38 @@ def test_fragile_forecast_includes_observed_damage_without_counting_it_as_steps(
     method.record_action_cost(ground_skill=pick)
     method.observe_execution_cost(cost=3, steps=3, complete=False)
     assert estimated_action_cost(state=method.pomdp_state, action=pick) == 25
+
+
+def test_decision_record_carries_the_practice_schedule(*, tmp_path: Path) -> None:
+    method = _build(pomdp_num_samples=1)
+    method.decision_log = tmp_path / "pomdp_decisions.jsonl"
+    pick = _grounding(method=method, name=PICK_SKILL)
+    schedule_keys = {
+        "practice_step_budget",
+        "measurement_interval_steps",
+        "practice_steps_used",
+        "model_budget_remaining_usd",
+    }
+
+    def last_decision() -> dict[str, object]:
+        decision = json.loads(method.decision_log.read_text().splitlines()[-1])
+        assert decision["event"] == "decision"
+        return decision
+
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    before = last_decision()
+    assert schedule_keys <= set(before)
+    assert [before[key] for key in sorted(schedule_keys)] == [None] * 4
+
+    method.observe_practice_schedule(
+        step_budget=85_000,
+        measurement_interval_steps=1_700,
+        steps_used=3_400,
+        model_budget_remaining_usd=12.5,
+    )
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    after = last_decision()
+    assert after["practice_step_budget"] == 85_000
+    assert after["measurement_interval_steps"] == 1_700
+    assert after["practice_steps_used"] == 3_400
+    assert after["model_budget_remaining_usd"] == 12.5

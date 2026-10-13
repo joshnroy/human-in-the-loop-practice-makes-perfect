@@ -26,6 +26,23 @@ class LabeledAction(BaseModel):
 Policy = Callable[[State], LabeledAction]
 
 
+class PracticeSchedule(BaseModel):
+    """What the step protocol knows about the run's practice budget at one decision.
+
+    `steps_used` counts robot control steps plus charged human steps against the
+    global `step_budget`; `model_budget_remaining_usd` is None for runs without a
+    model-cost ledger. Handed to `Method.observe_practice_schedule` before every
+    practice decision so a planner can reason about stopping, not just about the
+    per-session action count `observe_practice_action_budget` carries."""
+
+    model_config = ConfigDict(frozen=True)
+
+    step_budget: int = Field(gt=0)
+    measurement_interval_steps: int = Field(gt=0)
+    steps_used: int = Field(ge=0)
+    model_budget_remaining_usd: float | None = None
+
+
 class ParameterSamplingDiagnostics(BaseModel):
     """One proposal batch, including rejected draws that never became actions."""
 

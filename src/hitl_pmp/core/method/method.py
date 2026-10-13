@@ -137,6 +137,25 @@ class Method(BaseModel, abc.ABC):
         Methods that do not need the limit inherit this no-op.
         """
 
+    def observe_practice_schedule(
+        self,
+        *,
+        step_budget: int,
+        measurement_interval_steps: int,
+        steps_used: int,
+        model_budget_remaining_usd: float | None,
+    ) -> None:
+        """Receive the run-level practice schedule immediately before a decision.
+
+        `step_budget` is the whole run's control-step budget, `steps_used` how much
+        of it practice has consumed so far (robot steps plus charged human steps),
+        `measurement_interval_steps` how often a deployment snapshot is evaluated,
+        and `model_budget_remaining_usd` what the run's model-cost ledger still
+        allows (None when the run has no ledger). Diagnostic context, not a
+        constraint: nothing here changes which actions are admissible. Methods
+        that do not reason about stopping inherit this no-op.
+        """
+
     def observe_environment_reset(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *before* it resets the
         environment part-way through an interaction period
