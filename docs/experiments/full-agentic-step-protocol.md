@@ -68,7 +68,7 @@ is copied from the pre-pilot input; no learned overnight policy is included.
 The prompts retain RoboCode's interface and coding workflow, with the persistent
 world/human contract and common measurement budget substituted for free resets.
 
-The entrypoint is `python -m hitl_pmp.full_agentic.runner --sandbox-settings PATH
+The entrypoint is `python -m hitl_pmp.full_agentic.runner --env tossing3d --sandbox-settings PATH
 --output NEW_DIRECTORY`. Set the existing Claude Code authentication in the host
 process; never place credentials in the JSON, coding workspace, or generated code.
 Run under the existing memory-limited service configuration when a launch is

@@ -1,0 +1,63 @@
+{
+  "method": "full-agent",
+  "status": "step_matched",
+  "seed": 3,
+  "adaptation_hours": 2.0,
+  "max_model_cost_usd": 20,
+  "cost_functions": {
+    "robot_step": {
+      "value": 1.0,
+      "function": null
+    },
+    "human_skills": {
+      "reset_cube_far": {
+        "cost": {
+          "value": 40.0,
+          "function": null
+        },
+        "duration": {
+          "value": 30.0,
+          "function": null
+        }
+      },
+      "reset_cube_and_bin_near": {
+        "cost": {
+          "value": 25.0,
+          "function": null
+        },
+        "duration": {
+          "value": 20.0,
+          "function": null
+        }
+      }
+    },
+    "human_weight": 2.0,
+    "objective_lambda": 3e-06
+  },
+  "max_trials": null,
+  "max_control_steps": 85000,
+  "max_human_requests": null,
+  "objective": "E[autonomous_success] - lambda * (sum_robot_step_cost + human_weight * sum_human_skill_cost)",
+  "evaluation": {
+    "num_tasks": 10,
+    "control_steps": 500,
+    "interval": 1700,
+    "asynchronous": true
+  },
+  "human_skill_steps": 1,
+  "stop_after_perfect_evaluations": 0,
+  "practice_reset": "initialization only; subsequent repositioning via charged human tools",
+  "learning_schedule": "agent chooses updates; measurement does not trigger learning",
+  "container_limits": {
+    "coder": {
+      "memory_mb": 16384,
+      "memory_swap_mb": 16384,
+      "applied": false
+    },
+    "execution_sandbox": {
+      "memory_mb": 8192,
+      "memory_swap_mb": 8192,
+      "applied": true
+    }
+  }
+}

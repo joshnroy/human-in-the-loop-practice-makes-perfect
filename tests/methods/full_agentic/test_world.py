@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from hitl_pmp.core.practice_costs import PracticeCosts
+from hitl_pmp.full_agentic.domains import Tossing3DFullAgentic
 from hitl_pmp.full_agentic.world import World
 
 
@@ -17,7 +19,7 @@ class FakeBridge:
         return {"calls": self.calls, "helps": self.helps}
 
     def action_spec(self):
-        return {"low": [-1] * 18, "high": [1] * 18, "schedule_rows": 10}
+        return {"shape": [18], "low": [-1] * 18, "high": [1] * 18, "schedule_rows": 10}
 
     def step(self, *, action):
         self.calls += 1
@@ -39,7 +41,11 @@ class WorldTests(unittest.TestCase):
         (workspace / "approach.py").write_text("class GeneratedApproach: pass")
         self.bridge = FakeBridge()
         self.world = World(
-            bridge=self.bridge, workspace=workspace, output=self.root, deadline=float("inf")
+            bridge=self.bridge,
+            workspace=workspace,
+            output=self.root,
+            deadline=float("inf"),
+            interventions=Tossing3DFullAgentic.human_interventions,
         )
         self.counter = 0
 
@@ -238,3 +244,68 @@ class MeasurementTests(WorldTests):
         self.assertTrue(self.world.active)
         self.assertEqual(len(pending), 3)
         self.assertTrue(all(not f.done() for _, f in pending))
+
+
+class DomainInterventionTests(unittest.TestCase):
+    """A World accepts exactly its domain's interventions and its action width."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        (root / "workspace").mkdir()
+        self.bridge = FakeBridge()
+        self.bridge.action_spec = lambda: {
+            "shape": [11],
+            "low": [-1] * 11,
+            "high": [1] * 11,
+            "schedule_rows": 4,
+        }
+        self.destinations = []
+
+        def reset_movables(*, destination):
+            self.destinations.append(destination)
+            return True
+
+        self.bridge.reset_movables = reset_movables
+        self.world = World(
+            bridge=self.bridge,
+            workspace=root / "workspace",
+            output=root,
+            deadline=float("inf"),
+            interventions={"reset_cubes": "reset_cubes", "reset_wiper": "reset_wiper"},
+        )
+        self.world.configure_measurements(
+            budget=100,
+            interval=100,
+            costs=PracticeCosts(human_skills={"reset_cubes": {}, "reset_wiper": {}}),
+        )
+        self.counter = 0
+
+    def tearDown(self):
+        self.world.db.close()
+        self.tmp.cleanup()
+
+    def request(self, op, **kwargs):  # noqa: PLR0917 -- test request builder
+        self.counter += 1
+        return dict(
+            operation=op,
+            request_id=str(self.counter),
+            expected_version=self.world.version,
+            **kwargs,
+        )
+
+    def test_only_the_domains_interventions_are_dispatched(self):
+        with self.assertRaisesRegex(ValueError, "Unknown human intervention"):
+            self.world.dispatch(
+                request=self.request("request_help", intervention_id="reset_cube_far")
+            )
+        self.world.dispatch(request=self.request("request_help", intervention_id="reset_wiper"))
+        self.assertEqual(self.destinations, ["reset_wiper"])
+        self.assertEqual(self.world.human_by_side, {"reset_cubes": 0, "reset_wiper": 1})
+
+    def test_actions_are_validated_against_the_published_width(self):
+        with self.assertRaises(ValueError):
+            self.world.dispatch(request=self.request("step", action=[0] * 18))
+        self.world.dispatch(request=self.request("step", action=[0] * 11))
+        self.world.dispatch(request=self.request("step", action=[[0] * 11] * 4))
+        self.assertEqual(self.bridge.calls, 2)

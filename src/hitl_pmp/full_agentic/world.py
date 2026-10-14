@@ -5,7 +5,7 @@ import json
 import socketserver
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, cast
@@ -24,8 +24,12 @@ class World:
         workspace: Path,
         output: Path,
         deadline: float,
+        interventions: Mapping[str, str],
     ) -> None:
+        """`interventions` maps each human intervention_id the agent may request to
+        the `reset_movables` destination it dispatches (the domain's own list)."""
         self.bridge, self.workspace, self.output = bridge, workspace, output
+        self.interventions = dict(interventions)
         self.deadline = deadline
         self.version = self.steps = self.trials = self.help_requests = self.trial_steps = 0
         self.active = self.finished = self.uncertain = False
@@ -34,7 +38,7 @@ class World:
         self.clock: PracticeClock | None = None
         self.measurements: list[dict[str, Any]] = []
         self.on_measurement: Callable[[dict[str, Any]], Any] | None = None
-        self.human_by_side = {"robot_side": 0, "opposite_side": 0}
+        self.human_by_side = dict.fromkeys(self.interventions.values(), 0)
         self.revision: str | None = None
         self.submission: Path | None = None
         self.db = sqlite3.connect(output / "receipts.sqlite")
@@ -193,8 +197,9 @@ class World:
                 action = action.get("values", action.get("schedule"))
             array = np.asarray(action, dtype=float)
             spec = self.bridge.action_spec()
+            (width,) = spec["shape"]
             if (
-                array.shape not in ((18,), (spec["schedule_rows"], 18))
+                array.shape not in ((width,), (spec["schedule_rows"], width))
                 or not np.isfinite(array).all()
                 or np.any(array < spec["low"])
                 or np.any(array > spec["high"])
@@ -205,7 +210,7 @@ class World:
         if op == "begin_trial" and self.active:
             raise ValueError("End the active trial first, or trial budget exhausted")
         if op == "request_help":
-            if request.get("intervention_id") not in {"reset_cube_far", "reset_cube_and_bin_near"}:
+            if request.get("intervention_id") not in self.interventions:
                 raise ValueError("Unknown human intervention")
             charge = self.accounting.human_charge(skill=request["intervention_id"])
             if self.clock and self.counted_steps + charge.steps > self.clock.budget:
@@ -237,11 +242,7 @@ class World:
             elif op == "end_trial":
                 self.active = False
             elif op == "request_help":
-                destination = (
-                    "opposite_side"
-                    if request["intervention_id"] == "reset_cube_far"
-                    else "robot_side"
-                )
+                destination = self.interventions[request["intervention_id"]]
                 try:
                     if not self.bridge.env.reset_movables(destination=destination):
                         raise RuntimeError("Human executor declined the intervention")
