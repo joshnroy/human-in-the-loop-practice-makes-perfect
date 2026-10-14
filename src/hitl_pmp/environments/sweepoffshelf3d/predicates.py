@@ -7,8 +7,9 @@ The one exception is `CubeOrder`, a static chain over cube names that lets the s
 take every cube as a parameter while grounding exactly once.
 
 `OnFloor` and `WiperOnFloor` are observed outcomes only: no operator ever adds them.
-A cube or wiper that is neither where it belongs nor held is on the floor; the box rim
-and the other shelves are not places it can come to rest.
+A cube or wiper that is neither where it belongs nor held is on the floor. For a cube
+that includes the cupboard's bottom board and the box's rims, where one can come to
+rest out of every robot skill's reach (see `backend.py`).
 
 Three summary atoms exist so that no skill can succeed vacuously. A skill is scored a
 success when its promised effects hold afterwards, so a skill whose promises already
