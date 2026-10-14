@@ -1,0 +1,16 @@
+{
+  "phase": "running",
+  "updated_unix": 1791385607.5503163,
+  "practice_steps": 20400,
+  "robot_steps": 20382,
+  "human_invocations": 18,
+  "human_resets_by_destination": {
+    "robot_side": 15,
+    "opposite_side": 3
+  },
+  "learning_updates": 10,
+  "session_index": 10,
+  "measurement_snapshots": 13,
+  "evaluations_completed": 11,
+  "elapsed_seconds": 1319.130393885076
+}

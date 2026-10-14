@@ -1,0 +1,11 @@
+{
+  "practice_step_budget": 85000,
+  "measurement_interval_steps": 1700,
+  "human_skill_steps": 1,
+  "evaluation_control_steps": 500,
+  "learning_session_action_limit": 20,
+  "learning_cycle_count_limit": null,
+  "original_num_cycles_flag_superseded_by_step_budget": 50,
+  "evaluation_process": "spawn",
+  "evaluation_feedback": false
+}

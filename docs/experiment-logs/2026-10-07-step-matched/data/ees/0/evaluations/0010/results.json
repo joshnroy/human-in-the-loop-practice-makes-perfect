@@ -1,0 +1,79 @@
+{
+  "complete": true,
+  "tasks": [
+    {
+      "task": 0,
+      "seed": 357381689,
+      "solved": false,
+      "steps": 245,
+      "reason": "no_plan"
+    },
+    {
+      "task": 1,
+      "seed": 1109584189,
+      "solved": false,
+      "steps": 402,
+      "reason": "no_plan"
+    },
+    {
+      "task": 2,
+      "seed": 861111389,
+      "solved": false,
+      "steps": 218,
+      "reason": "no_plan"
+    },
+    {
+      "task": 3,
+      "seed": 909887001,
+      "solved": true,
+      "steps": 176,
+      "reason": "goal"
+    },
+    {
+      "task": 4,
+      "seed": 1282264805,
+      "solved": false,
+      "steps": 171,
+      "reason": "no_plan"
+    },
+    {
+      "task": 5,
+      "seed": 1233247625,
+      "solved": false,
+      "steps": 388,
+      "reason": "no_plan"
+    },
+    {
+      "task": 6,
+      "seed": 1563794485,
+      "solved": false,
+      "steps": 217,
+      "reason": "no_plan"
+    },
+    {
+      "task": 7,
+      "seed": 463687570,
+      "solved": true,
+      "steps": 244,
+      "reason": "goal"
+    },
+    {
+      "task": 8,
+      "seed": 945602026,
+      "solved": false,
+      "steps": 231,
+      "reason": "no_plan"
+    },
+    {
+      "task": 9,
+      "seed": 364873158,
+      "solved": false,
+      "steps": 348,
+      "reason": "no_plan"
+    }
+  ],
+  "num_solved": 2,
+  "num_total": 10,
+  "policy_sha256": "54c86a113be8f15abc2a698bc5aeb068978577fc0b1f903b166f6a500f81b18e",
+  "elapsed_seconds": 130.30659123230726
+}

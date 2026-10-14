@@ -1,0 +1,49 @@
+{
+  "success": true,
+  "error": null,
+  "total_cost_usd": 8.150404800000004,
+  "generation_metrics": {
+    "wall_time_s": 3466.303356409073,
+    "cli_duration_ms": 3463015,
+    "cli_duration_api_ms": 1641249,
+    "model_wait_time_s": 1247.9637170924107,
+    "experiment_time_s": 476.29595629067626,
+    "other_tool_time_s": 1739.1117755819578,
+    "num_turns": 100,
+    "input_tokens": 248,
+    "output_tokens": 159149,
+    "cache_read_tokens": 14929689,
+    "cache_creation_tokens": 396099,
+    "num_tool_calls": 131,
+    "num_autocompactions": 0,
+    "num_permission_denials": 0,
+    "turn_limit_hit": false,
+    "output_token_limit_hit": false,
+    "prompt_too_long_hit": false,
+    "api_error_hit": false,
+    "stop_reason": "success",
+    "model_usage": {
+      "claude-opus-5-5": {
+        "inputTokens": 248,
+        "outputTokens": 159149,
+        "cacheReadInputTokens": 14929689,
+        "cacheCreationInputTokens": 396099,
+        "webSearchRequests": 0,
+        "costUSD": 8.150404800000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 128000,
+        "thinkingTokens": 84343,
+        "canonicalModel": "claude-opus-5-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "rate_limit_retries": 0,
+    "output_token_retries": 0,
+    "prompt_too_long_retries": 0,
+    "api_error_retries": 0,
+    "unconfirmed_solution_retries": 0,
+    "aborted_tokens": 0,
+    "aborted_cost_usd": 0.0
+  }
+}

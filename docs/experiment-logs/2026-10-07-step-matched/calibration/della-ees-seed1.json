@@ -1,0 +1,3999 @@
+{
+  "machine": "della",
+  "method": "ees",
+  "seed": 1,
+  "source": "/home/josh/Documents/repos/research/hitl-pmp-results/exp22c-della/ees-gpoff/results/ees-lamcost5/ees/1",
+  "sessions": [
+    {
+      "cycle": 0,
+      "robot_skills": 6,
+      "human": 0,
+      "robot_steps": 585,
+      "counted_steps": 585
+    },
+    {
+      "cycle": 1,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1732,
+      "counted_steps": 1737
+    },
+    {
+      "cycle": 2,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1507,
+      "counted_steps": 1512
+    },
+    {
+      "cycle": 3,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1683,
+      "counted_steps": 1689
+    },
+    {
+      "cycle": 4,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1457,
+      "counted_steps": 1463
+    },
+    {
+      "cycle": 5,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1487,
+      "counted_steps": 1493
+    },
+    {
+      "cycle": 6,
+      "robot_skills": 16,
+      "human": 4,
+      "robot_steps": 1889,
+      "counted_steps": 1893
+    },
+    {
+      "cycle": 7,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1607,
+      "counted_steps": 1614
+    },
+    {
+      "cycle": 8,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1593,
+      "counted_steps": 1599
+    },
+    {
+      "cycle": 9,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1569,
+      "counted_steps": 1574
+    },
+    {
+      "cycle": 10,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1499,
+      "counted_steps": 1504
+    },
+    {
+      "cycle": 11,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1479,
+      "counted_steps": 1485
+    },
+    {
+      "cycle": 12,
+      "robot_skills": 16,
+      "human": 4,
+      "robot_steps": 1784,
+      "counted_steps": 1788
+    },
+    {
+      "cycle": 13,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1572,
+      "counted_steps": 1578
+    },
+    {
+      "cycle": 14,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1647,
+      "counted_steps": 1654
+    },
+    {
+      "cycle": 15,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1369,
+      "counted_steps": 1375
+    },
+    {
+      "cycle": 16,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1601,
+      "counted_steps": 1607
+    },
+    {
+      "cycle": 17,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1399,
+      "counted_steps": 1406
+    },
+    {
+      "cycle": 18,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1657,
+      "counted_steps": 1663
+    },
+    {
+      "cycle": 19,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1408,
+      "counted_steps": 1413
+    },
+    {
+      "cycle": 20,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1584,
+      "counted_steps": 1589
+    },
+    {
+      "cycle": 21,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1411,
+      "counted_steps": 1418
+    },
+    {
+      "cycle": 22,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1667,
+      "counted_steps": 1673
+    },
+    {
+      "cycle": 23,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1576,
+      "counted_steps": 1581
+    },
+    {
+      "cycle": 24,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1368,
+      "counted_steps": 1374
+    },
+    {
+      "cycle": 25,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1441,
+      "counted_steps": 1446
+    },
+    {
+      "cycle": 26,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1535,
+      "counted_steps": 1541
+    },
+    {
+      "cycle": 27,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1479,
+      "counted_steps": 1485
+    },
+    {
+      "cycle": 28,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1643,
+      "counted_steps": 1649
+    },
+    {
+      "cycle": 29,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1438,
+      "counted_steps": 1444
+    },
+    {
+      "cycle": 30,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1408,
+      "counted_steps": 1414
+    },
+    {
+      "cycle": 31,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1626,
+      "counted_steps": 1631
+    },
+    {
+      "cycle": 32,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1337,
+      "counted_steps": 1344
+    },
+    {
+      "cycle": 33,
+      "robot_skills": 17,
+      "human": 3,
+      "robot_steps": 1802,
+      "counted_steps": 1805
+    },
+    {
+      "cycle": 34,
+      "robot_skills": 16,
+      "human": 4,
+      "robot_steps": 1514,
+      "counted_steps": 1518
+    },
+    {
+      "cycle": 35,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1588,
+      "counted_steps": 1595
+    },
+    {
+      "cycle": 36,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1483,
+      "counted_steps": 1489
+    },
+    {
+      "cycle": 37,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1391,
+      "counted_steps": 1397
+    },
+    {
+      "cycle": 38,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1728,
+      "counted_steps": 1733
+    },
+    {
+      "cycle": 39,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1509,
+      "counted_steps": 1516
+    },
+    {
+      "cycle": 40,
+      "robot_skills": 15,
+      "human": 5,
+      "robot_steps": 1658,
+      "counted_steps": 1663
+    },
+    {
+      "cycle": 41,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1503,
+      "counted_steps": 1509
+    },
+    {
+      "cycle": 42,
+      "robot_skills": 16,
+      "human": 4,
+      "robot_steps": 1722,
+      "counted_steps": 1726
+    },
+    {
+      "cycle": 43,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1605,
+      "counted_steps": 1611
+    },
+    {
+      "cycle": 44,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1496,
+      "counted_steps": 1502
+    },
+    {
+      "cycle": 45,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1550,
+      "counted_steps": 1557
+    },
+    {
+      "cycle": 46,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1493,
+      "counted_steps": 1500
+    },
+    {
+      "cycle": 47,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1574,
+      "counted_steps": 1580
+    },
+    {
+      "cycle": 48,
+      "robot_skills": 14,
+      "human": 6,
+      "robot_steps": 1567,
+      "counted_steps": 1573
+    },
+    {
+      "cycle": 49,
+      "robot_skills": 13,
+      "human": 7,
+      "robot_steps": 1478,
+      "counted_steps": 1485
+    }
+  ],
+  "session_summary": {
+    "n": 50,
+    "total": 76980,
+    "mean": 1539.6,
+    "median": 1549.0,
+    "min": 585,
+    "max": 1893,
+    "p90": 1726,
+    "p95": 1788,
+    "p99": 1893
+  },
+  "practice_skill_lengths": {
+    "PickCube": {
+      "n": 352,
+      "total": 46242,
+      "mean": 131.3693181818182,
+      "median": 130.0,
+      "min": 106,
+      "max": 180,
+      "p90": 150,
+      "p95": 155,
+      "p99": 161
+    },
+    "MoveToTossLocationAndToss": {
+      "n": 350,
+      "total": 30454,
+      "mean": 87.01142857142857,
+      "median": 83.0,
+      "min": 29,
+      "max": 152,
+      "p90": 124,
+      "p95": 133,
+      "p99": 150
+    },
+    "OpenGripper": {
+      "n": 2,
+      "total": 2,
+      "mean": 1,
+      "median": 1.0,
+      "min": 1,
+      "max": 1,
+      "p90": 1,
+      "p95": 1,
+      "p99": 1
+    }
+  },
+  "evaluation_summary": {
+    "n": 510,
+    "total": 112958,
+    "mean": 221.48627450980393,
+    "median": 218.0,
+    "min": 155,
+    "max": 460,
+    "p90": 256,
+    "p95": 258,
+    "p99": 423
+  },
+  "solved_evaluation_summary": {
+    "n": 327,
+    "total": 71293,
+    "mean": 218.02140672782875,
+    "median": 219,
+    "min": 155,
+    "max": 433,
+    "p90": 256,
+    "p95": 257,
+    "p99": 259
+  },
+  "evaluation_episodes": [
+    {
+      "checkpoint": 0,
+      "task": 0,
+      "ticks": 232,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 1,
+      "ticks": 433,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 2,
+      "ticks": 183,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 3,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 4,
+      "ticks": 258,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 0,
+      "task": 6,
+      "ticks": 407,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 7,
+      "ticks": 189,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 0,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 0,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 0,
+      "ticks": 389,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 1,
+      "ticks": 250,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 2,
+      "ticks": 182,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 3,
+      "ticks": 323,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 4,
+      "ticks": 411,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 1,
+      "task": 6,
+      "ticks": 199,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 7,
+      "ticks": 379,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 8,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 1,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 2,
+      "task": 1,
+      "ticks": 460,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 2,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 3,
+      "ticks": 323,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 4,
+      "ticks": 456,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 5,
+      "ticks": 415,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 2,
+      "task": 7,
+      "ticks": 189,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 2,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 2,
+      "task": 9,
+      "ticks": 209,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 1,
+      "ticks": 248,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 2,
+      "ticks": 185,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 3,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 5,
+      "ticks": 219,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 6,
+      "ticks": 200,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 8,
+      "ticks": 253,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 3,
+      "task": 9,
+      "ticks": 207,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 4,
+      "task": 2,
+      "ticks": 177,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 4,
+      "task": 3,
+      "ticks": 156,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 5,
+      "ticks": 218,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 6,
+      "ticks": 200,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 8,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 4,
+      "task": 9,
+      "ticks": 427,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 1,
+      "ticks": 248,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 2,
+      "ticks": 177,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 3,
+      "ticks": 170,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 4,
+      "ticks": 257,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 5,
+      "ticks": 219,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 5,
+      "task": 9,
+      "ticks": 423,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 0,
+      "ticks": 228,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 1,
+      "ticks": 249,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 2,
+      "ticks": 178,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 3,
+      "ticks": 155,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 4,
+      "ticks": 257,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 5,
+      "ticks": 219,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 6,
+      "ticks": 199,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 8,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 6,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 7,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 7,
+      "task": 1,
+      "ticks": 433,
+      "skills": 4,
+      "solved": true
+    },
+    {
+      "checkpoint": 7,
+      "task": 2,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 7,
+      "task": 3,
+      "ticks": 171,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 7,
+      "task": 4,
+      "ticks": 258,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 7,
+      "task": 5,
+      "ticks": 221,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 7,
+      "task": 6,
+      "ticks": 201,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 7,
+      "task": 7,
+      "ticks": 189,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 7,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 7,
+      "task": 9,
+      "ticks": 410,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 1,
+      "ticks": 248,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 2,
+      "ticks": 177,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 3,
+      "ticks": 162,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 8,
+      "task": 4,
+      "ticks": 258,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 8,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 8,
+      "task": 6,
+      "ticks": 199,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 7,
+      "ticks": 188,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 8,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 8,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 9,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 1,
+      "ticks": 247,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 2,
+      "ticks": 180,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 3,
+      "ticks": 159,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 9,
+      "task": 4,
+      "ticks": 257,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 5,
+      "ticks": 220,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 9,
+      "task": 7,
+      "ticks": 187,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 8,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 9,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 10,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 10,
+      "task": 1,
+      "ticks": 247,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 10,
+      "task": 2,
+      "ticks": 177,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 10,
+      "task": 3,
+      "ticks": 162,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 10,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 10,
+      "task": 5,
+      "ticks": 219,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 10,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 10,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 10,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 10,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 11,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 11,
+      "task": 2,
+      "ticks": 177,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 11,
+      "task": 3,
+      "ticks": 167,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 11,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 5,
+      "ticks": 220,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 6,
+      "ticks": 200,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 11,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 12,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 3,
+      "ticks": 159,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 5,
+      "ticks": 218,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 12,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 7,
+      "ticks": 187,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 12,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 12,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 13,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 2,
+      "ticks": 183,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 3,
+      "ticks": 167,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 5,
+      "ticks": 220,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 13,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 13,
+      "task": 7,
+      "ticks": 187,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 13,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 13,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 2,
+      "ticks": 177,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 3,
+      "ticks": 156,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 14,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 14,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 6,
+      "ticks": 199,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 14,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 14,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 2,
+      "ticks": 178,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 15,
+      "task": 3,
+      "ticks": 174,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 15,
+      "task": 5,
+      "ticks": 220,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 6,
+      "ticks": 201,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 7,
+      "ticks": 187,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 15,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 15,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 2,
+      "ticks": 177,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 3,
+      "ticks": 189,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 16,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 5,
+      "ticks": 220,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 6,
+      "ticks": 200,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 16,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 16,
+      "task": 8,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 16,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 1,
+      "ticks": 250,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 2,
+      "ticks": 179,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 3,
+      "ticks": 162,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 17,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 17,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 2,
+      "ticks": 179,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 3,
+      "ticks": 162,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 6,
+      "ticks": 201,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 18,
+      "task": 7,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 18,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 3,
+      "ticks": 155,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 7,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 19,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 20,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 2,
+      "ticks": 177,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 20,
+      "task": 3,
+      "ticks": 173,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 6,
+      "ticks": 201,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 20,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 20,
+      "task": 8,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 20,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 1,
+      "ticks": 249,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 21,
+      "task": 2,
+      "ticks": 185,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 21,
+      "task": 3,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 21,
+      "task": 5,
+      "ticks": 220,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 21,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 21,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 2,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 22,
+      "task": 3,
+      "ticks": 193,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 22,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 5,
+      "ticks": 220,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 22,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 7,
+      "ticks": 189,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 22,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 22,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 23,
+      "task": 0,
+      "ticks": 228,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 23,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 23,
+      "task": 2,
+      "ticks": 188,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 23,
+      "task": 3,
+      "ticks": 185,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 23,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 23,
+      "task": 5,
+      "ticks": 219,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 23,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 23,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 23,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 23,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 2,
+      "ticks": 184,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 3,
+      "ticks": 156,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 5,
+      "ticks": 218,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 24,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 24,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 25,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 1,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 3,
+      "ticks": 169,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 25,
+      "task": 9,
+      "ticks": 211,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 26,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 1,
+      "ticks": 250,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 26,
+      "task": 2,
+      "ticks": 183,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 3,
+      "ticks": 157,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 26,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 27,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 27,
+      "task": 1,
+      "ticks": 250,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 27,
+      "task": 2,
+      "ticks": 185,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 27,
+      "task": 3,
+      "ticks": 163,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 27,
+      "task": 4,
+      "ticks": 258,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 27,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 27,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 27,
+      "task": 7,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 27,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 27,
+      "task": 9,
+      "ticks": 210,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 28,
+      "task": 1,
+      "ticks": 249,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 2,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 28,
+      "task": 3,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 4,
+      "ticks": 258,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 5,
+      "ticks": 220,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 28,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 7,
+      "ticks": 191,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 8,
+      "ticks": 253,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 28,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 29,
+      "task": 1,
+      "ticks": 249,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 29,
+      "task": 3,
+      "ticks": 195,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 29,
+      "task": 5,
+      "ticks": 221,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 6,
+      "ticks": 203,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 29,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 29,
+      "task": 9,
+      "ticks": 212,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 0,
+      "ticks": 229,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 30,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 3,
+      "ticks": 175,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 4,
+      "ticks": 259,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 6,
+      "ticks": 203,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 30,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 1,
+      "ticks": 250,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 2,
+      "ticks": 179,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 31,
+      "task": 3,
+      "ticks": 178,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 31,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 6,
+      "ticks": 378,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 31,
+      "task": 7,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 31,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 3,
+      "ticks": 194,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 5,
+      "ticks": 222,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 32,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 33,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 33,
+      "task": 1,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 33,
+      "task": 2,
+      "ticks": 186,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 33,
+      "task": 3,
+      "ticks": 187,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 33,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 33,
+      "task": 5,
+      "ticks": 222,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 33,
+      "task": 6,
+      "ticks": 205,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 33,
+      "task": 7,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 33,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 33,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 3,
+      "ticks": 171,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 4,
+      "ticks": 259,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 34,
+      "task": 5,
+      "ticks": 220,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 34,
+      "task": 9,
+      "ticks": 210,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 35,
+      "task": 0,
+      "ticks": 227,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 35,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 3,
+      "ticks": 186,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 6,
+      "ticks": 202,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 35,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 2,
+      "ticks": 180,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 36,
+      "task": 3,
+      "ticks": 167,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 36,
+      "task": 4,
+      "ticks": 259,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 6,
+      "ticks": 201,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 36,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 36,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 3,
+      "ticks": 169,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 37,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 5,
+      "ticks": 220,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 6,
+      "ticks": 201,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 7,
+      "ticks": 188,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 37,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 37,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 0,
+      "ticks": 228,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 38,
+      "task": 1,
+      "ticks": 249,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 3,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 4,
+      "ticks": 259,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 5,
+      "ticks": 222,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 38,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 38,
+      "task": 9,
+      "ticks": 208,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 39,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 1,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 3,
+      "ticks": 184,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 39,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 39,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 0,
+      "ticks": 229,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 2,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 40,
+      "task": 3,
+      "ticks": 183,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 4,
+      "ticks": 258,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 5,
+      "ticks": 222,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 40,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 1,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 3,
+      "ticks": 173,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 4,
+      "ticks": 256,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 5,
+      "ticks": 218,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 41,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 41,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 41,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 2,
+      "ticks": 179,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 3,
+      "ticks": 155,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 4,
+      "ticks": 258,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 42,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 42,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 42,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 2,
+      "ticks": 181,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 43,
+      "task": 3,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 4,
+      "ticks": 256,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 43,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 43,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 43,
+      "task": 9,
+      "ticks": 212,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 1,
+      "ticks": 252,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 44,
+      "task": 2,
+      "ticks": 186,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 3,
+      "ticks": 190,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 44,
+      "task": 4,
+      "ticks": 257,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 44,
+      "task": 5,
+      "ticks": 221,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 6,
+      "ticks": 202,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 44,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 44,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 1,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 3,
+      "ticks": 159,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 5,
+      "ticks": 223,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 45,
+      "task": 9,
+      "ticks": 414,
+      "skills": 4,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 1,
+      "ticks": 247,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 2,
+      "ticks": 179,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 3,
+      "ticks": 196,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 46,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 6,
+      "ticks": 200,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 7,
+      "ticks": 191,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 46,
+      "task": 8,
+      "ticks": 251,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 46,
+      "task": 9,
+      "ticks": 210,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 1,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 2,
+      "ticks": 178,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 3,
+      "ticks": 159,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 4,
+      "ticks": 258,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 5,
+      "ticks": 218,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 6,
+      "ticks": 201,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 47,
+      "task": 9,
+      "ticks": 208,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 1,
+      "ticks": 250,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 3,
+      "ticks": 192,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 4,
+      "ticks": 259,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 5,
+      "ticks": 223,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 7,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 8,
+      "ticks": 252,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 48,
+      "task": 9,
+      "ticks": 211,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 0,
+      "ticks": 228,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 2,
+      "ticks": 180,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 3,
+      "ticks": 173,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 5,
+      "ticks": 219,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 6,
+      "ticks": 201,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 7,
+      "ticks": 189,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 49,
+      "task": 9,
+      "ticks": 209,
+      "skills": 4,
+      "solved": false
+    },
+    {
+      "checkpoint": 50,
+      "task": 0,
+      "ticks": 227,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 1,
+      "ticks": 248,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 2,
+      "ticks": 188,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 3,
+      "ticks": 176,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 4,
+      "ticks": 257,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 5,
+      "ticks": 222,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 6,
+      "ticks": 199,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 7,
+      "ticks": 187,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 8,
+      "ticks": 251,
+      "skills": 2,
+      "solved": true
+    },
+    {
+      "checkpoint": 50,
+      "task": 9,
+      "ticks": 209,
+      "skills": 2,
+      "solved": true
+    }
+  ],
+  "excluded_blocks": []
+}

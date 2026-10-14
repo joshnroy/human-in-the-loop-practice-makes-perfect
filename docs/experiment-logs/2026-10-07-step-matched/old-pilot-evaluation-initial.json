@@ -1,0 +1,77 @@
+{
+  "tasks": [
+    {
+      "task": 0,
+      "seed": 357381689,
+      "solved": false,
+      "steps": 234,
+      "error": null
+    },
+    {
+      "task": 1,
+      "seed": 1109584189,
+      "solved": false,
+      "steps": 233,
+      "error": null
+    },
+    {
+      "task": 2,
+      "seed": 861111389,
+      "solved": false,
+      "steps": 233,
+      "error": null
+    },
+    {
+      "task": 3,
+      "seed": 909887001,
+      "solved": false,
+      "steps": 236,
+      "error": null
+    },
+    {
+      "task": 4,
+      "seed": 1282264805,
+      "solved": false,
+      "steps": 236,
+      "error": null
+    },
+    {
+      "task": 5,
+      "seed": 1233247625,
+      "solved": false,
+      "steps": 236,
+      "error": null
+    },
+    {
+      "task": 6,
+      "seed": 1563794485,
+      "solved": false,
+      "steps": 235,
+      "error": null
+    },
+    {
+      "task": 7,
+      "seed": 463687570,
+      "solved": false,
+      "steps": 236,
+      "error": null
+    },
+    {
+      "task": 8,
+      "seed": 945602026,
+      "solved": false,
+      "steps": 234,
+      "error": null
+    },
+    {
+      "task": 9,
+      "seed": 364873158,
+      "solved": false,
+      "steps": 234,
+      "error": null
+    }
+  ],
+  "num_solved": 0,
+  "num_total": 10,
+  "complete": true
+}
