@@ -13,14 +13,13 @@ def main() -> None:
         sys.path.insert(0, "/sandbox/submission")
         from approach import GeneratedApproach
 
-        spec = json.loads(Path("/sandbox/submission/robot_spec.json").read_text())
         random.seed(0)
         import numpy as np
 
         np.random.seed(0)
-        approach = GeneratedApproach(spec["action_spec"], {"mode": "object_state"}, {})
         observation = Relay.request(payload={"operation": "observe"})
-        approach.reset(observation, {"robot_spec": spec})
+        approach = GeneratedApproach(observation["action_spec"], {"mode": "object_state"}, {})
+        approach.reset(observation, {})
         for _ in range(
             json.loads(Path("/sandbox/evaluation_config.json").read_text())["max_steps"]
         ):

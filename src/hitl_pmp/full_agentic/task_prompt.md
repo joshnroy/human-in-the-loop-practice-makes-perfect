@@ -1,110 +1,51 @@
-You are writing an approach for an environment that you can only access as a black box.
-
-The environment is described below.
-
-A mobile TidyBot with a seven-joint arm and gripper must place a cube
-in a bin across a low barrier. Practice may leave the cube beyond autonomous reach.
-The initial Python skill code is the same untrained generated library used by the
-existing agentic experiment. approach.py contains a simple bootstrap composition;
-you may rewrite it and its helpers freely. No fixed skill slots, state clusters,
-belief model or planner are required. robot_spec.json contains known kinematics
-and the permitted local PyBullet planning scene. Planning previews do not simulate
-grasp/toss dynamics and are not practice evidence. Native environment source,
-controllers, and simulator reset operations are unavailable.
-
-
-The environment is a black box. Environment source and native controllers
-are unavailable. The existing robot API and observation fields are documented in
-robot_api.md and robot_spec.json. Observations are JSON dictionaries, exactly as
-provided to the initial robot policies, not Gym vectors or ObjectCentricState objects.
-
-env_client.py is the practice-only interface. Every make_env() connects to the SAME
-persistent world. There is no free reset, set_state, or independent test world.
-Observe before making decisions. Parallel analysis and coding are available;
-serialize physical experiments in this shared world. A stale-world error requires
-observing again and deciding from the actual current state. After a connection
-failure, retry_last_request() retrieves the durable receipt without repeating
-the physical action. Do not replay uncertain actions with new request IDs.
-
-from env_client import make_env
-env = make_env()
-record = env.observe()
-obs = record["observation"]
-env.begin_trial()                 # snapshot current code; robot invocation cost 1
-record = env.step(action)         # one documented robot control period
-env.end_trial()                   # no reset; no simulator change
-record = env.request_help("reset_cube_far")  # human request cost 5
-
-A trial is one bounded controller execution, with RoboCode's 1000-step limit.
-You can choose any code, parameters, controller structure and stopping point.
-The host supplies the total counted-step budget below. No additional trial-count or human-request-count cap is imposed.
-The server also records all control steps so different controller granularities
-remain visible. Trial boundaries do not create new scenes or enforce learning.
-
-Human assistance is available during practice. The two supplied interventions are:
-- reset_cube_far: place the cube in the robot-side pickup area and the bin across
-  the barrier.
-- reset_cube_and_bin_near: place both cube and bin on the robot side.
-Pause execution with end_trial() before requesting assistance. Both operations
-sample fresh placements for BOTH objects. They preserve the arm and normally the
-base; the supplied handler may move the base to its initial pose if it blocks all
-valid bin placements. They do not open the gripper or retract the arm.
-Observe the returned state. These are the existing deterministic host mechanisms;
-this pilot does not introduce unknown helper reliability or invented human outcomes.
-The request count and configured cost are charged by the host. A host failure is
-an operational failure, not successful help. You may request help whenever its
-expected benefit justifies its cost, including before becoming stuck.
-
-Use the existing linear-cost objective: autonomous task success probability minus
-3e-6 times accumulated robot-invocation and human-request cost. The current cost,
-step count and resource status are returned with every tool result. Model spending
-is independently capped by the coding CLI. Evaluation results are hidden.
-
-The host records observations and actions in evidence/practice.jsonl. You may keep
-your own files and models. All four responsibilities--policy learning, state
-representation, uncertainty tracking, and planning--are yours; no fixed graph,
-belief estimator, or practice schedule is imposed.
-
-Your approach.py is the frozen deployment program. It must NOT import env_client.
-The constructor receives the action-spec dictionary, {"mode":"object_state"},
-and an empty primitives dictionary. reset(state, info) receives the current
-observation and info["robot_spec"]. reset initializes YOUR program; it does not
-reset the physical practice world. get_action(state) returns a valid low-level
-action; returning None ends the task. Supplied supporting Python and static data
-files are included with the frozen program. No practice evidence is included.
-No model calls or human help are available during held-out evaluation.
-The evaluator uses the native task criterion, which can be stricter than merely
-being inside the bin. There is no success oracle in practice observations.
-
-When you decide adaptation is finished, end any active trial, commit the current
-program, call env.finish_adaptation(), and end your coding session. This snapshots
-the final artifact. Keep approach.py usable throughout, as in ordinary RoboCode.
-
-
+A mobile robot must place a cube in a bin across a barrier. Practice uses one persistent world and object-centric state observations. Use `env_client.py` for serialized robot commands and human requests. The deployment interface is `GeneratedApproach`; write its implementation.
+Available human skills during practice: `reset_cube_far` samples a cube placement in the robot-side pickup area and a bin placement across the barrier; `reset_cube_and_bin_near` samples both on the robot side. Both reposition both objects, preserve the arm and gripper state, and normally preserve the base; the host may return the base to its initial pose if it blocks valid bin placements. The supplied interventions are deterministic host operations. Each has a separate cost function cₕ(e) and duration function dₕ(e), both equal to 1 initially.
+Maximize expected autonomous deployment success minus the weighted accumulated practice cost. R denotes executed robot control periods. Hₕ denotes dispatched invocations of human skill h; cₕ is its cost function and dₕ its counted-duration function. Each function is evaluated for execution event e.
+$$
+C_R = \sum_{e\in R} r(e)
+$$
+$$
+C_H = \sum_h \sum_{e\in H_h} c_h(e)
+$$
+$$
+C = C_R + w_H C_H
+$$
+$$
+J = \mathbb{E}[\text{autonomous deployment success}] - \lambda C
+$$
+$$
+B = |R| + \sum_h \sum_{e\in H_h} d_h(e)
+$$
+Initial function values and fixed weights:
+$$
+r(e) \equiv 1
+$$
+$$
+c_h(e) \equiv 1 \quad \forall h
+$$
+$$
+d_h(e) \equiv 1 \quad \forall h
+$$
+$$
+w_H = 1
+$$
+$$
+\lambda = 3\times 10^{-6}
+$$
+w_H weights human cost relative to robot cost. λ weights total cost relative to deployment success. Every executed robot control period counts, including unsuccessful attempts, preparation and recovery. Each dispatched human invocation counts once, including failure. Receipt replay, code edits and held-out evaluation add no practice cost.
+Practice experience is B = robot control periods + Σdₕ(e), with dₕ(e) = 1 for each human skill. The host returns costs, counted experience, and remaining budget. The ceiling is 85,000 counted steps. Frozen copies are evaluated separately every 1,700 counted steps; results are hidden from you. When finished, commit your controller and call `env.finish_adaptation()`.
+Before each practice batch, and whenever you switch strategy or choose to finish, emit a brief "Decision summary:" in your ordinary response (at most two sentences): chosen practice side and next action, expected benefit and robot/human cost tradeoff, supporting observations, and reason for any switch or stop. State uncertainty when estimates are unavailable.
+Deployment calls the interface below on current observations. The constructor receives action metadata, the object-state observation-mode descriptor, and an empty primitives dictionary. `reset` initializes controller memory; `get_action` returns one valid low-level command or `None` to end execution. Each held-out task permits 500 robot control steps. Human assistance and model calls are unavailable during deployment.
 Write `approach.py` containing a class `GeneratedApproach` with the following interface:
-
 ```python
 class GeneratedApproach:
-    def __init__(self, action_space, observation_space, primitives):
-        """Initialize with the environment's gym spaces."""
-        ...
+    def __init__(self, action_space, observation_space, primitives): ...
 
-    def reset(self, state, info):
-        """Called at the start of each episode with the initial state."""
-        ...
+    def reset(self, state, info): ...
 
-    def get_action(self, state):
-        """Return a valid action for the given state."""
-        ...
+    def get_action(self, state): ...
 ```
-
-The class can maintain internal state between calls (e.g., a computed plan). The `reset` method is called at the start of each episode. The `get_action` method is called each step and must return a valid action.
-
-Read robot_api.md and robot_spec.json for allowed robot observations, actions and planning tools. No native skill primitives are supplied.
-
-Write the best approach you can — ideally one that solves the environment optimally. Your `approach.py` should only use packages available in the current environment. Write test scripts that use the real environment to verify your approach works. Once you have a strong candidate, search for instances it does not yet solve, then use those failures to improve it.
-
-IMPORTANT: Use `/opt/robocode-strict/bin/python` to run your test scripts, since that interpreter has all required packages installed. For example:
+Use the supplied interpreter to execute practice scripts:
 ```bash
-/opt/robocode-strict/bin/python test_approach.py
+/opt/robocode-strict/bin/python your_script.py
 ```
