@@ -19,11 +19,13 @@ atom of its own: `AnyCubeOnShelf`, `AnyCubeOffShelf` and `WiperAway` (not `Wiper
 are derived from the per-object atoms by `with_summaries`, which the backend applies
 to every observed state.
 
-The operators maintain them exactly except in one place: picking a cube off the shelf
-cannot know whether it was the last one, so `PickCubeFromShelf` leaves
-`AnyCubeOnShelf` as it was. A forecast can therefore hold a sweep applicable after the
-last shelf cube was picked by hand; every observed state is classified afresh, so the
-real applicability check is exact.
+The operators maintain them exactly except in two mirror-image places: picking a cube
+off the shelf cannot know whether it was the last one, so `PickCubeFromShelf` leaves
+`AnyCubeOnShelf` as it was; and returning a cube to the shelf cannot know whether it
+was the last stray one, so `ReturnCubeToShelf*` leaves `AnyCubeOffShelf` as it was. A
+forecast can therefore hold a sweep applicable after the last shelf cube was picked by
+hand, or `reset_cubes` applicable after the last stray cube was returned; every
+observed state is classified afresh, so the real applicability check is exact.
 """
 
 import itertools

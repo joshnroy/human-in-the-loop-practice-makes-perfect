@@ -76,3 +76,6 @@ class SweepOffShelf3DControllers(BaseModel):
 
     def place_cube_in_box(self, *, cube: str) -> None:
         self._run(skill="place_cube_in_box", cube=cube)
+
+    def return_cube_to_shelf(self, *, cube: str) -> None:
+        self._run(skill="return_cube_to_shelf", cube=cube)

@@ -7,6 +7,8 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
 from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
 from hitl_pmp.methods.belief_space.practice_domain import (
+    RETURN_CUBE_BELIEF,
+    SHELF_DEPLOYMENT_SKILLS,
     SHELF_ROBOT_SKILLS,
     SWEEP_OFF_SHELF_DOMAIN,
     SweepOffShelfDeployment,
@@ -170,3 +172,63 @@ def test_a_human_skill_forecast_branches_on_its_inferred_competence(*, ground, a
     assert mean_competence(belief=failed.skill_beliefs[name]) < competence
     for other in SHELF_ROBOT_SKILLS:
         assert succeeded.skill_beliefs[other] == state.skill_beliefs[other]
+
+
+def test_both_return_skills_share_one_learned_belief():
+    """One controller behind two operators (from the box, from the floor): one skill,
+    so one competence belief, learned like every other from its outcomes."""
+    for skill, cube_objects in (
+        (S.RETURN_CUBE_TO_SHELF_FROM_BOX, (O.cubes[0], O.box)),
+        (S.RETURN_CUBE_TO_SHELF_FROM_FLOOR, (O.cubes[0],)),
+    ):
+        ground = GroundSkill(skill=skill, objects=(O.robot, *cube_objects))
+        model = skill_belief_model(ground_skill=ground, domain=SWEEP_OFF_SHELF_DOMAIN)
+        assert model.belief_name == RETURN_CUBE_BELIEF
+        assert model.example_source == PracticeExampleSource.OUTCOME
+        assert skill.name in SWEEP_OFF_SHELF_DOMAIN.failure_effect_skills
+    assert RETURN_CUBE_BELIEF in SHELF_ROBOT_SKILLS
+    assert RETURN_CUBE_BELIEF not in SHELF_DEPLOYMENT_SKILLS
+
+
+def test_an_untrained_return_is_believed_to_work_one_time_in_four():
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+        make_default_tossing3d_belief,
+        mean_competence,
+    )
+
+    belief = make_default_tossing3d_belief(
+        num_particles=64,
+        model="local_trend",
+        engine="grid",
+        inference_config=InferenceConfig(),
+        domain=SWEEP_OFF_SHELF_DOMAIN,
+    )
+    competence = mean_competence(belief=belief.skill_beliefs[RETURN_CUBE_BELIEF])
+    assert competence == pytest.approx(0.25, abs=0.02)
+
+
+def test_deployment_value_never_reads_the_return_belief():
+    """Deployment solves a held-out task with no human, from every cube on the shelf;
+    putting a cube back on the shelf never moves it toward the box, so J must not
+    depend on how well the robot does it."""
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+        condition_skill_belief,
+        make_default_tossing3d_belief,
+    )
+
+    belief = make_default_tossing3d_belief(
+        num_particles=64,
+        model="local_trend",
+        engine="grid",
+        inference_config=InferenceConfig(),
+        domain=SWEEP_OFF_SHELF_DOMAIN,
+    )
+    before = SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=belief.skill_beliefs)
+    trained = dict(belief.skill_beliefs)
+    for _ in range(10):
+        trained[RETURN_CUBE_BELIEF] = condition_skill_belief(
+            belief=trained[RETURN_CUBE_BELIEF], success=True
+        )
+    assert SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=trained) == before

@@ -1,4 +1,4 @@
-"""SweepOffShelf3D's six robot skills on KINDER's own controllers.
+"""SweepOffShelf3D's robot skills on KINDER's own controllers: seven, behind eight operators.
 
 Each skill runs to completion or raises `SkillFailed`, and every one, failed or not,
 ends with the arm retracted: to KINDER's tucked home configuration (`HOME_ARM`), or,
@@ -259,7 +259,7 @@ class KinderControllers:
 
 
 class KinderSkills:
-    """Runs the six planner skills on one live scene, sharing `ShelfSkills`' step
+    """Runs the robot skills on one live scene, sharing `ShelfSkills`' step
     counter, budget, gripper command and recorder, so a KINDER step and a scripted
     step are counted, capped and filmed the same way."""
 
@@ -773,8 +773,10 @@ class KinderSkills:
 
     def return_cube_to_shelf(self, *, cube: str) -> None:
         """Pick the cube from the box or the floor and drop it onto the cube shelf from
-        `SHELF_DROP_RISES` above the board. Not a planner skill (the human returns the
-        cubes); kept beside the others for the validation it was asked for."""
+        `SHELF_DROP_RISES` above the board: both `ReturnCubeToShelf*` planner skills."""
+        shelf = self.shelf
+        if shelf.in_hand is not None or shelf.held_cube is not None:
+            raise SkillFailed("return_cube_to_shelf: the hand is not empty")
         robot, target = self.objects("robot", cube)
         controller = KinderControllers.get(name="PickCube")
 

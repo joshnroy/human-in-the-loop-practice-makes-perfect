@@ -7,7 +7,7 @@ nothing) and put the wiper back (`reset_wiper`, which always succeeds).
 
 One `take_action` runs one whole skill -- thousands of MuJoCo control steps -- through
 `controllers.py`. The action vector is ``[skill_id, cube_index, height, speed]``: the cube
-slot is read only by the three single-cube skills, the last two only by `SweepShelf`.
+slot is read only by the five single-cube skills, the last two only by `SweepShelf`.
 
 As in Tossing3D, `set_state` can only restore an episode-initial state: MuJoCo's full
 state does not fit in a flat feature vector, so a state with ``steps_taken > 0`` is
@@ -39,6 +39,8 @@ SKILL_IDS: dict[str, int] = {
     "PickCubeFromShelf": 3,
     "PickCubeFromFloor": 4,
     "PlaceCubeInBox": 5,
+    "ReturnCubeToShelfFromBox": 6,
+    "ReturnCubeToShelfFromFloor": 7,
 }
 NOOP_ID = -1
 
@@ -156,6 +158,11 @@ class SweepOffShelf3DEnvironment(Environment):
             controllers.pick_cube_from_floor(cube=cube)
         elif skill_id == SKILL_IDS["PlaceCubeInBox"]:
             controllers.place_cube_in_box(cube=cube)
+        elif skill_id in {
+            SKILL_IDS["ReturnCubeToShelfFromBox"],
+            SKILL_IDS["ReturnCubeToShelfFromFloor"],
+        }:
+            controllers.return_cube_to_shelf(cube=cube)
         elif skill_id != NOOP_ID:
             raise ControllerFailure(f"unknown skill id {skill_id}")
 

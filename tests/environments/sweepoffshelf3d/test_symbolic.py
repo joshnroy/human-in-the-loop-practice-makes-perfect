@@ -287,14 +287,24 @@ def test_the_wiper_is_away_exactly_while_it_is_not_home():
     assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) not in reset
 
 
-@pytest.mark.parametrize("skill", [S.RESET_CUBES, S.RESET_WIPER, S.SWEEP_SHELF])
+@pytest.mark.parametrize(
+    "skill",
+    [
+        S.RESET_CUBES,
+        S.RESET_WIPER,
+        S.SWEEP_SHELF,
+        S.RETURN_CUBE_TO_SHELF_FROM_BOX,
+        S.RETURN_CUBE_TO_SHELF_FROM_FLOOR,
+    ],
+)
 def test_no_skill_promises_nothing_from_any_state_it_applies_in(*, skill):
     """A skill whose promised effects already hold would be scored a success with
     nothing done; every state it can be grounded in must leave it something to do."""
     states = [
-        _start(on_shelf=O.cubes[:k], in_box=O.cubes[k:], wiper_home=home)
+        _start(on_shelf=O.cubes[:k], **{elsewhere: O.cubes[k:]}, wiper_home=home)
         for k in range(len(O.cubes) + 1)
         for home in (True, False)
+        for elsewhere in ("in_box", "on_floor")
     ]
     states += [
         _holding_wiper(atoms=state)
@@ -304,3 +314,45 @@ def test_no_skill_promises_nothing_from_any_state_it_applies_in(*, skill):
     for atoms in states:
         for ground in _groundings(skill=skill, atoms=atoms):
             assert not ground.expected_add_effects(before_atoms=atoms) <= atoms
+
+
+# --- the robot returns a cube to the shelf itself -----------------------------
+
+RETURNS = [S.RETURN_CUBE_TO_SHELF_FROM_BOX, S.RETURN_CUBE_TO_SHELF_FROM_FLOOR]
+
+
+@pytest.mark.parametrize(("skill", "where"), zip(RETURNS, ("in_box", "on_floor"), strict=True))
+def test_returning_a_cube_puts_that_cube_on_the_shelf_with_the_hand_empty(*, skill, where):
+    atoms = _start(on_shelf=O.cubes[1:], **{where: O.cubes[:1]})
+    (ground,) = _groundings(skill=skill, atoms=atoms)
+    assert ground.objects[1] == O.cubes[0]
+    after = _apply(ground=ground, atoms=atoms)
+    assert _atom(predicate=ON_SHELF, objects=(O.cubes[0],)) in after
+    assert _atom(predicate=IN_BOX, objects=(O.cubes[0], O.box)) not in after
+    assert _atom(predicate=ON_FLOOR, objects=(O.cubes[0],)) not in after
+    assert _atom(predicate=HAND_EMPTY, objects=(O.robot,)) in after
+    assert not any(atom.predicate == HOLDING_CUBE for atom in after)
+
+
+def test_a_return_promises_a_cube_on_the_shelf_and_leaves_any_off_shelf_alone():
+    """As `PickCubeFromShelf` cannot know it took the last shelf cube, a return cannot
+    know it brought back the last stray one; every observed state is reclassified."""
+    atoms = _start(on_shelf=(), in_box=O.cubes)
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) not in atoms
+    ground = _groundings(skill=S.RETURN_CUBE_TO_SHELF_FROM_BOX, atoms=atoms)[0]
+    after = _apply(ground=ground, atoms=atoms)
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) in after
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in after
+
+
+@pytest.mark.parametrize("skill", RETURNS)
+def test_a_cube_is_returned_only_with_an_empty_hand_and_only_from_off_the_shelf(*, skill):
+    assert _groundings(skill=skill, atoms=_start()) == []
+    stray = _start(on_shelf=O.cubes[2:], on_floor=O.cubes[:1], in_box=O.cubes[1:2])
+    assert len(_groundings(skill=skill, atoms=stray)) == 1
+    assert _groundings(skill=skill, atoms=_holding_wiper(atoms=stray)) == []
+
+
+def test_the_return_skills_are_robot_skills():
+    assert set(S.RETURN_CUBE_SKILLS) == set(RETURNS)
+    assert set(RETURNS) <= set(S.robot_skills())

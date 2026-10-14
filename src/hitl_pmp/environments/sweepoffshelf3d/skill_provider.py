@@ -75,7 +75,12 @@ class SweepOffShelf3DActions:
 
     @staticmethod
     def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
-        single_cube = (S.PICK_CUBE_FROM_SHELF, S.PICK_CUBE_FROM_FLOOR, S.PLACE_CUBE_IN_BOX)
+        single_cube = (
+            S.PICK_CUBE_FROM_SHELF,
+            S.PICK_CUBE_FROM_FLOOR,
+            S.PLACE_CUBE_IN_BOX,
+            *S.RETURN_CUBE_SKILLS,
+        )
         cube_index = (
             float(O.cubes.index(ground_skill.objects[1]))
             if ground_skill.skill in single_cube
