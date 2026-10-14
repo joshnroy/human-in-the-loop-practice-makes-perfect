@@ -109,7 +109,10 @@ LOWER_STEPS = 20
 CONTACT_STEP_LIMIT = 40
 CONTACT_PENETRATION = 0.04
 PULL_CHUNK = 2
-SWEEP_PASSES = 3
+# How far below the requested height the pull aims the head, pressing it into the
+# board so the cubes it pushes cannot wedge under its front edge and lift it.
+PULL_PRESS = 0.005
+SWEEP_PASSES = 5
 REGRASP_TRIES = 3
 GRASP_TEST_LIFT = 0.02
 PLACE_ON_SHELF_XY = (1.45, 0.0)
@@ -468,6 +471,16 @@ class ShelfSkills:
                         f"/{self.model.geom(other).name or 'box'}"
                     )
         return sorted(names)
+
+    def arm_touches(self, *, d: Any) -> bool:
+        """Whether any arm link (not the gripper) touches the cupboard or box in `d`."""
+        self.mujoco.mj_collision(self.model, d)
+        fixed = self.cupboard_geoms | self.box_geoms
+        for contact in d.contact[: d.ncon]:
+            for mine, other in ((contact.geom1, contact.geom2), (contact.geom2, contact.geom1)):
+                if mine in self.robot_geoms and mine not in self.gripper_geoms and other in fixed:
+                    return True
+        return False
 
     def collision_cost(self, *, d: Any, holding: bool) -> float:
         """Penetration of the robot into itself, the cupboard or the box, and (unless
@@ -969,17 +982,28 @@ class ShelfSkills:
         above = self.wiper_target(head=head + [0.0, 0.0, 0.30], stem=stem) @ np.linalg.inv(
             self.in_hand
         )
-        base = self.reachable_base(
-            poses=[above, target],
-            holding=True,
-            xs=FLOOR_BASE_XS,
-            ys=tuple(float(head[1] + dy) for dy in (0.0, -0.15, 0.15)),
-        )
-        if base is None:
-            raise SkillFailed(f"{label}: no base pose sets the wiper down on the floor")
         self.raise_hand(z=CARRY_Z, label=label, holding=True)
+        found = None
+        for base in [
+            np.array([x, head[1] + dy, 0.0]) for x in FLOOR_BASE_XS for dy in (0.0, -0.15, 0.15)
+        ]:
+            route = self.plan_route(waypoints=[above], base=base, holding=True)
+            # The descent from there must be reachable too (planned, not followed).
+            if route is not None and self.plan_route(
+                waypoints=[target],
+                base=base,
+                holding=True,
+                start_arm=route[-1],
+                allowance=CONTACT_PENETRATION,
+            ):
+                found = (base, route)
+                break
+        if found is None:
+            raise SkillFailed(f"{label}: no route sets the wiper down on the floor")
+        base, route = found
         self.move_base(target=base, label=label)
-        self.swing_to(pose=above, holding=True, label=label)
+        # To 30 cm above the spot along a planned route, then down in short lines.
+        self.follow(route=route, label=label, settle=0.04)
         for z in (0.15, 0.05, 0.015):
             self.move_wiper(head=head + [0.0, 0.0, z], label=label, stem=stem)
         self.move_wiper(head=head, label=label, stem=stem)
@@ -1001,21 +1025,27 @@ class ShelfSkills:
             lifted = grasp.copy()
             lifted[2, 3] += 0.25
             self.raise_hand(z=0.30, label=label, holding=False)
+            bases = [
+                np.array([x, grasp[1, 3] + dy, 0.0])
+                for x in FLOOR_BASE_XS
+                for dy in (0.0, -0.15, 0.15)
+            ]
+            # A later attempt starts its search further down the list of base poses.
             found = self.first_route(
                 waypoints=[lifted, pre, grasp],
-                bases=[
-                    np.array([x, grasp[1, 3] + dy, 0.0])
-                    for x in FLOOR_BASE_XS
-                    for dy in (0.0, -0.15, 0.15)
-                ],
+                bases=bases[attempt:] + bases[:attempt],
                 holding=False,
             )
             if found is None:
                 raise SkillFailed(f"{label}: no route reaches the wiper on the floor")
             base, route = found
             self.move_base(target=base, label=label)
-            self.follow(route=route, label=label)
-            self.settle_at(pose=grasp, label=label)
+            try:
+                self.follow(route=route, label=label)
+                self.settle_at(pose=grasp, label=label)
+            except SkillFailed as exc:
+                self.notes.append(f"{label}: approach {attempt + 1} blocked ({exc}), retrying")
+                continue
             if self.close_and_check(label=label):
                 self.take_wiper(kind=kind, label=label)
                 self.path(
@@ -1081,8 +1111,9 @@ class ShelfSkills:
             except SkillFailed:
                 tried.append(f"{base[0]:.2f}: no IK")
                 continue
-            # With the head near the board the pad tips can touch it too.
-            if collision <= CONTACT_PENETRATION:
+            # With the head near the board the pad tips can touch it too; the arm itself
+            # must stay clear.
+            if collision <= CONTACT_PENETRATION and not self.arm_touches(d=self.ik_data):
                 return base, arm
             tried.append(f"{base[0]:.2f}: {collision:.3f} m {self.touching(d=self.ik_data)}")
         raise SkillFailed(f"no base pose reaches the hand target: {'; '.join(tried)}")
@@ -1156,7 +1187,7 @@ class ShelfSkills:
         advance = settings.speed * CONTROL_DT * PULL_CHUNK
         while x > end + 1e-9:
             x = max(end, x - advance)
-            target = self.level_target(x=x, above_board=settings.height)
+            target = self.level_target(x=x, above_board=settings.height - PULL_PRESS)
             base = np.array([min(x - HEAD_AHEAD, BASE_X), y, 0.0])
             try:
                 arm, _ = self.ik(
