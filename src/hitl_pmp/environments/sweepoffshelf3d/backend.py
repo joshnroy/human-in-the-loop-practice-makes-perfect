@@ -1,7 +1,8 @@
 """The live KINDER `SweepOffShelf3D-o5` scene: build, observe, classify, human resets.
 
-The only module in this package that imports KINDER or MuJoCo, and only lazily, so the
-symbolic layer and its tests need neither.
+It and `kinder_skills.py` (KINDER's controllers) are the only modules in this package
+that import KINDER or MuJoCo, both only lazily, so the symbolic layer and its tests
+need neither.
 
 ## Classification
 
@@ -10,7 +11,7 @@ Every predicate is decided here, once per state, from the live scene:
 - a cube or the wiper is *held* when both gripper pads touch it;
 - `OnShelf`: not held, behind the cube shelf's open front, resting on that board;
 - `InBox`: not held and wholly inside the box -- the env's own `cube_in_box`, which is
-  exactly what the task scores;
+  exactly what the task scores (measured in the box's frame: see `OrientedBox`);
 - `OnFloor`: any other unheld cube. The box rim and the other boards are not places a
   cube swept off this shelf comes to rest, so "elsewhere" is the floor;
 - `WiperHome`: unheld and lying on the wiper shelf; `WiperOnFloor`: unheld anywhere else;
@@ -31,6 +32,7 @@ clears the robot, the other objects and the cupboard.
 
 import copy
 import os
+import types
 from typing import Any, ClassVar
 
 import numpy as np
@@ -95,6 +97,7 @@ class SweepOffShelf3DBackend(BaseModel):
                 scene_render_camera="task_view",
                 config=TidyBot3DConfig(use_arm_velocities=False),
             )
+            OrientedBox.install(core=self.core())
         return self._env
 
     def reset(self, *, seed: int) -> None:
@@ -293,3 +296,65 @@ class SweepOffShelf3DBackend(BaseModel):
             if not self._blocked(model=model, data=data, body=body, support=support):
                 return {self.wiper_name: (position, quaternion)}
         raise RuntimeError("no clear placement for the wiper on its shelf; reset not applied")
+
+
+class OrientedBox:
+    """The box's interior in its own frame, so a box the robot has turned still scores.
+
+    KINDER's `box_interior` raises for any box not axis-aligned, and its `cube_in_box`
+    and `_check_goals` -- which every `env.step` calls -- go through it, so a pick that
+    nudges the box a few degrees used to crash the episode. `install` rebinds both on
+    this scene's own object-centric env; nothing upstream changes. For an axis-aligned
+    box both answer exactly as upstream's do.
+    """
+
+    @staticmethod
+    def install(*, core: Any) -> None:
+        core.box_interior = types.MethodType(OrientedBox.interior, core)
+        core.cube_in_box = types.MethodType(OrientedBox.cube_in_box, core)
+
+    @staticmethod
+    def _frame(core: Any) -> tuple[Any, np.ndarray, Any, float, float]:  # noqa: PLR0917
+        from scipy.spatial.transform import Rotation
+
+        box = core._objects_dict[O.box.name]  # noqa: SLF001
+        position, quaternion = box.get_pose()
+        rotation = Rotation.from_quat(np.asarray(quaternion, dtype=float)[[1, 2, 3, 0]])
+        half_x = box.length / 2 - box.wall_thickness
+        half_y = box.width / 2 - box.wall_thickness
+        return box, np.asarray(position, dtype=float), rotation, half_x, half_y
+
+    @staticmethod
+    def interior(core: Any) -> tuple[tuple[float, float, float, float], float]:  # noqa: PLR0917
+        """((x0, y0, x1, y1), rim_z): the axis-aligned bound of the inner footprint
+        (the footprint itself when the box is axis-aligned) and the rim height."""
+        box, position, rotation, half_x, half_y = OrientedBox._frame(core)
+        corners = rotation.apply([
+            [sx * half_x, sy * half_y, 0.0] for sx in (-1, 1) for sy in (-1, 1)
+        ])
+        low = position[:2] + corners[:, :2].min(axis=0)
+        high = position[:2] + corners[:, :2].max(axis=0)
+        bound = (float(low[0]), float(low[1]), float(high[0]), float(high[1]))
+        return bound, float(position[2]) + box.height
+
+    @staticmethod
+    def cube_in_box(core: Any, name: str) -> bool:  # noqa: PLR0917
+        """All eight cube corners inside the inner walls and below the rim, both
+        measured in the box's own frame."""
+        from scipy.spatial.transform import Rotation
+
+        box, position, rotation, half_x, half_y = OrientedBox._frame(core)
+        cube = core._objects_dict[name]  # noqa: SLF001
+        cube_position, cube_quaternion = cube.get_pose()
+        cube_rotation = Rotation.from_quat(np.asarray(cube_quaternion, dtype=float)[[1, 2, 3, 0]])
+        signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
+        corners = cube_rotation.apply(signs * np.asarray(cube.size)) + cube_position
+        x, y, z = rotation.inv().apply(corners - position).T
+        tolerance = 1e-9
+        return bool(
+            np.all(
+                (np.abs(x) <= half_x + tolerance)
+                & (np.abs(y) <= half_y + tolerance)
+                & (z < box.height)
+            )
+        )

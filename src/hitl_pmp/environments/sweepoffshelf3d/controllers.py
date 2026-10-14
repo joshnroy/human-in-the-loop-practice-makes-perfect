@@ -1,9 +1,10 @@
-"""SweepOffShelf3D's skill controllers: the scripted skills, run on the backend's env.
+"""SweepOffShelf3D's skill controllers, run on the backend's env.
 
-`ShelfSkills` (scripted_skills.py) drives the TidyBot through KINDER's 11-D action. This
-wrapper gives each planner skill its own step budget, turns `SkillFailed` into
-`ControllerFailure`, rebuilds the skills whenever the scene is rebuilt, and keeps their
-grasp bookkeeping honest after a human moves things.
+`KinderSkills` (kinder_skills.py) drives the TidyBot through KINDER's 11-D action, with
+KINDER's controllers where KINDER has one and `ShelfSkills` (scripted_skills.py) where
+it does not. This wrapper gives each planner skill its own step budget, turns
+`SkillFailed` into `ControllerFailure`, rebuilds the skills whenever the scene is
+rebuilt, and keeps their grasp bookkeeping honest after a human moves things.
 """
 
 from typing import Any
@@ -11,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .backend import SweepOffShelf3DBackend
+from .kinder_skills import KinderSkills
 from .scripted_skills import ShelfSkills, SkillFailed
 
 
@@ -26,6 +28,7 @@ class SweepOffShelf3DControllers(BaseModel):
     steps: int = 0
 
     _skills: ShelfSkills | None = PrivateAttr(default=None)
+    _kinder: KinderSkills | None = PrivateAttr(default=None)
 
     def reset_counter(self) -> None:
         self.steps = 0
@@ -33,29 +36,23 @@ class SweepOffShelf3DControllers(BaseModel):
     def on_scene_reset(self) -> None:
         """The scene was rebuilt: the skills re-read it from scratch."""
         self._skills = ShelfSkills(env=self.backend.env(), tick_limit=self.step_limit)
+        self._kinder = KinderSkills(shelf=self._skills, backend=self.backend)
         self.backend.grip = 0.0
 
     def on_objects_moved(self) -> None:
         """A human moved objects; whatever they took out of the hand is no longer held."""
-        skills = self._skills
-        if skills is None:
+        if self._kinder is None or self._skills is None:
             return
-        if skills.held_cube is not None and not self.backend.held(name=skills.held_cube):
-            skills.held_cube = None
-            skills.grip = 0.0
-        if skills.in_hand is not None and not self.backend.held(name=self.backend.wiper_name):
-            skills.in_hand = None
-            skills.grasp_kind = None
-            skills.grip = 0.0
-        self.backend.grip = skills.grip
+        self._kinder.sync()
+        self.backend.grip = self._skills.grip
 
     def _run(self, *, skill: str, **kwargs: Any) -> None:
-        skills = self._skills
-        if skills is None:
+        skills, kinder = self._skills, self._kinder
+        if skills is None or kinder is None:
             raise ControllerFailure("no scene: reset the environment before acting")
         skills.ticks = 0
         try:
-            getattr(skills, skill)(**kwargs)
+            kinder.run(skill=getattr(kinder, skill), label=skill, **kwargs)
         except SkillFailed as failure:
             raise ControllerFailure(f"{skill}: {failure}") from failure
         finally:

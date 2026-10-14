@@ -39,6 +39,8 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_evaluating_the_predicate_does_not_change_the_trajectory",
     "tests/environments/tossing3d/test_pick_plannable.py::"
     "test_a_cube_across_the_barrier_really_is_unplannable",
+    "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
+    "test_the_wiper_sweeps_the_shelf_and_goes_back",
 })
 
 

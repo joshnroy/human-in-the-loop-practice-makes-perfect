@@ -2,6 +2,7 @@
 
 import importlib.util
 
+import numpy as np
 import pytest
 
 from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
@@ -110,3 +111,65 @@ def test_a_failed_reset_cubes_moves_nothing():
             assert after[name] == pytest.approx(before[name])
     finally:
         backend.close()
+
+
+def _yaw_box(*, backend, yaw):
+    box = backend.core().get_object("box_0")
+    position, _ = box.get_pose()
+    box.set_pose(list(position), [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+    box.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+
+
+def test_a_turned_box_still_scores_a_cube_inside_it_and_steps(*, backend):
+    backend.reset(seed=0)
+    _yaw_box(backend=backend, yaw=0.35)
+    centre = np.asarray(backend.core().get_object("box_0").get_pose()[0], dtype=float)
+    _place(backend=backend, name="cube_0", position=[centre[0], centre[1], 0.15])
+    for _ in range(20):
+        backend.env().step(np.zeros(11))
+    atoms = backend.abstract_atoms()
+    assert ("InBox", ("cube_0", "box_0")) in atoms
+    assert backend.features()["box_0"].shape == (5,)
+
+
+def test_a_turned_box_scores_by_its_own_walls_not_its_axis_aligned_bound(*, backend):
+    backend.reset(seed=0)
+    _yaw_box(backend=backend, yaw=np.pi / 4)
+    core = backend.core()
+    centre = np.asarray(core.get_object("box_0").get_pose()[0], dtype=float)
+    box = core._objects_dict["box_0"]  # noqa: SLF001
+    half_x = box.length / 2 - box.wall_thickness
+    # Along the box's own x axis just inside its wall; and 0.2 m along world x, which
+    # at 45 deg lies past the box's x walls though well inside its axis-aligned bound.
+    inside = centre + (half_x - 0.03) * np.array([np.cos(np.pi / 4), np.sin(np.pi / 4), 0.0])
+    outside = centre + np.array([0.2, 0.0, 0.0])
+    _place(backend=backend, name="cube_0", position=[inside[0], inside[1], centre[2] + 0.05])
+    _place(backend=backend, name="cube_1", position=[outside[0], outside[1], centre[2] + 0.05])
+    backend.sim().forward()
+    assert core.cube_in_box("cube_0")
+    assert not core.cube_in_box("cube_1")
+
+
+@pytest.mark.parametrize("yaw", [0.0, np.pi / 2])
+def test_an_axis_aligned_box_scores_exactly_as_upstream(*, backend, yaw):
+    from kinder.envs.dynamic3d.sweep_off_shelf3d import ObjectCentricSweepOffShelf3DEnv
+
+    backend.reset(seed=0)
+    _yaw_box(backend=backend, yaw=yaw)
+    core = backend.core()
+    centre = np.asarray(core.get_object("box_0").get_pose()[0], dtype=float)
+    rng = np.random.default_rng(0)
+    for _ in range(40):
+        offset = rng.uniform(-0.3, 0.3, size=2)
+        _place(backend=backend, name="cube_0", position=[*(centre[:2] + offset), 0.1])
+        backend.sim().forward()
+        assert core.cube_in_box("cube_0") == ObjectCentricSweepOffShelf3DEnv.cube_in_box(
+            core, "cube_0"
+        )
+        (ours, rim), (theirs, upstream_rim) = (
+            core.box_interior(),
+            ObjectCentricSweepOffShelf3DEnv.box_interior(core),
+        )
+        assert ours == pytest.approx(theirs, abs=1e-9)
+        assert rim == pytest.approx(upstream_rim, abs=1e-9)
