@@ -232,3 +232,27 @@ def test_deployment_value_never_reads_the_return_belief():
             belief=trained[RETURN_CUBE_BELIEF], success=True
         )
     assert SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=trained) == before
+
+
+@pytest.mark.parametrize("solver", ["determinized_astar", "expectimax"])
+def test_the_shelf_method_builds_from_the_shelfs_own_skills(*, solver: str) -> None:
+    """Every belief the domain seeds is reachable from an offered skill, including a
+    belief two operators share (ReturnCubeToShelf's FromBox and FromFloor). Built from
+    the symbolic layer only; nothing here touches the simulator."""
+    from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
+    from hitl_pmp.environments.sweepoffshelf3d.skill_provider import (
+        SweepOffShelf3DSkillProvider,
+    )
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+
+    env = SweepOffShelf3DEnvironment()
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
+        pomdp_domain=SWEEP_OFF_SHELF_DOMAIN,
+        pomdp_solver=solver,
+        pomdp_search_depth=2,
+        seed=0,
+    )
+    beliefs = set(method.pomdp_state.skill_beliefs)
+    assert {name for name, _ in SWEEP_OFF_SHELF_DOMAIN.belief_sources} <= beliefs
