@@ -403,3 +403,11 @@ def test_a_provider_without_the_human_reset_offers_no_reset_at_all() -> None:
     assert provider.human_cube_bin_reset_skill() is None
     assert provider.human_cube_bin_reset_skills() == ()
     assert provider.movables_reset_skills() == ()
+
+
+def test_each_reset_destination_names_its_human_skill() -> None:
+    provider = _provider()
+    assert tuple(
+        provider.human_skill_name(ground_skill=reset)
+        for reset in provider.human_cube_bin_reset_skills()
+    ) == ("reset_cube_and_bin_near", "reset_cube_far")
