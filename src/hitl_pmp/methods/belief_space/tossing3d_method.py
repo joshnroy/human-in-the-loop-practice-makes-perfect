@@ -29,12 +29,12 @@ from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
+from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
-    RESET_SKILLS,
     TOSS_SKILL,
 )
 from .tossing3d_model import Tossing3DPracticeModel
@@ -117,6 +117,8 @@ class Tossing3DPomdpMethod(EesMethod):
     robot_duration_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
+    # What the belief-space model knows about this domain (see practice_domain.py).
+    pomdp_domain: PracticeDomain = Field(default=TOSSING3D_DOMAIN, exclude=True)
 
     _pomdp_state: Tossing3DBeliefState = PrivateAttr()
     _pomdp_model: Tossing3DPracticeModel = PrivateAttr()
@@ -126,6 +128,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
+    _pending_reset_before_atoms: frozenset[GroundAtom] = PrivateAttr(default=frozenset())
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
 
@@ -263,6 +266,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 model=self.pomdp_competence_model, time_scale=self.pomdp_learning_time_scale
             ),
             additional_skill_names=tuple(skill.name for skill in self.human_skills()),
+            domain=self.pomdp_domain,
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
@@ -276,6 +280,7 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         self._pomdp_model = Tossing3DPracticeModel(
             seed=self.seed,
+            domain=self.pomdp_domain,
             exploration_epsilon=self.exploration_epsilon,
             competence_evidence=self.pomdp_competence_evidence,
             ground_skills=tuple(ground_skills),
@@ -290,11 +295,14 @@ class Tossing3DPomdpMethod(EesMethod):
             log_full_search_tree=self.pomdp_log_full_search_tree,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
-        missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
-        if not (available & PICK_SKILLS):
-            missing.add(PICK_SKILL)
+        if self.pomdp_domain == TOSSING3D_DOMAIN:
+            missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
+            if not (available & PICK_SKILLS):
+                missing.add(PICK_SKILL)
+        else:
+            missing = {name for name, _ in self.pomdp_domain.belief_sources} - available
         assert not missing, (
-            "Tossing3DPomdpMethod requires canonical Tossing3D skills; missing "
+            "the configured practice domain's skills are missing: "
             f"{sorted(missing)} from {sorted(available)}"
         )
         assert all(skill.skill.practice_cost is not None for skill in ground_skills)
@@ -434,8 +442,15 @@ class Tossing3DPomdpMethod(EesMethod):
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
-        if ground_skill.skill.name in RESET_SKILLS:
+        name = ground_skill.skill.name
+        if name in self.pomdp_domain.deterministic_skills:
             self._pending_reset = ground_skill
+        elif self.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+            # Its success is inferred, so remember what it was asked to change.
+            self._pending_reset = ground_skill
+            self._pending_reset_before_atoms = self.abstract_state(
+                state=self.env.get_current_state()
+            )
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         self.record_diagnostic(
             event="dispatch",
@@ -454,7 +469,7 @@ class Tossing3DPomdpMethod(EesMethod):
         success: bool,
         was_random_exploration: bool,
     ) -> None:
-        if success or ground_skill.skill.name not in {*PICK_SKILLS, TOSS_SKILL, OPEN_GRIPPER_SKILL}:
+        if success or ground_skill.skill.name not in self.pomdp_domain.failure_effect_skills:
             return
         counts = EmpiricalFailureEffects.observe(
             counts=self._pomdp_model.failure_effect_counts,
@@ -477,17 +492,33 @@ class Tossing3DPomdpMethod(EesMethod):
         )
 
     def observe_help_granted(self, *, state: State) -> None:
-        """Condition one completed reset on its joint success and cost observation."""
+        """Condition one completed reset on its joint success and cost observation.
+
+        A reset the domain treats as a known mechanism always succeeds. Otherwise the
+        human's skill is judged like any robot skill -- did its promised effects come
+        true -- and a failure teaches the empirical failure-effect model."""
         super().observe_help_granted(state=state)
         reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
         observed_cost = (
             reset.evaluate_practice_cost() if self._practice_accounting is None else None
         )
+        success = True
+        if reset.skill.name not in self.pomdp_domain.deterministic_skills:
+            before = self._pending_reset_before_atoms
+            after = self.abstract_state(state=state)
+            success = reset.expected_add_effects(before_atoms=before) <= after
+            self.observe_symbolic_transition(
+                ground_skill=reset,
+                before_atoms=before,
+                after_atoms=after,
+                success=success,
+                was_random_exploration=False,
+            )
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=reset,
-            success=True,
+            success=success,
             was_random_exploration=False,
             observed_cost=observed_cost,
         )
@@ -495,7 +526,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self.record_diagnostic(
             event="outcome",
             skill=reset.skill.name,
-            success=True,
+            success=success,
             random_exploration=False,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),

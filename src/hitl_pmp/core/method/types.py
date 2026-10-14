@@ -637,6 +637,16 @@ class GroundSkill(BaseModel):
             for effect in self.skill.conditional_add_effects
         )
 
+    def expected_add_effects(self, *, before_atoms: frozenset[GroundAtom]) -> frozenset[GroundAtom]:
+        """What a successful execution from `before_atoms` promises: the plain add
+        effects, plus every conditional addition whose conditions held beforehand."""
+        return self.add_effects | frozenset(
+            atom
+            for effect in self.conditional_add_effects
+            if effect.conditions <= before_atoms
+            for atom in effect.add_effects
+        )
+
 
 class ConditionalAddEffect(BaseModel):
     """Add atoms when every condition held before the action's effects.

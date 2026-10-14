@@ -484,3 +484,35 @@ def test_conditional_effects_ground_conditions_and_additions_and_affect_identity
     assert grounded_effect.add_effects == frozenset({
         GroundAtom(predicate=_AT, objects=(_OBJ, _OBJ3))
     })
+
+
+def test_expected_add_effects_include_conditional_effects_whose_conditions_held_before() -> None:
+    """A skill promises its plain add effects plus each conditional addition whose
+    conditions held when it started -- what a competence check must compare against."""
+    item = Type(name="item", feature_names=())
+    ready = Predicate(name="Ready", types=(item,), holds=lambda state, objects: False)
+    moved = Predicate(name="Moved", types=(item,), holds=lambda state, objects: False)
+    done = Predicate(name="Done", types=(), holds=lambda state, objects: False)
+    a, b = Variable(name="a", type=item), Variable(name="b", type=item)
+    skill = Skill(
+        name="MoveReady",
+        parameters=(a, b),
+        preconditions=frozenset(),
+        add_effects=frozenset({LiftedAtom(predicate=done, variables=())}),
+        delete_effects=frozenset(),
+        conditional_add_effects=frozenset(
+            ConditionalAddEffect(
+                conditions=frozenset({LiftedAtom(predicate=ready, variables=(v,))}),
+                add_effects=frozenset({LiftedAtom(predicate=moved, variables=(v,))}),
+            )
+            for v in (a, b)
+        ),
+        param_dim=0,
+    )
+    x, y = Object(name="x", type=item), Object(name="y", type=item)
+    ground = GroundSkill(skill=skill, objects=(x, y))
+    finished = GroundAtom(predicate=done, objects=())
+    assert ground.expected_add_effects(
+        before_atoms=frozenset({GroundAtom(predicate=ready, objects=(x,))})
+    ) == frozenset({finished, GroundAtom(predicate=moved, objects=(x,))})
+    assert ground.expected_add_effects(before_atoms=frozenset()) == frozenset({finished})

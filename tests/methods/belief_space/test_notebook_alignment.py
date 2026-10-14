@@ -14,14 +14,18 @@ from hitl_pmp.methods.belief_space.competence_inference import (
 from hitl_pmp.methods.belief_space.tossing3d_constants import TOSS_SKILL
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
-    SKILL_BELIEF_MODELS,
+    SkillBeliefModel,
     make_default_tossing3d_belief,
     refit_belief_state,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 
-TOSS_MODEL = SKILL_BELIEF_MODELS[Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS]
+TOSS_MODEL = SkillBeliefModel(
+    skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+    example_source=PracticeExampleSource.SAMPLER,
+)
 
 
 def _toss(*, state: Tossing3DBeliefState) -> BayesianSkillBelief:

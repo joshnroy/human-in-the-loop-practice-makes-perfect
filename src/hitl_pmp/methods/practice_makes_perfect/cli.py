@@ -2,6 +2,11 @@ import argparse
 import sys
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.methods.belief_space.practice_domain import (
+    SWEEP_OFF_SHELF_DOMAIN,
+    TOSSING3D_DOMAIN,
+    PracticeDomain,
+)
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
@@ -217,7 +222,14 @@ class EesCli:
 
 
 class Tossing3DPomdpCli(EesCli):
-    """Exact belief-space practice selection for Tossing3D."""
+    """Exact belief-space practice selection for Tossing3D and SweepOffShelf3D."""
+
+    # The practice domain for each supported environment CLI, by class name: a
+    # method-CLI never imports an environment.
+    DOMAINS: dict[str, PracticeDomain] = {
+        "Tossing3DCli": TOSSING3D_DOMAIN,
+        "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
+    }
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -324,8 +336,11 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        if env_cli.__name__ != "Tossing3DCli":
-            raise ValueError("--method pomdp currently supports only --env tossing3d")
+        domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
+        if domain is None:
+            raise ValueError(
+                "--method pomdp supports only --env tossing3d and --env sweepoffshelf3d"
+            )
         # Preserve replayable simulator states, but do not render or encode frames in
         # the training process. POMDP runs reconstruct their diagnostic videos from
         # the state and decision logs after the experiment finishes.
@@ -380,6 +395,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
+                pomdp_domain=domain,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None
