@@ -114,9 +114,11 @@ PULL_CHUNK = 2
 PULL_PRESS = 0.005
 SWEEP_PASSES = 5
 REGRASP_TRIES = 3
+CUBE_PICK_TRIES = 2
 GRASP_TEST_LIFT = 0.02
 PLACE_ON_SHELF_XY = (1.45, 0.0)
 BOX_DROP_XY = (1.235, 0.0)
+BOX_RELEASE_Z = 0.24
 DROP_XY = (1.235, 0.0)
 
 
@@ -1526,15 +1528,18 @@ class ShelfSkills:
         centre = self.cube_position(cube=cube)
         self.grip = 0.0
         self.raise_hand(z=0.35, label="shelf_cube_raise", holding=False)
+        attempts = 0
         for grasp, mouth in self.shelf_cube_pose(cube=cube, centre=centre):
+            if attempts == CUBE_PICK_TRIES:
+                break
             over = grasp.copy()
             over[2, 3] += 0.03
             found = self.first_route(
                 waypoints=[mouth, over, grasp],
                 bases=[
                     np.array([x, centre[1] + dy, 0.0])
-                    for x in (BASE_X, BASE_X - 0.1)
-                    for dy in (0.0, -0.15, 0.15)
+                    for x in (BASE_X, BASE_X - 0.08, BASE_X - 0.16, BASE_X - 0.24)
+                    for dy in (0.0, -0.1, 0.1, -0.2, 0.2)
                 ],
                 holding=False,
             )
@@ -1543,7 +1548,9 @@ class ShelfSkills:
             base, route = found
             self.move_base(target=base, label="to_shelf_cube")
             self.follow(route=route, label="into_cube_slot")
-            self.settle_at(pose=grasp, label="onto_cube")
+            # The pads may rest on the board a millimetre short of the exact pose.
+            with contextlib.suppress(SkillFailed):
+                self.settle_at(pose=grasp, label="onto_cube")
             self.grip_cube(cube=cube, label="shelf_cube")
             back = self.plan_route(waypoints=[over, mouth], base=base, holding=True, allowance=0.01)
             if back is None:
@@ -1559,10 +1566,17 @@ class ShelfSkills:
                 )
             else:
                 self.follow(route=back, label="out_of_slot", settle=0.05)
-            self.check_lifted(
-                cube=cube, above=self.board[CUBE_SHELF] + 0.02, label="pick_cube_from_shelf"
-            )
+            attempts += 1
+            try:
+                self.check_lifted(
+                    cube=cube, above=self.board[CUBE_SHELF] + 0.02, label="pick_cube_from_shelf"
+                )
+            except SkillFailed as exc:
+                self.notes.append(f"pick_cube_from_shelf: attempt {attempts} missed ({exc})")
+                continue
             return
+        if attempts:
+            raise SkillFailed(f"pick_cube_from_shelf: {attempts} grasps on {cube} missed")
         raise SkillFailed(f"pick_cube_from_shelf: no collision-free route to {cube}")
 
     def place_cube_on_shelf(
@@ -1621,20 +1635,25 @@ class ShelfSkills:
         here = self.site_pose()
         offset = here[:3, 3] - self.cube_position(cube=cube)
         low = here.copy()
-        low[:3, 3] = np.array([*BOX_DROP_XY, 0.08]) + offset
+        # Let go just above the rim: lower, the leaned wrist meets the box's near wall.
+        low[:3, 3] = np.array([*BOX_DROP_XY, BOX_RELEASE_Z]) + offset
         high = low.copy()
-        high[2, 3] += 0.25
-        base = self.reachable_base(poses=[high, low], holding=True)
-        if base is None:
-            raise SkillFailed("place_cube_in_box: no base pose reaches over the box")
+        high[2, 3] += 0.12
         self.raise_hand(z=0.45, label="cube_raise", holding=True)
+        found = self.first_route(
+            waypoints=[high, low],
+            bases=[
+                np.array([x, y, 0.0])
+                for x in (BASE_X, BASE_X - 0.1, BASE_X - 0.2)
+                for y in (0.0, -0.15, 0.15, -0.3, 0.3)
+            ],
+            holding=True,
+        )
+        if found is None:
+            raise SkillFailed("place_cube_in_box: no route reaches over the box")
+        base, route = found
         self.move_base(target=base, label="to_box")
-        self.path(
-            position=high[:3, 3], rotation=high[:3, :3], label="over_box", count=6, holding=True
-        )
-        self.path(
-            position=low[:3, 3], rotation=low[:3, :3], label="into_box", count=6, holding=True
-        )
+        self.follow(route=route, label="over_box", settle=0.04)
         self.release_cube(label="box")
         self.path(position=high[:3, 3], rotation=high[:3, :3], label="out_of_box", count=4)
         self.hold(count=15, label="settle")

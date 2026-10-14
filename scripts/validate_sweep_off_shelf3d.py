@@ -303,6 +303,7 @@ class Episode:
         if self.recorder is not None:
             self.recorder.attach(skills=self.skills)
         self.phases: list[Phase] = []
+        self.picked = ""
 
     def phase(self, *, name: str, action: Any) -> bool:
         skills = self.skills
@@ -337,12 +338,25 @@ class Episode:
         if skills.wiper_lift() < 0.05:
             raise SkillFailed("carry_wiper: the wiper dropped")
 
-    def front_cube(self) -> str:
+    def pick_a_shelf_cube(self) -> None:
+        """`pick_cube_from_shelf` on the cubes nearest the front first. A cube with no
+        collision-free route raises before the robot moves, so the next is tried."""
         skills = self.skills
-        return min(
+        cubes = sorted(
             skills.shelf_cubes(),
             key=lambda c: skills.cube_position(cube=c)[0] + abs(skills.cube_position(cube=c)[1]),
         )
+        for cube in cubes:
+            try:
+                skills.pick_cube_from_shelf(cube=cube)
+            except SkillFailed as exc:
+                if "no collision-free route" in str(exc):
+                    skills.notes.append(f"{cube}: {exc}")
+                    continue
+                raise
+            self.picked = cube
+            return
+        raise SkillFailed("no cube on the shelf has a collision-free route")
 
     def run(self) -> EpisodeResult:
         skills = self.skills
@@ -387,13 +401,11 @@ class Episode:
                 )
             )
         elif self.episode == "cube_shelf_to_box":
-            cube = self.front_cube()
             success = self.phase(
-                name=f"pick_cube_from_shelf({cube})",
-                action=lambda: skills.pick_cube_from_shelf(cube=cube),
+                name="pick_cube_from_shelf", action=self.pick_a_shelf_cube
             ) and self.phase(
-                name=f"place_cube_in_box({cube})",
-                action=lambda: skills.place_cube_in_box(cube=cube),
+                name="place_cube_in_box",
+                action=lambda: skills.place_cube_in_box(cube=self.picked),
             )
         else:
             raise ValueError(f"unknown episode {self.episode!r}")
