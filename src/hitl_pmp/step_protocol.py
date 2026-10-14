@@ -1,4 +1,6 @@
-"""Tossing3D practice measured in control steps, independently of learning sessions.
+"""Practice measured in control steps, independently of learning sessions.
+
+Any domain registered with a `StepProtocolEnvironment` (`cli_protocols.py`) runs here.
 
 The training process publishes immutable deployment snapshots. Spawned workers own
 their environments, policies and RNGs; they return measurements only to the logger.
@@ -22,6 +24,7 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
+from hitl_pmp.cli_protocols import EnvironmentCli, StepProtocolEnvironment
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.control_steps import ControlStepLimitReached
 from hitl_pmp.core.log_timing import LogTiming
@@ -119,7 +122,7 @@ class PracticeClock(BaseModel):
 
 class EvaluationStopping:
     @staticmethod
-    def reached(*, records: list[dict[str, Any]], patience: int = 3) -> bool:
+    def reached(*, records: list[dict[str, Any]], num_tasks: int, patience: int = 3) -> bool:
         if patience <= 0:
             return False
         streak = 0
@@ -132,7 +135,7 @@ class EvaluationStopping:
             if step == previous:
                 continue
             previous = step
-            perfect = record.get("num_solved") == record.get("num_total") == 10
+            perfect = record.get("num_solved") == record.get("num_total") == num_tasks
             streak = streak + 1 if perfect else 0
             if streak >= patience:
                 return True
@@ -293,29 +296,21 @@ class DeploymentSnapshot:
 
 class StepEvaluation:
     @staticmethod
-    def run(*, snapshot: str, configuration: dict[str, Any], output: str) -> dict[str, Any]:
-        # Import here to avoid a cycle with the domain's CLI composition root.
-        from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
-        from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
-        from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
-
+    def run(
+        *,
+        snapshot: str,
+        configuration: dict[str, Any],
+        output: str,
+        environment: type[StepProtocolEnvironment],
+    ) -> dict[str, Any]:
         args = argparse.Namespace(**configuration)
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
         raw = Path(snapshot).read_bytes()
-        problem = Tossing3DCli.build_evaluation_problem(args=args)
-        writer = StateLogWriter(
-            output_path=directory / "states.jsonl",
-            header=StateLogHeader(
-                layout=problem.env.layout,
-                variant=args.variant,
-                scene_bg=args.scene_bg,
-                canonical_seed=args.canonical_seed,
-                seed=args.seed,
-                test_env_seed_offset=args.test_env_seed_offset,
-            ),
+        problem = environment.build_evaluation_problem(args=args)
+        close_log = environment.attach_state_log(
+            args=args, problem=problem, directory=directory, evaluation=True
         )
-        problem.env.attach_state_log_writer(writer=writer)
         results: list[dict[str, Any]] = []
         started = time.monotonic()
         try:
@@ -324,19 +319,19 @@ class StepEvaluation:
             method = DeploymentSnapshot.restore(
                 raw=raw,
                 env=problem.env,
-                provider=Tossing3DSkillProvider(env=problem.env, offer_human_reset=False),
+                provider=environment.evaluation_skill_provider(problem=problem),
             )
             for index, task in enumerate(tasks):
                 state = problem.reset_to_task(task=task)
                 policy = method.get_task_policy(task=task)
-                backend = problem.env.backend()
+                check_goal = environment.goal_check(problem=problem, task=task)
                 clock = EvaluationClock(
                     budget=args.evaluation_control_steps,
-                    check_goal=backend.check_goals,
-                    solved=backend.check_goals(),
+                    check_goal=check_goal,
+                    solved=check_goal(),
                 )
                 reason = "goal" if clock.solved else "step_budget"
-                backend.set_control_step_observers(before=clock.before, after=clock.after)
+                problem.env.set_control_step_observers(before=clock.before, after=clock.after)
                 try:
                     while not clock.solved and clock.steps < args.evaluation_control_steps:
                         action = policy(state)
@@ -347,7 +342,7 @@ class StepEvaluation:
                         try:
                             state = problem.take_action(action=action.action)
                         except ControlStepLimitReached:
-                            problem.env._log_skill_ticks(action=action.action)
+                            environment.interrupted(problem=problem, action=action.action)
                             break
                         StepFiles.event(
                             path=directory / "actions.jsonl",
@@ -360,12 +355,12 @@ class StepEvaluation:
                             reason = "zero_step_controller_failure"
                             break
                 finally:
-                    backend.set_control_step_observers(before=None, after=None)
+                    problem.env.set_control_step_observers(before=None, after=None)
                 if clock.solved:
                     reason = "goal"
                 results.append({
                     "task": index,
-                    "seed": int(task.initial_state.get(obj=problem.env.scene, feature_name="seed")),
+                    "seed": environment.task_seed(task=task),
                     "solved": clock.solved,
                     "steps": clock.steps,
                     "reason": reason,
@@ -385,7 +380,7 @@ class StepEvaluation:
             (directory / "failure.txt").write_text(traceback.format_exc())
             raise
         finally:
-            writer.close()
+            close_log()
             problem.env.close()
 
 
@@ -409,8 +404,8 @@ class StepProtocolValidation:
 
     @staticmethod
     def check(*, args: argparse.Namespace) -> None:
-        if args.env != "tossing3d" or args.method not in {"ees", "pomdp"}:
-            raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
+        if args.method not in {"ees", "pomdp"}:
+            raise ValueError("Step protocol currently supports the EES and PDDL methods")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
             raise ValueError(
                 "Step protocol requires persistent practice (--practice-reset-policy never)"
@@ -432,55 +427,39 @@ class StepProtocolValidation:
 
 class StepProtocolEntry:
     @staticmethod
-    def run(*, args: argparse.Namespace, method_cli: Any) -> None:
+    def run(
+        *,
+        args: argparse.Namespace,
+        method_cli: Any,
+        env_cli: type[EnvironmentCli],
+        environment: type[StepProtocolEnvironment],
+    ) -> None:
         StepProtocolValidation.check(args=args)
-        from hitl_pmp.core.method.skill_provider import DomainContext
-        from hitl_pmp.environments.tossing3d.cli import Tossing3DCli as DomainCli
-        from hitl_pmp.environments.tossing3d.skill_provider import (
-            Tossing3DOracle,
-            Tossing3DSkillProvider,
-        )
-        from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
 
         # Method CLI factories remain authoritative for all algorithm configuration.
-        class Tossing3DCli:
-            @staticmethod
-            def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
-                problem = DomainCli.build_practice_problem(args=args)
-                output = Path(args.output_dir)
-                output.mkdir(parents=True, exist_ok=True)
-                writer = StateLogWriter(
-                    output_path=output / "tossing3d_state_log.jsonl",
-                    header=StateLogHeader(
-                        layout=problem.env.layout,
-                        variant=args.variant,
-                        scene_bg=args.scene_bg,
-                        canonical_seed=args.canonical_seed,
-                        seed=args.seed,
-                        test_env_seed_offset=args.test_env_seed_offset,
-                    ),
+        def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
+            problem = environment.build_practice_problem(args=args)
+            output = Path(args.output_dir)
+            output.mkdir(parents=True, exist_ok=True)
+            close_log = environment.attach_state_log(
+                args=args, problem=problem, directory=output, evaluation=False
+            )
+            context = environment.practice_context(args=args, problem=problem)
+            try:
+                StepPracticeRunner.run(
+                    args=args,
+                    method=method_factory(context),
+                    problem=problem,
+                    environment=environment,
                 )
-                problem.env.attach_state_log_writer(writer=writer)
-                context = DomainContext(
-                    env=problem.env,
-                    oracle=Tossing3DOracle(
-                        env=problem.env, throw_standoff=args.oracle_throw_standoff
-                    ),
-                    skill_provider=Tossing3DSkillProvider(
-                        env=problem.env,
-                        human_reset_practice_cost=args.human_reset_practice_cost,
-                        offer_human_reset=args.human_reset,
-                    ),
-                )
-                try:
-                    StepPracticeRunner.run(
-                        args=args, method=method_factory(context), problem=problem
-                    )
-                finally:
-                    writer.close()
-                    problem.env.close()
+            finally:
+                close_log()
+                problem.env.close()
 
-        method_cli.run(args=args, env_cli=Tossing3DCli)
+        # Named after the selected domain's CLI: method CLIs that support only some
+        # domains (`--method pomdp`) dispatch on `env_cli.__name__`.
+        step_cli = type(env_cli.__name__, (), {"run_method": staticmethod(run_method)})
+        method_cli.run(args=args, env_cli=step_cli)
 
 
 class StepPracticeRunner:
@@ -515,6 +494,7 @@ class StepPracticeRunner:
         args: argparse.Namespace,
         method: Any,
         problem: Any,
+        environment: type[StepProtocolEnvironment],
         evaluations: Any = None,
     ) -> Metrics:
         """Run persistent practice to the step budget. `StepProtocolValidation.check`
@@ -529,7 +509,8 @@ class StepPracticeRunner:
         cycle = 0
         robot_invocations = 0
         learning_updates = 0
-        reset_counts = {"robot_side": 0, "opposite_side": 0}
+        human_skills = environment.human_skill_names()
+        reset_counts = dict.fromkeys(human_skills, 0)
         records: list[dict[str, Any]] = []
         futures: list[tuple[dict[str, Any], Any]] = []
         started = time.monotonic()
@@ -547,6 +528,7 @@ class StepPracticeRunner:
             early_stop = EvaluationStopping.reached(
                 records=EvaluationStopping.completed(futures=futures),
                 patience=getattr(args, "stop_after_perfect_evaluations", 0),
+                num_tasks=args.num_test_tasks,
             )
             StepFiles.json(
                 path=output / "status.json",
@@ -593,6 +575,7 @@ class StepPracticeRunner:
                     snapshot=str(path),
                     configuration=configuration,
                     output=str(output / "evaluations" / f"{index:04d}"),
+                    environment=environment,
                 ),
             ))
             StepFiles.json(path=output / "measurements.json", value=records)
@@ -606,8 +589,7 @@ class StepPracticeRunner:
             on_progress=status,
             accounting=accounting,
         )
-        backend = problem.env.backend()
-        backend.set_control_step_observers(
+        problem.env.set_control_step_observers(
             before=clock.before_robot_step, after=clock.after_robot_step
         )
         StepFiles.json(
@@ -667,16 +649,12 @@ class StepPracticeRunner:
                         action = policy(state)
                     except HumanCubeBinResetRequested as request:
                         destination = request.destination
-                        if destination not in {"robot_side", "opposite_side"}:
+                        if destination not in human_skills:
                             raise ValueError(
                                 f"Unexpected reset destination: {destination!r}"
                             ) from request
                         assert destination is not None
-                        name = (
-                            "reset_cube_and_bin_near"
-                            if destination == "robot_side"
-                            else "reset_cube_far"
-                        )
+                        name = human_skills[destination]
                         try:
                             charge = clock.before_human(skill=name)
                         except ControlStepLimitReached:
@@ -744,8 +722,8 @@ class StepPracticeRunner:
                         # `take_action` never reached its own bookkeeping, so the env
                         # still holds the pre-skill state and a cleared skill error.
                         interruption = "practice_step_budget"
-                        state = problem.env.adopt_interrupted_skill(
-                            action=action.action, reason=interruption
+                        state = environment.adopt_interrupted_skill(
+                            problem=problem, action=action.action, reason=interruption
                         )
                     finally:
                         clock.robot_active = False
@@ -766,7 +744,7 @@ class StepPracticeRunner:
                         interrupted=interruption is not None,
                         interruption=interruption,
                         cost=accounting.total_cost - before_cost if accounting else None,
-                        skill_error=problem.env.last_skill_error(),
+                        skill_error=environment.last_skill_error(problem=problem),
                     )
                     if interruption is not None:
                         budget_reached = True
@@ -810,7 +788,7 @@ class StepPracticeRunner:
             (output / "failure.txt").write_text(traceback.format_exc())
             raise
         finally:
-            backend.set_control_step_observers(before=None, after=None)
+            problem.env.set_control_step_observers(before=None, after=None)
             clock.robot_active = False
             if endpoint != "failed" and (
                 not records or records[-1]["practice_steps"] != clock.steps
@@ -848,7 +826,7 @@ class StepPracticeRunner:
                         num_total=result["num_total"],
                         outcomes=tuple(
                             TaskOutcome(
-                                goal="InBin(cube_0, bin_0)",
+                                goal=environment.goal_description(),
                                 task_index=r["task"],
                                 solved=r["solved"],
                             )

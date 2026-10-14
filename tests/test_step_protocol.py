@@ -206,6 +206,9 @@ class FakeEnv:
     def backend(self) -> FakeBackend:
         return self._backend
 
+    def set_control_step_observers(self, *, before, after) -> None:
+        self._backend.set_control_step_observers(before=before, after=after)
+
     def _log_skill_ticks(self, *, action) -> None:
         pass
 
@@ -249,6 +252,31 @@ class FakeProblem:
 
     def execute_movables_reset(self, *, destination) -> None:
         self.state = ("reset", destination)
+
+
+class FakeStepProtocol:
+    """The domain protocol over `FakeProblem`: Tossing3D's two human skills, and every
+    per-domain hook delegated to the fake environment."""
+
+    @staticmethod
+    def human_skill_names() -> dict[str, str]:
+        return {"robot_side": "reset_cube_and_bin_near", "opposite_side": "reset_cube_far"}
+
+    @staticmethod
+    def goal_description() -> str:
+        return "goal"
+
+    @staticmethod
+    def adopt_interrupted_skill(*, problem, action, reason: str):
+        return problem.env.adopt_interrupted_skill(action=action, reason=reason)
+
+    @staticmethod
+    def last_skill_error(*, problem):
+        return problem.env.last_skill_error()
+
+    @staticmethod
+    def interrupted(*, problem, action) -> None:
+        pass
 
 
 class ScriptedMethod(EesMethod):
@@ -329,6 +357,7 @@ def _step_args(*, output_dir, budget: int, interval: int, human_steps: int = 1, 
         "measurement_interval_steps": interval,
         "human_skill_steps": human_steps,
         "evaluation_control_steps": 5,
+        "num_test_tasks": 10,
         "max_steps_per_interaction": 20,
         "num_cycles": 1,
     }
@@ -358,6 +387,7 @@ def test_a_human_request_that_does_not_fit_ends_practice_at_the_budget(*, tmp_pa
     output = tmp_path / "run"
     evaluations = FakeEvaluations()
     StepPracticeRunner.run(
+        environment=FakeStepProtocol,
         args=_step_args(output_dir=output, budget=5, interval=100, human_steps=2),
         method=_scripted_method(
             script=[4, HumanCubeBinResetRequested(cost=1.0, destination="robot_side")]
@@ -379,6 +409,7 @@ def test_measurements_are_recorded_on_the_practice_step_axis(*, tmp_path):
     a human request advances it."""
     output = tmp_path / "run"
     StepPracticeRunner.run(
+        environment=FakeStepProtocol,
         args=_step_args(output_dir=output, budget=7, interval=1, human_steps=1),
         method=_scripted_method(
             script=[2, HumanCubeBinResetRequested(cost=1.0, destination="opposite_side"), 3]
@@ -400,6 +431,7 @@ def test_a_failed_run_cancels_queued_evaluations_instead_of_waiting(*, tmp_path)
     evaluations = FakeEvaluations(complete=False)
     with pytest.raises(RuntimeError, match="planner exploded"):
         StepPracticeRunner.run(
+            environment=FakeStepProtocol,
             args=_step_args(output_dir=output, budget=50, interval=2),
             method=_scripted_method(script=[3, RuntimeError("planner exploded")]),
             problem=FakeProblem(),
@@ -418,6 +450,7 @@ def test_a_skill_interrupted_at_the_budget_is_logged_and_its_state_adopted(*, tm
     output = tmp_path / "run"
     problem = FakeProblem()
     StepPracticeRunner.run(
+        environment=FakeStepProtocol,
         args=_step_args(output_dir=output, budget=3, interval=100),
         method=_scripted_method(script=[5]),
         problem=problem,
@@ -469,6 +502,8 @@ def test_existing_output_is_refused_before_anything_is_built_or_opened(*, tmp_pa
     (output / "tossing3d_state_log.jsonl").write_text("old states\n")
     with pytest.raises(FileExistsError):
         StepProtocolEntry.run(
+            env_cli=RecordingMethodCli,
+            environment=FakeStepProtocol,
             args=_step_args(output_dir=output, budget=5, interval=1),
             method_cli=RecordingMethodCli,
         )
@@ -480,7 +515,6 @@ def test_existing_output_is_refused_before_anything_is_built_or_opened(*, tmp_pa
 @pytest.mark.parametrize(
     "override",
     [
-        {"env": "lightswitch"},
         {"method": "skill-oracle"},
         {"defer_rendering": False},
         {"practice_reset_interval": 3},
@@ -490,10 +524,21 @@ def test_unsupported_configurations_fail_before_anything_is_built(*, tmp_path, o
     RecordingMethodCli.calls.clear()
     with pytest.raises(ValueError, match="[Ss]tep protocol|defer-rendering"):
         StepProtocolEntry.run(
+            env_cli=RecordingMethodCli,
+            environment=FakeStepProtocol,
             args=_step_args(output_dir=tmp_path / "run", budget=5, interval=1, **override),
             method_cli=RecordingMethodCli,
         )
     assert RecordingMethodCli.calls == []
+    assert not (tmp_path / "run").exists()
+
+
+def test_a_domain_without_a_step_protocol_is_refused_by_the_cli(*, tmp_path):
+    from hitl_pmp.cli import Cli
+
+    argv = ["--env", "lightswitch", "--method", "ees", "--practice-step-budget", "5"]
+    with pytest.raises(ValueError, match="step protocol does not support --env lightswitch"):
+        Cli.main(argv=[*argv, "--output-dir", str(tmp_path / "run")])
     assert not (tmp_path / "run").exists()
 
 
@@ -552,26 +597,46 @@ def test_early_stop_requires_three_consecutive_complete_distinct_perfect_sweeps(
     def perfect(step):  # noqa: PLR0917 -- test record builder
         return dict(practice_steps=step, num_solved=10, num_total=10, complete=True)
 
-    assert EvaluationStopping.reached(records=[perfect(1700), perfect(3400), perfect(5100)])
-    assert not EvaluationStopping.reached(records=[perfect(1700), perfect(1700), perfect(3400)])
+    assert EvaluationStopping.reached(
+        records=[perfect(1700), perfect(3400), perfect(5100)], num_tasks=10
+    )
+    assert not EvaluationStopping.reached(
+        records=[perfect(1700), perfect(1700), perfect(3400)], num_tasks=10
+    )
     assert not EvaluationStopping.reached(
         records=[
             perfect(1700),
             dict(practice_steps=3400, complete=False),
             perfect(5100),
             perfect(6800),
-        ]
+        ],
+        num_tasks=10,
     )
     assert not EvaluationStopping.reached(
         records=[
             perfect(1700),
             dict(practice_steps=3400, num_solved=9, num_total=10),
             perfect(5100),
-        ]
+        ],
+        num_tasks=10,
     )
     assert not EvaluationStopping.reached(
-        records=[dict(practice_steps=s, num_solved=1, num_total=1) for s in range(3)]
+        records=[dict(practice_steps=s, num_solved=1, num_total=1) for s in range(3)],
+        num_tasks=10,
     )
+
+
+def test_perfect_means_every_configured_task_not_ten():
+    from hitl_pmp.step_protocol import EvaluationStopping
+
+    def sweep(step, solved, total):  # noqa: PLR0917 -- test record builder
+        return dict(practice_steps=step, num_solved=solved, num_total=total, complete=True)
+
+    three_of_three = [sweep(s, 3, 3) for s in (15000, 30000, 45000)]
+    assert EvaluationStopping.reached(records=three_of_three, num_tasks=3)
+    assert not EvaluationStopping.reached(records=three_of_three, num_tasks=10)
+    ten_of_ten = [sweep(s, 10, 10) for s in (15000, 30000, 45000)]
+    assert not EvaluationStopping.reached(records=ten_of_ten, num_tasks=3)
 
 
 def test_early_stop_waits_for_preceding_pending_evaluations():
@@ -588,7 +653,7 @@ def test_early_stop_waits_for_preceding_pending_evaluations():
     records = EvaluationStopping.completed(futures=futures)
     assert not records[0]["complete"]
     assert records[1]["num_solved"] == 10
-    assert not EvaluationStopping.reached(records=records)
+    assert not EvaluationStopping.reached(records=records, num_tasks=10)
 
 
 def test_an_empty_practice_session_ends_the_run_only_when_opted_in():
@@ -708,6 +773,7 @@ def test_an_empty_session_ends_the_run_only_with_the_opt_in_flag(*, tmp_path, op
 
     output = tmp_path / "run"
     StepPracticeRunner.run(
+        environment=FakeStepProtocol,
         args=_step_args(output_dir=output, budget=6, interval=3, stop_on_no_practice_action=opt_in),
         method=_scripted_method(script=[2, InteractionComplete(), InteractionComplete()]),
         problem=FakeProblem(),
@@ -722,6 +788,7 @@ def test_perfect_evaluations_stop_practice_only_when_requested(*, tmp_path):
     for patience, endpoint in [(0, "practice_step_budget"), (3, "three_perfect_evaluations")]:
         output = tmp_path / f"run{patience}"
         StepPracticeRunner.run(
+            environment=FakeStepProtocol,
             args=_step_args(
                 output_dir=output, budget=40, interval=2, stop_after_perfect_evaluations=patience
             ),

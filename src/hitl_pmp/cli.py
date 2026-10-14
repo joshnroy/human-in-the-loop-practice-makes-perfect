@@ -21,10 +21,11 @@ itself has no domain- or method-specific knowledge.
 import argparse
 from pathlib import Path
 
-from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli
+from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli, StepProtocolEnvironment
 from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
@@ -55,6 +56,12 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     # (`tossingroom`, `tossingroomsplit`, `tossingroomsplitidentity`) are retired; their
     # published results stay in docs/experiment-logs/ behind staleness notes.
     "tossingroom": TossingRoomCli,
+}
+
+
+# The domains `--practice-step-budget` (the step protocol, `step_protocol.py`) can run.
+STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
+    "tossing3d": Tossing3DStepProtocol,
 }
 
 
@@ -309,7 +316,14 @@ class Cli:
         if args.practice_step_budget is not None:
             from hitl_pmp.step_protocol import StepProtocolEntry
 
-            StepProtocolEntry.run(args=args, method_cli=METHODS[args.method])
+            if args.env not in STEP_PROTOCOL_ENVIRONMENTS:
+                raise ValueError(f"The step protocol does not support --env {args.env}")
+            StepProtocolEntry.run(
+                args=args,
+                method_cli=METHODS[args.method],
+                env_cli=ENVIRONMENTS[args.env],
+                environment=STEP_PROTOCOL_ENVIRONMENTS[args.env],
+            )
             return
         # cli.py is the one place allowed to import both environments/ and methods/,
         # so it is where the selected env-CLI (its composition root) and method-CLI

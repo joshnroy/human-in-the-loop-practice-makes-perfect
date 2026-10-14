@@ -39,6 +39,7 @@ domain cannot do.
 """
 
 import logging
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -603,6 +604,13 @@ class Tossing3DEnvironment(Environment):
     def drain_substep_frames(self) -> list[np.ndarray]:
         """Forwards to `KinderBackend.drain_substep_frames`."""
         return self.backend().drain_substep_frames()
+
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
+        """Forwards to `KinderBackend.set_control_step_observers`, which survives a
+        scene rebuild."""
+        self.backend().set_control_step_observers(before=before, after=after)
 
     def snapshot(self) -> "Tossing3DSnapshot":
         """A restorable handle to the live simulator, including mid-episode.

@@ -1,4 +1,5 @@
 import abc
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -162,3 +163,25 @@ class Environment(BaseModel, abc.ABC):
         AttributeError. `Tossing3DEnvironment` overrides to forward to
         `KinderBackend.drain_substep_frames`."""
         return []
+
+    def close(self) -> None:
+        """Release whatever live resources the domain holds (a simulator, its render
+        contexts). Nothing by default; idempotent wherever it is overridden."""
+        return None
+
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
+        """Call `before` ahead of, and `after` behind, every low-level controller step
+        that one `take_action` executes; `None` detaches. The step protocol
+        (`step_protocol.py`) counts practice and bounds evaluation through these, and
+        stops a skill mid-execution by raising `ControlStepLimitReached` from `before`,
+        which a domain must let propagate out of `take_action`.
+
+        Raises by default rather than silently never calling back: a domain whose
+        controller steps are not observable cannot be measured in control steps, and
+        a run that counted zero of them would look like a run that never acted."""
+        del before, after
+        raise NotImplementedError(
+            f"{type(self).__name__} does not expose its control steps to observers"
+        )

@@ -422,6 +422,7 @@ class FullAgenticRunner:
                     early_stop = EvaluationStopping.reached(
                         records=EvaluationStopping.completed(futures=futures),
                         patience=args.stop_after_perfect_evaluations,
+                        num_tasks=args.num_test_tasks,
                     )
                     if (
                         early_stop
