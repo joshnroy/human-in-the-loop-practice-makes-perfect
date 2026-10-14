@@ -126,3 +126,31 @@ def test_a_human_skill_is_never_a_practice_target():
     method = _build(score_human_skills=True)
     _dispatch_and_grant(method=method, after=_state(on_shelf=O.cubes, in_box=()))
     assert _reset_cubes(method=method) not in method.choose_practice_target()
+
+
+def test_a_configured_human_price_is_looked_up_by_the_shelf_skills_own_name():
+    """Under step accounting a human skill is charged by its own name. The shelf's are
+    `reset_cubes` and `reset_wiper`, never Tossing3D's near/far names."""
+    from hitl_pmp.core.practice_costs import (
+        ChargeFunction,
+        HumanCharge,
+        PracticeAccounting,
+        PracticeCosts,
+    )
+
+    method = _build(score_human_skills=False)
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                human_skills={
+                    "reset_cubes": HumanCharge(cost=ChargeFunction(value=7)),
+                    "reset_wiper": HumanCharge(cost=ChargeFunction(value=3)),
+                },
+            )
+        )
+    )
+    cubes, wiper = method.skill_provider.human_cube_bin_reset_skills()
+    assert method.skill_provider.human_skill_name(ground_skill=cubes) == "reset_cubes"
+    weight = method._practice_accounting.costs.human_weight  # noqa: SLF001
+    assert method.practice_action_cost(ground_skill=cubes) == pytest.approx(weight * 7)
+    assert method.practice_action_cost(ground_skill=wiper) == pytest.approx(weight * 3)

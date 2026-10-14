@@ -502,8 +502,8 @@ class EesMethod(Method):
             self._practice_accounting is not None
             and ground_skill in self.skill_provider.human_cube_bin_reset_skills()
         ):
-            destination = self.skill_provider.movables_reset_destination(ground_skill=ground_skill)
-            name = "reset_cube_and_bin_near" if destination == "robot_side" else "reset_cube_far"
+            name = self.skill_provider.human_skill_name(ground_skill=ground_skill)
+            assert name is not None, f"{ground_skill} is a human skill without a name"
             return (
                 self._practice_accounting.costs.human_weight
                 * self._practice_accounting.human_charge(skill=name).cost

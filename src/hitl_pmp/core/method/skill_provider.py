@@ -171,6 +171,13 @@ class SkillProvider(BaseModel, abc.ABC):
         del ground_skill
         return None
 
+    def human_skill_name(self, *, ground_skill: GroundSkill) -> str | None:
+        """The name practice costs and the step log charge this human skill under.
+
+        Its destination by default, which is already the skill's own name in a domain
+        whose human skills are distinct skills (SweepOffShelf3D's `reset_cubes`)."""
+        return self.movables_reset_destination(ground_skill=ground_skill)
+
 
 class OraclePolicyProvider(BaseModel, abc.ABC):
     """A domain's privileged, hand-authored solver -- what `SkillOracleMethod` drives

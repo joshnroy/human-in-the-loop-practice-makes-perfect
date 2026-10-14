@@ -339,6 +339,12 @@ class Tossing3DSkillProvider(SkillProvider):
         Tossing3DSides.parse(name=destination.name)
         return destination.name
 
+    def human_skill_name(self, *, ground_skill: GroundSkill) -> str | None:
+        destination = self.movables_reset_destination(ground_skill=ground_skill)
+        if destination is None:
+            return None
+        return "reset_cube_and_bin_near" if destination == "robot_side" else "reset_cube_far"
+
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
         automatic = self.non_human_cube_bin_reset_skills() if self.offer_non_human_reset else ()
         return (*self.human_cube_bin_reset_skills(), *automatic)
