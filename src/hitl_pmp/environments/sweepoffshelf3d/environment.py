@@ -15,6 +15,7 @@ refused rather than silently replaced by its episode's start.
 """
 
 import logging
+from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
@@ -165,6 +166,28 @@ class SweepOffShelf3DEnvironment(Environment):
             controllers.return_cube_to_shelf(cube=cube)
         elif skill_id != NOOP_ID:
             raise ControllerFailure(f"unknown skill id {skill_id}")
+
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
+        """Observe every KINDER control step a skill takes. A `ControlStepLimitReached`
+        raised from `before` is a `BaseException`, so no skill's error handling catches
+        it: it propagates out of `take_action` and the caller adopts the cut-off skill."""
+        self.backend().set_step_observers(before=before, after=after)
+
+    def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
+        """Account for a skill an external step budget stopped part-way through: record
+        the interruption as its outcome and adopt the scene as the cut-off left it, the
+        bookkeeping `take_action` never reached."""
+        del action
+        seed, steps_taken = self._bookkeeping()
+        self._last_skill_error = f"interrupted: {reason}"
+        controllers = self.controllers()
+        self._last_controller_steps = controllers.steps
+        controllers.on_objects_moved()
+        state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
+        self.current_state = state
+        return state
 
     def get_valid_actions(self) -> list[Action]:
         return []

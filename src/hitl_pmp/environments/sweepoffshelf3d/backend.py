@@ -38,6 +38,7 @@ clears the robot, the other objects and the cupboard.
 import copy
 import os
 import types
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -74,6 +75,8 @@ class SweepOffShelf3DBackend(BaseModel):
     box_name: ClassVar[str] = O.box.name
 
     _env: Any = PrivateAttr(default=None)
+    _before_step: Callable[[], None] | None = PrivateAttr(default=None)
+    _after_step: Callable[[], None] | None = PrivateAttr(default=None)
     _human_rng: np.random.Generator = PrivateAttr()
     _pads: tuple[frozenset[int], frozenset[int]] = PrivateAttr(default=(frozenset(), frozenset()))
     _wiper_start: Any = PrivateAttr(default=None)
@@ -103,7 +106,30 @@ class SweepOffShelf3DBackend(BaseModel):
                 config=TidyBot3DConfig(use_arm_velocities=False),
             )
             OrientedBox.install(core=self.core())
+            self._observe_steps(env=self._env)
         return self._env
+
+    def set_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
+        """Call `before` ahead of, and `after` behind, every KINDER control step; `None`
+        detaches. Both skill drivers (`ShelfSkills.step`, `KinderSkills.env_step`) step
+        this one env, so this is the single place every control step passes."""
+        self._before_step = before
+        self._after_step = after
+
+    def _observe_steps(self, *, env: Any) -> None:
+        step = env.step
+
+        def observed(action: Any) -> Any:  # noqa: PLR0917 -- gymnasium calls step positionally
+            if self._before_step is not None:
+                self._before_step()
+            result = step(action)
+            if self._after_step is not None:
+                self._after_step()
+            return result
+
+        env.step = observed
 
     def reset(self, *, seed: int) -> None:
         self.env().reset(seed=seed)
