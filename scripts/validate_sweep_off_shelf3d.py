@@ -68,7 +68,7 @@ CUBE_STANDOFF = 0.035
 CUBE_LEANS_DEG = (30.0, 40.0, 50.0, 60.0)
 PAD_HALF_LENGTH = 0.011
 # Shelf pick on the handle's middle; set-down spot on the cupboard top for the regrasp.
-PICK_ALONG = 0.14
+PICK_ALONGS = (0.14, 0.10, 0.17, 0.07)
 # At the centre of mass: a friction grasp 9 cm from it lets the head droop and creep.
 REGRASP_ALONG = None
 # Head centre when the wiper is laid down between strokes: its centre of mass on the board.
@@ -85,7 +85,7 @@ HEAD_AHEADS = (0.80, 0.75, 0.85, 0.70, 0.90, 0.65)
 # margin, limit keeps the head off the cupboard's side walls.
 STROKE_START_X = 1.60
 STROKE_END_X = 1.355
-STROKE_STEP = 0.02
+STROKE_STEP = 0.015
 STROKE_REACH = 0.08
 STROKE_LIMIT = 0.17
 HOVER = 0.08
@@ -97,9 +97,10 @@ HEAD_ON_BOARD = 0.004
 LOWER_STEP = 0.002
 LOWER_STEPS = 50
 CONTACT_STEP_LIMIT = 40
-CONTACT_PENETRATION = 0.015
-SWEEP_PASSES = 2
+CONTACT_PENETRATION = 0.04
+SWEEP_PASSES = 3
 PLACE_XY = (1.45, 0.0)
+CUBE_FLOOR_XY = (0.95, 0.45)
 DROP_XY = (1.235, 0.0)
 
 
@@ -559,7 +560,7 @@ class ShelfProbe:
         rotation: np.ndarray,
         base: Any = None,
         holding: bool = False,
-        attempts: int = 16,
+        attempts: int = 24,
     ) -> tuple[np.ndarray, float]:
         mujoco = self.mujoco
         d, m = self.ik_data, self.model
@@ -579,7 +580,7 @@ class ShelfProbe:
                 d.qpos[self.qa] = self.home_arm + rng.normal(0, 0.3 * (attempt > 1), 7)
             elif attempt:
                 d.qpos[self.qa] += rng.normal(0, 0.9, 7)
-            for _ in range(200):
+            for _ in range(400):
                 mujoco.mj_kinematics(m, d)
                 mujoco.mj_comPos(m, d)
                 current = Rotation.from_matrix(d.site_xmat[self.site].reshape(3, 3))
@@ -596,7 +597,7 @@ class ShelfProbe:
                 for i, joint in enumerate(self.joints):
                     if m.jnt_limited[joint]:
                         d.qpos[self.qa[i]] = np.clip(d.qpos[self.qa[i]], *m.jnt_range[joint])
-            if np.linalg.norm(err) < 0.006:
+            if np.linalg.norm(err) < 0.01:
                 collision = self.collision_cost(d=d, holding=holding)
                 q = d.qpos[self.qa].copy()
                 score = np.linalg.norm((q - initial + np.pi) % (2 * np.pi) - np.pi)
@@ -726,21 +727,35 @@ class ShelfProbe:
     def pick_wiper(self) -> None:
         """On the shelf only the lean toward the free end clears the board above
         (kinematic probe), so this grasp sits on the handle's middle."""
-        grasp, rotation = self.wiper_grasp(along=PICK_ALONG, lean_sign=1.0)
         # The wrist sits just under the board above at the grasp, so the hand comes in
-        # level, pads 2 cm above the handle, and only then drops onto it.
-        pre = grasp + np.array([0.0, 0.0, SLOT_ENTRY_RISE])
-        porch = np.array([self.front_x - 0.12, pre[1], pre[2]])
-        base = self.choose_base(
-            targets=[
-                (porch, rotation),
-                ((porch + pre) / 2, rotation),
-                (pre, rotation),
-                (grasp, rotation),
-            ],
-            ys=[float(grasp[1] + dy) for dy in (0.0, 0.1, -0.1, 0.2)],
-            holding=False,
-        )
+        # level, pads 2 cm above the handle, and only then drops onto it. Where the
+        # wiper lies varies by seed; the first grasp point along the handle and base
+        # pose that is collision-free at every waypoint is used.
+        plan = None
+        for along in PICK_ALONGS:
+            grasp, rotation = self.wiper_grasp(along=along, lean_sign=1.0)
+            pre = grasp + np.array([0.0, 0.0, SLOT_ENTRY_RISE])
+            porch = np.array([self.front_x - 0.12, pre[1], pre[2]])
+            notes = len(self.notes)
+            base = self.choose_base(
+                targets=[
+                    (porch, rotation),
+                    ((porch + pre) / 2, rotation),
+                    (pre, rotation),
+                    (grasp, rotation),
+                ],
+                xs=(BASE_X, BASE_X - 0.08),
+                ys=[float(grasp[1] + dy) for dy in (0.0, 0.1, -0.1, 0.2, -0.2)],
+                holding=False,
+            )
+            clean = len(self.notes) == notes
+            if plan is None or clean:
+                plan = (grasp, rotation, pre, porch, base)
+            if clean:
+                break
+            del self.notes[notes:]
+        assert plan is not None
+        grasp, rotation, pre, porch, base = plan
         self.grip = 0.0
         self.move_base(target=base, label="drive_to_cupboard")
         self.capture(label="at cupboard", keyframe=True)
@@ -1108,49 +1123,142 @@ class ShelfProbe:
         if not self.core.cube_in_box("cube_0"):
             raise RuntimeError("Dropped cube did not settle in the box")
 
-    def cube_grasp(self, *, centre: Any, lean_deg: float) -> tuple[np.ndarray, np.ndarray]:
+    def cube_grasp(
+        self, *, centre: Any, lean_deg: float, face: int, sign: float
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Pads on the cube's `face` (0 or 1) side faces; the approach leans `lean_deg`
+        from vertical toward `sign` times the horizontal normal of the other faces."""
         quaternion = self.core.get_object("cube_0").get_pose()[1]
         axes = Rotation.from_quat(quaternion[[1, 2, 3, 0]]).as_matrix()
-        closing = max((axes[:, 0], axes[:, 1]), key=lambda v: abs(v[1])).copy()
+        closing = axes[:, face].copy()
         closing[2] = 0.0
-        closing = closing / np.linalg.norm(closing) * np.sign(closing[1])
-        toward = np.array([closing[1], -closing[0], 0.0])
+        closing /= np.linalg.norm(closing)
+        toward = sign * np.array([-closing[1], closing[0], 0.0])
         rotation = Frames.leaned(closing=closing, lean_toward=toward, lean_deg=lean_deg)
         return np.asarray(centre) - CUBE_STANDOFF * rotation[:, 2], rotation
 
+    def reachable_base(
+        self,
+        *,
+        poses: list[tuple[np.ndarray, np.ndarray]],
+        holding: bool,
+        xs: tuple[float, ...] = (BASE_X, BASE_X - 0.1, BASE_X - 0.2),
+        ys: tuple[float, ...] = (0.0, -0.15, 0.15, -0.3, 0.3),
+    ) -> np.ndarray | None:
+        """First base pose from which every pose is reached collision-free."""
+        for x in xs:
+            for y in ys:
+                base = np.array([x, y, 0.0])
+                clean = True
+                for position, rotation in poses:
+                    try:
+                        _, collision = self.ik(
+                            position=position, rotation=rotation, base=base, holding=holding
+                        )
+                    except RuntimeError:
+                        clean = False
+                        break
+                    if collision > 0:
+                        clean = False
+                        break
+                if clean:
+                    return base
+        return None
+
+    def cube_plan(
+        self, *, centre: Any, leans: tuple[float, ...], toward_robot: bool | None, **base: Any
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """(grasp position, rotation, pre-grasp position, base) for the first lean and
+        face that is collision-free; `toward_robot` restricts the lean direction (True:
+        approach leans away from the robot, so the wrist stays on the robot's side)."""
+        for lean in leans:
+            for face in (0, 1):
+                for sign in (1.0, -1.0):
+                    grasp, rotation = self.cube_grasp(
+                        centre=centre, lean_deg=lean, face=face, sign=sign
+                    )
+                    approach = rotation[:, 2]
+                    if toward_robot is not None and (approach[0] > 0.2) != toward_robot:
+                        continue
+                    pre = grasp - 0.10 * approach + np.array([0.0, 0.0, 0.08])
+                    found = self.reachable_base(
+                        poses=[(pre, rotation), (grasp, rotation)], holding=False, **base
+                    )
+                    if found is not None:
+                        return grasp, rotation, pre, found
+        raise RuntimeError(f"No collision-free cube grasp at {np.round(centre, 3)}")
+
     def cube_out_of_box_to_shelf(self) -> None:
-        position = self.core.get_object("cube_0").get_pose()[0]
-        place = np.array([*PLACE_XY, self.board[CUBE_SHELF] + 0.012])
-        chosen = None
-        for lean in CUBE_LEANS_DEG:
-            pick_pose = self.cube_grasp(centre=position, lean_deg=lean)
-            place_pose = self.cube_grasp(centre=place, lean_deg=lean)
-            base = self.choose_base(
-                targets=[pick_pose, place_pose], ys=[0.0, -0.15, 0.15], holding=True
-            )
-            _, a = self.ik(position=pick_pose[0], rotation=pick_pose[1], base=base)
-            _, b = self.ik(position=place_pose[0], rotation=place_pose[1], base=base, holding=True)
-            if a + b == 0:
-                chosen = (lean, base, pick_pose, place_pose)
-                break
-        if chosen is None:
-            raise RuntimeError("No lean reaches both the box floor and the shelf collision-free")
-        lean, base, (grasp, rotation), (drop, _) = chosen
-        self.notes.append(f"cube lean {lean:.0f} deg")
-        approach = rotation[:, 2]
+        """The cube is held rigidly, so it lands upright only at the gripper orientation
+        it was picked with. Out of the box only a steep grasp clears the box walls; on
+        the shelf only a lean toward the cupboard clears the board above (kinematic
+        probe: no single lean does both). So the cube is set down on the open floor
+        beside the box in between and taken again at the shelf's lean."""
+        cube = self.core.get_object("cube_0")
+        grasp, rotation, pre, base = self.cube_plan(
+            centre=cube.get_pose()[0], leans=(30.0, 45.0), toward_robot=None
+        )
         self.grip = 0.0
         self.move_base(target=base, label="drive_to_box")
-        above = grasp - 0.12 * approach + np.array([0.0, 0.0, 0.10])
-        self.path(position=above, rotation=rotation, label="above_cube", count=8)
+        self.path(position=pre, rotation=rotation, label="above_cube", count=8)
         self.path(position=grasp, rotation=rotation, label="into_box", count=6)
         self.grip = 1.0
         self.hold(count=25, label="close_on_cube")
-        self.path(position=above, rotation=rotation, label="lift_out_of_box", count=6, holding=True)
-        lifted = self.core.get_object("cube_0").get_pose()[0]
+        self.path(position=pre, rotation=rotation, label="lift_out_of_box", count=6, holding=True)
+        lifted = cube.get_pose()[0]
         self.capture(label=f"cube lifted to z={lifted[2]:.3f}", keyframe=True)
-        if lifted[2] < self.board[CUBE_SHELF] - 0.1:
+        if lifted[2] < 0.12:
             raise RuntimeError(f"Cube not lifted out of the box (z={lifted[2]:.3f})")
+        # Set it down on the floor beside the box.
+        offset = self.data.site_xpos[self.site] - lifted
+        floor_grasp = np.array([*CUBE_FLOOR_XY, 0.012]) + offset
+        floor_pre = floor_grasp + (pre - grasp)
+        floor_base = self.reachable_base(
+            poses=[(floor_pre, rotation), (floor_grasp, rotation)],
+            holding=True,
+            xs=REGRASP_BASE_XS,
+            ys=(CUBE_FLOOR_XY[1], CUBE_FLOOR_XY[1] - 0.15, CUBE_FLOOR_XY[1] + 0.15),
+        )
+        if floor_base is None:
+            raise RuntimeError("No base pose sets the cube down beside the box")
+        raised = self.site_pose()
+        raised[2, 3] = max(raised[2, 3], 0.45)
+        self.path(position=raised[:3, 3], rotation=rotation, label="raise_cube", holding=True)
+        self.move_base(target=floor_base, label="to_floor_spot")
+        self.path(position=floor_pre, rotation=rotation, label="over_floor", count=6, holding=True)
+        self.path(position=floor_grasp, rotation=rotation, label="lower_to_floor", holding=True)
+        self.grip = 0.0
+        self.hold(count=20, label="release_on_floor")
+        self.path(position=floor_pre, rotation=rotation, label="back_off_floor", count=3)
+        self.capture(label="cube set down on the floor", keyframe=True)
+        # Take it again leaning toward the cupboard, and place it on the shelf.
+        place = np.array([*PLACE_XY, self.board[CUBE_SHELF] + 0.012])
+        grasp, rotation, pre, base = self.cube_plan(
+            centre=cube.get_pose()[0],
+            leans=CUBE_LEANS_DEG,
+            toward_robot=True,
+            xs=REGRASP_BASE_XS,
+            ys=(CUBE_FLOOR_XY[1], CUBE_FLOOR_XY[1] - 0.15, CUBE_FLOOR_XY[1] + 0.15),
+        )
+        lean = float(np.rad2deg(np.arccos(-rotation[2, 2])))
+        drop = place - CUBE_STANDOFF * rotation[:, 2]
         mouth = np.array([self.front_x - 0.12, drop[1], drop[2] + 0.04])
+        place_base = self.reachable_base(
+            poses=[(mouth, rotation), (drop + [0.0, 0.0, 0.03], rotation), (drop, rotation)],
+            holding=True,
+        )
+        if place_base is None:
+            raise RuntimeError(f"Regrasp at lean {lean:.0f} deg cannot reach the shelf")
+        self.notes.append(f"cube regrasped at lean {lean:.0f} deg")
+        self.move_base(target=base, label="to_regrasp")
+        self.path(position=pre, rotation=rotation, label="regrasp_approach", count=6)
+        self.path(position=grasp, rotation=rotation, label="regrasp_lower", count=4)
+        self.grip = 1.0
+        self.hold(count=25, label="regrasp_close")
+        raised = self.site_pose()
+        raised[2, 3] = max(raised[2, 3], 0.30)
+        self.path(position=raised[:3, 3], rotation=rotation, label="raise_cube", holding=True)
+        self.move_base(target=place_base, label="drive_to_shelf")
         self.path(position=mouth, rotation=rotation, label="to_shelf_mouth", count=6, holding=True)
         self.path(
             position=drop + [0.0, 0.0, 0.03], rotation=rotation, label="over_shelf", holding=True
@@ -1158,9 +1266,10 @@ class ShelfProbe:
         self.path(position=drop, rotation=rotation, label="lower_to_shelf", count=3, holding=True)
         self.grip = 0.0
         self.hold(count=25, label="release_on_shelf")
+        approach = rotation[:, 2]
         self.path(position=drop - 0.05 * approach, rotation=rotation, label="back_off", count=3)
         self.path(position=mouth, rotation=rotation, label="withdraw", count=4)
-        placed = self.core.get_object("cube_0").get_pose()[0]
+        placed = cube.get_pose()[0]
         self.capture(
             label=f"cube at ({placed[0]:.2f},{placed[1]:.2f},{placed[2]:.3f})", keyframe=True
         )
