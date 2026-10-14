@@ -31,6 +31,9 @@ from hitl_pmp.results_writer.run_collision import MissingVariationAxisError
 from hitl_pmp.results_writer.types import ExistingRun
 from hitl_pmp.results_writer.wandb_writer import WandbResultsWriter
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_wandb_writer")
+
 # Two cycles of the oracle on Light Switch: pure numpy, about a second per invocation,
 # and it needs no optional dependency of its own. The claim under test is about the
 # harness, not about any particular domain's dynamics.

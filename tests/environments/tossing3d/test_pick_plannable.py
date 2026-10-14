@@ -47,6 +47,9 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 from .observations import INITIAL_ATOMS, state
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_pick_plannable")
+
 _FIXTURES = Path(__file__).parent / "fixtures"
 _RESET_NAMES = {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}
 _PICK_NAMES = {"PickCube", "PickCubeFromFloor", "PickCubeFromBin", "PickCubeFromRim"}

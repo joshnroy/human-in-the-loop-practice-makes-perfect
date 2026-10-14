@@ -29,6 +29,9 @@ from hitl_pmp.core.method.types import EpisodeTrace
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_episode_traces")
+
 # Light Switch + skill-oracle: one evaluation sweep, no practice, and the oracle
 # always solves -- so every test task's episode is guaranteed to take at least one
 # real step (a grid_size of 3 puts the robot at least one move away from the light).
