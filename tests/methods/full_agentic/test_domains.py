@@ -189,13 +189,23 @@ class TestSweepOffShelf3DDomain:
         assert [i for i, (a, b) in enumerate(zip(tossing, shelf, strict=True)) if a != b] == [
             0,
             1,
+            35,
             36,
+            37,
         ]
         tossing_api = Tossing3DFullAgentic.robot_api().read_text().splitlines()
         shelf_api = SweepOffShelf3DFullAgentic.robot_api().read_text().splitlines()
         assert [
             i for i, (a, b) in enumerate(zip(tossing_api, shelf_api, strict=True)) if a != b
         ] == [14]
+
+    def test_shelf_prompt_states_the_rerun_plans_budgets(self) -> None:
+        # Stage 5 runs every shelf arm at 85,000 practice steps, an evaluation every
+        # 15,000, and 3,000 control steps per held-out task (Josh, 2026-10-14).
+        prompt = SweepOffShelf3DFullAgentic.task_prompt()
+        assert "The ceiling is 85,000 counted steps." in prompt
+        assert "every 15,000 counted steps" in prompt
+        assert "Each held-out task permits 3,000 robot control steps." in prompt
 
     def test_shelf_prompt_names_only_its_own_human_skills_and_command(self) -> None:
         prompt = rendered(args=parse("--env", "sweepoffshelf3d"))[1]
