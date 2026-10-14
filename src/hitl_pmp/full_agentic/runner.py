@@ -22,11 +22,9 @@ from hitl_pmp.agentic_runtime.sandbox import (
     SandboxSettings,
 )
 from hitl_pmp.core.practice_costs import PracticeCosts
-from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
-from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.step_protocol import EvaluationClock, EvaluationStopping
 
+from .domains import FULL_AGENTIC_DOMAINS, FullAgenticDomain
 from .world import Files, Server, World
 
 HERE = Path(__file__).resolve().parent
@@ -47,9 +45,9 @@ class EvaluationExecutor(DockerPolicyExecutor):
 
 
 class ScoreBridge:
-    def __init__(self, *, bridge: Any, budget: int) -> None:
+    def __init__(self, *, bridge: Any, budget: int, check_goal: Any) -> None:
         self.bridge = bridge
-        self.clock = EvaluationClock(budget=budget, check_goal=bridge.env.backend().check_goals)
+        self.clock = EvaluationClock(budget=budget, check_goal=check_goal)
 
     @property
     def success(self) -> bool:
@@ -112,6 +110,8 @@ class FullAgenticRunner:
         settings: SandboxSettings,
         output: Path,
         count: int,
+        domain: type[FullAgenticDomain],
+        environment_options: dict[str, Any] | None = None,
         budget: int = 500,
         seed: int = 0,
     ) -> list[dict[str, Any]]:
@@ -126,17 +126,18 @@ class FullAgenticRunner:
                 value=dict(tasks=records, num_solved=0, num_total=count, complete=True),
             )
             return records
-        env = Tossing3DEnvironment()
-        tasks = Tossing3DTasks(env=env, seed=seed)
+        env = domain.make_environment(options=environment_options or {}, human_seed=seed + 1)
+        tasks = domain.make_tasks(env=env, seed=seed)
         results = []
         try:
             for index in range(count):
                 task = tasks.sample_test_task()
                 bridge = ScoreBridge(
-                    bridge=Tossing3DAgenticBridge(env=env, observation_mode="object_state"),
+                    bridge=domain.make_bridge(env=env, practice=False),
                     budget=budget,
+                    check_goal=domain.goal_check(env=env),
                 )
-                task_seed = int(task.initial_state.get(obj=env.scene, feature_name="seed"))
+                task_seed = domain.task_seed(env=env, task=task)
                 with tempfile.TemporaryDirectory(prefix="hitl-full-eval-") as temporary:
                     work = Path(temporary)
                     shutil.copytree(submission, work / "submission")
@@ -196,9 +197,9 @@ class FullAgenticRunner:
         return results
 
     @staticmethod
-    def task_prompt(*, costs: PracticeCosts) -> str:
-        prompt = (HERE / "task_prompt.md").read_text()
-        if costs == PracticeCosts():
+    def task_prompt(*, costs: PracticeCosts, domain: type[FullAgenticDomain]) -> str:
+        prompt = domain.task_prompt()
+        if costs == domain.default_costs():
             return prompt
         start = prompt.index("Initial function values and fixed weights:")
         end = prompt.index("w_H weights human cost", start)
@@ -218,64 +219,51 @@ class FullAgenticRunner:
         )
 
     @staticmethod
-    def initial_files(*, workspace: Any, bridge: Any) -> None:
-        shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
-        Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
-        shutil.copyfile(HERE / "robot_api.md", workspace / "robot_api.md")
+    def practice_prompt(
+        *, domain: type[FullAgenticDomain], costs: PracticeCosts, budget: int, interval: int
+    ) -> str:
+        return FullAgenticRunner.task_prompt(costs=costs, domain=domain) + (
+            f"\nPractice has a total budget of {budget} counted steps: "
+            "one per robot control period plus each human skill's configured duration. "
+            "The host takes frozen deployment snapshots every "
+            f"{interval} "
+            "steps without resetting the world "
+            "or requesting a learning update. "
+            "Evaluation results are never returned. "
+            "Stop gracefully when the remaining budget is zero.\n"
+        )
 
     @staticmethod
-    def main() -> None:
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--output", type=Path, required=True)
-        parser.add_argument("--sandbox-settings", type=Path, required=True)
-        parser.add_argument("--practice-step-budget", type=int, default=85000)
-        parser.add_argument("--measurement-interval-steps", type=int, default=1700)
-        parser.add_argument("--human-skill-steps", type=int, default=1)
-        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
-        parser.add_argument("--practice-cost-config", type=Path, default=None)
-        parser.add_argument("--evaluation-control-steps", type=int, default=500)
-        parser.add_argument("--num-test-tasks", type=int, default=10)
-        parser.add_argument("--seed", type=int, default=0)
-        parser.add_argument("--hours", type=float, default=None)
-        parser.add_argument("--model-budget", type=float, default=20)
-        parser.add_argument(
-            "--coder-memory-mb",
-            type=int,
-            default=None,
-            help="Coder container cap; overrides coder_memory_mb in --sandbox-settings.",
-        )
-        parser.add_argument(
-            "--sandbox-memory-mb",
-            type=int,
-            default=None,
-            help="Execution sandbox cap; overrides memory_mb in --sandbox-settings.",
-        )
-        args = parser.parse_args()
-        if any(
-            value <= 0
-            for value in (
-                args.practice_step_budget,
-                args.measurement_interval_steps,
-                args.human_skill_steps,
-                args.evaluation_control_steps,
-                args.num_test_tasks,
-                args.model_budget,
-            )
-        ):
-            raise ValueError("Budgets and intervals must be positive")
+    def system_prompt() -> str:
+        return (HERE / "system_prompt.md").read_text()
+
+    @staticmethod
+    def initial_files(*, workspace: Any, bridge: Any, domain: type[FullAgenticDomain]) -> None:
+        shutil.copyfile(HERE / "env_client.py", workspace / "env_client.py")
+        Files.atomic_json(path=workspace / "initial_observation.json", value=bridge.observe())
+        shutil.copyfile(domain.robot_api(), workspace / "robot_api.md")
+
+    @staticmethod
+    def costs(*, args: argparse.Namespace, domain: type[FullAgenticDomain]) -> PracticeCosts:
+        if args.practice_cost_config is None:
+            return domain.default_costs()
         costs = PracticeCosts.load(path=args.practice_cost_config)
-        if args.human_skill_steps != 1:
-            raise ValueError("Configure per-skill durations in --practice-cost-config")
-        output = args.output.resolve()
-        output.mkdir(parents=True, exist_ok=False)
-        workspace = output / "coding" / "sandbox"
-        workspace.mkdir(parents=True)
-        settings = FullAgenticRunner.with_memory_caps(
-            settings=SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text())),
-            coder_memory_mb=args.coder_memory_mb,
-            sandbox_memory_mb=args.sandbox_memory_mb,
-        )
-        protocol = dict(
+        if set(costs.human_skills) != set(domain.human_interventions):
+            raise ValueError(
+                f"--practice-cost-config must price exactly {domain.name}'s human skills "
+                f"{sorted(domain.human_interventions)}; got {sorted(costs.human_skills)}"
+            )
+        return costs
+
+    @staticmethod
+    def protocol(
+        *,
+        args: argparse.Namespace,
+        costs: PracticeCosts,
+        settings: SandboxSettings,
+        domain: type[FullAgenticDomain],
+    ) -> dict[str, Any]:
+        return dict(
             method="full-agent",
             status="step_matched",
             seed=args.seed,
@@ -300,6 +288,81 @@ class FullAgenticRunner:
             practice_reset="initialization only; subsequent repositioning via charged human tools",
             learning_schedule="agent chooses updates; measurement does not trigger learning",
             container_limits=FullAgenticRunner.container_limits(settings=settings),
+            **domain.protocol_fields(options=domain.environment_options(args=args)),
+        )
+
+    @staticmethod
+    def parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
+        """Parse `--env` first, then the shared flags plus that domain's own."""
+        first = argparse.ArgumentParser(add_help=False)
+        first.add_argument("--env")
+        known, _ = first.parse_known_args(argv)
+        parser = FullAgenticRunner.parser()
+        if known.env in FULL_AGENTIC_DOMAINS:
+            FULL_AGENTIC_DOMAINS[known.env].add_arguments(parser=parser)
+        return parser.parse_args(argv)
+
+    @staticmethod
+    def parser() -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--env", required=True, choices=sorted(FULL_AGENTIC_DOMAINS))
+        parser.add_argument("--output", type=Path, required=True)
+        parser.add_argument("--sandbox-settings", type=Path, required=True)
+        parser.add_argument("--practice-step-budget", type=int, default=85000)
+        parser.add_argument("--measurement-interval-steps", type=int, default=1700)
+        parser.add_argument("--human-skill-steps", type=int, default=1)
+        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
+        parser.add_argument("--practice-cost-config", type=Path, default=None)
+        parser.add_argument("--evaluation-control-steps", type=int, default=500)
+        parser.add_argument("--num-test-tasks", type=int, default=10)
+        parser.add_argument("--seed", type=int, default=0)
+        parser.add_argument("--hours", type=float, default=None)
+        parser.add_argument("--model-budget", type=float, default=20)
+        parser.add_argument(
+            "--coder-memory-mb",
+            type=int,
+            default=None,
+            help="Coder container cap; overrides coder_memory_mb in --sandbox-settings.",
+        )
+        parser.add_argument(
+            "--sandbox-memory-mb",
+            type=int,
+            default=None,
+            help="Execution sandbox cap; overrides memory_mb in --sandbox-settings.",
+        )
+        return parser
+
+    @staticmethod
+    def main() -> None:
+        args = FullAgenticRunner.parse_args()
+        domain = FULL_AGENTIC_DOMAINS[args.env]
+        environment_options = domain.environment_options(args=args)
+        if any(
+            value <= 0
+            for value in (
+                args.practice_step_budget,
+                args.measurement_interval_steps,
+                args.human_skill_steps,
+                args.evaluation_control_steps,
+                args.num_test_tasks,
+                args.model_budget,
+            )
+        ):
+            raise ValueError("Budgets and intervals must be positive")
+        costs = FullAgenticRunner.costs(args=args, domain=domain)
+        if args.human_skill_steps != 1:
+            raise ValueError("Configure per-skill durations in --practice-cost-config")
+        output = args.output.resolve()
+        output.mkdir(parents=True, exist_ok=False)
+        workspace = output / "coding" / "sandbox"
+        workspace.mkdir(parents=True)
+        settings = FullAgenticRunner.with_memory_caps(
+            settings=SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text())),
+            coder_memory_mb=args.coder_memory_mb,
+            sandbox_memory_mb=args.sandbox_memory_mb,
+        )
+        protocol = FullAgenticRunner.protocol(
+            args=args, costs=costs, settings=settings, domain=domain
         )
         Files.atomic_json(path=output / "protocol.json", value=protocol)
         FullAgenticRunner.validate_runtime(settings=settings)
@@ -307,7 +370,7 @@ class FullAgenticRunner:
         settings = settings.model_copy(
             update={"artifact_dir": output / "execution", "timeout_seconds": 60}
         )
-        env = Tossing3DEnvironment()
+        env = domain.make_environment(options=environment_options, human_seed=args.seed)
         pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
         futures = []
         socket_dir = Path(tempfile.mkdtemp(prefix="hitl-full-sock-", dir="/tmp"))
@@ -318,17 +381,21 @@ class FullAgenticRunner:
         thread = None
         try:
             env.hard_reset()
-            bridge = Tossing3DAgenticBridge(
-                env=env, observation_mode="object_state", step_limit=2**63 - 1
-            )
-            FullAgenticRunner.initial_files(workspace=workspace, bridge=bridge)
+            bridge = domain.make_bridge(env=env, practice=True)
+            FullAgenticRunner.initial_files(workspace=workspace, bridge=bridge, domain=domain)
             Files.snapshot(
                 workspace=workspace,
                 destination=output / "initial_submission",
                 require_controller=False,
             )
             deadline = time.monotonic() + args.hours * 3600 if args.hours else float("inf")
-            world = World(bridge=bridge, workspace=workspace, output=output, deadline=deadline)
+            world = World(
+                bridge=bridge,
+                workspace=workspace,
+                output=output,
+                deadline=deadline,
+                interventions=domain.human_interventions,
+            )
 
             def queue_measurement(record: Any) -> Any:  # noqa: PLR0917 -- callback
                 future = pool.submit(
@@ -337,6 +404,8 @@ class FullAgenticRunner:
                     settings=settings,
                     output=output / "evaluations" / f"{record['index']:04d}",
                     count=args.num_test_tasks,
+                    domain=domain,
+                    environment_options=environment_options,
                     budget=args.evaluation_control_steps,
                     seed=args.seed,
                 )
@@ -349,18 +418,13 @@ class FullAgenticRunner:
                 callback=queue_measurement,
                 costs=costs,
             )
-            prompt = FullAgenticRunner.task_prompt(costs=costs)
-            prompt += (
-                f"\nPractice has a total budget of {args.practice_step_budget} counted steps: "
-                "one per robot control period plus each human skill's configured duration. "
-                "The host takes frozen deployment snapshots every "
-                f"{args.measurement_interval_steps} "
-                "steps without resetting the world "
-                "or requesting a learning update. "
-                "Evaluation results are never returned. "
-                "Stop gracefully when the remaining budget is zero.\n"
+            prompt = FullAgenticRunner.practice_prompt(
+                domain=domain,
+                costs=costs,
+                budget=args.practice_step_budget,
+                interval=args.measurement_interval_steps,
             )
-            system = (HERE / "system_prompt.md").read_text()
+            system = FullAgenticRunner.system_prompt()
             (output / "task_prompt.md").write_text(prompt)
             (output / "system_prompt.md").write_text(system)
             coding_settings = settings.model_copy(update={"live_tools_dir": socket_dir})

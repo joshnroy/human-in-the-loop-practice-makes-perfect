@@ -68,11 +68,15 @@ is copied from the pre-pilot input; no learned overnight policy is included.
 The prompts retain RoboCode's interface and coding workflow, with the persistent
 world/human contract and common measurement budget substituted for free resets.
 
-The entrypoint is `python -m hitl_pmp.full_agentic.runner --sandbox-settings PATH
+The entrypoint is `python -m hitl_pmp.full_agentic.runner --env tossing3d --sandbox-settings PATH
 --output NEW_DIRECTORY`. Set the existing Claude Code authentication in the host
 process; never place credentials in the JSON, coding workspace, or generated code.
 Run under the existing memory-limited service configuration when a launch is
 requested. No experiment starts when this module is imported or `--help` is used.
+`--env sweepoffshelf3d` runs the same method on the shelf (`full_agentic/domains.py`),
+with its own prompt and robot API files beside Tossing3D's, the native 11-D command,
+the human skills `reset_cubes` / `reset_wiper`, and `--reset-cubes-success-probability`.
+The `robocode_checkout` must contain `src/robocode/utils/isolated_transport.py`.
 
 This change prepares the method only. The new workstation experiment has not been
 launched. Validation covers receipts, accounting, immutable snapshots, pending

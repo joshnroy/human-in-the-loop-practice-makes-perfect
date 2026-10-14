@@ -2,6 +2,7 @@
 
 import pytest
 
+from hitl_pmp.full_agentic.domains import Tossing3DFullAgentic
 from hitl_pmp.full_agentic.runner import ScoreBridge
 
 
@@ -25,7 +26,7 @@ class FakeBridge:
 @pytest.mark.parametrize(("goal_after", "expected_solved"), [(2, True), (20, False)])
 def test_no_physics_after_goal_or_horizon(*, goal_after, expected_solved):
     physical = FakeBridge(goal_after=goal_after)
-    bridge = ScoreBridge(bridge=physical, budget=2)
+    bridge = ScoreBridge(bridge=physical, budget=2, check_goal=physical.check_goals)
     for _ in range(2):
         bridge.step(action=[0] * 18)
     with pytest.raises(RuntimeError, match="episode_finished"):
@@ -41,7 +42,9 @@ def test_initial_files_supply_only_interface_and_observation(*, tmp_path):
         def observe(self):
             return {"objects": []}
 
-    FullAgenticRunner.initial_files(workspace=tmp_path, bridge=Bridge())
+    FullAgenticRunner.initial_files(
+        workspace=tmp_path, bridge=Bridge(), domain=Tossing3DFullAgentic
+    )
     assert {p.name for p in tmp_path.iterdir()} == {
         "env_client.py",
         "robot_api.md",
@@ -53,7 +56,11 @@ def test_missing_controller_is_explicit_zero_step_evaluation(*, tmp_path):
     from hitl_pmp.full_agentic.runner import FullAgenticRunner
 
     records = FullAgenticRunner.evaluate(
-        submission=tmp_path, output=tmp_path / "eval", count=2, settings=None
+        submission=tmp_path,
+        output=tmp_path / "eval",
+        count=2,
+        settings=None,
+        domain=Tossing3DFullAgentic,
     )
     assert len(records) == 2
     assert all(
@@ -69,7 +76,7 @@ def test_prompt_reports_configured_prices_without_stale_unit_equations():
         robot_step=ChargeFunction(value=2),
         human_skills={"reset_cube_far": HumanCharge(cost=ChargeFunction(value=7))},
     )
-    prompt = FullAgenticRunner.task_prompt(costs=costs)
+    prompt = FullAgenticRunner.task_prompt(costs=costs, domain=Tossing3DFullAgentic)
     assert '"value": 7.0' in prompt
     assert "both equal to 1 initially" not in prompt
     assert r"c_h(e) \equiv 1" not in prompt
@@ -80,7 +87,9 @@ def test_rendered_prompt_requests_logged_decision_summaries(*, human_weight):
     from hitl_pmp.core.practice_costs import PracticeCosts
     from hitl_pmp.full_agentic.runner import FullAgenticRunner
 
-    prompt = FullAgenticRunner.task_prompt(costs=PracticeCosts(human_weight=human_weight))
+    prompt = FullAgenticRunner.task_prompt(
+        costs=PracticeCosts(human_weight=human_weight), domain=Tossing3DFullAgentic
+    )
     summary = next(line for line in prompt.splitlines() if '"Decision summary:"' in line)
     assert "Before each practice batch" in summary
     assert "switch strategy or choose to finish" in summary
