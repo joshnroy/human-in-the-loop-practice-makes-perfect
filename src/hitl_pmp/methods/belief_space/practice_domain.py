@@ -234,8 +234,10 @@ SHELF_EXPECTATION_SEED = 0
 
 
 class SweepOffShelfPracticeDomain(PracticeDomain):
-    """Every robot and human skill carries its own inferred competence: the human's
-    `reset_cubes` returns only 5 - k cubes, and the robot is not told k."""
+    """Every robot and human skill carries its own inferred competence, from the same
+    Beta(1, 3) prior: the human's `reset_cubes` succeeds only with some probability p,
+    and the robot is not told p. No skill is deterministic here, so every imagined
+    attempt -- human ones included -- branches on success and failure."""
 
     # The evaluation episode's horizon (SweepOffShelf3D's EPISODE_HORIZON).
     deployment_horizon: int = 12

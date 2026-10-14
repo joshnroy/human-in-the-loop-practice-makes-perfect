@@ -7,6 +7,8 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
 from hitl_pmp.environments.sweepoffshelf3d.predicates import (
+    ANY_CUBE_OFF_SHELF,
+    ANY_CUBE_ON_SHELF,
     CUBE_ORDER,
     HAND_EMPTY,
     HOLDING_CUBE,
@@ -14,8 +16,10 @@ from hitl_pmp.environments.sweepoffshelf3d.predicates import (
     IN_BOX,
     ON_FLOOR,
     ON_SHELF,
+    WIPER_AWAY,
     WIPER_HOME,
     WIPER_ON_FLOOR,
+    SweepOffShelf3DAtoms,
     SweepOffShelf3DPredicates,
 )
 from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
@@ -27,15 +31,37 @@ def _atom(*, predicate, objects):
     return GroundAtom(predicate=predicate, objects=objects)
 
 
-def _start(*, on_shelf=O.cubes, on_floor=(), in_box=()):
-    atoms = {
-        _atom(predicate=HAND_EMPTY, objects=(O.robot,)),
-        _atom(predicate=WIPER_HOME, objects=(O.wiper,)),
-    }
+def _summarized(*, atoms):
+    """What the backend's classifier would add: the summary atoms derived from the
+    per-object ones, through the one function both use."""
+    by_name = {predicate.name: predicate for predicate in SweepOffShelf3DPredicates.all()}
+    objects = {obj.name: obj for obj in O.all_objects()}
+    named = frozenset(
+        (atom.predicate.name, tuple(obj.name for obj in atom.objects))
+        for atom in atoms
+        if atom.predicate != CUBE_ORDER
+    )
+    derived = SweepOffShelf3DAtoms.with_summaries(atoms=named) - named
+    return atoms | frozenset(
+        _atom(predicate=by_name[name], objects=tuple(objects[n] for n in names))
+        for name, names in derived
+    )
+
+
+def _start(*, on_shelf=O.cubes, on_floor=(), in_box=(), wiper_home=True):
+    atoms = {_atom(predicate=HAND_EMPTY, objects=(O.robot,))}
+    if wiper_home:
+        atoms.add(_atom(predicate=WIPER_HOME, objects=(O.wiper,)))
+    else:
+        atoms.add(_atom(predicate=WIPER_ON_FLOOR, objects=(O.wiper,)))
     atoms |= {_atom(predicate=ON_SHELF, objects=(cube,)) for cube in on_shelf}
     atoms |= {_atom(predicate=ON_FLOOR, objects=(cube,)) for cube in on_floor}
     atoms |= {_atom(predicate=IN_BOX, objects=(cube, O.box)) for cube in in_box}
-    return frozenset(atoms | SweepOffShelf3DPredicates.static_atoms())
+    return _summarized(atoms=frozenset(atoms | SweepOffShelf3DPredicates.static_atoms()))
+
+
+def _holding_wiper(*, atoms):
+    return _apply(ground=_groundings(skill=S.PICK_WIPER, atoms=atoms)[0], atoms=atoms)
 
 
 def _groundings(*, skill, atoms):
@@ -160,9 +186,7 @@ def test_reset_wiper_returns_a_held_or_fallen_wiper():
         _atom(predicate=HAND_EMPTY, objects=(O.robot,)),
         _atom(predicate=WIPER_HOME, objects=(O.wiper,)),
     } <= atoms
-    fallen = _start() - {_atom(predicate=WIPER_HOME, objects=(O.wiper,))} | {
-        _atom(predicate=WIPER_ON_FLOOR, objects=(O.wiper,))
-    }
+    fallen = _start(wiper_home=False)
     atoms = _apply(ground=_groundings(skill=S.RESET_WIPER, atoms=fallen)[0], atoms=fallen)
     assert _atom(predicate=WIPER_HOME, objects=(O.wiper,)) in atoms
     assert _atom(predicate=WIPER_ON_FLOOR, objects=(O.wiper,)) not in atoms
@@ -193,3 +217,90 @@ def test_fast_downward_plans_to_the_goal_from_the_start():
         goal=SweepOffShelf3DPredicates.goal_atoms(),
     )
     assert [ground.skill.name for ground in plan] == ["PickWiper", "SweepShelf"]
+
+
+# --- competence semantics: no skill can succeed vacuously ---------------------
+
+
+def test_summary_atoms_are_derived_from_the_per_object_ones():
+    full = _start()
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) in full
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) not in full
+    assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) not in full
+    empty = _start(on_shelf=(), in_box=O.cubes, wiper_home=False)
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) not in empty
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in empty
+    assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) in empty
+    partial = _start(on_shelf=O.cubes[:1], on_floor=O.cubes[1:])
+    assert {
+        _atom(predicate=ANY_CUBE_ON_SHELF, objects=()),
+        _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()),
+    } <= partial
+
+
+def test_a_sweep_of_an_empty_shelf_is_not_applicable():
+    atoms = _holding_wiper(atoms=_start(on_shelf=(), in_box=O.cubes))
+    assert _groundings(skill=S.SWEEP_SHELF, atoms=atoms) == []
+
+
+@pytest.mark.parametrize("count", [1, 3, 5])
+def test_a_sweep_of_n_cubes_promises_exactly_those_n_in_the_box(*, count):
+    on_shelf = O.cubes[:count]
+    atoms = _holding_wiper(atoms=_start(on_shelf=on_shelf, in_box=O.cubes[count:]))
+    (sweep,) = _groundings(skill=S.SWEEP_SHELF, atoms=atoms)
+    promised = sweep.expected_add_effects(before_atoms=atoms)
+    assert {atom for atom in promised if atom.predicate == IN_BOX} == {
+        _atom(predicate=IN_BOX, objects=(cube, O.box)) for cube in on_shelf
+    }
+    after = _apply(ground=sweep, atoms=atoms)
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) not in after
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in after
+
+
+def test_reset_cubes_is_not_applicable_when_every_cube_is_on_the_shelf():
+    """The cancelled batch: with all cubes still on the shelf, reset_cubes
+    "succeeded" every time, because its promised effects already held."""
+    assert _groundings(skill=S.RESET_CUBES, atoms=_start()) == []
+
+
+def test_reset_wiper_is_not_applicable_when_the_wiper_is_home():
+    assert _groundings(skill=S.RESET_WIPER, atoms=_start()) == []
+
+
+def test_picking_a_cube_off_the_shelf_makes_reset_cubes_applicable():
+    atoms = _start()
+    pick = _groundings(skill=S.PICK_CUBE_FROM_SHELF, atoms=atoms)[0]
+    atoms = _apply(ground=pick, atoms=atoms)
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in atoms
+    (reset,) = _groundings(skill=S.RESET_CUBES, atoms=atoms)
+    after = _apply(ground=reset, atoms=atoms)
+    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) in after
+    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) not in after
+
+
+def test_the_wiper_is_away_exactly_while_it_is_not_home():
+    atoms = _holding_wiper(atoms=_start())
+    assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) in atoms
+    returned = _apply(ground=_groundings(skill=S.RETURN_WIPER, atoms=atoms)[0], atoms=atoms)
+    assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) not in returned
+    reset = _apply(ground=_groundings(skill=S.RESET_WIPER, atoms=atoms)[0], atoms=atoms)
+    assert _atom(predicate=WIPER_AWAY, objects=(O.wiper,)) not in reset
+
+
+@pytest.mark.parametrize("skill", [S.RESET_CUBES, S.RESET_WIPER, S.SWEEP_SHELF])
+def test_no_skill_promises_nothing_from_any_state_it_applies_in(*, skill):
+    """A skill whose promised effects already hold would be scored a success with
+    nothing done; every state it can be grounded in must leave it something to do."""
+    states = [
+        _start(on_shelf=O.cubes[:k], in_box=O.cubes[k:], wiper_home=home)
+        for k in range(len(O.cubes) + 1)
+        for home in (True, False)
+    ]
+    states += [
+        _holding_wiper(atoms=state)
+        for state in states
+        if _groundings(skill=S.PICK_WIPER, atoms=state)
+    ]
+    for atoms in states:
+        for ground in _groundings(skill=skill, atoms=atoms):
+            assert not ground.expected_add_effects(before_atoms=atoms) <= atoms

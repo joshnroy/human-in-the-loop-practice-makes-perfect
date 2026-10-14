@@ -14,15 +14,19 @@ Every predicate is decided here, once per state, from the live scene:
 - `OnFloor`: any other unheld cube. The box rim and the other boards are not places a
   cube swept off this shelf comes to rest, so "elsewhere" is the floor;
 - `WiperHome`: unheld and lying on the wiper shelf; `WiperOnFloor`: unheld anywhere else;
-- `HandEmpty`: nothing held.
+- `HandEmpty`: nothing held;
+- the summary atoms `AnyCubeOnShelf`, `AnyCubeOffShelf` and `WiperAway`, derived from
+  the above by `SweepOffShelf3DAtoms.with_summaries`.
 
 ## Human resets
 
-The human's two skills move only what they name, exactly as in the Full-Agentic runs:
-`reset_cubes` lifts the box and pours ``5 - left_behind`` uniformly chosen cubes back onto
-the cube shelf (from wherever they are, the hand included), and `reset_wiper` returns the
-wiper to its starting pose on its shelf. Every placement is searched on a scratch copy of
-the model and committed only when it clears the robot, the other objects and the cupboard.
+The human's two skills move only what they name, exactly as in the Full-Agentic runs,
+and like every skill each is all-or-nothing. `reset_cubes` succeeds with probability
+`reset_cubes_success_probability` (p): a success lifts the box and pours all five cubes
+back onto the cube shelf (from wherever they are, the hand included); a failure moves
+nothing. `reset_wiper` always returns the wiper to its starting pose on its shelf.
+Every placement is searched on a scratch copy of the model and committed only when it
+clears the robot, the other objects and the cupboard.
 """
 
 import copy
@@ -30,9 +34,10 @@ import os
 from typing import Any, ClassVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from .objects import SweepOffShelf3DObjects as O
+from .predicates import SweepOffShelf3DAtoms
 
 TASK_ID = "kinder/SweepOffShelf3D-o5-v0"
 CUPBOARD = "cupboard_1"
@@ -50,8 +55,9 @@ class SweepOffShelf3DBackend(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     scene_bg: bool = True
-    # k: how many cubes `reset_cubes` leaves where they are.
-    left_behind: int = 0
+    # p: the probability one `reset_cubes` succeeds (all five cubes) rather than
+    # fails (nothing moves).
+    reset_cubes_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
     human_seed: int = 0
     # The gripper command the controllers last sent (0 open .. 1 closed).
     grip: float = 0.0
@@ -190,16 +196,16 @@ class SweepOffShelf3DBackend(BaseModel):
             atoms.add(("WiperHome" if home else "WiperOnFloor", (self.wiper_name,)))
         if not holding:
             atoms.add(("HandEmpty", (O.robot.name,)))
-        return frozenset(atoms)
+        return SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(atoms))
 
     # --- human resets -----------------------------------------------------
 
     def reset_cubes(self) -> list[str]:
-        """Pour ``5 - left_behind`` uniformly chosen cubes back onto the cube shelf."""
-        count = len(self.cube_names) - self.left_behind
-        moved = sorted(
-            str(name) for name in self._human_rng.choice(self.cube_names, size=count, replace=False)
-        )
+        """With probability p pour all five cubes back onto the cube shelf and return
+        their names; otherwise move nothing and return none."""
+        if self._human_rng.random() >= self.reset_cubes_success_probability:
+            return []
+        moved = list(self.cube_names)
         self._commit(placements=self._cube_placements(names=moved))
         return moved
 

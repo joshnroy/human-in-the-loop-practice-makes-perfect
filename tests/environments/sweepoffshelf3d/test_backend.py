@@ -15,7 +15,7 @@ pytestmark = [
 _IDENTITY = [1.0, 0.0, 0.0, 0.0]
 _START = frozenset(
     {("OnShelf", (f"cube_{i}",)) for i in range(5)}
-    | {("WiperHome", ("wiper_0",)), ("HandEmpty", ("robot",))}
+    | {("WiperHome", ("wiper_0",)), ("HandEmpty", ("robot",)), ("AnyCubeOnShelf", ())}
 )
 
 
@@ -60,30 +60,53 @@ def test_a_wiper_on_the_floor_is_not_home(*, backend):
     backend.reset(seed=0)
     _place(backend=backend, name="wiper_0", position=[0.6, 0.6, 0.05])
     _settle(backend=backend)
-    assert ("WiperOnFloor", ("wiper_0",)) in backend.abstract_atoms()
+    assert {("WiperOnFloor", ("wiper_0",)), ("WiperAway", ("wiper_0",))} <= (
+        backend.abstract_atoms()
+    )
     backend.reset_wiper()
     _settle(backend=backend, steps=500)
     assert ("WiperHome", ("wiper_0",)) in backend.abstract_atoms()
+    assert ("WiperAway", ("wiper_0",)) not in backend.abstract_atoms()
 
 
-@pytest.mark.parametrize("left_behind", [0, 2, 5])
-def test_reset_cubes_returns_five_minus_k_cubes_to_the_shelf(*, left_behind):
-    backend = SweepOffShelf3DBackend(scene_bg=False, left_behind=left_behind)
+def _cubes_in_the_box(*, backend):
+    (x0, y0, x1, y1), _ = backend.core().box_interior()
+    for i in range(5):
+        _place(
+            backend=backend,
+            name=f"cube_{i}",
+            position=[(x0 + x1) / 2, y0 + 0.06 + 0.08 * i, 0.3],
+        )
+    _settle(backend=backend)
+
+
+def test_a_successful_reset_cubes_returns_all_five_cubes_to_the_shelf():
+    backend = SweepOffShelf3DBackend(scene_bg=False, reset_cubes_success_probability=1.0)
     try:
         backend.reset(seed=0)
-        (x0, y0, x1, y1), _ = backend.core().box_interior()
-        for i in range(5):
-            _place(
-                backend=backend,
-                name=f"cube_{i}",
-                position=[(x0 + x1) / 2, y0 + 0.06 + 0.08 * i, 0.3],
-            )
-        _settle(backend=backend)
+        _cubes_in_the_box(backend=backend)
+        assert ("AnyCubeOffShelf", ()) in backend.abstract_atoms()
         moved = backend.reset_cubes()
         _settle(backend=backend, steps=500)
         atoms = backend.abstract_atoms()
-        assert len(moved) == 5 - left_behind
-        on_shelf = {objects[0] for name, objects in atoms if name == "OnShelf"}
-        assert on_shelf == set(moved)
+        assert moved == [f"cube_{i}" for i in range(5)]
+        assert {objects[0] for name, objects in atoms if name == "OnShelf"} == set(moved)
+        assert ("AnyCubeOffShelf", ()) not in atoms
+    finally:
+        backend.close()
+
+
+def test_a_failed_reset_cubes_moves_nothing():
+    backend = SweepOffShelf3DBackend(scene_bg=False, reset_cubes_success_probability=0.0)
+    try:
+        backend.reset(seed=0)
+        _cubes_in_the_box(backend=backend)
+        before = backend.features()
+        atoms = backend.abstract_atoms()
+        assert backend.reset_cubes() == []
+        after = backend.features()
+        assert backend.abstract_atoms() == atoms
+        for name in backend.cube_names:
+            assert after[name] == pytest.approx(before[name])
     finally:
         backend.close()

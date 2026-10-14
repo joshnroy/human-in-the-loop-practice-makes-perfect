@@ -119,7 +119,17 @@ class EesMethod(Method):
     a harness-side wrapper.** The domain's own `SkillProvider` builds this mid-plan
     skill (see `plan_to`) and supplies its required cost, since both its effects and
     configuration belong to that domain. Providers that return `None` do not offer
-    `ask_for_reset_cube_bin_only`."""
+    `ask_for_reset_cube_bin_only`.
+
+    5. **Not the paper's EES, and off by default:** `score_human_skills`. The paper's
+       EES treats asking the human as a rescue that always works: it is offered at a
+       fixed price and its outcome is never observed. With the flag on, a human skill
+       is judged like a robot skill -- did its promised effects hold afterwards -- and
+       its competence is tracked by the same optimistic model, from the same prior,
+       and priced the same way, `-log(competence)`, on top of the human price. It is
+       never a practice target: the robot cannot practise the human. SweepOffShelf3D
+       runs enable it, because there the human is not always competent; Tossing3D's
+       published EES runs had it off, and still do by default."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -229,6 +239,9 @@ class EesMethod(Method):
     # covers the assigned-task goal as well -- see `goal_failure_enters_random_mode`,
     # which a subclass can decline.
     reproduce_predicators_random_when_stranded: bool = False
+    # Deviation 5 in the class docstring: score, track and price the human's skills like
+    # robot skills, rather than assuming they always succeed. Off reproduces the paper.
+    score_human_skills: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -347,6 +360,13 @@ class EesMethod(Method):
     _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
     # Practice periods started so far; the cycle index the goal-pursuit schedule reads.
     _practice_periods: int = PrivateAttr()
+    # Under score_human_skills only: one competence model per human ground skill, kept
+    # apart from `_competence_models` so a human skill is never a practice candidate
+    # and never enters the UCB totals; and the dispatched human skill awaiting its
+    # outcome, with the atoms it started from.
+    _human_competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
+    _pending_human_skill: GroundSkill | None = PrivateAttr()
+    _pending_human_before_atoms: frozenset[GroundAtom] = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -364,6 +384,9 @@ class EesMethod(Method):
         self._practice_episode = None
         self._starved_pools = {}
         self._practice_periods = 0
+        self._human_competence_models = {}
+        self._pending_human_skill = None
+        self._pending_human_before_atoms = frozenset()
 
     # ------------------------------------------------------------------ domain
 
@@ -389,18 +412,50 @@ class EesMethod(Method):
 
     # ------------------------------------------------------- estimate (competence)
 
+    def _new_competence_model(self) -> OptimisticSkillCompetenceModel:
+        return OptimisticSkillCompetenceModel(
+            alpha=self.prior_alpha,
+            beta=self.prior_beta,
+            window_size=self.competence_window_size,
+            recency_size=self.competence_recency_size,
+        )
+
+    def human_competence_model(
+        self, *, ground_skill: GroundSkill
+    ) -> OptimisticSkillCompetenceModel:
+        """The human skill's competence, under `score_human_skills`: the same model
+        and prior as a robot skill's, held apart from the practice candidates."""
+        if ground_skill not in self._human_competence_models:
+            self._human_competence_models[ground_skill] = self._new_competence_model()
+        return self._human_competence_models[ground_skill]
+
+    def human_skill_competence(self, *, ground_skill: GroundSkill) -> float:
+        return self.human_competence_model(ground_skill=ground_skill).get_current_competence()
+
+    def human_skill_cost(self, *, ground_skill: GroundSkill) -> float:
+        """The plan cost of a human skill: its price alone by default (the paper's
+        always-successful rescue); under `score_human_skills` the price plus
+        `-log(competence)`, exactly as a robot skill is priced."""
+        price = self.practice_action_cost(ground_skill=ground_skill)
+        if not self.score_human_skills:
+            return price
+        return price - math.log(max(self.human_skill_competence(ground_skill=ground_skill), 1e-12))
+
+    def record_human_skill_dispatch(
+        self, *, ground_skill: GroundSkill, before_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Remember a dispatched human skill so `observe_help_granted` can score it."""
+        if self.score_human_skills:
+            self._pending_human_skill = ground_skill
+            self._pending_human_before_atoms = before_atoms
+
     def competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
         """Lazily created per ground skill, so the candidate set is exactly "every
         ground skill ever executed" -- predicators keys `_ground_op_hist` the same
         way, which matters because the number of *possible* groundings is
         quadratic in grid_size while the number ever tried stays small."""
         if ground_skill not in self._competence_models:
-            self._competence_models[ground_skill] = OptimisticSkillCompetenceModel(
-                alpha=self.prior_alpha,
-                beta=self.prior_beta,
-                window_size=self.competence_window_size,
-                recency_size=self.competence_recency_size,
-            )
+            self._competence_models[ground_skill] = self._new_competence_model()
         return self._competence_models[ground_skill]
 
     def observe_outcome(
@@ -477,7 +532,10 @@ class EesMethod(Method):
         grounding)."""
         return {
             ground_skill: model.get_current_competence()
-            for ground_skill, model in self._competence_models.items()
+            for ground_skill, model in (
+                *self._competence_models.items(),
+                *self._human_competence_models.items(),
+            )
         }
 
     def practice_target_num_tries(self, *, ground_skill: GroundSkill) -> int:
@@ -578,7 +636,7 @@ class EesMethod(Method):
                 ground_skill_costs = {
                     **ground_skill_costs,
                     **{
-                        ground: self.practice_action_cost(ground_skill=ground)
+                        ground: self.human_skill_cost(ground_skill=ground)
                         for ground in cube_bin_ground_skills
                     },
                 }
@@ -595,7 +653,7 @@ class EesMethod(Method):
         # Position doesn't matter for the ceiling check, only that a reset
         # appears; `used[0]` is representative (a second reset back-to-back
         # would itself be pure waste, so at most one is ever load-bearing).
-        reset_cost = self.practice_action_cost(ground_skill=used[0])
+        reset_cost = self.human_skill_cost(ground_skill=used[0])
         ceiling = max(costs.values(), default=self.default_cost())
         if reset_cost <= ceiling:
             return plan
@@ -727,9 +785,31 @@ class EesMethod(Method):
 
     def observe_help_granted(self, *, state: State) -> None:
         """A movables reset re-placed the cube and bin, so the starved pools recorded
-        at the old placement no longer describe the scene."""
-        del state
+        at the old placement no longer describe the scene. Under
+        `score_human_skills` the human skill is also scored here, like a robot skill:
+        a success exactly when its promised effects hold in `state`."""
         self.clear_starved_parameter_pools()
+        human = self._pending_human_skill
+        if human is None:
+            return
+        before = self._pending_human_before_atoms
+        self._pending_human_skill = None
+        self._pending_human_before_atoms = frozenset()
+        after = self.abstract_state(state=state)
+        success = human.expected_add_effects(before_atoms=before) <= after
+        self.record_practice_attempt(
+            skill_name=human.skill.name,
+            success=success,
+            consultation=SamplerConsultation.NO_SAMPLER,
+        )
+        self.human_competence_model(ground_skill=human).observe(success=success)
+        self.observe_symbolic_transition(
+            ground_skill=human,
+            before_atoms=before,
+            after_atoms=after,
+            success=success,
+            was_random_exploration=False,
+        )
 
     def starved_ground_skills(self, *, true_atoms: frozenset[GroundAtom]) -> frozenset[GroundSkill]:
         return frozenset(self._starved_pools.get(true_atoms, set()))
@@ -986,7 +1066,7 @@ class EesMethod(Method):
     # ---------------------------------------------------------------- lifecycle
 
     def advance_competence_cycle(self) -> None:
-        for model in self._competence_models.values():
+        for model in (*self._competence_models.values(), *self._human_competence_models.values()):
             model.advance_cycle()
 
     def fit_samplers(self) -> None:
@@ -1451,9 +1531,13 @@ class _EesEpisode:
             if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
                 if self._practicing:
                     method.record_action_cost(ground_skill=ground_skill)
-                # Dispatch to the rescue mechanism, not execute_ground_skill --
-                # this "skill" has no controller/effects to score. self._pending
-                # stays untouched: nothing here for observe_pending to settle.
+                    method.record_human_skill_dispatch(
+                        ground_skill=ground_skill, before_atoms=true_atoms
+                    )
+                # Dispatch to the human, not execute_ground_skill -- the robot has no
+                # controller for it. self._pending stays untouched: the human's
+                # outcome, if scored at all (score_human_skills), is scored by
+                # observe_help_granted once the harness hands back its result.
                 raise HumanCubeBinResetRequested(
                     cost=method.practice_action_cost(ground_skill=ground_skill),
                     destination=method.skill_provider.movables_reset_destination(
