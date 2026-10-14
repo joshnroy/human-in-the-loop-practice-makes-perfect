@@ -9,6 +9,7 @@ description = "Human-in-the-Loop: Practice Makes Perfect"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic",
+    "tenacity",
     "gymnasium",
     "matplotlib",
     "imageio[ffmpeg]",
@@ -44,6 +45,7 @@ dev = [
 # gate on importlib.util.find_spec("wandb"), so a machine without it skips rather than
 # fails.
 wandb = ["wandb"]
+agentic = ["omegaconf"]
 # `--env tossing3d` only: KINDER's `Tossing3D` simulator and its parameterized
 # controllers.
 #
@@ -220,4 +222,4 @@ layers = [
 ]
 
 [tool.setuptools.package-data]
-hitl_pmp = ["environments/tossing3d/scenes/*.json"]
+hitl_pmp = ["environments/tossing3d/scenes/*.json", "full_agentic/*.json", "full_agentic/*.md"]
