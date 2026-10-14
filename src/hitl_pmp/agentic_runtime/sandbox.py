@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -41,7 +42,9 @@ class SandboxSettings(BaseModel):
     timeout_seconds: float = Field(default=120, gt=0)
     artifact_dir: Path = Path("artifacts/agentic-runtime")
     seed: int = Field(default=0, ge=0)
-    memory_mb: int = Field(default=4096, ge=256)
+    # Execution-sandbox and coder-container caps; swap always equals memory.
+    memory_mb: int = Field(default=8192, ge=256)
+    coder_memory_mb: int = Field(default=16384, ge=256)
     cpus: float = Field(default=2, gt=0)
     resource_pool_dir: Path | None = None
     cgroup_parent: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.-]+\.slice$")
@@ -70,9 +73,24 @@ class PolicyExecution(BaseModel):
 class DockerContainer:
     """One local, resource-bounded container with no network or host credentials."""
 
-    def __init__(self, *, settings: SandboxSettings) -> None:
+    def __init__(
+        self, *, settings: SandboxSettings, memory_mb: int | None = None, capped: bool = True
+    ) -> None:
         self.settings = settings
+        self.memory_mb = settings.memory_mb if memory_mb is None else memory_mb
+        # The coder transport strips resource flags without a resource pool.
+        self.capped = capped
         self._lease: Any = None
+
+    def configured_limits(self) -> dict[str, Any]:
+        if not self.capped:
+            return dict.fromkeys(("memory_mb", "memory_swap_mb", "cpus", "pids_limit"))
+        return {
+            "memory_mb": self.memory_mb,
+            "memory_swap_mb": self.memory_mb,
+            "cpus": float(3 if self.settings.resource_pool_dir is not None else self.settings.cpus),
+            "pids_limit": 256,
+        }
 
     def acquire_slot(self, *, name: str) -> None:
         """Admit at most two bounded containers across both experiment arms."""
@@ -174,7 +192,7 @@ class DockerContainer:
         command = [
             *self.client(),
             "run",
-            "--rm",
+            # No --rm: remove() reads the exit record (OOMKilled, ExitCode) first.
             "--init",
             "-i",
             "--pull",
@@ -196,9 +214,9 @@ class DockerContainer:
             "--user",
             f"{os.getuid()}:{os.getgid()}",
             "--memory",
-            f"{7680 if self.settings.resource_pool_dir is not None else self.settings.memory_mb}m",
+            f"{self.memory_mb}m",
             "--memory-swap",
-            f"{7680 if self.settings.resource_pool_dir is not None else self.settings.memory_mb}m",
+            f"{self.memory_mb}m",
             "--cpus",
             str(3 if self.settings.resource_pool_dir is not None else self.settings.cpus),
             "--pids-limit",
@@ -228,9 +246,11 @@ class DockerContainer:
         self.acquire_slot(name=name)
         return command
 
-    def remove(self, *, name: str) -> None:
+    def remove(self, *, name: str, record: Path | None = None) -> None:
         # Killing the Docker client does not stop its container. Always clean up
         # by the unique name, including startup failures and budget cancellation.
+        if record is not None:
+            self.write_exit_record(name=name, record=record)
         result = subprocess.run(
             [*self.client(), "rm", "--force", name],
             stdout=subprocess.DEVNULL,
@@ -243,6 +263,76 @@ class DockerContainer:
         if self._lease is not None:
             self._lease.close()
             self._lease = None
+
+    def write_exit_record(self, *, name: str, record: Path) -> None:
+        """Persist why the container ended; never let inspection block removal."""
+        inspected: dict[str, Any] | None = None
+        error = None
+        try:
+            result = subprocess.run(
+                [*self.client(), "inspect", name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                inspected = json.loads(result.stdout)[0]
+            else:
+                error = result.stderr.strip()
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+            error = repr(exc)
+        state = None
+        applied = None
+        if inspected is not None:
+            raw = inspected.get("State", {})
+            state = {
+                key: raw.get(key)
+                for key in (
+                    "Status",
+                    "Running",
+                    "OOMKilled",
+                    "ExitCode",
+                    "Error",
+                    "StartedAt",
+                    "FinishedAt",
+                )
+            }
+            host = inspected.get("HostConfig", {})
+            applied = {
+                key: host.get(key) for key in ("Memory", "MemorySwap", "NanoCpus", "PidsLimit")
+            }
+        reason = (
+            "not_inspectable"
+            if state is None
+            else "oom_killed"
+            if state["OOMKilled"]
+            else "force_removed_while_running"
+            if state["Running"]
+            else "exited"
+        )
+        if state is None and record.exists():
+            with suppress(ValueError):
+                if json.loads(record.read_text()).get("name") == name:
+                    return
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text(
+            json.dumps(
+                {
+                    "name": name,
+                    "reason": reason,
+                    "oom_killed": None if state is None else bool(state["OOMKilled"]),
+                    "exit_code": None if state is None else state["ExitCode"],
+                    "state": state,
+                    "inspect_error": error,
+                    "configured_limits": self.configured_limits(),
+                    "applied_limits": applied,
+                    "recorded_unix": time.time(),
+                },
+                indent=2,
+            )
+            + "\n"
+        )
 
 
 class DockerPolicyExecutor:
@@ -344,7 +434,10 @@ class DockerPolicyExecutor:
                         break
                     relay.handle_request()
             finally:
-                self.container.remove(name=name)
+                self.container.remove(
+                    name=name,
+                    record=self.settings.artifact_dir / "containers" / f"{name}.json",
+                )
                 if process.poll() is None:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()

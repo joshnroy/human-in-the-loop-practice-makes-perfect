@@ -93,9 +93,12 @@ def launch(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
     )
     monkeypatch.setattr(DockerContainer, "client", staticmethod(lambda: ["docker"]))
     monkeypatch.setattr(DockerContainer, "image_id", lambda self: "sha256:" + "a" * 64)
-    monkeypatch.setattr(
-        DockerContainer, "remove", lambda self, **kwargs: calls["removed"].append(kwargs["name"])
-    )
+
+    def remove(self: DockerContainer, **kwargs: Any) -> None:  # noqa: PLR0917 - patched method
+        calls["removed"].append(kwargs["name"])
+        calls["records"] = [*calls.get("records", []), kwargs.get("record")]
+
+    monkeypatch.setattr(DockerContainer, "remove", remove)
     monkeypatch.setattr(docker_cli.subprocess, "Popen", Process)
     monkeypatch.setattr(docker_cli.threading, "Timer", Timer)
     monkeypatch.setattr(docker_cli.os, "killpg", lambda *args: calls["killed"].append(args))
@@ -317,3 +320,34 @@ def test_synthetic_api_errors_reach_native_recovery_without_relaxing_model_check
     else:
         with pytest.raises(RuntimeError, match="Claude model mismatch"):
             RobocodeDockerTransport.validate_claude_models(path=path, expected="claude-opus-5-5")
+
+
+@pytest.mark.parametrize("outcome", ["success", "timeout", "parse_error"])
+def test_coder_exit_record_is_kept_on_every_exit_path(
+    *, launch: dict[str, Any], outcome: str
+) -> None:
+    if outcome == "timeout":
+        launch["timeout"] = True
+    if outcome == "parse_error":
+        launch["error"] = RuntimeError("broken CLI stream")
+    try:
+        launch["transport"].run(**launch["arguments"])
+    except (TimeoutError, RuntimeError):
+        assert outcome != "success"
+    root = launch["arguments"]["config"].sandbox_dir.parent
+    assert launch["records"] == [root / "container_exit.json"]
+
+
+def test_coder_container_uses_its_own_explicit_cap(*, launch: dict[str, Any], tmp_path) -> None:
+    launch["transport"].sandbox = SandboxSettings(
+        image="same-image",
+        robocode_checkout=tmp_path,
+        resource_pool_dir=tmp_path / "pool",
+        memory_mb=4096,
+        coder_memory_mb=12345,
+    )
+    launch["transport"].run(**launch["arguments"])
+    command = launch["command"]
+    assert command[command.index("--memory") + 1] == "12345m"
+    assert command[command.index("--memory-swap") + 1] == "12345m"
+    assert "--rm" not in command

@@ -192,6 +192,18 @@ class FullAgenticRunner:
         parser.add_argument("--seed", type=int, default=0)
         parser.add_argument("--hours", type=float, default=None)
         parser.add_argument("--model-budget", type=float, default=20)
+        parser.add_argument(
+            "--coder-memory-mb",
+            type=int,
+            default=None,
+            help="Coder container cap; overrides coder_memory_mb in --sandbox-settings.",
+        )
+        parser.add_argument(
+            "--sandbox-memory-mb",
+            type=int,
+            default=None,
+            help="Execution sandbox cap; overrides memory_mb in --sandbox-settings.",
+        )
         args = parser.parse_args()
         if any(
             value <= 0
@@ -209,6 +221,11 @@ class FullAgenticRunner:
         output.mkdir(parents=True, exist_ok=False)
         workspace = output / "coding" / "sandbox"
         workspace.mkdir(parents=True)
+        settings = FullAgenticRunner.with_memory_caps(
+            settings=SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text())),
+            coder_memory_mb=args.coder_memory_mb,
+            sandbox_memory_mb=args.sandbox_memory_mb,
+        )
         protocol = dict(
             method="full-agent",
             status="step_matched",
@@ -234,9 +251,9 @@ class FullAgenticRunner:
                 (HERE / "initial_library.json").read_bytes()
             ).hexdigest(),
             learning_schedule="agent chooses updates; measurement does not trigger learning",
+            container_limits=FullAgenticRunner.container_limits(settings=settings),
         )
         Files.atomic_json(path=output / "protocol.json", value=protocol)
-        settings = SandboxSettings.model_validate(json.loads(args.sandbox_settings.read_text()))
         sys.path.insert(0, str(settings.robocode_checkout.resolve() / "src"))
         settings = settings.model_copy(
             update={"artifact_dir": output / "execution", "timeout_seconds": 60}
@@ -331,6 +348,7 @@ class FullAgenticRunner:
                             generation_metrics=vars(result.generation_metrics)
                             if result.generation_metrics
                             else None,
+                            container_exit=FullAgenticRunner.coder_exit(output=output),
                         ),
                     )
                 except BaseException:
@@ -360,20 +378,15 @@ class FullAgenticRunner:
             if world.submission is None:
                 world.submission = output / "submission"
                 Files.snapshot(workspace=workspace, destination=world.submission)
-            endpoint = (
-                "practice_step_budget"
-                if world.counted_steps >= args.practice_step_budget
-                else "agent_submission"
-                if world.finished
-                else "unresolved_execution"
-                if world.uncertain
-                else "external_stop"
-                if (output / "STOP").exists()
-                else "wall_time_limit"
-                if time.monotonic() >= deadline
-                else "infrastructure_failure"
-                if coder_error
-                else "model_budget_or_cli_end"
+            coder_exit = FullAgenticRunner.coder_exit(output=output)
+            endpoint = FullAgenticRunner.adaptation_endpoint(
+                practice_exhausted=world.counted_steps >= args.practice_step_budget,
+                finished=world.finished,
+                coder_oom_killed=bool(coder_exit and coder_exit["oom_killed"]),
+                uncertain=world.uncertain,
+                stopped=(output / "STOP").exists(),
+                timed_out=time.monotonic() >= deadline,
+                coder_error=bool(coder_error),
             )
             Files.atomic_json(
                 path=output / "adaptation_endpoint.json",
@@ -382,6 +395,7 @@ class FullAgenticRunner:
                     agent_finished=world.finished,
                     coder_exception=bool(coder_error),
                     coding_success=coder_result[0].success if coder_result else None,
+                    coder_container_exit=coder_exit,
                 ),
             )
             world.final_measurement()
@@ -426,12 +440,82 @@ class FullAgenticRunner:
             shutil.rmtree(socket_dir, ignore_errors=True)
 
     @staticmethod
+    def adaptation_endpoint(
+        *,
+        practice_exhausted: bool,
+        finished: bool,
+        coder_oom_killed: bool,
+        uncertain: bool,
+        stopped: bool,
+        timed_out: bool,
+        coder_error: bool,
+    ) -> str:
+        # An OOM kill strands any in-flight step, so it precedes unresolved_execution.
+        for reached, name in (
+            (practice_exhausted, "practice_step_budget"),
+            (finished, "agent_submission"),
+            (coder_oom_killed, "coder_oom_killed"),
+            (uncertain, "unresolved_execution"),
+            (stopped, "external_stop"),
+            (timed_out, "wall_time_limit"),
+            (coder_error, "infrastructure_failure"),
+        ):
+            if reached:
+                return name
+        return "model_budget_or_cli_end"
+
+    @staticmethod
+    def coder_exit(*, output: Path) -> dict[str, Any] | None:
+        path = output / "coding" / "container_exit.json"
+        if not path.exists():
+            return None
+        record = json.loads(path.read_text())
+        return {
+            key: record.get(key)
+            for key in ("reason", "oom_killed", "exit_code", "configured_limits")
+        }
+
+    @staticmethod
+    def with_memory_caps(
+        *, settings: SandboxSettings, coder_memory_mb: int | None, sandbox_memory_mb: int | None
+    ) -> SandboxSettings:
+        update = {
+            key: value
+            for key, value in (
+                ("coder_memory_mb", coder_memory_mb),
+                ("memory_mb", sandbox_memory_mb),
+            )
+            if value is not None
+        }
+        return SandboxSettings.model_validate({**settings.model_dump(), **update})
+
+    @staticmethod
+    def container_limits(*, settings: SandboxSettings) -> dict[str, Any]:
+        # Native Robocode parity: the coder is uncapped unless a resource pool is set.
+        return {
+            "coder": {
+                "memory_mb": settings.coder_memory_mb,
+                "memory_swap_mb": settings.coder_memory_mb,
+                "applied": settings.resource_pool_dir is not None,
+            },
+            "execution_sandbox": {
+                "memory_mb": settings.memory_mb,
+                "memory_swap_mb": settings.memory_mb,
+                "applied": True,
+            },
+        }
+
+    @staticmethod
     def cleanup_container(*, output: Any, settings: Any) -> None:
         command_path = output / "coding" / "container_command.json"
         if command_path.exists():
             command = json.loads(command_path.read_text())
             name = command[command.index("--name") + 1]
-            DockerContainer(settings=settings).remove(name=name)
+            DockerContainer(
+                settings=settings,
+                memory_mb=settings.coder_memory_mb,
+                capped=settings.resource_pool_dir is not None,
+            ).remove(name=name, record=output / "coding" / "container_exit.json")
 
 
 if __name__ == "__main__":

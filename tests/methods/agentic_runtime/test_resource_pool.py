@@ -20,7 +20,7 @@ def test_third_container_waits_until_cleanup(*, tmp_path, monkeypatch):
     first = containers[0].command(name="first", work_dir=tmp_path, argv=["true"])
     containers[1].command(name="second", work_dir=tmp_path, argv=["true"])
     assert first[first.index("--cpus") + 1] == "3"
-    assert first[first.index("--memory") + 1] == "7680m"
+    assert first[first.index("--memory") + 1] == f"{settings.memory_mb}m"
     admitted = threading.Event()
 
     def third():
