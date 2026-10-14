@@ -245,6 +245,13 @@ class Tossing3DEnvironment(Environment):
             )
         return self._backend
 
+    def cost_observation(self) -> dict[str, Any]:
+        """The numeric object-state observation an agentic controller would see."""
+        # Imported here: agentic_bridge imports this module.
+        from .agentic_bridge import Tossing3DAgenticBridge
+
+        return Tossing3DAgenticBridge(env=self, observation_mode="object_state").observe()
+
     def last_skill_error(self) -> str | None:
         """Why the most recent `take_action` was a no-op, or `None` if it was not one.
 

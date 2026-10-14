@@ -85,6 +85,19 @@ class Cli:
             type=lambda value: Cli.parse_positive_int(value=value),
             default=None,
         )
+        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
+        parser.add_argument(
+            "--stop-on-no-practice-action",
+            action="store_true",
+            help="End the run when a practice session executes zero actions. Off by "
+            "default; on reproduces step-protocol runs recorded before it was opt-in.",
+        )
+        parser.add_argument(
+            "--practice-cost-config",
+            type=Path,
+            default=None,
+            help="Shared step-cost JSON; enables normalized execution costs.",
+        )
         parser.add_argument(
             "--measurement-interval-steps",
             type=lambda value: Cli.parse_positive_int(value=value),

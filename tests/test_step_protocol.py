@@ -26,6 +26,48 @@ from hitl_pmp.step_protocol import (
 )
 
 
+def test_clock_uses_prepared_per_skill_duration_and_actual_robot_cost():
+    from hitl_pmp.core.practice_costs import (
+        ChargeFunction,
+        HumanCharge,
+        PracticeAccounting,
+        PracticeCosts,
+    )
+
+    ledger = PracticeAccounting(
+        costs=PracticeCosts(
+            robot_step=ChargeFunction(value=2),
+            human_skills={
+                "near": HumanCharge(cost=ChargeFunction(value=7), duration=ChargeFunction(value=3))
+            },
+        )
+    )
+    seen = []
+    clock = PracticeClock(
+        budget=5,
+        interval=2,
+        accounting=ledger,
+        on_measure=lambda: seen.append((
+            clock.measurement_steps,
+            clock.steps,
+            ledger.total_cost,
+        )),
+    )
+    clock.robot_active = True
+    clock.before_robot_step()
+    clock.after_robot_step()
+    clock.robot_active = False
+    charge = clock.before_human(skill="near")
+    clock.human_invoked(charge=charge)
+    # The 3-step human jump from 1 to 4 crosses thresholds 2 and 4: one measurement
+    # each, at its own x, both after the whole charge is recorded.
+    assert seen == [(2, 4, 9), (4, 4, 9)]
+    assert clock.steps == ledger.practice_steps == 4
+    with pytest.raises(ControlStepLimitReached):
+        clock.before_human(skill="near")
+    assert ledger.total_cost == 9
+
+
 def test_tossing_snapshot_with_observed_competence_round_trips():
     from hitl_pmp.core.method.types import GroundSkill
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
@@ -502,3 +544,193 @@ def test_aborting_terminates_the_running_evaluation_and_cancels_the_queue():
     assert queued.cancelled()
     with pytest.raises(BrokenProcessPool):
         running.result(timeout=30)
+
+
+def test_early_stop_requires_three_consecutive_complete_distinct_perfect_sweeps():
+    from hitl_pmp.step_protocol import EvaluationStopping
+
+    def perfect(step):  # noqa: PLR0917 -- test record builder
+        return dict(practice_steps=step, num_solved=10, num_total=10, complete=True)
+
+    assert EvaluationStopping.reached(records=[perfect(1700), perfect(3400), perfect(5100)])
+    assert not EvaluationStopping.reached(records=[perfect(1700), perfect(1700), perfect(3400)])
+    assert not EvaluationStopping.reached(
+        records=[
+            perfect(1700),
+            dict(practice_steps=3400, complete=False),
+            perfect(5100),
+            perfect(6800),
+        ]
+    )
+    assert not EvaluationStopping.reached(
+        records=[
+            perfect(1700),
+            dict(practice_steps=3400, num_solved=9, num_total=10),
+            perfect(5100),
+        ]
+    )
+    assert not EvaluationStopping.reached(
+        records=[dict(practice_steps=s, num_solved=1, num_total=1) for s in range(3)]
+    )
+
+
+def test_early_stop_waits_for_preceding_pending_evaluations():
+    from concurrent.futures import Future
+
+    from hitl_pmp.step_protocol import EvaluationStopping
+
+    pending = Future()
+    later = Future()
+    later.set_result(dict(num_solved=10, num_total=10, complete=True))
+    futures = [(dict(practice_steps=1700), pending), (dict(practice_steps=3400), later)]
+    assert EvaluationStopping.completed(futures=futures) == []
+    pending.set_exception(RuntimeError("evaluation failed"))
+    records = EvaluationStopping.completed(futures=futures)
+    assert not records[0]["complete"]
+    assert records[1]["num_solved"] == 10
+    assert not EvaluationStopping.reached(records=records)
+
+
+def test_an_empty_practice_session_ends_the_run_only_when_opted_in():
+    from hitl_pmp.step_protocol import StepPracticeRunner
+
+    assert StepPracticeRunner.session_endpoint(actions=0, stop_on_no_practice_action=False) is None
+    assert (
+        StepPracticeRunner.session_endpoint(actions=0, stop_on_no_practice_action=True)
+        == "no_practice_action"
+    )
+    assert StepPracticeRunner.session_endpoint(actions=3, stop_on_no_practice_action=True) is None
+
+
+def test_the_no_practice_action_stop_is_off_unless_requested():
+    import argparse
+
+    from hitl_pmp.cli import Cli
+
+    parser = argparse.ArgumentParser()
+    Cli.add_global_arguments(parser=parser)
+    required = ["--env", "tossing3d", "--method", "pomdp"]
+    assert parser.parse_args(required).stop_on_no_practice_action is False
+    assert parser.parse_args([*required, "--stop-on-no-practice-action"]).stop_on_no_practice_action
+    assert parser.parse_args(required).stop_after_perfect_evaluations == 0
+
+
+def test_the_environment_supplies_the_cost_observation(*, monkeypatch, tmp_path):
+    import argparse
+    import json
+    import sys
+    import types
+
+    from hitl_pmp.step_protocol import StepPracticeRunner
+
+    module = types.ModuleType("cost_observation_from_env")
+    module.price = lambda **kw: kw["context"]["observation"]["price"]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    config = tmp_path / "costs.json"
+    config.write_text(json.dumps({"robot_step": {"function": "cost_observation_from_env:price"}}))
+    configured = []
+
+    class Method:
+        def configure_practice_accounting(self, *, accounting):
+            configured.append(accounting)
+
+    class Env:
+        price = 4
+
+        def cost_observation(self):
+            return {"price": self.price}
+
+    env = Env()
+    accounting = StepPracticeRunner.configure_accounting(
+        args=argparse.Namespace(practice_cost_config=config, human_skill_steps=1),
+        method=Method(),
+        problem=types.SimpleNamespace(env=env),
+        output=tmp_path,
+    )
+    assert configured == [accounting]
+    assert accounting.robot_charge().cost == 4
+    env.price = 6
+    assert accounting.robot_charge().cost == 6
+    assert (tmp_path / "practice_costs.json").exists()
+
+
+def test_without_a_cost_file_there_is_no_accounting(*, tmp_path):
+    import argparse
+
+    from hitl_pmp.step_protocol import StepPracticeRunner
+
+    args = argparse.Namespace(practice_cost_config=None, human_skill_steps=1)
+    assert (
+        StepPracticeRunner.configure_accounting(
+            args=args, method=None, problem=None, output=tmp_path
+        )
+        is None
+    )
+
+
+def test_a_domain_without_a_cost_observation_supplies_none():
+    assert LightSwitchEnvironment().cost_observation() is None
+
+
+def test_a_cost_file_with_human_skill_steps_is_refused_before_anything_is_built(*, tmp_path):
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    args = _step_args(
+        output_dir=tmp_path / "run",
+        budget=10,
+        interval=5,
+        human_steps=2,
+        practice_cost_config=tmp_path / "costs.json",
+    )
+    with pytest.raises(ValueError, match="human durations in the cost file"):
+        StepProtocolValidation.check(args=args)
+
+
+class PerfectEvaluations(FakeEvaluations):
+    def submit(self, *, fn, **kwargs) -> Future:
+        future: Future = Future()
+        future.set_result({"complete": True, "num_solved": 10, "num_total": 10})
+        self.futures.append(future)
+        return future
+
+
+def _endpoint(*, output) -> str:
+    (end,) = [e for e in _events(output=output) if e["event"] == "practice_end"]
+    return end["reason"]
+
+
+@pytest.mark.parametrize(
+    ("opt_in", "endpoint"),
+    [(False, "practice_step_budget"), (True, "no_practice_action")],
+)
+def test_an_empty_session_ends_the_run_only_with_the_opt_in_flag(*, tmp_path, opt_in, endpoint):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        args=_step_args(output_dir=output, budget=6, interval=3, stop_on_no_practice_action=opt_in),
+        method=_scripted_method(script=[2, InteractionComplete(), InteractionComplete()]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == endpoint
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert protocol["stop_on_no_practice_action"] is opt_in
+
+
+def test_perfect_evaluations_stop_practice_only_when_requested(*, tmp_path):
+    for patience, endpoint in [(0, "practice_step_budget"), (3, "three_perfect_evaluations")]:
+        output = tmp_path / f"run{patience}"
+        StepPracticeRunner.run(
+            args=_step_args(
+                output_dir=output, budget=40, interval=2, stop_after_perfect_evaluations=patience
+            ),
+            method=_scripted_method(script=[]),
+            problem=FakeProblem(),
+            evaluations=PerfectEvaluations(),
+        )
+        assert _endpoint(output=output) == endpoint
+    # Measurements at 0, 2 and 4 are the three perfect ones; the session sees it before
+    # its next action and stops well short of the budget.
+    assert _measured(output=tmp_path / "run3")[:3] == [0, 2, 4]
+    assert _measured(output=tmp_path / "run3")[-1] < 40
