@@ -85,6 +85,7 @@ class Cli:
             type=lambda value: Cli.parse_positive_int(value=value),
             default=None,
         )
+        parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
         parser.add_argument(
             "--practice-cost-config",
             type=Path,

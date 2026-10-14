@@ -6,10 +6,11 @@ only when execution is dispatched; receipt replay must not record it again.
 
 import importlib
 import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 class ChargeFunction(BaseModel):
@@ -73,6 +74,11 @@ class ExecutionCharge(BaseModel):
 
 
 class PracticeAccounting(BaseModel):
+    _observation_provider: Callable[[], Any] = PrivateAttr(default_factory=lambda: lambda: None)
+
+    def set_observation_provider(self, *, provider: Callable[[], Any]) -> None:
+        self._observation_provider = provider
+
     costs: PracticeCosts = Field(default_factory=PracticeCosts)
     robot_steps: int = 0
     human_steps: int = 0
@@ -98,6 +104,8 @@ class PracticeAccounting(BaseModel):
         )
 
     def robot_charge(self, *, observation: Any = None) -> ExecutionCharge:
+        if observation is None and self.costs.robot_step.function is not None:
+            observation = self._observation_provider()
         context = self.context(actor="robot", skill="robot_step", observation=observation)
         return ExecutionCharge(
             actor="robot",
@@ -110,6 +118,8 @@ class PracticeAccounting(BaseModel):
         if skill not in self.costs.human_skills:
             raise ValueError(f"Unknown human skill: {skill}")
         functions = self.costs.human_skills[skill]
+        if observation is None and (functions.cost.function or functions.duration.function):
+            observation = self._observation_provider()
         context = self.context(actor="human", skill=skill, observation=observation)
         duration = functions.duration.evaluate(context=context)
         if duration < 1 or not duration.is_integer():
