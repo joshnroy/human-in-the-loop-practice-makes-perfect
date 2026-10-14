@@ -23,13 +23,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import matplotlib
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from hitl_pmp.core.renderer.renderer import VideoStream
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
+from hitl_pmp.recording.replay.compositor import PresentationStyle
 
 WIDTH = 1920
 HEIGHT = 960
@@ -44,15 +44,15 @@ COLUMN_WIDTH = 288
 DECISION_TOP = 640
 FPS_HOLD_SECONDS = 1.0
 
-BACKGROUND = "#0f0d1c"
-PANEL = "#151225"
-TRACK = "#2b2941"
-TEXT = "#f2f0f7"
-MUTED = "#a39eb2"
-PURPLE = "#9a6be8"
-BLUE = "#45a9e8"
-GREEN = "#51e299"
-AMBER = "#eda015"
+BACKGROUND = PresentationStyle.background
+PANEL = PresentationStyle.panel
+TRACK = PresentationStyle.track
+TEXT = PresentationStyle.text
+MUTED = PresentationStyle.muted
+PURPLE = PresentationStyle.purple
+BLUE = PresentationStyle.blue
+GREEN = PresentationStyle.green
+AMBER = PresentationStyle.amber
 
 SKILLS = (
     "PickCube",
@@ -64,9 +64,7 @@ SKILLS = (
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
-    filename = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
-    path = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / filename
-    return ImageFont.truetype(str(path), size)
+    return PresentationStyle.font(size=size, bold=bold)
 
 
 def _timestamp(value: str) -> float:

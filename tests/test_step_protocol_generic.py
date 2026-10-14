@@ -30,6 +30,8 @@ from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeResetPolicy
+from hitl_pmp.recording.run_record.types import RecordingHeader
+from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
 
 CONTROL_STEPS_PER_ACTION = 400
@@ -93,13 +95,15 @@ class FakeStepProtocol:
         return LightSwitchSkillProvider(env=problem.env)
 
     @staticmethod
-    def attach_state_log(
-        *, args: argparse.Namespace, problem: Any, directory: Path, evaluation: bool
-    ) -> Callable[[], None]:
-        del args, problem
-        marker = directory / ("evaluation_log" if evaluation else "practice_log")
-        marker.write_text("open\n")
-        return lambda: marker.write_text("closed\n")
+    def attach_recording(
+        *, args: argparse.Namespace, problem: Any, output_path: Path
+    ) -> RunRecordWriter:
+        # No state source: the recording still carries every action and outcome.
+        del problem
+        return RunRecordWriter(
+            output_path=output_path,
+            header=RecordingHeader(environment="lightswitch", method=args.method),
+        )
 
     @staticmethod
     def human_skill_names() -> dict[str, str]:
@@ -247,8 +251,11 @@ def test_a_non_tossing_domain_runs_the_step_protocol_end_to_end(*, tmp_path: Pat
         outcome["goal"] for breakdown in stats["breakdowns"] for outcome in breakdown["outcomes"]
     }
     assert goals == {GOAL}
-    assert (output / "practice_log").read_text() == "closed\n"
-    assert (output / "evaluations" / "0000" / "evaluation_log").read_text() == "closed\n"
+    for path in (output / "recording.jsonl", output / "evaluations" / "0000" / "recording.jsonl"):
+        kinds = [json.loads(line)["kind"] for line in path.read_text().splitlines()]
+        assert kinds[0] == "header"
+        assert "action" in kinds
+        assert kinds[-1] == "segment_end"
 
 
 def test_an_unknown_human_destination_is_refused(*, tmp_path: Path) -> None:

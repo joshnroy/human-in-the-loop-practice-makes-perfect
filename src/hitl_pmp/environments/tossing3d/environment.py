@@ -48,11 +48,11 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
+from hitl_pmp.recording.run_record.sink import SkillTickSink
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 from .layout import Tossing3DLayout
 from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
-from .state_log import StateLogWriter
 from .types import KB_PICKUP_BLOCKED, AbstractAtom, Tossing3DState
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ class Tossing3DEnvironment(Environment):
     # nothing is written to disk without a writer attached. Set by Tossing3DCli.
     # run_method when --output-dir is given, shared across the practice and evaluation
     # environments so the two interleave into one chronological log.
-    _state_log_writer: StateLogWriter | None = PrivateAttr(default=None)
+    _state_log_writer: SkillTickSink | None = PrivateAttr(default=None)
 
     def backend(self) -> KinderBackend:
         """The live simulator handle, built on first use.
@@ -413,7 +413,7 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=next_state)
         return next_state
 
-    def attach_state_log_writer(self, *, writer: StateLogWriter) -> None:
+    def attach_state_log_writer(self, *, writer: SkillTickSink) -> None:
         """Wire a `StateLogWriter` so every `take_action` from here on persists its
         skill and per-tick states, instead of draining them only to discard them --
         set by `Tossing3DCli.run_method` when `--output-dir` is given."""
@@ -436,12 +436,17 @@ class Tossing3DEnvironment(Environment):
         name, objects = self._skill_label(action=action)
         params, toss_direction_deg = self.skill_log_params(action=action)
         writer.record_skill(
-            name=name, objects=objects, params=params, toss_direction_deg=toss_direction_deg
+            name=name,
+            objects=objects,
+            params=params,
+            controller=(
+                {} if toss_direction_deg is None else {"toss_direction_deg": toss_direction_deg}
+            ),
         )
         for tick in ticks:
             writer.record_tick(
                 state=backend.snapshot_to_plain(snapshot=tick),
-                abstraction_diagnostics=backend.abstraction_diagnostics(state=tick),
+                diagnostics=backend.abstraction_diagnostics(state=tick),
             )
 
     @classmethod
@@ -639,7 +644,9 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=snapshot.state.model_copy(deep=True))
         return self.get_current_state()
 
-    def restore_plain_snapshot(self, *, plain: dict[str, list[float]]) -> State:
+    def restore_plain_snapshot(
+        self, *, plain: dict[str, list[float]], dtype: type[np.floating] = np.float32
+    ) -> State:
         """`restore`'s sibling for a *logged* tick rather than an in-memory
         `Tossing3DSnapshot` -- see `state_log.py`'s module docstring for what produces
         `plain` and why a flat `core.State` alone cannot do this round-trip.
@@ -650,7 +657,7 @@ class Tossing3DEnvironment(Environment):
         renderer reads (`Tossing3DRenderer.caption` and the pixels themselves) consults
         either field."""
         backend = self.backend()
-        backend.restore(snapshot=backend.plain_to_snapshot(plain=plain))
+        backend.restore(snapshot=backend.plain_to_snapshot(plain=plain, dtype=dtype))
         # A restored tick is a fresh observation context: any refusal observed on
         # the previous timeline does not describe it.
         self._pickup_blocked = False

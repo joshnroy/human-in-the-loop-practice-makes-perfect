@@ -354,6 +354,7 @@ def _step_args(*, output_dir, budget: int, interval: int, human_steps: int = 1, 
         "human_skill_steps": human_steps,
         "evaluation_control_steps": 5,
         "num_test_tasks": 10,
+        "seed": 0,
         "max_steps_per_interaction": 20,
         "num_cycles": 1,
     }

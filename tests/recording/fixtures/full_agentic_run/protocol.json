@@ -1,0 +1,58 @@
+{
+  "method": "full-agent",
+  "environment": "sweepoffshelf3d",
+  "human_left_behind": 0,
+  "status": "step_matched",
+  "seed": 0,
+  "adaptation_hours": null,
+  "max_model_cost_usd": 20.0,
+  "cost_functions": {
+    "robot_step": {
+      "value": 1.0,
+      "function": null,
+      "parameters": {}
+    },
+    "human_skills": {
+      "reset_cubes": {
+        "cost": {
+          "value": 1.0,
+          "function": null,
+          "parameters": {}
+        },
+        "duration": {
+          "value": 1.0,
+          "function": null,
+          "parameters": {}
+        }
+      },
+      "reset_wiper": {
+        "cost": {
+          "value": 1.0,
+          "function": null,
+          "parameters": {}
+        },
+        "duration": {
+          "value": 1.0,
+          "function": null,
+          "parameters": {}
+        }
+      }
+    },
+    "human_weight": 1.0,
+    "objective_lambda": 3e-06
+  },
+  "max_trials": null,
+  "max_control_steps": 85000,
+  "max_human_requests": null,
+  "objective": "E[autonomous_success] - lambda * (sum_robot_step_cost + human_weight * sum_human_skill_cost)",
+  "evaluation": {
+    "num_tasks": 10,
+    "control_steps": 3000,
+    "interval": 17000,
+    "asynchronous": true
+  },
+  "human_skill_steps": 1,
+  "stop_after_perfect_evaluations": 0,
+  "practice_reset": "initialization only; subsequent repositioning via charged human tools",
+  "learning_schedule": "agent chooses updates; measurement does not trigger learning"
+}

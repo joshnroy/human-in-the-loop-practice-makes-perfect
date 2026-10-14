@@ -34,6 +34,8 @@ from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.practice_costs import ExecutionCharge, PracticeAccounting, PracticeCosts
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
+from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, Phase
+from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
 
 class PracticeClock(BaseModel):
@@ -301,14 +303,15 @@ class StepEvaluation:
         configuration: dict[str, Any],
         output: str,
         environment: type[StepProtocolEnvironment],
+        checkpoint: int | None = None,
     ) -> dict[str, Any]:
         args = argparse.Namespace(**configuration)
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
         raw = Path(snapshot).read_bytes()
         problem = environment.build_evaluation_problem(args=args)
-        close_log = environment.attach_state_log(
-            args=args, problem=problem, directory=directory, evaluation=True
+        writer = environment.attach_recording(
+            args=args, problem=problem, output_path=directory / RECORDING_FILENAME
         )
         results: list[dict[str, Any]] = []
         started = time.monotonic()
@@ -322,6 +325,10 @@ class StepEvaluation:
             )
             for index, task in enumerate(tasks):
                 state = problem.reset_to_task(task=task)
+                seed = environment.task_seed(task=task)
+                writer.begin_segment(
+                    phase=Phase.EVALUATION, checkpoint=checkpoint, task_index=index, task_seed=seed
+                )
                 policy = method.get_task_policy(task=task)
                 check_goal = environment.goal_check(problem=problem, task=task)
                 clock = EvaluationClock(
@@ -342,6 +349,13 @@ class StepEvaluation:
                             state = problem.take_action(action=action.action)
                         except ControlStepLimitReached:
                             environment.interrupted(problem=problem, action=action.action)
+                            writer.robot_action(
+                                label=action.label,
+                                start_step=previous,
+                                end_step=clock.steps,
+                                success=False,
+                                outcome="interrupted: evaluation step budget",
+                            )
                             break
                         StepFiles.event(
                             path=directory / "actions.jsonl",
@@ -349,6 +363,14 @@ class StepEvaluation:
                             label=action.label,
                             start_step=previous,
                             end_step=clock.steps,
+                        )
+                        error = environment.last_skill_error(problem=problem)
+                        writer.robot_action(
+                            label=action.label,
+                            start_step=previous,
+                            end_step=clock.steps,
+                            success=error is None,
+                            outcome=error,
                         )
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
@@ -359,12 +381,13 @@ class StepEvaluation:
                     reason = "goal"
                 results.append({
                     "task": index,
-                    "seed": environment.task_seed(task=task),
+                    "seed": seed,
                     "goal": task.goal.describe(),
                     "solved": clock.solved,
                     "steps": clock.steps,
                     "reason": reason,
                 })
+                writer.end_segment(success=clock.solved, outcome=reason, steps=clock.steps)
                 StepFiles.json(path=directory / "progress.json", value={"tasks": results})
             result = {
                 "complete": True,
@@ -380,7 +403,7 @@ class StepEvaluation:
             (directory / "failure.txt").write_text(traceback.format_exc())
             raise
         finally:
-            close_log()
+            writer.close()
             problem.env.close()
 
 
@@ -392,6 +415,7 @@ class StepProtocolValidation:
     # or rerunning into an old directory truncates the run it then refuses to replace.
     RUN_OUTPUTS: ClassVar[tuple[str, ...]] = (
         "step_events.jsonl",
+        RECORDING_FILENAME,
         "tossing3d_state_log.jsonl",
         "measurements.json",
         "step_protocol.json",
@@ -441,8 +465,8 @@ class StepProtocolEntry:
             problem = environment.build_practice_problem(args=args)
             output = Path(args.output_dir)
             output.mkdir(parents=True, exist_ok=True)
-            close_log = environment.attach_state_log(
-                args=args, problem=problem, directory=output, evaluation=False
+            writer = environment.attach_recording(
+                args=args, problem=problem, output_path=output / RECORDING_FILENAME
             )
             context = environment.practice_context(args=args, problem=problem)
             try:
@@ -451,9 +475,10 @@ class StepProtocolEntry:
                     method=method_factory(context),
                     problem=problem,
                     environment=environment,
+                    recorder=writer,
                 )
             finally:
-                close_log()
+                writer.close()
                 problem.env.close()
 
         # Named after the selected domain's CLI: method CLIs that support only some
@@ -496,6 +521,7 @@ class StepPracticeRunner:
         problem: Any,
         environment: type[StepProtocolEnvironment],
         evaluations: Any = None,
+        recorder: RunRecordWriter | None = None,
     ) -> Metrics:
         """Run persistent practice to the step budget. `StepProtocolValidation.check`
         must already have passed: by the time a problem exists, the state log beside
@@ -517,6 +543,8 @@ class StepPracticeRunner:
         endpoint = "running"
         early_stop = False
         problem.hard_reset()
+        recorder = recorder or RunRecordWriter.disabled()
+        recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
         accounting = StepPracticeRunner.configure_accounting(
             args=args, method=method, problem=problem, output=output
         )
@@ -576,6 +604,7 @@ class StepPracticeRunner:
                     configuration=configuration,
                     output=str(output / "evaluations" / f"{index:04d}"),
                     environment=environment,
+                    checkpoint=index,
                 ),
             ))
             StepFiles.json(path=output / "measurements.json", value=records)
@@ -638,6 +667,7 @@ class StepPracticeRunner:
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
+                recorder.begin_cycle(cycle=cycle, task=task, start_step=clock.steps)
                 for action_index in range(args.max_steps_per_interaction):
                     status()
                     if clock.steps >= clock.budget or early_stop:
@@ -700,6 +730,15 @@ class StepPracticeRunner:
                                 cost=cost,
                                 success=success,
                             )
+                            recorder.human_action(
+                                skill=name,
+                                objects=(destination,),
+                                start_step=before_count,
+                                end_step=clock.steps,
+                                success=success,
+                                cost=cost,
+                                cycle=cycle,
+                            )
                         state = problem.get_current_state()
                         method.observe_help_granted(state=state)
                         actions += 1
@@ -733,6 +772,8 @@ class StepPracticeRunner:
                             complete=completed,
                         )
                     actions += 1
+                    skill_error = environment.last_skill_error(problem=problem)
+                    robot_cost = accounting.total_cost - before_cost if accounting else None
                     StepFiles.event(
                         path=events,
                         event="robot",
@@ -743,8 +784,18 @@ class StepPracticeRunner:
                         end_step=clock.steps,
                         interrupted=interruption is not None,
                         interruption=interruption,
-                        cost=accounting.total_cost - before_cost if accounting else None,
-                        skill_error=environment.last_skill_error(problem=problem),
+                        cost=robot_cost,
+                        skill_error=skill_error,
+                    )
+                    # An adopted interruption is the skill's error, so it is the outcome.
+                    recorder.robot_action(
+                        label=action.label,
+                        start_step=before_count,
+                        end_step=clock.steps,
+                        success=completed and skill_error is None,
+                        outcome=skill_error,
+                        cost=robot_cost,
+                        cycle=cycle,
                     )
                     if interruption is not None:
                         budget_reached = True
@@ -797,6 +848,7 @@ class StepPracticeRunner:
             StepFiles.event(
                 path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
             )
+            recorder.end_segment(outcome=endpoint, steps=clock.steps)
             status()
             failed = endpoint == "failed"
             if failed:
