@@ -191,7 +191,11 @@ class RobocodeDockerTransport:
         provider = BrokerAuth.load_upstream(
             backend=self.backend_name, broker=broker, timeout_seconds=self.timeout_seconds
         )
-        container = DockerContainer(settings=self.sandbox)
+        container = DockerContainer(
+            settings=self.sandbox,
+            memory_mb=self.sandbox.coder_memory_mb,
+            capped=self.sandbox.resource_pool_dir is not None,
+        )
         # Initial inputs include editable controllers; never restore them over
         # work produced by the conversation we are resuming.
         if not config.resume_previous_session:
@@ -291,9 +295,7 @@ class RobocodeDockerTransport:
             )
             # Native Robocode does not impose these per-container resource caps.
             for flag in (
-                ()
-                if self.sandbox.resource_pool_dir is not None
-                else ("--memory", "--memory-swap", "--cpus", "--pids-limit")
+                () if container.capped else ("--memory", "--memory-swap", "--cpus", "--pids-limit")
             ):
                 if flag in docker_command:
                     index = docker_command.index(flag)
@@ -351,7 +353,9 @@ class RobocodeDockerTransport:
                 finally:
                     if timer is not None:
                         timer.cancel()
-                    container.remove(name=name)
+                    container.remove(
+                        name=name, record=config.sandbox_dir.parent / "container_exit.json"
+                    )
                     stderr.seek(0)
                     (config.sandbox_dir.parent / "container.stderr").write_text(stderr.read())
         if self.backend_name == "claude":
