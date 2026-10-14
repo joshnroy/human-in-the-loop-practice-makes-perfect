@@ -148,6 +148,18 @@ def make_default_tossing3d_belief(
         from .tossing3d_constants import RESET_SKILL
 
         names.append(RESET_SKILL)
+    if domain.initial_competence_alpha is not None or domain.initial_competence_beta is not None:
+        settings = inference_config or InferenceConfig()
+        inference_config = settings.model_copy(
+            update={
+                key: value
+                for key, value in (
+                    ("initial_competence_alpha", domain.initial_competence_alpha),
+                    ("initial_competence_beta", domain.initial_competence_beta),
+                )
+                if value is not None
+            }
+        )
     beliefs: dict[str, ConcreteSkillBelief] = {}
     for index, name in enumerate(dict.fromkeys(names)):
         beliefs[name] = (

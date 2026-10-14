@@ -64,3 +64,24 @@ def test_the_deployment_horizon_is_the_evaluation_episode_horizon():
     from hitl_pmp.environments.sweepoffshelf3d.problem import EPISODE_HORIZON
 
     assert SWEEP_OFF_SHELF_DOMAIN.deployment_horizon == EPISODE_HORIZON
+
+
+def test_an_untrained_shelf_skill_is_believed_to_work_one_time_in_four():
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+        make_default_tossing3d_belief,
+        refit_belief_state,
+    )
+
+    belief = refit_belief_state(
+        state=make_default_tossing3d_belief(
+            num_particles=4000,
+            model="local_trend",
+            engine="particle",
+            inference_config=InferenceConfig(),
+            domain=SWEEP_OFF_SHELF_DOMAIN,
+        )
+    )
+    for name in ("SweepShelf", "PickCubeFromShelf", "reset_cubes"):
+        assert belief.skill_beliefs[name].mean_competence() == pytest.approx(0.25, abs=0.02)
+    assert 0.4 < SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=belief.skill_beliefs) < 0.7

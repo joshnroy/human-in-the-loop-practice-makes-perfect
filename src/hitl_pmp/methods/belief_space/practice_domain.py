@@ -56,6 +56,9 @@ class PracticeDomain(BaseModel, abc.ABC):
     competence_weighted_skills: frozenset[str] = frozenset()
     # Skills whose failed executions teach the empirical failure-effect model.
     failure_effect_skills: frozenset[str] = frozenset()
+    # The Beta prior on an untrained skill's competence; None keeps InferenceConfig's.
+    initial_competence_alpha: float | None = None
+    initial_competence_beta: float | None = None
 
     def belief_name(self, *, skill_name: str) -> str | None:
         shared = dict(self.shared_beliefs)
@@ -235,7 +238,13 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
     `reset_cubes` returns only 5 - k cubes, and the robot is not told k."""
 
     # The evaluation episode's horizon (SweepOffShelf3D's EPISODE_HORIZON).
-    deployment_horizon: int = 4
+    deployment_horizon: int = 12
+    # Beta(1, 3): an untrained skill works one time in four. Under the default
+    # Beta(2, 1) the 12-skill deployment value starts at 0.97, so practice looks
+    # worthless before any evidence; Beta(1, 3) starts it at 0.555 (Tossing3D's own
+    # prior value is 0.518).
+    initial_competence_alpha: float | None = 1.0
+    initial_competence_beta: float | None = 3.0
     sampler_skill: str = "SweepShelf"
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (

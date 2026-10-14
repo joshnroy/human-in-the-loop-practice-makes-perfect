@@ -10,11 +10,11 @@ from hitl_pmp.core.renderer.renderer import Renderer
 from .environment import SweepOffShelf3DEnvironment
 from .tasks import SweepOffShelf3DTasks
 
-# Skills per evaluation episode: the shortest solve (`PickWiper`, `SweepShelf`) plus this
-# repo's usual two spare, enough for one stray cube's pick and place. Carrying all five
-# cubes by hand takes ten skills and so cannot finish an episode. The belief-space
-# method's deployment value uses this same horizon.
-EPISODE_HORIZON = 2 + 2
+# Skills per evaluation episode: enough to carry all five cubes by hand (ten skills)
+# plus this repo's usual two spare, so the planner can take either route -- sweep with
+# the wiper or carry the cubes. The belief-space method's deployment value uses this
+# same horizon.
+EPISODE_HORIZON = 2 * 5 + 2
 
 
 class SweepOffShelf3DProblem(Problem):
