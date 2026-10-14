@@ -9,10 +9,14 @@ a concrete CLI satisfies them just by having matching staticmethods, no subclass
 
 import argparse
 from collections.abc import Callable
+from pathlib import Path
 from typing import Protocol
 
 from hitl_pmp.core.method.method import Method
-from hitl_pmp.core.method.skill_provider import DomainContext
+from hitl_pmp.core.method.skill_provider import DomainContext, SkillProvider
+from hitl_pmp.core.problem.environment.types import Action, State
+from hitl_pmp.core.problem.problem import Problem
+from hitl_pmp.core.problem.tasks.types import Task
 
 
 class EnvironmentCli(Protocol):
@@ -46,3 +50,77 @@ class MethodCli(Protocol):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None: ...
+
+
+class StepProtocolEnvironment(Protocol):
+    """What the step-based practice protocol (`step_protocol.py`) needs from a domain,
+    registered per `--env` in `cli.py`'s `STEP_PROTOCOL_ENVIRONMENTS`. Every method
+    then shares one x-axis -- counted practice steps, i.e. robot control steps plus
+    each human skill's duration -- one budget and one evaluation schedule.
+
+    Beyond this, the domain's `Environment` must implement
+    `set_control_step_observers`, and its practice `Problem` must carry a `human`
+    whose `execute_movables_reset(destination=...)` performs each human skill.
+
+    A static-method container like `EnvironmentCli`. It must be importable by
+    reference (a module-level class), because each evaluation runs in a spawned
+    process that receives this class, not an instance."""
+
+    @staticmethod
+    def build_practice_problem(*, args: argparse.Namespace) -> Problem: ...
+
+    @staticmethod
+    def build_evaluation_problem(*, args: argparse.Namespace) -> Problem:
+        """Wholly separate from practice, with the same fixed test-task stream."""
+        ...
+
+    @staticmethod
+    def practice_context(*, args: argparse.Namespace, problem: Problem) -> DomainContext:
+        """The practice skill provider (human skills offered as configured) and oracle."""
+        ...
+
+    @staticmethod
+    def evaluation_skill_provider(*, problem: Problem) -> SkillProvider:
+        """Deployment offers no human skill."""
+        ...
+
+    @staticmethod
+    def attach_state_log(
+        *, args: argparse.Namespace, problem: Problem, directory: Path, evaluation: bool
+    ) -> Callable[[], None]:
+        """Start the domain's replayable state log in `directory`; returns its closer."""
+        ...
+
+    @staticmethod
+    def human_skill_names() -> dict[str, str]:
+        """Each `HumanCubeBinResetRequested.destination` this domain accepts, mapped to
+        the human skill it invokes (the name costs and the event log use). The key
+        order is the order of `human_resets_by_destination` in every record."""
+        ...
+
+    @staticmethod
+    def task_seed(*, task: Task) -> int:
+        """The identifier an evaluation records for each held-out task."""
+        ...
+
+    @staticmethod
+    def goal_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
+        """Whether `task` is solved in the live scene, callable after any control
+        step -- mid-skill, before `take_action` has returned a new `State`."""
+        ...
+
+    @staticmethod
+    def interrupted(*, problem: Problem, action: Action) -> None:
+        """`take_action(action)` was cut short by the control-step budget; flush what
+        the domain buffers per action."""
+        ...
+
+    @staticmethod
+    def adopt_interrupted_skill(*, problem: Problem, action: Action, reason: str) -> State:
+        """`take_action(action)` was cut short during practice: record `reason` as the
+        skill's outcome and adopt the simulator's actual state, which `take_action`
+        never reached its own bookkeeping to do."""
+        ...
+
+    @staticmethod
+    def last_skill_error(*, problem: Problem) -> str | None: ...
