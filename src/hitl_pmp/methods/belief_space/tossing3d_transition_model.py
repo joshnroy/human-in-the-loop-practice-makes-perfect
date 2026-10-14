@@ -6,14 +6,7 @@ from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
-from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-    PICK_SKILLS,
-    RESET_SKILL,
-    RESET_SKILLS,
-    TOSS_SKILL,
-)
+from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN, PracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     mean_competence,
@@ -69,13 +62,16 @@ def transition_belief_state(
     added_cost: float,
     toss_belief: ConcreteSkillBelief | None = None,
     added_training_examples: int = 0,
+    sampler_skill: str = TOSSING3D_DOMAIN.sampler_skill,
 ) -> Tossing3DBeliefState:
     skill_beliefs = dict(state.skill_beliefs)
     pending_examples = dict(state.pending_examples)
     if toss_belief is not None:
-        skill_beliefs[TOSS_SKILL] = toss_belief
+        skill_beliefs[sampler_skill] = toss_belief
     if added_training_examples:
-        pending_examples[TOSS_SKILL] = pending_examples.get(TOSS_SKILL, 0) + added_training_examples
+        pending_examples[sampler_skill] = (
+            pending_examples.get(sampler_skill, 0) + added_training_examples
+        )
     return state.model_copy(
         update={
             "skill_beliefs": skill_beliefs,
@@ -128,42 +124,19 @@ def transition_outcomes(
     random_toss_competence: float,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
+    domain: PracticeDomain = TOSSING3D_DOMAIN,
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
     cost = estimated_action_cost(state=state, action=action)
-    if action.skill.name in PICK_SKILLS:
-        return binary_outcomes(
-            state=state,
-            true_atoms=environment_state.true_atoms,
-            ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[PICK_SKILL]),
-            cost=cost,
-            effects=effects,
-            failure_effect_counts=failure_effect_counts,
-        )
-    if action.skill.name == OPEN_GRIPPER_SKILL:
-        return binary_outcomes(
-            state=state,
-            true_atoms=environment_state.true_atoms,
-            ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL]),
-            cost=cost,
-            effects=effects,
-            failure_effect_counts=failure_effect_counts,
-        )
-    if action.skill.name == RESET_SKILL:
-        return binary_outcomes(
-            state=state,
-            true_atoms=environment_state.true_atoms,
-            ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[RESET_SKILL]),
-            cost=cost,
-            effects=effects,
-            failure_effect_counts=failure_effect_counts,
-        )
-    if action.skill.name in RESET_SKILLS:
-        # The optional non-human reset retains its deterministic mechanism.
+    name = action.skill.name
+    if name in domain.deterministic_skills and name not in domain.competence_weighted_skills:
+        # The reset API either completes successfully or raises and aborts the
+        # run. Its empirical performance telemetry is not uncertain dynamics.
+        # Real completions still update S/F, costs and refits, but a forecast must
+        # not invent evidence about a known mechanism or move its cost posterior.
+        # It does advance the reset's training clock, exactly as the real
+        # completion will, so search forecasts the same m it will observe.
         pending = dict(state.pending_examples)
         pending[action.skill.name] = pending.get(action.skill.name, 0) + 1
         return (
@@ -179,7 +152,19 @@ def transition_outcomes(
                 ),
             ),
         )
-    assert action.skill.name == TOSS_SKILL
+    if name != domain.sampler_skill:
+        belief_name = domain.belief_name(skill_name=name)
+        assert belief_name is not None, f"{name} has no competence belief"
+        return binary_outcomes(
+            state=state,
+            true_atoms=environment_state.true_atoms,
+            ground_skill=action,
+            probability=mean_competence(belief=state.skill_beliefs[belief_name]),
+            cost=cost,
+            effects=effects,
+            failure_effect_counts=failure_effect_counts,
+            domain=domain,
+        )
     return toss_outcomes(
         state=state,
         true_atoms=environment_state.true_atoms,
@@ -190,6 +175,7 @@ def transition_outcomes(
         effects=effects,
         failure_effect_counts=failure_effect_counts,
         competence_evidence=competence_evidence,
+        domain=domain,
     )
 
 
@@ -205,6 +191,7 @@ def binary_outcomes(
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
+    domain: PracticeDomain = TOSSING3D_DOMAIN,
 ) -> tuple[TransitionBranch, ...]:
     outcomes: list[TransitionBranch] = []
     for success, branch_probability in ((True, probability), (False, 1.0 - probability)):
@@ -227,7 +214,7 @@ def binary_outcomes(
                 was_random_exploration=False,
             )
         )
-        next_state = skill_belief_model(ground_skill=ground_skill).observe_outcome(
+        next_state = skill_belief_model(ground_skill=ground_skill, domain=domain).observe_outcome(
             state=transition_belief_state(state=state, added_cost=cost),
             success=success,
             was_random_exploration=False,
@@ -254,6 +241,7 @@ def toss_outcomes(
     ],
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
+    domain: PracticeDomain = TOSSING3D_DOMAIN,
 ) -> tuple[TransitionBranch, ...]:
     """Branch on the greedy/epsilon draw, then on S/F.
 
@@ -264,7 +252,7 @@ def toss_outcomes(
     unfitted one; the tie-fraction fallback of a mixed fit is not modelled.
     """
     branches: list[TransitionBranch] = []
-    training = state.sampler_training.get(TOSS_SKILL)
+    training = state.sampler_training.get(domain.sampler_skill)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
     greedy_consultation = (
@@ -276,7 +264,7 @@ def toss_outcomes(
         (
             False,
             1.0 - exploration_epsilon,
-            mean_competence(belief=state.skill_beliefs[TOSS_SKILL]),
+            mean_competence(belief=state.skill_beliefs[domain.sampler_skill]),
         ),
         (True, exploration_epsilon, random_toss_competence),
     ):
@@ -287,7 +275,7 @@ def toss_outcomes(
             probability = choice_probability * observation_probability
             if probability <= 0.0:
                 continue
-            belief = state.skill_beliefs[TOSS_SKILL]
+            belief = state.skill_beliefs[domain.sampler_skill]
             if competence_evidence.admits(
                 consultation=SamplerConsultation.EPSILON_RANDOM
                 if is_random
@@ -315,10 +303,11 @@ def toss_outcomes(
                 state=state,
                 added_cost=toss_cost,
                 toss_belief=belief,
+                sampler_skill=domain.sampler_skill,
             )
-            next_state = skill_belief_model(ground_skill=ground_skill).observe_training_example(
-                state=next_state, success=success
-            )
+            next_state = skill_belief_model(
+                ground_skill=ground_skill, domain=domain
+            ).observe_training_example(state=next_state, success=success)
             branches.extend(
                 (probability * effect_probability, next_state, next_true_atoms)
                 for effect_probability, next_true_atoms in effect_outcomes

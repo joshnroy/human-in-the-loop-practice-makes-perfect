@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -11,17 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import (
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-    PRACTICE_BUDGET,
-    TOSS_SKILL,
-)
-from .tossing3d_deployment_model import (
-    DeploymentPolicyExpectation,
-    evaluate_deployment_policies,
-    evaluate_deployment_policy,
-)
+from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+from .tossing3d_constants import PRACTICE_BUDGET
 from .tossing3d_observation_model import (
     SkillBeliefModel,
     make_skill_belief_models,
@@ -36,7 +28,6 @@ from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
-from .types.theta import Tossing3DTheta
 
 
 class Tossing3DPracticeModel(BaseModel):
@@ -45,11 +36,13 @@ class Tossing3DPracticeModel(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     seed: int = 0
+    domain: PracticeDomain = Field(default=TOSSING3D_DOMAIN, exclude=True)
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
-    deployment_horizon: int = Field(default=4, ge=0)
+    # None: the domain's own deployment horizon.
+    deployment_horizon: int | None = Field(default=None, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
     # (symbolic state, ground action) pairs whose parameter pool starved this
@@ -70,6 +63,7 @@ class Tossing3DPracticeModel(BaseModel):
     ] = PrivateAttr(default_factory=dict)
     _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
+    _domain: PracticeDomain = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -99,27 +93,26 @@ class Tossing3DPracticeModel(BaseModel):
             for skill in self.ground_skills
         }
         self._skill_belief_models, self._skill_belief_models_by_name = make_skill_belief_models(
-            ground_skills=self.ground_skills
+            ground_skills=self.ground_skills, domain=self.domain
+        )
+        self._domain = (
+            self.domain
+            if self.deployment_horizon is None
+            else self.domain.model_copy(update={"deployment_horizon": self.deployment_horizon})
         )
 
-    def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DTheta:
+    def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Any:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
 
     def sample_thetas_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
-    ) -> list[Tossing3DTheta]:
+    ) -> list[Any]:
         projected = refit_belief_state(state=belief_state)
-        pick = self.sample_skills(belief=projected.skill_beliefs[PICK_SKILL], count=num_samples)
-        toss = self.sample_skills(belief=projected.skill_beliefs[TOSS_SKILL], count=num_samples)
-        opened = self.sample_skills(
-            belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
+        return self._domain.sample_thetas(
+            beliefs=projected.skill_beliefs,
+            sample_skills=lambda belief, count: self.sample_skills(belief=belief, count=count),
+            count=num_samples,
         )
-        return [
-            Tossing3DTheta.model_construct(
-                pick=pick[index], toss=toss[index], open_gripper=opened[index]
-            )
-            for index in range(num_samples)
-        ]
 
     def sample_skill(self, *, belief: SkillBelief) -> SkillHypothesis:
         return self.sample_skills(belief=belief, count=1)[0]
@@ -133,28 +126,15 @@ class Tossing3DPracticeModel(BaseModel):
             for row in parameters
         ]
 
-    def evaluate_policy(self, *, sampled_theta: Tossing3DTheta) -> float:
-        return evaluate_deployment_policy(
-            toss_competence=sampled_theta.toss.competence,
-            pick_competence=sampled_theta.pick.competence,
-            open_competence=sampled_theta.open_gripper.competence,
-            horizon=self.deployment_horizon,
-        )
+    def evaluate_policy(self, *, sampled_theta: Any) -> float:
+        return self._domain.evaluate_theta(theta=sampled_theta)
 
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> np.ndarray:
         projected = refit_belief_state(state=belief_state)
-        competences = []
-        for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
-            competences.append(
-                projected.skill_beliefs[skill_name].sample(rng=self._rng, count=num_samples)[:, 0]
-            )
-        return evaluate_deployment_policies(
-            toss_competences=competences[1],
-            pick_competences=competences[0],
-            open_competences=competences[2],
-            horizon=self.deployment_horizon,
+        return self._domain.sample_policy_values(
+            beliefs=projected.skill_beliefs, rng=self._rng, count=num_samples
         )
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
@@ -175,12 +155,7 @@ class Tossing3DPracticeModel(BaseModel):
         """
         assert num_samples >= 1
         projected = refit_belief_state(state=belief_state)
-        policy_value = DeploymentPolicyExpectation.evaluate(
-            pick=projected.skill_beliefs[PICK_SKILL],
-            toss=projected.skill_beliefs[TOSS_SKILL],
-            opened=projected.skill_beliefs[OPEN_GRIPPER_SKILL],
-            horizon=self.deployment_horizon,
-        )
+        policy_value = self._domain.expected_policy_value(beliefs=projected.skill_beliefs)
         return self.G(policy_value=policy_value, summed_cost=summed_cost)
 
     def observe_outcome(
@@ -329,6 +304,7 @@ class Tossing3DPracticeModel(BaseModel):
             random_toss_competence=self.random_toss_competence,
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
+            domain=self._domain,
         )
 
     def sample_next_states(

@@ -573,9 +573,8 @@ class EesMethod(Method):
         if practicing:
             cube_bin_ground_skills = self.skill_provider.human_cube_bin_reset_skills()
             if cube_bin_ground_skills:
-                reset_skill = cube_bin_ground_skills[0].skill
-                assert all(ground.skill == reset_skill for ground in cube_bin_ground_skills)
-                skills = (*skills, reset_skill)
+                # One lifted skill per kind of human reset the domain offers.
+                skills = (*skills, *dict.fromkeys(g.skill for g in cube_bin_ground_skills))
                 ground_skill_costs = {
                     **ground_skill_costs,
                     **{
@@ -1533,7 +1532,10 @@ class _EesEpisode:
         if self._pending is None:
             return
         if self._practicing:
-            success = self._pending.add_effects <= true_atoms
+            success = (
+                self._pending.expected_add_effects(before_atoms=self._pending_before_atoms)
+                <= true_atoms
+            )
             attempt = self._pending_sampler_record
             # Tallied here, beside the two consumers below, because this is the one
             # place an outcome becomes known -- so the diagnostic record and the data
