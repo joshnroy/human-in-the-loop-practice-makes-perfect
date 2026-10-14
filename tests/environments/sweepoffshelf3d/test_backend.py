@@ -6,7 +6,11 @@ import pytest
 
 from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 
-pytestmark = pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KINDER")
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = [
+    pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KINDER"),
+    pytest.mark.xdist_group("sweepoffshelf3d_test_backend"),
+]
 
 _IDENTITY = [1.0, 0.0, 0.0, 0.0]
 _START = frozenset(
