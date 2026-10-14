@@ -20,7 +20,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      # Pip is saved only from main; pull requests restore it. Each PR saving its own
+      # ~3.5 GB pip cache overflowed the cache quota and evicted the MimicLabs scenes,
+      # whose re-download Google Drive then rate-limited (tests/test_ci_caches.py).
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache ruff
         uses: actions/cache@v4
         with:
@@ -83,7 +101,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache mypy
         uses: actions/cache@v4
         with:
@@ -139,7 +172,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
@@ -186,7 +234,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
@@ -222,7 +285,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
@@ -268,7 +346,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
@@ -339,7 +432,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: "pip"
+      - name: Restore pip cache
+        if: github.event_name != 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+      - name: Cache pip (saved from main only)
+        if: github.event_name == 'push'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
