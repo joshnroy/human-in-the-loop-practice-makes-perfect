@@ -540,6 +540,7 @@ def test_the_dry_run_is_not_made_while_the_cube_is_held_or_across_the_barrier(
     assert not PICK_PLANNABLE.holds(observed, (env.robot, env.cube))
 
 
+@pytest.mark.main_only
 @_NEEDS_KINDER
 def test_a_cube_across_the_barrier_really_is_unplannable(*, live_env: Tossing3DEnvironment) -> None:
     """The gate's one shortcut, checked against the planner it stands in for."""
@@ -620,6 +621,7 @@ def _trajectory(*, tmp_path: Path, evaluate: bool, monkeypatch: pytest.MonkeyPat
     return [*events, final]
 
 
+@pytest.mark.main_only
 @_NEEDS_KINDER
 def test_evaluating_the_predicate_does_not_change_the_trajectory(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

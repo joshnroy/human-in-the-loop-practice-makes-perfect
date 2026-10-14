@@ -42,6 +42,7 @@ def _run(*, output_dir: Path) -> None:
     )
 
 
+@pytest.mark.main_only
 def test_an_ordinary_cli_run_writes_one_video_per_period_and_per_sweep(*, tmp_path: Path) -> None:
     output_dir = tmp_path / "run"
     _run(output_dir=output_dir)
@@ -54,6 +55,7 @@ def test_an_ordinary_cli_run_writes_one_video_per_period_and_per_sweep(*, tmp_pa
         assert path.stat().st_size > 0
 
 
+@pytest.mark.main_only
 def test_the_practice_video_carries_every_substep_frame_not_one_per_skill(
     *, tmp_path: Path
 ) -> None:
