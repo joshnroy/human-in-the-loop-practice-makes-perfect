@@ -17,6 +17,7 @@ from hitl_pmp.core.method.skill_provider import DomainContext, SkillProvider
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
 
 class EnvironmentCli(Protocol):
@@ -85,10 +86,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
-    def attach_state_log(
-        *, args: argparse.Namespace, problem: Problem, directory: Path, evaluation: bool
-    ) -> Callable[[], None]:
-        """Start the domain's replayable state log in `directory`; returns its closer."""
+    def attach_recording(
+        *, args: argparse.Namespace, problem: Problem, output_path: Path
+    ) -> RunRecordWriter:
+        """Start the run recording (`recording/run_record/`) at `output_path`, with the
+        domain's live state as its tick source; the caller closes it. A domain that
+        cannot replay its states returns `RunRecordWriter.disabled()`."""
         ...
 
     @staticmethod

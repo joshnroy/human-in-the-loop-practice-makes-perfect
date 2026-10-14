@@ -1,5 +1,11 @@
 """Logs enough of a Tossing3D episode to re-render it later, without a live replay.
 
+Superseded for step-protocol runs by the domain-agnostic run recording
+(`recording/run_record/`, written as `recording.jsonl`), which carries the same skill
+and tick content plus outcomes, counted steps, phases and human skills; the legacy
+`--num-cycles` CLI path still writes this format, and
+`environments/tossing3d/recording.LegacyTossing3DStateLog` loads it for playback.
+
 `Tossing3DRenderer` draws the live simulator, not the `core.State` it is handed (see
 that module's docstring) -- a flat `State` is a lossy projection (four of the robot's
 twenty-two features, ten of the cube's sixteen; see `KinderBackend.snapshot`), so it
@@ -22,12 +28,14 @@ scene from -- see `analysis/render_tossing3d_state_log.py`, this format's one re
 """
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.log_timing import LogTiming
+from hitl_pmp.recording.run_record.sink import SkillTickSink
 
 from .layout import Tossing3DLayout
 
@@ -69,7 +77,7 @@ class StateLogHeader(BaseModel):
     test_env_seed_offset: int
 
 
-class StateLogWriter(BaseModel):
+class StateLogWriter(SkillTickSink):
     """Streams a `StateLogHeader` then a sequence of `SkillEvent`/`TickEvent` lines to
     one file, one JSON object per line. Not a `LoopRecorder`: this logs raw state for
     replay, not composed video frames for direct playback -- see the module docstring
@@ -90,26 +98,26 @@ class StateLogWriter(BaseModel):
         self,
         *,
         name: str,
-        objects: tuple[str, ...],
-        params: tuple[float, ...],
-        toss_direction_deg: float | None = None,
+        objects: Sequence[str],
+        params: Sequence[float],
+        controller: Mapping[str, Any],
     ) -> None:
         self._write(
             obj=SkillEvent(
-                name=name, objects=objects, params=params, toss_direction_deg=toss_direction_deg
+                name=name,
+                objects=tuple(objects),
+                params=tuple(params),
+                toss_direction_deg=controller.get("toss_direction_deg"),
             ).model_dump()
         )
 
     def record_tick(
-        self,
-        *,
-        state: dict[str, list[float]],
-        abstraction_diagnostics: dict[str, Any] | None = None,
+        self, *, state: Mapping[str, Sequence[float]], diagnostics: dict[str, Any] | None = None
     ) -> None:
         self._write(
             obj=TickEvent(
                 state={k: tuple(v) for k, v in state.items()},
-                abstraction_diagnostics=abstraction_diagnostics,
+                abstraction_diagnostics=diagnostics,
             ).model_dump()
         )
 

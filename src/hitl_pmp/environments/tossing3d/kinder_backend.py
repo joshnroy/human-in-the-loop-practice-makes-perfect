@@ -758,12 +758,24 @@ class KinderBackend(BaseModel):
         against a *different* live scene's own identities."""
         return {obj.name: [float(v) for v in snapshot[obj]] for obj in snapshot}
 
-    def plain_to_snapshot(self, *, plain: dict[str, list[float]]) -> Any:
+    def live_state(self) -> Any:
+        """The live object-centric state at MuJoCo's float64 precision -- what every
+        drained tick is (see `StateCollection.step`) -- where `snapshot()` is the cached
+        float32 observation copy."""
+        return self._object_centric()._get_current_state()  # noqa: SLF001
+
+    def plain_to_snapshot(
+        self, *, plain: dict[str, list[float]], dtype: type[np.floating] = np.float32
+    ) -> Any:
         """The inverse of `snapshot_to_plain`, against THIS backend's own live scene --
         `restore(snapshot=this)` then puts that scene into the plain state's pose.
         Requires a scene already built (`reset()` run at least once), which is what
         supplies the `Object`/`Type` identities and the `type_features` schema a plain
-        dict cannot carry on its own."""
+        dict cannot carry on its own.
+
+        `dtype=np.float64` keeps a `live_state` (MuJoCo's own precision) exact through a
+        restore: measured, every dynamic object then reads back bit-identical, where the
+        float32 default leaves up to ~1.1e-7 of rounding on the robot."""
         template = self._require_state()
         objects_by_name = {obj.name: obj for obj in template}
         # Fixed collider names embed compiled MuJoCo geometry IDs. Presentation
@@ -771,7 +783,7 @@ class KinderBackend(BaseModel):
         # and cannot be restored by moving state objects anyway.
         data = {obj: template[obj].copy() for obj in template if obj.name.startswith("collider:")}
         data.update({
-            objects_by_name[name]: np.array(values, dtype=np.float32)
+            objects_by_name[name]: np.array(values, dtype=dtype)
             for name, values in plain.items()
             if not name.startswith("collider:")
         })

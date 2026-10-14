@@ -1,0 +1,14 @@
+{
+  "tasks": [
+    {
+      "task": 0,
+      "seed": 357381689,
+      "solved": true,
+      "steps": 2,
+      "error": null
+    }
+  ],
+  "num_solved": 1,
+  "num_total": 1,
+  "complete": true
+}

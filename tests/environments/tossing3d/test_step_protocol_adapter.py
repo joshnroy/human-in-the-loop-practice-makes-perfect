@@ -13,6 +13,7 @@ from hitl_pmp.cli import STEP_PROTOCOL_ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
 from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
+from hitl_pmp.recording.run_record.types import Phase
 
 
 def _args(*, tmp_path: Path, extra: tuple[str, ...] | list[str] = ()) -> argparse.Namespace:
@@ -71,20 +72,18 @@ def test_practice_context_matches_the_old_inline_wiring(*, tmp_path: Path) -> No
     assert provider.offer_human_reset is False
 
 
-def test_state_logs_keep_their_old_names_and_headers(*, tmp_path: Path) -> None:
+def test_recordings_carry_the_old_state_log_scene_header(*, tmp_path: Path) -> None:
     args = _args(tmp_path=tmp_path)
+    paths = (tmp_path / "recording.jsonl", tmp_path / "evaluations" / "0000" / "recording.jsonl")
     problem = Tossing3DStepProtocol.build_practice_problem(args=args)
-    close = Tossing3DStepProtocol.attach_state_log(
-        args=args, problem=problem, directory=tmp_path, evaluation=False
-    )
-    assert problem.env._state_log_writer is not None
-    close()
-    evaluation_directory = tmp_path / "evaluations" / "0000"
-    evaluation_directory.mkdir(parents=True)
-    evaluation = Tossing3DStepProtocol.build_evaluation_problem(args=args)
-    Tossing3DStepProtocol.attach_state_log(
-        args=args, problem=evaluation, directory=evaluation_directory, evaluation=True
-    )()
+    for built, path in zip(
+        (problem, Tossing3DStepProtocol.build_evaluation_problem(args=args)), paths, strict=True
+    ):
+        writer = Tossing3DStepProtocol.attach_recording(args=args, problem=built, output_path=path)
+        assert built.env._state_log_writer is writer
+        built.hard_reset()  # As the runner does: a segment opens on the live state.
+        writer.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
+        writer.close()
     expected = StateLogHeader(
         layout=problem.env.layout,
         variant=args.variant,
@@ -93,9 +92,10 @@ def test_state_logs_keep_their_old_names_and_headers(*, tmp_path: Path) -> None:
         seed=args.seed,
         test_env_seed_offset=args.test_env_seed_offset,
     ).model_dump(mode="json")
-    for path in (tmp_path / "tossing3d_state_log.jsonl", evaluation_directory / "states.jsonl"):
+    for path in paths:
         header = json.loads(path.read_text().splitlines()[0])
-        assert {key: header[key] for key in expected} == expected
+        assert header["kind"] == "header"
+        assert header["scene"] == expected
 
 
 def test_control_step_observers_reach_the_kinder_backend(*, tmp_path: Path) -> None:

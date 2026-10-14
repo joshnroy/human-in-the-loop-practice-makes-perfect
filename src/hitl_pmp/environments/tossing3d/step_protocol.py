@@ -9,14 +9,13 @@ from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
-from .cli import STATE_LOG_FILENAME, Tossing3DCli
+from .cli import Tossing3DCli
 from .environment import Tossing3DEnvironment
 from .problem import Tossing3DProblem
+from .recording import Tossing3DRecording
 from .skill_provider import Tossing3DOracle, Tossing3DSkillProvider
-from .state_log import StateLogHeader, StateLogWriter
-
-EVALUATION_STATE_LOG_FILENAME = "states.jsonl"
 
 
 class Tossing3DStepProtocol:
@@ -55,24 +54,15 @@ class Tossing3DStepProtocol:
         return Tossing3DSkillProvider(env=env, offer_human_reset=False)
 
     @staticmethod
-    def attach_state_log(
-        *, args: argparse.Namespace, problem: Problem, directory: Path, evaluation: bool
-    ) -> Callable[[], None]:
+    def attach_recording(
+        *, args: argparse.Namespace, problem: Problem, output_path: Path
+    ) -> RunRecordWriter:
         env = Tossing3DStepProtocol.env(problem=problem)
-        name = EVALUATION_STATE_LOG_FILENAME if evaluation else STATE_LOG_FILENAME
-        writer = StateLogWriter(
-            output_path=directory / name,
-            header=StateLogHeader(
-                layout=env.layout,
-                variant=args.variant,
-                scene_bg=args.scene_bg,
-                canonical_seed=args.canonical_seed,
-                seed=args.seed,
-                test_env_seed_offset=args.test_env_seed_offset,
-            ),
+        writer = Tossing3DRecording.writer(
+            env=env, args=args, method=args.method, output_path=output_path
         )
         env.attach_state_log_writer(writer=writer)
-        return writer.close
+        return writer
 
     @staticmethod
     def human_skill_names() -> dict[str, str]:
