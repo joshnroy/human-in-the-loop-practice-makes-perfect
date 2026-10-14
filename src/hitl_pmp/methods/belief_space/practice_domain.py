@@ -225,7 +225,8 @@ class SweepOffShelfDeployment:
         return value[(SweepOffShelfDeployment.NUM_CUBES, "empty", True)]
 
 
-SHELF_ROBOT_SKILLS = (
+# The skills J's deployment policy is built from, and the order it draws them in.
+SHELF_DEPLOYMENT_SKILLS = (
     "PickWiper",
     "SweepShelf",
     "ReturnWiper",
@@ -233,6 +234,13 @@ SHELF_ROBOT_SKILLS = (
     "PickCubeFromFloor",
     "PlaceCubeInBox",
 )
+# One belief for both `ReturnCubeToShelf*` operators: one controller, one competence.
+# J never reads it: deployment starts with every cube on the shelf and has no human,
+# and putting a cube back on the shelf never brings one nearer the box.
+RETURN_CUBE_BELIEF = "ReturnCubeToShelf"
+RETURN_CUBE_SKILLS = ("ReturnCubeToShelfFromBox", "ReturnCubeToShelfFromFloor")
+# Every robot belief.
+SHELF_ROBOT_SKILLS = (*SHELF_DEPLOYMENT_SKILLS, RETURN_CUBE_BELIEF)
 SHELF_HUMAN_SKILLS = ("reset_cubes", "reset_wiper")
 # Fixed so that J compares stopping values under common random numbers.
 SHELF_EXPECTATION_SAMPLES = 4096
@@ -267,12 +275,19 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
         )
         for name in (*SHELF_ROBOT_SKILLS, *SHELF_HUMAN_SKILLS)
     )
-    failure_effect_skills: frozenset[str] = frozenset({*SHELF_ROBOT_SKILLS, *SHELF_HUMAN_SKILLS})
+    shared_beliefs: tuple[tuple[str, str], ...] = tuple(
+        (name, RETURN_CUBE_BELIEF) for name in RETURN_CUBE_SKILLS
+    )
+    failure_effect_skills: frozenset[str] = frozenset({
+        *SHELF_DEPLOYMENT_SKILLS,
+        *RETURN_CUBE_SKILLS,
+        *SHELF_HUMAN_SKILLS,
+    })
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
     ) -> list[Any]:
-        samples = {name: sample_skills(beliefs[name], count) for name in SHELF_ROBOT_SKILLS}
+        samples = {name: sample_skills(beliefs[name], count) for name in SHELF_DEPLOYMENT_SKILLS}
         return [{name: draws[index] for name, draws in samples.items()} for index in range(count)]
 
     def evaluate_theta(self, *, theta: Any) -> float:
@@ -287,7 +302,8 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
         self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
     ) -> NDArray[np.float64]:
         competences = {
-            name: beliefs[name].sample(rng=rng, count=count)[:, 0] for name in SHELF_ROBOT_SKILLS
+            name: beliefs[name].sample(rng=rng, count=count)[:, 0]
+            for name in SHELF_DEPLOYMENT_SKILLS
         }
         return SweepOffShelfDeployment.values(
             competences=competences, horizon=self.deployment_horizon

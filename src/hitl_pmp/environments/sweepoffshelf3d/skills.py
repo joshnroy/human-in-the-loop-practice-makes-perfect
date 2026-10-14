@@ -1,4 +1,9 @@
-"""SweepOffShelf3D's lifted skills: six for the robot, two for the human.
+"""SweepOffShelf3D's lifted skills: eight for the robot, two for the human.
+
+The robot's last two are one skill, returning a cube to the shelf, split by where the
+cube starts (`RETURN_CUBE_SKILLS`). With them the robot can restore its own practice
+scene cube by cube; only the human can recover a fallen wiper or pour back every cube
+at once.
 
 Only `SweepShelf` has continuous parameters: the wiper head's height above the board and
 the pull speed. The height range runs past a cube's full height on purpose -- a head
@@ -150,6 +155,36 @@ class SweepOffShelf3DSkills:
         practice_cost=1.0,
     )
 
+    # One controller (`KinderSkills.return_cube_to_shelf`: pick the cube, drop it onto
+    # the cube shelf) behind two operators, since a precondition cannot say "in the box
+    # or on the floor". Both share one competence belief (practice_domain.py). Like
+    # `PickCubeFromShelf`, a return cannot know whether it brought back the last stray
+    # cube, so `AnyCubeOffShelf` is left as it was.
+    RETURN_CUBE_TO_SHELF_FROM_BOX: ClassVar[Skill] = Skill(
+        name="ReturnCubeToShelfFromBox",
+        parameters=(_robot, _cube, _box),
+        preconditions=frozenset({_empty, LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
+        add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
+        delete_effects=frozenset({LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
+        param_dim=0,
+        practice_cost=1.0,
+    )
+
+    RETURN_CUBE_TO_SHELF_FROM_FLOOR: ClassVar[Skill] = Skill(
+        name="ReturnCubeToShelfFromFloor",
+        parameters=(_robot, _cube),
+        preconditions=frozenset({_empty, LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
+        add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
+        delete_effects=frozenset({LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
+        param_dim=0,
+        practice_cost=1.0,
+    )
+
+    RETURN_CUBE_SKILLS: ClassVar[tuple[Skill, ...]] = (
+        RETURN_CUBE_TO_SHELF_FROM_BOX,
+        RETURN_CUBE_TO_SHELF_FROM_FLOOR,
+    )
+
     # Human skills. Practice cost is set by the skill provider.
     RESET_CUBES: ClassVar[Skill] = Skill(
         name=RESET_CUBES_NAME,
@@ -211,6 +246,7 @@ class SweepOffShelf3DSkills:
             s.PICK_CUBE_FROM_SHELF,
             s.PICK_CUBE_FROM_FLOOR,
             s.PLACE_CUBE_IN_BOX,
+            *s.RETURN_CUBE_SKILLS,
         )
 
     @staticmethod

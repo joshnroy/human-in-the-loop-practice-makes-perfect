@@ -174,6 +174,7 @@ CARRY_ROUTE_EVIDENCE = {
     "PickCubeFromShelf": (True,) * 8 + (False,) * 2,
     "PlaceCubeInBox": (True,) * 9 + (False,),
     "PickCubeFromFloor": (True,) * 6 + (False,) * 2,
+    "ReturnCubeToShelf": (True,) * 7 + (False,) * 3,
     "PickWiper": (False,) * 10,
     "SweepShelf": (False,) * 10,
 }
@@ -324,10 +325,13 @@ def test_one_representative_per_equivalent_action(*, ground_skills):
     )
     valid = model.get_valid_actions(environment_state=state)
     kept = reduced.get_valid_actions(environment_state=state)
-    assert len(valid) == 2 + 1 + 1 + 1  # floor picks, shelf pick, both human resets
+    # floor picks, shelf pick, returns from the floor and from the box, both human resets
+    assert len(valid) == 2 + 1 + 2 + 2 + 1 + 1
     assert sorted(g.skill.name for g in kept) == sorted([
         "PickCubeFromFloor",
         "PickCubeFromShelf",
+        "ReturnCubeToShelfFromBox",
+        "ReturnCubeToShelfFromFloor",
         "reset_cubes",
         "reset_wiper",
     ])

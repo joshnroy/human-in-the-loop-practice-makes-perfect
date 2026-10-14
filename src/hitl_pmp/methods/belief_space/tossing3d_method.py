@@ -311,7 +311,10 @@ class Tossing3DPomdpMethod(EesMethod):
             if not (available & PICK_SKILLS):
                 missing.add(PICK_SKILL)
         else:
-            missing = {name for name, _ in self.pomdp_domain.belief_sources} - available
+            # A belief two operators share (ReturnCubeToShelf's FromBox and FromFloor)
+            # is reached through either; compare beliefs, not skill names.
+            reachable = {self.pomdp_domain.belief_name(skill_name=name) for name in available}
+            missing = {name for name, _ in self.pomdp_domain.belief_sources} - reachable
         assert not missing, (
             "the configured practice domain's skills are missing: "
             f"{sorted(missing)} from {sorted(available)}"

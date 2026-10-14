@@ -5,7 +5,6 @@ import importlib.util
 import numpy as np
 import pytest
 
-from hitl_pmp.environments.sweepoffshelf3d.controllers import ControllerFailure
 from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
@@ -123,13 +122,23 @@ def test_the_wiper_sweeps_the_shelf_and_goes_back(*, env):
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
 
 
-def test_a_cube_returned_from_the_box_rests_on_the_shelf_or_the_skill_says_it_failed(*, env):
+@pytest.mark.parametrize(
+    ("skill", "where"),
+    [("ReturnCubeToShelfFromBox", "box"), ("ReturnCubeToShelfFromFloor", "floor")],
+)
+def test_a_returned_cube_rests_on_the_shelf_or_the_skill_says_it_failed(*, env, skill, where):
     env.reset_to_seed(seed=3)
-    box = env.backend().core().get_object("box_0").get_pose()[0]
-    _teleport(env=env, name="cube_3", position=[box[0], box[1], 0.06])
-    try:
-        env.controllers()._run(skill="return_cube_to_shelf", cube="cube_3")  # noqa: SLF001
-    except ControllerFailure:
-        assert ("OnShelf", ("cube_3",)) not in env.backend().abstract_atoms()
+    if where == "box":
+        box = env.backend().core().get_object("box_0").get_pose()[0]
+        _teleport(env=env, name="cube_3", position=[box[0], box[1], 0.06])
+        assert ("InBox", ("cube_3", "box_0")) in env.backend().abstract_atoms()
     else:
-        assert ("OnShelf", ("cube_3",)) in env.backend().abstract_atoms()
+        _teleport(env=env, name="cube_3", position=[0.95, 0.45, 0.011])
+        assert ("OnFloor", ("cube_3",)) in env.backend().abstract_atoms()
+    atoms = _act(env=env, skill=skill, cube=3)
+    assert env.last_controller_steps() > 0
+    returned = ("OnShelf", ("cube_3",)) in atoms
+    assert returned == (env.last_skill_error() is None), env.last_skill_error()
+    if returned:
+        assert ("HandEmpty", ("robot",)) in atoms
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
