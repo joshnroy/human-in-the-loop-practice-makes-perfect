@@ -1,5 +1,5 @@
 """`Tossing3DStepProtocol` reproduces exactly what the step protocol hard-wired before
-it was made domain-generic: the same goal string, human-skill names and their order,
+it was made domain-generic: the same human-skill names and their order,
 state-log files and headers, skill providers, and control-step wiring.
 
 None of this builds a simulator.
@@ -36,7 +36,6 @@ def test_tossing3d_is_the_registered_step_protocol_domain():
 
 
 def test_the_pre_generalisation_constants_are_unchanged():
-    assert Tossing3DStepProtocol.goal_description() == "InBin(cube_0, bin_0)"
     # Order matters: it is the key order of `human_resets_by_destination` in every
     # status/measurement record, which existing analyses read.
     assert list(Tossing3DStepProtocol.human_skill_names().items()) == [

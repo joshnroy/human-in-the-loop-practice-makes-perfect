@@ -99,11 +99,6 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
-    def goal_description() -> str:
-        """The evaluation goal, as recorded on every `TaskOutcome`."""
-        ...
-
-    @staticmethod
     def task_seed(*, task: Task) -> int:
         """The identifier an evaluation records for each held-out task."""
         ...

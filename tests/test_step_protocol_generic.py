@@ -33,6 +33,7 @@ from hitl_pmp.practice_loop import PracticeResetPolicy
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
 
 CONTROL_STEPS_PER_ACTION = 400
+# Light Switch's own `Goal.describe()`; the runner must not supply a string of its own.
 GOAL = "LightOn(light)"
 
 
@@ -103,10 +104,6 @@ class FakeStepProtocol:
     @staticmethod
     def human_skill_names() -> dict[str, str]:
         return {"reset_cubes": "reset_cubes", "reset_wiper": "reset_wiper"}
-
-    @staticmethod
-    def goal_description() -> str:
-        return GOAL
 
     @staticmethod
     def task_seed(*, task: Task) -> int:
@@ -244,6 +241,7 @@ def test_a_non_tossing_domain_runs_the_step_protocol_end_to_end(*, tmp_path: Pat
             assert task["steps"] <= 3000
             # Evaluation stops at the first control step the live goal check passes.
             assert task["solved"] == (task["reason"] == "goal")
+            assert task["goal"] == GOAL
     stats = json.loads((output / "stats.json").read_text())
     goals = {
         outcome["goal"] for breakdown in stats["breakdowns"] for outcome in breakdown["outcomes"]

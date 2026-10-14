@@ -79,10 +79,6 @@ class Tossing3DStepProtocol:
         return {"robot_side": "reset_cube_and_bin_near", "opposite_side": "reset_cube_far"}
 
     @staticmethod
-    def goal_description() -> str:
-        return "InBin(cube_0, bin_0)"
-
-    @staticmethod
     def task_seed(*, task: Task) -> int:
         return int(task.initial_state.get(obj=Tossing3DEnvironment.scene, feature_name="seed"))
 
@@ -93,7 +89,7 @@ class Tossing3DStepProtocol:
 
     @staticmethod
     def interrupted(*, problem: Problem, action: Action) -> None:
-        Tossing3DStepProtocol.env(problem=problem)._log_skill_ticks(action=action)  # noqa: SLF001
+        Tossing3DStepProtocol.env(problem=problem)._log_skill_ticks(action=action)
 
     @staticmethod
     def adopt_interrupted_skill(*, problem: Problem, action: Action, reason: str) -> State:

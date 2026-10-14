@@ -263,10 +263,6 @@ class FakeStepProtocol:
         return {"robot_side": "reset_cube_and_bin_near", "opposite_side": "reset_cube_far"}
 
     @staticmethod
-    def goal_description() -> str:
-        return "goal"
-
-    @staticmethod
     def adopt_interrupted_skill(*, problem, action, reason: str):
         return problem.env.adopt_interrupted_skill(action=action, reason=reason)
 
@@ -325,7 +321,7 @@ class FakeEvaluations:
         if self.complete:
             future.set_result({
                 "complete": True,
-                "tasks": [{"task": 0, "solved": False}],
+                "tasks": [{"task": 0, "goal": "goal", "solved": False}],
                 "num_solved": 0,
                 "num_total": 1,
             })

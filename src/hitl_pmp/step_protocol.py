@@ -6,7 +6,6 @@ The training process publishes immutable deployment snapshots. Spawned workers o
 their environments, policies and RNGs; they return measurements only to the logger.
 """
 
-# ruff: noqa: SLF001
 import argparse
 import hashlib
 import json
@@ -361,6 +360,7 @@ class StepEvaluation:
                 results.append({
                     "task": index,
                     "seed": environment.task_seed(task=task),
+                    "goal": task.goal.describe(),
                     "solved": clock.solved,
                     "steps": clock.steps,
                     "reason": reason,
@@ -826,7 +826,7 @@ class StepPracticeRunner:
                         num_total=result["num_total"],
                         outcomes=tuple(
                             TaskOutcome(
-                                goal=environment.goal_description(),
+                                goal=r["goal"],
                                 task_index=r["task"],
                                 solved=r["solved"],
                             )
