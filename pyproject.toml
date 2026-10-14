@@ -27,6 +27,10 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-cov",
+    # CI runs every pytest job with `-n auto`.
+    "pytest-xdist",
+    # tests/conftest.py serialises the MimicLabs asset download across xdist workers.
+    "filelock",
     "ruff",
     "mypy",
     "pre-commit",

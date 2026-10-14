@@ -240,7 +240,11 @@ Fast Downward is found by a sibling-directory convention that does not resolve f
 `--ignore` of it — because MuJoCo's OSMesa and torch's bundled triton each load their own
 LLVM and segfault when they share one. The workstation renders through EGL, which links no
 LLVM, so **the local gate stays a single `pytest`**. kinder-baselines avoids the same
-collision the same way.
+collision the same way. Each CI test job runs `pytest -n auto --dist loadgroup`
+(pytest-xdist); workers draw only from their job's own paths, so the split still holds.
+`-n 4` mimics a runner locally — a test that shares a fixed path, env var or download
+across processes breaks there first. A module with a module-scoped fixture needs
+`pytest.mark.xdist_group`, or every worker rebuilds it (`tests/test_xdist_groups.py`).
 
 **Run the gate locally; do not block on GitHub CI.** Local is ~1 minute against CI's ~10,
 and it is the same commands. Open the PR, report whatever state CI is in, and finish. If

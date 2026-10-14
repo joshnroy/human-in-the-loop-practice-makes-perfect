@@ -26,6 +26,9 @@ from pathlib import Path
 
 import pytest
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_sampler_draws")
+
 # Two cycles of real EES on Tossing Room: pure numpy + torch, ~5 s per invocation, and
 # it runs on CI. Its `ThrowTrash`/`ThrowRecycling` skills are `param_dim=1`, so a run
 # this short still consults a sampler many times -- which is what these tests need.

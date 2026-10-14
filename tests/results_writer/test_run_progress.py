@@ -39,6 +39,9 @@ from hitl_pmp.results_writer.registry import RESULTS_WRITERS
 from hitl_pmp.results_writer.results_writer import ResultsWriter
 from hitl_pmp.results_writer.run_progress import RunProgressWriter
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_run_progress")
+
 # Light Switch: pure numpy, milliseconds per cycle, and it exercises the same
 # MethodRunner cadence every domain shares. Nothing here is domain-specific.
 LIGHTSWITCH_ARGS = ("--env", "lightswitch", "--grid-size", "2", "--num-test-tasks", "3")

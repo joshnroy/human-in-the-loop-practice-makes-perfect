@@ -26,6 +26,9 @@ from pathlib import Path
 
 import pytest
 
+# Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
+pytestmark = pytest.mark.xdist_group("test_competence_log")
+
 # Two cycles of real EES on Tossing Room: pure numpy + torch, ~5 s per invocation, and
 # it runs on CI. See tests/test_sampler_draws.py for why this domain/size was chosen.
 TOSSINGROOM_ARGS = (
