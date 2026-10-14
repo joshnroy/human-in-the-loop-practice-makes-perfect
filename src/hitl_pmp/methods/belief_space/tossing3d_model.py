@@ -47,6 +47,9 @@ class Tossing3DPracticeModel(BaseModel):
     # None: the domain's own deployment horizon.
     deployment_horizon: int | None = Field(default=None, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    # STOP is a skill with competence 1 and this price (one robot step under step
+    # accounting, 0 otherwise): every stopping value is taken after paying it.
+    stop_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
     # (symbolic state, ground action) pairs whose parameter pool starved this
     # session (see EesMethod.record_starved_parameter_pool). Masked in
@@ -163,6 +166,7 @@ class Tossing3DPracticeModel(BaseModel):
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Apply either the PDF's hard-budget or linear-cost objective."""
+        summed_cost += self.stop_cost
         if self.linear_cost_lambda is not None:
             return policy_value - self.linear_cost_lambda * summed_cost
         return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf

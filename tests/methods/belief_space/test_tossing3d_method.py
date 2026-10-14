@@ -687,3 +687,14 @@ def test_a_reducing_domain_reduces_only_the_expectimax_search(*, solver, reduced
     assert model.object_symmetry is reduced
     assert model.merge_beliefs_by_counts is reduced
     assert method.search_depth == 5
+
+
+def test_the_stop_skill_is_priced_at_one_robot_step_under_step_accounting():
+    from hitl_pmp.core.practice_costs import PracticeAccounting
+
+    method = _build(pomdp_num_particles=32)
+    assert method._pomdp_model.stop_cost == 0.0  # noqa: SLF001 -- no accounting, no price
+    accounting = PracticeAccounting()
+    method.configure_practice_accounting(accounting=accounting)
+    price = accounting.robot_charge().cost
+    assert method._pomdp_model.stop_cost == pytest.approx(price)  # noqa: SLF001
