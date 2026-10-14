@@ -9,6 +9,7 @@ the first refused pick), and in every one the dispatched pick really is refused 
 is the fact the predicate has to predict.
 """
 
+import gc
 import importlib.util
 import json
 from collections.abc import Iterator
@@ -540,6 +541,7 @@ def test_the_dry_run_is_not_made_while_the_cube_is_held_or_across_the_barrier(
     assert not PICK_PLANNABLE.holds(observed, (env.robot, env.cube))
 
 
+@pytest.mark.main_only
 @_NEEDS_KINDER
 def test_a_cube_across_the_barrier_really_is_unplannable(*, live_env: Tossing3DEnvironment) -> None:
     """The gate's one shortcut, checked against the planner it stands in for."""
@@ -620,6 +622,7 @@ def _trajectory(*, tmp_path: Path, evaluate: bool, monkeypatch: pytest.MonkeyPat
     return [*events, final]
 
 
+@pytest.mark.main_only
 @_NEEDS_KINDER
 def test_evaluating_the_predicate_does_not_change_the_trajectory(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -656,6 +659,9 @@ def test_the_dry_run_leaves_the_simulator_and_the_abstraction_untouched(
     before = simulator()
     state_before = backend.snapshot_to_plain(snapshot=backend.snapshot())
     atoms_before = backend.abstract_atoms()
+    # Earlier tests' scenes are unreachable but uncollected; reap them now, or the
+    # collector can disconnect them mid-dry-run and the count drops.
+    gc.collect()
     clients_before = planning_clients()
     backend._pick_plan_failures.clear()  # noqa: SLF001
     assert backend.pick_cube_plan_failure() is None

@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Every pytest call passes `-m "$PYTEST_MARK_EXPR"`. A pull request skips the slow
+  # tests marked `main_only`; any other event (today only a push to main) gets the empty
+  # string, which pytest treats as no filter, so main still runs everything. A local bare
+  # `pytest` passes no `-m` and also runs everything (tests/test_main_only_marker.py).
+  PYTEST_MARK_EXPR: ${{ github.event_name == 'pull_request' && 'not main_only' || '' }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -154,7 +161,7 @@ jobs:
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Unit & Core tests (MSS)
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 \
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
             tests/core \
             tests/planning \
             tests/recording \
@@ -200,7 +207,7 @@ jobs:
             pytest-${{ runner.os }}-analysis-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Historical Analysis tests
-        run: pytest -q -n auto --dist loadgroup --durations=25 tests/analysis
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/analysis
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
@@ -237,7 +244,7 @@ jobs:
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — TossingRoom
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 \
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
             tests/environments/tossingroom \
             tests/environments/test_noop_action.py \
             tests/environments/test_operator_dynamics_fidelity.py
@@ -311,7 +318,7 @@ jobs:
       # of its tests (tests/test_xdist_groups.py). Every pytest call carries
       # `--durations=25` so the slowest tests stay visible in the log.
       - name: Pytest — Tossing3D (loads MuJoCo/OSMesa; own processes)
-        run: pytest -q -n auto --dist loadgroup --durations=25 tests/environments/tossing3d
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
@@ -375,7 +382,7 @@ jobs:
               print(f"{mod.__name__}: {path}")
           PY
       - name: Pytest — Scripts & Reproducibility
-        run: pytest -q -n auto --dist loadgroup --durations=25 tests/scripts
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/scripts
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 

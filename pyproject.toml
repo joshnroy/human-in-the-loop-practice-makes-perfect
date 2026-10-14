@@ -31,6 +31,8 @@ dev = [
     "pytest-xdist",
     # tests/conftest.py serialises the MimicLabs asset download across xdist workers.
     "filelock",
+    # tests/test_main_only_marker.py reads .github/workflows/ci.yml.
+    "pyyaml",
     "ruff",
     "mypy",
     "pre-commit",
@@ -97,6 +99,11 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Deliberately no addopts deselecting it: a bare local `pytest` runs everything. Only CI's
+# pull-request runs pass `-m "not main_only"` (tests/test_main_only_marker.py).
+markers = [
+    "main_only: slow; skipped on pull-request CI, run on every push to main and locally",
+]
 
 [tool.coverage.run]
 source = ["src/hitl_pmp"]

@@ -387,6 +387,7 @@ def test_the_removed_proposal_flag_is_rejected() -> None:
         )
 
 
+@pytest.mark.main_only
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )

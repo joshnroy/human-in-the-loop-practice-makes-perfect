@@ -174,6 +174,7 @@ def test_state_capture_is_unconditional_even_when_frame_recording_is_off() -> No
         env.close()
 
 
+@pytest.mark.main_only
 def test_an_ordinary_cli_run_writes_a_state_log_with_no_manual_wiring(*, tmp_path: Path) -> None:
     """The property the rest of this file's tests don't cover: a real run through the
     actual `hitl_pmp.cli` entrypoint -- the path every sweep and every human actually
