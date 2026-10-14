@@ -292,6 +292,20 @@ class TestAgenticBridge:
         assert spec["gripper"] == {"index": 10, "open": 0.0, "closed": 1.0}
         assert spec["position_mode"] == "delta"
 
+    def test_environment_supplies_object_state_as_its_cost_observation(
+        self, *, bridge: Tossing3DAgenticBridge
+    ) -> None:
+        cube_type = Type("mujoco_movable_object")
+        cube = Object("cube", cube_type)
+        bridge.env.backend()._state = ObjectCentricState(
+            {cube: np.array([0.25, -0.5])}, {cube_type: ["x", "y"]}
+        )
+        observation = bridge.env.cost_observation()
+        assert observation["observation_mode"] == "object_state"
+        assert observation["objects"] == [
+            {"name": "cube", "type": "mujoco_movable_object", "features": {"x": 0.25, "y": -0.5}}
+        ]
+
     def test_registered_policy_is_one_whole_environment_action(self) -> None:
         env = AgenticTossing3DEnvironment()
         execute = Mock(return_value=ControllerRun(steps=7, terminated=True))

@@ -419,6 +419,8 @@ class StepProtocolValidation:
             raise ValueError("Step protocol requires an output directory and no automatic resets")
         if not args.defer_rendering:
             raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
+        if getattr(args, "practice_cost_config", None) and args.human_skill_steps != 1:
+            raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
         output = Path(args.output_dir)
         existing = [name for name in StepProtocolValidation.RUN_OUTPUTS if (output / name).exists()]
         if existing:
@@ -483,6 +485,31 @@ class StepProtocolEntry:
 
 class StepPracticeRunner:
     @staticmethod
+    def configure_accounting(
+        *, args: argparse.Namespace, method: Any, problem: Any, output: Path
+    ) -> PracticeAccounting | None:
+        cost_path = getattr(args, "practice_cost_config", None)
+        if not cost_path:
+            return None
+        accounting = PracticeAccounting(costs=PracticeCosts.load(path=cost_path))
+        accounting.set_observation_provider(provider=problem.env.cost_observation)
+        method.configure_practice_accounting(accounting=accounting)
+        StepFiles.json(
+            path=output / "practice_costs.json", value=accounting.costs.model_dump(mode="json")
+        )
+        return accounting
+
+    @staticmethod
+    def session_endpoint(*, actions: int, stop_on_no_practice_action: bool) -> str | None:
+        """The endpoint a finished session forces, or `None` to keep practising.
+
+        A session with no actions ended runs unconditionally until the rule became
+        opt-in: one session-opening STOP was final. Kept reachable to reproduce them."""
+        if actions == 0 and stop_on_no_practice_action:
+            return "no_practice_action"
+        return None
+
+    @staticmethod
     def run(
         *,
         args: argparse.Namespace,
@@ -509,23 +536,10 @@ class StepPracticeRunner:
         endpoint = "running"
         early_stop = False
         problem.hard_reset()
-        cost_path = getattr(args, "practice_cost_config", None)
-        accounting = (
-            PracticeAccounting(costs=PracticeCosts.load(path=cost_path)) if cost_path else None
+        accounting = StepPracticeRunner.configure_accounting(
+            args=args, method=method, problem=problem, output=output
         )
-        if accounting is not None:
-            if args.human_skill_steps != 1:
-                raise ValueError(
-                    "Configure human durations in the cost file, not --human-skill-steps"
-                )
-            from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
-
-            cost_bridge = Tossing3DAgenticBridge(env=problem.env, observation_mode="object_state")
-            accounting.set_observation_provider(provider=cost_bridge.observe)
-            method.configure_practice_accounting(accounting=accounting)
-            StepFiles.json(
-                path=output / "practice_costs.json", value=accounting.costs.model_dump(mode="json")
-            )
+        stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
         pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
         def status() -> None:
@@ -613,6 +627,7 @@ class StepPracticeRunner:
                 "stop_after_perfect_evaluations": getattr(
                     args, "stop_after_perfect_evaluations", 0
                 ),
+                "stop_on_no_practice_action": stop_on_no_practice_action,
                 "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
             },
         )
@@ -770,8 +785,11 @@ class StepPracticeRunner:
                         action_limit=args.max_steps_per_interaction,
                     )
                 )
-                if actions == 0:
-                    endpoint = "no_practice_action"
+                forced = StepPracticeRunner.session_endpoint(
+                    actions=actions, stop_on_no_practice_action=stop_on_no_practice_action
+                )
+                if forced is not None:
+                    endpoint = forced
                     break
                 method.end_cycle()
                 learning_updates += 1

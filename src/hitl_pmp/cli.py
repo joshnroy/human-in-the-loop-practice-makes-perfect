@@ -87,6 +87,12 @@ class Cli:
         )
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
         parser.add_argument(
+            "--stop-on-no-practice-action",
+            action="store_true",
+            help="End the run when a practice session executes zero actions. Off by "
+            "default; on reproduces step-protocol runs recorded before it was opt-in.",
+        )
+        parser.add_argument(
             "--practice-cost-config",
             type=Path,
             default=None,

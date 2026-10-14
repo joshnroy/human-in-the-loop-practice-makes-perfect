@@ -1,5 +1,5 @@
 import abc
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 from gymnasium.spaces import Space
@@ -104,6 +104,14 @@ class Environment(BaseModel, abc.ABC):
         that pair repo-wide.
         """
         raise NotImplementedError
+
+    def cost_observation(self) -> Any:
+        """What a state-dependent practice cost function sees of the current world.
+
+        `None` for a domain that supplies none, so only constant costs apply there.
+        The domain chooses the representation, which keeps generic cost accounting
+        from importing any one environment's observation code."""
+        return None
 
     def set_state(self, *, state: State) -> None:
         """External override: what happens when a human (via HumanOracle, called
