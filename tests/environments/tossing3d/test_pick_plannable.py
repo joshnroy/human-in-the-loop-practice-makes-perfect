@@ -9,6 +9,7 @@ the first refused pick), and in every one the dispatched pick really is refused 
 is the fact the predicate has to predict.
 """
 
+import gc
 import importlib.util
 import json
 from collections.abc import Iterator
@@ -658,6 +659,9 @@ def test_the_dry_run_leaves_the_simulator_and_the_abstraction_untouched(
     before = simulator()
     state_before = backend.snapshot_to_plain(snapshot=backend.snapshot())
     atoms_before = backend.abstract_atoms()
+    # Earlier tests' scenes are unreachable but uncollected; reap them now, or the
+    # collector can disconnect them mid-dry-run and the count drops.
+    gc.collect()
     clients_before = planning_clients()
     backend._pick_plan_failures.clear()  # noqa: SLF001
     assert backend.pick_cube_plan_failure() is None
