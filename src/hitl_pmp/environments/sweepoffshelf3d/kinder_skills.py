@@ -37,7 +37,7 @@ Nothing here imports KINDER at module scope: `kinder_models` is imported on firs
 """
 
 import contextlib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import Any, ClassVar
 
 import numpy as np
@@ -462,7 +462,7 @@ class KinderSkills:
 
     @staticmethod
     @contextlib.contextmanager
-    def constant(*, module: Any, name: str, value: Any) -> Iterator[None]:
+    def constant(*, module: Any, name: str, value: Any) -> Generator[None, None, None]:
         """Set one of an upstream controller module's constants for one call."""
         original = getattr(module, name)
         setattr(module, name, value)
