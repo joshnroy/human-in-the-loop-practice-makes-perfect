@@ -67,7 +67,7 @@ class SweepOffShelf3DEnvironment(Environment):
     left_behind: int = 0
     human_seed: int = 0
     # Control steps one skill may take before it is cut off as a failure.
-    skill_step_limit: int = 8000
+    skill_step_limit: int = 12000
 
     _backend: SweepOffShelf3DBackend | None = PrivateAttr(default=None)
     _controllers: SweepOffShelf3DControllers | None = PrivateAttr(default=None)

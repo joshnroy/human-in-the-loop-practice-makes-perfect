@@ -13,8 +13,8 @@ from .objects import SweepOffShelf3DObjects as O
 from .predicates import SweepOffShelf3DAtoms, SweepOffShelf3DPredicates
 from .skills import SweepOffShelf3DSkills as S
 
-# The oracle's sweep: the head skimming the board at a moderate pull.
-ORACLE_SWEEP_PARAMS = (0.004, 0.1)
+# The oracle's sweep: 5 mm over the board at the slowest pull (5/5 in the tuning grid).
+ORACLE_SWEEP_PARAMS = (0.005, 0.05)
 
 
 class SweepOffShelf3DSkillProvider(SkillProvider):
