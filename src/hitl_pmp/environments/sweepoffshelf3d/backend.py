@@ -12,8 +12,13 @@ Every predicate is decided here, once per state, from the live scene:
 - `OnShelf`: not held, behind the cube shelf's open front, resting on that board;
 - `InBox`: not held and wholly inside the box -- the env's own `cube_in_box`, which is
   exactly what the task scores (measured in the box's frame: see `OrientedBox`);
-- `OnFloor`: any other unheld cube. The box rim and the other boards are not places a
-  cube swept off this shelf comes to rest, so "elsewhere" is the floor;
+- `OnFloor`: any other unheld cube -- including two places no robot skill reaches.
+  A cube that goes over the box's far rim passes through the 67 mm opening between
+  that rim and the cube shelf's underside and comes to rest on the cupboard's bottom
+  board; and a cube can balance on any of the box's 1 cm rims. Both are "OnFloor" to
+  the planner, so a floor pick or a return from the floor is attempted and fails;
+  only the human's `reset_cubes`, which pours back every cube from wherever it is,
+  recovers them (`test_backend.py` reproduces both);
 - `WiperHome`: unheld and lying on the wiper shelf; `WiperOnFloor`: unheld anywhere else;
 - `HandEmpty`: nothing held;
 - the summary atoms `AnyCubeOnShelf`, `AnyCubeOffShelf` and `WiperAway`, derived from

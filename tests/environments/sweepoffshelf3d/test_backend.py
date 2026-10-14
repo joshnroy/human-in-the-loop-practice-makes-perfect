@@ -173,3 +173,73 @@ def test_an_axis_aligned_box_scores_exactly_as_upstream(*, backend, yaw):
         )
         assert ours == pytest.approx(theirs, abs=1e-9)
         assert rim == pytest.approx(upstream_rim, abs=1e-9)
+
+
+# --- where a cube can lodge beyond every robot skill's reach -------------------
+#
+# A cube is 2 cm on a side. Two openings in this scene are larger: the one above the
+# box's far wall, below the cube shelf, into the cupboard's bottom compartment (a cube
+# that goes over the far rim lands on the bottom board), and the box's 1 cm rims, on
+# which a cube balances. Both classify `OnFloor`; no floor pick reaches either, and
+# `reset_cubes` recovers both. The geometry is kept as it is unless the traps show up
+# as a problem in practice; these tests pin it so a scene change is noticed.
+
+_CUBE_EDGE = 0.02
+_TRAPS = {
+    "over_the_far_rim": ([1.355, 0.10, 0.235], [0.10, 0.0, 0.0]),
+    "on_the_far_rim": ([1.3551, 0.0, 0.2105], [0.0, 0.0, 0.0]),
+    "on_a_side_rim": ([1.235, 0.245, 0.2105], [0.0, 0.0, 0.0]),
+}
+
+
+def _far_wall_outer_x(*, backend):
+    box = backend.core()._objects_dict["box_0"]  # noqa: SLF001
+    return float(box.get_pose()[0][0]) + box.length / 2
+
+
+def _cube_shelf_underside_z(*, backend):
+    core = backend.core()
+    board = core._shelf_geoms()[1]  # noqa: SLF001
+    return float(core._world_corners(board)[:, 2].min())  # noqa: SLF001
+
+
+def _release(*, backend, position, velocity):
+    obj = backend.core().get_object("cube_0")
+    obj.set_pose(position, _IDENTITY)
+    obj.set_velocity(velocity, [0.0] * 3)
+    backend.sim().forward()
+    _settle(backend=backend, steps=3000)
+    return np.asarray(backend.core().get_object("cube_0").get_pose()[0], dtype=float)
+
+
+def test_a_cube_cannot_drop_between_the_box_and_the_cupboard(*, backend):
+    backend.reset(seed=0)
+    gap = backend.core().shelf_front_x() - _far_wall_outer_x(backend=backend)
+    assert 0.0 < gap < _CUBE_EDGE
+
+
+def test_the_opening_above_the_far_wall_is_wider_than_a_cube(*, backend):
+    """66.7 mm at the 64ce45c pin, from the far rim up to the cube shelf's underside."""
+    backend.reset(seed=0)
+    _, rim = backend.core().box_interior()
+    opening = _cube_shelf_underside_z(backend=backend) - rim
+    assert opening == pytest.approx(0.0667, abs=1e-3)
+    assert opening > _CUBE_EDGE
+
+
+@pytest.mark.parametrize("trap", sorted(_TRAPS))
+def test_a_trapped_cube_is_on_the_floor_to_the_planner_and_the_human_recovers_it(*, backend, trap):
+    """Reproducible today: placed, a cube comes to rest on the bottom board or a rim,
+    classifies `OnFloor`, and `reset_cubes` (p = 1 here) puts it back on the shelf."""
+    backend.reset(seed=0)
+    position, velocity = _TRAPS[trap]
+    x, _, z = _release(backend=backend, position=position, velocity=velocity)
+    if trap == "over_the_far_rim":
+        assert x > backend.core().shelf_front_x()
+        assert z == pytest.approx(backend.core().shelf_top_z(shelf=0) + 0.01, abs=2e-3)
+    else:
+        assert z == pytest.approx(backend.core().box_interior()[1] + 0.01, abs=2e-3)
+    assert ("OnFloor", ("cube_0",)) in backend.abstract_atoms()
+    assert backend.reset_cubes() == list(backend.cube_names)
+    _settle(backend=backend, steps=500)
+    assert ("OnShelf", ("cube_0",)) in backend.abstract_atoms()
