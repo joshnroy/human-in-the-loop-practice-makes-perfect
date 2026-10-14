@@ -908,3 +908,13 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
         assert {a for a in after_reset if a.predicate == predicate} == {
             a for a in reset.add_effects if a.predicate == predicate
         }
+
+
+def test_stopping_pays_the_stop_skills_price() -> None:
+    # STOP is a skill with competence 1 and a one-step price: every stopping value,
+    # hard budget or linear, is taken after paying it.
+    linear = Tossing3DPracticeModel(linear_cost_lambda=0.01, stop_cost=2.0)
+    assert linear.G(policy_value=0.8, summed_cost=5.0) == pytest.approx(0.8 - 0.01 * 7.0)
+    hard = Tossing3DPracticeModel(stop_cost=1.0)
+    assert hard.G(policy_value=2.5, summed_cost=19.5) == -float("inf")
+    assert Tossing3DPracticeModel().stop_cost == 0.0

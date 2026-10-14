@@ -46,6 +46,7 @@ class PracticeClock(BaseModel):
     interval: int = Field(gt=0)
     human_steps: int = Field(default=1, gt=0)
     robot_steps: int = 0
+    stop_steps: int = 0
     human_invocations: int = 0
     counted_human_steps: int = 0
     accounting: PracticeAccounting | None = None
@@ -59,7 +60,7 @@ class PracticeClock(BaseModel):
 
     @property
     def steps(self) -> int:
-        return self.robot_steps + self.counted_human_steps
+        return self.robot_steps + self.stop_steps + self.counted_human_steps
 
     @property
     def measurement_steps(self) -> int:
@@ -85,6 +86,19 @@ class PracticeClock(BaseModel):
                 self._robot_charge = None
             self.robot_steps += 1
             self._advanced(previous=previous)
+
+    def stop_invoked(self) -> None:
+        """A STOP: a skill whose competence is fixed at 1, charged one robot control step.
+
+        Without a price a session-opening STOP would end practice for free, and a
+        planner that stops every session would never spend the budget."""
+        previous = self.steps
+        if self.accounting is not None:
+            self.accounting.record(
+                charge=self.accounting.robot_charge(observation=self.observation())
+            )
+        self.stop_steps += 1
+        self._advanced(previous=previous)
 
     def before_human(self, *, skill: str = "reset_cube_far") -> ExecutionCharge:
         charge = (
@@ -488,6 +502,10 @@ class StepProtocolEntry:
 
 
 class StepPracticeRunner:
+    # A run whose planner opens this many sessions in a row with a STOP has stopped
+    # practising: nothing changes between them, so the next would stop too.
+    REPEATED_STOP_LIMIT: ClassVar[int] = 10
+
     @staticmethod
     def configure_accounting(
         *, args: argparse.Namespace, method: Any, problem: Any, output: Path
@@ -639,6 +657,8 @@ class StepPracticeRunner:
                     args, "stop_after_perfect_evaluations", 0
                 ),
                 "stop_on_no_practice_action": stop_on_no_practice_action,
+                "stop_skill_steps": 1,
+                "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
                 "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
             },
         )
@@ -649,6 +669,7 @@ class StepPracticeRunner:
             ).model_dump(mode="json"),
         )
         budget_reached = False
+        stop_streak = 0
         try:
             measure()
             while clock.steps < clock.budget:
@@ -664,6 +685,7 @@ class StepPracticeRunner:
                     "session_action_cap"
                 )
                 actions = 0
+                stopped = False
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
@@ -747,6 +769,30 @@ class StepPracticeRunner:
                         reason = (
                             "planner_stop" if completion.planner_stop else "interaction_complete"
                         )
+                        before_count = clock.steps
+                        before_cost = accounting.total_cost if accounting else 0
+                        clock.stop_invoked()
+                        stop_cost = accounting.total_cost - before_cost if accounting else None
+                        StepFiles.event(
+                            path=events,
+                            event="stop",
+                            cycle=cycle,
+                            start_step=before_count,
+                            end_step=clock.steps,
+                            reason=reason,
+                            cost=stop_cost,
+                            success=True,
+                        )
+                        recorder.robot_action(
+                            label="STOP",
+                            start_step=before_count,
+                            end_step=clock.steps,
+                            success=True,
+                            outcome=None,
+                            cost=stop_cost,
+                            cycle=cycle,
+                        )
+                        stopped = True
                         break
                     before_count = clock.steps
                     before_cost = accounting.total_cost if accounting else 0
@@ -819,6 +865,10 @@ class StepPracticeRunner:
                 )
                 if forced is not None:
                     endpoint = forced
+                    break
+                stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
+                if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
+                    endpoint = "repeated_stop"
                     break
                 method.end_cycle()
                 learning_updates += 1

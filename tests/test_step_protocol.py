@@ -18,6 +18,8 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeResetPolicy
+from hitl_pmp.recording.run_record.types import RecordingHeader
+from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from hitl_pmp.step_protocol import (
     DeploymentSnapshot,
     PracticeClock,
@@ -798,3 +800,79 @@ def test_perfect_evaluations_stop_practice_only_when_requested(*, tmp_path):
     # its next action and stops well short of the budget.
     assert _measured(output=tmp_path / "run3")[:3] == [0, 2, 4]
     assert _measured(output=tmp_path / "run3")[-1] < 40
+
+
+def _stop_events(*, output) -> list[dict]:
+    """The `stop` events of a run, in order."""
+    return [e for e in _events(output=output) if e["event"] == "stop"]
+
+
+def test_a_stop_is_a_one_step_skill_that_always_succeeds(*, tmp_path):
+    """STOP is a skill with competence fixed at 1: it costs one counted step, is recorded
+    like any other action, and ends its session."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=6, interval=100),
+        method=_scripted_method(script=[2, InteractionComplete(planner_stop=True)]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+        recorder=RunRecordWriter(
+            output_path=output / "recording.jsonl", header=RecordingHeader(environment="fake")
+        ),
+    )
+    (stop,) = _stop_events(output=output)[:1]
+    assert (stop["start_step"], stop["end_step"]) == (2, 3)
+    assert stop["success"] is True
+    starts = [e["practice_steps"] for e in _events(output=output) if e["event"] == "session_start"]
+    assert starts[:2] == [0, 3]
+    kinds = [json.loads(line) for line in (output / "recording.jsonl").read_text().splitlines()]
+    labels = [entry.get("label") for entry in kinds if entry.get("kind") == "action"]
+    assert "STOP" in labels
+
+
+def test_ten_stop_only_sessions_in_a_row_end_the_run(*, tmp_path):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=_scripted_method(script=[1] + [InteractionComplete(planner_stop=True)] * 12),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    # One session with the action and its stop, then ten STOP-only sessions.
+    assert len(_stop_events(output=output)) == 11
+    assert _measured(output=output)[-1] == 1 + 11
+    assert json.loads((output / "status.json").read_text())["phase"] == "complete"
+
+
+def test_a_session_with_an_action_resets_the_stop_streak(*, tmp_path):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=_scripted_method(script=[stop] * 9 + [1, stop] + [stop] * 10),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    assert len(_stop_events(output=output)) == 20
+
+
+def test_a_stop_is_charged_one_robot_step_through_the_accounting():
+    from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
+
+    accounting = PracticeAccounting(costs=PracticeCosts())
+    clock = PracticeClock(budget=10, interval=5, accounting=accounting, on_measure=lambda: None)
+    price = accounting.robot_charge().cost
+    clock.stop_invoked()
+    assert clock.steps == 1
+    assert accounting.total_cost == pytest.approx(price)
