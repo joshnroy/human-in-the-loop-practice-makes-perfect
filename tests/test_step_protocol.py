@@ -1,13 +1,29 @@
+import argparse
+import functools
+import json
+import os
 import pickle
+import time
+from concurrent.futures import Future
+from concurrent.futures.process import BrokenProcessPool
+from types import SimpleNamespace
+from typing import ClassVar
 
 import numpy as np
 import pytest
 
 from hitl_pmp.core.control_steps import ControlStepLimitReached
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
-from hitl_pmp.step_protocol import DeploymentSnapshot, PracticeClock
+from hitl_pmp.practice_loop import PracticeResetPolicy
+from hitl_pmp.step_protocol import (
+    DeploymentSnapshot,
+    PracticeClock,
+    StepPracticeRunner,
+    StepProtocolEntry,
+)
 
 
 def test_tossing_snapshot_with_observed_competence_round_trips():
@@ -120,3 +136,369 @@ def test_snapshot_freezes_sampler_without_refitting_or_sharing_rng():
         restored._samplers["test"]._classifier._input_shift,
         sampler._classifier._input_shift,
     )
+
+
+# --- Runner-level fakes -----------------------------------------------------------------
+# The runner is driven against a scripted problem whose `take_action` fires the control-
+# step observers once per requested tick, so every boundary below is exercised exactly as
+# a real controller would exercise it, without a simulator.
+
+
+class FakeBackend:
+    def __init__(self) -> None:
+        self.before = None
+        self.after = None
+
+    def set_control_step_observers(self, *, before, after) -> None:
+        self.before = before
+        self.after = after
+
+
+class FakeEnv:
+    def __init__(self) -> None:
+        self._backend = FakeBackend()
+        self.error = None
+        self.adopted: list[tuple[float, str]] = []
+        self.problem = None
+
+    def backend(self) -> FakeBackend:
+        return self._backend
+
+    def _log_skill_ticks(self, *, action) -> None:
+        pass
+
+    def last_skill_error(self):
+        return self.error
+
+    def adopt_interrupted_skill(self, *, action, reason: str):
+        self.error = reason
+        self.adopted.append((float(action[0]), reason))
+        self.problem.state = ("adopted", float(action[0]))
+        return self.problem.state
+
+    def close(self) -> None:
+        pass
+
+
+class FakeProblem:
+    def __init__(self) -> None:
+        self.env = FakeEnv()
+        self.env.problem = self
+        self.state: object = ("initial",)
+        self.tasks = self
+
+    def hard_reset(self) -> None:
+        pass
+
+    def get_current_state(self):
+        return self.state
+
+    def sample_train_task_in_place(self):
+        return SimpleNamespace(name="task")
+
+    def take_action(self, *, action):
+        self.env.error = None
+        backend = self.env.backend()
+        for _ in range(int(action[0])):
+            backend.before()
+            backend.after()
+        self.state = ("after", float(action[0]))
+        return self.state
+
+    def execute_movables_reset(self, *, destination) -> None:
+        self.state = ("reset", destination)
+
+
+class ScriptedMethod(EesMethod):
+    """A real `EesMethod` (so deployment snapshots encode), with a scripted practice
+    policy: an int is a robot skill of that many control steps, an exception is raised.
+    Once the script runs out every action is a one-step skill, so the budget is reached."""
+
+    def model_post_init(self, context, /) -> None:  # noqa: PLR0917
+        super().model_post_init(context)
+        self._script: list = []
+
+    def get_practice_policy(self, *, task):
+        def policy(state):  # noqa: PLR0917 -- Policy is a positional callable
+            item = self._script.pop(0) if self._script else 1
+            if isinstance(item, BaseException):
+                raise item
+            return SimpleNamespace(action=np.array([float(item)]), label=f"skill{item}")
+
+        return policy
+
+    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+        pass
+
+    def observe_help_granted(self, *, state) -> None:
+        pass
+
+    def observe_environment_reset(self, *, state) -> None:
+        pass
+
+    def end_cycle(self) -> None:
+        pass
+
+
+class FakeEvaluations:
+    """Records how the runner closes the evaluation queue. `complete=False` leaves every
+    future pending, as a long queue behind a single worker would be."""
+
+    def __init__(self, *, complete: bool = True) -> None:
+        self.complete = complete
+        self.futures: list[Future] = []
+        self.finished = False
+        self.aborted = False
+
+    def submit(self, *, fn, **kwargs) -> Future:
+        future: Future = Future()
+        if self.complete:
+            future.set_result({
+                "complete": True,
+                "tasks": [{"task": 0, "solved": False}],
+                "num_solved": 0,
+                "num_total": 1,
+            })
+        self.futures.append(future)
+        return future
+
+    def finish(self) -> None:
+        self.finished = True
+        pending = sum(not future.done() for future in self.futures)
+        if pending:
+            # The real queue would block here until every evaluation completed.
+            raise AssertionError(f"finish() would wait on {pending} pending evaluations")
+
+    def abort(self) -> None:
+        self.aborted = True
+        for future in self.futures:
+            future.cancel()
+
+
+def _step_args(*, output_dir, budget: int, interval: int, human_steps: int = 1, **extra):
+    values = {
+        "env": "tossing3d",
+        "method": "ees",
+        "practice_reset_policy": PracticeResetPolicy.NEVER,
+        "practice_reset_interval": None,
+        "output_dir": output_dir,
+        "defer_rendering": True,
+        "practice_step_budget": budget,
+        "measurement_interval_steps": interval,
+        "human_skill_steps": human_steps,
+        "evaluation_control_steps": 5,
+        "max_steps_per_interaction": 20,
+        "num_cycles": 1,
+    }
+    values.update(extra)
+    return argparse.Namespace(**values)
+
+
+def _scripted_method(*, script: list) -> ScriptedMethod:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = ScriptedMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=0)
+    method._script = list(script)
+    return method
+
+
+def _events(*, output) -> list[dict]:
+    return [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+
+
+def _measured(*, output) -> list[int]:
+    records = json.loads((output / "measurements.json").read_text())
+    return [m["practice_steps"] for m in records]
+
+
+def test_a_human_request_that_does_not_fit_ends_practice_at_the_budget(*, tmp_path):
+    """Finding 2: the budget reached on a human request ends practice like the budget
+    reached on a robot action -- not a crash -- and the final measurement still runs."""
+    output = tmp_path / "run"
+    evaluations = FakeEvaluations()
+    StepPracticeRunner.run(
+        args=_step_args(output_dir=output, budget=5, interval=100, human_steps=2),
+        method=_scripted_method(
+            script=[4, HumanCubeBinResetRequested(cost=1.0, destination="robot_side")]
+        ),
+        problem=FakeProblem(),
+        evaluations=evaluations,
+    )
+    assert not (output / "failure.txt").exists()
+    end = [e for e in _events(output=output) if e["event"] == "practice_end"]
+    assert [e["reason"] for e in end] == ["practice_step_budget"]
+    assert _measured(output=output) == [0, 4]
+    assert json.loads((output / "status.json").read_text())["phase"] == "complete"
+    assert evaluations.finished and not evaluations.aborted
+
+
+def test_measurements_are_recorded_on_the_practice_step_axis(*, tmp_path):
+    """Finding 6: stats.json's x is the counted practice step of each measurement --
+    unique and strictly increasing, even when two thresholds fall inside one skill, and
+    a human request advances it."""
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        args=_step_args(output_dir=output, budget=7, interval=1, human_steps=1),
+        method=_scripted_method(
+            script=[2, HumanCubeBinResetRequested(cost=1.0, destination="opposite_side"), 3]
+        ),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    stats = json.loads((output / "stats.json").read_text())
+    xs = [x for x, _, _ in stats["evaluations"]]
+    assert xs == list(range(8))
+    assert xs == _measured(output=output)
+    assert [b["num_online_transitions"] for b in stats["breakdowns"]] == xs
+
+
+def test_a_failed_run_cancels_queued_evaluations_instead_of_waiting(*, tmp_path):
+    """Finding 4: a crash must not block on the evaluation queue; what was cancelled is
+    recorded rather than silently dropped."""
+    output = tmp_path / "run"
+    evaluations = FakeEvaluations(complete=False)
+    with pytest.raises(RuntimeError, match="planner exploded"):
+        StepPracticeRunner.run(
+            args=_step_args(output_dir=output, budget=50, interval=2),
+            method=_scripted_method(script=[3, RuntimeError("planner exploded")]),
+            problem=FakeProblem(),
+            evaluations=evaluations,
+        )
+    assert evaluations.aborted and not evaluations.finished
+    records = json.loads((output / "step_evaluations.json").read_text())
+    assert len(records) == 2
+    assert all(r["complete"] is False and r["cancelled"] is True for r in records)
+    assert json.loads((output / "status.json").read_text())["phase"] == "failed"
+
+
+def test_a_skill_interrupted_at_the_budget_is_logged_and_its_state_adopted(*, tmp_path):
+    """Finding 9: the interrupted skill is reported as interrupted, with a reason, and
+    the environment adopts the simulator's actual post-interruption state."""
+    output = tmp_path / "run"
+    problem = FakeProblem()
+    StepPracticeRunner.run(
+        args=_step_args(output_dir=output, budget=3, interval=100),
+        method=_scripted_method(script=[5]),
+        problem=problem,
+        evaluations=FakeEvaluations(),
+    )
+    robot = [e for e in _events(output=output) if e["event"] == "robot"]
+    assert len(robot) == 1
+    assert robot[0]["interrupted"] is True
+    assert robot[0]["interruption"] == "practice_step_budget"
+    assert robot[0]["skill_error"] is not None
+    assert problem.env.adopted == [(5.0, robot[0]["skill_error"])]
+    assert problem.state == ("adopted", 5.0)
+
+
+def test_a_jump_over_several_thresholds_measures_each_one():
+    """Finding 8: a human invocation longer than the interval crosses several measurement
+    thresholds and several progress multiples; each is reported once, at its threshold."""
+    measured = []
+    progress = []
+    clock = PracticeClock(
+        budget=1000,
+        interval=2,
+        human_steps=250,
+        on_measure=lambda: measured.append(clock.measurement_steps),
+        on_progress=lambda: progress.append(clock.steps),
+    )
+    clock.before_human()
+    clock.human_invoked()
+    assert measured == list(range(2, 251, 2))
+    assert len(progress) == 2
+    assert clock.measurement_steps == 250
+
+
+class RecordingMethodCli:
+    calls: ClassVar[list] = []
+
+    @staticmethod
+    def run(*, args, env_cli) -> None:
+        RecordingMethodCli.calls.append(args)
+
+
+def test_existing_output_is_refused_before_anything_is_built_or_opened(*, tmp_path):
+    """Finding 3: an existing run is refused before the problem is built or the state log
+    is opened for writing, so its files are untouched."""
+    RecordingMethodCli.calls.clear()
+    output = tmp_path / "run"
+    output.mkdir()
+    (output / "step_events.jsonl").write_text("old events\n")
+    (output / "tossing3d_state_log.jsonl").write_text("old states\n")
+    with pytest.raises(FileExistsError):
+        StepProtocolEntry.run(
+            args=_step_args(output_dir=output, budget=5, interval=1),
+            method_cli=RecordingMethodCli,
+        )
+    assert RecordingMethodCli.calls == []
+    assert (output / "tossing3d_state_log.jsonl").read_text() == "old states\n"
+    assert (output / "step_events.jsonl").read_text() == "old events\n"
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"env": "lightswitch"},
+        {"method": "skill-oracle"},
+        {"defer_rendering": False},
+        {"practice_reset_interval": 3},
+    ],
+)
+def test_unsupported_configurations_fail_before_anything_is_built(*, tmp_path, override):
+    RecordingMethodCli.calls.clear()
+    with pytest.raises(ValueError, match="[Ss]tep protocol|defer-rendering"):
+        StepProtocolEntry.run(
+            args=_step_args(output_dir=tmp_path / "run", budget=5, interval=1, **override),
+            method_cli=RecordingMethodCli,
+        )
+    assert RecordingMethodCli.calls == []
+    assert not (tmp_path / "run").exists()
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--practice-step-budget",
+        "--measurement-interval-steps",
+        "--human-skill-steps",
+        "--evaluation-control-steps",
+    ],
+)
+@pytest.mark.parametrize("value", ["0", "-3"])
+def test_step_flags_reject_non_positive_values_at_parse_time(*, flag, value):
+    """Finding 5."""
+    from hitl_pmp.cli import Cli
+
+    with pytest.raises(SystemExit):
+        Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees", flag, value])
+
+
+def test_each_evaluation_runs_in_its_own_fresh_process():
+    """Finding 7: no long-lived worker accumulates simulator memory across evaluations."""
+    from hitl_pmp.step_protocol import FreshProcessEvaluations
+
+    evaluations = FreshProcessEvaluations()
+    futures = [evaluations.submit(fn=os.getpid) for _ in range(2)]
+    evaluations.finish()
+    pids = [future.result() for future in futures]
+    assert len(set(pids)) == 2
+    assert os.getpid() not in pids
+
+
+def test_aborting_terminates_the_running_evaluation_and_cancels_the_queue():
+    """Finding 4, against the real queue: abort returns promptly, the queued evaluation is
+    cancelled, and the running one's process is terminated rather than awaited."""
+    from hitl_pmp.step_protocol import FreshProcessEvaluations
+
+    evaluations = FreshProcessEvaluations()
+    running = evaluations.submit(fn=functools.partial(time.sleep, 120))
+    queued = evaluations.submit(fn=functools.partial(time.sleep, 120))
+    deadline = time.monotonic() + 60
+    while not evaluations.has_running_process() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    started = time.monotonic()
+    evaluations.abort()
+    assert time.monotonic() - started < 10
+    assert queued.cancelled()
+    with pytest.raises(BrokenProcessPool):
+        running.result(timeout=30)

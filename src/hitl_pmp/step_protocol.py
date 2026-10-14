@@ -11,15 +11,16 @@ import json
 import multiprocessing
 import os
 import pickle
+import threading
 import time
 import traceback
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import CancelledError, Future, ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.control_steps import ControlStepLimitReached
@@ -44,10 +45,22 @@ class PracticeClock(BaseModel):
     robot_active: bool = False
     on_measure: Callable[[], None]
     on_progress: Callable[[], None] = lambda: None
+    progress_interval: int = Field(default=100, gt=0)
+    _measuring_at: int | None = PrivateAttr(default=None)
 
     @property
     def steps(self) -> int:
         return self.robot_steps + self.human_steps * self.human_invocations
+
+    @property
+    def measurement_steps(self) -> int:
+        """The practice step a measurement is taken at.
+
+        Inside `on_measure` this is the threshold being crossed, which differs from
+        `steps` only when one human invocation jumps over several thresholds at once:
+        no learning happens inside that jump, so one policy is measured at each of them,
+        and each lands at its own x rather than all of them at the jump's end."""
+        return self.steps if self._measuring_at is None else self._measuring_at
 
     def before_robot_step(self) -> None:
         if self.robot_active and self.steps >= self.budget:
@@ -69,13 +82,31 @@ class PracticeClock(BaseModel):
         self._advanced(previous=previous)
 
     def _advanced(self, *, previous: int) -> None:
-        if self.steps // self.interval > previous // self.interval:
-            self.on_measure()
-        if self.steps % 100 == 0:
+        # Once per crossed threshold: one increment can cross several (a human
+        # invocation longer than the interval) or land past one without touching it.
+        for threshold in range(
+            (previous // self.interval + 1) * self.interval, self.steps + 1, self.interval
+        ):
+            self._measuring_at = threshold
+            try:
+                self.on_measure()
+            finally:
+                self._measuring_at = None
+        crossed = self.steps // self.progress_interval - previous // self.progress_interval
+        for _ in range(crossed):
             self.on_progress()
 
 
 class EvaluationClock(BaseModel):
+    """Counts one held-out evaluation episode's control steps and scores it.
+
+    **Known divergence, deliberately not fixed here.** `solved` latches on the first
+    physics tick at which `check_goals()` is true, and `before` then stops the
+    controller. A cube *passing through* the goal box mid-flight therefore scores as
+    solved even if it would bounce out. The incumbent evaluation (`PracticeLoop`)
+    scores the state after the whole skill has finished, so the two protocols' success
+    rates are not the same measurement and must not be compared as if they were."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     budget: int = Field(gt=0)
     check_goal: Callable[[], bool]
@@ -89,6 +120,64 @@ class EvaluationClock(BaseModel):
     def after(self) -> None:
         self.steps += 1
         self.solved = self.solved or self.check_goal()
+
+
+class FreshProcessEvaluations(BaseModel):
+    """Evaluations run one at a time, each in a freshly spawned process.
+
+    A long-lived worker would build a new MuJoCo scene per evaluation and keep whatever
+    the simulator fails to release, so memory grows with the number of measurements.
+    `ProcessPoolExecutor(max_tasks_per_child=1)` would say this in one argument, but it
+    needs Python 3.11 and this project runs 3.10, so a one-thread queue owns ordering
+    and each job gets its own single-use spawn pool."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    _queue: ThreadPoolExecutor = PrivateAttr(
+        default_factory=lambda: ThreadPoolExecutor(max_workers=1)
+    )
+    _lock: Any = PrivateAttr(default_factory=threading.Lock)
+    _current: ProcessPoolExecutor | None = PrivateAttr(default=None)
+    _closing: bool = PrivateAttr(default=False)
+
+    def submit(self, *, fn: Callable[..., Any], **kwargs: Any) -> Future:
+        return self._queue.submit(lambda: self._isolated(fn=fn, kwargs=kwargs))
+
+    def has_running_process(self) -> bool:
+        with self._lock:
+            return self._current is not None
+
+    def finish(self) -> None:
+        """Wait for every queued evaluation."""
+        self._queue.shutdown(wait=True)
+
+    def abort(self) -> None:
+        """Cancel queued evaluations and terminate the running one, without waiting."""
+        with self._lock:
+            self._closing = True
+            current = self._current
+        self._queue.shutdown(wait=False, cancel_futures=True)
+        if current is not None:
+            # `_processes` becomes None if the job finished and shut its pool meanwhile.
+            for process in list((current._processes or {}).values()):
+                process.terminate()
+            current.shutdown(wait=False, cancel_futures=True)
+
+    def _isolated(self, *, fn: Callable[..., Any], kwargs: dict[str, Any]) -> Any:
+        # Submitted under the lock, so `abort` always sees a spawned worker to terminate.
+        with self._lock:
+            if self._closing:
+                raise CancelledError()
+            pool = ProcessPoolExecutor(
+                max_workers=1, mp_context=multiprocessing.get_context("spawn")
+            )
+            inner = pool.submit(fn, **kwargs)
+            self._current = pool
+        try:
+            return inner.result()
+        finally:
+            with self._lock:
+                self._current = None
+            pool.shutdown(wait=not self._closing, cancel_futures=True)
 
 
 class StepFiles:
@@ -241,9 +330,49 @@ class StepEvaluation:
             problem.env.close()
 
 
+class StepProtocolValidation:
+    """Everything that can refuse a run, checked before anything is built or opened."""
+
+    # Any of these in the output directory means a run already lives there. The state
+    # log is opened in mode "w" while the problem is built, so the check must come first
+    # or rerunning into an old directory truncates the run it then refuses to replace.
+    RUN_OUTPUTS: ClassVar[tuple[str, ...]] = (
+        "step_events.jsonl",
+        "tossing3d_state_log.jsonl",
+        "measurements.json",
+        "step_protocol.json",
+        "step_evaluations.json",
+        "stats.json",
+        "status.json",
+        "snapshots",
+        "evaluations",
+    )
+
+    @staticmethod
+    def check(*, args: argparse.Namespace) -> None:
+        if args.env != "tossing3d" or args.method not in {"ees", "pomdp"}:
+            raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
+        if args.practice_reset_policy != PracticeResetPolicy.NEVER:
+            raise ValueError(
+                "Step protocol requires persistent practice (--practice-reset-policy never)"
+            )
+        if args.practice_reset_interval is not None or args.output_dir is None:
+            raise ValueError("Step protocol requires an output directory and no automatic resets")
+        if not args.defer_rendering:
+            raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
+        output = Path(args.output_dir)
+        existing = [name for name in StepProtocolValidation.RUN_OUTPUTS if (output / name).exists()]
+        if existing:
+            raise FileExistsError(
+                f"Preserve the existing run in {output} (found {', '.join(existing)}); "
+                "choose a new output directory"
+            )
+
+
 class StepProtocolEntry:
     @staticmethod
     def run(*, args: argparse.Namespace, method_cli: Any) -> None:
+        StepProtocolValidation.check(args=args)
         from hitl_pmp.core.method.skill_provider import DomainContext
         from hitl_pmp.environments.tossing3d.cli import Tossing3DCli as DomainCli
         from hitl_pmp.environments.tossing3d.skill_provider import (
@@ -295,21 +424,18 @@ class StepProtocolEntry:
 
 class StepPracticeRunner:
     @staticmethod
-    def run(*, args: argparse.Namespace, method: Any, problem: Any) -> Metrics:
-        if args.env != "tossing3d" or args.method not in {"ees", "pomdp"}:
-            raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
-        if args.practice_reset_policy != PracticeResetPolicy.NEVER:
-            raise ValueError(
-                "Step protocol requires persistent practice (--practice-reset-policy never)"
-            )
-        if args.practice_reset_interval is not None or args.output_dir is None:
-            raise ValueError("Step protocol requires an output directory and no automatic resets")
-        if not args.defer_rendering:
-            raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
+    def run(
+        *,
+        args: argparse.Namespace,
+        method: Any,
+        problem: Any,
+        evaluations: Any = None,
+    ) -> Metrics:
+        """Run persistent practice to the step budget. `StepProtocolValidation.check`
+        must already have passed: by the time a problem exists, the state log beside
+        these outputs has been opened, so the existing-run check cannot live here."""
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
-        if (output / "step_events.jsonl").exists():
-            raise FileExistsError("Preserve the existing run; choose a new output directory")
         (output / "snapshots").mkdir()
         configuration = vars(args).copy()
         events = output / "step_events.jsonl"
@@ -323,7 +449,7 @@ class StepPracticeRunner:
         started = time.monotonic()
         endpoint = "running"
         problem.hard_reset()
-        pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+        pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
         def status() -> None:
             StepFiles.json(
@@ -350,7 +476,8 @@ class StepPracticeRunner:
             path.write_bytes(raw)
             record = {
                 "index": index,
-                "practice_steps": clock.steps,
+                "practice_steps": clock.measurement_steps,
+                "clock_steps": clock.steps,
                 "robot_steps": clock.robot_steps,
                 "human_invocations": clock.human_invocations,
                 "human_resets_by_destination": dict(reset_counts),
@@ -364,7 +491,7 @@ class StepPracticeRunner:
             futures.append((
                 record,
                 pool.submit(
-                    StepEvaluation.run,
+                    fn=StepEvaluation.run,
                     snapshot=str(path),
                     configuration=configuration,
                     output=str(output / "evaluations" / f"{index:04d}"),
@@ -394,7 +521,8 @@ class StepPracticeRunner:
                 "learning_session_action_limit": args.max_steps_per_interaction,
                 "learning_cycle_count_limit": None,
                 "original_num_cycles_flag_superseded_by_step_budget": args.num_cycles,
-                "evaluation_process": "spawn",
+                "evaluation_process": "spawn, one fresh process per evaluation",
+                "evaluation_x_axis": "practice_steps",
                 "evaluation_feedback": False,
             },
         )
@@ -404,6 +532,7 @@ class StepPracticeRunner:
                 args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
             ).model_dump(mode="json"),
         )
+        budget_reached = False
         try:
             measure()
             while clock.steps < clock.budget:
@@ -431,7 +560,22 @@ class StepPracticeRunner:
                     try:
                         action = policy(state)
                     except HumanCubeBinResetRequested as request:
-                        clock.before_human()
+                        try:
+                            clock.before_human()
+                        except ControlStepLimitReached:
+                            # The human does not fit in what remains: the budget is
+                            # reached here exactly as it is by a robot step, so practice
+                            # ends normally and the final measurement still runs.
+                            budget_reached = True
+                            StepFiles.event(
+                                path=events,
+                                event="human_refused_at_budget",
+                                cycle=cycle,
+                                practice_steps=clock.steps,
+                                destination=request.destination,
+                                cost=request.cost,
+                            )
+                            break
                         destination = request.destination
                         if destination not in {"robot_side", "opposite_side"}:
                             raise ValueError(
@@ -470,12 +614,16 @@ class StepPracticeRunner:
                     before_count = clock.steps
                     robot_invocations += 1
                     clock.robot_active = True
-                    interrupted = False
+                    interruption: str | None = None
                     try:
                         state = problem.take_action(action=action.action)
                     except ControlStepLimitReached:
-                        problem.env._log_skill_ticks(action=action.action)
-                        interrupted = True
+                        # `take_action` never reached its own bookkeeping, so the env
+                        # still holds the pre-skill state and a cleared skill error.
+                        interruption = "practice_step_budget"
+                        state = problem.env.adopt_interrupted_skill(
+                            action=action.action, reason=interruption
+                        )
                     finally:
                         clock.robot_active = False
                     actions += 1
@@ -487,12 +635,14 @@ class StepPracticeRunner:
                         action=action.action.tolist(),
                         start_step=before_count,
                         end_step=clock.steps,
-                        interrupted=interrupted,
+                        interrupted=interruption is not None,
+                        interruption=interruption,
                         skill_error=problem.env.last_skill_error(),
                     )
-                    if interrupted:
+                    if interruption is not None:
+                        budget_reached = True
                         break
-                if clock.steps >= clock.budget:
+                if budget_reached or clock.steps >= clock.budget:
                     endpoint = "practice_step_budget"
                     break
                 metrics.practice_session_ends.append(
@@ -532,13 +682,30 @@ class StepPracticeRunner:
                 path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
             )
             status()
-            pool.shutdown(wait=True)
+            failed = endpoint == "failed"
+            if failed:
+                # A crash or Ctrl-C must not sit behind the evaluation queue: cancel what
+                # has not started, terminate what has, and record both as cancelled.
+                pool.abort()
+            else:
+                pool.finish()
             evaluation_records = []
             for record, future in futures:
+                if future.cancelled() or (failed and not future.done()):
+                    evaluation_records.append({
+                        **record,
+                        "complete": False,
+                        "cancelled": True,
+                        "error": "cancelled: practice ended in failure",
+                    })
+                    continue
                 try:
                     result = future.result()
+                    # x is the measurement's own practice step, unique and increasing,
+                    # so mid-skill and final measurements never share a point and
+                    # human invocations advance the axis like control steps do.
                     metrics.record_evaluation(
-                        num_online_transitions=record["robot_invocations"],
+                        num_online_transitions=record["practice_steps"],
                         num_solved=result["num_solved"],
                         num_total=result["num_total"],
                         outcomes=tuple(
@@ -552,7 +719,12 @@ class StepPracticeRunner:
                     )
                     evaluation_records.append({**record, **result})
                 except Exception as exc:
-                    evaluation_records.append({**record, "complete": False, "error": repr(exc)})
+                    evaluation_records.append({
+                        **record,
+                        "complete": False,
+                        "cancelled": False,
+                        "error": repr(exc),
+                    })
             StepFiles.json(path=output / "step_evaluations.json", value=evaluation_records)
             StepFiles.json(path=output / "stats.json", value=metrics.model_dump(mode="json"))
             evaluation_failures = sum(not r["complete"] for r in evaluation_records)

@@ -387,6 +387,24 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=next_state)
         return next_state
 
+    def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
+        """Account for a skill an external step budget stopped part-way through.
+
+        The interruption propagates out of `take_action` before its own bookkeeping, so
+        without this the env would still hold the pre-skill state while the simulator has
+        moved on, and `last_skill_error` would read as a clean `None`. This records the
+        interruption as the skill's outcome, drains its ticks, and adopts the simulator's
+        actual state -- the same forward-dynamics step `take_action` ends with.
+        """
+        state = self.get_current_state()
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        self._last_skill_error = f"interrupted: {reason}"
+        self._log_skill_ticks(action=action)
+        next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
+        self._adopt(state=next_state)
+        return next_state
+
     def attach_state_log_writer(self, *, writer: StateLogWriter) -> None:
         """Wire a `StateLogWriter` so every `take_action` from here on persists its
         skill and per-tick states, instead of draining them only to discard them --
