@@ -34,10 +34,12 @@ dev = [
     "filelock",
     # tests/test_main_only_marker.py reads .github/workflows/ci.yml.
     "pyyaml",
-    "ruff",
-    "mypy",
+    # Exact pins: the local gate and CI must run the same lint and type tools
+    # (tests/test_tool_pins.py). Bump them deliberately, together with any fixes.
+    "ruff==0.17.0",
+    "mypy==2.4.0",
     "pre-commit",
-    "import-linter",
+    "import-linter==2.15",
 ]
 # --record-wandb only. Optional, and CI deliberately does not install it: the package
 # must import, typecheck and test without wandb present, exactly as it must without
