@@ -170,6 +170,37 @@ def test_the_ees_reset_gate_flag_parses_and_reaches_ees(
     assert method.reset_cost_gate is expected
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], False), (["--ees-score-human-skills"], True), (["--no-ees-score-human-skills"], False)],
+)
+def test_the_ees_score_human_skills_flag_parses_and_reaches_ees(
+    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Off by default so Tossing3D's published EES runs reproduce; the shelf runs
+    turn it on."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    args = _build_ees_parser().parse_args(argv)
+    assert args.ees_score_human_skills is expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert method.score_human_skills is expected
+
+
 def test_ees_does_not_register_domain_owned_reset_cost() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
@@ -197,6 +228,16 @@ def test_pomdp_accepts_linear_cost_coefficient() -> None:
     Tossing3DPomdpCli.add_arguments(parser=parser)
     args = parser.parse_args(["--pomdp-linear-cost-lambda", "0.03"])
     assert args.pomdp_linear_cost_lambda == pytest.approx(0.03)
+
+
+def test_pomdp_rejects_the_ees_score_human_skills_flag() -> None:
+    """The belief-space method already scores every non-deterministic human skill;
+    the EES flag would otherwise be parsed and silently ignored."""
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args(["--ees-score-human-skills"])
+    with pytest.raises(ValueError, match="ees-score-human-skills"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
 
 
 def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:

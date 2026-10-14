@@ -158,6 +158,15 @@ class EesCli:
             "and a reset-free route. Evaluation never offers the reset either way.",
         )
         parser.add_argument(
+            "--ees-score-human-skills",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["score_human_skills"].default,
+            help="Score each human skill's outcome against its effects, track its "
+            "competence and price it at its human cost plus -log(competence), like a "
+            "robot skill (default off: the paper's EES, whose human rescue always "
+            "succeeds). A deviation from the paper; SweepOffShelf3D runs turn it on.",
+        )
+        parser.add_argument(
             "--defer-rendering",
             action=argparse.BooleanOptionalAction,
             default=False,
@@ -203,6 +212,7 @@ class EesCli:
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
                 reset_cost_gate=args.ees_reset_gate,
+                score_human_skills=args.ees_score_human_skills,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history
@@ -336,6 +346,11 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if args.ees_score_human_skills:
+            raise ValueError(
+                "--ees-score-human-skills is an EES flag: --method pomdp already scores "
+                "every human skill its practice domain does not treat as deterministic"
+            )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if domain is None:
             raise ValueError(

@@ -1,11 +1,15 @@
 """Plugs SweepOffShelf3D into the global runner as `--env sweepoffshelf3d`.
 
-    python -m hitl_pmp.cli --env sweepoffshelf3d --method ees --left-behind 0 ...
+    python -m hitl_pmp.cli --env sweepoffshelf3d --method ees \
+        --reset-cubes-success-probability 1 ...
 
 Like Tossing3D it builds two independent Environment/Tasks/Problem triples, one for
 practice and one for evaluation, so an evaluation episode's rebuild of the scene never
-hands the practice arm a free reset. The practice environment's human leaves
-`--left-behind` (k) cubes where they are on every `reset_cubes`.
+hands the practice arm a free reset. The practice environment's human succeeds at
+each `reset_cubes` with probability `--reset-cubes-success-probability` (p): all five
+cubes go back on the shelf, or nothing moves. This replaces the earlier partial
+`--left-behind k` reset (5 - k cubes returned), removed because no committed experiment
+log used it: its only runs were the cancelled batch that exposed vacuous resets.
 """
 
 import argparse
@@ -17,7 +21,6 @@ from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import SweepOffShelf3DEnvironment
-from .objects import NUM_CUBES
 from .problem import SweepOffShelf3DProblem
 from .skill_provider import SweepOffShelf3DOracle, SweepOffShelf3DSkillProvider
 from .tasks import SweepOffShelf3DTasks
@@ -30,12 +33,11 @@ class SweepOffShelf3DCli:
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         env_fields = SweepOffShelf3DEnvironment.model_fields
         parser.add_argument(
-            "--left-behind",
-            type=int,
-            choices=range(NUM_CUBES + 1),
-            default=env_fields["left_behind"].default,
-            help="k: how many cubes the human's reset_cubes leaves where they are "
-            "(k=0 returns all five to the shelf, k=5 returns none).",
+            "--reset-cubes-success-probability",
+            type=SweepOffShelf3DCli.probability,
+            default=env_fields["reset_cubes_success_probability"].default,
+            help="p: the human's true competence at reset_cubes. Each attempt returns "
+            "all five cubes to the shelf with probability p and otherwise moves nothing.",
         )
         parser.add_argument(
             "--no-scene-bg",
@@ -72,11 +74,18 @@ class SweepOffShelf3DCli:
         parser.set_defaults(scene_bg=True, defer_rendering=True)
 
     @staticmethod
+    def probability(value: str) -> float:  # noqa: PLR0917  (argparse calls type= positionally)
+        p = float(value)
+        if not 0.0 <= p <= 1.0:
+            raise argparse.ArgumentTypeError(f"a probability must lie in [0, 1], got {p}")
+        return p
+
+    @staticmethod
     def build_problem(*, args: argparse.Namespace, human_seed: int) -> SweepOffShelf3DProblem:
         env = SweepOffShelf3DEnvironment(
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,
-            left_behind=args.left_behind,
+            reset_cubes_success_probability=args.reset_cubes_success_probability,
             human_seed=human_seed,
             skill_step_limit=args.skill_step_limit,
         )

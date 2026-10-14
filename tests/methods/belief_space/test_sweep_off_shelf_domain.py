@@ -55,7 +55,7 @@ def test_every_shelf_skill_updates_its_own_belief():
 
 
 def test_human_skills_are_inferred_not_assumed():
-    """The robot is not told k: reset_cubes's competence is learned, never fixed at 1."""
+    """The robot is not told p: reset_cubes's competence is learned, never fixed at 1."""
     assert not SWEEP_OFF_SHELF_DOMAIN.deterministic_skills
     assert {"reset_cubes", "reset_wiper"} <= SWEEP_OFF_SHELF_DOMAIN.failure_effect_skills
 
@@ -85,3 +85,88 @@ def test_an_untrained_shelf_skill_is_believed_to_work_one_time_in_four():
     for name in ("SweepShelf", "PickCubeFromShelf", "reset_cubes"):
         assert belief.skill_beliefs[name].mean_competence() == pytest.approx(0.25, abs=0.02)
     assert 0.4 < SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=belief.skill_beliefs) < 0.7
+
+
+def _shelf_atoms(*, on_shelf, in_box, wiper_home=True):
+    from hitl_pmp.core.problem.tasks.types import GroundAtom
+    from hitl_pmp.environments.sweepoffshelf3d.predicates import (
+        SweepOffShelf3DAtoms,
+        SweepOffShelf3DPredicates,
+    )
+
+    wiper = "WiperHome" if wiper_home else "WiperOnFloor"
+    named = {("HandEmpty", ("robot",)), (wiper, ("wiper_0",))}
+    named |= {("OnShelf", (cube.name,)) for cube in on_shelf}
+    named |= {("InBox", (cube.name, O.box.name)) for cube in in_box}
+    named = SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named))
+    by_name = {p.name: p for p in SweepOffShelf3DPredicates.all()}
+    objects = {obj.name: obj for obj in O.all_objects()}
+    return (
+        frozenset(
+            GroundAtom(predicate=by_name[name], objects=tuple(objects[n] for n in names))
+            for name, names in named
+        )
+        | SweepOffShelf3DPredicates.static_atoms()
+    )
+
+
+@pytest.mark.parametrize(
+    ("ground", "atoms"),
+    [
+        (
+            GroundSkill(skill=S.RESET_CUBES, objects=(O.robot, O.box, *O.cubes)),
+            {"on_shelf": (), "in_box": O.cubes},
+        ),
+        (
+            GroundSkill(skill=S.RESET_WIPER, objects=(O.robot, O.wiper)),
+            {"on_shelf": O.cubes, "in_box": (), "wiper_home": False},
+        ),
+    ],
+)
+def test_a_human_skill_forecast_branches_on_its_inferred_competence(*, ground, atoms):
+    """As for Tossing3D's human reset (#411): success with E[kappa], failure with
+    1 - E[kappa], each branch conditioning only the human skill's own belief. A
+    failed human skill moves nothing."""
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+        make_default_tossing3d_belief,
+        mean_competence,
+    )
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+        make_tossing3d_search_state,
+        transition_outcomes,
+    )
+
+    priced = ground.model_copy(
+        update={"skill": ground.skill.model_copy(update={"practice_cost": 2.0})}
+    )
+    state = make_default_tossing3d_belief(
+        num_particles=64,
+        model="local_trend",
+        engine="grid",
+        inference_config=InferenceConfig(),
+        domain=SWEEP_OFF_SHELF_DOMAIN,
+    )
+    name = ground.skill.name
+    assert name not in SWEEP_OFF_SHELF_DOMAIN.deterministic_skills
+    before = _shelf_atoms(**atoms)
+    competence = mean_competence(belief=state.skill_beliefs[name])
+    assert competence == pytest.approx(0.25, abs=0.02)
+    outcomes = transition_outcomes(
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
+        state=state,
+        action=priced,
+        ground_skills=(priced,),
+        effects={priced: (priced.add_effects, priced.delete_effects, priced.ignore_effects)},
+        exploration_epsilon=0.0,
+        random_toss_competence=0.0,
+        domain=SWEEP_OFF_SHELF_DOMAIN,
+    )
+    assert [p for p, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
+    (_, succeeded, after_success), (_, failed, after_failure) = outcomes
+    assert priced.expected_add_effects(before_atoms=before) <= after_success
+    assert after_failure == before
+    assert mean_competence(belief=succeeded.skill_beliefs[name]) > competence
+    assert mean_competence(belief=failed.skill_beliefs[name]) < competence
+    for other in SHELF_ROBOT_SKILLS:
+        assert succeeded.skill_beliefs[other] == state.skill_beliefs[other]

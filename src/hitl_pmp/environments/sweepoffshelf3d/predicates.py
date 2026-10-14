@@ -9,6 +9,21 @@ take every cube as a parameter while grounding exactly once.
 `OnFloor` and `WiperOnFloor` are observed outcomes only: no operator ever adds them.
 A cube or wiper that is neither where it belongs nor held is on the floor; the box rim
 and the other shelves are not places it can come to rest.
+
+Three summary atoms exist so that no skill can succeed vacuously. A skill is scored a
+success when its promised effects hold afterwards, so a skill whose promises already
+hold "succeeds" with nothing done -- a sweep of an empty shelf, or a `reset_cubes` with
+every cube already on the shelf (40/40 and 62/62 such "successes" in the cancelled
+batch). The operator language is conjunctive, so "some cube is on the shelf" needs an
+atom of its own: `AnyCubeOnShelf`, `AnyCubeOffShelf` and `WiperAway` (not `WiperHome`)
+are derived from the per-object atoms by `with_summaries`, which the backend applies
+to every observed state.
+
+The operators maintain them exactly except in one place: picking a cube off the shelf
+cannot know whether it was the last one, so `PickCubeFromShelf` leaves
+`AnyCubeOnShelf` as it was. A forecast can therefore hold a sweep applicable after the
+last shelf cube was picked by hand; every observed state is classified afresh, so the
+real applicability check is exact.
 """
 
 import itertools
@@ -16,7 +31,9 @@ import itertools
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 
+from .objects import NUM_CUBES
 from .objects import SweepOffShelf3DObjects as O
+from .types import AbstractAtom
 
 
 class SweepOffShelf3DAtoms:
@@ -32,6 +49,19 @@ class SweepOffShelf3DAtoms:
                 "through SweepOffShelf3DEnvironment"
             )
         return (name, tuple(obj.name for obj in objects)) in atoms
+
+    @staticmethod
+    def with_summaries(*, atoms: frozenset[AbstractAtom]) -> frozenset[AbstractAtom]:
+        """`atoms` plus the summary atoms they imply (see the module docstring)."""
+        on_shelf = {objects for name, objects in atoms if name == "OnShelf"}
+        derived: set[AbstractAtom] = set()
+        if on_shelf:
+            derived.add(("AnyCubeOnShelf", ()))
+        if len(on_shelf) < NUM_CUBES:
+            derived.add(("AnyCubeOffShelf", ()))
+        if ("WiperHome", (O.wiper.name,)) not in atoms:
+            derived.add(("WiperAway", (O.wiper.name,)))
+        return atoms | derived
 
     @staticmethod
     def predicate(*, name: str, types: tuple[Type, ...]) -> Predicate:
@@ -70,6 +100,9 @@ HOLDING_WIPER = SweepOffShelf3DAtoms.predicate(
 )
 WIPER_HOME = SweepOffShelf3DAtoms.predicate(name="WiperHome", types=(O.wiper_type,))
 WIPER_ON_FLOOR = SweepOffShelf3DAtoms.predicate(name="WiperOnFloor", types=(O.wiper_type,))
+ANY_CUBE_ON_SHELF = SweepOffShelf3DAtoms.predicate(name="AnyCubeOnShelf", types=())
+ANY_CUBE_OFF_SHELF = SweepOffShelf3DAtoms.predicate(name="AnyCubeOffShelf", types=())
+WIPER_AWAY = SweepOffShelf3DAtoms.predicate(name="WiperAway", types=(O.wiper_type,))
 
 _CUBE_CHAIN = frozenset((first.name, second.name) for first, second in itertools.pairwise(O.cubes))
 CUBE_ORDER = Predicate(
@@ -88,6 +121,9 @@ DYNAMIC_PREDICATES = (
     HOLDING_WIPER,
     WIPER_HOME,
     WIPER_ON_FLOOR,
+    ANY_CUBE_ON_SHELF,
+    ANY_CUBE_OFF_SHELF,
+    WIPER_AWAY,
 )
 
 

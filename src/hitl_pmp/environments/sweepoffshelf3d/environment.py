@@ -2,7 +2,8 @@
 
 A TidyBot sweeps five cubes off a cupboard shelf, over its open front edge, into a box on
 the floor that is too heavy for it to lift. A human can pour the box back onto the shelf
-(`reset_cubes`, which returns ``5 - k`` cubes) and put the wiper back (`reset_wiper`).
+(`reset_cubes`, which succeeds -- all five cubes -- with probability p and otherwise moves
+nothing) and put the wiper back (`reset_wiper`, which always succeeds).
 
 One `take_action` runs one whole skill -- thousands of MuJoCo control steps -- through
 `controllers.py`. The action vector is ``[skill_id, cube_index, height, speed]``: the cube
@@ -18,7 +19,7 @@ from typing import ClassVar
 
 import numpy as np
 from gymnasium.spaces import Box
-from pydantic import ConfigDict, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
@@ -63,8 +64,8 @@ class SweepOffShelf3DEnvironment(Environment):
 
     scene_bg: bool = True
     canonical_seed: int = 0
-    # k: how many cubes `reset_cubes` leaves behind.
-    left_behind: int = 0
+    # p: the human's true competence at `reset_cubes`.
+    reset_cubes_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
     human_seed: int = 0
     # Control steps one skill may take before it is cut off as a failure.
     skill_step_limit: int = 12000
@@ -78,7 +79,9 @@ class SweepOffShelf3DEnvironment(Environment):
     def backend(self) -> SweepOffShelf3DBackend:
         if self._backend is None:
             self._backend = SweepOffShelf3DBackend(
-                scene_bg=self.scene_bg, left_behind=self.left_behind, human_seed=self.human_seed
+                scene_bg=self.scene_bg,
+                reset_cubes_success_probability=self.reset_cubes_success_probability,
+                human_seed=self.human_seed,
             )
             self._controllers = SweepOffShelf3DControllers(
                 backend=self._backend, step_limit=self.skill_step_limit
@@ -183,7 +186,9 @@ class SweepOffShelf3DEnvironment(Environment):
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
         """The human's two skills, named by `destination`: `reset_cubes` or
-        `reset_wiper`. The robot is untouched; `steps_taken` carries forward."""
+        `reset_wiper`. The robot is untouched; `steps_taken` carries forward. True
+        whenever the human attempted the skill, failed or not: a failure is an
+        outcome the robot scores, not a refusal (`moved` is then empty)."""
         seed, steps_taken = self._bookkeeping()
         backend = self.backend()
         if destination == RESET_CUBES_NAME:

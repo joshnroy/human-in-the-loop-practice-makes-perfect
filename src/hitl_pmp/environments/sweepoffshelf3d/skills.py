@@ -7,10 +7,16 @@ fail as well as ones that work, and there is something for practice to learn.
 
 `SweepShelf` takes all five cubes so one sweep can move however many are on the shelf:
 each cube that is `OnShelf` is promised `InBox` through a conditional effect, and the
-`CubeOrder` chain pins those five slots to a single grounding. The human resets are
-modelled at their nominal effect (every cube back on the shelf; the wiper home). How
-often that effect actually happens -- `reset_cubes` returns only 5 - k cubes -- is not
-written into the model: the robot learns it, as it learns every robot skill's competence.
+`CubeOrder` chain pins those five slots to a single grounding. Its precondition
+`AnyCubeOnShelf` makes a sweep of an empty shelf inapplicable, so a success always
+means "the n > 0 cubes that were on the shelf are now in the box".
+
+Every skill, robot and human, is all-or-nothing: an attempt either brings about all of
+its promised effects or it fails. The human skills are modelled at their nominal effect
+(every cube back on the shelf; the wiper home) and are applicable only when that effect
+does not already hold (`AnyCubeOffShelf`, `WiperAway`), so neither can succeed
+vacuously. How often the human actually succeeds is not written into the model: the
+robot learns it, as it learns every robot skill's competence.
 """
 
 from typing import ClassVar
@@ -20,6 +26,8 @@ from hitl_pmp.core.method.types import ConditionalAddEffect, LiftedAtom, Skill, 
 from .objects import NUM_CUBES
 from .objects import SweepOffShelf3DObjects as O
 from .predicates import (
+    ANY_CUBE_OFF_SHELF,
+    ANY_CUBE_ON_SHELF,
     CUBE_ORDER,
     HAND_EMPTY,
     HOLDING_CUBE,
@@ -27,6 +35,7 @@ from .predicates import (
     IN_BOX,
     ON_FLOOR,
     ON_SHELF,
+    WIPER_AWAY,
     WIPER_HOME,
     WIPER_ON_FLOOR,
 )
@@ -39,6 +48,8 @@ _ROBOT = Variable(name="robot", type=O.robot_type)
 _BOX = Variable(name="box", type=O.box_type)
 _SLOTS = tuple(Variable(name=f"cube{i}", type=O.cube_type) for i in range(NUM_CUBES))
 _EMPTY = LiftedAtom(predicate=HAND_EMPTY, variables=(_ROBOT,))
+_ANY_ON = LiftedAtom(predicate=ANY_CUBE_ON_SHELF, variables=())
+_ANY_OFF = LiftedAtom(predicate=ANY_CUBE_OFF_SHELF, variables=())
 
 
 class SweepOffShelf3DSkills:
@@ -56,6 +67,7 @@ class SweepOffShelf3DSkills:
     )
     _held_cube: ClassVar[LiftedAtom] = LiftedAtom(predicate=HOLDING_CUBE, variables=(_robot, _cube))
     _home: ClassVar[LiftedAtom] = LiftedAtom(predicate=WIPER_HOME, variables=(_wiper,))
+    _away: ClassVar[LiftedAtom] = LiftedAtom(predicate=WIPER_AWAY, variables=(_wiper,))
     _chain: ClassVar[frozenset[LiftedAtom]] = frozenset(
         LiftedAtom(predicate=CUBE_ORDER, variables=(a, b))
         for a, b in zip(_SLOTS, _SLOTS[1:], strict=False)
@@ -71,7 +83,7 @@ class SweepOffShelf3DSkills:
         name="PickWiper",
         parameters=(_robot, _wiper),
         preconditions=frozenset({_empty, _home}),
-        add_effects=frozenset({_held_wiper}),
+        add_effects=frozenset({_held_wiper, _away}),
         delete_effects=frozenset({_empty, _home}),
         param_dim=0,
         practice_cost=1.0,
@@ -80,9 +92,12 @@ class SweepOffShelf3DSkills:
     SWEEP_SHELF: ClassVar[Skill] = Skill(
         name="SweepShelf",
         parameters=(_robot, _wiper, _box, *_slots),
-        preconditions=frozenset({_held_wiper, *_chain}),
-        add_effects=frozenset(),
-        delete_effects=frozenset(LiftedAtom(predicate=ON_SHELF, variables=(c,)) for c in _slots),
+        preconditions=frozenset({_held_wiper, _ANY_ON, *_chain}),
+        add_effects=frozenset({_ANY_OFF}),
+        delete_effects=frozenset({
+            _ANY_ON,
+            *(LiftedAtom(predicate=ON_SHELF, variables=(c,)) for c in _slots),
+        }),
         conditional_add_effects=frozenset(
             ConditionalAddEffect(
                 conditions=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(c,))}),
@@ -99,7 +114,7 @@ class SweepOffShelf3DSkills:
         parameters=(_robot, _wiper),
         preconditions=frozenset({_held_wiper}),
         add_effects=frozenset({_empty, _home}),
-        delete_effects=frozenset({_held_wiper}),
+        delete_effects=frozenset({_held_wiper, _away}),
         param_dim=0,
         practice_cost=1.0,
     )
@@ -108,7 +123,8 @@ class SweepOffShelf3DSkills:
         name="PickCubeFromShelf",
         parameters=(_robot, _cube),
         preconditions=frozenset({_empty, LiftedAtom(predicate=ON_SHELF, variables=(_cube,))}),
-        add_effects=frozenset({_held_cube}),
+        # AnyCubeOnShelf is left as it was: see predicates.py.
+        add_effects=frozenset({_held_cube, _ANY_OFF}),
         delete_effects=frozenset({_empty, LiftedAtom(predicate=ON_SHELF, variables=(_cube,))}),
         param_dim=0,
         practice_cost=1.0,
@@ -138,17 +154,23 @@ class SweepOffShelf3DSkills:
     RESET_CUBES: ClassVar[Skill] = Skill(
         name=RESET_CUBES_NAME,
         parameters=(_robot, _box, *_slots),
-        preconditions=frozenset(_chain),
-        add_effects=frozenset(LiftedAtom(predicate=ON_SHELF, variables=(c,)) for c in _slots),
-        delete_effects=frozenset(
-            atom
-            for c in _slots
-            for atom in (
-                LiftedAtom(predicate=IN_BOX, variables=(c, _BOX)),
-                LiftedAtom(predicate=ON_FLOOR, variables=(c,)),
-                LiftedAtom(predicate=HOLDING_CUBE, variables=(_ROBOT, c)),
-            )
-        ),
+        preconditions=frozenset({_ANY_OFF, *_chain}),
+        add_effects=frozenset({
+            _ANY_ON,
+            *(LiftedAtom(predicate=ON_SHELF, variables=(c,)) for c in _slots),
+        }),
+        delete_effects=frozenset({
+            _ANY_OFF,
+            *(
+                atom
+                for c in _slots
+                for atom in (
+                    LiftedAtom(predicate=IN_BOX, variables=(c, _BOX)),
+                    LiftedAtom(predicate=ON_FLOOR, variables=(c,)),
+                    LiftedAtom(predicate=HOLDING_CUBE, variables=(_ROBOT, c)),
+                )
+            ),
+        }),
         conditional_add_effects=frozenset(
             ConditionalAddEffect(
                 conditions=frozenset({LiftedAtom(predicate=HOLDING_CUBE, variables=(_ROBOT, c))}),
@@ -163,10 +185,11 @@ class SweepOffShelf3DSkills:
     RESET_WIPER: ClassVar[Skill] = Skill(
         name=RESET_WIPER_NAME,
         parameters=(_robot, _wiper),
-        preconditions=frozenset(),
+        preconditions=frozenset({_away}),
         add_effects=frozenset({_home}),
         delete_effects=frozenset({
             _held_wiper,
+            _away,
             LiftedAtom(predicate=WIPER_ON_FLOOR, variables=(_wiper,)),
         }),
         conditional_add_effects=frozenset({
