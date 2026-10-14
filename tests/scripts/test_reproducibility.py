@@ -80,6 +80,9 @@ class ReproducibilityHarness:
                 str(seed),
                 "--output-dir",
                 str(output_dir),
+                # stats.json is all these tests compare, and it is byte-identical
+                # without video (tests/test_defer_rendering.py).
+                "--defer-rendering",
             ],
             capture_output=True,
             text=True,

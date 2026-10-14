@@ -194,6 +194,8 @@ def test_an_ordinary_cli_run_writes_a_state_log_with_no_manual_wiring(*, tmp_pat
             "1",
             "--output-dir",
             str(output_dir),
+            # State capture is gated on --output-dir, not on the renderer.
+            "--defer-rendering",
         ]
     )
 
