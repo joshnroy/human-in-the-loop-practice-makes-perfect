@@ -373,3 +373,29 @@ def test_the_goal_pursuit_schedule_flags_reach_both_methods(
     Cli.main(argv=["--env", "tossing3d", "--method", method_name, *argv])
     (method,) = built
     assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == expected  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("env_name", "argv", "expected"),
+    [
+        ("tossing3d", [], 3),
+        ("sweepoffshelf3d", [], 7),
+        ("sweepoffshelf3d", ["--pomdp-search-depth", "4"], 4),
+    ],
+)
+def test_the_pomdp_search_depth_defaults_to_the_domains(
+    *, env_name: str, argv: list[str], expected: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resolved before the run so config_snapshot.json records the depth searched."""
+    from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+
+    seen: list[int] = []
+
+    def _run_method(*, args: argparse.Namespace, **_kwargs: object) -> None:
+        seen.append(args.pomdp_search_depth)
+
+    env_cli = {"tossing3d": Tossing3DCli, "sweepoffshelf3d": SweepOffShelf3DCli}[env_name]
+    monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", env_name, "--method", "pomdp", *argv])
+    assert seen == [expected]

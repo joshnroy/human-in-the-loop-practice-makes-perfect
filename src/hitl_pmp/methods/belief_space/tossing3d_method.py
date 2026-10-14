@@ -90,7 +90,8 @@ class Tossing3DPomdpMethod(EesMethod):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    pomdp_search_depth: int = Field(default=3, ge=0)
+    # None: the practice domain's `default_search_depth` (3 Tossing3D, 7 the shelf).
+    pomdp_search_depth: int | None = Field(default=None, ge=0)
     pomdp_log_full_search_tree: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
@@ -278,14 +279,6 @@ class Tossing3DPomdpMethod(EesMethod):
                 objects=self.objects(), predicates=self.predicates()
             ),
         )
-        self._pomdp_model = Tossing3DPracticeModel(
-            seed=self.seed,
-            domain=self.pomdp_domain,
-            exploration_epsilon=self.exploration_epsilon,
-            competence_evidence=self.pomdp_competence_evidence,
-            ground_skills=tuple(ground_skills),
-            linear_cost_lambda=self.pomdp_linear_cost_lambda,
-        )
         self.pomdp_planner = make_belief_space_planner(
             planner=self.pomdp_planner,
             solver=self.pomdp_solver,
@@ -293,6 +286,22 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+        )
+        # Exact reductions of the expectimax tree only: determinized A* samples paths
+        # over the action list, so dropping equivalent actions would change what it
+        # samples rather than only how fast it runs.
+        reduce_search = self.pomdp_domain.reduce_expectimax_search and isinstance(
+            self.pomdp_planner, ExpectimaxPlanner
+        )
+        self._pomdp_model = Tossing3DPracticeModel(
+            seed=self.seed,
+            domain=self.pomdp_domain,
+            exploration_epsilon=self.exploration_epsilon,
+            competence_evidence=self.pomdp_competence_evidence,
+            ground_skills=tuple(ground_skills),
+            linear_cost_lambda=self.pomdp_linear_cost_lambda,
+            object_symmetry=reduce_search,
+            merge_beliefs_by_counts=reduce_search,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         if self.pomdp_domain == TOSSING3D_DOMAIN:
@@ -309,6 +318,12 @@ class Tossing3DPomdpMethod(EesMethod):
         assert all(skill.evaluate_practice_cost() <= COST_MAX for skill in ground_skills), (
             f"POMDP cost observations must be at most {COST_MAX}"
         )
+
+    @property
+    def search_depth(self) -> int:
+        if self.pomdp_search_depth is None:
+            return self.pomdp_domain.default_search_depth
+        return self.pomdp_search_depth
 
     @property
     def pomdp_state(self) -> Tossing3DBeliefState:
@@ -607,7 +622,7 @@ class Tossing3DPomdpMethod(EesMethod):
         ] = self._pomdp_model
         planner = self.pomdp_planner
         assert planner is not None
-        horizon = self.pomdp_search_depth
+        horizon = self.search_depth
         if self._remaining_practice_actions is not None:
             horizon = min(horizon, self._remaining_practice_actions)
         search_started_at = time.perf_counter()

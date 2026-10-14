@@ -59,6 +59,12 @@ class PracticeDomain(BaseModel, abc.ABC):
     # The Beta prior on an untrained skill's competence; None keeps InferenceConfig's.
     initial_competence_alpha: float | None = None
     initial_competence_beta: float | None = None
+    # Expectimax depth when the run does not set one.
+    default_search_depth: int = Field(default=3, ge=0)
+    # Reduce expectimax by exact object symmetry and count-keyed beliefs
+    # (object_symmetry.py, `Tossing3DPracticeModel.search_cache_key`). Off by default,
+    # so a domain that has never been checked for it searches exactly as before.
+    reduce_expectimax_search: bool = False
 
     def belief_name(self, *, skill_name: str) -> str | None:
         shared = dict(self.shared_beliefs)
@@ -247,6 +253,10 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
     # prior value is 0.518).
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
+    # Five interchangeable cubes: exact symmetry plus count-keyed beliefs take the
+    # search from depth 5 to depth 7 in about the same time per decision.
+    default_search_depth: int = 7
+    reduce_expectimax_search: bool = True
     sampler_skill: str = "SweepShelf"
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (
