@@ -1,0 +1,739 @@
+"""Tossing3D practice measured in control steps, independently of learning sessions.
+
+The training process publishes immutable deployment snapshots. Spawned workers own
+their environments, policies and RNGs; they return measurements only to the logger.
+"""
+
+# ruff: noqa: SLF001
+import argparse
+import hashlib
+import json
+import multiprocessing
+import os
+import pickle
+import threading
+import time
+import traceback
+from collections.abc import Callable
+from concurrent.futures import CancelledError, Future, ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, ClassVar, Literal
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+from hitl_pmp.config_snapshot import ConfigSnapshot
+from hitl_pmp.core.control_steps import ControlStepLimitReached
+from hitl_pmp.core.log_timing import LogTiming
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete
+from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
+from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
+
+
+class PracticeClock(BaseModel):
+    """Only actual practice controller calls and human invocations advance this clock."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    budget: int = Field(gt=0)
+    interval: int = Field(gt=0)
+    human_steps: int = Field(default=1, gt=0)
+    robot_steps: int = 0
+    human_invocations: int = 0
+    robot_active: bool = False
+    on_measure: Callable[[], None]
+    on_progress: Callable[[], None] = lambda: None
+    progress_interval: int = Field(default=100, gt=0)
+    _measuring_at: int | None = PrivateAttr(default=None)
+
+    @property
+    def steps(self) -> int:
+        return self.robot_steps + self.human_steps * self.human_invocations
+
+    @property
+    def measurement_steps(self) -> int:
+        """The practice step a measurement is taken at.
+
+        Inside `on_measure` this is the threshold being crossed, which differs from
+        `steps` only when one human invocation jumps over several thresholds at once:
+        no learning happens inside that jump, so one policy is measured at each of them,
+        and each lands at its own x rather than all of them at the jump's end."""
+        return self.steps if self._measuring_at is None else self._measuring_at
+
+    def before_robot_step(self) -> None:
+        if self.robot_active and self.steps >= self.budget:
+            raise ControlStepLimitReached()
+
+    def after_robot_step(self) -> None:
+        if self.robot_active:
+            previous = self.steps
+            self.robot_steps += 1
+            self._advanced(previous=previous)
+
+    def before_human(self) -> None:
+        if self.steps + self.human_steps > self.budget:
+            raise ControlStepLimitReached()
+
+    def human_invoked(self) -> None:
+        previous = self.steps
+        self.human_invocations += 1
+        self._advanced(previous=previous)
+
+    def _advanced(self, *, previous: int) -> None:
+        # Once per crossed threshold: one increment can cross several (a human
+        # invocation longer than the interval) or land past one without touching it.
+        for threshold in range(
+            (previous // self.interval + 1) * self.interval, self.steps + 1, self.interval
+        ):
+            self._measuring_at = threshold
+            try:
+                self.on_measure()
+            finally:
+                self._measuring_at = None
+        crossed = self.steps // self.progress_interval - previous // self.progress_interval
+        for _ in range(crossed):
+            self.on_progress()
+
+
+class EvaluationClock(BaseModel):
+    """Counts one held-out evaluation episode's control steps and scores it.
+
+    **Known divergence, deliberately not fixed here.** `solved` latches on the first
+    physics tick at which `check_goals()` is true, and `before` then stops the
+    controller. A cube *passing through* the goal box mid-flight therefore scores as
+    solved even if it would bounce out. The incumbent evaluation (`PracticeLoop`)
+    scores the state after the whole skill has finished, so the two protocols' success
+    rates are not the same measurement and must not be compared as if they were."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    budget: int = Field(gt=0)
+    check_goal: Callable[[], bool]
+    steps: int = 0
+    solved: bool = False
+
+    def before(self) -> None:
+        if self.solved or self.steps >= self.budget:
+            raise ControlStepLimitReached()
+
+    def after(self) -> None:
+        self.steps += 1
+        self.solved = self.solved or self.check_goal()
+
+
+class FreshProcessEvaluations(BaseModel):
+    """Evaluations run one at a time, each in a freshly spawned process.
+
+    A long-lived worker would build a new MuJoCo scene per evaluation and keep whatever
+    the simulator fails to release, so memory grows with the number of measurements.
+    `ProcessPoolExecutor(max_tasks_per_child=1)` would say this in one argument, but it
+    needs Python 3.11 and this project runs 3.10, so a one-thread queue owns ordering
+    and each job gets its own single-use spawn pool."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    _queue: ThreadPoolExecutor = PrivateAttr(
+        default_factory=lambda: ThreadPoolExecutor(max_workers=1)
+    )
+    _lock: Any = PrivateAttr(default_factory=threading.Lock)
+    _current: ProcessPoolExecutor | None = PrivateAttr(default=None)
+    _closing: bool = PrivateAttr(default=False)
+
+    def submit(self, *, fn: Callable[..., Any], **kwargs: Any) -> Future:
+        return self._queue.submit(lambda: self._isolated(fn=fn, kwargs=kwargs))
+
+    def has_running_process(self) -> bool:
+        with self._lock:
+            return self._current is not None
+
+    def finish(self) -> None:
+        """Wait for every queued evaluation."""
+        self._queue.shutdown(wait=True)
+
+    def abort(self) -> None:
+        """Cancel queued evaluations and terminate the running one, without waiting."""
+        with self._lock:
+            self._closing = True
+            current = self._current
+        self._queue.shutdown(wait=False, cancel_futures=True)
+        if current is not None:
+            # `_processes` becomes None if the job finished and shut its pool meanwhile.
+            for process in list((current._processes or {}).values()):
+                process.terminate()
+            current.shutdown(wait=False, cancel_futures=True)
+
+    def _isolated(self, *, fn: Callable[..., Any], kwargs: dict[str, Any]) -> Any:
+        # Submitted under the lock, so `abort` always sees a spawned worker to terminate.
+        with self._lock:
+            if self._closing:
+                raise CancelledError()
+            pool = ProcessPoolExecutor(
+                max_workers=1, mp_context=multiprocessing.get_context("spawn")
+            )
+            inner = pool.submit(fn, **kwargs)
+            self._current = pool
+        try:
+            return inner.result()
+        finally:
+            with self._lock:
+                self._current = None
+            pool.shutdown(wait=not self._closing, cancel_futures=True)
+
+
+class StepFiles:
+    @staticmethod
+    def json(*, path: Path, value: Any) -> None:
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+        temporary.replace(path)
+
+    @staticmethod
+    def event(*, path: Path, **record: Any) -> None:
+        with path.open("a") as stream:
+            stream.write(LogTiming.encode(record=record))
+
+
+class DeploymentSnapshot:
+    """Both structured arms inherit EES deployment; practice-only state is excluded."""
+
+    @staticmethod
+    def encode(*, method: EesMethod) -> bytes:
+        configuration = {
+            key: getattr(method, key)
+            for key in EesMethod.model_fields
+            if key not in {"env", "skill_provider", "draw_recorder"}
+        }
+        return pickle.dumps(
+            {
+                "configuration": configuration,
+                "samplers": method._samplers,
+                "competence_models": [
+                    (ground.skill.name, tuple(o.name for o in ground.objects), belief)
+                    for ground, belief in method._competence_models.items()
+                ],
+                "rng": method._rng.bit_generator.state,
+            },
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+    @staticmethod
+    def restore(*, raw: bytes, env: Any, provider: Any) -> EesMethod:
+        payload = pickle.loads(raw)  # trusted, locally produced experiment snapshots
+        method = EesMethod(env=env, skill_provider=provider, **payload["configuration"])
+        method._samplers = payload["samplers"]
+        skills = {skill.name: skill for skill in provider.skills()}
+        objects = {obj.name: obj for obj in provider.objects()}
+        method._competence_models = {
+            GroundSkill(skill=skills[name], objects=tuple(objects[obj] for obj in names)): belief
+            for name, names, belief in payload["competence_models"]
+            if name in skills  # Human actions are unavailable in deployment.
+        }
+        method._rng.bit_generator.state = payload["rng"]
+        return method
+
+
+class StepEvaluation:
+    @staticmethod
+    def run(*, snapshot: str, configuration: dict[str, Any], output: str) -> dict[str, Any]:
+        # Import here to avoid a cycle with the domain's CLI composition root.
+        from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+        from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+        from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
+
+        args = argparse.Namespace(**configuration)
+        directory = Path(output)
+        directory.mkdir(parents=True, exist_ok=False)
+        raw = Path(snapshot).read_bytes()
+        problem = Tossing3DCli.build_evaluation_problem(args=args)
+        writer = StateLogWriter(
+            output_path=directory / "states.jsonl",
+            header=StateLogHeader(
+                layout=problem.env.layout,
+                variant=args.variant,
+                scene_bg=args.scene_bg,
+                canonical_seed=args.canonical_seed,
+                seed=args.seed,
+                test_env_seed_offset=args.test_env_seed_offset,
+            ),
+        )
+        problem.env.attach_state_log_writer(writer=writer)
+        results: list[dict[str, Any]] = []
+        started = time.monotonic()
+        try:
+            problem.hard_reset()
+            tasks = [problem.sample_test_task() for _ in range(args.num_test_tasks)]
+            method = DeploymentSnapshot.restore(
+                raw=raw,
+                env=problem.env,
+                provider=Tossing3DSkillProvider(env=problem.env, offer_human_reset=False),
+            )
+            for index, task in enumerate(tasks):
+                state = problem.reset_to_task(task=task)
+                policy = method.get_task_policy(task=task)
+                backend = problem.env.backend()
+                clock = EvaluationClock(
+                    budget=args.evaluation_control_steps,
+                    check_goal=backend.check_goals,
+                    solved=backend.check_goals(),
+                )
+                reason = "goal" if clock.solved else "step_budget"
+                backend.set_control_step_observers(before=clock.before, after=clock.after)
+                try:
+                    while not clock.solved and clock.steps < args.evaluation_control_steps:
+                        action = policy(state)
+                        if np.array_equal(action.action, problem.env.noop_action()):
+                            reason = "no_plan"
+                            break
+                        previous = clock.steps
+                        try:
+                            state = problem.take_action(action=action.action)
+                        except ControlStepLimitReached:
+                            problem.env._log_skill_ticks(action=action.action)
+                            break
+                        StepFiles.event(
+                            path=directory / "actions.jsonl",
+                            task=index,
+                            label=action.label,
+                            start_step=previous,
+                            end_step=clock.steps,
+                        )
+                        if clock.steps == previous:
+                            reason = "zero_step_controller_failure"
+                            break
+                finally:
+                    backend.set_control_step_observers(before=None, after=None)
+                if clock.solved:
+                    reason = "goal"
+                results.append({
+                    "task": index,
+                    "seed": int(task.initial_state.get(obj=problem.env.scene, feature_name="seed")),
+                    "solved": clock.solved,
+                    "steps": clock.steps,
+                    "reason": reason,
+                })
+                StepFiles.json(path=directory / "progress.json", value={"tasks": results})
+            result = {
+                "complete": True,
+                "tasks": results,
+                "num_solved": sum(r["solved"] for r in results),
+                "num_total": len(results),
+                "policy_sha256": hashlib.sha256(raw).hexdigest(),
+                "elapsed_seconds": time.monotonic() - started,
+            }
+            StepFiles.json(path=directory / "results.json", value=result)
+            return result
+        except BaseException:
+            (directory / "failure.txt").write_text(traceback.format_exc())
+            raise
+        finally:
+            writer.close()
+            problem.env.close()
+
+
+class StepProtocolValidation:
+    """Everything that can refuse a run, checked before anything is built or opened."""
+
+    # Any of these in the output directory means a run already lives there. The state
+    # log is opened in mode "w" while the problem is built, so the check must come first
+    # or rerunning into an old directory truncates the run it then refuses to replace.
+    RUN_OUTPUTS: ClassVar[tuple[str, ...]] = (
+        "step_events.jsonl",
+        "tossing3d_state_log.jsonl",
+        "measurements.json",
+        "step_protocol.json",
+        "step_evaluations.json",
+        "stats.json",
+        "status.json",
+        "snapshots",
+        "evaluations",
+    )
+
+    @staticmethod
+    def check(*, args: argparse.Namespace) -> None:
+        if args.env != "tossing3d" or args.method not in {"ees", "pomdp"}:
+            raise ValueError("Step protocol currently supports Tossing3D EES and PDDL")
+        if args.practice_reset_policy != PracticeResetPolicy.NEVER:
+            raise ValueError(
+                "Step protocol requires persistent practice (--practice-reset-policy never)"
+            )
+        if args.practice_reset_interval is not None or args.output_dir is None:
+            raise ValueError("Step protocol requires an output directory and no automatic resets")
+        if not args.defer_rendering:
+            raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
+        output = Path(args.output_dir)
+        existing = [name for name in StepProtocolValidation.RUN_OUTPUTS if (output / name).exists()]
+        if existing:
+            raise FileExistsError(
+                f"Preserve the existing run in {output} (found {', '.join(existing)}); "
+                "choose a new output directory"
+            )
+
+
+class StepProtocolEntry:
+    @staticmethod
+    def run(*, args: argparse.Namespace, method_cli: Any) -> None:
+        StepProtocolValidation.check(args=args)
+        from hitl_pmp.core.method.skill_provider import DomainContext
+        from hitl_pmp.environments.tossing3d.cli import Tossing3DCli as DomainCli
+        from hitl_pmp.environments.tossing3d.skill_provider import (
+            Tossing3DOracle,
+            Tossing3DSkillProvider,
+        )
+        from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
+
+        # Method CLI factories remain authoritative for all algorithm configuration.
+        class Tossing3DCli:
+            @staticmethod
+            def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
+                problem = DomainCli.build_practice_problem(args=args)
+                output = Path(args.output_dir)
+                output.mkdir(parents=True, exist_ok=True)
+                writer = StateLogWriter(
+                    output_path=output / "tossing3d_state_log.jsonl",
+                    header=StateLogHeader(
+                        layout=problem.env.layout,
+                        variant=args.variant,
+                        scene_bg=args.scene_bg,
+                        canonical_seed=args.canonical_seed,
+                        seed=args.seed,
+                        test_env_seed_offset=args.test_env_seed_offset,
+                    ),
+                )
+                problem.env.attach_state_log_writer(writer=writer)
+                context = DomainContext(
+                    env=problem.env,
+                    oracle=Tossing3DOracle(
+                        env=problem.env, throw_standoff=args.oracle_throw_standoff
+                    ),
+                    skill_provider=Tossing3DSkillProvider(
+                        env=problem.env,
+                        human_reset_practice_cost=args.human_reset_practice_cost,
+                        offer_human_reset=args.human_reset,
+                    ),
+                )
+                try:
+                    StepPracticeRunner.run(
+                        args=args, method=method_factory(context), problem=problem
+                    )
+                finally:
+                    writer.close()
+                    problem.env.close()
+
+        method_cli.run(args=args, env_cli=Tossing3DCli)
+
+
+class StepPracticeRunner:
+    @staticmethod
+    def run(
+        *,
+        args: argparse.Namespace,
+        method: Any,
+        problem: Any,
+        evaluations: Any = None,
+    ) -> Metrics:
+        """Run persistent practice to the step budget. `StepProtocolValidation.check`
+        must already have passed: by the time a problem exists, the state log beside
+        these outputs has been opened, so the existing-run check cannot live here."""
+        output = Path(args.output_dir)
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "snapshots").mkdir()
+        configuration = vars(args).copy()
+        events = output / "step_events.jsonl"
+        metrics = Metrics()
+        cycle = 0
+        robot_invocations = 0
+        learning_updates = 0
+        reset_counts = {"robot_side": 0, "opposite_side": 0}
+        records: list[dict[str, Any]] = []
+        futures: list[tuple[dict[str, Any], Any]] = []
+        started = time.monotonic()
+        endpoint = "running"
+        problem.hard_reset()
+        pool = evaluations if evaluations is not None else FreshProcessEvaluations()
+
+        def status() -> None:
+            StepFiles.json(
+                path=output / "status.json",
+                value={
+                    "phase": endpoint,
+                    "updated_unix": time.time(),
+                    "practice_steps": clock.steps,
+                    "robot_steps": clock.robot_steps,
+                    "human_invocations": clock.human_invocations,
+                    "human_resets_by_destination": reset_counts,
+                    "learning_updates": learning_updates,
+                    "session_index": cycle,
+                    "measurement_snapshots": len(records),
+                    "evaluations_completed": sum(f.done() for _, f in futures),
+                    "elapsed_seconds": time.monotonic() - started,
+                },
+            )
+
+        def measure() -> None:
+            raw = DeploymentSnapshot.encode(method=method)
+            index = len(records)
+            path = output / "snapshots" / f"{index:04d}.pickle"
+            path.write_bytes(raw)
+            record = {
+                "index": index,
+                "practice_steps": clock.measurement_steps,
+                "clock_steps": clock.steps,
+                "robot_steps": clock.robot_steps,
+                "human_invocations": clock.human_invocations,
+                "human_resets_by_destination": dict(reset_counts),
+                "robot_invocations": robot_invocations,
+                "learning_updates": learning_updates,
+                "session_index": cycle,
+                "policy_sha256": hashlib.sha256(raw).hexdigest(),
+            }
+            records.append(record)
+            StepFiles.event(path=events, event="measurement", **record)
+            futures.append((
+                record,
+                pool.submit(
+                    fn=StepEvaluation.run,
+                    snapshot=str(path),
+                    configuration=configuration,
+                    output=str(output / "evaluations" / f"{index:04d}"),
+                ),
+            ))
+            StepFiles.json(path=output / "measurements.json", value=records)
+            status()
+
+        clock = PracticeClock(
+            budget=args.practice_step_budget,
+            interval=args.measurement_interval_steps,
+            human_steps=args.human_skill_steps,
+            on_measure=measure,
+            on_progress=status,
+        )
+        backend = problem.env.backend()
+        backend.set_control_step_observers(
+            before=clock.before_robot_step, after=clock.after_robot_step
+        )
+        StepFiles.json(
+            path=output / "step_protocol.json",
+            value={
+                "practice_step_budget": clock.budget,
+                "measurement_interval_steps": clock.interval,
+                "human_skill_steps": clock.human_steps,
+                "evaluation_control_steps": args.evaluation_control_steps,
+                "learning_session_action_limit": args.max_steps_per_interaction,
+                "learning_cycle_count_limit": None,
+                "original_num_cycles_flag_superseded_by_step_budget": args.num_cycles,
+                "evaluation_process": "spawn, one fresh process per evaluation",
+                "evaluation_x_axis": "practice_steps",
+                "evaluation_feedback": False,
+            },
+        )
+        StepFiles.json(
+            path=output / "config_snapshot.json",
+            value=ConfigSnapshot.collect(
+                args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
+            ).model_dump(mode="json"),
+        )
+        budget_reached = False
+        try:
+            measure()
+            while clock.steps < clock.budget:
+                if (output / "STOP").exists():
+                    endpoint = "external_stop"
+                    break
+                task = PracticeLoop._sample_practice_task(
+                    problem=problem, practice_reset_policy=PracticeResetPolicy.NEVER
+                )
+                policy = method.get_practice_policy(task=task)
+                state = problem.get_current_state()
+                reason: Literal["session_action_cap", "planner_stop", "interaction_complete"] = (
+                    "session_action_cap"
+                )
+                actions = 0
+                StepFiles.event(
+                    path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
+                )
+                for action_index in range(args.max_steps_per_interaction):
+                    if clock.steps >= clock.budget:
+                        break
+                    method.observe_practice_action_budget(
+                        remaining_actions=args.max_steps_per_interaction - action_index
+                    )
+                    try:
+                        action = policy(state)
+                    except HumanCubeBinResetRequested as request:
+                        try:
+                            clock.before_human()
+                        except ControlStepLimitReached:
+                            # The human does not fit in what remains: the budget is
+                            # reached here exactly as it is by a robot step, so practice
+                            # ends normally and the final measurement still runs.
+                            budget_reached = True
+                            StepFiles.event(
+                                path=events,
+                                event="human_refused_at_budget",
+                                cycle=cycle,
+                                practice_steps=clock.steps,
+                                destination=request.destination,
+                                cost=request.cost,
+                            )
+                            break
+                        destination = request.destination
+                        if destination not in {"robot_side", "opposite_side"}:
+                            raise ValueError(
+                                f"Unexpected reset destination: {destination!r}"
+                            ) from request
+                        assert destination is not None
+                        before_count = clock.steps
+                        state = PracticeLoop._grant_movables_reset(
+                            problem=problem,
+                            method=method,
+                            metrics=metrics,
+                            cost=request.cost,
+                            destination=destination,
+                            state=state,
+                        )
+                        method.observe_help_granted(state=state)
+                        reset_counts[destination] = reset_counts.get(destination, 0) + 1
+                        clock.human_invoked()
+                        actions += 1
+                        StepFiles.event(
+                            path=events,
+                            event="human",
+                            cycle=cycle,
+                            start_step=before_count,
+                            end_step=clock.steps,
+                            destination=destination,
+                            cost=request.cost,
+                            success=True,
+                        )
+                        continue
+                    except InteractionComplete as completion:
+                        reason = (
+                            "planner_stop" if completion.planner_stop else "interaction_complete"
+                        )
+                        break
+                    before_count = clock.steps
+                    robot_invocations += 1
+                    clock.robot_active = True
+                    interruption: str | None = None
+                    try:
+                        state = problem.take_action(action=action.action)
+                    except ControlStepLimitReached:
+                        # `take_action` never reached its own bookkeeping, so the env
+                        # still holds the pre-skill state and a cleared skill error.
+                        interruption = "practice_step_budget"
+                        state = problem.env.adopt_interrupted_skill(
+                            action=action.action, reason=interruption
+                        )
+                    finally:
+                        clock.robot_active = False
+                    actions += 1
+                    StepFiles.event(
+                        path=events,
+                        event="robot",
+                        cycle=cycle,
+                        label=action.label,
+                        action=action.action.tolist(),
+                        start_step=before_count,
+                        end_step=clock.steps,
+                        interrupted=interruption is not None,
+                        interruption=interruption,
+                        skill_error=problem.env.last_skill_error(),
+                    )
+                    if interruption is not None:
+                        budget_reached = True
+                        break
+                if budget_reached or clock.steps >= clock.budget:
+                    endpoint = "practice_step_budget"
+                    break
+                metrics.practice_session_ends.append(
+                    PracticeSessionEnd(
+                        cycle_index=cycle,
+                        reason=reason,
+                        actions_executed=actions,
+                        action_limit=args.max_steps_per_interaction,
+                    )
+                )
+                method.end_cycle()
+                learning_updates += 1
+                StepFiles.event(
+                    path=events,
+                    event="learning_update",
+                    cycle=cycle,
+                    practice_steps=clock.steps,
+                    actions=actions,
+                    reason=reason,
+                )
+                cycle += 1
+                status()
+            if endpoint == "running":
+                endpoint = "practice_step_budget"
+        except BaseException:
+            endpoint = "failed"
+            (output / "failure.txt").write_text(traceback.format_exc())
+            raise
+        finally:
+            backend.set_control_step_observers(before=None, after=None)
+            clock.robot_active = False
+            if endpoint != "failed" and (
+                not records or records[-1]["practice_steps"] != clock.steps
+            ):
+                measure()
+            StepFiles.event(
+                path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
+            )
+            status()
+            failed = endpoint == "failed"
+            if failed:
+                # A crash or Ctrl-C must not sit behind the evaluation queue: cancel what
+                # has not started, terminate what has, and record both as cancelled.
+                pool.abort()
+            else:
+                pool.finish()
+            evaluation_records = []
+            for record, future in futures:
+                if future.cancelled() or (failed and not future.done()):
+                    evaluation_records.append({
+                        **record,
+                        "complete": False,
+                        "cancelled": True,
+                        "error": "cancelled: practice ended in failure",
+                    })
+                    continue
+                try:
+                    result = future.result()
+                    # x is the measurement's own practice step, unique and increasing,
+                    # so mid-skill and final measurements never share a point and
+                    # human invocations advance the axis like control steps do.
+                    metrics.record_evaluation(
+                        num_online_transitions=record["practice_steps"],
+                        num_solved=result["num_solved"],
+                        num_total=result["num_total"],
+                        outcomes=tuple(
+                            TaskOutcome(
+                                goal="InBin(cube_0, bin_0)",
+                                task_index=r["task"],
+                                solved=r["solved"],
+                            )
+                            for r in result["tasks"]
+                        ),
+                    )
+                    evaluation_records.append({**record, **result})
+                except Exception as exc:
+                    evaluation_records.append({
+                        **record,
+                        "complete": False,
+                        "cancelled": False,
+                        "error": repr(exc),
+                    })
+            StepFiles.json(path=output / "step_evaluations.json", value=evaluation_records)
+            StepFiles.json(path=output / "stats.json", value=metrics.model_dump(mode="json"))
+            evaluation_failures = sum(not r["complete"] for r in evaluation_records)
+            endpoint = (
+                "failed"
+                if endpoint == "failed"
+                else "evaluation_failed"
+                if evaluation_failures
+                else "complete"
+            )
+            status()
+        return metrics

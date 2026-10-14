@@ -81,6 +81,24 @@ class Cli:
     @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "--practice-step-budget",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+        )
+        parser.add_argument(
+            "--measurement-interval-steps",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=1700,
+        )
+        parser.add_argument(
+            "--human-skill-steps", type=lambda value: Cli.parse_positive_int(value=value), default=1
+        )
+        parser.add_argument(
+            "--evaluation-control-steps",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=500,
+        )
+        parser.add_argument(
             "--env",
             choices=sorted(ENVIRONMENTS),
             required=True,
@@ -275,6 +293,11 @@ class Cli:
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
+        if args.practice_step_budget is not None:
+            from hitl_pmp.step_protocol import StepProtocolEntry
+
+            StepProtocolEntry.run(args=args, method_cli=METHODS[args.method])
+            return
         # cli.py is the one place allowed to import both environments/ and methods/,
         # so it is where the selected env-CLI (its composition root) and method-CLI
         # are wired together -- the method-CLI drives `env_cli.run_method`, so a

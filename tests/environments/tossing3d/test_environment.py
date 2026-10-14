@@ -319,3 +319,42 @@ def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() ->
         assert PICKUP_UNBLOCKED.holds(picked, (env.cube,))
     finally:
         env.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_a_skill_stopped_by_an_external_step_budget_adopts_the_simulators_state() -> None:
+    """Finding 9 on #408: a budget interruption escapes `take_action` before its own
+    bookkeeping. Adopting it must leave the env holding the simulator's actual state, one
+    skill further on, with the interruption -- not a clean `None` -- as the skill error."""
+    from hitl_pmp.core.control_steps import ControlStepLimitReached
+
+    env = Tossing3DEnvironment()
+    try:
+        before = env.reset_to_seed(seed=0)
+        backend = env.backend()
+        ticks = []
+
+        def stop_after_twenty() -> None:
+            if len(ticks) >= 20:
+                raise ControlStepLimitReached()
+
+        backend.set_control_step_observers(before=stop_after_twenty, after=lambda: ticks.append(1))
+        action = np.array([float(env.pick_cube_id), 0.0, 0.0, 0.0, 0.0])
+        with pytest.raises(ControlStepLimitReached):
+            env.take_action(action=action)
+        backend.set_control_step_observers(before=None, after=None)
+        assert env.get_current_state() is before
+
+        adopted = env.adopt_interrupted_skill(action=action, reason="practice_step_budget")
+
+        assert env.get_current_state() is adopted
+        assert env.last_skill_error() == "interrupted: practice_step_budget"
+        assert adopted.get(obj=env.scene, feature_name="steps_taken") == 1
+        live = env.build_state(observation=backend.observe(), seed=0, steps_taken=1)
+        for obj in (env.robot, env.cube):
+            assert np.allclose(adopted[obj], live[obj])
+        assert not np.allclose(adopted[env.robot], before[env.robot])
+    finally:
+        env.close()
