@@ -7,12 +7,18 @@ registry follows `cli.py`'s `STEP_PROTOCOL_ENVIRONMENTS`.
 """
 
 import abc
+import argparse
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
-from hitl_pmp.core.practice_costs import PracticeCosts
+from hitl_pmp.core.practice_costs import HumanCharge, PracticeCosts
 from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.environments.sweepoffshelf3d.agentic_bridge import SweepOffShelf3DAgenticBridge
+from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
+from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
+from hitl_pmp.environments.sweepoffshelf3d.skills import RESET_CUBES_NAME, RESET_WIPER_NAME
+from hitl_pmp.environments.sweepoffshelf3d.tasks import SweepOffShelf3DTasks
 from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -34,8 +40,20 @@ class FullAgenticDomain(abc.ABC):
     human_interventions: ClassVar[dict[str, str]]
 
     @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        """The domain's own runner flags, if any."""
+        del parser
+
+    @staticmethod
+    def environment_options(*, args: argparse.Namespace) -> dict[str, Any]:
+        """JSON-serializable keyword arguments for `make_environment`."""
+        return {}
+
+    @staticmethod
     @abc.abstractmethod
-    def make_environment() -> Any: ...
+    def make_environment(*, options: dict[str, Any], human_seed: int) -> Any:
+        """Practice uses `human_seed=seed`, evaluation `seed + 1`, as `--env`'s other
+        methods do."""
 
     @staticmethod
     @abc.abstractmethod
@@ -60,7 +78,7 @@ class FullAgenticDomain(abc.ABC):
     def default_costs() -> PracticeCosts: ...
 
     @staticmethod
-    def protocol_fields() -> dict[str, Any]:
+    def protocol_fields(*, options: dict[str, Any]) -> dict[str, Any]:
         """Extra `protocol.json` fields, appended after the shared ones."""
         return {}
 
@@ -83,7 +101,9 @@ class Tossing3DFullAgentic(FullAgenticDomain):
     }
 
     @staticmethod
-    def make_environment() -> Any:
+    def make_environment(*, options: dict[str, Any], human_seed: int) -> Any:
+        # Tossing3D's human resets draw from the environment's own seed, as before.
+        del options, human_seed
         return Tossing3DEnvironment()
 
     @staticmethod
@@ -111,6 +131,69 @@ class Tossing3DFullAgentic(FullAgenticDomain):
         return PracticeCosts()
 
 
+class SweepOffShelf3DFullAgentic(FullAgenticDomain):
+    name = "sweepoffshelf3d"
+    task_prompt_file = "sweepoffshelf3d_task_prompt.md"
+    robot_api_file = "sweepoffshelf3d_robot_api.md"
+    human_interventions = {
+        RESET_CUBES_NAME: RESET_CUBES_NAME,
+        RESET_WIPER_NAME: RESET_WIPER_NAME,
+    }
+
+    @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--reset-cubes-success-probability",
+            type=float,
+            default=SweepOffShelf3DEnvironment.model_fields[
+                "reset_cubes_success_probability"
+            ].default,
+            help="p: the human's true competence at reset_cubes.",
+        )
+
+    @staticmethod
+    def environment_options(*, args: argparse.Namespace) -> dict[str, Any]:
+        return {"reset_cubes_success_probability": args.reset_cubes_success_probability}
+
+    @staticmethod
+    def make_environment(*, options: dict[str, Any], human_seed: int) -> Any:
+        return SweepOffShelf3DEnvironment(**options, human_seed=human_seed)
+
+    @staticmethod
+    def make_tasks(*, env: Any, seed: int) -> Any:
+        return SweepOffShelf3DTasks(env=env, seed=seed)
+
+    @staticmethod
+    def make_bridge(*, env: Any, practice: bool) -> Any:
+        if practice:
+            return SweepOffShelf3DAgenticBridge(env=env, step_limit=PRACTICE_STEP_LIMIT)
+        return SweepOffShelf3DAgenticBridge(env=env)
+
+    @staticmethod
+    def goal_check(*, env: Any) -> Callable[[], bool]:
+        # The goal every other shelf method is scored on: each cube unheld in the box.
+        goal = {
+            ("InBox", (cube.name, SweepOffShelf3DBackend.box_name))
+            for cube in SweepOffShelf3DEnvironment.cubes
+        }
+        return lambda: goal <= env.backend().abstract_atoms()
+
+    @staticmethod
+    def task_seed(*, env: Any, task: Task) -> int:
+        return int(task.initial_state.get(obj=env.scene, feature_name="seed"))
+
+    @staticmethod
+    def default_costs() -> PracticeCosts:
+        return PracticeCosts(
+            human_skills={RESET_CUBES_NAME: HumanCharge(), RESET_WIPER_NAME: HumanCharge()}
+        )
+
+    @staticmethod
+    def protocol_fields(*, options: dict[str, Any]) -> dict[str, Any]:
+        return {"env": SweepOffShelf3DFullAgentic.name, "environment": options}
+
+
 FULL_AGENTIC_DOMAINS: dict[str, type[FullAgenticDomain]] = {
     Tossing3DFullAgentic.name: Tossing3DFullAgentic,
+    SweepOffShelf3DFullAgentic.name: SweepOffShelf3DFullAgentic,
 }

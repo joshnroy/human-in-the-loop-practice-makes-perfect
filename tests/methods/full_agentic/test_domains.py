@@ -13,7 +13,11 @@ import pytest
 
 from hitl_pmp.agentic_runtime.sandbox import SandboxSettings
 from hitl_pmp.core.practice_costs import PracticeCosts
-from hitl_pmp.full_agentic.domains import FULL_AGENTIC_DOMAINS, Tossing3DFullAgentic
+from hitl_pmp.full_agentic.domains import (
+    FULL_AGENTIC_DOMAINS,
+    SweepOffShelf3DFullAgentic,
+    Tossing3DFullAgentic,
+)
 from hitl_pmp.full_agentic.runner import FullAgenticRunner
 
 GOLDEN = Path(__file__).with_name("golden")
@@ -26,13 +30,15 @@ def settings() -> SandboxSettings:
 
 
 def parse(*extra: str) -> object:
-    return FullAgenticRunner.parser().parse_args([
-        "--output",
-        "/unused",
-        "--sandbox-settings",
-        "/unused.json",
-        *extra,
-    ])
+    return FullAgenticRunner.parse_args(
+        argv=[
+            "--output",
+            "/unused",
+            "--sandbox-settings",
+            "/unused.json",
+            *extra,
+        ]
+    )
 
 
 def rendered(*, args: object) -> tuple[str, str]:
@@ -53,11 +59,23 @@ def rendered(*, args: object) -> tuple[str, str]:
 class TestDomainSelection:
     def test_env_is_a_required_choice_of_the_registered_domains(self) -> None:
         with pytest.raises(SystemExit):
-            FullAgenticRunner.parser().parse_args(["--output", "o", "--sandbox-settings", "s"])
+            FullAgenticRunner.parse_args(argv=["--output", "o", "--sandbox-settings", "s"])
         with pytest.raises(SystemExit):
             parse("--env", "lightswitch")
         assert parse("--env", "tossing3d").env == "tossing3d"
-        assert FULL_AGENTIC_DOMAINS["tossing3d"] is Tossing3DFullAgentic
+        assert {
+            "tossing3d": Tossing3DFullAgentic,
+            "sweepoffshelf3d": SweepOffShelf3DFullAgentic,
+        } == FULL_AGENTIC_DOMAINS
+
+    def test_only_the_shelf_takes_the_humans_competence(self) -> None:
+        with pytest.raises(SystemExit):
+            parse("--env", "tossing3d", "--reset-cubes-success-probability", "0.5")
+        args = parse("--env", "sweepoffshelf3d", "--reset-cubes-success-probability", "0.5")
+        assert SweepOffShelf3DFullAgentic.environment_options(args=args) == {
+            "reset_cubes_success_probability": 0.5
+        }
+        assert Tossing3DFullAgentic.environment_options(args=parse("--env", "tossing3d")) == {}
 
     def test_a_cost_config_must_price_exactly_the_domains_human_skills(
         self, *, tmp_path: Path
@@ -129,7 +147,7 @@ class TestTossing3DBridgeUnchanged:
     ) -> None:
         from hitl_pmp.environments.tossing3d.agentic_bridge import Tossing3DAgenticBridge
 
-        env = Tossing3DFullAgentic.make_environment()
+        env = Tossing3DFullAgentic.make_environment(options={}, human_seed=0)
         try:
             env.hard_reset()
             direct = Tossing3DAgenticBridge(
@@ -143,3 +161,59 @@ class TestTossing3DBridgeUnchanged:
             assert evaluation.step_limit == 1000  # the bridge's own default, as before
         finally:
             env.close()
+
+
+class TestSweepOffShelf3DDomain:
+    def test_interventions_are_the_shelf_humans_two_skills(self) -> None:
+        assert SweepOffShelf3DFullAgentic.human_interventions == {
+            "reset_cubes": "reset_cubes",
+            "reset_wiper": "reset_wiper",
+        }
+        assert SweepOffShelf3DFullAgentic.default_costs() == PracticeCosts(
+            human_skills={"reset_cubes": {}, "reset_wiper": {}}
+        )
+
+    def test_protocol_records_the_domain_after_every_shared_field(self) -> None:
+        protocol = json.loads(rendered(args=parse("--env", "sweepoffshelf3d", "--seed", "4"))[0])
+        tossing = json.loads(rendered(args=parse("--env", "tossing3d", "--seed", "4"))[0])
+        assert list(protocol)[: len(tossing)] == list(tossing)
+        assert protocol["env"] == "sweepoffshelf3d"
+        assert protocol["environment"] == {"reset_cubes_success_probability": 1.0}
+        assert set(protocol["cost_functions"]["human_skills"]) == {"reset_cubes", "reset_wiper"}
+
+    def test_shelf_prompts_differ_from_tossing3d_only_where_listed(self) -> None:
+        """Every line that differs is a line the PR lists for sign-off."""
+        tossing = Tossing3DFullAgentic.task_prompt().splitlines()
+        shelf = SweepOffShelf3DFullAgentic.task_prompt().splitlines()
+        assert len(shelf) == len(tossing)
+        assert [i for i, (a, b) in enumerate(zip(tossing, shelf, strict=True)) if a != b] == [
+            0,
+            1,
+            36,
+        ]
+        tossing_api = Tossing3DFullAgentic.robot_api().read_text().splitlines()
+        shelf_api = SweepOffShelf3DFullAgentic.robot_api().read_text().splitlines()
+        assert [
+            i for i, (a, b) in enumerate(zip(tossing_api, shelf_api, strict=True)) if a != b
+        ] == [14]
+
+    def test_shelf_prompt_names_only_its_own_human_skills_and_command(self) -> None:
+        prompt = rendered(args=parse("--env", "sweepoffshelf3d"))[1]
+        assert "`reset_cubes`" in prompt and "`reset_wiper`" in prompt
+        assert "reset_cube_far" not in prompt and "barrier" not in prompt
+        api = SweepOffShelf3DFullAgentic.robot_api().read_text()
+        assert "11-element" in api and "schedule" not in api
+
+    def test_configured_shelf_costs_replace_the_unit_equations(self, *, tmp_path: Path) -> None:
+        path = tmp_path / "costs.json"
+        path.write_text(
+            PracticeCosts(
+                human_skills={"reset_cubes": {"cost": {"value": 30}}, "reset_wiper": {}}
+            ).model_dump_json()
+        )
+        prompt = rendered(
+            args=parse("--env", "sweepoffshelf3d", "--practice-cost-config", str(path))
+        )[1]
+        assert '"value": 30.0' in prompt
+        assert "both equal to 1 initially" not in prompt
+        assert r"c_h(e) \equiv 1" not in prompt

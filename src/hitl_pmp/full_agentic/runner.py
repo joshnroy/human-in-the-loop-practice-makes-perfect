@@ -111,6 +111,7 @@ class FullAgenticRunner:
         output: Path,
         count: int,
         domain: type[FullAgenticDomain],
+        environment_options: dict[str, Any] | None = None,
         budget: int = 500,
         seed: int = 0,
     ) -> list[dict[str, Any]]:
@@ -125,7 +126,7 @@ class FullAgenticRunner:
                 value=dict(tasks=records, num_solved=0, num_total=count, complete=True),
             )
             return records
-        env = domain.make_environment()
+        env = domain.make_environment(options=environment_options or {}, human_seed=seed + 1)
         tasks = domain.make_tasks(env=env, seed=seed)
         results = []
         try:
@@ -287,8 +288,19 @@ class FullAgenticRunner:
             practice_reset="initialization only; subsequent repositioning via charged human tools",
             learning_schedule="agent chooses updates; measurement does not trigger learning",
             container_limits=FullAgenticRunner.container_limits(settings=settings),
-            **domain.protocol_fields(),
+            **domain.protocol_fields(options=domain.environment_options(args=args)),
         )
+
+    @staticmethod
+    def parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
+        """Parse `--env` first, then the shared flags plus that domain's own."""
+        first = argparse.ArgumentParser(add_help=False)
+        first.add_argument("--env")
+        known, _ = first.parse_known_args(argv)
+        parser = FullAgenticRunner.parser()
+        if known.env in FULL_AGENTIC_DOMAINS:
+            FULL_AGENTIC_DOMAINS[known.env].add_arguments(parser=parser)
+        return parser.parse_args(argv)
 
     @staticmethod
     def parser() -> argparse.ArgumentParser:
@@ -322,8 +334,9 @@ class FullAgenticRunner:
 
     @staticmethod
     def main() -> None:
-        args = FullAgenticRunner.parser().parse_args()
+        args = FullAgenticRunner.parse_args()
         domain = FULL_AGENTIC_DOMAINS[args.env]
+        environment_options = domain.environment_options(args=args)
         if any(
             value <= 0
             for value in (
@@ -357,7 +370,7 @@ class FullAgenticRunner:
         settings = settings.model_copy(
             update={"artifact_dir": output / "execution", "timeout_seconds": 60}
         )
-        env = domain.make_environment()
+        env = domain.make_environment(options=environment_options, human_seed=args.seed)
         pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
         futures = []
         socket_dir = Path(tempfile.mkdtemp(prefix="hitl-full-sock-", dir="/tmp"))
@@ -392,6 +405,7 @@ class FullAgenticRunner:
                     output=output / "evaluations" / f"{record['index']:04d}",
                     count=args.num_test_tasks,
                     domain=domain,
+                    environment_options=environment_options,
                     budget=args.evaluation_control_steps,
                     seed=args.seed,
                 )

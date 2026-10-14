@@ -309,3 +309,13 @@ class DomainInterventionTests(unittest.TestCase):
         self.world.dispatch(request=self.request("step", action=[0] * 11))
         self.world.dispatch(request=self.request("step", action=[[0] * 11] * 4))
         self.assertEqual(self.bridge.calls, 2)
+
+    def test_a_spec_without_schedules_rejects_every_schedule_before_physics(self):
+        self.bridge.action_spec = lambda: {"shape": [11], "low": [-1] * 11, "high": [1] * 11}
+        for action in ([[0] * 11] * 4, {"schedule": [0] * 11}, {"schedule": [[0] * 11]}):
+            with self.assertRaises(ValueError):
+                self.world.dispatch(request=self.request("step", action=action))
+        self.assertFalse(self.world.uncertain)
+        self.assertEqual(self.bridge.calls, 0)
+        self.world.dispatch(request=self.request("step", action={"values": [0] * 11}))
+        self.assertEqual(self.bridge.calls, 1)

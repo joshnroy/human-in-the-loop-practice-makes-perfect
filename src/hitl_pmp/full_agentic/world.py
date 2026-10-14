@@ -191,15 +191,20 @@ class World:
             if self.clock and self.counted_steps >= self.clock.budget:
                 raise RuntimeError("Practice step budget exhausted")
             action = request.get("action")
+            spec = self.bridge.action_spec()
+            (width,) = spec["shape"]
+            # A domain whose native command has no millisecond schedule omits the rows.
+            rows = spec.get("schedule_rows")
+            shapes = ((width,),) if rows is None else ((width,), (rows, width))
             if isinstance(action, dict):
                 if set(action) not in ({"values"}, {"schedule"}):
                     raise ValueError("Action must contain only values or schedule")
+                if rows is None and "schedule" in action:
+                    raise ValueError("This robot accepts no schedules; physics was not advanced")
                 action = action.get("values", action.get("schedule"))
             array = np.asarray(action, dtype=float)
-            spec = self.bridge.action_spec()
-            (width,) = spec["shape"]
             if (
-                array.shape not in ((width,), (spec["schedule_rows"], width))
+                array.shape not in shapes
                 or not np.isfinite(array).all()
                 or np.any(array < spec["low"])
                 or np.any(array > spec["high"])
