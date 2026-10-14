@@ -201,6 +201,43 @@ def test_the_ees_score_human_skills_flag_parses_and_reaches_ees(
     assert method.score_human_skills is expected
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], (10.0, 1.0)), (["--ees-prior-alpha", "1", "--ees-prior-beta", "3"], (1.0, 3.0))],
+)
+def test_the_ees_competence_prior_flags_reach_ees(
+    *, argv: list[str], expected: tuple[float, float], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Beta(10, 1) by default, the paper's prior, so Tossing3D's published EES runs
+    reproduce; the shelf rerun gives EES the same Beta(1, 3) as every other method."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    args = _build_ees_parser().parse_args(argv)
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert (method.prior_alpha, method.prior_beta) == expected
+
+
+@pytest.mark.parametrize("flag", ["--ees-prior-alpha", "--ees-prior-beta"])
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_the_ees_prior_must_be_positive(*, flag: str, value: str) -> None:
+    with pytest.raises(SystemExit):
+        _build_ees_parser().parse_args([flag, value])
+
+
 def test_ees_does_not_register_domain_owned_reset_cost() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
@@ -237,6 +274,17 @@ def test_pomdp_rejects_the_ees_score_human_skills_flag() -> None:
     Tossing3DPomdpCli.add_arguments(parser=parser)
     args = parser.parse_args(["--ees-score-human-skills"])
     with pytest.raises(ValueError, match="ees-score-human-skills"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
+
+
+@pytest.mark.parametrize("flag", ["--ees-prior-alpha", "--ees-prior-beta"])
+def test_pomdp_rejects_the_ees_prior_flags(*, flag: str) -> None:
+    """The belief-space method's priors come from its practice domain; an EES prior
+    would otherwise be parsed and silently ignored."""
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([flag, "3"])
+    with pytest.raises(ValueError, match="ees-prior"):
         Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
 
 
