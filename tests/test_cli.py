@@ -107,7 +107,8 @@ def test_methods_registry_contains_tossing3d_pomdp() -> None:
 
 def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp"])
-    assert args.pomdp_search_depth == 3
+    # None: resolved to the practice domain's default when the run starts.
+    assert args.pomdp_search_depth is None
     assert args.pomdp_num_particles == 20000
     assert args.pomdp_num_samples == 100
     assert args.pomdp_learning_rate_process_noise_std == 0.005

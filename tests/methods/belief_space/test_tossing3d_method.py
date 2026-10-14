@@ -662,3 +662,28 @@ def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_plan
     assert episode is not None
     assert episode._goal_phase_done is True
     assert episode._random_mode is False
+
+
+def test_tossing3d_searches_unreduced_at_depth_three_by_default():
+    method = _build(pomdp_search_depth=None)
+    assert method.search_depth == 3
+    model = method._pomdp_model  # noqa: SLF001
+    assert not model.object_symmetry
+    assert not model.merge_beliefs_by_counts
+
+
+@pytest.mark.parametrize(
+    ("solver", "reduced"), [("expectimax", True), ("determinized_astar", False)]
+)
+def test_a_reducing_domain_reduces_only_the_expectimax_search(*, solver, reduced):
+    """Determinized A* samples over the action list, so it keeps every action."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+
+    domain = TOSSING3D_DOMAIN.model_copy(
+        update={"reduce_expectimax_search": True, "default_search_depth": 5}
+    )
+    method = _build(pomdp_domain=domain, pomdp_solver=solver, pomdp_search_depth=None)
+    model = method._pomdp_model  # noqa: SLF001
+    assert model.object_symmetry is reduced
+    assert model.merge_beliefs_by_counts is reduced
+    assert method.search_depth == 5

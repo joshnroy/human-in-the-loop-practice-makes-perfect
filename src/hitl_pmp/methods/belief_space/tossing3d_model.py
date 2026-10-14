@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .competence_inference import BayesianSkillBelief
+from .object_symmetry import InterchangeableObjects
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
 from .tossing3d_constants import PRACTICE_BUDGET
 from .tossing3d_observation_model import (
@@ -20,6 +22,7 @@ from .tossing3d_observation_model import (
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
+    estimated_action_cost,
     make_tossing3d_search_state,
     transition_outcomes,
 )
@@ -53,8 +56,18 @@ class Tossing3DPracticeModel(BaseModel):
     starved_pools: tuple[tuple[frozenset[GroundAtom], GroundSkill], ...] = Field(
         default=(), exclude=True
     )
+    # Exact search reductions (see object_symmetry.py and search_cache_key); the
+    # method turns both on for expectimax on a domain with `reduce_expectimax_search`.
+    object_symmetry: bool = False
+    merge_beliefs_by_counts: bool = False
 
     _rng: np.random.Generator = PrivateAttr()
+    _dynamic_predicates: frozenset[str] = PrivateAttr(default=frozenset())
+    # (costs, failure records, starved pools, static atoms, symmetry) of the last
+    # detection; the first three compared by identity, as they are fixed in a search.
+    _symmetry_cache: (
+        tuple[object, object, object, frozenset[GroundAtom], InterchangeableObjects] | None
+    ) = PrivateAttr(default=None)
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
     _effects: dict[
@@ -85,6 +98,17 @@ class Tossing3DPracticeModel(BaseModel):
             key=str,
         )
         self._atom_indexes = {atom: index for index, atom in enumerate(relevant_atoms)}
+        self._dynamic_predicates = frozenset(
+            atom.predicate.name
+            for skill in self.ground_skills
+            for atom in (
+                *skill.add_effects,
+                *skill.delete_effects,
+                *(atom for effect in skill.conditional_add_effects for atom in effect.add_effects),
+            )
+        ) | frozenset(
+            predicate.name for skill in self.ground_skills for predicate in skill.ignore_effects
+        )
         self._precondition_masks = tuple(
             self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills
         )
@@ -201,12 +225,61 @@ class Tossing3DPracticeModel(BaseModel):
         so whether that is worth its cost is the planner's choice.
         """
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
-        return [
+        actions = [
             ground_skill
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
             and (environment_state.true_atoms, ground_skill) not in self.starved_pools
         ]
+        if not self.object_symmetry:
+            return actions
+        return self.object_symmetry_for(environment_state=environment_state).representatives(
+            atoms=environment_state.true_atoms, actions=actions
+        )
+
+    def object_symmetry_for(
+        self, *, environment_state: Tossing3DSearchState
+    ) -> InterchangeableObjects:
+        """The interchangeable objects under this model and the state's cost forecasts.
+
+        Derived from the model's *current* failure records and starved pools on every
+        call rather than at construction, because the method adds them with
+        `model_copy`, which skips `model_post_init`. Within one search none of the
+        inputs changes (beliefs are shallow-copied, so the forecast dict is the same
+        object at every node), so one detection serves the whole search."""
+        if not self.object_symmetry:
+            return InterchangeableObjects()
+        belief = environment_state.state
+        static = frozenset(
+            atom
+            for atom in environment_state.true_atoms
+            if atom.predicate.name not in self._dynamic_predicates
+        )
+        cached = self._symmetry_cache
+        if (
+            cached is not None
+            and cached[0] is belief.expected_execution_costs
+            and cached[1] is self.failure_effect_counts
+            and cached[2] is self.starved_pools
+            and cached[3] == static
+        ):
+            return cached[4]
+        symmetry = InterchangeableObjects.detect(
+            ground_skills=self.ground_skills,
+            dynamic_predicates=self._dynamic_predicates,
+            static_atoms=static,
+            cost_of=lambda ground_skill: estimated_action_cost(state=belief, action=ground_skill),
+            failure_effect_counts=self.failure_effect_counts,
+            starved_pools=self.starved_pools,
+        )
+        self._symmetry_cache = (
+            belief.expected_execution_costs,
+            self.failure_effect_counts,
+            self.starved_pools,
+            static,
+            symmetry,
+        )
+        return symmetry
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
         mask = 0
@@ -275,15 +348,39 @@ class Tossing3DPracticeModel(BaseModel):
         horizon: int | None,
     ) -> object:
         assert summed_cost == belief_state.accumulated_cost
+        atoms = environment_state.true_atoms
+        if self.object_symmetry:
+            atoms = self.object_symmetry_for(environment_state=environment_state).canonical_atoms(
+                atoms=atoms
+            )
+        if not self.merge_beliefs_by_counts:
+            return (
+                self._atoms_mask(atoms=atoms),
+                tuple(
+                    (skill_name, self._belief_signature(belief=belief))
+                    for skill_name, belief in sorted(belief_state.skill_beliefs.items())
+                ),
+                tuple(sorted(belief_state.pending_examples.items())),
+                tuple(sorted(belief_state.sampler_training.items())),
+                belief_state.accumulated_cost,
+                horizon,
+            )
+        # Within one search every belief descends from the root's by likelihood
+        # products alone -- no refit, no cycle advance, no cost observation -- so equal
+        # S/F counts are the same posterior up to floating-point order, and the
+        # accumulated cost of one multiset of actions is the same sum up to order.
+        # Exact to rounding, not bitwise; valid only for a key that lives one search.
         return (
-            self._atoms_mask(atoms=environment_state.true_atoms),
+            self._atoms_mask(atoms=atoms),
             tuple(
-                (skill_name, self._belief_signature(belief=belief))
+                (skill_name, belief.cycle_successes, belief.cycle_failures)
+                if isinstance(belief, BayesianSkillBelief)
+                else (skill_name, self._belief_signature(belief=belief))
                 for skill_name, belief in sorted(belief_state.skill_beliefs.items())
             ),
             tuple(sorted(belief_state.pending_examples.items())),
             tuple(sorted(belief_state.sampler_training.items())),
-            belief_state.accumulated_cost,
+            float(f"{belief_state.accumulated_cost:.12g}"),
             horizon,
         )
 

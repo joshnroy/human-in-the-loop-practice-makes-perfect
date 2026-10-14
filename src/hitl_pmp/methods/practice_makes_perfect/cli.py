@@ -254,8 +254,9 @@ class Tossing3DPomdpCli(EesCli):
         parser.add_argument(
             "--pomdp-search-depth",
             type=int,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_search_depth"].default,
-            help="Exact belief-space expectimax depth in future skill executions.",
+            default=None,
+            help="Exact belief-space expectimax depth in future skill executions "
+            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D).",
         )
         parser.add_argument(
             "--pomdp-solver",
@@ -356,6 +357,9 @@ class Tossing3DPomdpCli(EesCli):
             raise ValueError(
                 "--method pomdp supports only --env tossing3d and --env sweepoffshelf3d"
             )
+        if args.pomdp_search_depth is None:
+            # Resolved here so config_snapshot.json records the depth actually searched.
+            args.pomdp_search_depth = domain.default_search_depth
         # Preserve replayable simulator states, but do not render or encode frames in
         # the training process. POMDP runs reconstruct their diagnostic videos from
         # the state and decision logs after the experiment finishes.
