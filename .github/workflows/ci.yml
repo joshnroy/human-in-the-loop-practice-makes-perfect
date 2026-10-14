@@ -390,9 +390,17 @@ jobs:
           restore-keys: |
             pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      - name: Download MimicLabs scene assets
+      # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
+      # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
+      # rate-limits CI runners. Only lab2 is used (tests/test_ci_caches.py).
+      - name: Fetch MimicLabs lab2 scene assets from the release mirror
         if: steps.cache-assets.outputs.cache-hit != 'true'
-        run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download mimiclabs-lab2-v1 -p mimiclabs-lab2-v1.tar.gz -D "$RUNNER_TEMP"
+          echo "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0  $RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
       - name: Verify KINDER resolves under reference/
         run: |
           python - <<'PY'
@@ -476,9 +484,17 @@ jobs:
           restore-keys: |
             pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      - name: Download MimicLabs scene assets
+      # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
+      # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
+      # rate-limits CI runners. Only lab2 is used (tests/test_ci_caches.py).
+      - name: Fetch MimicLabs lab2 scene assets from the release mirror
         if: steps.cache-assets.outputs.cache-hit != 'true'
-        run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download mimiclabs-lab2-v1 -p mimiclabs-lab2-v1.tar.gz -D "$RUNNER_TEMP"
+          echo "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0  $RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
       - name: Verify KINDER resolves under reference/
         run: |
           python - <<'PY'
