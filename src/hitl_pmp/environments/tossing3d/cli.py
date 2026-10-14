@@ -130,7 +130,7 @@ class Tossing3DCli:
             "removes it outright (not just prices it high), for the baseline that asks "
             "whether the reset is needed. Evaluation never offers it either way.",
         )
-        parser.set_defaults(scene_bg=True, defer_rendering=False)
+        parser.set_defaults(scene_bg=True)
 
     @staticmethod
     def run_method(

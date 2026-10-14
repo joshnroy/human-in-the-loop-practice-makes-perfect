@@ -129,7 +129,10 @@ class LightSwitchCli:
         )
 
         renderer: type[Renderer] | None = (
-            LightSwitchRenderer if MethodRunner.rendering_needed(args=args) else None
+            LightSwitchRenderer
+            if MethodRunner.rendering_needed(args=args)
+            and not getattr(args, "defer_rendering", False)
+            else None
         )
         MethodRunner.run(
             args=args,

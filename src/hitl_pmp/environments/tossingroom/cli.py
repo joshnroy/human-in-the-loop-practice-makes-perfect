@@ -231,7 +231,9 @@ class TossingRoomCli:
         )
 
         renderer: type[Renderer] | None = (
-            TossingRoomRenderer if args.output_dir is not None else None
+            TossingRoomRenderer
+            if args.output_dir is not None and not getattr(args, "defer_rendering", False)
+            else None
         )
         MethodRunner.run(
             args=args,

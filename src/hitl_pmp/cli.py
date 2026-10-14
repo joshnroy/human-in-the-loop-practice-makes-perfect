@@ -245,6 +245,15 @@ class Cli:
             "the finished policy; a larger value produces a visible progression. "
             "Only meaningful with --output-dir and a learning --method.",
         )
+        parser.add_argument(
+            "--defer-rendering",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Build no in-run renderer, so no episode.mp4 or period videos are "
+            "encoded during the run (default off: render as before). Honoured by every "
+            "environment that renders; stats.json is byte-identical either way. "
+            "--method pomdp forces it on.",
+        )
 
     @staticmethod
     def parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
