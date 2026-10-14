@@ -48,6 +48,13 @@ class EesCli:
     other business-logic class in this project."""
 
     @staticmethod
+    def positive_float(*, value: str) -> float:
+        parsed = float(value)
+        if not parsed > 0:
+            raise argparse.ArgumentTypeError(f"must be > 0, got {value}")
+        return parsed
+
+    @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         # 10 cycles = predicators' num_online_learning_cycles default; 150 steps =
         # the paper's stated Light Switch free-period length.
@@ -157,6 +164,15 @@ class EesCli:
             "plan, so Fast Downward's cost minimisation alone chooses between a reset "
             "and a reset-free route. Evaluation never offers the reset either way.",
         )
+        for name, field in (("alpha", "prior_alpha"), ("beta", "prior_beta")):
+            parser.add_argument(
+                f"--ees-prior-{name}",
+                type=lambda value: EesCli.positive_float(value=value),
+                default=EesMethod.model_fields[field].default,
+                help=f"{name} of EES's Beta competence prior (default Beta(10, 1), the "
+                "paper's). The SweepOffShelf3D rerun uses Beta(1, 3), as every other "
+                "method there does: a labelled deviation from the paper.",
+            )
         parser.add_argument(
             "--ees-score-human-skills",
             action=argparse.BooleanOptionalAction,
@@ -213,6 +229,8 @@ class EesCli:
                 competence_recency_size=args.competence_recency_size,
                 reset_cost_gate=args.ees_reset_gate,
                 score_human_skills=args.ees_score_human_skills,
+                prior_alpha=args.ees_prior_alpha,
+                prior_beta=args.ees_prior_beta,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history
@@ -351,6 +369,15 @@ class Tossing3DPomdpCli(EesCli):
             raise ValueError(
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
                 "every human skill its practice domain does not treat as deterministic"
+            )
+        defaults = (
+            EesMethod.model_fields["prior_alpha"].default,
+            EesMethod.model_fields["prior_beta"].default,
+        )
+        if (args.ees_prior_alpha, args.ees_prior_beta) != defaults:
+            raise ValueError(
+                "--ees-prior-alpha/--ees-prior-beta are EES flags: --method pomdp takes its "
+                "competence priors from its practice domain"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if domain is None:
