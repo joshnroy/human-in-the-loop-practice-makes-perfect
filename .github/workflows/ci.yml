@@ -418,8 +418,10 @@ jobs:
       # module-scoped fixture is built once rather than once per worker that receives one
       # of its tests (tests/test_xdist_groups.py). Every pytest call carries
       # `--durations=25` so the slowest tests stay visible in the log.
-      - name: Pytest — Tossing3D (loads MuJoCo/OSMesa; own processes)
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d
+      # SweepOffShelf3D is also a KINDER Dynamic3D scene (lab2), so its simulator tests need
+      # this job's OSMesa rendering too; no other job collects them (tests/test_ci_coverage.py).
+      - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d tests/environments/sweepoffshelf3d
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
