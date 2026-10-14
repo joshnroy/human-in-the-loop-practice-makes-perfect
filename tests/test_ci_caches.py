@@ -51,3 +51,26 @@ def test_every_python_job_restores_pip_and_saves_it_only_from_main() -> None:
         assert saving[0]["if"] == "github.event_name == 'push'", name
         assert restoring[0]["if"] == "github.event_name != 'push'", name
         assert saving[0]["with"]["key"] == restoring[0]["with"]["key"], name
+
+
+MIRROR_TAG = "mimiclabs-lab2-v1"
+MIRROR_SHA256 = "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0"
+
+
+def test_no_ci_step_downloads_mimiclabs_from_google_drive() -> None:
+    # KINDER's own downloader fetches ~2 GB through gdown, which Drive rate-limits on CI.
+    assert "download_mimiclabs_assets" not in CI_WORKFLOW.read_text()
+
+
+def test_a_mimiclabs_cache_miss_fills_from_the_checksummed_lab2_mirror() -> None:
+    jobs = [job for job in CiSteps.jobs().values() if "steps" in job]
+    filled = 0
+    for job in jobs:
+        steps = job["steps"]
+        if not any(step.get("id") == "cache-assets" for step in steps):
+            continue
+        (fill,) = [step for step in steps if MIRROR_TAG in str(step.get("run", ""))]
+        assert fill["if"] == "steps.cache-assets.outputs.cache-hit != 'true'"
+        assert f"{MIRROR_SHA256}  " in fill["run"] and "sha256sum -c" in fill["run"]
+        filled += 1
+    assert filled == 2  # The Tossing3D and scripts jobs, the two that build MimicLabs scenes.
