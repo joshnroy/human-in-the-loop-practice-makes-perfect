@@ -1,7 +1,8 @@
 """The live KINDER `SweepOffShelf3D-o5` scene: build, observe, classify, human resets.
 
-The only module in this package that imports KINDER or MuJoCo, and only lazily, so the
-symbolic layer and its tests need neither.
+It and `kinder_skills.py` (KINDER's controllers) are the only modules in this package
+that import KINDER or MuJoCo, both only lazily, so the symbolic layer and its tests
+need neither.
 
 ## Classification
 
@@ -10,7 +11,7 @@ Every predicate is decided here, once per state, from the live scene:
 - a cube or the wiper is *held* when both gripper pads touch it;
 - `OnShelf`: not held, behind the cube shelf's open front, resting on that board;
 - `InBox`: not held and wholly inside the box -- the env's own `cube_in_box`, which is
-  exactly what the task scores;
+  exactly what the task scores (measured in the box's frame: see `OrientedBox`);
 - `OnFloor`: any other unheld cube. The box rim and the other boards are not places a
   cube swept off this shelf comes to rest, so "elsewhere" is the floor;
 - `WiperHome`: unheld and lying on the wiper shelf; `WiperOnFloor`: unheld anywhere else;
