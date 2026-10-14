@@ -46,15 +46,6 @@ def test_sweep_settings_reject_values_outside_the_ranges(*, height: float, speed
         SweepSettings(height=height, speed=speed)
 
 
-def test_strokes_cover_every_cube_with_the_fewest_head_widths() -> None:
-    assert Strokes.cover(ys=[], reach=0.08, limit=0.17) == []
-    assert Strokes.cover(ys=[0.01, -0.03], reach=0.08, limit=0.17) == pytest.approx([0.05])
-    centres = Strokes.cover(ys=[-0.22, -0.15, 0.0, 0.05, 0.22], reach=0.08, limit=0.17)
-    assert len(centres) == 3
-    for y in (-0.22, -0.15, 0.0, 0.05, 0.22):
-        assert any(abs(y - c) <= 0.08 + 0.05 + 1e-9 for c in centres)
-
-
 def test_stroke_plan_keeps_every_cube_out_from_under_the_handle() -> None:
     ys = [-0.168, -0.092, -0.057, 0.051, 0.2]
     centres = Strokes.plan(ys=ys, reach=0.08, band=0.03, limit=0.17)

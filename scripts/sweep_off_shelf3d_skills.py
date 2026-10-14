@@ -16,14 +16,24 @@ skills is one call that runs to completion or raises `SkillFailed`:
 Nothing here edits the environment. The friction grasp is the environment's own; the
 only state ever set directly is `drop_cube_into_box`, a documented scene setup.
 
-Three facts shape every motion. The cupboard slots are 0.254 m tall, too short for a
+The wiper is only ever held at one of two fixed grasps, each a constant hand pose in
+the wiper's own frame (`ShelfSkills.grasp_in_wiper`): "shelf" on the head, used to take
+it off and put it back on its shelf, and "sweep" on the handle at its centre of mass,
+used to sweep. Between them it is put down on the floor and taken again. Base poses
+and arm routes adapt to where the wiper lies; the grasp never does, and every grasp
+taken is recorded with its measured hand-to-wiper pose (`grasps_taken`).
+
+Four facts shape every motion. The cupboard slots are 0.254 m tall, too short for a
 vertical gripper (the wrist hits the board above), so every grasp in the cupboard
 leans the gripper about its closing axis; a lean keeps the pads on the same two faces.
 The 2F-85's friction grasp resists rotation about its closing axis worst of all, so
-the wiper is swept from a grasp at its centre of mass, closed loop on its measured
-pose, and is put down and taken again between strokes. And the box keeps the base at
-least BASE_X back from the cupboard while the leaned hand only reaches 0.6 m or more in
-front of the base, so the base carries each stroke and the arm trims.
+both wiper grasps sit beside its centre of mass. Lowered behind the cubes, the flat
+wiper's handle comes down on any cube in its line, so strokes are placed with no cube
+under the handle (`Strokes.plan`). And the box keeps the base at least BASE_X back
+from the cupboard while the leaned hand only reaches 0.6 m or more in front of the
+base, so the base carries each stroke and the arm trims. Near the cupboard the arm
+follows routes planned joint by joint on one IK branch, with the carried wiper in the
+collision check.
 
 Every KINDER import lives inside `ShelfSkills.import_kinder`.
 """
@@ -61,15 +71,15 @@ WIPER_STANDOFF = 0.035
 CUBE_STANDOFF = 0.035
 CUBE_LEANS_DEG = (30.0, 40.0, 50.0, 60.0)
 PAD_HALF_LENGTH = 0.011
-# The two fixed wiper grasps, by where on the handle they sit (from the head centre)
-# and which way the gripper leans. SHELF: the only lean that clears the board above
-# the wiper slot (wrist over the head). SWEEP: at the centre of mass (None), wrist
-# over the free end, the side it must be on to pull the head toward the robot; 9 cm
-# from the centre of mass the head droops and creeps in the friction grasp. Each is
-# turned into a pose in the wiper's own frame once, at reset, and never searched over.
+# The two fixed wiper grasps. SHELF: on the head, SHELF_HEAD_OFFSET from its centre
+# toward the open front, pads closing along the handle, wrist leaning out of the slot;
+# it reaches the wiper wherever it lies on its shelf (a grasp on the handle puts the
+# wrist into the cupboard's side panel when the wiper lies toward that side). SWEEP:
+# on the handle at the centre of mass (None), wrist over the free end, the side it must
+# be on to pull the head toward the robot. Each becomes a pose in the wiper's own frame
+# once, at reset, and is never searched over.
 SHELF_HEAD_OFFSET = 0.035
 SWEEP_ALONG = None
-GRASPS = ("shelf", "sweep")
 SLOT_ENTRY_RISE = 0.02
 # Joint-space jump allowed between neighbouring waypoints of a planned route: more is a
 # change of IK branch, which swings the arm through whatever is between.
@@ -146,16 +156,6 @@ class Recorder(Protocol):
 
 
 class Strokes:
-    @staticmethod
-    def cover(*, ys: list[float], reach: float, limit: float) -> list[float]:
-        """Fewest stroke centres, each covering +/- reach, that cover every y."""
-        centres: list[float] = []
-        for y in sorted(ys):
-            if centres and y <= centres[-1] + reach:
-                continue
-            centres.append(float(np.clip(y + reach, -limit, limit)))
-        return centres
-
     @staticmethod
     def plan(*, ys: list[float], reach: float, band: float, limit: float) -> list[float]:
         """Fewest stroke centres covering every cube with the head (|dy| <= reach)
@@ -309,6 +309,9 @@ class ShelfSkills:
         }
         self.grasps_taken: list[dict[str, Any]] = []
         self.closed_in_hand = np.eye(4)
+        # Head speed actually achieved over each pull (m/s); the base tops out at
+        # 0.15 m/s, so a commanded speed above that is reached only with the arm.
+        self.pull_speeds: list[float] = []
 
     @staticmethod
     def import_kinder() -> Any:
@@ -744,12 +747,6 @@ class ShelfSkills:
                 return base, route
         return None
 
-    def swing_to(self, *, pose: np.ndarray, holding: bool, label: str) -> None:
-        """Joint-space move to `pose` in open space: a Cartesian line from a pose the
-        base has just carried close to the robot can leave the arm's reach."""
-        arm, _ = self.ik(position=pose[:3, 3], rotation=pose[:3, :3], holding=holding)
-        self.follow(route=[arm], label=label, settle=0.03)
-
     def raise_hand(self, *, z: float, label: str, holding: bool) -> None:
         """Straight up toward height `z`, 3 cm at a time, stopping at the arm's reach."""
         here = self.site_pose()
@@ -1066,9 +1063,8 @@ class ShelfSkills:
         raise SkillFailed(f"{label}: {REGRASP_TRIES} grasps on the floor missed")
 
     def regrasp_for_sweep(self) -> None:
-        """The shelf grasp puts the wrist over the head, exactly where it cannot be when
-        the head is pulled from the back of the cube slot. Put the wiper down on the
-        open floor and take it again at its centre of mass, leaning the other way."""
+        """The shelf grasp holds the head, the part that does the sweeping. Put the
+        wiper down on the open floor and take it again at the sweep grasp."""
         self.notes.append(
             f"shelf grasp held with max slip {self.slip or 0:.3f} m / {self.slip_deg:.1f} deg"
         )
@@ -1185,6 +1181,7 @@ class ShelfSkills:
         control steps. The base follows the head; it moves at most 0.15 m/s."""
         y = float(self.data.qpos[self.ba][1])
         x = float(self.data.geom_xpos[self.head_geom][0])
+        start, began = x, self.ticks
         end = x - distance
         advance = settings.speed * CONTROL_DT * PULL_CHUNK
         while x > end + 1e-9:
@@ -1201,6 +1198,8 @@ class ShelfSkills:
             self.base_target = base
             for _ in range(PULL_CHUNK):
                 self.step(arm=arm, base=base, label=label)
+        travelled = start - float(self.data.geom_xpos[self.head_geom][0])
+        self.pull_speeds.append(travelled / max(1, self.ticks - began) / CONTROL_DT)
         self.hold(count=10, label=label)
 
     def reseat_wiper(self, *, label: str) -> None:

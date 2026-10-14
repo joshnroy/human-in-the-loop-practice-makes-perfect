@@ -77,6 +77,7 @@ class EpisodeResult(BaseModel):
     height: float | None
     speed: float | None
     wiper_slip_deg: float
+    pull_speeds: tuple[float, ...]
     robot_cupboard_contact_steps: int
     arm_cupboard_contact_steps: int
     robot_box_contact_steps: int
@@ -424,6 +425,7 @@ class Episode:
             height=plan.height if sweep else None,
             speed=plan.speed if sweep else None,
             wiper_slip_deg=skills.slip_deg,
+            pull_speeds=tuple(round(v, 3) for v in skills.pull_speeds),
             robot_cupboard_contact_steps=skills.cupboard_contact_steps,
             arm_cupboard_contact_steps=skills.arm_cupboard_contact_steps,
             robot_box_contact_steps=skills.box_contact_steps,
