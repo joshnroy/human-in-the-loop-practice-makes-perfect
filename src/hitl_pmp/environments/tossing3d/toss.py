@@ -64,6 +64,9 @@ class Tossing3DToss:
         WIDE_TOSS_RELEASE_MS_BOUNDS,
     )
 
+    # `feature_row`'s fields, in order; a test pins the two together.
+    FEATURE_ROW_NAMES: ClassVar[tuple[str, ...]] = ("bias", "standoff", "speed", "release")
+
     @staticmethod
     def sample_params(*, rng: np.random.Generator) -> np.ndarray:
         """The state-free draw: standoff over the full band."""

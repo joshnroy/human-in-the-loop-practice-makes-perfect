@@ -10,15 +10,18 @@ from hitl_pmp.core.method.skill_provider import (
 )
 from hitl_pmp.core.method.types import (
     ConditionalAddEffect,
+    FeatureSpec,
     GroundSkill,
     LabeledAction,
     LiftedAtom,
+    ParameterSpec,
     Skill,
     Variable,
 )
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
+from .descriptions import Tossing3DDescriptions
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import (
@@ -183,6 +186,22 @@ class Tossing3DSkillProvider(SkillProvider):
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
         return Tossing3DToss.feature_row(params=params)
+
+    def hand_selected_feature_names(self, *, ground_skill: GroundSkill) -> tuple[str, ...] | None:
+        if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return None
+        return Tossing3DToss.FEATURE_ROW_NAMES
+
+    def parameter_specs(self, *, skill: Skill) -> tuple[ParameterSpec, ...] | None:
+        if skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return None
+        return Tossing3DDescriptions.TOSS_PARAMETERS
+
+    def feature_specs(self) -> dict[str, tuple[FeatureSpec, ...]]:
+        return dict(Tossing3DDescriptions.FEATURES)
+
+    def task_description(self) -> str | None:
+        return Tossing3DDescriptions.task()
 
     def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:

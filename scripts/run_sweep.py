@@ -340,33 +340,44 @@ class SweepRunner:
         results_root: Path,
         shared_args: list[str],
         method_args: dict[str, list[str]],
+        seed_first: bool = False,
     ) -> list[SweepRun]:
+        """One run per (arm, seed). An arm is a method name, or `alias:method` when
+        several arms run one method with different flags: the alias names the results
+        directory and keys `method_args`. `seed_first` queues every arm at one seed
+        before the next seed, so a sweep cut short has whole seeds."""
+        pairs = (
+            [(arm, seed) for seed in seeds for arm in methods]
+            if seed_first
+            else [(arm, seed) for arm in methods for seed in seeds]
+        )
         runs: list[SweepRun] = []
-        for method in methods:
-            for seed in seeds:
-                output_dir = results_root / method / str(seed)
-                runs.append(
-                    SweepRun(
-                        method=method,
-                        seed=seed,
-                        output_dir=output_dir,
-                        command=[
-                            sys.executable,
-                            "-m",
-                            "hitl_pmp.cli",
-                            "--env",
-                            env,
-                            "--method",
-                            method,
-                            "--seed",
-                            str(seed),
-                            "--output-dir",
-                            str(output_dir),
-                            *shared_args,
-                            *method_args.get(method, []),
-                        ],
-                    )
+        for arm, seed in pairs:
+            name, _, method = arm.partition(":")
+            method = method or name
+            output_dir = results_root / name / str(seed)
+            runs.append(
+                SweepRun(
+                    method=name,
+                    seed=seed,
+                    output_dir=output_dir,
+                    command=[
+                        sys.executable,
+                        "-m",
+                        "hitl_pmp.cli",
+                        "--env",
+                        env,
+                        "--method",
+                        method,
+                        "--seed",
+                        str(seed),
+                        "--output-dir",
+                        str(output_dir),
+                        *shared_args,
+                        *method_args.get(name, []),
+                    ],
                 )
+            )
         return runs
 
     @staticmethod
@@ -612,6 +623,11 @@ def _parse_args() -> argparse.Namespace:
         help='Repeatable, "method=--flag value". Flags for one method only.',
     )
     parser.add_argument(
+        "--seed-first",
+        action="store_true",
+        help="Queue every arm at seed 0, then every arm at seed 1, and so on.",
+    )
+    parser.add_argument(
         "--max-workers",
         type=int,
         default=os.cpu_count() or 1,
@@ -648,6 +664,7 @@ def main() -> int:
         results_root=args.results_root,
         shared_args=shared,
         method_args=SweepRunner.parse_method_args(raw=args.method_args),
+        seed_first=args.seed_first,
     )
     sweep_id = SweepRunner.new_sweep_id()
     print(

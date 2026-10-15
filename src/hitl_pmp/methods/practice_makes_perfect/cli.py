@@ -11,6 +11,7 @@ from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
+from .coded_sampler.cli import CodedSamplerCli
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
 
@@ -197,6 +198,7 @@ class EesCli:
             help="Optimistic competence model window (predicators' default 5; the "
             "paper overrides to 2 for the simulated Ball-Ring).",
         )
+        CodedSamplerCli.add_arguments(parser=parser)
         parser.add_argument(
             "--competence-recency-size",
             type=int,
@@ -211,6 +213,7 @@ class EesCli:
         # rejected before the environment is constructed, and so it is built exactly
         # once even if a caller ever invokes the factory more than once (two recorders
         # on one path would truncate each other's file).
+        CodedSamplerCli.validate(args=args)
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -219,6 +222,7 @@ class EesCli:
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
+                coded_sampler=CodedSamplerCli.build(args=args, provider=ctx.skill_provider),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
@@ -394,6 +398,7 @@ class Tossing3DPomdpCli(EesCli):
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
         if args.pomdp_solver == "expectimax":
             sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
+        CodedSamplerCli.validate(args=args)
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -402,6 +407,7 @@ class Tossing3DPomdpCli(EesCli):
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
+                coded_sampler=CodedSamplerCli.build(args=args, provider=ctx.skill_provider),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,

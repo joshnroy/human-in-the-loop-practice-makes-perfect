@@ -720,3 +720,28 @@ class LiftedAtom(BaseModel):
             predicate=self.predicate,
             objects=tuple(substitution[variable] for variable in self.variables),
         )
+
+
+class ParameterSpec(BaseModel):
+    """One continuous skill parameter, described for a reader outside the code: what a
+    generated sampler is told it is choosing. `lower`/`upper` are the closed support
+    the domain's own proposal draws from, read from the domain's constants rather than
+    written down twice."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    unit: str
+    meaning: str
+    lower: float
+    upper: float
+
+
+class FeatureSpec(BaseModel):
+    """One state feature of one object type, described the same way."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    unit: str
+    meaning: str
