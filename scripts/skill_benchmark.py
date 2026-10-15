@@ -4,9 +4,10 @@
     scripts/with_env.sh python -m scripts.skill_benchmark generate \
         [--states benchmarks/sweepoffshelf3d/states.jsonl] [--harvest <run dirs>...]
 
-    # an experiment-scale run: on agni, under run-heavy
+    # an experiment-scale run: on agni, under run-heavy. --out defaults to where the
+    # launch gate (hitl_pmp/launch_gate.py) reads this commit's report.
     run-heavy scripts/with_env.sh python -m scripts.skill_benchmark run \
-        --out <dir> [--workers 4] [--no-videos]
+        [--out <dir>] [--workers 4] [--no-videos]
 
     scripts/with_env.sh python -m scripts.skill_benchmark report --out <dir>
 
@@ -22,13 +23,14 @@ from pathlib import Path
 from analysis.sweepoffshelf3d_skill_benchmark import SkillBenchmarkPage
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.harvest import HarvestedStates
-from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.report import BenchmarkReports
+from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.report import DOMAIN, BenchmarkReports
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.runner import ShardWorker
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import (
     StateFamilies,
     StateSet,
     StateSpec,
 )
+from hitl_pmp.launch_gate import LaunchGate, LaunchIdentity
 
 DEFAULT_STATES = Path(__file__).resolve().parents[1] / "benchmarks/sweepoffshelf3d/states.jsonl"
 DEFAULT_WORKERS = 4
@@ -48,13 +50,20 @@ class SkillBenchmarkCli:
         generate.add_argument("--only", default=None, help="comma-separated state-id prefixes")
         run = sub.add_parser("run")
         run.add_argument("--states", type=Path, default=DEFAULT_STATES)
-        run.add_argument("--out", type=Path, required=True)
+        run.add_argument(
+            "--out",
+            type=Path,
+            default=None,
+            help="Default: where the launch gate reads this commit's report.",
+        )
         run.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
         run.add_argument("--no-videos", action="store_true")
         report = sub.add_parser("report")
         report.add_argument("--states", type=Path, default=DEFAULT_STATES)
-        report.add_argument("--out", type=Path, required=True)
+        report.add_argument("--out", type=Path, default=None)
         args = parser.parse_args(argv)
+        if getattr(args, "out", "unset") is None:
+            args.out = SkillBenchmarkCli.default_out()
         if args.command == "generate":
             return SkillBenchmarkCli.generate(args=args)
         if args.command == "run":
@@ -68,6 +77,14 @@ class SkillBenchmarkCli:
             print(f"workers exited {codes}")
             return SkillBenchmarkCli.report(args=args, elapsed=time.monotonic() - started)
         return SkillBenchmarkCli.report(args=args, elapsed=0.0)
+
+    @staticmethod
+    def default_out() -> Path:
+        """`benchmark-reports/sweepoffshelf3d/<commit>/`: the launch gate's location."""
+        commit = LaunchIdentity.current().git_commit
+        return LaunchGate.report_path(
+            root=LaunchGate.default_root(), domain=DOMAIN, commit=commit
+        ).parent
 
     @staticmethod
     def generate(*, args: argparse.Namespace) -> int:
