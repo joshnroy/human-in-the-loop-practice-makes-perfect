@@ -56,7 +56,7 @@ class SkillBenchmarkPage:
         counts = {
             v.skill: Counter(r.label for r in results if r.skill == v.skill) for v in report.skills
         }
-        fig, ax = plt.subplots(figsize=(10, 4.6))
+        fig, ax = plt.subplots(figsize=(10, 5.4))
         bottoms = [0] * len(skills)
         for label in ("success", *FAILURE_LABELS, "harness_error"):
             heights = [counts[s].get(label, 0) for s in skills]
@@ -87,7 +87,8 @@ class SkillBenchmarkPage:
         ax.set_title(
             f"SweepOffShelf3D skill benchmark, MuJoCo execution, commit {report.git_commit[:9]}"
         )
-        ax.legend(fontsize=7, loc="upper left", ncol=2)
+        # Below the axes: inside, it covers the tallest bar's x/y label.
+        ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.28), ncol=4)
         fig.tight_layout()
         fig.savefig(path, dpi=130)
         plt.close(fig)
