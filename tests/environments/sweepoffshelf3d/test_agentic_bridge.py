@@ -166,12 +166,12 @@ class TestShelfAgenticBridge:
 @pytest.mark.xdist_group("sweepoffshelf3d_agentic_bridge_sim")
 class TestShelfAgenticBridgeLive:
     def test_live_scene_observation_kinematics_actions_and_human_reset(self) -> None:
-        from hitl_pmp.full_agentic.domains import SweepOffShelf3DFullAgentic
+        from hitl_pmp.full_agentic.domains import PRACTICE_STEP_LIMIT, SweepOffShelf3DFullAgentic
 
         env = SweepOffShelf3DFullAgentic.make_environment(options={}, human_seed=0)
         try:
             env.hard_reset()
-            bridge = SweepOffShelf3DFullAgentic.make_bridge(env=env, practice=True)
+            bridge = SweepOffShelf3DFullAgentic.make_bridge(env=env, step_limit=PRACTICE_STEP_LIMIT)
             backend = env.backend()
             observation = bridge.observe()
             names = {o["name"] for o in observation["objects"]}
