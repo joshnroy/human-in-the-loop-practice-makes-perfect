@@ -44,6 +44,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from .scripted_skills import CARRY_Z, ShelfSkills, SkillFailed, StepBudgetExhausted
+from .types import SkillNote
 
 CUPBOARD = "cupboard_1"
 BOX = "box_0"
@@ -270,7 +271,12 @@ class KinderSkills:
         self.backend = backend
         self.env = shelf.env
         self.core = shelf.core
-        self.notes: list[str] = []
+        self.notes: list[SkillNote] = []
+
+    def note(self, *, stage: str, kind: str, reason: str, params: Any = None) -> None:
+        """Record one candidate's fate for the skill trace (`skill_trace.py`)."""
+        values = None if params is None else np.asarray(params, dtype=float).reshape(-1).tolist()
+        self.notes.append(SkillNote(stage=stage, kind=kind, reason=reason[:240], params=values))
 
     # --- state ----------------------------------------------------------------------
 
@@ -345,25 +351,37 @@ class KinderSkills:
         try:
             controller.reset(self.state(), params)
         except (TrajectorySamplingFailure, AssertionError, ValueError, RuntimeError) as exc:
-            self.notes.append(f"{label}: no plan for {np.round(params, 3).tolist()}: {exc!r}"[:200])
+            self.note(stage=label, kind="no_plan", params=params, reason=repr(exc))
             return "planned-out"
         except Exception as exc:  # noqa: BLE001  (IK and planner errors carry many types)
-            self.notes.append(f"{label}: no plan ({type(exc).__name__}: {exc})"[:200])
+            self.note(
+                stage=label, kind="no_plan", params=params, reason=f"{type(exc).__name__}: {exc}"
+            )
             return "planned-out"
         blocked = self.plan_blocked(controller=controller)
         if blocked:
-            self.notes.append(f"{label}: plan for {np.round(params, 3).tolist()} {blocked}"[:200])
+            self.note(stage=label, kind="plan_blocked", params=params, reason=blocked)
             return "planned-out"
+        start = self.shelf.ticks
         try:
             while not controller.terminated():
                 self.env_step(action=controller.step(), label=label)
                 controller.observe(self.state())
-        except SkillFailed:
+        except SkillFailed as exc:
+            self.note(stage=label, kind="execution_failed", params=params, reason=str(exc))
             raise
         except (TrajectorySamplingFailure, Exception) as exc:
-            raise SkillFailed(f"{label}: execution failed: {type(exc).__name__}: {exc}") from exc
+            reason = f"{type(exc).__name__}: {exc}"
+            self.note(stage=label, kind="execution_failed", params=params, reason=reason)
+            raise SkillFailed(f"{label}: execution failed: {reason}") from exc
         finally:
             self.sync()
+        self.note(
+            stage=label,
+            kind="executed",
+            params=params,
+            reason=f"{self.shelf.ticks - start} control steps",
+        )
         return "done"
 
     def plan_blocked(self, *, controller: Any) -> str | None:
@@ -536,11 +554,13 @@ class KinderSkills:
             self.back_out(label=f"{label}_back_out")
             plan = self.plan_home()
         if plan is None:
-            self.notes.append(f"{label}: no collision-free retract; arm left where it is")
+            self.note(stage=label, kind="retract", reason="no collision-free retract; arm left")
             return
         confs = [np.array(q[:7]) for q in plan]
         if shelf.in_hand is not None and self.carried_wiper_blocked(confs=confs):
-            self.notes.append(f"{label}: the carried wiper would hit something; arm left raised")
+            self.note(
+                stage=label, kind="retract", reason="carried wiper would hit; arm left raised"
+            )
             return
         follower = PlanFollower(plan=confs)
         for _ in range(FINAL_STEP_LIMIT + 20 * len(plan)):
@@ -852,7 +872,9 @@ class KinderSkills:
             lifted = abs(shelf.wiper_lift()) > 0.01
             if "withdraw" not in str(exc) or self.held(name=WIPER) or home > 0.05 or lifted:
                 raise
-            self.notes.append(f"return_wiper: wiper home ({home:.3f} m); {exc}")
+            self.note(
+                stage="return_wiper", kind="scripted", reason=f"wiper home ({home:.3f} m); {exc}"
+            )
 
 
 class PlanFollower:

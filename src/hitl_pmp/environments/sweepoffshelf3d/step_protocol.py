@@ -4,6 +4,7 @@ on the shelf, with its two human skills and KINDER's own goal verdict."""
 import argparse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
@@ -17,6 +18,7 @@ from .environment import SweepOffShelf3DEnvironment
 from .objects import SweepOffShelf3DObjects as O
 from .problem import SweepOffShelf3DProblem
 from .skill_provider import SweepOffShelf3DOracle, SweepOffShelf3DSkillProvider
+from .skill_trace import SkillTraces
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
 
 
@@ -116,3 +118,8 @@ class SweepOffShelf3DStepProtocol:
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
         return SweepOffShelf3DStepProtocol.env(problem=problem).last_skill_error()
+
+    @staticmethod
+    def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
+        trace = SkillTraces.last(env=SweepOffShelf3DStepProtocol.env(problem=problem))
+        return None if trace is None else trace.model_dump(mode="json")
