@@ -50,10 +50,17 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.recording.run_record.sink import SkillTickSink
 
-from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
+from .kinder_backend import KinderBackend
 from .layout import Tossing3DLayout
 from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
-from .types import KB_PICKUP_BLOCKED, AbstractAtom, Tossing3DState
+from .types import (
+    KB_PICKUP_BLOCKED,
+    AbstractAtom,
+    ControllerRun,
+    Tossing3DBackend,
+    Tossing3DObservation,
+    Tossing3DState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +181,7 @@ class Tossing3DEnvironment(Environment):
     # domain's docs was measured at. `hard_reset` uses it; `Tasks` supplies its own.
     canonical_seed: int = 125
 
-    _backend: KinderBackend | None = PrivateAttr(default=None)
+    _backend: Tossing3DBackend | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
     _last_controller_steps: tuple[int, ...] = PrivateAttr(default=())
     # The observed pickup-infeasibility channel (the 2026-09-22 recovery-state fix):
@@ -196,11 +203,29 @@ class Tossing3DEnvironment(Environment):
     # environments so the two interleave into one chronological log.
     _state_log_writer: SkillTickSink | None = PrivateAttr(default=None)
 
-    def backend(self) -> KinderBackend:
-        """The live simulator handle, built on first use.
+    def backend(self) -> Tossing3DBackend:
+        """The live backend, built on first use by `build_backend`.
 
         Built lazily rather than in `model_post_init` so that constructing a
         `Tossing3DEnvironment` -- which every offline test does -- does not import KINDER.
+        """
+        if self._backend is None:
+            self._backend = self.build_backend()
+        return self._backend
+
+    def kinder_backend(self) -> KinderBackend:
+        """`backend()`, narrowed to the simulator: for the code that reads KINDER's own
+        scene (the agentic bridge, physics-rate recording) and has no real-robot
+        counterpart. Raises on any other backend rather than guessing."""
+        backend = self.backend()
+        if not isinstance(backend, KinderBackend):
+            raise TypeError(
+                f"this operation needs the KinderBackend simulator, not {type(backend).__name__}"
+            )
+        return backend
+
+    def build_backend(self) -> Tossing3DBackend:
+        """The simulator backend. A subclass that runs elsewhere overrides this.
 
         **This domain runs the scene the installed KINDER ships, and no longer selects
         one.** There used to be a `Tossing3DTaskConfig` enum here, and no `task_config_path`
@@ -233,18 +258,16 @@ class Tossing3DEnvironment(Environment):
         region and this domain's symbolic layer is single-cube, so a run labelled `o2`
         would be measuring something this package cannot describe.
         """
-        if self._backend is None:
-            if self.variant != "o1":
-                raise ValueError(
-                    f"this domain's symbolic layer describes the o1 scene, not "
-                    f"{self.variant!r}; use --variant o1"
-                )
-            self._backend = KinderBackend(
-                env_id=f"kinder/Tossing3D-{self.variant}-v0",
-                scene_bg=self.scene_bg,
-                task_config_path=self.layout.task_config_path(),
+        if self.variant != "o1":
+            raise ValueError(
+                f"this domain's symbolic layer describes the o1 scene, not "
+                f"{self.variant!r}; use --variant o1"
             )
-        return self._backend
+        return KinderBackend(
+            env_id=f"kinder/Tossing3D-{self.variant}-v0",
+            scene_bg=self.scene_bg,
+            task_config_path=self.layout.task_config_path(),
+        )
 
     def cost_observation(self) -> dict[str, Any]:
         """The numeric object-state observation an agentic controller would see."""
@@ -278,13 +301,13 @@ class Tossing3DEnvironment(Environment):
     def build_state(
         self,
         *,
-        observation: KinderObservation,
+        observation: Tossing3DObservation,
         seed: int,
         steps_taken: int,
         object_centric: Any = None,
         abstract_atoms: frozenset[AbstractAtom] | None = None,
     ) -> Tossing3DState:
-        """Translate one `KinderObservation` into this domain's `core.State`.
+        """Translate one `Tossing3DObservation` into this domain's `core.State`.
 
         Pure, and free of KINDER: it reads named features out of plain dicts, so a test
         can hand it a hand-built observation and check the translation with no simulator.
@@ -710,7 +733,7 @@ class Tossing3DEnvironment(Environment):
     def _adopt(self, *, state: State) -> None:
         self.current_state = state
 
-    def _robot_source(self, *, observation: KinderObservation) -> str:
+    def _robot_source(self, *, observation: Tossing3DObservation) -> str:
         """The robot's name in the observation.
 
         Resolved by feature schema rather than by literal: the robot is the one object
@@ -728,7 +751,7 @@ class Tossing3DEnvironment(Environment):
     def _vector(
         self,
         *,
-        observation: KinderObservation,
+        observation: Tossing3DObservation,
         name: str,
         obj: Object,
         features: tuple[str, ...] | None = None,
