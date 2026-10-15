@@ -51,8 +51,8 @@ from pydantic import BaseModel, ConfigDict
 
 from .kinder_backend import KinderBackend
 from .parameter_feasibility import TossParameterFeasibility
-from .types import PlanarCollisionBox, TossFeasibilityGeometry
-from .wide_long_range_proposal import WIDE_TOSS_STANDOFF_BOUNDS, WideLongRangeTossProposal
+from .types import PlanarCollisionBox, TossFeasibilityGeometry, TossParameterSet
+from .wide_long_range_proposal import SIM_TOSS_PARAMETERS, WideLongRangeTossProposal
 
 TOSS_DIRECTIONS_DEG = (0, 90, 180, 270)
 
@@ -100,21 +100,29 @@ class TossStandoffBand:
     planner, no random draw.
     """
 
-    _cache: ClassVar[OrderedDict[tuple[str, TossFeasibilityGeometry], tuple[float, float]]] = (
-        OrderedDict()
-    )
+    _cache: ClassVar[
+        OrderedDict[tuple[str, TossFeasibilityGeometry, TossParameterSet], tuple[float, float]]
+    ] = OrderedDict()
 
     @staticmethod
-    def far_bounds(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
-        return TossStandoffBand._cached(kind="far", geometry=geometry)
+    def far_bounds(
+        *,
+        geometry: TossFeasibilityGeometry,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
+    ) -> tuple[float, float]:
+        return TossStandoffBand._cached(kind="far", geometry=geometry, parameters=parameters)
 
     @staticmethod
-    def robot_side_bounds(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+    def robot_side_bounds(
+        *,
+        geometry: TossFeasibilityGeometry,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
+    ) -> tuple[float, float]:
         """The standoff interval a robot-side bin can be thrown at from, at its live pose.
 
         A bin at its reset pose (inside the practice region, yaw 180) has a plannable
         direction at every standoff of the controller's range, so this is exactly
-        `WIDE_TOSS_STANDOFF_BOUNDS` there and the draw is unchanged. A practice pick
+        the parameter set's full standoff range there and the draw is unchanged. A practice pick
         can drag and rotate the bin, and the four directions rotate with it; this
         band is then clipped to the standoffs at which at least one of them passes
         the geometry gate. It is the hull of that set: a standoff in a gap, or one
@@ -122,19 +130,21 @@ class TossStandoffBand:
         the full range, so every draw is rejected and the pool comes back empty --
         the signal the practice planner already replans around.
         """
-        return TossStandoffBand._cached(kind="robot_side", geometry=geometry)
+        return TossStandoffBand._cached(kind="robot_side", geometry=geometry, parameters=parameters)
 
     @staticmethod
-    def _cached(*, kind: str, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+    def _cached(
+        *, kind: str, geometry: TossFeasibilityGeometry, parameters: TossParameterSet
+    ) -> tuple[float, float]:
         cache = TossStandoffBand._cache
-        key = (kind, geometry)
+        key = (kind, geometry, parameters)
         if key in cache:
             cache.move_to_end(key)
             return cache[key]
         if kind == "far":
-            bounds = TossStandoffBand._compute(geometry=geometry)
+            bounds = TossStandoffBand._compute(geometry=geometry, parameters=parameters)
         else:
-            bounds = TossStandoffBand._compute_robot_side(geometry=geometry)
+            bounds = TossStandoffBand._compute_robot_side(geometry=geometry, parameters=parameters)
         cache[key] = bounds
         if len(cache) > _BAND_CACHE_LIMIT:
             cache.popitem(last=False)
@@ -145,8 +155,12 @@ class TossStandoffBand:
         TossStandoffBand._cache.clear()
 
     @staticmethod
-    def _compute(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
-        floor, ceiling = WideLongRangeTossProposal.far_standoff_bounds(bin_x=geometry.bin_pose[0])
+    def _compute(
+        *, geometry: TossFeasibilityGeometry, parameters: TossParameterSet
+    ) -> tuple[float, float]:
+        floor, ceiling = WideLongRangeTossProposal.far_standoff_bounds(
+            bin_x=geometry.bin_pose[0], parameters=parameters
+        )
 
         def feasible(*, standoff: float) -> bool:
             return (
@@ -187,8 +201,10 @@ class TossStandoffBand:
         return floor, TossStandoffBand._edge(feasible=feasible, good=grid[last], bad=grid[last + 1])
 
     @staticmethod
-    def _compute_robot_side(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
-        floor, ceiling = WIDE_TOSS_STANDOFF_BOUNDS
+    def _compute_robot_side(
+        *, geometry: TossFeasibilityGeometry, parameters: TossParameterSet
+    ) -> tuple[float, float]:
+        floor, ceiling = parameters.standoff_bounds
 
         def feasible(*, standoff: float) -> bool:
             return any(

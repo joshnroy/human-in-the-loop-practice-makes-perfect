@@ -80,6 +80,42 @@ class PlanarCollisionBox(BaseModel):
     yaw: float
 
 
+class TossParameterSet(BaseModel):
+    """The box the toss's three learned parameters are drawn from and checked against.
+
+    Standoff in metres, speed in joint-path deg/s, release in milliseconds from the start
+    of the swing. An environment carries one (`Tossing3DEnvironment.toss_parameters`):
+    the simulator's is `wide_long_range_proposal.SIM_TOSS_PARAMETERS`, the real swing's
+    `REAL_TOSS_PARAMETERS`. Every draw, standoff band and refusal follows the set the
+    environment carries, so a real run cannot draw a sim-only throw.
+    """
+
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+
+    standoff_bounds: tuple[float, float]
+    speed_bounds: tuple[float, float]
+    release_ms_bounds: tuple[float, float]
+
+    def model_post_init(self, __context: object) -> None:
+        for name, (low, high) in self._named():
+            if not low < high:
+                raise ValueError(f"{name} bounds must be an interval low < high, got {(low, high)}")
+
+    def violation(self, *, params: tuple[float, float, float]) -> str | None:
+        """Why `(standoff, speed, release_ms)` is outside this set, or `None`."""
+        for (name, (low, high)), value in zip(self._named(), params, strict=True):
+            if not low <= value <= high:
+                return f"{name}={value} outside [{low}, {high}]"
+        return None
+
+    def _named(self) -> tuple[tuple[str, tuple[float, float]], ...]:
+        return (
+            ("standoff", self.standoff_bounds),
+            ("speed", self.speed_bounds),
+            ("release_ms", self.release_ms_bounds),
+        )
+
+
 class TossFeasibilityGeometry(BaseModel):
     """Geometry from one explicit state for a conservative toss-parameter check."""
 
