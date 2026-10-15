@@ -86,6 +86,11 @@ class FakeStepProtocol:
         return None
 
     @staticmethod
+    def resume_practice_environment(*, problem: Any, state: Any) -> None:
+        del problem, state
+        raise NotImplementedError
+
+    @staticmethod
     def practice_context(*, args: argparse.Namespace, problem: Any) -> DomainContext:
         del args
         return DomainContext(

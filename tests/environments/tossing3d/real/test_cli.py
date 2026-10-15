@@ -51,6 +51,7 @@ def test_the_real_cli_defaults_to_evaluating_at_the_end_only(*, tmp_path: Path) 
     args = _args(output=tmp_path)
     assert args.measurement_interval_steps == END_ONLY_MEASUREMENT_INTERVAL
     assert args.initial_measurement is False
+    assert args.checkpoint_sessions is True
     assert args.robot_plant == "fake"
 
 

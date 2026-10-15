@@ -103,6 +103,20 @@ class Cli:
         )
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
         parser.add_argument(
+            "--resume",
+            action="store_true",
+            help="Carry on a paused step-protocol run in --output-dir from its practice "
+            "checkpoint (written at a PAUSE file, or after every session with "
+            "--checkpoint-sessions). --env tossing3d_real only.",
+        )
+        parser.add_argument(
+            "--checkpoint-sessions",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Write a practice checkpoint after every session, so a run that dies "
+            "can be resumed from the last one. --env tossing3d_real turns it on.",
+        )
+        parser.add_argument(
             "--initial-measurement",
             action=argparse.BooleanOptionalAction,
             default=True,

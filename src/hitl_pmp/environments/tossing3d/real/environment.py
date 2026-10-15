@@ -8,14 +8,20 @@ the sim's).
 
 from pydantic import ConfigDict
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
-from hitl_pmp.environments.tossing3d.types import Tossing3DBackend, TossParameterSet
+from hitl_pmp.environments.tossing3d.types import (
+    KB_PICKUP_BLOCKED,
+    Tossing3DBackend,
+    Tossing3DState,
+    TossParameterSet,
+)
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
 from .backend import RealTossingBackend, RealWorld
-from .types import RealSceneLayout
+from .types import RealSceneLayout, RealSceneSnapshot
 
 
 class RealTossing3DEnvironment(Tossing3DEnvironment):
@@ -52,6 +58,25 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
         if self.owner == "evaluation":
             return
         super().hard_reset()
+
+    def resume(self, *, state: State) -> None:
+        """Carry on from a checkpointed practice `state` after a pause.
+
+        The room persisted, so the person is asked to put the scene back only if it no
+        longer looks like the checkpoint's (a battery swap usually moves nothing). The
+        state adopted is observed afresh, with the checkpoint's episode bookkeeping.
+        """
+        assert isinstance(state, Tossing3DState)
+        snapshot = state.object_centric
+        assert isinstance(snapshot, RealSceneSnapshot)
+        backend = self.real_backend()
+        backend.resume_scene(saved=snapshot.observation)
+        self._pickup_blocked = (KB_PICKUP_BLOCKED, (self.cube.name,)) in (
+            state.abstract_atoms or frozenset()
+        )
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        self._adopt(state=self._observed_state(seed=seed, steps_taken=steps_taken))
 
     def real_backend(self) -> RealTossingBackend:
         backend = self.backend()
