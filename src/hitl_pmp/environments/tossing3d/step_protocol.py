@@ -36,6 +36,11 @@ class Tossing3DStepProtocol:
         return Tossing3DCli.build_evaluation_problem(args=args)
 
     @staticmethod
+    def evaluation_pool() -> None:
+        """The protocol's default: one fresh spawned process per evaluation."""
+        return None
+
+    @staticmethod
     def practice_context(*, args: argparse.Namespace, problem: Problem) -> DomainContext:
         env = Tossing3DStepProtocol.env(problem=problem)
         return DomainContext(

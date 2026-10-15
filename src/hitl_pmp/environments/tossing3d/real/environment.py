@@ -45,6 +45,14 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             owner=self.owner,
         )
 
+    def hard_reset(self) -> None:
+        """Practice: the person sets up the canonical scene. Evaluation: nothing --
+        every evaluation episode opens with `reset_to_task`, which asks for its own
+        scene, so a canonical one first would be one more set-up for nothing."""
+        if self.owner == "evaluation":
+            return
+        super().hard_reset()
+
     def real_backend(self) -> RealTossingBackend:
         backend = self.backend()
         assert isinstance(backend, RealTossingBackend)

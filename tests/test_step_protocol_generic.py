@@ -82,6 +82,10 @@ class FakeStepProtocol:
         return FakeStepProtocol.build_practice_problem(args=args)
 
     @staticmethod
+    def evaluation_pool() -> None:
+        return None
+
+    @staticmethod
     def practice_context(*, args: argparse.Namespace, problem: Any) -> DomainContext:
         del args
         return DomainContext(

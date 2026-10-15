@@ -10,7 +10,7 @@ a concrete CLI satisfies them just by having matching staticmethods, no subclass
 import argparse
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext, SkillProvider
@@ -73,6 +73,13 @@ class StepProtocolEnvironment(Protocol):
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> Problem:
         """Wholly separate from practice, with the same fixed test-task stream."""
+        ...
+
+    @staticmethod
+    def evaluation_pool() -> Any:
+        """Where evaluations run: `None` for the default, a fresh spawned process per
+        evaluation beside practice; a domain whose evaluation cannot run beside
+        practice (one real robot) returns a pool that runs it in place."""
         ...
 
     @staticmethod
