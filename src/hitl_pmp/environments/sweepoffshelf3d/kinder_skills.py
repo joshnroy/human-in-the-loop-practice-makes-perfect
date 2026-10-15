@@ -72,6 +72,16 @@ BOX_RELEASE_Z = 0.32
 PLACE_REACHES = (0.8, 0.7, 0.6)
 PLACE_Y_OFFSETS = (0.0, 0.1, -0.1)
 PICK_WIPER_DISTANCES = (0.7, 0.6, 0.8, 0.55)
+# World headings from the base to the wiper. Square on first, then a little either side,
+# which swings the base along the cupboard front: from an arm left over the box (seed 3)
+# no square-on candidate planned an approach that clears board 3.
+PICK_WIPER_HEADINGS = (0.0, 0.15, -0.15, 0.3, -0.3, np.pi / 2, -np.pi / 2, np.pi)
+# Planned picks of the wiper in its slot, each re-observed and replanned, before giving up.
+SLOT_PICK_ATTEMPTS = 3
+# Taking the wiper out of its slot: lift off the board, and how far beyond the cupboard's
+# open front its far end ends up.
+SLOT_LIFT = 0.02
+SLOT_EXIT_CLEARANCE = 0.05
 # Base x positions for a shelf pick: as far back as the box lets it, and nearer.
 SHELF_PICK_BASE_XS = (0.8, 0.72, 0.64)
 SHELF_PICK_GRASPS = 6
@@ -108,6 +118,9 @@ class FollowPlans:
     _grip_wait: int
     # Set by the caller: run once, between the end of the approach and the gripper.
     settle: Callable[[], None] | None = None
+    # Set by the caller: end a pick once the gripper has closed, leaving the hand where
+    # it is, so the caller can check the grasp and take the object out itself.
+    stop_after_grip: bool = False
 
     def _follow(
         self, *, key: str, plan: list[Any], final: float = FINAL_TOLERANCE
@@ -157,6 +170,9 @@ class FollowPlans:
             if self._grip_wait >= GRIP_STEPS:
                 setattr(self, gripped, True)
             return self._hold(grip=1.0 if pick else 0.0)
+        if pick and self.stop_after_grip:
+            self._lifted = True
+            return self._hold(grip=1.0)
         action = self._follow(key="retract", plan=self._current_retract_plan)  # type: ignore[attr-defined]
         if action is not None:
             return action
@@ -377,6 +393,8 @@ class KinderSkills:
         base = np.array([end.x, end.y, end.theta()])
         d = shelf.ik_data
         for name in ("_current_arm_joint_plan", "_current_retract_plan"):
+            if name == "_current_retract_plan" and getattr(controller, "stop_after_grip", False):
+                continue
             plan = getattr(controller, name, None)
             if not plan:
                 continue
@@ -660,22 +678,89 @@ class KinderSkills:
         return settle
 
     def pick_wiper(self) -> None:
-        import kinder_models.dynamic3d.sweep3D.parameterized_skills as sweep3d
-
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("pick_wiper: the hand is not empty")
+        if ("WiperHome", (WIPER,)) not in self.backend.abstract_atoms():
+            self.pick_wiper_once()
+            return
+        # Closed loop in the slot: re-observe the wiper and replan for each attempt, and
+        # take it out only once both pads hold it.
+        for attempt in range(1, SLOT_PICK_ATTEMPTS + 1):
+            self.pick_wiper_once()
+            if self.held(name=WIPER):
+                self.sync()
+                # Out of the slot the arm is left as the scripted pick leaves it, for
+                # `run`'s retract to raise to the carry height: SweepShelf's and
+                # ReturnWiper's routes start from there.
+                self.take_wiper_out_of_slot(label="pick_wiper_out_of_slot")
+                if self.held(name=WIPER):
+                    return
+                raise SkillFailed("pick_wiper: the wiper slipped out of the hand on the way out")
+            self.notes.append(f"pick_wiper: attempt {attempt} closed on nothing; opening")
+            for _ in range(GRIP_STEPS):
+                self.env_step(action=FollowPlans._hold(grip=0.0), label="pick_wiper_open")  # noqa: SLF001
+            self.sync()
+            self.retract(label="pick_wiper_regrasp_retract")
+            if ("WiperHome", (WIPER,)) not in self.backend.abstract_atoms():
+                break
+        raise SkillFailed("pick_wiper: the wiper did not come with the hand")
+
+    def take_wiper_out_of_slot(self, *, label: str) -> None:
+        """Lift the held wiper off its board, then back the base straight away from the
+        cupboard, the arm held still, until the wiper's far end is `SLOT_EXIT_CLEARANCE`
+        outside the cupboard's open front: the wiper leaves the slot along the slot,
+        unturned. (`ShelfSkills.leave_wiper_slot` pulls it out with the arm instead, and
+        from KINDER's pick base its exit pose has no IK solution.)"""
+        shelf = self.shelf
+        lift = shelf.site_pose()
+        lift[2, 3] += SLOT_LIFT
+        with contextlib.suppress(SkillFailed):
+            shelf.path(
+                position=lift[:3, 3], rotation=lift[:3, :3], label=label, count=4, holding=True
+            )
+        self.sync()
+        out = self.wiper_far_x() - shelf.front_x + SLOT_EXIT_CLEARANCE
+        if out > 0.0:
+            base = shelf.data.qpos[shelf.ba].copy()
+            away = np.array([np.cos(base[2]), np.sin(base[2])])
+            base[:2] -= out * away
+            shelf.move_base(target=base, label=label)
+        self.sync()
+
+    def wiper_far_x(self) -> float:
+        """The largest world x any part of the wiper reaches (its geoms' bounding boxes)."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.data
+        far = -np.inf
+        for g in shelf.wiper_geoms:
+            rotation = d.geom_xmat[g].reshape(3, 3)
+            centre = d.geom_xpos[g] + rotation @ m.geom_aabb[g][:3]
+            half = np.abs(rotation) @ m.geom_aabb[g][3:]
+            far = max(far, float(centre[0] + half[0]))
+        return far
+
+    def pick_wiper_once(self) -> None:
+        """One planned pick: off the shelf it is upstream's, lifted on its retract plan;
+        in the slot the hand stops as the gripper closes (`FollowPlans.stop_after_grip`).
+        That retract plan is BiRRT in KINDER's planning scene, which has no wiper in it:
+        from a wiper 0.15 deg off square it took the hand 9 cm deeper into the cupboard,
+        and the back panel tore the wiper out of the pads."""
+        import kinder_models.dynamic3d.sweep3D.parameterized_skills as sweep3d
+
+        shelf = self.shelf
         robot, wiper = self.objects("robot", WIPER)
         yaw = self.yaw(name=WIPER)
         candidates = [(0.7, -np.pi)]  # upstream's own fixed parameter first
-        for heading in (0.0, np.pi / 2, -np.pi / 2, np.pi):
+        for heading in PICK_WIPER_HEADINGS:
             candidates += [(d, heading - yaw) for d in PICK_WIPER_DISTANCES]
         # In its slot only the leaned grasp clears the board above; off the shelf,
         # upstream's own grasp.
         grasp = sweep3d.WIPER_TRANSFORM_TO_OBJECT
         controller = KinderControllers.get(name="PickWiper")
         settle = None
-        if ("WiperHome", (WIPER,)) in self.backend.abstract_atoms():
+        in_slot = ("WiperHome", (WIPER,)) in self.backend.abstract_atoms()
+        if in_slot:
             hand = shelf.wiper_grasp(kind="shelf")
             grasp = self.pose_in(obj_pose=shelf.wiper_pose(), hand=hand)
             controller = KinderControllers.get(name="PickWiperInSlot")
@@ -684,6 +769,7 @@ class KinderSkills:
         def make() -> Any:
             pick = controller(objects=[robot, wiper], pybullet_sim=self.planning_sim())
             pick.settle = settle
+            pick.stop_after_grip = in_slot
             return pick
 
         with self.constant(module=sweep3d, name="WIPER_TRANSFORM_TO_OBJECT", value=grasp):
@@ -692,7 +778,7 @@ class KinderSkills:
                 candidates=candidates,
                 label="pick_wiper",
             )
-        if not self.held(name=WIPER):
+        if not in_slot and not self.held(name=WIPER):
             raise SkillFailed("pick_wiper: the wiper did not come with the hand")
 
     def pick_cube_from_floor(self, *, cube: str) -> None:
