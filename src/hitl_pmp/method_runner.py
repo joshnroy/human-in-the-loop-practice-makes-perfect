@@ -14,6 +14,7 @@ from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
+from hitl_pmp.human_resets import HumanResetLog
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.recording.period_recorder import PeriodRecorder
@@ -201,6 +202,9 @@ class MethodRunner:
         # domain/method-agnostic core.Problem return value), never anything
         # Method-specific, so method_runner.py is where it belongs.
         trace_recorder = EpisodeTraceRecorder.open_if_requested(args=args)
+        # Not behind a flag: like stats.json it is written whenever there is an
+        # --output-dir, because it is the per-event record of a stats.json counter.
+        human_reset_log = HumanResetLog.open_if_requested(args=args)
 
         def record_skill_competence() -> None:
             """Reads the checkpoint metrics.evaluations just gained -- see
@@ -268,6 +272,7 @@ class MethodRunner:
                 recorder=recorder,
                 period_recorder=period_recorder,
                 trace_recorder=trace_recorder,
+                human_reset_log=human_reset_log,
             )
             # Once more after the loop, so the final evaluation sweep is covered and
             # so a num_cycles=0 run (every non-learning baseline) still gets exactly
@@ -292,6 +297,8 @@ class MethodRunner:
             # wanted afterwards. `metrics` is therefore whatever the run got to.
             for writer in results_writers:
                 writer.close(metrics=metrics)
+            if human_reset_log is not None:
+                human_reset_log.close()
         if recorder is not None:
             print(
                 f"full-loop recording: {args.record_full_loop} ({recorder.frames_written} frames)"

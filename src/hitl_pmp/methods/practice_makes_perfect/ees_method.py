@@ -1543,6 +1543,7 @@ class _EesEpisode:
                     destination=method.skill_provider.movables_reset_destination(
                         ground_skill=ground_skill
                     ),
+                    skill=ground_skill.skill.name,
                 )
             # By default every skill executed during practice explores
             # (epsilon-greedy). Under reproduce_predicators_explore_target_only,
