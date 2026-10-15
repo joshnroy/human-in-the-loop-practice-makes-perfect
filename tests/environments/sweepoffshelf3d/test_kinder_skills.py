@@ -142,3 +142,60 @@ def test_a_returned_cube_rests_on_the_shelf_or_the_skill_says_it_failed(*, env, 
     if returned:
         assert ("HandEmpty", ("robot",)) in atoms
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+# Where a SweepShelf that lost the wiper left the arm, reproducing cccc-determinized-p1
+# on 2026-10-14: the hand just inside the cupboard's open front, clear of everything in
+# MuJoCo, but a finger pad inside KINDER's PyBullet cupboard model.
+STRANDED_BASE = (0.523, -0.174, 0.0)
+STRANDED_ARM = (0.333, 1.217, 2.526, -1.478, 2.23, -0.759, 2.628)
+
+
+def _pose_robot(*, env, base, arm):
+    backend = env.backend()
+    model, data = backend.model(), backend.data()
+    for name, value in zip(("x", "y", "th"), base, strict=True):
+        data.qpos[model.jnt_qposadr[model.joint(f"robot_joint_{name}").id]] = value
+    for i, value in enumerate(arm, start=1):
+        data.qpos[model.jnt_qposadr[model.joint(f"robot_joint_{i}").id]] = value
+    data.qvel[:] = 0.0
+    backend.sim().forward()
+    env.controllers().on_objects_moved()
+
+
+def test_an_arm_stranded_in_the_cupboard_front_is_retracted_after_the_next_skill(*, env):
+    """The absorbing state behind CCCC's PickCubeFromShelf/PickWiper plan-time tally:
+    the retract planned from a start PyBullet calls a collision, never planned, and left
+    the arm out; every later skill planned its approach from there and failed with 0
+    control steps, and so did its own retract."""
+    env.reset_to_seed(seed=0)
+    _pose_robot(env=env, base=STRANDED_BASE, arm=STRANDED_ARM)
+    assert _arm_from_home(env=env) > RETRACT_TOLERANCE
+    _act(env=env, skill="PickWiper")
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE, env.last_skill_error()
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+
+
+def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypatch):
+    """`HoldingWiper` is re-evaluated at every control step of a sweep. The stage-5
+    rerun's wiper turned 93 deg in the grasp and fell into the box; the sweep carried on
+    aiming the hand from the fallen wiper ("no base pose reaches the hand target: no IK")
+    and stranded the hand inside the cupboard front."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
+
+    pull = ShelfSkills.pull
+
+    def pull_then_drop(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        pull(self, **kwargs)
+        _teleport(env=env, name="wiper_0", position=[1.235, 0.0, 0.05])  # into the box
+
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    monkeypatch.setattr(ShelfSkills, "pull", pull_then_drop)
+    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    error = env.last_skill_error() or ""
+    assert "wiper left the hand" in error, error
+    assert "no base pose" not in error, error
+    assert ("HandEmpty", ("robot",)) in atoms
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
