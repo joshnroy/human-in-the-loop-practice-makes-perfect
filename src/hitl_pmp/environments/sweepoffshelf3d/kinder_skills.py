@@ -72,6 +72,10 @@ BOX_RELEASE_Z = 0.32
 PLACE_REACHES = (0.8, 0.7, 0.6)
 PLACE_Y_OFFSETS = (0.0, 0.1, -0.1)
 PICK_WIPER_DISTANCES = (0.7, 0.6, 0.8, 0.55)
+# World headings from the base to the wiper. Square on first, then a little either side,
+# which swings the base along the cupboard front: from an arm left over the box (seed 3)
+# no square-on candidate planned an approach that clears board 3.
+PICK_WIPER_HEADINGS = (0.0, 0.15, -0.15, 0.3, -0.3, np.pi / 2, -np.pi / 2, np.pi)
 # Planned picks of the wiper in its slot, each re-observed and replanned, before giving up.
 SLOT_PICK_ATTEMPTS = 3
 # Taking the wiper out of its slot: lift off the board, and how far beyond the cupboard's
@@ -748,7 +752,7 @@ class KinderSkills:
         robot, wiper = self.objects("robot", WIPER)
         yaw = self.yaw(name=WIPER)
         candidates = [(0.7, -np.pi)]  # upstream's own fixed parameter first
-        for heading in (0.0, np.pi / 2, -np.pi / 2, np.pi):
+        for heading in PICK_WIPER_HEADINGS:
             candidates += [(d, heading - yaw) for d in PICK_WIPER_DISTANCES]
         # In its slot only the leaned grasp clears the board above; off the shelf,
         # upstream's own grasp.

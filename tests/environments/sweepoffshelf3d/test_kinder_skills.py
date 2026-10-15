@@ -99,6 +99,25 @@ def test_pick_wiper_takes_a_wiper_sitting_a_fraction_of_a_degree_off_square(*, e
     assert _wiper_carried_clear(env=env)
 
 
+def test_pick_wiper_from_an_arm_left_over_the_box(*, env):
+    """PR #445's one PickWiper failure (Lane B's E2, seed 3): the arm where a
+    PlaceCubeInBox leaves it. With the base square on to the wiper no candidate planned
+    (17 tried); swung a little to one side, one does."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames
+
+    env.reset_to_seed(seed=3)
+    skills = env.controllers()._skills  # noqa: SLF001
+    rotation = Frames.leaned(
+        closing=np.array([0.0, 1.0, 0.0]), lean_toward=np.array([1.0, 0.0, 0.0]), lean_deg=30.0
+    )
+    base = np.array([0.75, 0.0, 0.0])
+    arm, _ = skills.ik(position=[1.235, 0.0, 0.36], rotation=rotation, base=base)
+    _pose_robot(env=env, base=base, arm=arm)
+    env.current_state = env._observed_state(seed=3, steps_taken=0)  # noqa: SLF001
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+
+
 def test_pick_wiper_takes_a_wiper_left_turned_on_its_shelf(*, env):
     """Where a torn-out pick left it in the stage-5 rerun: 25 deg off square, 5 cm in."""
     env.reset_to_seed(seed=0)
