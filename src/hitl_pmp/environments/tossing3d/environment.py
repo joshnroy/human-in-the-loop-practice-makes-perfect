@@ -60,6 +60,7 @@ from .types import (
     Tossing3DBackend,
     Tossing3DObservation,
     Tossing3DState,
+    TossParameterSet,
 )
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,11 @@ class Tossing3DEnvironment(Environment):
     # Upstream's own `test_pick_ground_toss` seed, and the one every number in this
     # domain's docs was measured at. `hard_reset` uses it; `Tasks` supplies its own.
     canonical_seed: int = 125
+    # The toss's parameter box. `None` is the simulator's own
+    # (`wide_long_range_proposal.SIM_TOSS_PARAMETERS`, resolved by
+    # `Tossing3DToss.parameters_of`, since that module cannot be imported from here);
+    # a real-robot environment carries the real swing's.
+    toss_parameters: TossParameterSet | None = None
 
     _backend: Tossing3DBackend | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
