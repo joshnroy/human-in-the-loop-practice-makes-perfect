@@ -33,6 +33,9 @@ from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
+from .coded_sampler.history import StateCodec
+from .coded_sampler.sampler import CodedProposalSampler, CodedSamplerHub
+from .coded_sampler.types import CodedSamplerMode
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
 
@@ -283,6 +286,10 @@ class EesMethod(Method):
     # from, so no branch, no RNG draw and no planner call depends on it. See
     # hitl_pmp/sampler_draws.py.
     draw_recorder: SamplerDrawRecorder | None = None
+    # --sampler claude_code's per-run hub, or None (the default: the MLP, and every
+    # unchanged run byte-identical). When set, every sampler this method builds is a
+    # coded one, and the practice history the coding agent reads is recorded.
+    coded_sampler: CodedSamplerHub | None = None
     # Two reasons for 10000 over the old default of 1000, neither of which is a score
     # comparison:
     #
@@ -319,7 +326,7 @@ class EesMethod(Method):
     # `reproduce_predicators_practice_target_history` is on; competence always reads
     # its own random-excluding history in `_competence_models` instead.
     _all_attempt_outcomes: dict[GroundSkill, list[bool]] = PrivateAttr()
-    _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
+    _samplers: dict[str, LearnedSkillSampler | CodedProposalSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
@@ -789,6 +796,10 @@ class EesMethod(Method):
         `score_human_skills` the human skill is also scored here, like a robot skill:
         a success exactly when its promised effects hold in `state`."""
         self.clear_starved_parameter_pools()
+        if self.coded_sampler is not None:
+            self.record_trajectory(
+                kind="human_reset_completed", state_after=StateCodec.encode(state=state)
+            )
         human = self._pending_human_skill
         if human is None:
             return
@@ -1013,7 +1024,17 @@ class EesMethod(Method):
             )
         return candidates
 
-    def sampler(self, *, skill_name: str, param_dim: int) -> LearnedSkillSampler:
+    def sampler(
+        self, *, skill_name: str, param_dim: int
+    ) -> LearnedSkillSampler | CodedProposalSampler:
+        if skill_name not in self._samplers and self.coded_sampler is not None:
+            self._samplers[skill_name] = self.coded_sampler.sampler_for(
+                skill_name=skill_name,
+                param_dim=param_dim,
+                num_candidates=self.num_candidates,
+                exploration_epsilon=self.exploration_epsilon,
+                seed=self.seed,
+            )
         if skill_name not in self._samplers:
             self._samplers[skill_name] = LearnedSkillSampler(
                 skill_name=skill_name,
@@ -1070,8 +1091,18 @@ class EesMethod(Method):
             model.advance_cycle()
 
     def fit_samplers(self) -> None:
+        if self.coded_sampler is not None:
+            # One coding session covers every skill, so it refits once per cycle.
+            self.coded_sampler.history.end_cycle()
+            self.coded_sampler.refit()
+            return
         for sampler in self._samplers.values():
             sampler.fit()
+
+    def record_trajectory(self, *, kind: str, **data: Any) -> None:
+        """Append to the coding agent's practice history; nothing without a hub."""
+        if self.coded_sampler is not None:
+            self.coded_sampler.history.append(kind=kind, **data)
 
     def end_cycle(self) -> None:
         """Retrain, then start a new competence cycle -- predicators' per-cycle
@@ -1096,6 +1127,8 @@ class EesMethod(Method):
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
         greedily. Records nothing -- these are held-out test tasks."""
+        if self.coded_sampler is not None:
+            self.coded_sampler.set_phase(phase="evaluation")
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=False)
         return lambda state: episode.step(state=state)
 
@@ -1113,6 +1146,14 @@ class EesMethod(Method):
         those checks key on."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
+        if self.coded_sampler is not None:
+            self.coded_sampler.set_phase(phase="practice")
+            self.record_trajectory(
+                kind="practice_period_start",
+                period=self._practice_periods,
+                goal=sorted(str(atom) for atom in task.goal.atoms),
+                initial_state=StateCodec.encode(state=task.initial_state),
+            )
         # Starvation is per session: a new period re-randomizes movable geometry,
         # so last session's infeasible pools are no longer evidence.
         self.clear_starved_parameter_pools()
@@ -1158,6 +1199,8 @@ class EesMethod(Method):
         self._practice_episode.observe_pending(
             true_atoms=self.abstract_state(state=state), state=state
         )
+        if self.coded_sampler is not None:
+            self.record_trajectory(kind="environment_reset", state=StateCodec.encode(state=state))
 
     def execute_ground_skill(
         self, *, ground_skill: GroundSkill, state: State, explore: bool
@@ -1188,10 +1231,20 @@ class EesMethod(Method):
                 for candidate in candidates
             ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
+            if self.coded_sampler is not None:
+                self.coded_sampler.begin_decision(
+                    ground_skill=ground_skill, state=state, explore=explore
+                )
             choice = sampler.sample(
                 sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
             )
             params = choice.params
+            infeasible = self.generated_parameter_rejection(
+                ground_skill=ground_skill,
+                state=state,
+                choice_informed=choice.was_informed,
+                params=params,
+            )
             record = _SkillAttempt(
                 skill_name=skill.name,
                 param_dim=skill.param_dim,
@@ -1206,11 +1259,52 @@ class EesMethod(Method):
                 was_informed_choice=choice.was_informed,
                 consultation=choice.consultation,
                 records_training_row=explore,
+                infeasible_reason=infeasible,
+                code_version=(
+                    None if self.coded_sampler is None else self.coded_sampler.current_version.index
+                ),
             )
+            if infeasible is not None:
+                # Generated parameters inside the bounds that no controller can
+                # realise: executed as the environment's own no-op, so the attempt is
+                # spent and observed as a failure rather than filtered out.
+                return LabeledAction(
+                    action=self._noop_action(),
+                    label=f"{skill.name}: infeasible generated parameters ({infeasible})",
+                ), record
 
         return self._labeled_action(
             ground_skill=ground_skill, params=params, state=state, record=record
         ), record
+
+    def generated_parameter_rejection(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        state: State,
+        choice_informed: bool,
+        params: np.ndarray,
+    ) -> str | None:
+        """Why code-proposed parameters cannot be executed, or None. Only sampler mode
+        proposes parameters the base proposal's feasibility filter never saw."""
+        hub = self.coded_sampler
+        if hub is None or hub.mode != CodedSamplerMode.SAMPLER or not choice_informed:
+            return None
+        reason = self.skill_provider.parameter_rejection_reason(
+            ground_skill=ground_skill, params=params, state=state
+        )
+        if reason is not None:
+            hub.note(
+                record={
+                    "skill": ground_skill.skill.name,
+                    "infeasible_proposal": reason,
+                    "params": [float(p) for p in params],
+                }
+            )
+        return reason
+
+    def _noop_action(self) -> np.ndarray:
+        return self.env.noop_action()
 
     def execute_random_ground_skill(
         self, *, ground_skill: GroundSkill, state: State
@@ -1399,6 +1493,10 @@ class _SkillAttempt(BaseModel):
     # `compute_action` chose itself (Tossing3D's stand direction), logged beside
     # `params` rather than inside it.
     controller_choices: dict[str, float] = Field(default_factory=dict)
+    # Coded samplers only: why generated parameters could not be executed, and the
+    # frozen code version consulted.
+    infeasible_reason: str | None = None
+    code_version: int | None = None
 
 
 class _EesEpisode:
@@ -1534,6 +1632,14 @@ class _EesEpisode:
                     method.record_human_skill_dispatch(
                         ground_skill=ground_skill, before_atoms=true_atoms
                     )
+                    if method.coded_sampler is not None:
+                        method.record_trajectory(
+                            kind="human_reset_requested",
+                            skill=ground_skill.skill.name,
+                            grounding=StateCodec.grounding(ground_skill=ground_skill),
+                            cost=method.practice_action_cost(ground_skill=ground_skill),
+                            state_before=StateCodec.encode(state=state),
+                        )
                 # Dispatch to the human, not execute_ground_skill -- the robot has no
                 # controller for it. self._pending stays untouched: the human's
                 # outcome, if scored at all (score_human_skills), is scored by
@@ -1580,11 +1686,34 @@ class _EesEpisode:
                 method.record_starved_parameter_pool(
                     ground_skill=ground_skill, true_atoms=true_atoms
                 )
+                if method.coded_sampler is not None:
+                    method.record_trajectory(
+                        kind="parameter_pool_starved",
+                        skill=ground_skill.skill.name,
+                        grounding=StateCodec.grounding(ground_skill=ground_skill),
+                    )
                 continue
             if self._practicing:
                 # Charge only once action construction has succeeded, even if no
                 # later policy call observes this actual attempt.
                 method.record_action_cost(ground_skill=ground_skill)
+                if method.coded_sampler is not None:
+                    method.record_trajectory(
+                        kind="skill_dispatched",
+                        skill=ground_skill.skill.name,
+                        grounding=StateCodec.grounding(ground_skill=ground_skill),
+                        params=[] if record is None else record.params,
+                        epsilon_random=record is not None and record.was_random_exploration,
+                        consultation=(
+                            SamplerConsultation.NO_SAMPLER
+                            if record is None
+                            else record.consultation
+                        ).value,
+                        code_version=None if record is None else record.code_version,
+                        infeasible_reason=None if record is None else record.infeasible_reason,
+                        action_label=labeled.label,
+                        state_before=StateCodec.encode(state=state),
+                    )
             self._pending = ground_skill
             self._pending_before_atoms = true_atoms
             self._pending_sampler_record = record
@@ -1665,6 +1794,14 @@ class _EesEpisode:
             # exception from the file system cannot leave the learning path
             # half-updated. `attempt is not None` is exactly "a sampler was consulted",
             # which is the population this file is defined over.
+            if self._method.coded_sampler is not None:
+                self._method.record_trajectory(
+                    kind="skill_outcome",
+                    skill=self._pending.skill.name,
+                    grounding=StateCodec.grounding(ground_skill=self._pending),
+                    success=success,
+                    state_after=StateCodec.encode(state=state),
+                )
             recorder = self._method.draw_recorder
             if recorder is not None and attempt is not None:
                 recorder.record(

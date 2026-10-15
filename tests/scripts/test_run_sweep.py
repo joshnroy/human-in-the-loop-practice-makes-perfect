@@ -733,3 +733,32 @@ def test_sweep_output_round_trips_through_the_analysis_layout(*, tmp_path: Path)
         json.dumps({"evaluations": [[0, 1, 2]], "task_name": "default"})
     )
     assert sorted(tmp_path.glob("*/*/stats.json")) == [run.output_dir / "stats.json"]
+
+
+def test_an_arm_alias_names_the_directory_and_its_args_but_runs_the_real_method() -> None:
+    runs = SweepRunner.plan(
+        env="tossing3d",
+        methods=["ees-scorer:ees", "astar-scorer:pomdp"],
+        seeds=[0],
+        results_root=Path("/tmp/results"),
+        shared_args=[],
+        method_args={"astar-scorer": ["--pomdp-solver", "determinized_astar"]},
+    )
+    assert [run.method for run in runs] == ["ees-scorer", "astar-scorer"]
+    assert runs[1].output_dir == Path("/tmp/results/astar-scorer/0")
+    command = runs[1].command
+    assert command[command.index("--method") + 1] == "pomdp"
+    assert command[-2:] == ["--pomdp-solver", "determinized_astar"]
+
+
+def test_seed_first_queues_every_arm_at_one_seed_before_the_next_seed() -> None:
+    runs = SweepRunner.plan(
+        env="lightswitch",
+        methods=["a:ees", "b:ees"],
+        seeds=[0, 1],
+        results_root=Path("/tmp/results"),
+        shared_args=[],
+        method_args={},
+        seed_first=True,
+    )
+    assert [(run.method, run.seed) for run in runs] == [("a", 0), ("b", 0), ("a", 1), ("b", 1)]

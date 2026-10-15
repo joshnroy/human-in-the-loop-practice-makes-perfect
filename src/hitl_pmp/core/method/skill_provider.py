@@ -3,7 +3,13 @@ import abc
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
+from hitl_pmp.core.method.types import (
+    FeatureSpec,
+    GroundSkill,
+    LabeledAction,
+    ParameterSpec,
+    Skill,
+)
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
@@ -118,6 +124,29 @@ class SkillProvider(BaseModel, abc.ABC):
         A concrete provider that overrides this must build the row consistently for
         both a training observation and a candidate being scored -- i.e. it is a pure
         function of `(ground_skill, state, params)`."""
+        return None
+
+    def hand_selected_feature_names(self, *, ground_skill: GroundSkill) -> tuple[str, ...] | None:
+        """The field names of `hand_selected_feature_transform`'s row, in order, or
+        `None` when this domain uses the default layout for this ground skill. Exists so
+        a description of the row can be generated rather than written by hand; a
+        domain that overrides the transform overrides this with it."""
+        del ground_skill
+        return None
+
+    def parameter_specs(self, *, skill: Skill) -> tuple[ParameterSpec, ...] | None:
+        """Names, units, meanings and bounds of `skill`'s continuous parameters, or
+        `None` when this domain does not describe them."""
+        del skill
+        return None
+
+    def feature_specs(self) -> dict[str, tuple[FeatureSpec, ...]]:
+        """Per object-type name, a description of each state feature, in the type's
+        own feature order. Empty when this domain does not describe them."""
+        return {}
+
+    def task_description(self) -> str | None:
+        """A prose description of the domain's task for a coding agent, or `None`."""
         return None
 
     def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
