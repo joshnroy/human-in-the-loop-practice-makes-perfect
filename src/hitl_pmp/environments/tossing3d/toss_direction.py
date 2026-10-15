@@ -51,6 +51,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .kinder_backend import KinderBackend
 from .parameter_feasibility import TossParameterFeasibility
+from .toss_geometry import TossGeometrySource
 from .types import PlanarCollisionBox, TossFeasibilityGeometry, TossParameterSet
 from .wide_long_range_proposal import SIM_TOSS_PARAMETERS, WideLongRangeTossProposal
 
@@ -312,7 +313,7 @@ class TossDirectionSelector:
         """The one swappable feasibility check: `None` if the real base motion planner
         finds a path to this stand, else a reason. Replace this function to change what
         "plannable" means; nothing else in the rule depends on how it is decided."""
-        return KinderBackend.toss_base_plan_failure(
+        return TossGeometrySource.base_plan_failure(
             snapshot=snapshot, distance=distance, rotation=rotation
         )
 
@@ -321,9 +322,7 @@ class TossDirectionSelector:
         """`select` on a live `Tossing3DState`; raises if the state carries no geometry,
         since then no direction can be chosen at all."""
         snapshot = getattr(state, "object_centric", None)
-        geometry = (
-            None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
-        )
+        geometry = None if snapshot is None else TossGeometrySource.geometry(snapshot=snapshot)
         if geometry is None:
             raise ValueError(
                 "cannot choose a toss direction: the state carries no base-planner "
@@ -369,7 +368,9 @@ class TossDirectionSelector:
             stand_xy = TossDirectionSelector.stand_point(
                 geometry=geometry, standoff=standoff, direction_deg=direction
             )
-            TossDirectionSelector._check_far_bins_stand_west(geometry=geometry, stand_xy=stand_xy)
+            TossDirectionSelector._check_far_bins_stand_on_robots_side(
+                geometry=geometry, stand_xy=stand_xy
+            )
             return TossDirectionChoice(
                 direction_deg=direction,
                 rotation=rotation,
@@ -448,9 +449,12 @@ class TossDirectionSelector:
         return reason
 
     @staticmethod
-    def _check_far_bins_stand_west(
+    def _check_far_bins_stand_on_robots_side(
         *, geometry: TossFeasibilityGeometry, stand_xy: tuple[float, float]
     ) -> None:
+        """A far bin is thrown at from the robot's side of it. On the sim the robot is
+        west of the barrier, so this is exactly "west of the bin" (`stand_x < bin_x`);
+        the real robot works east of its barrier, so there it is east."""
         barriers = [
             obstacle
             for obstacle in geometry.obstacles
@@ -463,10 +467,12 @@ class TossDirectionSelector:
         robot_x = geometry.robot_pose[0]
         if (bin_x - barrier_x) * (robot_x - barrier_x) >= 0.0:
             return
-        if not stand_xy[0] < bin_x:
+        if not (stand_xy[0] - bin_x) * (robot_x - barrier_x) > 0.0:
+            side = "west" if robot_x < barrier_x else "east"
             raise TossDirectionInvariantError(
                 f"far-side bin at x={bin_x:.3f} was given a stand at "
-                f"{TossDirectionSelector.rounded(values=stand_xy)}, not west of the bin"
+                f"{TossDirectionSelector.rounded(values=stand_xy)}, not {side} of the bin "
+                "(the robot's side)"
             )
 
     @staticmethod

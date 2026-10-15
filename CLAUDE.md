@@ -165,16 +165,24 @@ committed experiment logs carry staleness notes saying so.
 lookup into that set, so a hand-built `core.State` **raises** rather than quietly answering
 `False` five times. `test_kb_predicate_parity.py` pins the classifiers' own semantics.
 
-**The operator model is still written here rather than imported, but it no longer
-*differs* from upstream's.** That is a change: it used to put the one-way-door constraint
-in a different place from `kinder_bilevel_planning`'s. At the two-skill rung the two
-models agree atom for atom — `pick_cube` is pre `{HandEmpty, OnGround, MovableIsDownX}`,
-add `{Holding}`, del `{HandEmpty, OnGround}`; `move_to_toss_location_and_toss` is pre
-`{Holding, MovableIsDownX}`, add `{HandEmpty, MovableInGoalRegion, OnGround}`, del
-`{Holding, MovableIsDownX}` — the only difference being that this domain's `InBin` carries
-a bin argument upstream's unary `MovableInGoalRegion` does not.
+**The operator model is written here rather than imported, and it has moved past the
+two-skill rung this file used to describe.** `Tossing3DSkills` has three robot skills:
+`PickCube` (pre `HandEmpty`, `OnGround`, `RobotAtSide`/`CubeAtSide` on one shared side,
+`PickPlannable`, `BinOnGround`), `MoveToTossLocationAndToss` (pre `Holding`, `BinAtSide`,
+`BinOnGround`) and `OpenGripper` (pre `ClosedEmpty`, `BinOnGround`); the human reset is
+the provider's `ask_for_reset_cube_bin_only`, grounded once per bin side. The side atoms
+are robot-relative, so a cube across the barrier has no pick and only the reset recovers
+it. `MovableIsDownX` is still in the atom set but no operator uses it. The old claim that
+this model agrees atom for atom with `kinder_bilevel_planning`'s was made at the two-skill
+rung and has not been re-checked since.
 
-**That agreement is deliberately not pinned by a test, and the reason is worth knowing.**
+**The real robot runs this same domain.** `environments/tossing3d/real/` is a
+`Tossing3DBackend` over the robot side's skill-level client: same predicates, skills and
+operator model, with the room's object positions, the toss length and the toss parameter
+set (`REAL_TOSS_PARAMETERS`) the only differences. Its predicate mapping is the table in
+`real/backend.py`'s docstring.
+
+**Any such agreement is deliberately not pinned by a test, and the reason is worth knowing.**
 `kinder_bilevel_planning` is *importable* in this environment but is **not installed from
 `reference/`** — only `kinder-models` is — so `import kinder_bilevel_planning` resolves to
 the **main checkout's** tree regardless of which pin a worktree declares. A test asserting

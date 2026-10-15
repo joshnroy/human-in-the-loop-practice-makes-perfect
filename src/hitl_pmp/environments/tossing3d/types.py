@@ -128,6 +128,11 @@ class TossFeasibilityGeometry(BaseModel):
     obstacles: tuple[PlanarCollisionBox, ...]
     sampling_x_bounds: tuple[float, float]
     sampling_y_bounds: tuple[float, float]
+    # An obstacle the base never crosses, even where it could drive round it: a stand
+    # whose footprint reaches across the line along this rectangle's long axis, from
+    # the robot's side, is rejected. `None` on the simulator, whose barrier spans the
+    # room; the real room's finite barrier (see `real/geometry.py`).
+    uncrossable: PlanarCollisionBox | None = None
 
 
 class Tossing3DState(State):

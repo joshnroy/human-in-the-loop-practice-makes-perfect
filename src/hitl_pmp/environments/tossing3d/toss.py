@@ -27,7 +27,6 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
-from .kinder_backend import KinderBackend
 from .toss_direction import (
     InfeasibleStandoffBandError,
     NoFeasibleTossDirectionError,
@@ -35,6 +34,7 @@ from .toss_direction import (
     TossDirectionSelector,
     TossStandoffBand,
 )
+from .toss_geometry import TossGeometrySource
 from .types import TossParameterSet
 from .wide_long_range_proposal import (
     SIM_TOSS_PARAMETERS,
@@ -118,9 +118,16 @@ class Tossing3DToss:
         robot_x = state.get(obj=robot, feature_name="pos_base_x")
         far = (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0
         snapshot = getattr(state, "object_centric", None)
-        geometry = (
-            None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
-        )
+        geometry = None if snapshot is None else TossGeometrySource.geometry(snapshot=snapshot)
+        if TossGeometrySource.is_real(snapshot=snapshot):
+            # The real room: the four-direction scan for either side. The sim's far band
+            # rests on `FAR_STAND_X_LIMIT_M`, measured in the sim's room, and on its
+            # direction-0-only rule for far bins; neither describes this room. No
+            # geometry (an unlocalized bin) leaves the set's own range, which direction
+            # selection then refuses.
+            if geometry is None:
+                return parameters.standoff_bounds
+            return TossStandoffBand.robot_side_bounds(geometry=geometry, parameters=parameters)
         if geometry is None:
             # A hand-built state carries no collider geometry; only the analytic
             # stand line is knowable, and direction selection refuses such a state
