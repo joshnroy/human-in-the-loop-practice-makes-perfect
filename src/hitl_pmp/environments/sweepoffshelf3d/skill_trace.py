@@ -8,7 +8,8 @@ robot took no control step is a `plan_failure` -- every candidate was rejected b
 anything moved -- and one after it moved is an `execution_failure`.
 
 Decision logs already run to hundreds of GB, so a trace is bounded: at most `MAX_NOTES`
-candidate notes (the overflow is counted, not kept) and `MAX_REASON_CHARS` per reason.
+candidate notes (the first and the last; the middle is counted, not kept) and
+`MAX_REASON_CHARS` per reason.
 """
 
 from collections.abc import Iterable
@@ -26,6 +27,7 @@ from .types import AbstractAtom, SkillNote, SkillTrace
 
 MAX_NOTES = 48
 MAX_REASON_CHARS = 240
+KEPT_TAIL = 16
 INTERRUPTED_PREFIX = "interrupted:"
 
 
@@ -85,7 +87,7 @@ class SkillTraces:
             missing_effects=missing,
             added=SkillTraces.names(atoms=atoms_after - atoms_before),
             removed=SkillTraces.names(atoms=atoms_before - atoms_after),
-            notes=[SkillTraces.clip(note=note) for note in notes[:MAX_NOTES]],
+            notes=[SkillTraces.clip(note=note) for note in SkillTraces.kept(notes=notes)],
             notes_dropped=max(0, len(notes) - MAX_NOTES),
         )
 
@@ -141,6 +143,14 @@ class SkillTraces:
     @staticmethod
     def names(*, atoms: Iterable[AbstractAtom]) -> list[str]:
         return sorted(f"{name}({','.join(objects)})" for name, objects in atoms)
+
+    @staticmethod
+    def kept(*, notes: list[SkillNote]) -> list[SkillNote]:
+        """At most `MAX_NOTES`: the first ones and the last `KEPT_TAIL`, which say how
+        the attempt ended (`verdicts.py` reads them); the middle is dropped and counted."""
+        if len(notes) <= MAX_NOTES:
+            return notes
+        return [*notes[: MAX_NOTES - KEPT_TAIL], *notes[-KEPT_TAIL:]]
 
     @staticmethod
     def clip(*, note: SkillNote) -> SkillNote:
