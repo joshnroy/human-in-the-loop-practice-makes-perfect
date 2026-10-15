@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, ParameterSpec
@@ -38,7 +38,7 @@ from .coder import Coder
 from .history import StateCodec, TrajectoryHistory
 from .prompts import CodedSamplerPrompts
 from .runner import CodeRunner
-from .types import CodedSamplerMode, CodeVersion
+from .types import CodedSamplerMode, CoderResult, CodeVersion
 from .workspace import CodingWorkspace, GeneratedImports, ParameterCheck
 
 
@@ -63,6 +63,10 @@ class CodedSamplerHub(BaseModel):
     runner: CodeRunner
     output_dir: Path
     history: TrajectoryHistory
+    # Dollars of model spend for the whole run, across every refit; 0 means no cap.
+    # Accounted as Full-Agentic's `--model-budget` is: each invocation is offered
+    # what is left, and aborted retry attempts count against it.
+    model_budget_usd: float = Field(default=0.0, ge=0.0)
 
     _versions: list[CodeVersion] = PrivateAttr(default_factory=list)
     _refits: int = PrivateAttr(default=0)
@@ -74,6 +78,9 @@ class CodedSamplerHub(BaseModel):
     _refit_log: JsonlLog = PrivateAttr()
     _compactions: JsonlLog = PrivateAttr()
     _initialised: bool = PrivateAttr(default=False)
+    _spent_usd: float = PrivateAttr(default=0.0)
+    # Set once the budget is spent: coding stops and the last good version is frozen.
+    _coding_stopped_at_cycle: int | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context: object) -> None:
         self._versions = [CodeVersion(index=0, cycle=None, snapshot_dir=None, git_commit=None)]
@@ -105,10 +112,31 @@ class CodedSamplerHub(BaseModel):
         )
         self._initialised = True
 
+    @property
+    def remaining_budget_usd(self) -> float:
+        return max(0.0, self.model_budget_usd - self._spent_usd)
+
     def refit(self) -> None:
         """End of a practice cycle: hand the agent everything new, then freeze."""
         self.initialise()
         cycle = self.history.cycle - 1
+        if self._coding_stopped_at_cycle is not None:
+            # Out of budget: the coder is never invoked again, and the last version
+            # that passed its checks keeps running, as Full-Agentic's last submission
+            # does.
+            self._refit_log.write(
+                record={
+                    "refit": self._refits,
+                    "cycle": cycle,
+                    "coding_stopped": True,
+                    "budget_exhausted_at_cycle": self._coding_stopped_at_cycle,
+                    "spent_usd": self._spent_usd,
+                    "model_budget_usd": self.model_budget_usd,
+                    "frozen_version": self.current_version.index,
+                }
+            )
+            self._refits += 1
+            return
         start = self._history_cursor
         end = len(self.history)
         data = self.workspace.root / "data"
@@ -125,13 +153,39 @@ class CodedSamplerHub(BaseModel):
             errors=len(self._errors_since_refit),
             new_file=f"data/new_since_refit_{self._refits:03d}.jsonl",
         )
+        capped = self.model_budget_usd > 0
+        offered = self.remaining_budget_usd if capped else 0.0
         result = self.coder.run(
             prompt=prompt,
             system_prompt=CodedSamplerPrompts.system(),
             resume=self._refits > 0,
+            max_budget_usd=offered,
         )
+        if result.cost_usd is not None:
+            self._spent_usd += result.cost_usd
+        if capped and (result.budget_exhausted or result.cost_usd is None):
+            # Cut off partway, or spend unknown: what it left may be half-written,
+            # so the previous version stays and coding stops.
+            self._coding_stopped_at_cycle = cycle
+            self._refit_log.write(
+                record={
+                    "refit": self._refits,
+                    "cycle": cycle,
+                    "cut_off_by_budget": True,
+                    "budget_exhausted_at_cycle": cycle,
+                    "spent_usd": self._spent_usd,
+                    "model_budget_usd": self.model_budget_usd,
+                    "offered_usd": offered,
+                    "frozen_version": self.current_version.index,
+                    "coder": result.model_dump(mode="json"),
+                }
+            )
+            self.log_compactions(result=result, cycle=cycle)
+            self._history_cursor = end
+            self._refits += 1
+            return
         version = self.workspace.snapshot(
-            index=self._refits + 1, cycle=cycle, skills=self.learned_skills
+            index=len(self._versions), cycle=cycle, skills=self.learned_skills
         )
         assert version.snapshot_dir is not None
         code_dir = version.snapshot_dir / self.workspace.MODULE_DIR
@@ -156,9 +210,26 @@ class CodedSamplerHub(BaseModel):
             "code_errors_reported": len(self._errors_since_refit),
             "version": version.model_dump(mode="json"),
             "import_violations": rejected,
+            "spent_usd": self._spent_usd,
+            "model_budget_usd": self.model_budget_usd,
+            "offered_usd": offered,
             "coder": result.model_dump(mode="json"),
         }
+        if capped and self.remaining_budget_usd <= 1e-9:
+            # Completed, and spent the rest: this version is the frozen one.
+            self._coding_stopped_at_cycle = cycle
+            record["budget_exhausted_at_cycle"] = cycle
         self._refit_log.write(record=record)
+        self.log_compactions(result=result, cycle=cycle)
+        # The errors just handed to the agent are reported; start the next window
+        # with the new version's own import rejections, which it sees next refit.
+        self._errors_since_refit = []
+        for skill, names in rejected.items():
+            self.record_error(skill_name=skill, error=f"disallowed imports: {names}", call=None)
+        self._history_cursor = end
+        self._refits += 1
+
+    def log_compactions(self, *, result: CoderResult, cycle: int) -> None:
         for index, compaction in enumerate(result.compactions):
             self._compactions.write(
                 record={
@@ -169,13 +240,6 @@ class CodedSamplerHub(BaseModel):
                     **compaction.model_dump(),
                 }
             )
-        # The errors just handed to the agent are reported; start the next window
-        # with the new version's own import rejections, which it sees next refit.
-        self._errors_since_refit = []
-        for skill, names in rejected.items():
-            self.record_error(skill_name=skill, error=f"disallowed imports: {names}", call=None)
-        self._history_cursor = end
-        self._refits += 1
 
     # ---------------------------------------------------------------- calls
 

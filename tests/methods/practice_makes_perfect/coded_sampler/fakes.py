@@ -23,22 +23,40 @@ SAMPLER = "def sample(state, grounding, rng):\n    return [0.25]\n"
 
 
 class FakeCoder(Coder):
-    """Writes `sources[skill]` into every module, keeps one session id, records calls."""
+    """Writes `sources[skill]` into every module, keeps one session id, records calls.
+
+    `costs[i]` is what invocation i reports spending (default 0). An invocation in
+    `cut_off` writes `cut_off_source` instead and reports the CLI's budget stop."""
 
     workspace: Path
     sources: dict[str, str]
     calls: list[dict[str, object]] = []
+    costs: list[float] = []
+    cut_off: set[int] = set()
+    cut_off_source: str = "def score(sampler_inputs):\n    return [0.0] * len(sampler_inputs)\n"
 
-    def run(self, *, prompt: str, system_prompt: str, resume: bool) -> CoderResult:
-        self.calls.append({"prompt": prompt, "resume": resume})
+    def run(
+        self, *, prompt: str, system_prompt: str, resume: bool, max_budget_usd: float = 0.0
+    ) -> CoderResult:
+        index = len(self.calls)
+        self.calls.append({"prompt": prompt, "resume": resume, "max_budget_usd": max_budget_usd})
         samplers = self.workspace / "samplers"
         samplers.mkdir(parents=True, exist_ok=True)
+        cut = index in self.cut_off
         for skill, source in self.sources.items():
-            (samplers / f"{skill}.py").write_text(source)
+            (samplers / f"{skill}.py").write_text(self.cut_off_source if cut else source)
         (self.workspace.parent / "fake_session.json").write_text(
             json.dumps({"seen_data": (self.workspace / "data" / "trajectories.jsonl").exists()})
         )
-        return CoderResult(success=True, session_id="fake-session", resumed=resume)
+        cost = self.costs[index] if index < len(self.costs) else 0.0
+        return CoderResult(
+            success=not cut,
+            error="error_max_budget_usd" if cut else None,
+            session_id="fake-session",
+            resumed=resume,
+            cost_usd=cost,
+            budget_exhausted=cut,
+        )
 
 
 class DescribedLightSwitchProvider(LightSwitchSkillProvider):
@@ -60,6 +78,7 @@ class CodedLightSwitch:
         mode: CodedSamplerMode,
         sources: dict[str, str] | None = None,
         epsilon: float = 0.5,
+        model_budget_usd: float = 0.0,
     ) -> tuple[EesMethod, LightSwitchEnvironment, CodedSamplerHub, FakeCoder]:
         env = LightSwitchEnvironment(grid_size=4)
         provider = DescribedLightSwitchProvider(env=env)
@@ -80,6 +99,7 @@ class CodedLightSwitch:
             runner=SubprocessCodeRunner(timeout_seconds=30.0),
             output_dir=tmp_path,
             history=TrajectoryHistory(),
+            model_budget_usd=model_budget_usd,
         )
         method = EesMethod(
             env=env,

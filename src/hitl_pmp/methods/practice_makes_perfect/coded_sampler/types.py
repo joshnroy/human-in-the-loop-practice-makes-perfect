@@ -73,6 +73,9 @@ class CoderResult(BaseModel):
     final_context_tokens: int | None = None
     compactions: list[CompactionEvent] = Field(default_factory=list)
     rate_limit_retries: int = 0
+    # The CLI stopped this invocation at its dollar budget (`error_max_budget_usd`),
+    # so whatever it left in the workspace may be half-written.
+    budget_exhausted: bool = False
 
 
 class CodeCallOutcome(BaseModel):
