@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -157,10 +158,13 @@ def test_a_crashing_module_falls_back_uninformed_and_the_error_reaches_the_next_
         explore=False,
     )
     assert (choice.was_random, choice.was_informed) == (False, False)
+    # A refit with no new attempts is skipped, so practise before the next one.
+    _practice(method=method, env=env, steps=4, seed=1)
     method.end_cycle()
     errors = _lines(path=hub.workspace.root / "data" / "code_errors.jsonl")
     assert any("boom" in str(e["error"]) for e in errors)
-    assert "1 errors" in str(coder.calls[-1]["prompt"])
+    reported = re.search(r"(\d+) errors from your code", str(coder.calls[-1]["prompt"]))
+    assert reported is not None and int(reported.group(1)) == len(errors) >= 1
 
 
 def test_a_garbage_score_vector_is_rejected_not_used(*, tmp_path: Path) -> None:

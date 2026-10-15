@@ -23,15 +23,21 @@ SAMPLER = "def sample(state, grounding, rng):\n    return [0.25]\n"
 
 
 class FakeCoder(Coder):
-    """Writes `sources[skill]` into every module, keeps one session id, records calls.
+    """Writes `sources[skill]` into every module and records calls. Reports cost the way
+    the Claude CLI does: `total_cost_usd` is cumulative over the *session*, so a resumed
+    session's figure includes every earlier invocation.
 
-    `costs[i]` is what invocation i reports spending (default 0). An invocation in
-    `cut_off` writes `cut_off_source` instead and reports the CLI's budget stop."""
+    `costs[i]` is what invocation i itself spends (default 0). An invocation in
+    `new_session_at` starts a fresh session, whose cumulative restarts at 0. One in
+    `missing_cost` reports no cost. One in `cut_off` writes `cut_off_source` and reports
+    the CLI's budget stop."""
 
     workspace: Path
     sources: dict[str, str]
     calls: list[dict[str, object]] = []
     costs: list[float] = []
+    new_session_at: set[int] = set()
+    missing_cost: set[int] = set()
     cut_off: set[int] = set()
     cut_off_source: str = "def score(sampler_inputs):\n    return [0.0] * len(sampler_inputs)\n"
 
@@ -48,13 +54,19 @@ class FakeCoder(Coder):
         (self.workspace.parent / "fake_session.json").write_text(
             json.dumps({"seen_data": (self.workspace / "data" / "trajectories.jsonl").exists()})
         )
-        cost = self.costs[index] if index < len(self.costs) else 0.0
+        sessions = 1 + sum(1 for i in self.new_session_at if i <= index)
+        session = f"fake-session-{sessions}"
+        first = max([0, *(i for i in self.new_session_at if i <= index)])
+        cumulative = sum(self.costs[first : index + 1])
+        if index in self.missing_cost:
+            return CoderResult(success=True, session_id=session, resumed=resume)
         return CoderResult(
             success=not cut,
             error="error_max_budget_usd" if cut else None,
-            session_id="fake-session",
+            session_id=session,
             resumed=resume,
-            cost_usd=cost,
+            session_cumulative_usd=cumulative,
+            session_costs={session: cumulative},
             budget_exhausted=cut,
         )
 
