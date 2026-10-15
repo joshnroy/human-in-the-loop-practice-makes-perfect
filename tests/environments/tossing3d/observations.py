@@ -1,6 +1,6 @@
-"""Hand-built `KinderObservation`s, so the offline half of this domain can be tested.
+"""Hand-built `Tossing3DObservation`s, so the offline half of this domain can be tested.
 
-`KinderObservation` is deliberately a plain-floats boundary type (see
+`Tossing3DObservation` is deliberately a plain-floats boundary type (see
 `kinder_backend.py`), which means everything above it -- the state translation, all five
 predicates, the skills, the oracle -- is testable with no MuJoCo. CI installs the
 `tossing3d` extra now, but that is recent; the offline half is still what makes most of
@@ -13,7 +13,7 @@ offline test and a simulator-backed one are talking about the same scene.
 """
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.kinder_backend import KinderObservation
+from hitl_pmp.environments.tossing3d.types import Tossing3DObservation
 
 # The live `Region.bbox` of `blocks_goal_region`: the task JSON's [2.00, 2.05] x
 # [-0.07, 0.07] x [0, 0.10] inflated by ground_placement_threshold = 0.05 per side, z
@@ -72,10 +72,10 @@ def observation(
     bin_x: float = BIN_X,
     goal_region: tuple[float, float, float, float, float, float] = GOAL_REGION_BBOX,
     solved: bool = False,
-) -> KinderObservation:
+) -> Tossing3DObservation:
     """One scene snapshot. Defaults are the initial state: cube flat on the floor at the
     near side, gripper open, robot at the origin."""
-    return KinderObservation(
+    return Tossing3DObservation(
         features={
             "robot": {
                 "pos_base_x": base_x,

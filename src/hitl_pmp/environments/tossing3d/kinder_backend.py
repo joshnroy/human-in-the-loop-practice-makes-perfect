@@ -10,7 +10,7 @@ it never installs the optional `tossing3d` extra.
 and the success criterion are upstream's, driven exactly as upstream's own
 `kinder-models/tests/dynamic3d/tossing/test_tossing_parameterized_skills.py::test_pick_ground_toss`
 drives them. What this module supplies is the translation: a KINDER `ObjectCentricState`
-becomes a `KinderObservation` of plain floats, and a whole *skill* becomes one call.
+becomes a `Tossing3DObservation` of plain floats, and a whole *skill* becomes one call.
 
 ## The import dance, which is the trap that costs an hour
 
@@ -104,7 +104,13 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
 from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
-from .types import AbstractAtom, PlanarCollisionBox, TossFeasibilityGeometry
+from .types import (
+    AbstractAtom,
+    ControllerRun,
+    PlanarCollisionBox,
+    TossFeasibilityGeometry,
+    Tossing3DObservation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,69 +148,6 @@ DEFAULT_CAMERA = "task_view"
 # Upstream's own `test_pick_ground_toss` value; the *only* seed any number in this
 # package's docs was measured at.
 DEFAULT_SCENE_SEED = 125
-
-
-class KinderObservation(BaseModel):
-    """One KINDER `ObjectCentricState`, flattened to plain floats.
-
-    This is the boundary type: `KinderBackend` produces it, `Tossing3DEnvironment`
-    consumes it, and nothing about it requires KINDER to construct -- which is what lets
-    a test build one by hand and exercise the translation offline.
-
-    `goal_region` is the **live** `Region.bbox` of `blocks_goal_region`, read back from
-    the compiled model rather than re-derived from the task JSON. The JSON range is
-    inflated by `MujocoObject`'s per-object placement threshold (1cm per side) before it
-    becomes a region, so the literal in the file is not the box that scores. Reading it
-    back is what lets this domain's `InBin` agree with `_check_goals()` exactly. It
-    reaches the state carried on the **bin** object -- the region is attached to the
-    bin's own body (`blocks_goal_region.target` is `bin_0`), under this domain's
-    assumption that the bin's interior contains this region -- see `predicates.py`'s
-    module docstring. Because the region moves with the bin, this box is not fixed
-    across seeds once `bin_init_region` samples a position: it tracks wherever the bin
-    actually landed.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    features: dict[str, dict[str, float]]
-    goal_region: tuple[float, float, float, float, float, float]
-    solved: bool
-
-    def get(self, *, name: str, feature: str) -> float:
-        """One named feature of one named KINDER object, or a loud error.
-
-        Loud because the alternative is a silent zero: every feature this package reads
-        is named in `Tossing3DEnvironment`'s own `Type` declarations, so a miss means
-        upstream renamed something and the translation is now wrong, not merely empty.
-        """
-        if name not in self.features:
-            raise KeyError(f"no object named {name!r} in this observation: {sorted(self.features)}")
-        obj = self.features[name]
-        if feature not in obj:
-            raise KeyError(f"object {name!r} has no feature {feature!r}: {sorted(obj)}")
-        return obj[feature]
-
-
-class ControllerRun(BaseModel):
-    """What one upstream controller execution did.
-
-    `steps` is how many `env.step` calls it took to terminate -- the quantity the
-    validation record reports as `71 / 23 / 16 / 18` for the oracle's four controller
-    executions, so it is returned rather than discarded.
-
-    `error` is non-`None` when the controller raised. That is not exceptional: KINDER's
-    motion planners `assert plan is not None`, so an unreachable grasp or an
-    unplannable arm trajectory surfaces as an `AssertionError` from `reset()`. A
-    `core.Environment.take_action` must be total over its action space, so the caller
-    turns this into a no-op transition rather than propagating -- see
-    `Tossing3DEnvironment.take_action`.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    steps: int
-    terminated: bool
-    error: str | None = None
 
 
 def _build_state_collection_class() -> Any:
@@ -464,7 +407,7 @@ class KinderBackend(BaseModel):
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
         return self._robot_name
 
-    def reset(self, *, seed: int) -> KinderObservation:
+    def reset(self, *, seed: int) -> Tossing3DObservation:
         """Build (or rebuild) the scene at `seed` and return the initial observation.
 
         The gym env is remade whenever there is not one already; `env.reset(seed=...)`
@@ -627,7 +570,7 @@ class KinderBackend(BaseModel):
         """
         return self._require_state().copy()
 
-    def restore(self, *, snapshot: Any) -> KinderObservation:
+    def restore(self, *, snapshot: Any) -> Tossing3DObservation:
         """Put the simulator back to a `snapshot`, exactly, and re-observe.
 
         Faithful in a way `Tossing3DEnvironment.set_state` cannot be: this restores
@@ -791,7 +734,7 @@ class KinderBackend(BaseModel):
 
     def reset_cube_and_bin(
         self, *, bin_region: dict[str, object] | None = None
-    ) -> KinderObservation:
+    ) -> Tossing3DObservation:
         """Reset the cube and bin to their declared regions, leaving the robot alone.
 
         Use KINDER's public reset primitive so placements honor the room boundary,
@@ -1035,7 +978,7 @@ class KinderBackend(BaseModel):
             "fresh ground pose for it."
         )
 
-    def observe(self) -> KinderObservation:
+    def observe(self) -> Tossing3DObservation:
         """Flatten the live KINDER state (plus the live goal box and verdict) to floats.
 
         Feature names come from `ObjectCentricState.type_features`, the state's own
@@ -1055,7 +998,7 @@ class KinderBackend(BaseModel):
             features[self.barrier_name].update(
                 zip(("bb_x", "bb_y", "bb_z"), dimensions, strict=True)
             )
-        return KinderObservation(
+        return Tossing3DObservation(
             features=features,
             goal_region=self.goal_region_bbox(),
             solved=self.check_goals(),
