@@ -31,6 +31,7 @@ from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
+from hitl_pmp.launch_gate import LaunchGate
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import (
     EesCli,
@@ -91,6 +92,7 @@ class Cli:
 
     @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
+        LaunchGate.add_argument(parser=parser)
         parser.add_argument(
             "--practice-step-budget",
             type=lambda value: Cli.parse_positive_int(value=value),
@@ -322,6 +324,7 @@ class Cli:
 
             if args.env not in STEP_PROTOCOL_ENVIRONMENTS:
                 raise ValueError(f"The step protocol does not support --env {args.env}")
+            LaunchGate.enforce(domain=args.env, override=args.skip_skill_benchmark_gate)
             StepProtocolEntry.run(
                 args=args,
                 method_cli=METHODS[args.method],
