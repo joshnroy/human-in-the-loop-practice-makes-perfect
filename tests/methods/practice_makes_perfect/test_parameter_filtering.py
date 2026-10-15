@@ -238,9 +238,14 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
     sampling = [event for event in events if event["event"] == "parameter_sampling"]
     assert len(sampling) == 1
     assert sampling[0]["accepted_candidates"] == (0 if reject else 2)
-    assert len([event for event in events if event["event"] == "dispatch"]) == int(
-        practicing and not reject
-    )
+    dispatches = [event for event in events if event["event"] == "dispatch"]
+    assert len(dispatches) == int(practicing and not reject)
+    for dispatch in dispatches:
+        # The cost table is the decision event's; repeating it here doubled the log
+        # (~84 MB a line on SweepOffShelf3D, 2026-10-14).
+        assert "estimated_costs" not in dispatch
+        assert dispatch["skill"] == ground.skill.name
+        assert dispatch["cost"] == dispatch["summed_cost"] == 1.0
     assert env._backend is None  # noqa: SLF001
 
 
