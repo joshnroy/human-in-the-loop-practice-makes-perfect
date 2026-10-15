@@ -2,6 +2,7 @@
 
 import pytest
 
+from hitl_pmp.agentic_runtime.sandbox import SandboxSettings
 from hitl_pmp.full_agentic.domains import Tossing3DFullAgentic
 from hitl_pmp.full_agentic.runner import ScoreBridge
 
@@ -100,3 +101,90 @@ def test_rendered_prompt_requests_logged_decision_summaries(*, human_weight):
     assert "observations" in summary
     assert "reason for any switch or stop" in summary
     assert "uncertainty" in summary
+
+
+class StopAtScoring(Exception):
+    pass
+
+
+@pytest.mark.parametrize("budget", [3000, 7])
+def test_the_evaluation_bridge_allows_the_whole_evaluation_budget(*, tmp_path, monkeypatch, budget):
+    """The bridge's own step limit must not end a held-out task before the scoring clock.
+
+    The 2026-10-14 shelf rerun configured 3,000 evaluation steps, but `make_bridge` built
+    the evaluation bridge at its 1,000-step default, so every unsolved task died at 1,000.
+    """
+    from hitl_pmp.full_agentic import runner
+    from hitl_pmp.full_agentic.domains import FullAgenticDomain
+
+    limits = []
+
+    class Domain(FullAgenticDomain):
+        make_environment = staticmethod(
+            lambda *, options, human_seed: type("Env", (), {"close": lambda self: None})()
+        )
+        make_tasks = staticmethod(
+            lambda *, env, seed: type("Tasks", (), {"sample_test_task": lambda self: None})()
+        )
+        goal_check = staticmethod(lambda *, env: lambda: False)
+
+        @staticmethod
+        def make_bridge(*, env, step_limit):
+            limits.append(step_limit)
+            return object()
+
+    def score(**kwargs):
+        raise StopAtScoring
+
+    monkeypatch.setattr(runner, "ScoreBridge", score)
+    (tmp_path / "approach.py").write_text("")
+    with pytest.raises(StopAtScoring):
+        runner.FullAgenticRunner.evaluate(
+            submission=tmp_path,
+            output=tmp_path / "eval",
+            count=1,
+            settings=SandboxSettings(image="i", robocode_checkout="/rc"),
+            domain=Domain,
+            budget=budget,
+        )
+    assert limits == [budget]
+
+
+@pytest.mark.parametrize("budget", [500, 3000])
+def test_the_evaluation_time_limit_scales_with_the_step_budget(*, budget):
+    """Only the step budget may end a held-out task. The 60 s deadline the runner gives
+    practice options (startup + execution) cut 22/37 unsolved shelf tasks short once the
+    step limit was raised to 3,000, at 309-2,686 steps."""
+    from hitl_pmp.full_agentic.runner import FullAgenticRunner
+
+    practice = SandboxSettings(image="i", robocode_checkout="/rc", timeout_seconds=60)
+    evaluation = FullAgenticRunner.evaluation_settings(settings=practice, budget=budget)
+    seconds = FullAgenticRunner.EVALUATION_STARTUP_SECONDS
+    seconds += FullAgenticRunner.EVALUATION_SECONDS_PER_STEP * budget
+    assert evaluation.timeout_seconds == seconds
+    assert evaluation.model_copy(update={"timeout_seconds": 60}) == practice
+
+
+def test_evaluate_runs_under_the_budget_derived_time_limit(*, tmp_path, monkeypatch):
+    from hitl_pmp.full_agentic import runner
+
+    budgets = []
+
+    def evaluation_settings(*, settings, budget):
+        budgets.append(budget)
+        raise StopAtScoring
+
+    monkeypatch.setattr(
+        runner.FullAgenticRunner, "evaluation_settings", staticmethod(evaluation_settings)
+    )
+    (tmp_path / "approach.py").write_text("")
+    with pytest.raises(StopAtScoring):
+        runner.FullAgenticRunner.evaluate(
+            submission=tmp_path,
+            output=tmp_path / "eval",
+            count=1,
+            settings=None,
+            domain=Tossing3DFullAgentic,
+            budget=3000,
+        )
+    assert budgets == [3000]

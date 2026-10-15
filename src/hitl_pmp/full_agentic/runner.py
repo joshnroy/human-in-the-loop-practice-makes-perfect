@@ -12,7 +12,7 @@ import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from hitl_pmp.agentic_runtime.docker_cli import RobocodeDockerTransport
 from hitl_pmp.agentic_runtime.sandbox import (
@@ -24,7 +24,7 @@ from hitl_pmp.agentic_runtime.sandbox import (
 from hitl_pmp.core.practice_costs import PracticeCosts
 from hitl_pmp.step_protocol import EvaluationClock, EvaluationStopping
 
-from .domains import FULL_AGENTIC_DOMAINS, FullAgenticDomain
+from .domains import FULL_AGENTIC_DOMAINS, PRACTICE_STEP_LIMIT, FullAgenticDomain
 from .world import Files, Server, World
 
 HERE = Path(__file__).resolve().parent
@@ -79,6 +79,19 @@ class DeadlineTransport(RobocodeDockerTransport):
 
 
 class FullAgenticRunner:
+    # A held-out task may end only on its step budget. One sandbox deadline covers
+    # container startup and execution; on the 2026-10-14 shelf rerun the slowest
+    # checkpoint averaged ~22 steps/s with startup, so this allows ~5x that.
+    EVALUATION_STARTUP_SECONDS: ClassVar[float] = 120.0
+    EVALUATION_SECONDS_PER_STEP: ClassVar[float] = 0.25
+
+    @staticmethod
+    def evaluation_settings(*, settings: SandboxSettings, budget: int) -> SandboxSettings:
+        """`settings` with a deadline long enough for `budget` control steps."""
+        seconds = FullAgenticRunner.EVALUATION_STARTUP_SECONDS
+        seconds += FullAgenticRunner.EVALUATION_SECONDS_PER_STEP * budget
+        return settings.model_copy(update={"timeout_seconds": seconds})
+
     @staticmethod
     def validate_runtime(*, settings: SandboxSettings) -> None:
         """Fail closed if an operator selects the old robot-planning image."""
@@ -126,6 +139,7 @@ class FullAgenticRunner:
                 value=dict(tasks=records, num_solved=0, num_total=count, complete=True),
             )
             return records
+        settings = FullAgenticRunner.evaluation_settings(settings=settings, budget=budget)
         env = domain.make_environment(options=environment_options or {}, human_seed=seed + 1)
         tasks = domain.make_tasks(env=env, seed=seed)
         results = []
@@ -133,7 +147,7 @@ class FullAgenticRunner:
             for index in range(count):
                 task = tasks.sample_test_task()
                 bridge = ScoreBridge(
-                    bridge=domain.make_bridge(env=env, practice=False),
+                    bridge=domain.make_bridge(env=env, step_limit=budget),
                     budget=budget,
                     check_goal=domain.goal_check(env=env),
                 )
@@ -381,7 +395,7 @@ class FullAgenticRunner:
         thread = None
         try:
             env.hard_reset()
-            bridge = domain.make_bridge(env=env, practice=True)
+            bridge = domain.make_bridge(env=env, step_limit=PRACTICE_STEP_LIMIT)
             FullAgenticRunner.initial_files(workspace=workspace, bridge=bridge, domain=domain)
             Files.snapshot(
                 workspace=workspace,

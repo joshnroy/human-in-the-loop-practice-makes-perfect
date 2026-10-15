@@ -61,9 +61,10 @@ class FullAgenticDomain(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def make_bridge(*, env: Any, practice: bool) -> Any:
-        """An object-state bridge: unbounded for practice, default-bounded for one
-        evaluation task (whose own clock stops it first)."""
+    def make_bridge(*, env: Any, step_limit: int) -> Any:
+        """An object-state bridge that refuses commands past `step_limit`: practice passes
+        `PRACTICE_STEP_LIMIT` (its world counts the budget), an evaluation its own budget,
+        so the bridge never ends a held-out task before the scoring clock does."""
 
     @staticmethod
     @abc.abstractmethod
@@ -111,12 +112,10 @@ class Tossing3DFullAgentic(FullAgenticDomain):
         return Tossing3DTasks(env=env, seed=seed)
 
     @staticmethod
-    def make_bridge(*, env: Any, practice: bool) -> Any:
-        if practice:
-            return Tossing3DAgenticBridge(
-                env=env, observation_mode="object_state", step_limit=PRACTICE_STEP_LIMIT
-            )
-        return Tossing3DAgenticBridge(env=env, observation_mode="object_state")
+    def make_bridge(*, env: Any, step_limit: int) -> Any:
+        return Tossing3DAgenticBridge(
+            env=env, observation_mode="object_state", step_limit=step_limit
+        )
 
     @staticmethod
     def goal_check(*, env: Any) -> Callable[[], bool]:
@@ -164,10 +163,8 @@ class SweepOffShelf3DFullAgentic(FullAgenticDomain):
         return SweepOffShelf3DTasks(env=env, seed=seed)
 
     @staticmethod
-    def make_bridge(*, env: Any, practice: bool) -> Any:
-        if practice:
-            return SweepOffShelf3DAgenticBridge(env=env, step_limit=PRACTICE_STEP_LIMIT)
-        return SweepOffShelf3DAgenticBridge(env=env)
+    def make_bridge(*, env: Any, step_limit: int) -> Any:
+        return SweepOffShelf3DAgenticBridge(env=env, step_limit=step_limit)
 
     @staticmethod
     def goal_check(*, env: Any) -> Callable[[], bool]:

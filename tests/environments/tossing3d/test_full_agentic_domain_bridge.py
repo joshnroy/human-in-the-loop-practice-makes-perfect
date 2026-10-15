@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from hitl_pmp.full_agentic.domains import Tossing3DFullAgentic
+from hitl_pmp.full_agentic.domains import PRACTICE_STEP_LIMIT, Tossing3DFullAgentic
 
 HAS_KINDER = importlib.util.find_spec("kinder") is not None
 
@@ -26,13 +26,13 @@ class TestTossing3DBridgeUnchanged:
         try:
             env.hard_reset()
             direct = Tossing3DAgenticBridge(
-                env=env, observation_mode="object_state", step_limit=2**63 - 1
+                env=env, observation_mode="object_state", step_limit=PRACTICE_STEP_LIMIT
             )
-            via_domain = Tossing3DFullAgentic.make_bridge(env=env, practice=True)
+            via_domain = Tossing3DFullAgentic.make_bridge(env=env, step_limit=PRACTICE_STEP_LIMIT)
             assert via_domain.step_limit == direct.step_limit
             assert json.dumps(via_domain.observe()) == json.dumps(direct.observe())
             assert json.dumps(via_domain.robot_spec()) == json.dumps(direct.robot_spec())
-            evaluation = Tossing3DFullAgentic.make_bridge(env=env, practice=False)
-            assert evaluation.step_limit == 1000  # the bridge's own default, as before
+            evaluation = Tossing3DFullAgentic.make_bridge(env=env, step_limit=3000)
+            assert evaluation.step_limit == 3000
         finally:
             env.close()
