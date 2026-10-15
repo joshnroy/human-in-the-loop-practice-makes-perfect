@@ -10,6 +10,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SweepOffShelf3DEnvironment,
 )
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import HOME_ARM, RETRACT_TOLERANCE
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -44,6 +45,14 @@ def _arm_from_home(*, env):
     return float(np.max(np.abs((arm - HOME_ARM + np.pi) % (2 * np.pi) - np.pi)))
 
 
+def _wiper_carried_clear(*, env):
+    """`KinderSkills.retract`'s end state holding the wiper: the hand at the carry height
+    and the whole wiper outside the cupboard's open front."""
+    skills = env.controllers()._skills  # noqa: SLF001
+    far = env.controllers()._kinder.wiper_far_x()  # noqa: SLF001
+    return skills.site_pose()[2, 3] > CARRY_Z - 0.02 and far < skills.front_x
+
+
 def _teleport(*, env, name, position):
     obj = env.backend().core().get_object(name)
     obj.set_pose(list(position), [1.0, 0.0, 0.0, 0.0])
@@ -53,11 +62,49 @@ def _teleport(*, env, name, position):
         env.backend().env().step(np.zeros(11))
 
 
-def test_pick_wiper_takes_it_off_its_shelf_and_retracts_the_arm(*, env):
+def test_pick_wiper_takes_it_off_its_shelf_and_carries_it_clear(*, env):
     env.reset_to_seed(seed=0)
     atoms = _act(env=env, skill="PickWiper")
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
-    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+    assert _wiper_carried_clear(env=env)
+
+
+def _turn_wiper_in_its_slot(*, env, degrees):
+    backend = env.backend()
+    obj = backend.core().get_object("wiper_0")
+    position, quaternion = (np.asarray(v, dtype=float) for v in obj.get_pose())
+    w, x, y, z = quaternion
+    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) + np.radians(degrees)
+    obj.set_pose(list(position), [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+    obj.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+    for _ in range(30):
+        backend.env().step(np.zeros(11))
+    env.controllers().on_objects_moved()
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
+    assert ("WiperHome", ("wiper_0",)) in env.backend().abstract_atoms()
+
+
+@pytest.mark.parametrize("degrees", [-0.2, 0.15, 0.3])
+def test_pick_wiper_takes_a_wiper_sitting_a_fraction_of_a_degree_off_square(*, env, degrees):
+    """The EES p0 stage-5 tally (56 failures of "the wiper did not come with the hand"):
+    the wiper home at 90.05 deg instead of 90.00. Upstream's retract, planned blind to
+    the held wiper, then took the hand 9 cm deeper into the cupboard, the wiper struck
+    the back panel and was torn out of the pads, left turned ~25 deg on its shelf --
+    where every later attempt failed too."""
+    env.reset_to_seed(seed=0)
+    _turn_wiper_in_its_slot(env=env, degrees=degrees)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+    assert _wiper_carried_clear(env=env)
+
+
+def test_pick_wiper_takes_a_wiper_left_turned_on_its_shelf(*, env):
+    """Where a torn-out pick left it in the stage-5 rerun: 25 deg off square, 5 cm in."""
+    env.reset_to_seed(seed=0)
+    _turn_wiper_in_its_slot(env=env, degrees=-26.6)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
 
 
 def test_a_cube_on_the_open_floor_is_picked_up(*, env):
