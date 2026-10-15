@@ -268,3 +268,29 @@ def test_the_default_layout_description_matches_the_row_the_method_builds(
     description = SamplerInputLayout.describe(provider=hub.provider, skill=ground.skill)
     assert len(description["sampler_input"]) == len(row)
     assert description["sampler_input"][-1]["name"] == "param.dlight"
+
+
+def test_a_module_may_import_its_own_helpers_under_samplers() -> None:
+    source = "import toss_features\nfrom helpers.fit import model\nimport torch\n"
+    assert GeneratedImports.violations(
+        source=source, local_modules={"toss_features", "helpers"}
+    ) == ["torch"]
+
+
+def test_a_refit_keeps_a_module_that_imports_a_local_helper(*, tmp_path: Path) -> None:
+    source = "import helper\ndef score(sampler_inputs):\n    return helper.score(sampler_inputs)\n"
+    method, env, hub, coder = CodedLightSwitch.build(
+        tmp_path=tmp_path, mode=CodedSamplerMode.SCORER, sources={"TurnOnLight": source}
+    )
+    coder.sources["helper"] = SCORER
+    _practice(method=method, env=env, steps=2)
+    method.end_cycle()
+    assert hub.has_code(skill_name="TurnOnLight")
+    sampler = method.sampler(skill_name="TurnOnLight", param_dim=1)
+    candidates = [np.array([float(v)]) for v in np.linspace(-1, 1, 10)]
+    choice = sampler.sample(
+        sampler_inputs=[[1.0, float(c[0])] for c in candidates],
+        candidates=candidates,
+        explore=False,
+    )
+    assert choice.was_informed and choice.params is candidates[-1]
