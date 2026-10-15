@@ -472,12 +472,13 @@ class Tossing3DPomdpMethod(EesMethod):
                 state=self.env.get_current_state()
             )
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
+        # No cost table: the decision event just before carries it, and repeating it
+        # here doubled the decision log.
         self.record_diagnostic(
             event="dispatch",
             skill=ground_skill.skill.name,
             cost=action_cost,
             summed_cost=self._pomdp_state.accumulated_cost,
-            estimated_costs=self.practice_skill_costs(),
         )
 
     def observe_symbolic_transition(
