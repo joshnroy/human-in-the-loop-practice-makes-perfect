@@ -32,6 +32,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.practice_costs import ExecutionCharge, PracticeAccounting, PracticeCosts
+from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, Phase
@@ -265,6 +266,13 @@ class StepFiles:
         temporary.replace(path)
 
     @staticmethod
+    def trace(*, environment: type[StepProtocolEnvironment], problem: Problem) -> dict[str, Any]:
+        """The `skill_trace` field of a robot event, or nothing for a domain that
+        keeps no trace -- so those domains' event logs are unchanged."""
+        trace = environment.last_skill_trace(problem=problem)
+        return {} if trace is None else {"skill_trace": trace}
+
+    @staticmethod
     def event(*, path: Path, **record: Any) -> None:
         with path.open("a") as stream:
             stream.write(LogTiming.encode(record=record))
@@ -371,14 +379,16 @@ class StepEvaluation:
                                 outcome="interrupted: evaluation step budget",
                             )
                             break
+                        error = environment.last_skill_error(problem=problem)
                         StepFiles.event(
                             path=directory / "actions.jsonl",
                             task=index,
                             label=action.label,
                             start_step=previous,
                             end_step=clock.steps,
+                            skill_error=error,
+                            **StepFiles.trace(environment=environment, problem=problem),
                         )
-                        error = environment.last_skill_error(problem=problem)
                         writer.robot_action(
                             label=action.label,
                             start_step=previous,
@@ -832,6 +842,7 @@ class StepPracticeRunner:
                         interruption=interruption,
                         cost=robot_cost,
                         skill_error=skill_error,
+                        **StepFiles.trace(environment=environment, problem=problem),
                     )
                     # An adopted interruption is the skill's error, so it is the outcome.
                     recorder.robot_action(

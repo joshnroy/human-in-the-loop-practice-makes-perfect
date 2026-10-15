@@ -29,7 +29,7 @@ from .backend import SweepOffShelf3DBackend
 from .controllers import ControllerFailure, SweepOffShelf3DControllers
 from .objects import SweepOffShelf3DObjects as O
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
-from .types import HumanEvent, SweepOffShelf3DState
+from .types import AbstractAtom, HumanEvent, SkillNote, SweepOffShelf3DState
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,8 @@ class SweepOffShelf3DEnvironment(Environment):
     _controllers: SweepOffShelf3DControllers | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
     _last_controller_steps: int = PrivateAttr(default=0)
+    _last_action: np.ndarray | None = PrivateAttr(default=None)
+    _atoms_before: frozenset[AbstractAtom] = PrivateAttr(default=frozenset())
     _human_events: list[HumanEvent] = PrivateAttr(default_factory=list)
 
     def backend(self) -> SweepOffShelf3DBackend:
@@ -101,6 +103,19 @@ class SweepOffShelf3DEnvironment(Environment):
 
     def last_controller_steps(self) -> int:
         return self._last_controller_steps
+
+    def last_skill_attempt(
+        self,
+    ) -> (
+        tuple[np.ndarray, frozenset[AbstractAtom], frozenset[AbstractAtom], list[SkillNote]] | None
+    ):
+        """The last robot skill's action, the atoms before and after it, and every
+        candidate note its controllers left (`skill_trace.py` turns these into a
+        `SkillTrace`); None before the first one."""
+        if self._last_action is None:
+            return None
+        after = getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
+        return self._last_action, self._atoms_before, after, self.controllers().notes()
 
     def human_events(self) -> tuple[HumanEvent, ...]:
         return tuple(self._human_events)
@@ -131,7 +146,12 @@ class SweepOffShelf3DEnvironment(Environment):
         self._last_controller_steps = 0
         controllers = self.controllers()
         controllers.reset_counter()
+        controllers.clear_notes()
         values = np.asarray(action, dtype=float)
+        self._last_action = values.copy()
+        self._atoms_before = (
+            getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
+        )
         try:
             if values.shape != (4,) or not np.all(np.isfinite(values)):
                 raise ControllerFailure(f"malformed action {action!r}")
@@ -179,8 +199,11 @@ class SweepOffShelf3DEnvironment(Environment):
         """Account for a skill an external step budget stopped part-way through: record
         the interruption as its outcome and adopt the scene as the cut-off left it, the
         bookkeeping `take_action` never reached."""
-        del action
         seed, steps_taken = self._bookkeeping()
+        self._last_action = np.asarray(action, dtype=float).copy()
+        self._atoms_before = (
+            getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
+        )
         self._last_skill_error = f"interrupted: {reason}"
         controllers = self.controllers()
         self._last_controller_steps = controllers.steps

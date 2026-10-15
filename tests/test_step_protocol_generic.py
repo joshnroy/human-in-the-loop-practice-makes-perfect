@@ -136,6 +136,11 @@ class FakeStepProtocol:
         del problem
         return None
 
+    @staticmethod
+    def last_skill_trace(*, problem: Any) -> dict[str, Any] | None:
+        del problem
+        return {"skill": "fake"}
+
 
 class AsksForTheWiperOnce(EesMethod):
     """EES that opens practice by asking the human for `reset_wiper`."""
@@ -256,6 +261,22 @@ def test_a_non_tossing_domain_runs_the_step_protocol_end_to_end(*, tmp_path: Pat
         assert kinds[0] == "header"
         assert "action" in kinds
         assert kinds[-1] == "segment_end"
+
+
+def test_every_robot_skill_logs_the_domains_skill_trace(*, tmp_path: Path) -> None:
+    _, output = _run(args=_args(output=tmp_path / "run"))
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    robots = [e for e in events if e["event"] == "robot"]
+    assert robots and all(r["skill_trace"]["skill"] == "fake" for r in robots)
+    others = [e for e in events if e["event"] != "robot"]
+    assert all("skill_trace" not in e for e in others)
+    actions = [
+        json.loads(line)
+        for path in sorted((output / "evaluations").glob("*/actions.jsonl"))
+        for line in path.read_text().splitlines()
+    ]
+    assert actions and all(a["skill_trace"]["skill"] == "fake" for a in actions)
+    assert all("skill_error" in a for a in actions)
 
 
 def test_an_unknown_human_destination_is_refused(*, tmp_path: Path) -> None:
