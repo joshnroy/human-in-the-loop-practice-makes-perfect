@@ -183,7 +183,8 @@ def _spy_backend(*, monkeypatch: pytest.MonkeyPatch) -> tuple[Tossing3DEnvironme
 
     Offline: nothing behind it builds a scene, so this exercises the dispatch alone.
     """
-    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+    from hitl_pmp.environments.tossing3d.types import ControllerRun
 
     calls: list[dict] = []
 

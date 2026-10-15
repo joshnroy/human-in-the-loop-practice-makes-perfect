@@ -18,7 +18,8 @@ from hitl_pmp.environments.tossing3d.agentic_bridge import (
     AgenticTossing3DEnvironment,
     Tossing3DAgenticBridge,
 )
-from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+from hitl_pmp.environments.tossing3d.types import ControllerRun
 
 
 @pytest.fixture

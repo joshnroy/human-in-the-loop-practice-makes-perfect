@@ -297,7 +297,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
     """An INTEGRATION test, deliberately not skipped, in the style of
     `tests/planning/test_fast_downward.py`: it shells out to a real Fast Downward on this
     domain's own PDDL. It needs no simulator -- the whole symbolic layer is built from a
-    hand-written `KinderObservation` -- so it runs on CI, where Fast Downward is present.
+    hand-written `Tossing3DObservation` -- so it runs on CI, where Fast Downward is present.
 
     The structural test above would not have caught a second way of emitting unparseable
     PDDL; this one catches any of them, and is the check that was missing when

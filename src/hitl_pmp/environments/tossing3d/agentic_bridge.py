@@ -18,7 +18,7 @@ from hitl_pmp.agentic_runtime.observations import ObservationMode
 from hitl_pmp.core.problem.environment.types import Action
 
 from .environment import Tossing3DEnvironment
-from .kinder_backend import ControllerRun
+from .types import ControllerRun
 
 
 class AgenticTossing3DEnvironment(Tossing3DEnvironment):
@@ -141,7 +141,7 @@ class Tossing3DAgenticBridge(BaseModel):
                 ),
             }
             return observation
-        backend = self.env.backend()
+        backend = self.env.kinder_backend()
         frames = backend._object_centric().render_all_cameras()  # noqa: SLF001
         images = []
         for camera in (backend.camera, f"{backend.robot_name}_wrist"):
@@ -161,7 +161,7 @@ class Tossing3DAgenticBridge(BaseModel):
         """Export calibrated kinematics and optional static planning-model geometry."""
         robot = self._robot()
         model = robot.sim.model.mj_model
-        name = self.env.backend().robot_name
+        name = self.env.kinder_backend().robot_name
         tool_id = int(model.site(f"{name}_pinch_site").id)
         tool_body = int(model.site_bodyid[tool_id])
         body_ids = []
@@ -255,7 +255,7 @@ class Tossing3DAgenticBridge(BaseModel):
         """Export approved PyBullet geometry, without poses, controllers, or goal labels."""
         from kinder_models.dynamic3d.utils import ROBOT_ARM_POSE_TO_BASE
 
-        backend = self.env.backend()
+        backend = self.env.kinder_backend()
         bin_object = backend._object_centric().get_object(backend.bin_name)  # noqa: SLF001
         # Match the arm-only collision model used by _pick_collision_sim; this
         # does not expose that controller, its grasp transforms, or its planner.
@@ -321,7 +321,7 @@ class Tossing3DAgenticBridge(BaseModel):
         }
 
     def _objects(self, *, proprioception: dict[str, float]) -> list[dict[str, Any]]:
-        backend = self.env.backend()
+        backend = self.env.kinder_backend()
         state = backend._require_state()  # noqa: SLF001 -- public numeric observation schema
         physical_features = {
             "x",
@@ -362,7 +362,7 @@ class Tossing3DAgenticBridge(BaseModel):
 
     def action_spec(self) -> dict[str, Any]:
         """Describe the native 18D joint-space interface and explicit finite bounds."""
-        backend = self.env.backend()
+        backend = self.env.kinder_backend()
         robot = self._robot()
         space = backend._env.action_space  # noqa: SLF001 -- numeric native boundary only
         if space.shape != (18,) or not robot.act_delta:
@@ -412,7 +412,7 @@ class Tossing3DAgenticBridge(BaseModel):
             raise ValueError("actuator commands must be finite")
         if np.any(array < spec["low"]) or np.any(array > spec["high"]):
             raise ValueError("actuator command exceeds the published bounds")
-        backend = self.env.backend()
+        backend = self.env.kinder_backend()
         self._control_steps += 1
         # Discard reward and termination: the VLM must evaluate actual skill outcomes.
         observation, _, _, _, _ = backend._env.step(array)  # noqa: SLF001
@@ -421,7 +421,7 @@ class Tossing3DAgenticBridge(BaseModel):
 
     def _robot(self) -> Any:
         # This host-only handle is never returned by any relay operation.
-        return self.env.backend()._object_centric()._robot_env  # noqa: SLF001
+        return self.env.kinder_backend()._object_centric()._robot_env  # noqa: SLF001
 
 
 class GeneratedPolicyExecutor(Protocol):

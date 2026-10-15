@@ -35,7 +35,8 @@ import numpy as np
 import pytest
 
 from hitl_pmp.environments.tossing3d import kinder_backend
-from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+from hitl_pmp.environments.tossing3d.types import ControllerRun
 
 # --- the GL backend --------------------------------------------------------------
 #
