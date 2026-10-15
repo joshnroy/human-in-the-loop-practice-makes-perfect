@@ -153,3 +153,25 @@ def test_a_noop_and_an_unknown_skill_are_traced_without_effects() -> None:
         notes=[],
     )
     assert (unknown.skill, unknown.outcome) == ("unknown:42", "plan_failure")
+
+
+def test_an_overflowing_trace_keeps_the_candidates_that_decided_the_outcome() -> None:
+    # The last notes say how the attempt ended (the executed candidate); a cap that kept
+    # only the first ones dropped exactly those.
+    notes = [
+        SkillNote(stage="pick_cube_from_shelf", kind="no_plan", params=[float(i)], reason="r")
+        for i in range(3 * MAX_NOTES)
+    ]
+    notes.append(SkillNote(stage="pick_cube_from_shelf", kind="executed", reason="700 steps"))
+    trace = SkillTraces.build(
+        action=_action(skill="PickCubeFromShelf", cube=1),
+        atoms_before=START,
+        atoms_after=START,
+        error=None,
+        controller_steps=700,
+        notes=notes,
+    )
+    assert len(trace.notes) == MAX_NOTES
+    assert trace.notes[-1].kind == "executed"
+    assert trace.notes[0].params == [0.0]
+    assert trace.notes_dropped == len(notes) - MAX_NOTES
