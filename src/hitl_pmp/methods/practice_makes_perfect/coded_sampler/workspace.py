@@ -193,7 +193,9 @@ class GeneratedImports:
     ALLOWED: ClassVar[frozenset[str]] = frozenset({"numpy", "scipy", "sklearn"})
 
     @staticmethod
-    def violations(*, source: str) -> list[str]:
+    def violations(
+        *, source: str, local_modules: frozenset[str] | set[str] = frozenset()
+    ) -> list[str]:
         """Top-level imports outside numpy, scipy, sklearn, the standard library and the
         module's own directory (`local` names other files beside it)."""
         tree = ast.parse(source)
@@ -208,6 +210,7 @@ class GeneratedImports:
             for name in names
             if name.split(".")[0] not in GeneratedImports.ALLOWED
             and name.split(".")[0] not in sys.stdlib_module_names
+            and name.split(".")[0] not in local_modules
         })
 
 

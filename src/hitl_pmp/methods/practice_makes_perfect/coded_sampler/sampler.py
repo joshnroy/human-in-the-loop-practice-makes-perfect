@@ -133,9 +133,13 @@ class CodedSamplerHub(BaseModel):
         version = self.workspace.snapshot(
             index=self._refits + 1, cycle=cycle, skills=self.learned_skills
         )
+        assert version.snapshot_dir is not None
+        code_dir = version.snapshot_dir / self.workspace.MODULE_DIR
+        # The agent's own helpers beside its modules are importable at call time.
+        local = {entry.stem for entry in code_dir.iterdir()}
         violations = {
             skill: GeneratedImports.violations(
-                source=(version.snapshot_dir / module).read_text()  # type: ignore[operator]
+                source=(version.snapshot_dir / module).read_text(), local_modules=local
             )
             for skill, module in version.modules.items()
         }
