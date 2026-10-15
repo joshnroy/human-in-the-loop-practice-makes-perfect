@@ -38,6 +38,7 @@ class StreamLog:
     @staticmethod
     def summarize(*, lines: list[str]) -> dict[str, Any]:
         session_id = None
+        session_costs: dict[str, float] = {}
         compactions: list[CompactionEvent] = []
         context_tokens = None
         for line in lines:
@@ -49,6 +50,10 @@ class StreamLog:
                 continue
             if event.get("type") in {"system", "result"} and event.get("session_id"):
                 session_id = event["session_id"]
+            cost = event.get("total_cost_usd")
+            if event.get("type") == "result" and event.get("session_id") and cost is not None:
+                key = event["session_id"]
+                session_costs[key] = max(session_costs.get(key, 0.0), float(cost))
             if event.get("type") == "system" and event.get("subtype") == "compact_boundary":
                 metadata = event.get("compact_metadata") or {}
                 compactions.append(
@@ -68,6 +73,7 @@ class StreamLog:
                     )
         return {
             "session_id": session_id,
+            "session_costs": session_costs,
             "compactions": compactions,
             "final_context_tokens": context_tokens,
         }
@@ -96,15 +102,6 @@ class RobocodeCoder(Coder):
     timeout_seconds: float | None = None
 
     BUDGET_STOP: ClassVar[str] = "error_max_budget_usd"
-
-    @staticmethod
-    def invocation_cost(*, result: Any) -> float | None:
-        """The final attempt's cost plus every attempt `run_with_recovery` aborted and
-        retried before it, so a rate-limit retry can never hand spend back."""
-        if result.total_cost_usd is None:
-            return None
-        aborted = getattr(result.generation_metrics, "aborted_cost_usd", 0.0) or 0.0
-        return float(result.total_cost_usd) + float(aborted)
 
     def run(
         self, *, prompt: str, system_prompt: str, resume: bool, max_budget_usd: float = 0.0
@@ -163,7 +160,8 @@ class RobocodeCoder(Coder):
             error=result.error,
             resumed=resume,
             wall_seconds=time.monotonic() - started,
-            cost_usd=RobocodeCoder.invocation_cost(result=result),
+            session_cumulative_usd=result.total_cost_usd,
+            aborted_cost_usd=getattr(metrics, "aborted_cost_usd", None),
             budget_exhausted=(
                 getattr(metrics, "stop_reason", None) == RobocodeCoder.BUDGET_STOP
                 or RobocodeCoder.BUDGET_STOP in str(result.error or "")

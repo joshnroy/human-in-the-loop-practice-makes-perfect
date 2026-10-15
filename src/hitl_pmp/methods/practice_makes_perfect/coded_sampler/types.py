@@ -63,7 +63,16 @@ class CoderResult(BaseModel):
     session_id: str | None = None
     resumed: bool = False
     wall_seconds: float = 0.0
-    cost_usd: float | None = None
+    # The CLI's `total_cost_usd` is cumulative over a *session*: a resumed session's
+    # figure includes every earlier invocation. This is the final attempt's figure.
+    session_cumulative_usd: float | None = None
+    # The highest cumulative cost each session reported during this invocation, from
+    # every CLI result in it (an aborted attempt and its retry included). A refit's
+    # own cost is the rise in these over what was already accounted.
+    session_costs: dict[str, float] = Field(default_factory=dict)
+    # Robocode's sum over aborted attempts' reported costs. Informational only: those
+    # are cumulative figures too, so adding them would count the session again.
+    aborted_cost_usd: float | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0

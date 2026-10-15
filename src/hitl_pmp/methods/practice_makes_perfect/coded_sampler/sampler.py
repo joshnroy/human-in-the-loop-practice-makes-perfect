@@ -21,7 +21,7 @@ Before the first refit there is no code, and both behave as an unfitted MLP does
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -79,8 +79,19 @@ class CodedSamplerHub(BaseModel):
     _compactions: JsonlLog = PrivateAttr()
     _initialised: bool = PrivateAttr(default=False)
     _spent_usd: float = PrivateAttr(default=0.0)
+    # Per session id, the cumulative cost already counted in `_spent_usd`.
+    _session_costs: dict[str, float] = PrivateAttr(default_factory=dict)
     # Set once the budget is spent: coding stops and the last good version is frozen.
     _coding_stopped_at_cycle: int | None = PrivateAttr(default=None)
+
+    # History kinds that are practice data: skill attempts and human resets. Period
+    # starts, environment resets, starved pools and cycle ends are bookkeeping.
+    PRACTICE_KINDS: ClassVar[frozenset[str]] = frozenset({
+        "skill_dispatched",
+        "skill_outcome",
+        "human_reset_requested",
+        "human_reset_completed",
+    })
 
     def model_post_init(self, __context: object) -> None:
         self._versions = [CodeVersion(index=0, cycle=None, snapshot_dir=None, git_commit=None)]
@@ -139,6 +150,22 @@ class CodedSamplerHub(BaseModel):
             return
         start = self._history_cursor
         end = len(self.history)
+        if not any(event.kind in self.PRACTICE_KINDS for event in self.history.events(start=start)):
+            # Nothing was attempted: an MLP refit from scratch on the same data with the
+            # same seed reproduces its weights, so this refit is skipped to match. The
+            # cursor stays put, so these events reach the next refit's prompt.
+            self._refit_log.write(
+                record={
+                    "refit": self._refits,
+                    "cycle": cycle,
+                    "skipped": "no_new_practice_data",
+                    "history_events": [start, end],
+                    "version_index": self.current_version.index,
+                    "spent_usd": self._spent_usd,
+                }
+            )
+            self._refits += 1
+            return
         data = self.workspace.root / "data"
         self.history.write(path=data / "trajectories.jsonl")
         self.history.write(path=data / f"new_since_refit_{self._refits:03d}.jsonl", start=start)
@@ -161,9 +188,12 @@ class CodedSamplerHub(BaseModel):
             resume=self._refits > 0,
             max_budget_usd=offered,
         )
-        if result.cost_usd is not None:
-            self._spent_usd += result.cost_usd
-        if capped and (result.budget_exhausted or result.cost_usd is None):
+        refit_cost = self.account(result=result)
+        cost_fields = {
+            "cost_usd_this_refit": refit_cost,
+            "session_cumulative_usd": result.session_cumulative_usd,
+        }
+        if capped and (result.budget_exhausted or refit_cost is None):
             # Cut off partway, or spend unknown: what it left may be half-written,
             # so the previous version stays and coding stops.
             self._coding_stopped_at_cycle = cycle
@@ -176,6 +206,7 @@ class CodedSamplerHub(BaseModel):
                     "spent_usd": self._spent_usd,
                     "model_budget_usd": self.model_budget_usd,
                     "offered_usd": offered,
+                    **cost_fields,
                     "frozen_version": self.current_version.index,
                     "coder": result.model_dump(mode="json"),
                 }
@@ -213,6 +244,7 @@ class CodedSamplerHub(BaseModel):
             "spent_usd": self._spent_usd,
             "model_budget_usd": self.model_budget_usd,
             "offered_usd": offered,
+            **cost_fields,
             "coder": result.model_dump(mode="json"),
         }
         if capped and self.remaining_budget_usd <= 1e-9:
@@ -228,6 +260,25 @@ class CodedSamplerHub(BaseModel):
             self.record_error(skill_name=skill, error=f"disallowed imports: {names}", call=None)
         self._history_cursor = end
         self._refits += 1
+
+    def account(self, *, result: CoderResult) -> float | None:
+        """Add this refit's spend to the run's and return it, or None if unknown.
+
+        Each session's cumulative cost counts once: a refit costs the rise in it, and
+        a session first seen here (a fresh start, or a resume that failed) counts in
+        full from zero."""
+        costs = dict(result.session_costs)
+        if not costs and result.session_cumulative_usd is not None and result.session_id:
+            costs = {result.session_id: result.session_cumulative_usd}
+        if not costs:
+            return None
+        refit_cost = 0.0
+        for session, cumulative in costs.items():
+            counted = self._session_costs.get(session, 0.0)
+            refit_cost += max(0.0, cumulative - counted)
+            self._session_costs[session] = max(counted, cumulative)
+        self._spent_usd += refit_cost
+        return refit_cost
 
     def log_compactions(self, *, result: CoderResult, cycle: int) -> None:
         for index, compaction in enumerate(result.compactions):
