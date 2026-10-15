@@ -11,7 +11,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,8 +25,11 @@ class Coder(BaseModel, abc.ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @abc.abstractmethod
-    def run(self, *, prompt: str, system_prompt: str, resume: bool) -> CoderResult:
-        """One invocation in the persistent workspace; `resume` continues the session."""
+    def run(
+        self, *, prompt: str, system_prompt: str, resume: bool, max_budget_usd: float = 0.0
+    ) -> CoderResult:
+        """One invocation in the persistent workspace; `resume` continues the session.
+        `max_budget_usd` caps this invocation's spend; 0 means no cap."""
 
 
 class StreamLog:
@@ -91,9 +94,21 @@ class RobocodeCoder(Coder):
     model: str
     effort: str
     timeout_seconds: float | None = None
-    max_budget_usd: float = 0.0
 
-    def run(self, *, prompt: str, system_prompt: str, resume: bool) -> CoderResult:
+    BUDGET_STOP: ClassVar[str] = "error_max_budget_usd"
+
+    @staticmethod
+    def invocation_cost(*, result: Any) -> float | None:
+        """The final attempt's cost plus every attempt `run_with_recovery` aborted and
+        retried before it, so a rate-limit retry can never hand spend back."""
+        if result.total_cost_usd is None:
+            return None
+        aborted = getattr(result.generation_metrics, "aborted_cost_usd", 0.0) or 0.0
+        return float(result.total_cost_usd) + float(aborted)
+
+    def run(
+        self, *, prompt: str, system_prompt: str, resume: bool, max_budget_usd: float = 0.0
+    ) -> CoderResult:
         source_root = str(self.settings.robocode_checkout.resolve() / "src")
         if source_root not in sys.path:
             sys.path.insert(0, source_root)
@@ -111,7 +126,7 @@ class RobocodeCoder(Coder):
             system_prompt=system_prompt,
             output_filename="CLAUDE.md",
             model=self.model,
-            max_budget_usd=self.max_budget_usd,
+            max_budget_usd=max_budget_usd,
             max_turns=0,
             max_output_tokens=32768,
             autocompact_pct=80,
@@ -148,7 +163,11 @@ class RobocodeCoder(Coder):
             error=result.error,
             resumed=resume,
             wall_seconds=time.monotonic() - started,
-            cost_usd=result.total_cost_usd,
+            cost_usd=RobocodeCoder.invocation_cost(result=result),
+            budget_exhausted=(
+                getattr(metrics, "stop_reason", None) == RobocodeCoder.BUDGET_STOP
+                or RobocodeCoder.BUDGET_STOP in str(result.error or "")
+            ),
             input_tokens=int(getattr(metrics, "input_tokens", 0) or 0),
             output_tokens=int(getattr(metrics, "output_tokens", 0) or 0),
             cache_read_tokens=int(getattr(metrics, "cache_read_tokens", 0) or 0),

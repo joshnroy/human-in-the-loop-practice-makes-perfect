@@ -49,6 +49,14 @@ class CodedSamplerCli:
             default=3600.0,
             help="Wall-clock seconds one refit may take before it is abandoned.",
         )
+        parser.add_argument(
+            "--coded-sampler-model-budget",
+            type=float,
+            default=20.0,
+            help="Dollars of model spend for the whole run, across every refit, as "
+            "Full-Agentic's --model-budget (default 20). Once spent, coding stops and "
+            "the last good version is frozen. 0 means no cap.",
+        )
         parser.add_argument("--coded-sampler-coder-memory-mb", type=int, default=8192)
         parser.add_argument("--coded-sampler-call-memory-mb", type=int, default=2048)
 
@@ -101,4 +109,5 @@ class CodedSamplerCli:
             ),
             output_dir=output,
             history=TrajectoryHistory(),
+            model_budget_usd=args.coded_sampler_model_budget,
         )
