@@ -75,6 +75,10 @@ class TossParameterFeasibility:
         for obstacle in geometry.obstacles:
             if TossParameterFeasibility._strictly_overlap(first=robot, second=obstacle):
                 return f"target_collision:{obstacle.name}"
+        if geometry.uncrossable is not None and TossParameterFeasibility.crosses(
+            geometry=geometry, footprint=robot, line=geometry.uncrossable
+        ):
+            return f"uncrossable:{geometry.uncrossable.name}"
         polygon = TossParameterFeasibility.room_polygon(geometry=geometry)
         if polygon is not None and not TossParameterFeasibility._inside(
             point=target, polygon=polygon
@@ -86,6 +90,36 @@ class TossParameterFeasibility:
             ):
                 return f"separating_obstacle:{obstacle.name}"
         return None
+
+    @staticmethod
+    def crosses(
+        *,
+        geometry: TossFeasibilityGeometry,
+        footprint: PlanarCollisionBox,
+        line: PlanarCollisionBox,
+    ) -> bool:
+        """Whether any footprint corner is not strictly on the robot's side of `line`.
+
+        The line runs along the rectangle's long axis through its centre; a corner
+        counts as on the robot's side only beyond the rectangle's half-thickness.
+        """
+        long_is_height = line.height >= line.width
+        normal = TossParameterFeasibility._axes(box=line)[0 if long_is_height else 1]
+        half_thickness = (line.width if long_is_height else line.height) / 2
+        center = np.asarray(line.center)
+        robot_side = float(np.dot(np.asarray(geometry.robot_pose[:2]) - center, normal))
+        sign = 1.0 if robot_side >= 0.0 else -1.0
+        first, second = TossParameterFeasibility._axes(box=footprint)
+        for along in (-0.5, 0.5):
+            for across in (-0.5, 0.5):
+                corner = (
+                    np.asarray(footprint.center)
+                    + first * footprint.width * along
+                    + second * footprint.height * across
+                )
+                if sign * float(np.dot(corner - center, normal)) <= half_thickness:
+                    return True
+        return False
 
     @staticmethod
     def room_polygon(*, geometry: TossFeasibilityGeometry) -> list[tuple[float, float]] | None:
