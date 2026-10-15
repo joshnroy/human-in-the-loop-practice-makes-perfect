@@ -489,6 +489,7 @@ class StepProtocolEntry:
                     method=method_factory(context),
                     problem=problem,
                     environment=environment,
+                    evaluations=environment.evaluation_pool(),
                     recorder=writer,
                 )
             finally:
@@ -671,7 +672,10 @@ class StepPracticeRunner:
         budget_reached = False
         stop_streak = 0
         try:
-            measure()
+            # The untrained policy's measurement. Off for a domain where every
+            # evaluation task costs a person a scene set-up (`--env tossing3d_real`).
+            if getattr(args, "initial_measurement", True):
+                measure()
             while clock.steps < clock.budget:
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
