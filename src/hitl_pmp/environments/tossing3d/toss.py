@@ -35,7 +35,9 @@ from .toss_direction import (
     TossDirectionSelector,
     TossStandoffBand,
 )
+from .types import TossParameterSet
 from .wide_long_range_proposal import (
+    SIM_TOSS_PARAMETERS,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
     WIDE_TOSS_STANDOFF_BOUNDS,
@@ -65,26 +67,48 @@ class Tossing3DToss:
     )
 
     @staticmethod
-    def sample_params(*, rng: np.random.Generator) -> np.ndarray:
+    def parameters_of(*, env: Tossing3DEnvironment) -> TossParameterSet:
+        """The parameter set `env` carries: the simulator's unless it says otherwise."""
+        return env.toss_parameters if env.toss_parameters is not None else SIM_TOSS_PARAMETERS
+
+    @staticmethod
+    def sample_params(
+        *, rng: np.random.Generator, parameters: TossParameterSet = SIM_TOSS_PARAMETERS
+    ) -> np.ndarray:
         """The state-free draw: standoff over the full band."""
-        return WideLongRangeTossProposal.sample(rng=rng)
+        return WideLongRangeTossProposal.sample(rng=rng, parameters=parameters)
 
     @staticmethod
     def sample_params_at_state(
-        *, rng: np.random.Generator, ground_skill: GroundSkill, state: State
+        *,
+        rng: np.random.Generator,
+        ground_skill: GroundSkill,
+        state: State,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
     ) -> np.ndarray:
         """The draw a decision uses: standoff over this bin's feasible band. A bin with
         no band still gets a draw, over the analytic far range, so the proposal is
         rejected by `rejection_reason` rather than raised out of the sampler."""
         try:
-            bounds = Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
+            bounds = Tossing3DToss.standoff_bounds(
+                ground_skill=ground_skill, state=state, parameters=parameters
+            )
         except InfeasibleStandoffBandError:
             bin_x = state.get(obj=ground_skill.objects[1], feature_name="x")
-            bounds = WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
-        return WideLongRangeTossProposal.sample(rng=rng, standoff_bounds=bounds)
+            bounds = WideLongRangeTossProposal.far_standoff_bounds(
+                bin_x=bin_x, parameters=parameters
+            )
+        return WideLongRangeTossProposal.sample(
+            rng=rng, standoff_bounds=bounds, parameters=parameters
+        )
 
     @staticmethod
-    def standoff_bounds(*, ground_skill: GroundSkill, state: State) -> tuple[float, float]:
+    def standoff_bounds(
+        *,
+        ground_skill: GroundSkill,
+        state: State,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
+    ) -> tuple[float, float]:
         """The per-bin band at the bin's live pose, yaw included: the robot-side band
         for a bin on the robot's side (the full band unless the bin was moved), the
         far band for a bin across the barrier. A function of the state's geometry."""
@@ -102,11 +126,13 @@ class Tossing3DToss:
             # stand line is knowable, and direction selection refuses such a state
             # anyway.
             if far:
-                return WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
-            return WIDE_TOSS_STANDOFF_BOUNDS
+                return WideLongRangeTossProposal.far_standoff_bounds(
+                    bin_x=bin_x, parameters=parameters
+                )
+            return parameters.standoff_bounds
         if far:
-            return TossStandoffBand.far_bounds(geometry=geometry)
-        return TossStandoffBand.robot_side_bounds(geometry=geometry)
+            return TossStandoffBand.far_bounds(geometry=geometry, parameters=parameters)
+        return TossStandoffBand.robot_side_bounds(geometry=geometry, parameters=parameters)
 
     @staticmethod
     def choose_direction(*, state: State, params: np.ndarray) -> TossDirectionChoice:
@@ -114,7 +140,11 @@ class Tossing3DToss:
 
     @staticmethod
     def rejection_reason(
-        *, ground_skill: GroundSkill, state: State, params: np.ndarray
+        *,
+        ground_skill: GroundSkill,
+        state: State,
+        params: np.ndarray,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
     ) -> str | None:
         """A standoff with a plannable direction is accepted; one with none is rejected
         like any other proposal. The band keeps these rare -- they are a moved bin's
@@ -122,7 +152,9 @@ class Tossing3DToss:
         the pool, which the practice planner replans around. A far bin with no
         feasible band is such a pose, so it rejects every proposal."""
         try:
-            Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
+            Tossing3DToss.standoff_bounds(
+                ground_skill=ground_skill, state=state, parameters=parameters
+            )
         except InfeasibleStandoffBandError:
             return INFEASIBLE_STANDOFF_BAND_REJECTION
         try:
