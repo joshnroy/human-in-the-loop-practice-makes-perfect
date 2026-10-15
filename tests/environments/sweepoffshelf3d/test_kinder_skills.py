@@ -199,3 +199,28 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
     assert "no base pose" not in error, error
     assert ("HandEmpty", ("robot",)) in atoms
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, env, monkeypatch):
+    """`raise_hand` catches `SkillFailed` from each 3 cm lift and stops there, so the
+    per-step `HoldingWiper` check's failure was swallowed: the stroke went on with no
+    wiper in hand and died on `recalibrate_grasp`'s assert. That crashed the stage-5
+    CCCC determinized p1 relaunch (job 15616001_1, 2026-10-15)."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
+
+    raise_hand = ShelfSkills.raise_hand
+    dropped = []
+
+    def drop_then_raise(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        if self.watch_wiper and not dropped:  # inside a stroke, with the check on
+            dropped.append(True)
+            _teleport(env=env, name="wiper_0", position=[1.235, 0.0, 0.05])  # into the box
+        raise_hand(self, **kwargs)
+
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    monkeypatch.setattr(ShelfSkills, "raise_hand", drop_then_raise)
+    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    error = env.last_skill_error() or ""
+    assert "wiper left the hand" in error, error
+    assert ("HandEmpty", ("robot",)) in atoms
