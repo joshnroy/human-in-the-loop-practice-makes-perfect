@@ -10,7 +10,7 @@ a concrete CLI satisfies them just by having matching staticmethods, no subclass
 import argparse
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext, SkillProvider
@@ -127,3 +127,10 @@ class StepProtocolEnvironment(Protocol):
 
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None: ...
+
+    @staticmethod
+    def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
+        """A compact, JSON-ready account of the last robot skill -- its outcome and
+        every candidate it rejected -- logged as the step event's `skill_trace`; None
+        for a domain that keeps none (the event then carries no such field)."""
+        ...

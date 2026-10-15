@@ -273,6 +273,11 @@ class FakeStepProtocol:
         return problem.env.last_skill_error()
 
     @staticmethod
+    def last_skill_trace(*, problem):
+        del problem
+        return None
+
+    @staticmethod
     def interrupted(*, problem, action) -> None:
         pass
 

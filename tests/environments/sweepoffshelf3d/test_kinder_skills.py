@@ -199,3 +199,18 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
     assert "no base pose" not in error, error
     assert ("HandEmpty", ("robot",)) in atoms
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+def test_every_attempt_leaves_a_trace_naming_what_it_tried(*, env):
+    from hitl_pmp.environments.sweepoffshelf3d.skill_trace import SkillTraces
+
+    env.reset_to_seed(seed=0)
+    _act(env=env, skill="SweepShelf")
+    trace = SkillTraces.last(env=env)
+    assert trace is not None and trace.outcome == "plan_failure"
+    assert "wiper is not in hand" in (trace.error or "")
+    _act(env=env, skill="PickWiper")
+    trace = SkillTraces.last(env=env)
+    assert trace is not None and trace.outcome == "success", trace
+    assert [n.kind for n in trace.notes if n.stage == "pick_wiper"][-1] == "executed"
+    assert "HoldingWiper(robot,wiper_0)" in trace.added

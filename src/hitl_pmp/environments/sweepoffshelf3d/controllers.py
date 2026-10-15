@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from .backend import SweepOffShelf3DBackend
 from .kinder_skills import KinderSkills
 from .scripted_skills import ShelfSkills, SkillFailed
+from .types import SkillNote
 
 
 class ControllerFailure(Exception):
@@ -32,6 +33,19 @@ class SweepOffShelf3DControllers(BaseModel):
 
     def reset_counter(self) -> None:
         self.steps = 0
+
+    def clear_notes(self) -> None:
+        if self._kinder is not None:
+            self._kinder.notes = []
+        if self._skills is not None:
+            self._skills.notes = []
+
+    def notes(self) -> list[SkillNote]:
+        """What the last skill tried: KINDER candidates first, then the scripted
+        routines' retries (strings there, kept as `scripted` notes)."""
+        kinder = [] if self._kinder is None else list(self._kinder.notes)
+        scripted = [] if self._skills is None else self._skills.notes
+        return kinder + [SkillNote(stage="scripted", kind="scripted", reason=n) for n in scripted]
 
     def on_scene_reset(self) -> None:
         """The scene was rebuilt: the skills re-read it from scratch."""
