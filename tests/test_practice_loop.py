@@ -27,6 +27,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
+from hitl_pmp.human_resets import HumanResetLog
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
@@ -1865,7 +1866,9 @@ class _CubeBinAskingMethod(_FakeMethod):
     def _asking_action(self, *, state: State) -> LabeledAction:
         del state
         if self.steps_taken >= self.steps_before_asking:
-            raise HumanCubeBinResetRequested(cost=self.ask_cost, destination=self.reset_destination)
+            raise HumanCubeBinResetRequested(
+                cost=self.ask_cost, destination=self.reset_destination, skill="ask_for_reset"
+            )
         self.steps_taken += 1
         return LabeledAction(action=np.array([0.0]), label="asking")
 
@@ -2003,3 +2006,47 @@ def test_a_cube_bin_reset_is_handed_to_the_recorder_as_a_human_reset() -> None:
         "human_reset:5",
         "human_reset:8",
     ]
+
+
+def test_every_cube_bin_reset_is_logged_with_its_cycle_and_destination(*, tmp_path: Path) -> None:
+    """One record per charged rescue, written beside the counter it explains: the count
+    in stats.json says how many, and only this says when and where. Two cycles so the
+    cycle index is observably per-period rather than a constant."""
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
+    method.reset_destination = "opposite_side"
+    log = HumanResetLog.open(output_path=tmp_path / "human_resets.jsonl")
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        num_test_tasks=1,
+        human_reset_log=log,
+    )
+    records = HumanResetLog.read(path=tmp_path / "human_resets.jsonl")
+    assert len(records) == metrics.num_human_interventions_recorded == 4
+    assert [(r.cycle, r.step_index, r.num_online_transitions) for r in records] == [
+        (0, 2, 2),
+        (0, 5, 4),
+        (1, 2, 6),
+        (1, 5, 8),
+    ]
+    assert {r.destination for r in records} == {"opposite_side"}
+    assert {r.skill for r in records} == {"ask_for_reset"}
+    assert sum(r.cost for r in records) == metrics.summed_human_cost_recorded
+
+
+def test_a_run_without_a_human_reset_log_still_rescues_exactly_as_before() -> None:
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+    )
+    assert metrics.num_human_interventions()[1] == 3

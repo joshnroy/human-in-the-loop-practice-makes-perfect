@@ -58,12 +58,18 @@ class HumanCubeBinResetRequested(Exception):  # noqa: N818
     with the same execution contract.
 
     `cost` is required, not optional: there's no `Goal`/`target_state` to price a
-    partial reset against, so the raising `Method` must always price it itself."""
+    partial reset against, so the raising `Method` must always price it itself.
 
-    def __init__(self, *, cost: float, destination: str | None = None) -> None:
+    `skill` names the ground skill that asked, so a log of resets can tell a paid human
+    reset from an automatic one: both are dispatched through this one request."""
+
+    def __init__(
+        self, *, cost: float, destination: str | None = None, skill: str | None = None
+    ) -> None:
         super().__init__(cost)
         self.cost = cost
         self.destination = destination
+        self.skill = skill
 
 
 class Method(BaseModel, abc.ABC):

@@ -1682,6 +1682,21 @@ def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_res
     assert method._competence_models == {}
 
 
+def test_a_dispatched_reset_names_the_skill_that_asked_for_it() -> None:
+    """human_resets.jsonl tells a paid human reset apart from an automatic one by this
+    name, since both are dispatched through the same request."""
+    method, env = _cube_bin_reset_build(human_reset_practice_cost=0.37)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    reset_ground_skill = method.skill_provider.human_cube_bin_reset_skill()
+    assert reset_ground_skill is not None
+    episode = _EesEpisode(method=method, goal=task.goal.atoms, practicing=True)
+    episode._plan = [reset_ground_skill]
+
+    with pytest.raises(HumanCubeBinResetRequested) as excinfo:
+        episode.step(state=task.initial_state)
+    assert excinfo.value.skill == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+
+
 def test_ees_evaluation_never_offers_the_cube_bin_reset_skill() -> None:
     """No evaluation episode is ever rescued -- measurement would be measuring the
     human. This skill is not gated on any per-episode state (its effects don't depend

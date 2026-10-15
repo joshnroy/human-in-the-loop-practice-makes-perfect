@@ -14,6 +14,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
+from hitl_pmp.human_resets import HumanReset, HumanResetLog
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.recording.period_recorder import PeriodRecorder
 
@@ -311,6 +312,7 @@ class PracticeLoop:
         recorder: LoopRecorder | None = None,
         period_recorder: PeriodRecorder | None = None,
         trace_recorder: EpisodeTraceRecorder | None = None,
+        human_reset_log: HumanResetLog | None = None,
     ) -> None:
         # Up front, before hard_reset(), so a caller that forgot the sink finds out
         # before the run mutates the environment rather than one sweep in.
@@ -503,9 +505,12 @@ class PracticeLoop:
                         problem=problem,
                         method=method,
                         metrics=metrics,
-                        cost=request.cost,
-                        destination=request.destination,
+                        request=request,
                         state=state,
+                        human_reset_log=human_reset_log,
+                        cycle=cycle,
+                        step_index=step,
+                        num_online_transitions=num_online_transitions,
                     )
                     method.observe_help_granted(state=state)
                     if recorder is not None:
@@ -612,9 +617,12 @@ class PracticeLoop:
         problem: Problem,
         method: Method,
         metrics: Metrics,
-        cost: float,
+        request: HumanCubeBinResetRequested,
         state: State,
-        destination: str | None = None,
+        human_reset_log: HumanResetLog | None,
+        cycle: int,
+        step_index: int,
+        num_online_transitions: int,
     ) -> State:
         """Perform the *partial* rescue a `Method` asked for via
         `HumanCubeBinResetRequested`, charge it, and return the state that results.
@@ -645,8 +653,19 @@ class PracticeLoop:
         against what really happened rather than against the state it is about to
         lose -- the identical contract a mid-period interval reset has."""
         method.observe_environment_reset(state=state)
-        problem.execute_movables_reset(destination=destination)
-        metrics.record_human_intervention(cost=cost)
+        problem.execute_movables_reset(destination=request.destination)
+        metrics.record_human_intervention(cost=request.cost)
+        if human_reset_log is not None:
+            human_reset_log.record(
+                reset=HumanReset(
+                    cycle=cycle,
+                    step_index=step_index,
+                    num_online_transitions=num_online_transitions,
+                    destination=request.destination,
+                    skill=request.skill,
+                    cost=request.cost,
+                )
+            )
         return problem.get_current_state()
 
     @staticmethod
