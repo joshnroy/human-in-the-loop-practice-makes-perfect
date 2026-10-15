@@ -158,6 +158,72 @@ def test_pick_cube_from_shelf_takes_a_cube_out_of_the_cupboard(*, env, cube):
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
 
 
+# Cube layouts a human `reset_cubes` left (`_cube_placements`, human seeds 0, 61 and
+# 77), as fixed poses: position, then MuJoCo's (w, x, y, z) quaternion. Each failed
+# the shelf pick before it screened its arm configurations in MuJoCo:
+# - seed 0, cube_0 7 cm from the -y side panel and cube_2 at the back: no grasp planned;
+# - seed 61, cube_1 in the back corner: no grasp planned, and then no retract or
+#   approach plan from the pre-grasp until both went through the open front;
+# - seed 77, cube_4 with cube_1 and cube_3 under 4 cm away: the close shoved it 9 cm
+#   along the shelf onto its neighbour, and every retry missed the same way.
+RESET_LAYOUT = {
+    "cube_0": ([1.4678, -0.2203, 0.2899], [-0.8328, 0.0, 0.0, 0.5536]),
+    "cube_1": ([1.5578, 0.0512, 0.2899], [-0.1366, 0.0, 0.0, 0.9906]),
+    "cube_2": ([1.5609, 0.1516, 0.2899], [-0.9013, 0.0, 0.0, 0.4331]),
+    "cube_3": ([1.4347, 0.1102, 0.2899], [-0.9090, 0.0, 0.0, 0.4167]),
+    "cube_4": ([1.5058, -0.0961, 0.2899], [0.9960, 0.0, 0.0, 0.0889]),
+}
+BACK_CORNER_LAYOUT = {
+    "cube_0": ([1.5381, 0.0821, 0.2899], [0.2066, 0.0, 0.0, 0.9784]),
+    "cube_1": ([1.5696, 0.2391, 0.2899], [0.8230, 0.0, 0.0, 0.5680]),
+    "cube_2": ([1.5218, -0.1253, 0.2899], [0.9703, 0.0, 0.0, 0.2420]),
+    "cube_3": ([1.5475, -0.2305, 0.2899], [-0.9802, 0.0, 0.0, 0.1982]),
+    "cube_4": ([1.5658, 0.1722, 0.2899], [0.8802, 0.0, 0.0, 0.4745]),
+}
+CLUSTER_LAYOUT = {
+    "cube_0": ([1.5072, -0.1229, 0.2899], [0.5393, 0.0, 0.0, 0.8421]),
+    "cube_1": ([1.4846, 0.1446, 0.2899], [0.3867, 0.0, 0.0, 0.9222]),
+    "cube_2": ([1.5408, 0.1242, 0.2899], [0.9168, 0.0, 0.0, 0.3993]),
+    "cube_3": ([1.4804, 0.1780, 0.2899], [-0.6059, 0.0, 0.0, 0.7956]),
+    "cube_4": ([1.4525, 0.1817, 0.2899], [0.4834, 0.0, 0.0, 0.8754]),
+}
+
+
+def _pour(*, env, layout):
+    backend = env.backend()
+    for name, (position, quaternion) in layout.items():
+        obj = backend.core().get_object(name)
+        obj.set_pose(position, list(np.asarray(quaternion) / np.linalg.norm(quaternion)))
+        obj.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+    env.controllers().on_objects_moved()
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
+
+
+def _picks_from(*, env, layout, cube):
+    env.reset_to_seed(seed=0)
+    _pour(env=env, layout=layout)
+    assert ("OnShelf", (f"cube_{cube}",)) in env.get_current_state().abstract_atoms
+    atoms = _act(env=env, skill="PickCubeFromShelf", cube=cube)
+    assert ("HoldingCube", ("robot", f"cube_{cube}")) in atoms, env.last_skill_error()
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+@pytest.mark.parametrize("cube", [0, 2], ids=["by-side-panel", "back-of-shelf"])
+def test_pick_cube_from_shelf_takes_a_cube_from_a_human_reset_layout(*, env, cube):
+    _picks_from(env=env, layout=RESET_LAYOUT, cube=cube)
+
+
+@pytest.mark.main_only
+@pytest.mark.parametrize(
+    ("layout", "cube"),
+    [(BACK_CORNER_LAYOUT, 1), (CLUSTER_LAYOUT, 4)],
+    ids=["back-corner", "cluster"],
+)
+def test_pick_cube_from_shelf_takes_a_cornered_or_crowded_cube(*, env, layout, cube):
+    _picks_from(env=env, layout=layout, cube=cube)
+
+
 def test_a_wiper_lost_from_the_hand_is_not_still_believed_held(*, env):
     """The absorbing failure behind CCCC's PickWiper tally: a skill that loses the
     wiper used to leave the controllers believing it was in hand, so every later

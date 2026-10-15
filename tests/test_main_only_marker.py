@@ -41,6 +41,8 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_a_cube_across_the_barrier_really_is_unplannable",
     "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
     "test_the_wiper_sweeps_the_shelf_and_goes_back",
+    "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
+    "test_pick_cube_from_shelf_takes_a_cornered_or_crowded_cube",
 })
 
 
