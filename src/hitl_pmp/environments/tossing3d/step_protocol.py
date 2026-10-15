@@ -36,6 +36,13 @@ class Tossing3DStepProtocol:
         return Tossing3DCli.build_evaluation_problem(args=args)
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Not offered: a paused run resumes only on the real robot
+        (`--env tossing3d_real`), where the world itself persisted."""
+        del problem, state
+        raise NotImplementedError("--resume is supported for --env tossing3d_real only")
+
+    @staticmethod
     def evaluation_pool() -> None:
         """The protocol's default: one fresh spawned process per evaluation."""
         return None

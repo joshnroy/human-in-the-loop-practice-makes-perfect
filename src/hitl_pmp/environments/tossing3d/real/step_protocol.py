@@ -76,6 +76,10 @@ class Tossing3DRealStepProtocol:
         return Tossing3DRealCli.build_evaluation_problem(args=args)
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        Tossing3DRealStepProtocol.env(problem=problem).resume(state=state)
+
+    @staticmethod
     def evaluation_pool() -> InProcessEvaluations:
         return InProcessEvaluations()
 

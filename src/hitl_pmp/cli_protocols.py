@@ -83,6 +83,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Put a resumed run's practice environment back where its checkpoint left it
+        (`state`), or raise `NotImplementedError` where a domain cannot."""
+        ...
+
+    @staticmethod
     def practice_context(*, args: argparse.Namespace, problem: Problem) -> DomainContext:
         """The practice skill provider (human skills offered as configured) and oracle."""
         ...

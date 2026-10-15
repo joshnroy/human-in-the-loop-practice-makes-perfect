@@ -139,16 +139,20 @@ class RealWorld(BaseModel):
         self._owner = owner
         if previous is None or previous == owner or restore is None:
             return
-        cube = restore.cube
-        bin_ = restore.bin
+        self.restore(owner=owner, saved=restore, previous_owner=previous)
+
+    def restore(self, *, owner: str, saved: RobotObservation, previous_owner: str) -> None:
+        """Ask the person to put back the scene `saved` describes."""
+        cube = saved.cube
+        bin_ = saved.bin
         request = PlacementRequest(
             kind="restore",
             owner=owner,
             cube_target=None if cube is None else (cube.x, cube.y),
             bin_target=None if bin_ is None else (bin_.x, bin_.y),
-            was_holding=restore.holding,
+            was_holding=saved.holding,
         )
-        if restore.holding:
+        if saved.holding:
             logger.warning(
                 "restoring %s's scene, in which the robot was holding the cube: a human "
                 "cannot put it back in the gripper, so the restored scene differs",
@@ -156,7 +160,7 @@ class RealWorld(BaseModel):
             )
         self.robot.go_home()
         self.moved()
-        self.place(request=request, previous_owner=previous)
+        self.place(request=request, previous_owner=previous_owner)
 
     def note_for_next_placement(self, *, notes: tuple[str, ...]) -> None:
         """Attach `notes` to the next placement request, for the person to read."""
@@ -265,6 +269,17 @@ class RealTossingBackend(BaseModel):
             )
         )
         return self.observe()
+
+    def resume_scene(self, *, saved: RobotObservation) -> None:
+        """After a pause: ask for the saved scene back, unless it is still there."""
+        self.world.enter(owner=self.owner, restore=None)
+        self._last = None
+        current = RobotObservation.parse(reply=self.world.robot.observe())
+        if RealScene.matches(current=current, saved=saved):
+            self.world.log(event="resume", owner=self.owner, restored=False)
+            return
+        self.world.restore(owner=self.owner, saved=saved, previous_owner="paused run")
+        self.world.log(event="resume", owner=self.owner, restored=True)
 
     # --- observation and abstraction ----------------------------------------------------
 
@@ -582,6 +597,29 @@ class RealTossingBackend(BaseModel):
             float(rng.uniform(region.x_min, region.x_max)),
             float(rng.uniform(region.y_min, region.y_max)),
         )
+
+
+class RealScene:
+    """A static-method container, never instantiated."""
+
+    # Within this, an object has not been moved (localization noise, not a move).
+    SAME_POSITION_M: float = 0.05
+
+    @staticmethod
+    def matches(*, current: RobotObservation, saved: RobotObservation) -> bool:
+        """Whether the scene still looks like `saved`: cube, bin and grip unchanged."""
+        if current.holding != saved.holding or current.cube_in_bin != saved.cube_in_bin:
+            return False
+        for now, then in ((current.cube, saved.cube), (current.bin, saved.bin)):
+            if (now is None) != (then is None):
+                return False
+            if (
+                now is not None
+                and then is not None
+                and math.hypot(now.x - then.x, now.y - then.y) > RealScene.SAME_POSITION_M
+            ):
+                return False
+        return True
 
 
 class RealAtoms:
