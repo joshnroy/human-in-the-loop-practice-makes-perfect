@@ -121,7 +121,11 @@ class SkillOraclePolicy:
             )
             # Lifted into the bin's feasible band: a far bin past x ~ 2.24 has no
             # stand at all at the historical 1.35 m (see `far_standoff_bounds`).
-            low, _ = Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
+            low, _ = Tossing3DToss.standoff_bounds(
+                ground_skill=ground_skill,
+                state=state,
+                parameters=Tossing3DToss.parameters_of(env=env),
+            )
             params = np.array([
                 max(throw_standoff, low),
                 ORACLE_RELEASE_SPEED_DEG_S,

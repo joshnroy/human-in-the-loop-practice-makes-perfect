@@ -142,7 +142,9 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return Tossing3DToss.sample_params(rng=rng)
+            return Tossing3DToss.sample_params(
+                rng=rng, parameters=Tossing3DToss.parameters_of(env=self.env)
+            )
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
@@ -152,7 +154,10 @@ class Tossing3DSkillProvider(SkillProvider):
     ) -> np.ndarray:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return Tossing3DToss.sample_params_at_state(
-                rng=rng, ground_skill=ground_skill, state=state
+                rng=rng,
+                ground_skill=ground_skill,
+                state=state,
+                parameters=Tossing3DToss.parameters_of(env=self.env),
             )
         return self.sample_params(ground_skill=ground_skill, rng=rng)
 
@@ -173,7 +178,12 @@ class Tossing3DSkillProvider(SkillProvider):
         """Rejects a standoff no direction can plan, rather than raising."""
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
-        return Tossing3DToss.rejection_reason(ground_skill=ground_skill, state=state, params=params)
+        return Tossing3DToss.rejection_reason(
+            ground_skill=ground_skill,
+            state=state,
+            params=params,
+            parameters=Tossing3DToss.parameters_of(env=self.env),
+        )
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
