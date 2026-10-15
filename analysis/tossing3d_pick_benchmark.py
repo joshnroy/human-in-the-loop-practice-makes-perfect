@@ -70,13 +70,12 @@ class PickBenchmarkPage:
         ax.set_title(f"Tossing3D pick benchmark, MuJoCo execution, commit {commit[:9]}")
         handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in LABEL_COLOURS.values()]
         totals = Counter(r.label for r in results)
+        # Lower right: every bar but the longest leaves that corner empty.
         ax.legend(
             handles,
             [f"{label} (n={totals.get(label, 0)})" for label in LABEL_COLOURS],
             fontsize=7,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.12 - 2.0 / max(len(rows), 4)),
-            ncol=5,
+            loc="lower right",
         )
         fig.tight_layout()
         fig.savefig(path, dpi=130, bbox_inches="tight")
