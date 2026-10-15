@@ -5,14 +5,23 @@ import imageio
 import pytest
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
-from hitl_pmp.core.method.types import Policy, PracticeTargetTally, SkillPracticeTally
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested
+from hitl_pmp.core.method.types import (
+    LabeledAction,
+    Policy,
+    PracticeTargetTally,
+    SkillPracticeTally,
+)
 from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
 from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchOracle
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+from hitl_pmp.human_resets import HUMAN_RESETS_FILENAME, HumanResetLog
+from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 from hitl_pmp.practice_loop import PracticeResetPolicy
@@ -704,3 +713,73 @@ def test_a_run_that_practiced_nothing_prints_nothing_extra(
         render_fps=2,
     )
     assert "practice " not in capsys.readouterr().out
+
+
+class _ResettableLightSwitch(LightSwitchEnvironment):
+    """LightSwitch with a movables reset that leaves the state alone, so a run can be
+    charged human resets without a simulator."""
+
+    def reset_movables(self, *, destination: str | None = None) -> bool:
+        del destination
+        return True
+
+
+class _AskingOracleMethod(SkillOracleMethod):
+    """Asks for a reset every third practice call, alternating destinations."""
+
+    calls: int = 0
+
+    def may_request_human_help(self) -> bool:
+        return True
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        inner = super().get_task_policy(task=task)
+
+        def policy(state: State) -> LabeledAction:  # noqa: PLR0917
+            self.calls += 1
+            if self.calls % 3 == 0:
+                destination = "robot_side" if self.calls % 2 else "opposite_side"
+                raise HumanCubeBinResetRequested(
+                    cost=0.5, destination=destination, skill="ask_for_reset_cube_bin_only"
+                )
+            return inner(state)
+
+        return policy
+
+
+def _run_asking(*, output_dir: Path) -> Metrics:
+    env = _ResettableLightSwitch()
+    problem = LightSwitchProblem(
+        env=env, tasks=LightSwitchTasks(env=env), human=UnconditionalHumanOracle
+    )
+    return MethodRunner.run(
+        args=_args(num_test_tasks=1, output_dir=output_dir),
+        method=_AskingOracleMethod(env=env, oracle=LightSwitchOracle(env=env)),
+        problem=problem,
+        num_cycles=3,
+        max_steps_per_interaction=4,
+        renderer=None,
+        render_fps=2,
+    )
+
+
+def test_run_with_output_dir_writes_one_human_reset_record_per_charged_reset(
+    *, tmp_path: Path
+) -> None:
+    metrics = _run_asking(output_dir=tmp_path)
+    records = HumanResetLog.read(path=tmp_path / HUMAN_RESETS_FILENAME)
+    stats = Metrics.model_validate_json((tmp_path / "stats.json").read_text())
+    assert stats.num_human_interventions_recorded == metrics.num_human_interventions_recorded
+    assert len(records) == stats.num_human_interventions_recorded > 0
+    assert {record.destination for record in records} == {"robot_side", "opposite_side"}
+    assert {record.cycle for record in records} <= {0, 1, 2}
+
+
+def test_human_reset_records_leave_stats_json_shaped_exactly_as_before(*, tmp_path: Path) -> None:
+    """Beside stats.json, never inside it: no new key, and stats.json is still exactly
+    the serialized Metrics."""
+    metrics = _run_asking(output_dir=tmp_path)
+    text = (tmp_path / "stats.json").read_text()
+    assert text == metrics.model_dump_json(indent=2)
+    assert "destination" not in text
+    assert "robot_side" not in text

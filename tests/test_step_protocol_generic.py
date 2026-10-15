@@ -241,6 +241,9 @@ def test_a_non_tossing_domain_runs_the_step_protocol_end_to_end(*, tmp_path: Pat
     status = json.loads((output / "status.json").read_text())
     assert status["phase"] == "complete"
     assert status["human_resets_by_destination"] == {"reset_cubes": 0, "reset_wiper": 1}
+    # The step protocol keeps its own per-destination record in step_events.jsonl; the
+    # practice loop's human_resets.jsonl is not its output.
+    assert not (output / "human_resets.jsonl").exists()
 
     evaluations = json.loads((output / "step_evaluations.json").read_text())
     assert evaluations and all(e["complete"] for e in evaluations)
