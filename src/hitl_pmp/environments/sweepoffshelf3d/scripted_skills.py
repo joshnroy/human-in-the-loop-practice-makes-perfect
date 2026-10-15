@@ -114,6 +114,8 @@ STROKE_LIMIT = 0.17
 HANDLE_BAND = 0.03
 # Put the wiper down and take it again only once it has turned this far in the grasp.
 RESEAT_TURN_DEG = 6.0
+# Control steps in a row without both pads on the wiper before a sweep calls it lost.
+WIPER_LOST_STEPS = 5
 HOVER = 0.08
 RESEAT_HEAD_X = 1.50
 LOWER_TOLERANCE = 0.003
@@ -261,6 +263,10 @@ class ShelfSkills:
             and self.model.body(self.model.geom_bodyid[g]).name != "robot_base_link"
         }
         self.pad_geoms = {g for g in self.robot_geoms if "pad" in (self.model.geom(g).name or "")}
+        sides: dict[int, set[int]] = {}
+        for g in self.pad_geoms:
+            sides.setdefault(int(self.model.geom_bodyid[g]), set()).add(g)
+        self.pad_sides = [frozenset(geoms) for geoms in sides.values()]
         self.cupboard_geoms = {g for g, r in owner.items() if r == "cupboard_1"}
         self.box_geoms = {g for g, r in owner.items() if r == "box_0"}
         self.wiper_geoms = sorted(g for g, r in owner.items() if r == "wiper_0")
@@ -292,6 +298,9 @@ class ShelfSkills:
         self.slip: float | None = None
         self.slip_deg = 0.0
         self.contact_shortfalls = 0
+        # While a sweep runs, `HoldingWiper` is re-evaluated after every control step.
+        self.watch_wiper = False
+        self.wiper_unheld_steps = 0
         # Hand pose in the wiper's frame for each fixed grasp, and the measured
         # hand-to-wiper pose every time one is taken.
         self.grasp_in_wiper = {
@@ -426,6 +435,29 @@ class ShelfSkills:
         self.track_slip()
         if self.recorder is not None:
             self.recorder.on_step(skills=self, label=label)
+        if self.watch_wiper:
+            self.check_wiper_held(label=label)
+
+    def pads_hold_wiper(self) -> bool:
+        """`HoldingWiper`: both gripper pads touch the wiper (the backend's own test)."""
+        touched = [False] * len(self.pad_sides)
+        for contact in self.data.contact[: self.data.ncon]:
+            for mine, other in ((contact.geom1, contact.geom2), (contact.geom2, contact.geom1)):
+                if self.model.geom_bodyid[other] != self.wiper_body:
+                    continue
+                for side, pads in enumerate(self.pad_sides):
+                    touched[side] |= int(mine) in pads
+        return all(touched)
+
+    def check_wiper_held(self, *, label: str) -> None:
+        if self.pads_hold_wiper():
+            self.wiper_unheld_steps = 0
+            return
+        self.wiper_unheld_steps += 1
+        if self.wiper_unheld_steps >= WIPER_LOST_STEPS:
+            self.watch_wiper = False
+            self.in_hand, self.grasp_kind = None, None
+            raise SkillFailed(f"the wiper left the hand during {label}")
 
     def hold(self, *, count: int = 15, label: str = "hold") -> None:
         arm = self.arm_reference.copy()
@@ -1276,15 +1308,25 @@ class ShelfSkills:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
         if self.grasp_kind != "sweep":
             self.regrasp_for_sweep()
-        for sweep_pass in range(SWEEP_PASSES):
-            ys = [float(self.cube_position(cube=c)[1]) for c in self.shelf_cubes()]
-            if not ys:
-                return
-            centres = Strokes.plan(ys=ys, reach=STROKE_REACH, band=HANDLE_BAND, limit=STROKE_LIMIT)
-            if not centres:
-                break
-            for y in centres:
-                self.stroke(y=y, settings=settings, name=f"pass{sweep_pass}_y{y:+.2f}")
+        self.watch_wiper, self.wiper_unheld_steps = True, 0
+        try:
+            for sweep_pass in range(SWEEP_PASSES):
+                ys = [float(self.cube_position(cube=c)[1]) for c in self.shelf_cubes()]
+                if not ys:
+                    return
+                centres = Strokes.plan(
+                    ys=ys, reach=STROKE_REACH, band=HANDLE_BAND, limit=STROKE_LIMIT
+                )
+                if not centres:
+                    break
+                for y in centres:
+                    self.stroke(y=y, settings=settings, name=f"pass{sweep_pass}_y{y:+.2f}")
+        except SkillFailed as exc:
+            if "wiper left the hand" in str(exc):
+                raise SkillFailed(f"sweep_shelf: {exc}") from exc
+            raise
+        finally:
+            self.watch_wiper = False
         left = self.shelf_cubes()
         if left:
             raise SkillFailed(f"sweep_shelf: {len(left)} cube(s) still on the shelf: {left}")
