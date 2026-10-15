@@ -89,6 +89,8 @@ CHECK_STEP = 0.05
 CARRIED_ALLOWANCE = 0.004
 HAND_ALLOWANCE = 0.001
 PRE_GRASP_RISE = 0.03
+# How far the hand backs out toward the base when the retract cannot plan from where it is.
+BACK_OUT = 0.15
 
 
 class FollowPlans:
@@ -515,8 +517,6 @@ class KinderSkills:
         """Bring the arm to `HOME_ARM` along a collision-free plan (KINDER's arm BiRRT,
         the held cube attached if there is one) -- or, holding the wiper, straight up
         to the carry height `CARRY_Z`."""
-        from pybullet_helpers.motion_planning import run_motion_planning
-
         if self.arm_from_home() < RETRACT_TOLERANCE:
             return
         shelf = self.shelf
@@ -526,24 +526,15 @@ class KinderSkills:
             with contextlib.suppress(SkillFailed):
                 shelf.raise_hand(z=CARRY_Z, label=f"{label}_raise", holding=True)
             return
-        sim = self.planning_sim()
-        x = self.state()
-        sim.set_state(x)
-        held = None
-        if shelf.held_cube is not None:
-            sim.base_link_to_held_obj = self.held_transform(sim=sim, cube=shelf.held_cube)
-            held = sim._cubes[shelf.held_cube]  # noqa: SLF001
-            sim.set_state(x, x.get_object_from_name(shelf.held_cube))
-        plan = run_motion_planning(
-            sim.robot,
-            sim.get_robot_joints(),
-            [*HOME_ARM.tolist(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            collision_bodies=sim.get_collision_bodies(held_object=held),
-            held_object=held,
-            base_link_to_held_obj=sim.base_link_to_held_obj if held is not None else None,
-            seed=0,
-            physics_client_id=sim.physics_client_id,
-        )
+        plan = self.plan_home()
+        if plan is None:
+            # KINDER's PyBullet cupboard is not MuJoCo's: a hand MuJoCo leaves just inside
+            # the cupboard's open front, touching nothing, can start the plan in collision
+            # there, and BiRRT never plans from a colliding start -- so the arm stayed out
+            # and every later skill planned from it and failed too. Back the hand out
+            # toward the base on MuJoCo's own kinematics, then plan again.
+            self.back_out(label=f"{label}_back_out")
+            plan = self.plan_home()
         if plan is None:
             self.notes.append(f"{label}: no collision-free retract; arm left where it is")
             return
@@ -557,6 +548,50 @@ class KinderSkills:
             if action is None:
                 break
             self.env_step(action=action, label=label)
+        self.sync()
+
+    def plan_home(self) -> list[Any] | None:
+        """KINDER's arm BiRRT from the current arm to `HOME_ARM`, the held cube attached
+        if there is one; None if it finds no plan."""
+        from pybullet_helpers.motion_planning import run_motion_planning
+
+        shelf = self.shelf
+        sim = self.planning_sim()
+        x = self.state()
+        sim.set_state(x)
+        held = None
+        if shelf.held_cube is not None:
+            sim.base_link_to_held_obj = self.held_transform(sim=sim, cube=shelf.held_cube)
+            held = sim._cubes[shelf.held_cube]  # noqa: SLF001
+            sim.set_state(x, x.get_object_from_name(shelf.held_cube))
+        return run_motion_planning(
+            sim.robot,
+            sim.get_robot_joints(),
+            [*HOME_ARM.tolist(), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            collision_bodies=sim.get_collision_bodies(held_object=held),
+            held_object=held,
+            base_link_to_held_obj=sim.base_link_to_held_obj if held is not None else None,
+            seed=0,
+            physics_client_id=sim.physics_client_id,
+        )
+
+    def back_out(self, *, label: str) -> None:
+        """Move the hand `BACK_OUT` straight toward the base, orientation kept."""
+        shelf = self.shelf
+        hand = shelf.site_pose()
+        base = shelf.data.qpos[shelf.ba]
+        toward = np.array([base[0] - hand[0, 3], base[1] - hand[1, 3], 0.0])
+        if np.linalg.norm(toward) < 1e-6:
+            return
+        target = hand[:3, 3] + BACK_OUT * toward / np.linalg.norm(toward)
+        with contextlib.suppress(SkillFailed):
+            shelf.path(
+                position=target,
+                rotation=hand[:3, :3],
+                label=label,
+                count=3,
+                holding=shelf.held_cube is not None,
+            )
         self.sync()
 
     def carried_wiper_blocked(self, *, confs: list[np.ndarray]) -> bool:

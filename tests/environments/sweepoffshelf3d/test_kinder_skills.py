@@ -142,3 +142,36 @@ def test_a_returned_cube_rests_on_the_shelf_or_the_skill_says_it_failed(*, env, 
     if returned:
         assert ("HandEmpty", ("robot",)) in atoms
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+# Where a SweepShelf that lost the wiper left the arm, reproducing cccc-determinized-p1
+# on 2026-10-14: the hand just inside the cupboard's open front, clear of everything in
+# MuJoCo, but a finger pad inside KINDER's PyBullet cupboard model.
+STRANDED_BASE = (0.523, -0.174, 0.0)
+STRANDED_ARM = (0.333, 1.217, 2.526, -1.478, 2.23, -0.759, 2.628)
+
+
+def _pose_robot(*, env, base, arm):
+    backend = env.backend()
+    model, data = backend.model(), backend.data()
+    for name, value in zip(("x", "y", "th"), base, strict=True):
+        data.qpos[model.jnt_qposadr[model.joint(f"robot_joint_{name}").id]] = value
+    for i, value in enumerate(arm, start=1):
+        data.qpos[model.jnt_qposadr[model.joint(f"robot_joint_{i}").id]] = value
+    data.qvel[:] = 0.0
+    backend.sim().forward()
+    env.controllers().on_objects_moved()
+
+
+def test_an_arm_stranded_in_the_cupboard_front_is_retracted_after_the_next_skill(*, env):
+    """The absorbing state behind CCCC's PickCubeFromShelf/PickWiper plan-time tally:
+    the retract planned from a start PyBullet calls a collision, never planned, and left
+    the arm out; every later skill planned its approach from there and failed with 0
+    control steps, and so did its own retract."""
+    env.reset_to_seed(seed=0)
+    _pose_robot(env=env, base=STRANDED_BASE, arm=STRANDED_ARM)
+    assert _arm_from_home(env=env) > RETRACT_TOLERANCE
+    _act(env=env, skill="PickWiper")
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE, env.last_skill_error()
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
