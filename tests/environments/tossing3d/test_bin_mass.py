@@ -75,3 +75,32 @@ def test_a_pick_from_inside_the_bin_no_longer_drags_it() -> None:
     assert math.hypot(after[0] - before[0], after[1] - before[1]) < 0.005
     names = ("x", "y", "z", "qw", "qx", "qy", "qz")
     assert BinOnGroundGeometry.holds(bin_=dict(zip(names, after[:7], strict=True)))
+
+
+@pytest.mark.skipif(not _KINDER, reason="KINDER is not installed")
+def test_same_side_bin_compiles_with_the_upstream_contact_parameters() -> None:
+    """Upstream stiffens the bin's contact (`solref`/`solimp`, priority 1) so a fast cube
+    cannot sink through its floor; the same-side scene must compile the same bin."""
+    import mujoco
+
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+
+    def bin_contact(*, layout: Tossing3DLayout) -> np.ndarray:
+        backend = KinderBackend(task_config_path=layout.task_config_path(), scene_bg=False)
+        try:
+            backend.reset(seed=125)
+            model = backend._object_centric()._robot_env.sim.model.mj_model  # noqa: SLF001
+            body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "bin_0")
+            geoms = [g for g in range(model.ngeom) if model.geom_bodyid[g] == body]
+            return np.hstack([
+                model.geom_solref[geoms],
+                model.geom_solimp[geoms],
+                model.geom_priority[geoms][:, None],
+            ])
+        finally:
+            backend.close()
+
+    upstream = bin_contact(layout=Tossing3DLayout.BARRIER)
+    same_side = bin_contact(layout=Tossing3DLayout.SAME_SIDE)
+    assert upstream.shape[0] == 5
+    np.testing.assert_array_equal(same_side, upstream)
