@@ -224,6 +224,39 @@ class RealSceneLayout(BaseModel):
     )
 
 
+class RealSkillStepCosts(BaseModel):
+    """What one real skill costs against the step budget: its average sim tick count.
+
+    In the sim a skill is one `take_action` but costs one control step per MuJoCo tick
+    it runs (`KinderBackend`'s step observers). A real skill has no ticks, so it is
+    charged the mean number of ticks the same skill takes in the sim Tossing3D, which
+    keeps practice budgets, evaluation budgets and step-measured curves in the sim's
+    units on the real robot.
+
+    Measured from the per-tick `tossing3d_state_log.jsonl` of the 18 completed runs of
+    `hitl-pmp-results/coded-sampler-20261014/full` (3 seeds x {astar, ees, expectimax}
+    x {sampler, scorer}; barrier layout, canonical seed 125; hitl-pmp f6eb0e3d,
+    kindergarden 64ce45c, kinder-baselines 427ad6c, the pins this tree carries),
+    pooled over every execution and rounded to a whole step:
+
+    | skill | n | mean | sd | median | min-max |
+    | --- | --- | --- | --- | --- | --- |
+    | `PickCube` | 12695 | 118.53 | 9.68 | 115 | 106-203 |
+    | `MoveToTossLocationAndToss` | 12651 | 90.06 | 28.40 | 88 | 29-156 |
+    | `OpenGripper` | 43 | 1.00 | 0.00 | 1 | 1-1 |
+
+    The human reset is not here: it is charged `--human-skill-steps` (or the cost
+    file's human duration) by the harness, in the sim and on the robot alike. A pick
+    or toss controller change in the sim moves these means; re-measure then.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    pick_cube: int = Field(default=119, gt=0)
+    move_to_toss_location_and_toss: int = Field(default=90, gt=0)
+    open_gripper: int = Field(default=1, gt=0)
+
+
 class RealSceneSnapshot(BaseModel):
     """What the real backend carries on a `Tossing3DState` as `object_centric`.
 

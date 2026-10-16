@@ -36,6 +36,7 @@ from hitl_pmp.environments.tossing3d.real.types import (
     BarrierDisabledError,
     BarrierRect,
     RealSceneSnapshot,
+    RealSkillStepCosts,
     RobotObservation,
     RobotPose,
     TossingRobot,
@@ -356,15 +357,52 @@ def test_a_toss_outside_the_real_set_moves_nothing_and_charges_nothing() -> None
     )
 
 
-def test_each_skill_is_one_control_step() -> None:
+def test_the_default_skill_step_costs_are_the_measured_sim_means() -> None:
+    costs = RealSkillStepCosts()
+    assert costs.pick_cube == 119
+    assert costs.move_to_toss_location_and_toss == 90
+    assert costs.open_gripper == 1
+
+
+def test_each_skill_is_charged_its_average_sim_tick_count() -> None:
+    """One `before` -- an exhausted budget still stops a skill from starting -- then one
+    `after` per sim tick the skill takes on average, as the sim's step protocol counts."""
     _, _, world = _world()
     env = _env(world=world)
+    costs = RealSkillStepCosts()
     steps: list[str] = []
     env.set_control_step_observers(
         before=lambda: steps.append("before"), after=lambda: steps.append("after")
     )
     _pick(env=env)
-    assert steps == ["before", "after"]
+    assert steps == ["before"] + ["after"] * costs.pick_cube
+    steps.clear()
+    provider = Tossing3DSkillProvider(env=env)
+    action = provider.compute_action(
+        ground_skill=_toss_skill(env=env),
+        params=np.array([1.2, 120.0, 675.0]),
+        state=env.get_current_state(),
+    )
+    env.take_action(action=action)
+    assert steps == ["before"] + ["after"] * costs.move_to_toss_location_and_toss
+    steps.clear()
+    env.take_action(action=np.array([float(env.open_gripper_id), 0, 0, 0, 0]))
+    assert steps == ["before"] + ["after"] * costs.open_gripper
+
+
+def test_the_skill_step_costs_are_configurable() -> None:
+    _, _, world = _world()
+    env = RealTossing3DEnvironment(
+        world=world,
+        step_costs=RealSkillStepCosts(
+            pick_cube=7, move_to_toss_location_and_toss=5, open_gripper=2
+        ),
+    )
+    env.reset_to_seed(seed=3)
+    steps: list[str] = []
+    env.set_control_step_observers(before=None, after=lambda: steps.append("after"))
+    _pick(env=env)
+    assert len(steps) == 7
 
 
 def test_a_missed_toss_leaves_the_cube_where_it_landed() -> None:
@@ -490,7 +528,9 @@ class SkillBusy(RuntimeError):
     """Stands in for the client's own: another motion skill was already running."""
 
 
-@pytest.mark.parametrize(("error", "charged"), [(SkillStopped, 1), (SkillBusy, 0)])
+@pytest.mark.parametrize(
+    ("error", "charged"), [(SkillStopped, RealSkillStepCosts().pick_cube), (SkillBusy, 0)]
+)
 def test_an_interrupted_or_refused_skill_is_a_failed_action_not_a_retry(
     *, error: type[RuntimeError], charged: int
 ) -> None:

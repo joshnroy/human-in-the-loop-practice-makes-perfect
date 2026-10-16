@@ -21,7 +21,7 @@ from hitl_pmp.environments.tossing3d.types import (
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
 from .backend import RealTossingBackend, RealWorld
-from .types import RealSceneLayout, RealSceneSnapshot
+from .types import RealSceneLayout, RealSceneSnapshot, RealSkillStepCosts
 
 
 class RealTossing3DEnvironment(Tossing3DEnvironment):
@@ -37,6 +37,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
 
     world: RealWorld
     scene_layout: RealSceneLayout = RealSceneLayout()
+    step_costs: RealSkillStepCosts = RealSkillStepCosts()
     owner: str = "practice"
     toss_parameters: TossParameterSet | None = REAL_TOSS_PARAMETERS
     layout: Tossing3DLayout = Tossing3DLayout.BARRIER
@@ -49,6 +50,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             layout=self.scene_layout,
             parameters=self.toss_parameters or REAL_TOSS_PARAMETERS,
             owner=self.owner,
+            step_costs=self.step_costs,
         )
 
     def hard_reset(self) -> None:

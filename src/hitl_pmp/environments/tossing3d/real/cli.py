@@ -1,7 +1,7 @@
 """`--env tossing3d_real`: the Tossing3D practice loop on the real TidyBot.
 
     python -m hitl_pmp.cli --env tossing3d_real --method pomdp \\
-        --robot-host <nuc> --practice-step-budget 60 --practice-reset-policy never \\
+        --robot-host <nuc> --practice-step-budget 6000 --practice-reset-policy never \\
         --defer-rendering --num-test-tasks 3 --output-dir <dir>
 
 Same domain, methods and step protocol as `--env tossing3d`; what changes is where the
@@ -16,8 +16,10 @@ human (a person at this terminal, `RealHumanOracle`).
 | `sim` | the KINDER simulation (`real/sim_plant.py`), the dry run | scripted |
 | `fake` | `FakeTossingRobot`, no physics at all | scripted |
 
-**Budgets are in skills.** One real skill is one control step (`real/backend.py`), and
-a human reset costs `--human-skill-steps` (default 1). **Evaluation runs at the end
+**Budgets are in the sim's control steps.** One real skill is charged the mean number
+of MuJoCo ticks the same skill takes in the sim (`RealSkillStepCosts`: pick 119, toss 90,
+open gripper 1), so a budget means the same on the robot as in the sim; a human reset
+costs `--human-skill-steps` (default 1), as in the sim. **Evaluation runs at the end
 only** by default: `--measurement-interval-steps` defaults past any budget and the
 step-0 measurement is off (`--no-initial-measurement`), since every evaluation task is
 a scene a person sets up. Give an interval to add checkpoints; practice and evaluation
