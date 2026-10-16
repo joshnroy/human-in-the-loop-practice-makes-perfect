@@ -8,9 +8,11 @@ pricing, same commands -- but it does not trust a reset blindly. After the perso
 confirms, the scene is re-observed and checked against what the reset skill promises
 the planner (`Tossing3DSkillProvider._cube_bin_reset_groundings`' add effects): cube on
 the floor on the robot's side, pickable, not held, the bin upright on the requested
-side. Anything unmet is shown and the person asked again, up to `max_attempts`; after
-that the run carries on from the observed scene and the shortfall is logged, since a
-planner replans from what it observes.
+side. Anything unmet is shown and the person asked again, up to `max_attempts`. If the
+last attempt still fails, the run pauses and asks the person, through the same prompt:
+continue anyway -- carrying on from the observed scene, since a planner replans from
+what it observes -- or end the session (`HumanEndedSession`, which the step protocol
+ends practice on). The shortfall and the answer are logged either way.
 
 **Cost is accounted exactly as in the sim.** Nothing here charges anything: the harness
 charges the reset skill's practice cost and records the intervention
@@ -26,7 +28,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.problem.environment.environment import Environment
-from hitl_pmp.core.problem.human.human import HumanOracle
+from hitl_pmp.core.problem.human.human import HumanEndedSession, HumanOracle
 from hitl_pmp.core.problem.human.types import (
     CommandGoalDescription,
     CommandStartStateDescription,
@@ -70,6 +72,20 @@ class TerminalScenePlacer(BaseModel):
             if answer in {"y", "yes"}:
                 return True
             if answer in {"n", "no"}:
+                return False
+
+    def continue_after_unverified_reset(
+        self, *, owner: str, unmet: tuple[str, ...], attempts: int
+    ) -> bool:
+        """Pause and ask: the reset failed its check every time it was tried."""
+        self.output_fn(f"[{owner}] The reset still does not check out after {attempts} attempts:")
+        for reason in unmet:
+            self.output_fn(f"  NOT YET: {reason}")
+        while True:
+            answer = self.input_fn("Continue anyway, or end the session? [c/e] ").strip().lower()
+            if answer in {"c", "continue"}:
+                return True
+            if answer in {"e", "end"}:
                 return False
 
     @staticmethod
@@ -152,14 +168,26 @@ class RealHumanOracle(HumanOracle):
             unmet = RealHumanOracle.unmet(env=real, destination=destination)
             if not unmet:
                 break
+        after_unverified = None
+        if unmet:
+            carry_on = real.world.placer.continue_after_unverified_reset(
+                owner=real.owner, unmet=tuple(unmet), attempts=attempts
+            )
+            after_unverified = "continue" if carry_on else "end"
         real.world.log(
             event="human_reset",
             owner=real.owner,
             destination=destination,
             attempts=attempts,
             unmet=unmet,
+            after_unverified=after_unverified,
             seconds=time.monotonic() - started,
         )
+        if after_unverified == "end":
+            raise HumanEndedSession(
+                f"the reset failed its check {attempts} times ({'; '.join(unmet)}) "
+                "and the person ended the session"
+            )
 
     @staticmethod
     def unmet(*, env: RealTossing3DEnvironment, destination: str | None) -> list[str]:

@@ -5,6 +5,15 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from .types import CommandGoalDescription, CommandStartStateDescription, Cost
 
 
+class HumanEndedSession(Exception):  # noqa: N818 - a person's decision, not an error
+    """The person chose to end the session rather than carry on.
+
+    Raised by a `HumanOracle` that asks its person whether to continue (a real reset
+    whose result could not be verified); the step protocol ends practice on it,
+    cleanly, as an operator stop rather than a failure.
+    """
+
+
 class HumanOracle(abc.ABC):
     """The v0-v3 human-cost-model axis from the design doc; a static-method container,
     never instantiated, swappable independent of Environment. Unlike

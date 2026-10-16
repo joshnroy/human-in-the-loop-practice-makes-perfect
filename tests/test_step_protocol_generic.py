@@ -18,6 +18,7 @@ from hitl_pmp.core.method.method import HumanCubeBinResetRequested
 from hitl_pmp.core.method.skill_provider import DomainContext, SkillProvider
 from hitl_pmp.core.method.types import Policy
 from hitl_pmp.core.problem.environment.types import Action, State
+from hitl_pmp.core.problem.human.human import HumanEndedSession
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
@@ -265,6 +266,50 @@ def test_a_non_tossing_domain_runs_the_step_protocol_end_to_end(*, tmp_path: Pat
         assert kinds[0] == "header"
         assert "action" in kinds
         assert kinds[-1] == "segment_end"
+
+
+class EndsTheSession(UnconditionalHumanOracle):
+    """A person whose reset could not be verified, and who chose to end the session."""
+
+    @staticmethod
+    def execute_movables_reset(*, env: Any, destination: str | None = None) -> None:
+        del env, destination
+        raise HumanEndedSession("the person ended the session")
+
+
+class EndingStepProtocol(FakeStepProtocol):
+    @staticmethod
+    def build_practice_problem(*, args: argparse.Namespace) -> LightSwitchProblem:
+        env = CountingLightSwitch(grid_size=4)
+        tasks = LightSwitchTasks(env=env, seed=args.seed)
+        return LightSwitchProblem(env=env, tasks=tasks, human=EndsTheSession)
+
+
+def test_a_person_ending_the_session_at_a_reset_ends_practice_cleanly(*, tmp_path: Path) -> None:
+    args = _args(output=tmp_path / "run")
+    AsksForTheWiperOnceCli.built.clear()
+    AsksForTheWiperOnceCli.domains.clear()
+    StepProtocolEntry.run(
+        args=args,
+        method_cli=AsksForTheWiperOnceCli,
+        env_cli=LightSwitchCli,
+        environment=EndingStepProtocol,
+    )
+    output = Path(args.output_dir)
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    humans = [e for e in events if e["event"] == "human"]
+    # The reset was asked for and the person's time is charged, but it did not succeed.
+    assert [(h["skill"], h["success"]) for h in humans] == [("reset_wiper", False)]
+    assert not [e for e in events if e["event"] == "robot"]
+    assert events[-1]["event"] == "practice_end"
+    assert events[-1]["reason"] == "human_ended_session"
+    assert not (output / "failure.txt").exists()
+    status = json.loads((output / "status.json").read_text())
+    assert status["phase"] == "human_ended_session"
+    # Ended by the person, so no further measurement asks them for evaluation scenes.
+    assert [e for e in events if e["event"] == "measurement"] == [
+        e for e in events if e["event"] == "measurement" and e["practice_steps"] == 0
+    ]
 
 
 def test_an_unknown_human_destination_is_refused(*, tmp_path: Path) -> None:

@@ -245,11 +245,24 @@ class FakeRobotPlacer(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     robot: FakeTossingRobot
+    # The scripted person's answer when a reset fails its check every attempt.
+    continue_after_unverified: bool = True
     _requests: list[PlacementRequest] = PrivateAttr(default_factory=list)
     _inspections: int = PrivateAttr(default=0)
+    _unverified_asks: int = PrivateAttr(default=0)
 
     def requests(self) -> list[PlacementRequest]:
         return list(self._requests)
+
+    def continue_after_unverified_reset(
+        self, *, owner: str, unmet: tuple[str, ...], attempts: int
+    ) -> bool:
+        del owner, unmet, attempts
+        self._unverified_asks += 1
+        return self.continue_after_unverified
+
+    def unverified_asks(self) -> int:
+        return self._unverified_asks
 
     def inspect_cube_in_bin(self, *, owner: str) -> bool:
         """The person looks into the bin: the fake's ground truth."""

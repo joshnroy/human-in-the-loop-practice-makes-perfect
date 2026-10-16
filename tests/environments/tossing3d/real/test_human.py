@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from hitl_pmp.core.problem.human.human import HumanEndedSession
 from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE
 from hitl_pmp.environments.tossing3d.real.backend import RealWorld
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
@@ -154,6 +155,8 @@ def test_a_reset_that_never_takes_stops_asking_and_says_so() -> None:
     event = [e for e in world.events() if e["event"] == "human_reset"][-1]
     assert event["attempts"] == RealHumanOracle.max_attempts
     assert event["unmet"]
+    # The fake person was asked, and its scripted answer is to carry on.
+    assert world.placer.unverified_asks() == 1
 
 
 def test_a_command_with_a_target_state_sets_up_that_scene() -> None:
@@ -186,3 +189,89 @@ def test_the_terminal_placer_asks_whether_a_hidden_cube_is_in_the_bin() -> None:
         ).inspect_cube_in_bin(owner="practice")
         is False
     )
+
+
+# --- a reset check that fails every attempt: ask, do not carry on silently ----------
+
+
+class AlwaysAcrossAtTheTerminal(TerminalScenePlacer):
+    """A person at the terminal who, every time, leaves the cube across the barrier.
+
+    Every prompt -- Enter after a placement, and the question after the last failed
+    check -- goes through the one scripted `input_fn`, as at the real terminal.
+    """
+
+    robot: FakeTossingRobot
+
+    def place(self, *, request: PlacementRequest) -> None:
+        super().place(request=request)
+        FakeRobotPlacer(robot=self.robot).place(request=request)
+        if request.kind == "reset":
+            self.robot.place(
+                cube=self.robot.cube_start.model_copy(update={"x": -0.5}),
+                bin_=self.robot._bin,  # noqa: SLF001 - the fake's own world
+            )
+
+
+def _terminal_env(*, answers: list[str]):
+    person = ScriptedPerson(answers=answers)
+    robot = FakeTossingRobot()
+    placer = AlwaysAcrossAtTheTerminal(robot=robot, input_fn=person.input, output_fn=person.output)
+    world = RealWorld(robot=robot, placer=placer)
+    env = RealTossing3DEnvironment(world=world)
+    env.reset_to_seed(seed=1)
+    return env, world, person
+
+
+def test_the_terminal_asks_whether_to_continue_after_an_unverified_reset() -> None:
+    person = ScriptedPerson(answers=["maybe", "c"])
+    placer = TerminalScenePlacer(input_fn=person.input, output_fn=person.output)
+    assert placer.continue_after_unverified_reset(
+        owner="practice", unmet=("the cube is not on the robot's side",), attempts=3
+    )
+    assert len(person.asked) == 2
+    assert "the cube is not on the robot's side" in "\n".join(person.shown)
+    person = ScriptedPerson(answers=["e"])
+    placer = TerminalScenePlacer(input_fn=person.input, output_fn=person.output)
+    assert not placer.continue_after_unverified_reset(
+        owner="practice", unmet=("the bin is not seen upright",), attempts=3
+    )
+
+
+def test_three_failed_checks_pause_and_continue_on_the_persons_word() -> None:
+    # Enter for the scene and each of the three placements, then "c": continue anyway.
+    env, world, person = _terminal_env(answers=["", "", "", "", "c"])
+    RealHumanOracle.execute_movables_reset(env=env, destination="opposite_side")
+    assert len(person.asked) == 1 + RealHumanOracle.max_attempts + 1
+    assert "continue" in person.asked[-1].lower()
+    event = [e for e in world.events() if e["event"] == "human_reset"][-1]
+    assert event["attempts"] == RealHumanOracle.max_attempts
+    assert event["unmet"]
+    assert event["after_unverified"] == "continue"
+
+
+def test_three_failed_checks_pause_and_end_the_session_on_the_persons_word() -> None:
+    env, world, person = _terminal_env(answers=["", "", "", "", "e"])
+    with pytest.raises(HumanEndedSession):
+        RealHumanOracle.execute_movables_reset(env=env, destination="opposite_side")
+    assert len(person.asked) == 1 + RealHumanOracle.max_attempts + 1
+    event = [e for e in world.events() if e["event"] == "human_reset"][-1]
+    assert event["after_unverified"] == "end"
+
+
+def test_a_reset_that_takes_asks_nothing_more() -> None:
+    env, _, world = _env()
+    RealHumanOracle.execute_movables_reset(env=env, destination="opposite_side")
+    assert world.placer.unverified_asks() == 0
+    event = [e for e in world.events() if e["event"] == "human_reset"][-1]
+    assert event["after_unverified"] is None
+
+
+def test_the_fake_placer_answers_the_unverified_reset_question_as_scripted() -> None:
+    robot = FakeTossingRobot()
+    assert FakeRobotPlacer(robot=robot).continue_after_unverified_reset(
+        owner="practice", unmet=("x",), attempts=3
+    )
+    placer = FakeRobotPlacer(robot=robot, continue_after_unverified=False)
+    assert not placer.continue_after_unverified_reset(owner="practice", unmet=("x",), attempts=3)
+    assert placer.unverified_asks() == 1
