@@ -319,3 +319,31 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
 
 
 SWEEP_OFF_SHELF_DOMAIN = SweepOffShelfPracticeDomain()
+
+
+class PracticeDomainWithoutSkills:
+    """A practice domain with some skills' beliefs removed: no belief, no failure-effect
+    model, no shared-belief alias. Their deterministic / competence-weighted entries are
+    left alone -- they describe a skill only if it is offered, and keeping them keeps a
+    domain with no such belief (Tossing3D) exactly equal to the original. A
+    static-method container."""
+
+    @staticmethod
+    def drop(*, domain: PracticeDomain, skill_names: frozenset[str]) -> PracticeDomain:
+        if not skill_names:
+            return domain
+        return domain.model_copy(
+            update={
+                "belief_sources": tuple(
+                    (name, source)
+                    for name, source in domain.belief_sources
+                    if name not in skill_names
+                ),
+                "shared_beliefs": tuple(
+                    (name, belief)
+                    for name, belief in domain.shared_beliefs
+                    if name not in skill_names and belief not in skill_names
+                ),
+                "failure_effect_skills": domain.failure_effect_skills - skill_names,
+            }
+        )
