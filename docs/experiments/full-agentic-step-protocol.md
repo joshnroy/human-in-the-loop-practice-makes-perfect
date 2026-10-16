@@ -60,7 +60,10 @@ checkout's own simulator dependencies, and supply a `SandboxSettings` JSON with
 an immutable Docker image ID and the corresponding RoboCode checkout path.
 The planning-enabled image builder is `scripts/build_agentic_planning_image.py`;
 its input is the existing strict RoboCode image, a Python 3.11 PyBullet extension,
-and the robot URDF. It builds offline and records copied asset hashes.
+and the robot URDF, by default pybullet_helpers' `gen3_7dof_vision_module.urdf`:
+the TidyBot's wrist, with the bracelet's vision module and no RealSense box, which is
+the arm the simulator's own pick plans with. It builds offline and records copied
+asset hashes.
 
 The packaged `bootstrap_provenance.json` records the original library digest,
 prompt digests, and external RoboCode source fingerprints. The bootstrap library
