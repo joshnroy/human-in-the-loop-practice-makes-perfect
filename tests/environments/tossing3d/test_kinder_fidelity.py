@@ -14,6 +14,7 @@ import pytest
 from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
@@ -851,3 +852,45 @@ def test_same_side_human_reset_uses_python_defined_region(*, destination: str) -
             assert _robot_pose(state=observed) == pytest.approx(before, abs=1e-6)
     finally:
         env.close()
+
+
+def test_the_pick_plans_with_the_wrist_mujoco_executes_with() -> None:
+    """The pick's PyBullet arm collides the bracelet MuJoCo collides, and nothing else.
+
+    MuJoCo's TidyBot collides the Kinova vision module (the wrist camera's housing,
+    3.7 cm deeper on one side than the bare bracelet) and has no RealSense on the
+    gripper. A planner with the stock pybullet_helpers wrist accepts grasps that drive
+    the housing into the bin wall. Read from the live model, not a literal, so a pin
+    bump that changes either side fails here.
+    """
+    import mujoco
+    import pybullet as p
+
+    backend = KinderBackend()
+    try:
+        backend.reset(seed=CANONICAL_SEED)
+        model = backend._object_centric()._robot_env.sim.model.mj_model  # noqa: SLF001
+        mujoco_meshes = {
+            mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_MESH, model.geom_dataid[geom])
+            for geom in range(model.ngeom)
+            if (
+                mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom]) or ""
+            ).endswith("bracelet_link")
+            and model.geom_contype[geom] | model.geom_conaffinity[geom]
+        }
+        sim = backend._pick_collision_sim(state=backend.snapshot())  # noqa: SLF001
+        robot = sim.robot
+
+        def collision_meshes(*, link: str) -> list[str]:
+            shapes = p.getCollisionShapeData(
+                robot.robot_id,
+                robot.link_from_name(link),
+                physicsClientId=robot.physics_client_id,
+            )
+            return [Path(shape[4].decode()).stem for shape in shapes]
+
+        assert collision_meshes(link="bracelet_link") == sorted(mujoco_meshes)
+        assert collision_meshes(link="robotiq_arg2f_base_link") == ["robotiq_arg2f_base_link"]
+        sim.close()
+    finally:
+        backend.close()

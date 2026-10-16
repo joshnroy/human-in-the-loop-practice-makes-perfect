@@ -89,9 +89,13 @@ Three transitive ceilings come with it, none of them ours to lift — installing
 
 | ceiling | imposed by | resolves to |
 | --- | --- | --- |
-| `numpy<2.0,>=1.23.5` | `pybullet_helpers 0.1.1` | 1.26.4 |
-| `scipy==1.14.0` (**exact** pin) | `pybullet_helpers 0.1.1` | 1.14.0 |
+| `numpy<2.0,>=1.23.5` | `pybullet_helpers>=0.1.3` | 1.26.4 |
+| `scipy==1.14.0` (**exact** pin) | `pybullet_helpers>=0.1.3` | 1.14.0 |
 | `pillow<12.0` | `moviepy` | 11.3.0 |
+
+The extra requires `pybullet_helpers>=0.1.3`, the first release with `kinova-gen3-vision`
+(the TidyBot's wrist, which the pinned `kinder_models` plans with). It also pulls in
+`dexmate-urdf`, which has no dependencies of its own.
 
 **Only if you need IKFast**, install system BLAS/LAPACK once. `pybullet_helpers` compiles
 IKFast from C++ the first time a controller asks for inverse kinematics — on Tossing3D

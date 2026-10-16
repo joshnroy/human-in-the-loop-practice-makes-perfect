@@ -24,7 +24,7 @@ def inputs(*, tmp_path: Path) -> dict[str, Any]:
     module = importlib.util.find_spec("pybullet_helpers")
     assert module is not None and module.origin is not None
     asset_root = Path(module.origin).parent / "assets/urdf/kortex_description"
-    tree = ET.parse(asset_root / "gen3_7dof.urdf")
+    tree = ET.parse(asset_root / "gen3_7dof_vision_module.urdf")
     for mesh in tree.getroot().findall(".//mesh"):
         relative = mesh.attrib["filename"].removeprefix("package://kortex_description/")
         mesh.set("filename", str(asset_root / relative))
