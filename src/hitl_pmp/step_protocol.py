@@ -446,10 +446,8 @@ class StepProtocolValidation:
 
     @staticmethod
     def check(*, args: argparse.Namespace) -> None:
-        if args.method not in {"ees", "ees-always-reset", "pomdp"}:
-            raise ValueError(
-                "Step protocol currently supports the EES, EES-always-reset and PDDL methods"
-            )
+        if args.method not in {"ees", "pomdp"}:
+            raise ValueError("Step protocol currently supports the EES and PDDL methods")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
             raise ValueError(
                 "Step protocol requires persistent practice (--practice-reset-policy never)"

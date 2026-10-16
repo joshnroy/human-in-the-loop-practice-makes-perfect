@@ -449,64 +449,37 @@ def test_the_pomdp_search_depth_defaults_to_the_domains(
     assert seen == [expected]
 
 
-def test_the_global_cli_selects_ees_always_reset() -> None:
-    from hitl_pmp.cli import METHODS
-    from hitl_pmp.methods.practice_makes_perfect.cli import EesAlwaysResetCli
-
-    assert METHODS["ees-always-reset"] is EesAlwaysResetCli
-
-
-@pytest.mark.parametrize(("argv", "expected"), [([], 2.0), (["--start-reset-cost", "0.5"], 0.5)])
-def test_ees_always_reset_builds_ees_with_the_always_reset_rule(
-    *, argv: list[str], expected: float, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("method", "extra"),
+    [
+        ("ees", []),
+        ("pomdp", ["--pomdp-solver", "expectimax"]),
+        ("pomdp", ["--pomdp-solver", "determinized_astar"]),
+    ],
+)
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_the_always_ask_reset_flag_wraps_every_planner(
+    *, method: str, extra: list[str], wrapped: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every `--method ees` flag still reaches EES; the rule is priced at the domain's own
-    human-reset price unless `--start-reset-cost` says otherwise."""
+    """One flag, the same wrapper, on EES and on both belief-space solvers; off by
+    default."""
     from types import SimpleNamespace
 
-    from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
-    from hitl_pmp.environments.sweepoffshelf3d.skill_provider import (
-        SweepOffShelf3DSkillProvider,
-    )
-    from hitl_pmp.methods.practice_makes_perfect.cli import EesAlwaysResetCli
-    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import AlwaysAskReset
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--num-test-tasks", type=int, default=20)
-    parser.add_argument("--output-dir", type=Path, default=None)
-    LightSwitchCli.add_arguments(parser=parser)
-    EesAlwaysResetCli.add_arguments(parser=parser)
-    args = parser.parse_args([*argv, "--no-ees-reset-gate"])
     captured: dict[str, object] = {}
     monkeypatch.setattr(
-        LightSwitchCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
+        Tossing3DCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
     )
-    EesAlwaysResetCli.run(args=args, env_cli=LightSwitchCli)
-    env = SweepOffShelf3DEnvironment()
-    provider = SweepOffShelf3DSkillProvider(env=env, human_reset_practice_cost=2.0)
-    method = captured["method_factory"](  # type: ignore[operator]
-        SimpleNamespace(env=env, skill_provider=provider)
+    flag = ["--always-ask-reset"] if wrapped else []
+    Cli.main(argv=["--env", "tossing3d", "--method", method, *extra, *flag])
+    env = Tossing3DEnvironment(scene_bg=False)
+    built = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=Tossing3DSkillProvider(env=env))
     )
-    assert isinstance(method, EesMethod)
-    assert method.reset_cost_gate is False
-    assert method.practice_target_reset is not None
-    assert method.practice_target_reset.cost == expected
-
-
-def test_plain_ees_has_no_always_reset_rule(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    from types import SimpleNamespace
-
-    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
-
-    args = _build_ees_parser().parse_args([])
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(
-        LightSwitchCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
-    )
-    EesCli.run(args=args, env_cli=LightSwitchCli)
-    env = LightSwitchEnvironment(grid_size=3)
-    method = captured["method_factory"](  # type: ignore[operator]
-        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
-    )
-    assert method.practice_target_reset is None
+    assert isinstance(built.always_ask_reset, AlwaysAskReset) is wrapped
+    if method == "pomdp":
+        assert built.pomdp_solver == extra[-1]
