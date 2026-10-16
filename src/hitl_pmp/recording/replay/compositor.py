@@ -71,6 +71,10 @@ class ReplayCompositor:
         return np.asarray(image, dtype=np.uint8)
 
     @staticmethod
+    def pacing_label(*, status: ReplayStatus) -> str:
+        return status.pacing or f"{status.speedup}x speed"
+
+    @staticmethod
     def _status_bar(*, draw: ImageDraw.ImageDraw, status: ReplayStatus) -> None:
         style = PresentationStyle
         practice = status.phase is Phase.PRACTICE
@@ -86,7 +90,7 @@ class ReplayCompositor:
         )
         draw.text(
             (88, 46),
-            f"{status.speedup}x speed",
+            ReplayCompositor.pacing_label(status=status),
             font=style.font(size=13, bold=True),
             fill="white",
             anchor="mm",
