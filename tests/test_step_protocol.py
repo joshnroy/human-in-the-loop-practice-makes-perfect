@@ -876,3 +876,12 @@ def test_a_stop_is_charged_one_robot_step_through_the_accounting():
     clock.stop_invoked()
     assert clock.steps == 1
     assert accounting.total_cost == pytest.approx(price)
+
+
+@pytest.mark.parametrize("method", ["ees", "ees-always-reset", "pomdp"])
+def test_the_step_protocol_accepts_every_planning_method(*, tmp_path, method: str):
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    StepProtocolValidation.check(
+        args=_step_args(output_dir=tmp_path / "run", budget=10, interval=5, method=method)
+    )

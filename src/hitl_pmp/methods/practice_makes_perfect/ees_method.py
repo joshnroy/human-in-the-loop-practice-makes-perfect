@@ -27,6 +27,7 @@ from hitl_pmp.core.method.types import (
 from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -34,6 +35,7 @@ from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
+from .practice_target_reset import AlwaysResetAfterPracticeTarget
 from .wrapped_sampler import LearnedSkillSampler
 
 logger = logging.getLogger(__name__)
@@ -242,6 +244,11 @@ class EesMethod(Method):
     # Deviation 5 in the class docstring: score, track and price the human's skills like
     # robot skills, rather than assuming they always succeed. Off reproduces the paper.
     score_human_skills: bool = False
+    # EES-always-reset (`--method ees-always-reset`) when set: after every execution of
+    # the practice target EES selected, ask once for a human reset to a freshly sampled
+    # start state. Selection, planning and learning are untouched; see
+    # `practice_target_reset.py` for exactly when it asks. None is plain EES.
+    practice_target_reset: AlwaysResetAfterPracticeTarget | None = None
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -509,6 +516,17 @@ class EesMethod(Method):
                 * self._practice_accounting.human_charge(skill=name).cost
             )
         return ground_skill.evaluate_practice_cost()
+
+    def sampled_start_reset_cost(self) -> float:
+        """What one full reset is charged: by its own name under step accounting, as
+        every human skill is, else the always-reset rule's configured price."""
+        assert self.practice_target_reset is not None
+        if self._practice_accounting is not None:
+            return (
+                self._practice_accounting.costs.human_weight
+                * self._practice_accounting.human_charge(skill=SAMPLED_START_RESET_SKILL_NAME).cost
+            )
+        return self.practice_target_reset.cost
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         self._execution_ground_skill = ground_skill
@@ -1090,8 +1108,11 @@ class EesMethod(Method):
     # ------------------------------------------------------------------ policy
 
     def may_request_human_help(self) -> bool:
-        """Whether this domain supplies a human-reset skill."""
-        return bool(self.skill_provider.human_cube_bin_reset_skills())
+        """Whether this domain supplies a human-reset skill, or the always-reset rule
+        will ask for a full one."""
+        return self.practice_target_reset is not None or bool(
+            self.skill_provider.human_cube_bin_reset_skills()
+        )
 
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
@@ -1431,6 +1452,10 @@ class _EesEpisode:
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.
         self._practice_target: GroundSkill | None = None
+        # The candidate EES's own selector chose, when the current plan is a practice
+        # plan built for it -- None for a goal plan or a random draw. Only consulted by
+        # the always-reset rule, which follows exactly this skill's executions.
+        self._selected_target: GroundSkill | None = None
         # predicators' `using_random`: set once no practice goal is reachable, under
         # reproduce_predicators_random_when_stranded, and never cleared this episode.
         self._random_mode = False
@@ -1459,6 +1484,14 @@ class _EesEpisode:
         )
         true_atoms = method.abstract_state(state=state)
         self.observe_pending(true_atoms=true_atoms, state=state)
+        if self._practicing and method.practice_target_reset is not None:
+            # The target's outcome was observed just above, so ask now. The reset moves
+            # the whole scene, so nothing queued survives it.
+            if method.practice_target_reset.owed:
+                self._plan = []
+                self._practice_target = None
+                self._selected_target = None
+            method.practice_target_reset.raise_if_owed(cost=method.sampled_start_reset_cost())
         self._tick_goal_pursuit_horizon()
 
         # The `while` exists for one event only: a starved parameter pool (see the
@@ -1585,6 +1618,12 @@ class _EesEpisode:
                 # Charge only once action construction has succeeded, even if no
                 # later policy call observes this actual attempt.
                 method.record_action_cost(ground_skill=ground_skill)
+                if (
+                    method.practice_target_reset is not None
+                    and self._selected_target is not None
+                    and ground_skill is self._selected_target
+                ):
+                    method.practice_target_reset.observe_target_dispatched()
             self._pending = ground_skill
             self._pending_before_atoms = true_atoms
             self._pending_sampler_record = record
@@ -1682,6 +1721,7 @@ class _EesEpisode:
 
     def _next_plan(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         method = self._method
+        self._selected_target = None
         if not self._goal_phase_done:
             if self._goal <= true_atoms:
                 self._goal_phase_done = True
@@ -1729,6 +1769,7 @@ class _EesEpisode:
                 continue
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
+                self._selected_target = candidate
                 return [candidate]
             try:
                 prefix = method.plan_to(
@@ -1749,6 +1790,7 @@ class _EesEpisode:
                 method.record_practice_target(name=candidate.skill.name, field="unreachable")
                 continue
             method.record_practice_target(name=candidate.skill.name, field="selected")
+            self._selected_target = candidate
             return [*prefix, candidate]
 
         if method.reproduce_predicators_random_when_stranded:

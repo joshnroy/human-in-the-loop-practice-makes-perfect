@@ -33,6 +33,7 @@ from hitl_pmp.environments.tossingroom.cli import (
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import (
+    EesAlwaysResetCli,
     EesCli,
     RandomSkillsCli,
     Tossing3DPomdpCli,
@@ -73,6 +74,7 @@ METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
     "ees": EesCli,
+    "ees-always-reset": EesAlwaysResetCli,
     "pomdp": Tossing3DPomdpCli,
 }
 
