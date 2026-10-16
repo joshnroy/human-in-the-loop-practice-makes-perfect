@@ -447,3 +447,39 @@ def test_the_pomdp_search_depth_defaults_to_the_domains(
     monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
     Cli.main(argv=["--env", env_name, "--method", "pomdp", *argv])
     assert seen == [expected]
+
+
+@pytest.mark.parametrize(
+    ("method", "extra"),
+    [
+        ("ees", []),
+        ("pomdp", ["--pomdp-solver", "expectimax"]),
+        ("pomdp", ["--pomdp-solver", "determinized_astar"]),
+    ],
+)
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_the_always_ask_reset_flag_wraps_every_planner(
+    *, method: str, extra: list[str], wrapped: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One flag, the same wrapper, on EES and on both belief-space solvers; off by
+    default."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import AlwaysAskReset
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        Tossing3DCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
+    )
+    flag = ["--always-ask-reset"] if wrapped else []
+    Cli.main(argv=["--env", "tossing3d", "--method", method, *extra, *flag])
+    env = Tossing3DEnvironment(scene_bg=False)
+    built = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=Tossing3DSkillProvider(env=env))
+    )
+    assert isinstance(built.always_ask_reset, AlwaysAskReset) is wrapped
+    if method == "pomdp":
+        assert built.pomdp_solver == extra[-1]

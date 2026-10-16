@@ -37,3 +37,11 @@ class CommandGoalDescription(BaseModel):
 
 
 Cost = float
+
+# The movables-reset destination that asks for a *full* reset instead: the human puts the
+# whole scene, robot included, into a freshly sampled start state. It rides the partial
+# reset's request (`HumanStartResetRequested`) so every harness counts, charges and
+# records it unchanged; `Problem.execute_movables_reset` is where the two part.
+SAMPLED_START_RESET_DESTINATION = "sampled_start"
+# The name practice accounting and the step log charge that reset under.
+SAMPLED_START_RESET_SKILL_NAME = "reset_to_sampled_start"

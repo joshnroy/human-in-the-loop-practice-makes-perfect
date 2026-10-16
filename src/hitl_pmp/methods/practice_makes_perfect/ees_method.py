@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.method.method import (
     HumanCubeBinResetRequested,
+    HumanStartResetRequested,
     InteractionComplete,
     Method,
     NoFeasibleParametersError,
@@ -27,12 +28,14 @@ from hitl_pmp.core.method.types import (
 from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
+from .always_ask_reset import PARAMETERIZED_SKILL, STRANDED, AlwaysAskReset
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
 
@@ -242,6 +245,12 @@ class EesMethod(Method):
     # Deviation 5 in the class docstring: score, track and price the human's skills like
     # robot skills, rather than assuming they always succeed. Off reproduces the paper.
     score_human_skills: bool = False
+    # The always-ask reset wrapper (`--always-ask-reset`): when set, a human full reset
+    # to a freshly sampled start state is forced after every skill with continuous
+    # parameters, and whenever the goal is unreachable without a human. The planner --
+    # EES's, or a subclass's -- still chooses every robot action; see
+    # `always_ask_reset.py`.
+    always_ask_reset: AlwaysAskReset | None = None
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -629,7 +638,7 @@ class EesMethod(Method):
         ground_skill_costs = costs
         cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
         if practicing:
-            cube_bin_ground_skills = self.skill_provider.human_cube_bin_reset_skills()
+            cube_bin_ground_skills = self.offered_partial_resets()
             if cube_bin_ground_skills:
                 # One lifted skill per kind of human reset the domain offers.
                 skills = (*skills, *dict.fromkeys(g.skill for g in cube_bin_ground_skills))
@@ -1089,9 +1098,49 @@ class EesMethod(Method):
 
     # ------------------------------------------------------------------ policy
 
+    def goal_unreachable(
+        self, *, true_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
+    ) -> bool:
+        """Whether no plan reaches `goal` with the robot's own skills (no human reset
+        offered) -- the goal-attempt wrapper's stranded trigger."""
+        if goal <= true_atoms:
+            return False
+        try:
+            self.plan_to(init_atoms=true_atoms, goal=goal, costs=self.skill_costs())
+        except PlanningFailure:
+            return True
+        return False
+
+    def offered_partial_resets(self) -> tuple[GroundSkill, ...]:
+        """The domain's partial human resets this planner may choose: none under the
+        always-ask wrapper (Josh, 2026-10-16), whose forced full reset is then the only
+        human reset; otherwise every one the provider offers."""
+        if self.always_ask_reset is not None:
+            return ()
+        return self.skill_provider.human_cube_bin_reset_skills()
+
+    def start_reset_cost(self) -> float:
+        """What one forced full reset is charged: by its own name under step accounting,
+        as every human skill is, else the wrapper's configured price."""
+        assert self.always_ask_reset is not None
+        if self._practice_accounting is not None:
+            return (
+                self._practice_accounting.costs.human_weight
+                * self._practice_accounting.human_charge(skill=SAMPLED_START_RESET_SKILL_NAME).cost
+            )
+        return self.always_ask_reset.cost
+
+    def record_forced_reset(self, *, reason: str, cost: float, consecutive_stranded: int) -> None:
+        """A hook for a subclass that tracks session cost or keeps a decision log; the
+        counts live on the wrapper."""
+        del reason, cost, consecutive_stranded
+
     def may_request_human_help(self) -> bool:
-        """Whether this domain supplies a human-reset skill."""
-        return bool(self.skill_provider.human_cube_bin_reset_skills())
+        """Whether this domain supplies a human-reset skill, or the always-ask wrapper
+        will force a full one."""
+        return self.always_ask_reset is not None or bool(
+            self.skill_provider.human_cube_bin_reset_skills()
+        )
 
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
@@ -1459,6 +1508,8 @@ class _EesEpisode:
         )
         true_atoms = method.abstract_state(state=state)
         self.observe_pending(true_atoms=true_atoms, state=state)
+        if self._practicing and method.always_ask_reset is not None:
+            self._force_always_ask_reset(true_atoms=true_atoms)
         self._tick_goal_pursuit_horizon()
 
         # The `while` exists for one event only: a starved parameter pool (see the
@@ -1529,21 +1580,7 @@ class _EesEpisode:
                     continue
                 raise InteractionComplete(planner_stop=False)
             if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
-                if self._practicing:
-                    method.record_action_cost(ground_skill=ground_skill)
-                    method.record_human_skill_dispatch(
-                        ground_skill=ground_skill, before_atoms=true_atoms
-                    )
-                # Dispatch to the human, not execute_ground_skill -- the robot has no
-                # controller for it. self._pending stays untouched: the human's
-                # outcome, if scored at all (score_human_skills), is scored by
-                # observe_help_granted once the harness hands back its result.
-                raise HumanCubeBinResetRequested(
-                    cost=method.practice_action_cost(ground_skill=ground_skill),
-                    destination=method.skill_provider.movables_reset_destination(
-                        ground_skill=ground_skill
-                    ),
-                )
+                self._dispatch_human_reset(ground_skill=ground_skill, true_atoms=true_atoms)
             # By default every skill executed during practice explores
             # (epsilon-greedy). Under reproduce_predicators_explore_target_only,
             # only the practice target does -- the prefix that navigates to it uses
@@ -1585,10 +1622,50 @@ class _EesEpisode:
                 # Charge only once action construction has succeeded, even if no
                 # later policy call observes this actual attempt.
                 method.record_action_cost(ground_skill=ground_skill)
+                if method.always_ask_reset is not None:
+                    method.always_ask_reset.observe_dispatch(ground_skill=ground_skill)
             self._pending = ground_skill
             self._pending_before_atoms = true_atoms
             self._pending_sampler_record = record
             return labeled
+
+    def _dispatch_human_reset(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Hand a human reset to the harness: always raises."""
+        method = self._method
+        if self._practicing:
+            method.record_action_cost(ground_skill=ground_skill)
+            method.record_human_skill_dispatch(ground_skill=ground_skill, before_atoms=true_atoms)
+        # Dispatch to the human, not execute_ground_skill -- the robot has no
+        # controller for it. self._pending stays untouched: the human's outcome, if
+        # scored at all (score_human_skills), is scored by observe_help_granted once
+        # the harness hands back its result.
+        raise HumanCubeBinResetRequested(
+            cost=method.practice_action_cost(ground_skill=ground_skill),
+            destination=method.skill_provider.movables_reset_destination(ground_skill=ground_skill),
+        )
+
+    def _force_always_ask_reset(self, *, true_atoms: frozenset[GroundAtom]) -> None:
+        """The always-ask wrapper: after a parameterized skill (its outcome was observed
+        just above), or when the goal is unreachable without a human, ask for a full
+        reset to a freshly sampled start state."""
+        method = self._method
+        rule = method.always_ask_reset
+        assert rule is not None
+        if rule.take_owed():
+            reason = PARAMETERIZED_SKILL
+        elif method.goal_unreachable(true_atoms=true_atoms, goal=self._goal):
+            reason = STRANDED
+        else:
+            return
+        consecutive = rule.record_forced(reason=reason)
+        cost = method.start_reset_cost()
+        method.record_forced_reset(reason=reason, cost=cost, consecutive_stranded=consecutive)
+        # The reset rebuilds the scene, so nothing queued survives it.
+        self._plan = []
+        self._practice_target = None
+        raise HumanStartResetRequested(cost=cost)
 
     def _tick_goal_pursuit_horizon(self) -> None:
         """Spend one step of the goal-pursuit budget, and end the goal phase once it

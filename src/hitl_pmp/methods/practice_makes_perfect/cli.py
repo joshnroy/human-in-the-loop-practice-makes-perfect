@@ -1,5 +1,6 @@
 import argparse
 import sys
+from typing import Any
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.practice_domain import (
@@ -11,6 +12,7 @@ from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
+from .always_ask_reset import AlwaysAskReset
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
 
@@ -53,6 +55,14 @@ class EesCli:
         if not parsed > 0:
             raise argparse.ArgumentTypeError(f"must be > 0, got {value}")
         return parsed
+
+    @staticmethod
+    def always_ask_reset(*, args: argparse.Namespace, ctx: Any) -> AlwaysAskReset | None:
+        if not args.always_ask_reset:
+            return None
+        return AlwaysAskReset.for_provider(
+            skill_provider=ctx.skill_provider, cost=args.always_ask_reset_cost
+        )
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -183,6 +193,23 @@ class EesCli:
             "succeeds). A deviation from the paper; SweepOffShelf3D runs turn it on.",
         )
         parser.add_argument(
+            "--always-ask-reset",
+            action="store_true",
+            help="Wrap the planner (EES, or --method pomdp with either solver) so the "
+            "robot always asks: a human full reset to a freshly sampled start state after "
+            "every skill with continuous parameters, success or failure, and whenever the "
+            "goal is unreachable without a human. The planner still chooses every robot "
+            "action. Off by default.",
+        )
+        parser.add_argument(
+            "--always-ask-reset-cost",
+            type=float,
+            default=None,
+            help="Price of one --always-ask-reset reset when no --practice-cost-config "
+            "prices reset_to_sampled_start (default: the domain's own human-reset price, "
+            "--human-reset-practice-cost).",
+        )
+        parser.add_argument(
             "--defer-rendering",
             action=argparse.BooleanOptionalAction,
             default=False,
@@ -228,6 +255,7 @@ class EesCli:
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
                 reset_cost_gate=args.ees_reset_gate,
+                always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
                 score_human_skills=args.ees_score_human_skills,
                 prior_alpha=args.ees_prior_alpha,
                 prior_beta=args.ees_prior_beta,
@@ -411,6 +439,7 @@ class Tossing3DPomdpCli(EesCli):
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
                 reset_cost_gate=args.ees_reset_gate,
+                always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history

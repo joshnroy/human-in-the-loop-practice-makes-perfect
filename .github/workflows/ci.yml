@@ -325,7 +325,8 @@ jobs:
           pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
             tests/environments/tossingroom \
             tests/environments/test_noop_action.py \
-            tests/environments/test_operator_dynamics_fidelity.py
+            tests/environments/test_operator_dynamics_fidelity.py \
+            tests/environments/test_sampled_start_reset.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 

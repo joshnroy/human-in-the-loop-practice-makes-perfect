@@ -60,9 +60,13 @@ class Tossing3DTasks(Tasks):
     # is `seed + offset`, so two runs at different `--seed` share no scenes and the split
     # is reproducible from the seed alone.
     test_env_seed_offset: int = 10000
+    # The human full reset's own stream (`sample_reset_start_task`), `seed + offset` like
+    # the test stream, so drawing from it never moves the train or test scenes.
+    reset_start_seed_offset: int = 20000
 
     _train_rng: np.random.Generator = PrivateAttr()
     _test_rng: np.random.Generator = PrivateAttr()
+    _reset_start_rng: np.random.Generator = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self.set_seed(seed=self.seed)
@@ -79,6 +83,7 @@ class Tossing3DTasks(Tasks):
         self.seed = seed
         self._train_rng = self._make_rng(offset=0)
         self._test_rng = self._make_rng(offset=self.test_env_seed_offset)
+        self._reset_start_rng = self._make_rng(offset=self.reset_start_seed_offset)
 
     def sample_train_task(self) -> Task:
         return self.build_task(scene_seed=self.draw_scene_seed(rng=self._train_rng))
@@ -86,6 +91,12 @@ class Tossing3DTasks(Tasks):
     def sample_test_task(self) -> Task:
         """A held-out scene the method never practiced on."""
         return self.build_task(scene_seed=self.draw_scene_seed(rng=self._test_rng))
+
+    def sample_reset_start_task(self) -> Task:
+        """A fresh scene for the human full reset: a new seed, drawn the way a train
+        task's is, and built in the world -- cube, bin, barrier and robot all placed
+        from their sampling regions."""
+        return self.build_task(scene_seed=self.draw_scene_seed(rng=self._reset_start_rng))
 
     def sample_train_task_in_place(self) -> Task:
         """The training task for the scene the robot is already standing in.

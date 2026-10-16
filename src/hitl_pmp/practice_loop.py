@@ -514,7 +514,10 @@ class PracticeLoop:
                         )
                     if period_recorder is not None:
                         period_recorder.record_human_reset(
-                            state=state, step_index=step, transitions=num_online_transitions
+                            state=state,
+                            step_index=step,
+                            transitions=num_online_transitions,
+                            destination=request.destination,
                         )
                     continue
                 except InteractionComplete as completion:

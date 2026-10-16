@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_DESTINATION
 from hitl_pmp.core.problem.tasks.types import Task
 
 from .types import (
@@ -64,6 +65,20 @@ class HumanCubeBinResetRequested(Exception):  # noqa: N818
         super().__init__(cost)
         self.cost = cost
         self.destination = destination
+
+
+class HumanStartResetRequested(HumanCubeBinResetRequested):  # noqa: N818
+    """Raised by a practice policy asking the human for a *full* reset: the whole scene,
+    robot included, put into a freshly sampled start state -- a new draw from the
+    domain's initial-state distribution, not the canonical scene and not the state the
+    period began in.
+
+    A subclass, so that every harness catching `HumanCubeBinResetRequested` counts it,
+    charges it and records it exactly as it does a partial reset; only
+    `Problem.execute_movables_reset` tells the two apart, by `destination`."""
+
+    def __init__(self, *, cost: float) -> None:
+        super().__init__(cost=cost, destination=SAMPLED_START_RESET_DESTINATION)
 
 
 class Method(BaseModel, abc.ABC):
