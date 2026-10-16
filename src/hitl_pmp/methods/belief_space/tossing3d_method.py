@@ -129,6 +129,8 @@ class Tossing3DPomdpMethod(EesMethod):
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
+    # A full reset the always-ask wrapper forced, awaiting its completion.
+    _pending_start_reset: bool = PrivateAttr(default=False)
     _pending_reset_before_atoms: frozenset[GroundAtom] = PrivateAttr(default=frozenset())
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
@@ -481,6 +483,23 @@ class Tossing3DPomdpMethod(EesMethod):
             summed_cost=self._pomdp_state.accumulated_cost,
         )
 
+    def record_forced_reset(self, *, reason: str, cost: float, consecutive_stranded: int) -> None:
+        """The always-ask wrapper overrode this step's decision with a full reset: charge
+        it to the session like any action, remember to expect its completion, and log
+        it apart from the planner's own choices."""
+        action_cost = cost if self._practice_accounting is None else 0.0
+        self._pomdp_state = self._pomdp_state.model_copy(
+            update={"accumulated_cost": self._pomdp_state.accumulated_cost + action_cost}
+        )
+        self._pending_start_reset = True
+        self.record_diagnostic(
+            event="forced_reset",
+            reason=reason,
+            cost=action_cost,
+            consecutive_stranded=consecutive_stranded,
+            summed_cost=self._pomdp_state.accumulated_cost,
+        )
+
     def observe_symbolic_transition(
         self,
         *,
@@ -519,6 +538,12 @@ class Tossing3DPomdpMethod(EesMethod):
         human's skill is judged like any robot skill -- did its promised effects come
         true -- and a failure teaches the empirical failure-effect model."""
         super().observe_help_granted(state=state)
+        if self._pending_start_reset:
+            # The wrapper's full reset is not a skill this planner models or chose, so
+            # there is no belief to condition; the next decision reads the new scene.
+            self._pending_start_reset = False
+            self.record_diagnostic(event="forced_reset_complete")
+            return
         reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
         observed_cost = (
