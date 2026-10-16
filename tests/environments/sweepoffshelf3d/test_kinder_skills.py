@@ -239,8 +239,19 @@ def test_pick_cube_from_shelf_takes_a_cube_from_a_human_reset_layout(*, env, cub
 @pytest.mark.main_only
 @pytest.mark.parametrize(
     ("layout", "cube"),
-    [(BACK_CORNER_LAYOUT, 1), (CLUSTER_LAYOUT, 4)],
-    ids=["back-corner", "cluster"],
+    [
+        pytest.param(
+            BACK_CORNER_LAYOUT,
+            1,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="only a grasp with the pads turned off the cube's faces reached it, "
+                "and Josh ruled those out (2026-10-15)",
+            ),
+            id="back-corner",
+        ),
+        pytest.param(CLUSTER_LAYOUT, 4, id="cluster"),
+    ],
 )
 def test_pick_cube_from_shelf_takes_a_cornered_or_crowded_cube(*, env, layout, cube):
     _picks_from(env=env, layout=layout, cube=cube)
