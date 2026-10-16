@@ -638,7 +638,7 @@ class EesMethod(Method):
         ground_skill_costs = costs
         cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
         if practicing:
-            cube_bin_ground_skills = self.skill_provider.human_cube_bin_reset_skills()
+            cube_bin_ground_skills = self.offered_partial_resets()
             if cube_bin_ground_skills:
                 # One lifted skill per kind of human reset the domain offers.
                 skills = (*skills, *dict.fromkeys(g.skill for g in cube_bin_ground_skills))
@@ -1110,6 +1110,14 @@ class EesMethod(Method):
         except PlanningFailure:
             return True
         return False
+
+    def offered_partial_resets(self) -> tuple[GroundSkill, ...]:
+        """The domain's partial human resets this planner may choose: none under the
+        always-ask wrapper (Josh, 2026-10-16), whose forced full reset is then the only
+        human reset; otherwise every one the provider offers."""
+        if self.always_ask_reset is not None:
+            return ()
+        return self.skill_provider.human_cube_bin_reset_skills()
 
     def start_reset_cost(self) -> float:
         """What one forced full reset is charged: by its own name under step accounting,

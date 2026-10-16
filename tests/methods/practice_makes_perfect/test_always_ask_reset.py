@@ -15,7 +15,6 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.method.method import (
-    HumanCubeBinResetRequested,
     HumanStartResetRequested,
     InteractionComplete,
 )
@@ -297,15 +296,72 @@ def test_without_the_wrapper_nothing_is_forced(*, name: str, world: _World) -> N
     assert episode.step(state=domain.state).label == domain.parameterized.skill.name
 
 
+# --- the wrapped arms offer the planner no partial human reset (Josh: "Off.") ---------
+
+
+def _offered_to_ees_practice_planner(
+    *, method: EesMethod, monkeypatch: pytest.MonkeyPatch
+) -> set[str]:
+    """The skills `plan_to` hands Fast Downward for a practice plan."""
+    offered: set[str] = set()
+
+    def capture(**kwargs):
+        offered.update(skill.name for skill in kwargs["skills"])
+        return []
+
+    monkeypatch.setattr(method, "_plan_or_raise", capture)
+    EesMethod.plan_to(method, init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
+    return offered
+
+
+@pytest.mark.parametrize("build", [_shelf, _tossing], ids=["shelf", "tossing3d"])
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_only_unwrapped_ees_offers_its_planner_the_partial_resets(
+    *, build, wrapped: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    domain = build(wrapped=wrapped)
+    partial = {
+        reset.skill.name for reset in domain.method.skill_provider.human_cube_bin_reset_skills()
+    }
+    assert partial
+    offered = _offered_to_ees_practice_planner(method=domain.method, monkeypatch=monkeypatch)
+    assert bool(offered & partial) is not wrapped
+    # Removed, not priced out: the robot's own skills are all still there.
+    assert {skill.name for skill in domain.method.skills()} <= offered
+
+
+@pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_only_unwrapped_belief_space_planners_can_choose_a_partial_reset(
+    *, solver: str, wrapped: bool
+) -> None:
+    domain = _pomdp(solver=solver)(wrapped=wrapped)
+    method = domain.method
+    assert isinstance(method, Tossing3DPomdpMethod)
+    partial = {reset.skill.name for reset in method.skill_provider.movables_reset_skills()}
+    actions = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert bool(actions & partial) is not wrapped
+    assert bool(method.human_skills()) is not wrapped
+    assert {skill.name for skill in method.skills()} <= actions
+
+
 @pytest.mark.parametrize("name", sorted(DOMAINS))
-def test_the_planners_own_partial_reset_is_still_offered(*, name: str, world: _World) -> None:
-    domain = DOMAINS[name]()
-    partial = domain.method.skill_provider.human_cube_bin_reset_skills()[0]
-    world.candidates = [partial]
-    world.atoms = partial.preconditions
-    with pytest.raises(HumanCubeBinResetRequested) as request:
-        _episode(domain=domain).step(state=domain.state)
-    assert not isinstance(request.value, HumanStartResetRequested)
+def test_the_stranded_check_offers_no_reset_either_way(
+    *, name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Robot skills only, wrapped or not -- as before this change."""
+    for wrapped in (True, False):
+        domain = DOMAINS[name](wrapped=wrapped)
+        offered: list[set[str]] = []
+        monkeypatch.setattr(
+            domain.method,
+            "_plan_or_raise",
+            lambda offered=offered, **kwargs: (
+                offered.append({skill.name for skill in kwargs["skills"]}) or []
+            ),
+        )
+        domain.method.goal_unreachable(true_atoms=frozenset(), goal=domain.goal)
+        assert offered == [{skill.name for skill in domain.method.skills()}]
 
 
 def test_the_pomdp_planner_records_a_forced_reset_and_its_completion(
@@ -491,3 +547,30 @@ def test_forced_resets_leave_the_planners_choices_and_draws_unchanged(
     assert sweeps > 0
     assert wrapped.count("RESET") == _rule(domain=wrapped_domain).forced[PARAMETERIZED_SKILL]
     assert _rule(domain=wrapped_domain).skill_attempts == sweeps
+
+
+def test_a_forced_resets_measured_duration_is_not_credited_to_the_last_robot_skill(
+    *, world: _World
+) -> None:
+    """Under step accounting the harness reports the human's steps via
+    `observe_execution_cost`; they belong to no robot skill's duration forecast."""
+    domain = _pomdp(solver="expectimax")()
+    method = domain.method
+    assert isinstance(method, Tossing3DPomdpMethod)
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                human_skills={"reset_to_sampled_start": HumanCharge(cost=ChargeFunction(value=1))}
+            )
+        )
+    )
+    world.candidates = [domain.parameterized]
+    world.atoms = domain.parameterized.preconditions
+    episode = _episode(domain=domain)
+    episode.step(state=domain.state)
+    method.observe_execution_cost(cost=1.0, steps=40, complete=True)
+    with pytest.raises(HumanStartResetRequested):
+        episode.step(state=domain.state)
+    method.observe_execution_cost(cost=1.0, steps=999, complete=True)
+    method.observe_help_granted(state=domain.state)
+    assert method._execution_durations[domain.parameterized] == [40]  # noqa: SLF001

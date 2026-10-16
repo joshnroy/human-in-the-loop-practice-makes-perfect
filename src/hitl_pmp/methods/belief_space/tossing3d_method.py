@@ -171,7 +171,12 @@ class Tossing3DPomdpMethod(EesMethod):
             return
         ground = self._execution_ground_skill
         assert ground is not None, "execution without dispatch"
-        if complete and ground not in self.skill_provider.human_cube_bin_reset_skills():
+        # A forced full reset's steps are the human's, not the last robot skill's.
+        if (
+            complete
+            and not self._pending_start_reset
+            and ground not in self.skill_provider.human_cube_bin_reset_skills()
+        ):
             self._execution_durations.setdefault(ground, []).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
@@ -249,7 +254,10 @@ class Tossing3DPomdpMethod(EesMethod):
         """Offer every provider-owned reset mechanism to belief-space planning.
 
         Empty when the provider offers none (`--no-human-reset`): the robot then has no
-        way out of a stuck scene, which is what that baseline measures."""
+        way out of a stuck scene, which is what that baseline measures. Empty, too, under
+        the always-ask wrapper, whose forced full reset is then the only human reset."""
+        if self.always_ask_reset is not None:
+            return ()
         resets = self.skill_provider.movables_reset_skills()
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
