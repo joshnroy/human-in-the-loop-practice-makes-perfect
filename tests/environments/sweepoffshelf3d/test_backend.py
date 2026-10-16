@@ -175,6 +175,33 @@ def test_an_axis_aligned_box_scores_exactly_as_upstream(*, backend, yaw):
         assert rim == pytest.approx(upstream_rim, abs=1e-9)
 
 
+@pytest.mark.parametrize("tilt_deg", [0.0, 3.0, 10.0])
+def test_in_box_and_the_goal_match_upstream_for_a_tipped_box(*, backend, tilt_deg):
+    """A cube inside a box tipped about its x axis: `InBox` and the goal answer as
+    upstream's `cube_in_box` does, which holds nothing in a box tipped past 5 deg."""
+    from kinder.envs.dynamic3d.sweep_off_shelf3d import ObjectCentricSweepOffShelf3DEnv
+    from scipy.spatial.transform import Rotation
+
+    backend.reset(seed=0)
+    core = backend.core()
+    box = core.get_object("box_0")
+    centre = np.asarray(box.get_pose()[0], dtype=float)
+    tilt = Rotation.from_euler("x", tilt_deg, degrees=True)
+    x, y, z, w = tilt.as_quat()
+    box.set_pose(list(centre), [w, x, y, z])
+    box.set_velocity([0.0] * 3, [0.0] * 3)
+    for i, name in enumerate(backend.cube_names):
+        cube = core.get_object(name)
+        offset = [-0.06 + 0.03 * i, 0.0, 0.05]
+        cube.set_pose(list(tilt.apply(offset) + centre), [w, x, y, z])
+        cube.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+    upstream = ObjectCentricSweepOffShelf3DEnv.cube_in_box(core, "cube_0")
+    assert upstream == (tilt_deg < 5.0)
+    assert (("InBox", ("cube_0", "box_0")) in backend.abstract_atoms()) == upstream
+    assert core._check_goals() == upstream  # noqa: SLF001
+
+
 # --- where a cube can lodge beyond every robot skill's reach -------------------
 #
 # A cube is 2 cm on a side. Two openings in this scene are larger: the one above the
