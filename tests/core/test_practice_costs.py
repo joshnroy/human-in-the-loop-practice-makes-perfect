@@ -110,3 +110,23 @@ def test_state_dependent_charge_receives_current_host_observation(*, monkeypatch
     assert accounting.robot_charge().cost == 2
     state["price"] = 9
     assert accounting.robot_charge().cost == 9
+
+
+def test_the_sampled_start_cost_file_prices_the_full_reset_like_the_tossing3d_resets():
+    """`--method ees-always-reset` under step accounting charges its full reset by name;
+    this file is the normalized one plus that name, at the price both partial resets
+    already carry."""
+    from pathlib import Path
+
+    from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
+
+    root = Path(__file__).resolve().parents[2]
+    base = PracticeCosts.load(path=root / "configs" / "normalized_practice_costs.json")
+    costs = PracticeCosts.load(
+        path=root / "configs" / "normalized_practice_costs_sampled_start.json"
+    )
+    assert set(costs.human_skills) == {*base.human_skills, SAMPLED_START_RESET_SKILL_NAME}
+    for name, charge in base.human_skills.items():
+        assert costs.human_skills[name] == charge
+        assert costs.human_skills[SAMPLED_START_RESET_SKILL_NAME] == charge
+    assert costs.model_dump(exclude={"human_skills"}) == base.model_dump(exclude={"human_skills"})

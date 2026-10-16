@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -12,6 +13,7 @@ from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEv
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .ees_method import EesMethod
+from .practice_target_reset import AlwaysResetAfterPracticeTarget
 from .random_skills_method import RandomSkillsMethod
 
 
@@ -214,34 +216,89 @@ class EesCli:
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
-            method_factory=lambda ctx: EesMethod(
-                env=ctx.env,
-                skill_provider=ctx.skill_provider,
-                seed=args.seed,
+            method_factory=lambda ctx: EesCli.build_method(
+                args=args, ctx=ctx, draw_recorder=draw_recorder
+            ),
+            num_cycles=args.num_cycles,
+            max_steps_per_interaction=args.max_steps_per_interaction,
+        )
+
+    @staticmethod
+    def build_method(
+        *,
+        args: argparse.Namespace,
+        ctx: DomainContext,
+        draw_recorder: SamplerDrawRecorder | None,
+        practice_target_reset: AlwaysResetAfterPracticeTarget | None = None,
+    ) -> EesMethod:
+        return EesMethod(
+            env=ctx.env,
+            skill_provider=ctx.skill_provider,
+            practice_target_reset=practice_target_reset,
+            seed=args.seed,
+            draw_recorder=draw_recorder,
+            exploration_epsilon=args.exploration_epsilon,
+            sampler_max_train_iters=args.sampler_max_train_iters,
+            goal_pursuit_horizon=args.goal_pursuit_horizon,
+            goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
+            goal_pursuit_interval=args.goal_pursuit_interval,
+            planning_timeout=args.planning_timeout,
+            competence_window_size=args.competence_window_size,
+            competence_recency_size=args.competence_recency_size,
+            reset_cost_gate=args.ees_reset_gate,
+            score_human_skills=args.ees_score_human_skills,
+            prior_alpha=args.ees_prior_alpha,
+            prior_beta=args.ees_prior_beta,
+            reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
+            reproduce_predicators_practice_target_history=(
+                args.reproduce_predicators_practice_target_history
+            ),
+            reproduce_predicators_explore_target_only=(
+                args.reproduce_predicators_explore_target_only
+            ),
+            reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+            reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+            reproduce_predicators_random_when_stranded=(
+                args.reproduce_predicators_random_when_stranded
+            ),
+        )
+
+
+class EesAlwaysResetCli(EesCli):
+    """`--method ees-always-reset`: EES with every flag of `--method ees`, plus one human
+    reset to a freshly sampled start state after every execution of the practice target
+    EES selected (see `practice_target_reset.py`). A static-method container."""
+
+    @staticmethod
+    def nonnegative_float(*, value: str) -> float:
+        parsed = float(value)
+        if not parsed >= 0:
+            raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+        return parsed
+
+    @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        EesCli.add_arguments(parser=parser)
+        parser.add_argument(
+            "--start-reset-cost",
+            type=lambda value: EesAlwaysResetCli.nonnegative_float(value=value),
+            default=None,
+            help="Price of one full reset when no --practice-cost-config prices "
+            "reset_to_sampled_start (default: the domain's own human-reset price, "
+            "--human-reset-practice-cost).",
+        )
+
+    @staticmethod
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
+        env_cli.run_method(
+            args=args,
+            method_factory=lambda ctx: EesCli.build_method(
+                args=args,
+                ctx=ctx,
                 draw_recorder=draw_recorder,
-                exploration_epsilon=args.exploration_epsilon,
-                sampler_max_train_iters=args.sampler_max_train_iters,
-                goal_pursuit_horizon=args.goal_pursuit_horizon,
-                goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
-                goal_pursuit_interval=args.goal_pursuit_interval,
-                planning_timeout=args.planning_timeout,
-                competence_window_size=args.competence_window_size,
-                competence_recency_size=args.competence_recency_size,
-                reset_cost_gate=args.ees_reset_gate,
-                score_human_skills=args.ees_score_human_skills,
-                prior_alpha=args.ees_prior_alpha,
-                prior_beta=args.ees_prior_beta,
-                reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
-                reproduce_predicators_practice_target_history=(
-                    args.reproduce_predicators_practice_target_history
-                ),
-                reproduce_predicators_explore_target_only=(
-                    args.reproduce_predicators_explore_target_only
-                ),
-                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
-                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
-                reproduce_predicators_random_when_stranded=(
-                    args.reproduce_predicators_random_when_stranded
+                practice_target_reset=AlwaysResetAfterPracticeTarget.for_provider(
+                    skill_provider=ctx.skill_provider, cost=args.start_reset_cost
                 ),
             ),
             num_cycles=args.num_cycles,
@@ -258,6 +315,13 @@ class Tossing3DPomdpCli(EesCli):
         "Tossing3DCli": TOSSING3D_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
     }
+
+    @staticmethod
+    def nonnegative_float(*, value: str) -> float:
+        parsed = float(value)
+        if not parsed >= 0:
+            raise argparse.ArgumentTypeError(f"must be >= 0, got {value}")
+        return parsed
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:

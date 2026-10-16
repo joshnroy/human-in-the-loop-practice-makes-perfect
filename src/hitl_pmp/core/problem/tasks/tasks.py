@@ -57,3 +57,17 @@ class Tasks(BaseModel, abc.ABC):
         `reset_to_task` afterwards, which is exactly what `NEVER` stopped doing.
         """
         return self.sample_train_task()
+
+    def sample_reset_start_task(self) -> Task:
+        """A fresh start task for a human *full* reset (`SAMPLED_START_RESET_DESTINATION`):
+        drawn from the same initial-state distribution as `sample_train_task`, but from
+        a stream of its own, so a run that resets this way sees exactly the train and
+        test tasks a run that never does sees at the same seed.
+
+        Concrete and refusing by default: only a domain that implements the full reset
+        offers it. A domain whose task building is an operation on the world (Tossing3D,
+        SweepOffShelf3D) builds the drawn scene here as a side effect; the human then
+        installs it through `set_state`, which is what makes it the human's act."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not sample start states for a full human reset"
+        )
