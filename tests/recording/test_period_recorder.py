@@ -322,3 +322,18 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
     )
     assert len(stream.captured) == recorder.reset_hold_frames
     assert np.array_equal(stream.captured[0], expected)
+
+
+def test_the_history_names_which_human_reset_happened() -> None:
+    """A full reset to a sampled start state rebuilds the whole scene, robot included;
+    labelling it "cube + bin" would misdescribe the video."""
+    from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_DESTINATION
+    from hitl_pmp.recording.period_recorder import PeriodRecorder
+
+    assert PeriodRecorder.human_reset_label(destination=None) == "HUMAN RESET cube + bin"
+    assert PeriodRecorder.human_reset_label(destination="opposite_side") == (
+        "HUMAN RESET cube + bin"
+    )
+    assert PeriodRecorder.human_reset_label(destination=SAMPLED_START_RESET_DESTINATION) == (
+        "HUMAN RESET to a sampled start state"
+    )
