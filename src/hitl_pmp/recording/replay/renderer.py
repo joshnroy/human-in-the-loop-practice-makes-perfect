@@ -1,4 +1,5 @@
 import abc
+from typing import ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -13,6 +14,11 @@ class ReplayRenderer(BaseModel, abc.ABC):
     step physics -- so playback depends on nothing but the recording."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # A storyboard draws one frame per action from a recording that holds only each
+    # action's end state: an action that changed nothing (and so recorded no state)
+    # still gets a frame, on the scene as it stands.
+    storyboard: ClassVar[bool] = False
 
     @abc.abstractmethod
     def fps(self) -> int: ...
