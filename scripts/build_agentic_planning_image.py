@@ -13,6 +13,18 @@ class PlanningImageBuilder:
     """Copy only an audited binary and referenced robot geometry, never packages."""
 
     @staticmethod
+    def default_urdf() -> Path:
+        """pybullet_helpers' TidyBot wrist: the bracelet's vision module, no RealSense box.
+
+        The arm `KinderBackend._pick_collision_sim` plans with, which `planning_spec`
+        promises the image matches. Imported here, never inside the image.
+        """
+        import pybullet_helpers
+
+        assets = Path(pybullet_helpers.__file__).parent / "assets/urdf/kortex_description"
+        return assets / "gen3_7dof_vision_module.urdf"
+
+    @staticmethod
     def prepare(*, context: Path, extension: Path, urdf: Path, base_image: str) -> None:
         if not extension.name.startswith("pybullet.cpython-311-") or extension.suffix != ".so":
             raise ValueError("The strict image requires a CPython 3.11 PyBullet extension")
@@ -74,7 +86,7 @@ class PlanningImageBuilder:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--context", type=Path, required=True)
         parser.add_argument("--extension", type=Path, required=True)
-        parser.add_argument("--urdf", type=Path, required=True)
+        parser.add_argument("--urdf", type=Path, default=None)
         parser.add_argument("--base-image", required=True)
         parser.add_argument("--tag", required=True)
         parser.add_argument("--prepare-only", action="store_true")
@@ -82,7 +94,7 @@ class PlanningImageBuilder:
         PlanningImageBuilder.prepare(
             context=args.context,
             extension=args.extension,
-            urdf=args.urdf,
+            urdf=args.urdf or PlanningImageBuilder.default_urdf(),
             base_image=args.base_image,
         )
         if not args.prepare_only:
