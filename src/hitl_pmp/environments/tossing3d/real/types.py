@@ -222,6 +222,13 @@ class RealSceneLayout(BaseModel):
     opposite_side_bin_region: PlanarRegion = PlanarRegion(
         x_min=-1.1, y_min=-0.6, x_max=-0.6, y_max=0.6
     )
+    # Map y band where the two ceiling cameras overlap, outside both calibrated
+    # regions: cube localization there is off by several cm and picks fail (measured
+    # 2026-10-14). A human placing the cube -- a task's scene or a reset -- is asked to
+    # keep it out of this band, and the cube targets drawn for them skip it. It is
+    # NOT a pick constraint: a cube the robot tosses or drops here is picked as
+    # anywhere else, so the perception problem stays visible. `None` disables it.
+    ceiling_camera_overlap_y: tuple[float, float] | None = (-0.15, 0.18)
 
 
 class RealSkillStepCosts(BaseModel):
@@ -288,6 +295,8 @@ class PlacementRequest(BaseModel):
     owner: str
     cube_target: tuple[float, float] | None
     cube_region: PlanarRegion | None = None
+    # A map y band to keep the cube out of (`RealSceneLayout.ceiling_camera_overlap_y`).
+    cube_avoid_y: tuple[float, float] | None = None
     bin_target: tuple[float, float] | None
     bin_region: PlanarRegion | None = None
     # A restore of a scene in which the robot was holding the cube: a human cannot put

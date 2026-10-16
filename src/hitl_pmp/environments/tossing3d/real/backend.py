@@ -239,8 +239,9 @@ class RealTossingBackend(BaseModel):
             kind="scene",
             owner=self.owner,
             seed=seed,
-            cube_target=self._draw(rng=rng, region=self.layout.cube_reset_region),
+            cube_target=self._draw_cube(rng=rng),
             cube_region=self.layout.cube_reset_region,
+            cube_avoid_y=self.layout.ceiling_camera_overlap_y,
             bin_target=self._draw(rng=rng, region=self.layout.opposite_side_bin_region),
             bin_region=self.layout.opposite_side_bin_region,
         )
@@ -266,8 +267,9 @@ class RealTossingBackend(BaseModel):
             request=PlacementRequest(
                 kind="reset",
                 owner=self.owner,
-                cube_target=self._draw(rng=self._rng, region=self.layout.cube_reset_region),
+                cube_target=self._draw_cube(rng=self._rng),
                 cube_region=self.layout.cube_reset_region,
+                cube_avoid_y=self.layout.ceiling_camera_overlap_y,
                 bin_target=self._draw(rng=self._rng, region=region),
                 bin_region=region,
                 destination=destination or None,
@@ -600,12 +602,48 @@ class RealTossingBackend(BaseModel):
         reply = CanPickReply.model_validate(self.world.robot.can_pick())
         return reply.feasible
 
-    @staticmethod
-    def _draw(*, rng: np.random.Generator, region: PlanarRegion) -> tuple[float, float]:
-        return (
-            float(rng.uniform(region.x_min, region.x_max)),
-            float(rng.uniform(region.y_min, region.y_max)),
+    def _draw_cube(self, *, rng: np.random.Generator) -> tuple[float, float]:
+        """Where a human is asked to put the cube: the cube reset region, minus the
+        ceiling-camera overlap band (`RealSceneLayout.ceiling_camera_overlap_y`)."""
+        return self._draw(
+            rng=rng,
+            region=self.layout.cube_reset_region,
+            avoid_y=self.layout.ceiling_camera_overlap_y,
         )
+
+    @staticmethod
+    def _draw(
+        *,
+        rng: np.random.Generator,
+        region: PlanarRegion,
+        avoid_y: tuple[float, float] | None = None,
+    ) -> tuple[float, float]:
+        """Uniform over `region`, or over its part outside the y band `avoid_y`.
+
+        Exactly two draws either way, so a seed's later draws (the bin's) do not move
+        when the band is set or changed.
+        """
+        x = float(rng.uniform(region.x_min, region.x_max))
+        if avoid_y is None:
+            return x, float(rng.uniform(region.y_min, region.y_max))
+        low, high = avoid_y
+        pieces = [
+            (start, end)
+            for start, end in (
+                (region.y_min, min(low, region.y_max)),
+                (max(high, region.y_min), region.y_max),
+            )
+            if end > start
+        ]
+        total = sum(end - start for start, end in pieces)
+        if total <= 0:
+            raise ValueError(f"{region} lies entirely inside the excluded y band {avoid_y}")
+        offset = float(rng.uniform(0.0, total))
+        for start, end in pieces:
+            if offset <= end - start:
+                return x, start + offset
+            offset -= end - start
+        return x, pieces[-1][1]
 
 
 class RealScene:
