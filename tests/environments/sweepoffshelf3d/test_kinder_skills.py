@@ -200,6 +200,28 @@ def _pour(*, env, layout):
     env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
 
 
+@pytest.mark.parametrize("yaw_deg", [0.0, 20.0, 45.0, 70.0])
+def test_every_shelf_grasp_closes_the_pads_on_opposite_faces(*, env, yaw_deg):
+    """Josh, 2026-10-15: no grasp closes the pads across the cube off its faces."""
+    from scipy.spatial.transform import Rotation
+
+    env.reset_to_seed(seed=0)
+    position, _ = env.backend().core().get_object("cube_1").get_pose()
+    yaw = np.deg2rad(yaw_deg)
+    _pour(
+        env=env, layout={"cube_1": (list(position), [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])}
+    )
+    kinder = env.controllers()._kinder  # noqa: SLF001
+    centre = kinder.shelf.cube_position(cube="cube_1")
+    quaternion = env.backend().core().get_object("cube_1").get_pose()[1]
+    faces = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()[:, :2]
+    hands = kinder.shelf_hands(cube="cube_1", centre=centre)
+    assert hands
+    for hand, _ in hands:
+        closing = hand[:3, 0]
+        assert np.max(np.abs(faces.T @ closing)) > np.cos(np.deg2rad(1.0)), closing
+
+
 def _picks_from(*, env, layout, cube):
     env.reset_to_seed(seed=0)
     _pour(env=env, layout=layout)

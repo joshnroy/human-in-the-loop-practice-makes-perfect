@@ -29,8 +29,8 @@ Where each controller comes from:
   6. the shelf pick's held-cube retract allows upstream's 1 mm resting contact
      (`HELD_ON_SUPPORT_THRESHOLD`), and the box is in every planning scene;
   7. the shelf pick is closed loop over its own candidates (`pick_cube_from_shelf`):
-     grasps on the cube as it lies now, turned off its faces where none aligned is
-     clear (`shelf_hands`), each solved and checked in MuJoCo before KINDER plans to
+     grasps on the cube as it lies now, the pads on opposite faces (`shelf_hands`),
+     each solved and checked in MuJoCo before KINDER plans to
      it (`shelf_candidates`), carried out of the cupboard's front before the retract
      plan (`lifter`), and on a miss, looked at again and replanned.
 - `sweep_shelf`, `return_wiper`: KINDER has no controller for either (its
@@ -99,7 +99,10 @@ SLOT_LIFT = 0.02
 SLOT_EXIT_CLEARANCE = 0.05
 # Base x positions for a shelf pick: as far back as the box lets it, and nearer.
 SHELF_PICK_BASE_XS = (0.8, 0.72, 0.64, 0.56)
-SHELF_PICK_Y_OFFSETS = (0.0, 0.1, -0.1, 0.2, -0.2)
+# Base y offsets from the cube, nearest first. The widest are for when something on the
+# floor blocks the nearer ones: a wiper dropped across the front of the box left only
+# bases 0.4-0.5 m to the side for upstream's base planner, which drives around it.
+SHELF_PICK_Y_OFFSETS = (0.0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5)
 # A second pre-grasp: this far (m) back along the approach, from where the hand
 # goes in along its own axis, where the way to a nearer one is too narrow to plan.
 SHELF_PICK_FAR_BACK = 0.08
@@ -128,9 +131,6 @@ SHELF_PICK_MIN_OUTWARD = 0.2
 # Last of all, grasps whose wrist leans sideways along the shelf rather than out of
 # it: the only ones whose pads close parallel to a side panel, for a cube against it.
 SHELF_PICK_MIN_SIDEWAYS = -0.35
-# How far (deg) the approach may lean off the cube's face normal, the pads then closing
-# across the cube at that angle: 0 first, then wider.
-SHELF_PICK_TURNS_DEG = (0.0, 15.0, -15.0, 30.0, -30.0, 45.0, -45.0)
 # Approaches whose directions agree this closely (cosine) count as the same grasp.
 SHELF_PICK_SAME_APPROACH = float(np.cos(np.deg2rad(8.0)))
 # Bases in a row from which a grasp is not clear before the grasp is given up.
@@ -1138,12 +1138,10 @@ class KinderSkills:
 
         Each grasp has the pads on two side faces and the approach leaning
         `CUBE_LEANS_DEG` from vertical, the wrist out of the cupboard's open front
-        (`ShelfSkills.cube_grasp`). First the approach leans along a face normal; then,
-        `SHELF_PICK_TURNS_DEG` off it, the pads closing across the cube at that angle,
-        which turns it on the board until its faces meet them. A cube by a side panel
-        or at the back of the shelf, turned so that no face normal points out of the
-        cupboard, has no clear aligned grasp at all. Last, aligned grasps whose wrist
-        leans sideways along the shelf (`SHELF_PICK_MIN_SIDEWAYS`).
+        (`ShelfSkills.cube_grasp`): the approach leans along a face normal, so the pads
+        close on the opposite pair of faces -- never across the cube at an angle to them
+        (Josh, 2026-10-15). Last, grasps whose wrist leans sideways along the shelf
+        (`SHELF_PICK_MIN_SIDEWAYS`).
 
         Each grasp has three pre-grasps: backed `PRE_GRASP_RISE` out along the
         approach, then `SHELF_PICK_FAR_BACK` out along it, where the way to the nearer
@@ -1156,17 +1154,13 @@ class KinderSkills:
         faces = [normal + k * np.pi / 2 for k in range(4)]
         out: list[tuple[np.ndarray, tuple[np.ndarray, ...]]] = []
         seen: list[float] = []
-        tiers = [(turn, SHELF_PICK_MIN_OUTWARD) for turn in SHELF_PICK_TURNS_DEG] + [
-            (0.0, SHELF_PICK_MIN_SIDEWAYS)
-        ]
-        for turn, outward in tiers:
+        for outward in (SHELF_PICK_MIN_OUTWARD, SHELF_PICK_MIN_SIDEWAYS):
             for lean in CUBE_LEANS_DEG:
                 for face in faces:
-                    heading = face + np.deg2rad(turn)
-                    toward = np.array([np.cos(heading), np.sin(heading), 0.0])
+                    toward = np.array([np.cos(face), np.sin(face), 0.0])
                     if toward[0] <= outward:
                         continue
-                    key = float(np.rad2deg(heading) % 360.0) + 1000.0 * lean
+                    key = float(np.rad2deg(face) % 360.0) + 1000.0 * lean
                     if any(abs(key - k) < 1.0 for k in seen):
                         continue
                     seen.append(key)
