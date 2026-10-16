@@ -35,6 +35,7 @@ from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.practice_costs import ExecutionCharge, PracticeAccounting, PracticeCosts
 from hitl_pmp.core.problem.environment.environment import Environment
+from hitl_pmp.core.problem.human.human import HumanEndedSession
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
@@ -874,6 +875,9 @@ class StepPracticeRunner:
             ).model_dump(mode="json"),
         )
         budget_reached = False
+        # The person ended the session at a reset (`HumanEndedSession`): practice ends
+        # there, cleanly, and no further measurement asks them for evaluation scenes.
+        human_ended = False
         checkpoint_sessions = bool(getattr(args, "checkpoint_sessions", False))
         try:
             # The untrained policy's measurement. Off for a domain where every
@@ -945,6 +949,17 @@ class StepPracticeRunner:
                         try:
                             problem.execute_movables_reset(destination=destination)
                             success = True
+                        except HumanEndedSession as ended:
+                            human_ended = True
+                            StepFiles.event(
+                                path=events,
+                                event="human_ended_session",
+                                cycle=cycle,
+                                practice_steps=clock.steps,
+                                destination=destination,
+                                skill=name,
+                                reason=str(ended),
+                            )
                         finally:
                             reset_counts[destination] += 1
                             clock.human_invoked(charge=charge)
@@ -975,6 +990,8 @@ class StepPracticeRunner:
                                 cost=cost,
                                 cycle=cycle,
                             )
+                        if human_ended:
+                            break
                         state = problem.get_current_state()
                         method.observe_help_granted(state=state)
                         actions += 1
@@ -1060,6 +1077,9 @@ class StepPracticeRunner:
                     if interruption is not None:
                         budget_reached = True
                         break
+                if human_ended:
+                    endpoint = "human_ended_session"
+                    break
                 if early_stop:
                     endpoint = "three_perfect_evaluations"
                     break
@@ -1107,7 +1127,7 @@ class StepPracticeRunner:
         finally:
             problem.env.set_control_step_observers(before=None, after=None)
             clock.robot_active = False
-            if endpoint not in ("failed", "paused") and (
+            if endpoint not in ("failed", "paused", "human_ended_session") and (
                 not records or records[-1]["practice_steps"] != clock.steps
             ):
                 measure()
@@ -1164,7 +1184,7 @@ class StepPracticeRunner:
             evaluation_failures = sum(not r["complete"] for r in evaluation_records)
             endpoint = (
                 endpoint
-                if endpoint in ("failed", "paused")
+                if endpoint in ("failed", "paused", "human_ended_session")
                 else "evaluation_failed"
                 if evaluation_failures
                 else "complete"

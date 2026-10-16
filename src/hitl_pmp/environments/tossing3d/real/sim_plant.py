@@ -273,3 +273,10 @@ class SimPlantPlacer(BaseModel):
     def inspect_cube_in_bin(self, *, owner: str) -> bool:
         del owner
         return self.robot.in_bin()
+
+    def continue_after_unverified_reset(
+        self, *, owner: str, unmet: tuple[str, ...], attempts: int
+    ) -> bool:
+        """The dry run carries on, as an unattended run must."""
+        del owner, unmet, attempts
+        return True

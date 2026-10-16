@@ -310,3 +310,11 @@ class RealScenePlacer(Protocol):
         reports no cube and `cube_in_bin` False. That is unknown, not a miss: a person
         looks and says whether the cube is in the bin."""
         ...
+
+    def continue_after_unverified_reset(
+        self, *, owner: str, unmet: tuple[str, ...], attempts: int
+    ) -> bool:
+        """A human reset failed its check `attempts` times in a row (`unmet` says why).
+        The run pauses here: True carries on from the observed scene anyway, False
+        ends the session."""
+        ...
