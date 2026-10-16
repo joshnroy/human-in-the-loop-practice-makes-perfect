@@ -32,9 +32,11 @@ from hitl_pmp.environments.tossing3d.real.fake_robot import (
     FakeTossOutcome,
 )
 from hitl_pmp.environments.tossing3d.real.geometry import RealTossGeometry
+from hitl_pmp.environments.tossing3d.real.human import TerminalScenePlacer
 from hitl_pmp.environments.tossing3d.real.types import (
     BarrierDisabledError,
     BarrierRect,
+    RealSceneLayout,
     RealSceneSnapshot,
     RealSkillStepCosts,
     RobotObservation,
@@ -497,6 +499,78 @@ def test_a_human_reset_goes_home_and_requests_the_sides_region() -> None:
             Tossing3DSides.robot,
         ),
     )
+
+
+def test_the_ceiling_camera_overlap_strip_is_a_named_layout_value() -> None:
+    assert RealSceneLayout().ceiling_camera_overlap_y == (-0.15, 0.18)
+
+
+def _in_strip(*, y: float, layout: RealSceneLayout) -> bool:
+    assert layout.ceiling_camera_overlap_y is not None
+    low, high = layout.ceiling_camera_overlap_y
+    return low <= y <= high
+
+
+def test_scene_and_reset_cube_targets_avoid_the_overlap_strip() -> None:
+    _, placer, world = _world()
+    env = _env(world=world)
+    layout = env.scene_layout
+    region = layout.cube_reset_region
+    backend = env.real_backend()
+    targets = [backend.scene_request(seed=seed).cube_target for seed in range(300)]
+    for _ in range(100):
+        env.reset_movables(destination="robot_side")
+        targets.append(placer.requests()[-1].cube_target)
+    for target in targets:
+        assert target is not None
+        x, y = target
+        assert region.x_min <= x <= region.x_max
+        assert region.y_min <= y <= region.y_max
+        assert not _in_strip(y=y, layout=layout)
+    # Both sides of the strip are used: it is cut out, not a side chosen.
+    assert any(y < -0.15 for _, y in targets) and any(y > 0.18 for _, y in targets)
+
+
+def test_the_prompt_tells_the_person_to_keep_the_cube_out_of_the_strip() -> None:
+    _, placer, world = _world()
+    env = _env(world=world)
+    env.reset_movables(destination="robot_side")
+    request = placer.requests()[-1]
+    assert request.cube_avoid_y == (-0.15, 0.18)
+    text = "\n".join(TerminalScenePlacer.describe(request=request))
+    assert "-0.15" in text and "0.18" in text and "overlap" in text
+
+
+def test_the_strip_does_not_move_the_bin_targets() -> None:
+    """The cube's draw uses as much randomness as before, so a seed's bin target is
+    the one it always was."""
+    open_layout = RealSceneLayout(ceiling_camera_overlap_y=None)
+    _, _, world = _world()
+    env = _env(world=world)
+    open_env = RealTossing3DEnvironment(world=world, scene_layout=open_layout)
+    for seed in range(20):
+        with_strip = env.real_backend().scene_request(seed=seed)
+        without = open_env.real_backend().scene_request(seed=seed)
+        assert with_strip.bin_target == without.bin_target
+        assert without.cube_avoid_y is None
+
+
+def test_a_cube_the_robot_left_in_the_strip_is_still_picked() -> None:
+    """No pick constraint: a toss or drop into the strip is picked as anywhere else, so
+    a perception problem there shows up as missed picks, not as a refusal."""
+    robot, _, world = _world()
+    env = _env(world=world)
+    robot.place(cube=RobotPose(x=0.8, y=0.0, yaw=0.0), bin_=robot._bin)  # noqa: SLF001
+    world.moved()
+    env.backend().observe()
+    env._adopt(  # noqa: SLF001
+        state=env._observed_state(seed=3, steps_taken=0)  # noqa: SLF001
+    )
+    assert _in_strip(y=0.0, layout=env.scene_layout)
+    assert _holds(env=env, predicate=PICK_PLANNABLE, objects=(env.robot, env.cube))
+    _pick(env=env)
+    assert "pick" in robot.calls()
+    assert _holds(env=env, predicate=HOLDING, objects=(env.robot, env.cube))
 
 
 def test_evaluation_between_practice_steps_is_followed_by_a_restore() -> None:

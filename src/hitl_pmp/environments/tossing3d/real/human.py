@@ -104,6 +104,12 @@ class TerminalScenePlacer(BaseModel):
             f"  cube: upright on the floor, {TerminalScenePlacer.at(point=request.cube_target)}"
             + ("" if request.cube_region is None else f" (in {request.cube_region})")
         )
+        if request.cube_avoid_y is not None:
+            low, high = request.cube_avoid_y
+            lines.append(
+                f"    keep the cube out of map y in [{low:.2f}, {high:.2f}]: the ceiling "
+                "cameras overlap there"
+            )
         side = _SIDE_WORDS.get(request.destination or "", "")
         lines.append(
             f"  bin: upright, {TerminalScenePlacer.at(point=request.bin_target)}"
