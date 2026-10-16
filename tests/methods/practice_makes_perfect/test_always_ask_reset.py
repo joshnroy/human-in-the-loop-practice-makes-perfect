@@ -574,3 +574,49 @@ def test_a_forced_resets_measured_duration_is_not_credited_to_the_last_robot_ski
     method.observe_execution_cost(cost=1.0, steps=999, complete=True)
     method.observe_help_granted(state=domain.state)
     assert method._execution_durations[domain.parameterized] == [40]  # noqa: SLF001
+
+
+# --- the belief-space practice domain under the wrapper --------------------------------
+
+
+@pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_a_shelf_belief_space_planner_builds_with_and_without_the_wrapper(
+    *, solver: str, wrapped: bool
+) -> None:
+    """Under the wrapper the shelf's human skills are not offered, so the practice
+    domain drops their beliefs; unwrapped, they stay and the completeness check still
+    holds."""
+    from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
+
+    env = SweepOffShelf3DEnvironment()
+    provider = SweepOffShelf3DSkillProvider(env=env)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        pomdp_solver=solver,
+        pomdp_num_particles=16,
+        pomdp_domain=SWEEP_OFF_SHELF_DOMAIN,
+        always_ask_reset=_rule_or_none(wrapped=wrapped),
+    )
+    human = {reset.skill.name for reset in provider.movables_reset_skills()}
+    beliefs = {name for name, _ in method.pomdp_domain.belief_sources}
+    actions = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert bool(beliefs & human) is not wrapped
+    assert bool(actions & human) is not wrapped
+    assert {skill.name for skill in method.skills()} <= actions
+    # The shared module-level domain is never modified.
+    assert human <= {name for name, _ in SWEEP_OFF_SHELF_DOMAIN.belief_sources}
+
+
+@pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_the_tossing3d_belief_space_domain_is_unaffected_by_the_wrapper(
+    *, solver: str, wrapped: bool
+) -> None:
+    """Tossing3D's beliefs are the robot's alone (its reset is a deterministic skill,
+    not a belief), so the wrapper leaves its practice domain exactly as it was."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+
+    domain = _pomdp(solver=solver)(wrapped=wrapped)
+    assert domain.method.pomdp_domain == TOSSING3D_DOMAIN

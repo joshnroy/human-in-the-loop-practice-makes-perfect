@@ -29,7 +29,7 @@ from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
-from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain, PracticeDomainWithoutSkills
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
@@ -263,6 +263,16 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
+        if self.always_ask_reset is not None:
+            # The wrapper offers no human skill (see `human_skills`), so a belief over
+            # one would be about an action this planner can never take: drop them from
+            # the practice domain rather than weaken its completeness check below.
+            self.pomdp_domain = PracticeDomainWithoutSkills.drop(
+                domain=self.pomdp_domain,
+                skill_names=frozenset(
+                    reset.skill.name for reset in self.skill_provider.movables_reset_skills()
+                ),
+            )
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
