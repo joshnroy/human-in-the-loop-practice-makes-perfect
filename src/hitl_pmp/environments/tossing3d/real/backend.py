@@ -33,13 +33,16 @@ across the barrier from the robot, and only otherwise the dry run.
 computed by `predicates.py` from the flat state exactly as in the sim; this module only
 has to put the right numbers in it (the barrier's `bb_x` is the rectangle's x extent).
 
-## One skill is one robot call, and one control step
+## One skill is one robot call, charged its average sim tick count
 
 The step protocol counts control steps through the observers `set_control_step_observers`
-installs. A real skill has no ticks to count, so each robot skill is exactly one step:
-`before` runs before the robot moves -- so an exhausted budget stops a skill from
-starting rather than cutting one short -- and `after` once it returns. Budgets for a real
-run are therefore counted in skill executions.
+installs; in the sim, one per MuJoCo tick. A real skill has no ticks to count, so it is
+charged the mean number of ticks the same skill takes in the sim (`RealSkillStepCosts`):
+`before` runs once before the robot moves -- so an exhausted budget stops a skill from
+starting -- and `after` once per charged step when it returns. Budgets for a real run are
+therefore in the sim's units. A real skill cannot be cut off mid-motion as a sim one is
+at the budget, so the last skill of a budget is charged in full and can overshoot it by
+less than its own cost.
 
 ## One robot, two environments
 
@@ -80,6 +83,7 @@ from .types import (
     RealSceneLayout,
     RealScenePlacer,
     RealSceneSnapshot,
+    RealSkillStepCosts,
     RobotObservation,
     RobotPose,
     TossingRobot,
@@ -198,6 +202,7 @@ class RealTossingBackend(BaseModel):
     layout: RealSceneLayout
     parameters: TossParameterSet
     owner: str = "practice"
+    step_costs: RealSkillStepCosts = RealSkillStepCosts()
 
     _last: RobotObservation | None = PrivateAttr(default=None)
     _last_generation: int | None = PrivateAttr(default=None)
@@ -424,17 +429,17 @@ class RealTossingBackend(BaseModel):
         def act() -> ControllerRun:
             reply = PickReply.model_validate(self.world.robot.pick())
             self._replies.append({"skill": "pick", **reply.model_dump()})
-            return ControllerRun(steps=1, terminated=True)
+            return ControllerRun(steps=self.step_costs.pick_cube, terminated=True)
 
-        return self._skill(act=act)
+        return self._skill(act=act, cost=self.step_costs.pick_cube)
 
     def run_open_gripper(self) -> ControllerRun:
         def act() -> ControllerRun:
             self.world.robot.open_gripper()
             self._replies.append({"skill": "open_gripper"})
-            return ControllerRun(steps=1, terminated=True)
+            return ControllerRun(steps=self.step_costs.open_gripper, terminated=True)
 
-        return self._skill(act=act)
+        return self._skill(act=act, cost=self.step_costs.open_gripper)
 
     def run_move_to_toss_location_and_toss(
         self,
@@ -483,17 +488,20 @@ class RealTossingBackend(BaseModel):
             self.world.robot.retract()
             self.world.moved()
             self._inspect_if_hidden()
-            return ControllerRun(steps=1, terminated=True)
+            return ControllerRun(steps=cost, terminated=True)
 
-        return self._skill(act=act)
+        cost = self.step_costs.move_to_toss_location_and_toss
+        return self._skill(act=act, cost=cost)
 
-    def _skill(self, *, act: Callable[[], ControllerRun]) -> ControllerRun:
-        """One robot skill: one control step, then one fresh observation.
+    def _skill(self, *, act: Callable[[], ControllerRun], cost: int) -> ControllerRun:
+        """One robot skill: `run.steps` control steps, then one fresh observation.
 
-        The client's `SkillStopped` (a `stop()` interrupted the skill) and `SkillBusy`
-        (another motion skill was running) are `RuntimeError`s. Either is the action's
-        failure, recorded as its error -- never retried here. A stopped skill had
-        started moving, so it is charged its step; a refused busy one is not.
+        `act` returns `cost` steps when the robot executed the skill, 0 when it was
+        refused without moving. The client's `SkillStopped` (a `stop()` interrupted the
+        skill) and `SkillBusy` (another motion skill was running) are `RuntimeError`s.
+        Either is the action's failure, recorded as its error -- never retried here. A
+        stopped skill had started moving and how far it got is unknown, so it is
+        charged its full `cost`; a refused busy one is not charged.
         """
         self.world.enter(owner=self.owner, restore=self._last)
         self._replies = []
@@ -507,14 +515,15 @@ class RealTossingBackend(BaseModel):
             self._replies.append({"aborted": name, "message": str(error)})
             self.world.log(event="skill_aborted", owner=self.owner, error=name, message=str(error))
             run = ControllerRun(
-                steps=0 if name == "SkillBusy" else 1,
+                steps=0 if name == "SkillBusy" else cost,
                 terminated=False,
                 error=f"aborted: {name}: {error}",
             )
         if self.world.generation() == generation:
             self.world.moved()
-        if self._after is not None and run.steps > 0:
-            self._after()
+        if self._after is not None:
+            for _ in range(run.steps):
+                self._after()
         self.observe()
         self._ticks.append(self.snapshot())
         return run

@@ -18,7 +18,8 @@ from hitl_pmp.step_protocol import CHECKPOINT_FILENAME, PAUSE_FILENAME, StepFile
 
 pytestmark = pytest.mark.xdist_group("tossing3d_real_resume")
 
-BUDGET = "14"
+# In the sim's units: a real pick costs ~119 steps and a toss ~90 (`RealSkillStepCosts`).
+BUDGET = "1400"
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +46,7 @@ def _argv(*, method: str, output: Path, resume: bool = False) -> list[str]:
         "--num-test-tasks",
         "2",
         "--evaluation-control-steps",
-        "4",
+        "500",
         "--output-dir",
         str(output),
         "--defer-rendering",
