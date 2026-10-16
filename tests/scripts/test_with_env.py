@@ -9,6 +9,7 @@ thing. A wrapper that quietly failed to fix that would be worse than none, since
 the skill instructs people to trust it.
 """
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -105,3 +106,45 @@ def test_the_wrapper_propagates_the_exit_code_of_the_command_it_runs() -> None:
         check=False,
     )
     assert completed.returncode == 3
+
+
+# (import package, this checkout's submodule `src/` that must provide it). The two come
+# from two different submodules, each an editable install whose .pth names the MAIN
+# checkout's reference/, so each needs its own PYTHONPATH entry -- fixing one leaves a
+# worktree silently testing a different copy of the other.
+KINDER_PACKAGES = (
+    ("kinder", REPO_ROOT / "reference" / "kindergarden" / "src"),
+    ("kinder_models", REPO_ROOT / "reference" / "kinder-baselines" / "kinder-models" / "src"),
+)
+
+
+@needs_conda
+@pytest.mark.parametrize(("package", "submodule_src"), KINDER_PACKAGES)
+def test_the_wrapper_imports_kinder_from_this_checkouts_reference(
+    *, package: str, submodule_src: Path
+) -> None:
+    """CLAUDE.md's rule is that `kinder.__file__` and `kinder_models.__file__` both
+    resolve under *this* checkout's `reference/`. Without it a worktree tests whatever
+    KINDER the main checkout has checked out, not the pins it declares. Skips when the
+    package is not installed or this checkout's submodule is not populated -- an
+    unpopulated worktree is allowed to fall back to the editable install."""
+    if importlib.util.find_spec(package) is None:
+        pytest.skip(f"{package} is not installed (the optional `tossing3d` extra)")
+    if not submodule_src.is_dir():
+        pytest.skip(f"{submodule_src} is not populated; run `git submodule update --init`")
+    completed = subprocess.run(  # noqa: S603
+        [str(WRAPPER), "python", "-c", f"import {package}; print({package}.__file__)"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd="/",
+    )
+    assert Path(completed.stdout.strip()).is_relative_to(submodule_src)
+
+
+@needs_conda
+def test_the_bare_wrapper_reports_where_kinder_models_resolves() -> None:
+    """The no-argument form is the sanity check; it has to name both KINDER packages,
+    since they come from different submodules and can resolve to different trees."""
+    completed = subprocess.run([str(WRAPPER)], capture_output=True, text=True, check=True, cwd="/")
+    assert "kinder_models" in completed.stdout
