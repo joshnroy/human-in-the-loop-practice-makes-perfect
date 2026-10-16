@@ -9,6 +9,7 @@ from hitl_pmp.core.method.types import LabeledAction, Policy
 from hitl_pmp.core.metrics.types import PracticeSessionEnd
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_DESTINATION
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
 
 from .overlay import StatusBarOverlay
@@ -151,9 +152,19 @@ class PeriodRecorder(BaseModel):
             repeat=self.reset_hold_frames,
         )
 
-    def record_human_reset(self, *, state: State, step_index: int, transitions: int) -> None:
+    @staticmethod
+    def human_reset_label(*, destination: str | None) -> str:
+        """The partial reset moves the cube and bin; the full one rebuilds the scene."""
+        if destination == SAMPLED_START_RESET_DESTINATION:
+            return "HUMAN RESET to a sampled start state"
+        return "HUMAN RESET cube + bin"
+
+    def record_human_reset(
+        self, *, state: State, step_index: int, transitions: int, destination: str | None = None
+    ) -> None:
         self.transitions = transitions
-        self.record_history(entry=f"{step_index + 1:02d}  HUMAN RESET cube + bin")
+        label = PeriodRecorder.human_reset_label(destination=destination)
+        self.record_history(entry=f"{step_index + 1:02d}  {label}")
         self._write(
             state=state,
             status=self._status(
