@@ -456,8 +456,20 @@ class StepProtocolValidation:
             raise ValueError("Step protocol requires an output directory and no automatic resets")
         if not args.defer_rendering:
             raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
-        if getattr(args, "practice_cost_config", None) and args.human_skill_steps != 1:
+        cost_path = getattr(args, "practice_cost_config", None)
+        if cost_path and args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
+        if (
+            cost_path
+            and getattr(args, "always_ask_reset", False)
+            and SAMPLED_START_RESET_SKILL_NAME
+            not in PracticeCosts.load(path=cost_path).human_skills
+        ):
+            # Otherwise the first forced reset raises mid-run, after the first sweep/toss.
+            raise ValueError(
+                f"{cost_path} does not price {SAMPLED_START_RESET_SKILL_NAME!r}, which "
+                "--always-ask-reset requests"
+            )
         output = Path(args.output_dir)
         existing = [name for name in StepProtocolValidation.RUN_OUTPUTS if (output / name).exists()]
         if existing:
