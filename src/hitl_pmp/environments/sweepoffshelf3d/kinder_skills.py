@@ -1073,8 +1073,10 @@ class KinderSkills:
         """(grasp, entry, base, grasp arm, arm at the entry's first pose) candidates
         clear in MuJoCo, lazily, in `shelf_hands` order -- except that a grasp with
         another cube where the pads close (`cube_between_pads`) waits until every other
-        has been offered: in a cluster the jaws squeeze or shove the neighbour, but in
-        a tight one there may be no other grasp.
+        has been offered, and so does one whose hand touches another cube at the grasp
+        or the pre-grasp: in a cluster the jaws squeeze or shove the neighbour, but in a
+        tight one there may be no other grasp, and a grasp grazing a neighbour still
+        picked the cube on `main`.
 
         Each pre-grasp is an entry of its own; after them, one that starts outside the
         cupboard's front (`shelf_exit`) and comes in through the first pre-grasp: into
@@ -1101,7 +1103,9 @@ class KinderSkills:
                         break
                     continue
                 unreachable = 0
-                squeezed = self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
+                squeezed = bool(
+                    self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
+                ) or self.touches_other_cube(base=base, arm=grasp_conf, cube=cube)
                 entries: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
                 for pre in pres:
                     pre_conf = self.shelf_pre_conf(
@@ -1118,7 +1122,7 @@ class KinderSkills:
                         entries.append(((out, first), out_conf))
                 for entry, conf in entries:
                     candidate = (hand, entry, base, grasp_conf, conf)
-                    if squeezed:
+                    if squeezed or self.touches_other_cube(base=base, arm=conf, cube=cube):
                         crowded.append(candidate)
                     else:
                         yield candidate
@@ -1247,7 +1251,7 @@ class KinderSkills:
         self, *, hand: np.ndarray, base: np.ndarray, cube: str
     ) -> np.ndarray | None:
         """The arm configuration at the grasp `hand` from `base`, solved on MuJoCo's own
-        kinematics and clear of the cupboard, the box and the other cubes; None if
+        kinematics and clear of the cupboard and the box; None if
         there is none.
 
         KINDER solves one IK in PyBullet and plans to whatever it returns: on cubes by
@@ -1261,7 +1265,7 @@ class KinderSkills:
             )
         except SkillFailed:
             return None
-        if collision > 0 or self.touches_other_cube(base=base, arm=conf, cube=cube):
+        if collision > 0:
             return None
         return self.wrapped(arm=conf)
 
@@ -1319,8 +1323,6 @@ class KinderSkills:
             return None
         jump = np.max(np.abs((conf - grasp_conf + np.pi) % (2 * np.pi) - np.pi))
         if collision > 0 or jump > SHELF_PICK_MAX_JUMP:
-            return None
-        if self.touches_other_cube(base=base, arm=conf, cube=cube):
             return None
         return self.wrapped(arm=conf)
 
