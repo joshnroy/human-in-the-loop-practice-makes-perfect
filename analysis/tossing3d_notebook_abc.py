@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
+
 TOSS = "MoveToTossLocationAndToss"
 EVIDENCE = ("all", "non_epsilon", "informed")
 LAMBDAS = ("0.0003", "0")
@@ -58,7 +60,7 @@ class RunSummary:
                 ],
             })
         clock, last_smoothing, conditioned = [], None, [0, 0]
-        with (run_dir / "pomdp_decisions.jsonl").open() as stream:
+        with JsonlLog.open_text(path=run_dir / "pomdp_decisions.jsonl") as stream:
             for line in stream:
                 head = line[:120]
                 if '"event": "refit"' in head:

@@ -13,6 +13,8 @@ dependencies = [
     "gymnasium",
     "matplotlib",
     "imageio[ffmpeg]",
+    # Finished runs' decision logs are compressed to `.jsonl.zst` (results_writer/jsonl_log.py).
+    "zstandard",
     "imageio-ffmpeg",
     # Already present transitively (imageio and matplotlib both require it), but
     # recording/overlay.py imports it directly to draw the status bar, so it is
