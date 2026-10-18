@@ -1,8 +1,14 @@
 """`--env tossing3d_real`: the Tossing3D practice loop on the real TidyBot.
 
     python -m hitl_pmp.cli --env tossing3d_real --method pomdp \\
-        --robot-host <nuc> --practice-step-budget 6000 --practice-reset-policy never \\
-        --defer-rendering --num-test-tasks 3 --output-dir <dir>
+        --preset tossing3d-canonical --pomdp-observation-probability-weight 0.0 \\
+        --robot-host <nuc> --practice-step-budget 6000 --num-test-tasks 3 --output-dir <dir>
+
+`--preset tossing3d-canonical` is the arm the sim runs too (`src/hitl_pmp/presets/`):
+observation weight 0, lambda 3e-6, one cost per control tick, goal pursuit off, and
+persistent practice with deferred rendering. The weight is also passed explicitly: at
+its 0.1 default STOP wins at the priors in every session. Under the preset's cost file
+a real skill costs its `RealSkillStepCosts` ticks, so there is no second cost table.
 
 Same domain, methods and step protocol as `--env tossing3d`; what changes is where the
 world comes from (`--robot-plant`), the toss parameter set (the real swing's), and the
@@ -19,7 +25,8 @@ human (a person at this terminal, `RealHumanOracle`).
 **Budgets are in the sim's control steps.** One real skill is charged the mean number
 of MuJoCo ticks the same skill takes in the sim (`RealSkillStepCosts`: pick 119, toss 90,
 open gripper 1), so a budget means the same on the robot as in the sim; a human reset
-costs `--human-skill-steps` (default 1), as in the sim. **Evaluation runs at the end
+costs `--human-skill-steps` (default 1), or under a cost file (the preset's: 500) its
+human duration and cost, as in the sim. **Evaluation runs at the end
 only** by default: `--measurement-interval-steps` defaults past any budget and the
 step-0 measurement is off (`--no-initial-measurement`), since every evaluation task is
 a scene a person sets up. Give an interval to add checkpoints; practice and evaluation
