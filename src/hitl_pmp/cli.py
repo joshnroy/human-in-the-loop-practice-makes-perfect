@@ -40,6 +40,7 @@ from hitl_pmp.methods.practice_makes_perfect.cli import (
     Tossing3DPomdpCli,
 )
 from hitl_pmp.practice_loop import PracticeResetPolicy
+from hitl_pmp.presets.preset import CliPreset
 
 # Registering tossing3d here costs nothing on a machine without KINDER: importing
 # Tossing3DCli imports no simulator (see environments/tossing3d/kinder_backend.py), so
@@ -96,6 +97,14 @@ class Cli:
 
     @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--preset",
+            choices=CliPreset.names(),
+            default=None,
+            help="A committed set of flag values (src/hitl_pmp/presets/<name>.json) "
+            "applied as defaults: any flag given explicitly still wins, and every value "
+            "lands in config_snapshot.json like a typed-in one.",
+        )
         parser.add_argument(
             "--practice-step-budget",
             type=lambda value: Cli.parse_positive_int(value=value),
@@ -329,6 +338,7 @@ class Cli:
         discovery = argparse.ArgumentParser(add_help=False)
         discovery.add_argument("--env", choices=sorted(ENVIRONMENTS))
         discovery.add_argument("--method", choices=sorted(METHODS))
+        discovery.add_argument("--preset", choices=CliPreset.names())
         known_args, _ = discovery.parse_known_args(argv)
 
         parser = argparse.ArgumentParser(
@@ -339,7 +349,16 @@ class Cli:
             ENVIRONMENTS[known_args.env].add_arguments(parser=parser)
         if known_args.method is not None:
             METHODS[known_args.method].add_arguments(parser=parser)
-        return parser.parse_args(argv)
+        if known_args.preset is not None and known_args.env and known_args.method:
+            CliPreset.load(name=known_args.preset).apply(
+                parser=parser, env=known_args.env, method=known_args.method
+            )
+        args = parser.parse_args(argv)
+        if args.preset is not None and args.practice_step_budget is None:
+            # A preset prices practice with its cost file, which only the step protocol
+            # reads: in cycle mode the run would silently not be the preset's arm.
+            parser.error(f"--preset {args.preset} runs only under --practice-step-budget")
+        return args
 
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
