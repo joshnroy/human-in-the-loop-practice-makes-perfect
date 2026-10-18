@@ -263,16 +263,14 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
-        if self.always_ask_reset is not None:
-            # The wrapper offers no human skill (see `human_skills`), so a belief over
-            # one would be about an action this planner can never take: drop them from
-            # the practice domain rather than weaken its completeness check below.
-            self.pomdp_domain = PracticeDomainWithoutSkills.drop(
-                domain=self.pomdp_domain,
-                skill_names=frozenset(
-                    reset.skill.name for reset in self.skill_provider.movables_reset_skills()
-                ),
-            )
+        # A human skill this method does not offer (the always-ask wrapper offers none;
+        # `--no-human-reset` leaves the provider none) is an action the planner can never
+        # take, so a belief over it is dropped rather than the completeness check below
+        # weakened.
+        self.pomdp_domain = PracticeDomainWithoutSkills.keep_offered(
+            domain=self.pomdp_domain,
+            offered=frozenset(skill.name for skill in self.human_skills()),
+        )
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
