@@ -10,6 +10,7 @@
     "scene": "lab2",
     "room_layout": "tossing_room.xml",
     "convex_placement_room_body": "tossing_room",
+    "observe_static_colliders": true,
     "regions": {
         "bin_init_region": {
             "target": "ground",
@@ -152,6 +153,7 @@
                 "width": 0.3,
                 "height": 0.2,
                 "wall_thickness": 0.02,
+                "fixed": true,
                 "rgba": [
                     0.8,
                     0.8,
