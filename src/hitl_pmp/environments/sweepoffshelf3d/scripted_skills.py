@@ -140,6 +140,13 @@ class SkillFailed(RuntimeError):
     """A skill could not reach its postcondition; the message says where and why."""
 
 
+class WiperLost(RuntimeError):
+    """The per-step `HoldingWiper` check failed mid-sweep. Deliberately not a
+    `SkillFailed`: tolerant motions (`raise_hand`, `hand_to`, the IK fallbacks) catch
+    `SkillFailed` and carry on, which swallowed the loss and let the stroke continue with
+    no wiper in hand. `sweep_shelf` turns it into a `SkillFailed`."""
+
+
 class StepBudgetExhausted(SkillFailed):
     """The run's hard control-step cap was reached; nothing here loops open."""
 
@@ -457,7 +464,7 @@ class ShelfSkills:
         if self.wiper_unheld_steps >= WIPER_LOST_STEPS:
             self.watch_wiper = False
             self.in_hand, self.grasp_kind = None, None
-            raise SkillFailed(f"the wiper left the hand during {label}")
+            raise WiperLost(f"the wiper left the hand during {label}")
 
     def hold(self, *, count: int = 15, label: str = "hold") -> None:
         arm = self.arm_reference.copy()
@@ -1321,10 +1328,8 @@ class ShelfSkills:
                     break
                 for y in centres:
                     self.stroke(y=y, settings=settings, name=f"pass{sweep_pass}_y{y:+.2f}")
-        except SkillFailed as exc:
-            if "wiper left the hand" in str(exc):
-                raise SkillFailed(f"sweep_shelf: {exc}") from exc
-            raise
+        except WiperLost as exc:
+            raise SkillFailed(f"sweep_shelf: {exc}") from exc
         finally:
             self.watch_wiper = False
         left = self.shelf_cubes()

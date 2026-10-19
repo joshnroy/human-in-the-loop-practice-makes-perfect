@@ -27,7 +27,12 @@ Where each controller comes from:
      (`KinderSkills.plan_blocked`): PyBullet's cupboard and arm are not MuJoCo's, and
      its scene has no wiper;
   6. the shelf pick's held-cube retract allows upstream's 1 mm resting contact
-     (`HELD_ON_SUPPORT_THRESHOLD`), and the box is in every planning scene.
+     (`HELD_ON_SUPPORT_THRESHOLD`), and the box is in every planning scene;
+  7. the shelf pick is closed loop over its own candidates (`pick_cube_from_shelf`):
+     grasps on the cube as it lies now, the pads on opposite faces (`shelf_hands`),
+     each solved and checked in MuJoCo before KINDER plans to
+     it (`shelf_candidates`), carried out of the cupboard's front before the retract
+     plan (`lifter`), and on a miss, looked at again and replanned.
 - `sweep_shelf`, `return_wiper`: KINDER has no controller for either (its
   `SweepOriController` sweeps a floor-standing target, 0/15 here), so they are this
   package's, built on `ShelfSkills`' routines, starting from the wiper as it is actually
@@ -43,7 +48,17 @@ from typing import Any, ClassVar
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from .scripted_skills import CARRY_Z, ShelfSkills, SkillFailed, StepBudgetExhausted
+from .objects import SweepOffShelf3DObjects as O
+from .scripted_skills import (
+    CARRY_Z,
+    CUBE_LEANS_DEG,
+    CUBE_SHELF,
+    CUBE_STANDOFF,
+    Frames,
+    ShelfSkills,
+    SkillFailed,
+    StepBudgetExhausted,
+)
 
 CUPBOARD = "cupboard_1"
 BOX = "box_0"
@@ -72,10 +87,61 @@ BOX_RELEASE_Z = 0.32
 PLACE_REACHES = (0.8, 0.7, 0.6)
 PLACE_Y_OFFSETS = (0.0, 0.1, -0.1)
 PICK_WIPER_DISTANCES = (0.7, 0.6, 0.8, 0.55)
+# World headings from the base to the wiper. Square on first, then a little either side,
+# which swings the base along the cupboard front: from an arm left over the box (seed 3)
+# no square-on candidate planned an approach that clears board 3.
+PICK_WIPER_HEADINGS = (0.0, 0.15, -0.15, 0.3, -0.3, np.pi / 2, -np.pi / 2, np.pi)
+# Planned picks of the wiper in its slot, each re-observed and replanned, before giving up.
+SLOT_PICK_ATTEMPTS = 3
+# Taking the wiper out of its slot: lift off the board, and how far beyond the cupboard's
+# open front its far end ends up.
+SLOT_LIFT = 0.02
+SLOT_EXIT_CLEARANCE = 0.05
 # Base x positions for a shelf pick: as far back as the box lets it, and nearer.
-SHELF_PICK_BASE_XS = (0.8, 0.72, 0.64)
-SHELF_PICK_GRASPS = 6
-SHELF_PICK_Y_OFFSETS = (0.0, 0.1, -0.1)
+SHELF_PICK_BASE_XS = (0.8, 0.72, 0.64, 0.56)
+# Base y offsets from the cube, nearest first. The widest are for when something on the
+# floor blocks the nearer ones: a wiper dropped across the front of the box left only
+# bases 0.4-0.5 m to the side for upstream's base planner, which drives around it.
+SHELF_PICK_Y_OFFSETS = (0.0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.4, -0.4, 0.5, -0.5)
+# A second pre-grasp: this far (m) back along the approach, from where the hand
+# goes in along its own axis, where the way to a nearer one is too narrow to plan.
+SHELF_PICK_FAR_BACK = 0.08
+# Where a picked cube is carried before the retract plan takes over: this far (m)
+# outside the cupboard's open front, and this much higher than the pre-grasp.
+SHELF_PICK_EXIT = 0.06
+SHELF_PICK_EXIT_RISE = 0.02
+# Penetration (m) KINDER's PyBullet planner allows the shelf pick's approach plan.
+SHELF_PICK_PLANNING_SLACK = 0.008
+# Joint-error gain for carrying a picked cube out along the retract plan, half the
+# followers' 2.0: at full speed, cubes held across a corner slipped out of the pads
+# on the way to the tucked arm, and fell into the box or onto the floor.
+SHELF_PICK_CARRY_GAIN = 1.0
+# BiRRT seeds tried for each shelf-pick plan, upstream's own (0) first.
+SHELF_PICK_PLAN_SEEDS = (0, 1, 2)
+# KINDER plans tried for one grasp, over its bases and pre-grasps, before the next grasp.
+SHELF_PICK_PLANS_PER_GRASP = 6
+# Grasp executions per shelf pick: a miss is seen (the cube is not between the pads),
+# and the pick looks at the cube again and replans.
+SHELF_PICK_EXECUTIONS = 3
+# KINDER plans tried per execution, over candidates already clear in MuJoCo.
+SHELF_PICK_PLANS = 24
+# A shelf grasp's wrist must lean out of the cupboard: the approach's horizontal
+# direction at most ~78 deg from +x, toward the open front.
+SHELF_PICK_MIN_OUTWARD = 0.2
+# Last of all, grasps whose wrist leans sideways along the shelf rather than out of
+# it: the only ones whose pads close parallel to a side panel, for a cube against it.
+SHELF_PICK_MIN_SIDEWAYS = -0.35
+# Approaches whose directions agree this closely (cosine) count as the same grasp.
+SHELF_PICK_SAME_APPROACH = float(np.cos(np.deg2rad(8.0)))
+# Bases in a row from which a grasp is not clear before the grasp is given up.
+SHELF_PICK_UNREACHABLE_BASES = 3
+# The space the pads sweep as they close, in the pinch site's frame (m): across the
+# closing axis, and along the approach (the pads ride 11-24 mm ahead of the site as they
+# close, 11 mm long), with a few millimetres' margin.
+JAW_HALF_WIDTH = 0.016
+JAW_DEPTH = (0.0, 0.05)
+# Largest joint change (rad) from the grasp to the pre-grasp: more is another IK branch.
+SHELF_PICK_MAX_JUMP = 0.5
 # A cube resting on a board starts the held-object retract plan touching it, which the
 # planner's default threshold (1e-6 m) counts as a collision, so no retract ever plans.
 # Upstream's own allowance for a cube resting on its support: tossing.PickCubeController
@@ -108,13 +174,24 @@ class FollowPlans:
     _grip_wait: int
     # Set by the caller: run once, between the end of the approach and the gripper.
     settle: Callable[[], None] | None = None
+    # Set by the caller: end a pick once the gripper has closed, leaving the hand where
+    # it is, so the caller can check the grasp and take the object out itself.
+    stop_after_grip: bool = False
+    # Set by the caller: run once, between the gripper and the retract plan.
+    lift: Callable[[], None] | None = None
+    # Set by the caller: the joint-error gain the retract plan is followed with.
+    retract_gain: float = 2.0
 
     def _follow(
         self, *, key: str, plan: list[Any], final: float = FINAL_TOLERANCE
     ) -> np.ndarray | None:
         follower = self._followers.get(key)
         if follower is None:
-            follower = PlanFollower(plan=[np.array(q[:7], dtype=float) for q in plan], final=final)
+            follower = PlanFollower(
+                plan=[np.array(q[:7], dtype=float) for q in plan],
+                final=final,
+                gain=self.retract_gain if key == "retract" else 2.0,
+            )
             self._followers[key] = follower
         current = np.array(self._get_current_robot_arm_conf()[:7])  # type: ignore[attr-defined]
         grip = self._get_current_robot_gripper_pose()  # type: ignore[attr-defined]
@@ -157,6 +234,13 @@ class FollowPlans:
             if self._grip_wait >= GRIP_STEPS:
                 setattr(self, gripped, True)
             return self._hold(grip=1.0 if pick else 0.0)
+        if pick and self.stop_after_grip:
+            self._lifted = True
+            return self._hold(grip=1.0)
+        lift = getattr(self, "lift", None)
+        if lift is not None:
+            self.lift = None
+            lift()
         action = self._follow(key="retract", plan=self._current_retract_plan)  # type: ignore[attr-defined]
         if action is not None:
             return action
@@ -177,6 +261,9 @@ class PreGraspApproach:
     # The upstream module whose planner and grasp constant the controller reads.
     grasp_module: ClassVar[str] = "kinder_models.dynamic3d.shelf.parameterized_skills"
     grasp_constant: ClassVar[str] = "GRASP_TRANSFORM_TO_OBJECT"
+    # Set by the caller: the pre-grasp arm configuration, already solved and checked in
+    # MuJoCo (`KinderSkills.shelf_confs`); None solves it with PyBullet's IK.
+    pre_conf: list[float] | None = None
 
     def reset(self, x: Any, params: Any, **kwargs: Any) -> None:  # noqa: PLR0917
         import importlib
@@ -207,7 +294,12 @@ class PreGraspApproach:
             (grasp.position[0], grasp.position[1], grasp.position[2] + PRE_GRASP_RISE),
             grasp.orientation,
         )
-        pre_conf = inverse_kinematics(sim.robot, above, set_joints=False)
+        sim.set_state(plan_x)
+        if self.pre_conf is None:
+            pre_conf = inverse_kinematics(sim.robot, above, set_joints=False)
+        else:
+            # The arm's seven joints; the fingers stay as they are.
+            pre_conf = [*self.pre_conf[:7], *list(sim.get_robot_joints())[7:]]
         sim.set_state(plan_x)
         to_pre = shelf_skills.run_motion_planning(
             sim.robot,
@@ -377,6 +469,8 @@ class KinderSkills:
         base = np.array([end.x, end.y, end.theta()])
         d = shelf.ik_data
         for name in ("_current_arm_joint_plan", "_current_retract_plan"):
+            if name == "_current_retract_plan" and getattr(controller, "stop_after_grip", False):
+                continue
             plan = getattr(controller, name, None)
             if not plan:
                 continue
@@ -639,11 +733,19 @@ class KinderSkills:
             with contextlib.suppress(SkillFailed):
                 self.retract(label=f"{label}_retract")
 
-    def settler(self, *, hand: np.ndarray, label: str) -> Callable[[], None]:
-        """The descent from the pre-grasp (`PreGraspApproach`) to the pinch-site pose
-        `hand`, straight down, on MuJoCo's own kinematics: KINDER solves IK in PyBullet,
-        whose arm sits up to ~5 mm from MuJoCo's at the same joints -- enough to put a
-        pad on top of a 15 mm wiper head or a 2 cm cube."""
+    def settler(
+        self,
+        *,
+        hand: np.ndarray,
+        label: str,
+        entry: tuple[np.ndarray, ...] = (),
+    ) -> Callable[[], None]:
+        """The approach from the pre-grasp (`PreGraspApproach`) to the pinch-site pose
+        `hand`, in straight lines on MuJoCo's own kinematics: KINDER solves IK in
+        PyBullet, whose arm sits up to ~5 mm from MuJoCo's at the same joints -- enough
+        to put a pad on top of a 15 mm wiper head or a 2 cm cube. The pre-grasp is
+        `entry`'s first pose, the hand passing through the rest on the way in; with no
+        `entry`, `PRE_GRASP_RISE` straight above the grasp."""
 
         def settle() -> None:
             shelf = self.shelf
@@ -651,31 +753,155 @@ class KinderSkills:
             shelf.arm_reference = shelf.data.qpos[shelf.qa].copy()
             above = hand.copy()
             above[2, 3] += PRE_GRASP_RISE
+            first, *rest = entry or (above,)
             with contextlib.suppress(SkillFailed):
-                shelf.settle_at(pose=above, label=label)
+                shelf.settle_at(pose=first, label=label)
+                for pose in rest:
+                    shelf.path(position=pose[:3, 3], rotation=pose[:3, :3], label=label, count=6)
                 shelf.path(position=hand[:3, 3], rotation=hand[:3, :3], label=label, count=3)
             with contextlib.suppress(SkillFailed):
                 shelf.settle_at(pose=hand, label=label)
 
         return settle
 
-    def pick_wiper(self) -> None:
-        import kinder_models.dynamic3d.sweep3D.parameterized_skills as sweep3d
+    def lifter(
+        self, *, pre: np.ndarray, label: str, outside: np.ndarray | None = None
+    ) -> Callable[[], None]:
+        """The way back out from the grasp to the pre-grasp `pre`, then on to `outside`
+        just outside the cupboard's open front (`shelf_exit`) when there is one,
+        holding the cube, in straight lines on MuJoCo's kinematics, so the retract plan
+        starts clear of the boards. Planned from the grasp itself, a cube at the back of
+        the shelf left the wrist inside KINDER's lower board above, and no retract
+        planned from any base; from the pre-grasp, a cube in the back corner still had
+        none, with either end clear."""
 
+        def lift() -> None:
+            shelf = self.shelf
+            shelf.base_target = shelf.data.qpos[shelf.ba].copy()
+            shelf.arm_reference = shelf.data.qpos[shelf.qa].copy()
+            for pose in (pre,) if outside is None else (pre, outside):
+                try:
+                    shelf.path(
+                        position=pose[:3, 3],
+                        rotation=pose[:3, :3],
+                        label=label,
+                        count=3 if pose is pre else 6,
+                        holding=True,
+                    )
+                except SkillFailed as exc:
+                    # The retract plan starts where the lift was to end: followed from
+                    # anywhere else it cuts through the cupboard's front edge, and the
+                    # board knocked a held cube out of the pads. Stop here; the skill's
+                    # own retract (`retract`) plans from where the hand really is.
+                    raise RuntimeError(f"the lift out of the cupboard stopped: {exc}") from exc
+
+        return lift
+
+    def shelf_exit(
+        self, *, pre: np.ndarray, pre_conf: np.ndarray, base: np.ndarray, cube: str
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        """The hand pose `SHELF_PICK_EXIT` outside the cupboard's open front, level with
+        the pre-grasp and `SHELF_PICK_EXIT_RISE` above it, and its arm configuration
+        from `base` on the pre-grasp's IK branch, clear as `shelf_grasp_conf` checks;
+        None for the configuration if there is none."""
+        shelf = self.shelf
+        out = pre.copy()
+        out[0, 3] = min(float(pre[0, 3]), float(shelf.front_x) - SHELF_PICK_EXIT)
+        out[2, 3] += SHELF_PICK_EXIT_RISE
+        try:
+            conf, collision = shelf.ik(
+                position=out[:3, 3], rotation=out[:3, :3], base=base, seed=pre_conf, attempts=2
+            )
+        except SkillFailed:
+            return out, None
+        if collision > 0 or self.touches_other_cube(base=base, arm=conf, cube=cube):
+            return out, None
+        return out, self.wrapped(arm=conf)
+
+    def pick_wiper(self) -> None:
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("pick_wiper: the hand is not empty")
+        if ("WiperHome", (WIPER,)) not in self.backend.abstract_atoms():
+            self.pick_wiper_once()
+            return
+        # Closed loop in the slot: re-observe the wiper and replan for each attempt, and
+        # take it out only once both pads hold it.
+        for attempt in range(1, SLOT_PICK_ATTEMPTS + 1):
+            self.pick_wiper_once()
+            if self.held(name=WIPER):
+                self.sync()
+                # Out of the slot the arm is left as the scripted pick leaves it, for
+                # `run`'s retract to raise to the carry height: SweepShelf's and
+                # ReturnWiper's routes start from there.
+                self.take_wiper_out_of_slot(label="pick_wiper_out_of_slot")
+                if self.held(name=WIPER):
+                    return
+                raise SkillFailed("pick_wiper: the wiper slipped out of the hand on the way out")
+            self.notes.append(f"pick_wiper: attempt {attempt} closed on nothing; opening")
+            for _ in range(GRIP_STEPS):
+                self.env_step(action=FollowPlans._hold(grip=0.0), label="pick_wiper_open")  # noqa: SLF001
+            self.sync()
+            self.retract(label="pick_wiper_regrasp_retract")
+            if ("WiperHome", (WIPER,)) not in self.backend.abstract_atoms():
+                break
+        raise SkillFailed("pick_wiper: the wiper did not come with the hand")
+
+    def take_wiper_out_of_slot(self, *, label: str) -> None:
+        """Lift the held wiper off its board, then back the base straight away from the
+        cupboard, the arm held still, until the wiper's far end is `SLOT_EXIT_CLEARANCE`
+        outside the cupboard's open front: the wiper leaves the slot along the slot,
+        unturned. (`ShelfSkills.leave_wiper_slot` pulls it out with the arm instead, and
+        from KINDER's pick base its exit pose has no IK solution.)"""
+        shelf = self.shelf
+        lift = shelf.site_pose()
+        lift[2, 3] += SLOT_LIFT
+        with contextlib.suppress(SkillFailed):
+            shelf.path(
+                position=lift[:3, 3], rotation=lift[:3, :3], label=label, count=4, holding=True
+            )
+        self.sync()
+        out = self.wiper_far_x() - shelf.front_x + SLOT_EXIT_CLEARANCE
+        if out > 0.0:
+            base = shelf.data.qpos[shelf.ba].copy()
+            away = np.array([np.cos(base[2]), np.sin(base[2])])
+            base[:2] -= out * away
+            shelf.move_base(target=base, label=label)
+        self.sync()
+
+    def wiper_far_x(self) -> float:
+        """The largest world x any part of the wiper reaches (its geoms' bounding boxes)."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.data
+        far = -np.inf
+        for g in shelf.wiper_geoms:
+            rotation = d.geom_xmat[g].reshape(3, 3)
+            centre = d.geom_xpos[g] + rotation @ m.geom_aabb[g][:3]
+            half = np.abs(rotation) @ m.geom_aabb[g][3:]
+            far = max(far, float(centre[0] + half[0]))
+        return far
+
+    def pick_wiper_once(self) -> None:
+        """One planned pick: off the shelf it is upstream's, lifted on its retract plan;
+        in the slot the hand stops as the gripper closes (`FollowPlans.stop_after_grip`).
+        That retract plan is BiRRT in KINDER's planning scene, which has no wiper in it:
+        from a wiper 0.15 deg off square it took the hand 9 cm deeper into the cupboard,
+        and the back panel tore the wiper out of the pads."""
+        import kinder_models.dynamic3d.sweep3D.parameterized_skills as sweep3d
+
+        shelf = self.shelf
         robot, wiper = self.objects("robot", WIPER)
         yaw = self.yaw(name=WIPER)
         candidates = [(0.7, -np.pi)]  # upstream's own fixed parameter first
-        for heading in (0.0, np.pi / 2, -np.pi / 2, np.pi):
+        for heading in PICK_WIPER_HEADINGS:
             candidates += [(d, heading - yaw) for d in PICK_WIPER_DISTANCES]
         # In its slot only the leaned grasp clears the board above; off the shelf,
         # upstream's own grasp.
         grasp = sweep3d.WIPER_TRANSFORM_TO_OBJECT
         controller = KinderControllers.get(name="PickWiper")
         settle = None
-        if ("WiperHome", (WIPER,)) in self.backend.abstract_atoms():
+        in_slot = ("WiperHome", (WIPER,)) in self.backend.abstract_atoms()
+        if in_slot:
             hand = shelf.wiper_grasp(kind="shelf")
             grasp = self.pose_in(obj_pose=shelf.wiper_pose(), hand=hand)
             controller = KinderControllers.get(name="PickWiperInSlot")
@@ -684,6 +910,7 @@ class KinderSkills:
         def make() -> Any:
             pick = controller(objects=[robot, wiper], pybullet_sim=self.planning_sim())
             pick.settle = settle
+            pick.stop_after_grip = in_slot
             return pick
 
         with self.constant(module=sweep3d, name="WIPER_TRANSFORM_TO_OBJECT", value=grasp):
@@ -692,7 +919,7 @@ class KinderSkills:
                 candidates=candidates,
                 label="pick_wiper",
             )
-        if not self.held(name=WIPER):
+        if not in_slot and not self.held(name=WIPER):
             raise SkillFailed("pick_wiper: the wiper did not come with the hand")
 
     def pick_cube_from_floor(self, *, cube: str) -> None:
@@ -711,54 +938,420 @@ class KinderSkills:
             raise SkillFailed(f"pick_cube_from_floor: {cube} did not come with the hand")
 
     def pick_cube_from_shelf(self, *, cube: str) -> None:
-        import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
-
+        """Closed loop over grasp attempts: plan from the cube as it lies now, execute
+        the first candidate that plans, and if the cube did not come with the hand,
+        open, look again and replan -- up to `SHELF_PICK_EXECUTIONS` executions."""
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("pick_cube_from_shelf: the hand is not empty")
+        missed: list[str] = []
+        tried: list[np.ndarray] = []
+        for _ in range(SHELF_PICK_EXECUTIONS):
+            if not self.on_cube_shelf(cube=cube):
+                break
+            try:
+                planned = self.shelf_pick_attempt(cube=cube, tried=tried)
+            except StepBudgetExhausted:
+                raise
+            except SkillFailed as exc:
+                missed.append(str(exc))
+                planned = True
+            if not planned:
+                if missed:
+                    break
+                raise SkillFailed(f"pick_cube_from_shelf: no grasp on {cube} planned")
+            if self.held(name=cube):
+                return
+            missed.append(f"{cube} did not come with the hand")
+            self.notes.append(f"pick_cube_from_shelf: attempt {len(missed)} missed; replanning")
+            self.sync()
+            self.retract(label="pick_cube_from_shelf_regrasp")
+            for _ in range(GRIP_STEPS):
+                self.env_step(action=FollowPlans._hold(grip=0.0), label="pick_cube_from_shelf_open")  # noqa: SLF001
+            self.sync()
+        raise SkillFailed(f"pick_cube_from_shelf: {cube} not picked ({'; '.join(missed)})"[:300])
+
+    def on_cube_shelf(self, *, cube: str) -> bool:
+        """Whether the cube still rests on the cube shelf, inside the cupboard."""
+        shelf = self.shelf
+        x, _, z = shelf.cube_position(cube=cube)
+        return bool(x > shelf.front_x and abs(z - shelf.board[CUBE_SHELF] - 0.01) < 0.01)
+
+    def shelf_pick_attempt(self, *, cube: str, tried: list[np.ndarray]) -> bool:
+        """One grasp execution, from the first (grasp, base) candidate whose arm
+        configurations are clear in MuJoCo and whose plans KINDER finds; False when
+        none plans (nothing moved). Approach directions in `tried` already missed this
+        cube and are not tried again; the one executed is added."""
+        import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
+
+        shelf = self.shelf
         robot, target = self.objects("robot", cube)
         centre = shelf.cube_position(cube=cube)
         obj_pose = self.cube_pose(cube=cube)
         controller = KinderControllers.get(name="PickShelf")
-        # (distance, rotation) putting the base at (x, cube y + dy), facing the cube:
-        # upstream's rotation parameter is relative to the cube's own yaw.
-        yaw = self.yaw(name=cube)
-        candidates = []
-        for base_x in SHELF_PICK_BASE_XS:
-            for dy in SHELF_PICK_Y_OFFSETS:
-                back = float(centre[0]) - base_x
-                candidates.append((float(np.hypot(back, dy)), float(np.arctan2(-dy, back) - yaw)))
-        tried = 0
         planner = shelf_skills.run_motion_planning
+        solved_grasp: list[np.ndarray] = []
+        solved_pre: list[np.ndarray] = []
+        failures: dict[int, int] = {}
 
         def held_on_support(*args: Any, **kwargs: Any) -> Any:
             if kwargs.get("held_object") is not None:
                 kwargs.setdefault("distance_threshold", HELD_ON_SUPPORT_THRESHOLD)
-            return planner(*args, **kwargs)
+                if solved_pre:
+                    # The retract starts where `lifter` leaves the hand, outside the
+                    # front (`shelf_exit`) or at the pre-grasp, not at the grasp in
+                    # among the boards.
+                    start = [*solved_pre[-1].tolist(), *list(args[1])[7:]]
+                    args = (args[0], start, *args[2:])
+            elif solved_grasp and np.allclose(np.asarray(args[2])[:7], solved_grasp[-1]):
+                # Upstream's own approach, straight to the grasp: `PreGraspApproach`
+                # replaces it with its plan to the pre-grasp, so it is not planned.
+                return [list(args[1]), list(args[2])]
+            else:
+                # The approach to the pre-grasp, whose end is solved clear in MuJoCo.
+                # KINDER's planning scene adds its own cupboard model to the compiled
+                # one, boards 6.35 mm low, and an arm a few millimetres off MuJoCo's:
+                # into the back of the shelf it put the wrist 1-8 mm into the board
+                # above at every pre-grasp MuJoCo found clear. Planned with that much
+                # slack, every plan is still re-checked in MuJoCo (`plan_blocked`).
+                kwargs.setdefault("distance_threshold", -SHELF_PICK_PLANNING_SLACK)
+            # Out of the back of the shelf with a cube in hand the way out is narrow:
+            # BiRRT with upstream's seed found none where another seed does.
+            for seed in SHELF_PICK_PLAN_SEEDS:
+                plan = planner(*args, **{**kwargs, "seed": seed})
+                if plan is not None:
+                    return plan
+            return None
 
-        for hand, _ in shelf.shelf_cube_pose(cube=cube, centre=centre)[:SHELF_PICK_GRASPS]:
+        for drives, (hand, entry, base, grasp_conf, pre_conf) in enumerate(
+            self.shelf_candidates(cube=cube, centre=centre, tried=tried), start=1
+        ):
+            if failures.get(id(hand), 0) >= SHELF_PICK_PLANS_PER_GRASP:
+                continue
+            pre = entry[-1]
+            exit_pose, exit_conf = self.shelf_exit(pre=pre, pre_conf=pre_conf, base=base, cube=cube)
+            solved_grasp.append(grasp_conf)
+            solved_pre.append(pre_conf if exit_conf is None else exit_conf)
             grasp = self.pose_in(obj_pose=obj_pose, hand=hand)
             with (
                 self.constant(module=shelf_skills, name="GRASP_TRANSFORM_TO_OBJECT", value=grasp),
                 self.constant(
+                    module=shelf_skills,
+                    name="inverse_kinematics",
+                    value=self.fixed_ik(conf=grasp_conf),
+                ),
+                self.constant(
                     module=shelf_skills, name="run_motion_planning", value=held_on_support
                 ),
             ):
-                for params in candidates:
-                    pick = controller(objects=[robot, target], pybullet_sim=self.planning_sim())
-                    pick.settle = self.settler(hand=hand, label="pick_cube_from_shelf_settle")
-                    outcome = self.drive(
-                        controller=pick, params=params, label="pick_cube_from_shelf"
-                    )
-                    if outcome == "done":
-                        tried += 1
+                pick = controller(objects=[robot, target], pybullet_sim=self.planning_sim())
+                pick.settle = self.settler(
+                    hand=hand, entry=entry, label="pick_cube_from_shelf_settle"
+                )
+                pick.lift = self.lifter(
+                    pre=pre,
+                    outside=None if exit_conf is None else exit_pose,
+                    label="pick_cube_from_shelf_lift",
+                )
+                pick.pre_conf = pre_conf.tolist()
+                pick.retract_gain = SHELF_PICK_CARRY_GAIN
+                params = self.facing_params(base=base, centre=centre, cube=cube)
+                outcome = self.drive(controller=pick, params=params, label="pick_cube_from_shelf")
+            if outcome == "done":
+                tried.append(hand[:3, 2].copy())
+                return True
+            failures[id(hand)] = failures.get(id(hand), 0) + 1
+            if drives >= SHELF_PICK_PLANS:
+                return False
+        return False
+
+    def shelf_candidates(
+        self, *, cube: str, centre: np.ndarray, tried: list[np.ndarray]
+    ) -> Generator[
+        tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray, np.ndarray], None, None
+    ]:
+        """(grasp, entry, base, grasp arm, arm at the entry's first pose) candidates
+        clear in MuJoCo, lazily, in `shelf_hands` order -- except that a grasp with
+        another cube where the pads close (`cube_between_pads`) waits until every other
+        has been offered, and so does one whose hand touches another cube at the grasp
+        or the pre-grasp: in a cluster the jaws squeeze or shove the neighbour, but in a
+        tight one there may be no other grasp, and a grasp grazing a neighbour still
+        picked the cube on `main`.
+
+        Each pre-grasp is an entry of its own; after them, one that starts outside the
+        cupboard's front (`shelf_exit`) and comes in through the first pre-grasp: into
+        the back of the shelf, the plan to a pre-grasp can be refused by the MuJoCo
+        re-check from every base while the way in from the front is clear."""
+        crowded = []
+        bases = [b for b in self.shelf_pick_bases(centre=centre) if self.base_clear(base=b)]
+        drivable: dict[int, bool] = {}
+        for hand, pres in self.shelf_hands(cube=cube, centre=centre):
+            if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried):
+                continue
+            unreachable = 0
+            for i, base in enumerate(bases):
+                if i not in drivable:
+                    drivable[i] = self.base_drivable(base=base)
+                if not drivable[i]:
+                    continue
+                grasp_conf = self.shelf_grasp_conf(hand=hand, base=base, cube=cube)
+                if grasp_conf is None:
+                    # Whether a grasp is clear barely depends on the base; give up on
+                    # this one once it has failed from several bases in a row.
+                    unreachable += 1
+                    if unreachable >= SHELF_PICK_UNREACHABLE_BASES:
                         break
-            if tried:
-                break
-        if not tried:
-            raise SkillFailed(f"pick_cube_from_shelf: no grasp on {cube} planned")
-        if not self.held(name=cube):
-            raise SkillFailed(f"pick_cube_from_shelf: {cube} did not come with the hand")
+                    continue
+                unreachable = 0
+                squeezed = bool(
+                    self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
+                ) or self.touches_other_cube(base=base, arm=grasp_conf, cube=cube)
+                entries: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
+                for pre in pres:
+                    pre_conf = self.shelf_pre_conf(
+                        pre=pre, base=base, grasp_conf=grasp_conf, cube=cube
+                    )
+                    if pre_conf is not None:
+                        entries.append(((pre,), pre_conf))
+                if entries:
+                    (first,), first_conf = entries[0]
+                    out, out_conf = self.shelf_exit(
+                        pre=first, pre_conf=first_conf, base=base, cube=cube
+                    )
+                    if out_conf is not None:
+                        entries.append(((out, first), out_conf))
+                for entry, conf in entries:
+                    candidate = (hand, entry, base, grasp_conf, conf)
+                    if squeezed or self.touches_other_cube(base=base, arm=conf, cube=cube):
+                        crowded.append(candidate)
+                    else:
+                        yield candidate
+        yield from crowded
+
+    @staticmethod
+    def fixed_ik(*, conf: np.ndarray) -> Callable[..., list[float]]:
+        """Stands in for upstream's `inverse_kinematics(robot, pose, ...)`: the arm
+        configuration already solved and checked in MuJoCo, fingers as they are."""
+        return lambda robot, *_, **__: [*conf.tolist(), *list(robot.get_joint_positions())[7:]]
+
+    def shelf_hands(
+        self, *, cube: str, centre: np.ndarray
+    ) -> list[tuple[np.ndarray, tuple[np.ndarray, ...]]]:
+        """(grasp, pre-grasps) pinch-site poses for a cube on the shelf, in the order
+        they are tried.
+
+        Each grasp has the pads on two side faces and the approach leaning
+        `CUBE_LEANS_DEG` from vertical, the wrist out of the cupboard's open front
+        (`ShelfSkills.cube_grasp`): the approach leans along a face normal, so the pads
+        close on the opposite pair of faces -- never across the cube at an angle to them
+        (Josh, 2026-10-15). Last, grasps whose wrist leans sideways along the shelf
+        (`SHELF_PICK_MIN_SIDEWAYS`).
+
+        Each grasp has three pre-grasps: backed `PRE_GRASP_RISE` out along the
+        approach, then `SHELF_PICK_FAR_BACK` out along it, where the way to the nearer
+        one is too narrow to plan (cubes at the back of the shelf), then straight
+        above. Raised straight up, a steeply leaned wrist meets the board above in
+        KINDER's planning scene, whose boards sit 6.35 mm lower than MuJoCo's."""
+        quaternion = self.shelf.core.get_object(cube).get_pose()[1]
+        axes = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()
+        normal = np.arctan2(axes[1, 0], axes[0, 0])
+        faces = [normal + k * np.pi / 2 for k in range(4)]
+        out: list[tuple[np.ndarray, tuple[np.ndarray, ...]]] = []
+        seen: list[float] = []
+        for outward in (SHELF_PICK_MIN_OUTWARD, SHELF_PICK_MIN_SIDEWAYS):
+            for lean in CUBE_LEANS_DEG:
+                for face in faces:
+                    toward = np.array([np.cos(face), np.sin(face), 0.0])
+                    if toward[0] <= outward:
+                        continue
+                    key = float(np.rad2deg(face) % 360.0) + 1000.0 * lean
+                    if any(abs(key - k) < 1.0 for k in seen):
+                        continue
+                    seen.append(key)
+                    closing = np.array([toward[1], -toward[0], 0.0])
+                    rotation = Frames.leaned(closing=closing, lean_toward=toward, lean_deg=lean)
+                    hand = Frames.pose(
+                        rotation=rotation,
+                        position=np.asarray(centre) - CUBE_STANDOFF * rotation[:, 2],
+                    )
+                    back = hand.copy()
+                    back[:3, 3] -= PRE_GRASP_RISE * rotation[:, 2]
+                    above = hand.copy()
+                    above[2, 3] += PRE_GRASP_RISE
+                    far = hand.copy()
+                    far[:3, 3] -= SHELF_PICK_FAR_BACK * rotation[:, 2]
+                    out.append((hand, (back, far, above)))
+        return out
+
+    @staticmethod
+    def shelf_pick_bases(*, centre: np.ndarray) -> list[np.ndarray]:
+        """Base poses (x, y, heading) at `SHELF_PICK_BASE_XS` and cube y +
+        `SHELF_PICK_Y_OFFSETS`, each facing the cube, as upstream's parameters put it."""
+        out = []
+        for base_x in SHELF_PICK_BASE_XS:
+            for dy in SHELF_PICK_Y_OFFSETS:
+                y = float(centre[1]) + dy
+                heading = float(np.arctan2(float(centre[1]) - y, float(centre[0]) - base_x))
+                out.append(np.array([base_x, y, heading]))
+        return out
+
+    def facing_params(
+        self, *, base: np.ndarray, centre: np.ndarray, cube: str
+    ) -> tuple[float, float]:
+        """`PickShelfController`'s (distance, rotation) for `base`: its rotation is
+        relative to the cube's own yaw."""
+        back = float(centre[0] - base[0])
+        side = float(centre[1] - base[1])
+        return float(np.hypot(back, side)), float(np.arctan2(side, back) - self.yaw(name=cube))
+
+    def base_drivable(self, *, base: np.ndarray) -> bool:
+        """Whether upstream's own base planner (`run_base_motion_planning`, over the
+        scene's overhead footprints, as `PickShelfController.reset` calls it) reaches
+        `base`: it fails the same way for every grasp tried from that base."""
+        from kinder_models.dynamic3d.shelf.parameterized_skills import (
+            WORLD_X_BOUNDS,
+            WORLD_Y_BOUNDS,
+            run_base_motion_planning,
+        )
+        from spatialmath import SE2
+
+        plan = run_base_motion_planning(
+            state=self.state(),
+            target_base_pose=SE2(float(base[0]), float(base[1]), float(base[2])),
+            x_bounds=WORLD_X_BOUNDS,
+            y_bounds=WORLD_Y_BOUNDS,
+            seed=0,
+        )
+        return plan is not None
+
+    def base_clear(self, *, base: np.ndarray) -> bool:
+        """Whether the robot, at `base` with the arm at `HOME_ARM`, touches nothing but
+        the floor: a wiper dropped on the floor where the base would stand rules that
+        base out for every grasp, not just the first few tried from it."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.ik_data
+        d.qpos[:] = shelf.data.qpos
+        d.qpos[shelf.ba] = base
+        d.qpos[shelf.qa] = HOME_ARM
+        shelf.mujoco.mj_kinematics(m, d)
+        shelf.mujoco.mj_collision(m, d)
+        for contact in d.contact[: d.ncon]:
+            pair = (int(contact.geom1), int(contact.geom2))
+            for mine, other in (pair, pair[::-1]):
+                if (
+                    mine in shelf.robot_geoms
+                    and other not in shelf.robot_geoms
+                    and m.geom_bodyid[other] != 0
+                    and contact.dist < 0
+                ):
+                    return False
+        return True
+
+    def shelf_grasp_conf(
+        self, *, hand: np.ndarray, base: np.ndarray, cube: str
+    ) -> np.ndarray | None:
+        """The arm configuration at the grasp `hand` from `base`, solved on MuJoCo's own
+        kinematics and clear of the cupboard and the box; None if
+        there is none.
+
+        KINDER solves one IK in PyBullet and plans to whatever it returns: on cubes by
+        a side panel or at the back of the shelf, that one solution put the wrist into
+        the board above or a finger into the panel from every base, while other
+        solutions to the same hand pose are clear."""
+        shelf = self.shelf
+        try:
+            conf, collision = shelf.ik(
+                position=hand[:3, 3], rotation=hand[:3, :3], base=base, seed=HOME_ARM
+            )
+        except SkillFailed:
+            return None
+        if collision > 0:
+            return None
+        return self.wrapped(arm=conf)
+
+    def cube_between_pads(self, *, base: np.ndarray, arm: np.ndarray, cube: str) -> str | None:
+        """Another cube that lies where the pads close, at this base and arm: the jaws
+        would squeeze it with the target or shove it into it. Seen on human reset
+        layouts with cubes 3 cm apart, where the close knocked the target 9 cm along
+        the shelf and stacked it on its neighbour."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.ik_data
+        here = np.linalg.inv(shelf.site_pose())
+        pads = [
+            np.mean([(here @ np.r_[shelf.data.geom_xpos[g], 1.0])[:3] for g in side], axis=0)
+            for side in shelf.pad_sides
+        ]
+        half_gap = 0.5 * abs(float(pads[0][0] - pads[1][0]))
+        d.qpos[:] = shelf.data.qpos
+        d.qpos[shelf.ba] = base
+        d.qpos[shelf.qa] = arm
+        shelf.mujoco.mj_kinematics(m, d)
+        site = Frames.pose(
+            rotation=d.site_xmat[shelf.site].reshape(3, 3), position=d.site_xpos[shelf.site]
+        )
+        to_site = np.linalg.inv(site)
+        half = O.cube_half_size
+        corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
+        for i in range(5):
+            other = f"cube_{i}"
+            if other == cube:
+                continue
+            pose = self.cube_pose(cube=other)
+            points = (pose[:3, :3] @ (half * corners).T).T + pose[:3, 3]
+            local = (to_site[:3, :3] @ points.T).T + to_site[:3, 3]
+            inside = (
+                (np.abs(local[:, 0]) < half_gap)
+                & (np.abs(local[:, 1]) < JAW_HALF_WIDTH)
+                & (local[:, 2] > JAW_DEPTH[0])
+                & (local[:, 2] < JAW_DEPTH[1])
+            )
+            if inside.any():
+                return other
+        return None
+
+    def shelf_pre_conf(
+        self, *, pre: np.ndarray, base: np.ndarray, grasp_conf: np.ndarray, cube: str
+    ) -> np.ndarray | None:
+        """The arm configuration at the pre-grasp `pre`, on the grasp's IK branch and
+        clear as `shelf_grasp_conf` checks; None if there is none."""
+        shelf = self.shelf
+        try:
+            conf, collision = shelf.ik(
+                position=pre[:3, 3], rotation=pre[:3, :3], base=base, seed=grasp_conf, attempts=2
+            )
+        except SkillFailed:
+            return None
+        jump = np.max(np.abs((conf - grasp_conf + np.pi) % (2 * np.pi) - np.pi))
+        if collision > 0 or jump > SHELF_PICK_MAX_JUMP:
+            return None
+        return self.wrapped(arm=conf)
+
+    def wrapped(self, *, arm: np.ndarray) -> np.ndarray:
+        """Unlimited joints brought into (-pi, pi], as PyBullet reports them."""
+        shelf = self.shelf
+        out = np.array(arm, dtype=float)
+        for i, joint in enumerate(shelf.joints):
+            if not shelf.model.jnt_limited[joint]:
+                out[i] = (out[i] + np.pi) % (2 * np.pi) - np.pi
+        return out
+
+    def touches_other_cube(self, *, base: np.ndarray, arm: np.ndarray, cube: str) -> bool:
+        """Whether the robot, at this base and arm, touches a cube other than `cube`."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.ik_data
+        d.qpos[:] = shelf.data.qpos
+        d.qpos[shelf.ba] = base
+        d.qpos[shelf.qa] = arm
+        shelf.mujoco.mj_kinematics(m, d)
+        shelf.mujoco.mj_collision(m, d)
+        for contact in d.contact[: d.ncon]:
+            pair = (int(contact.geom1), int(contact.geom2))
+            for mine, other in (pair, pair[::-1]):
+                if mine in shelf.robot_geoms and contact.dist < 0:
+                    name = str(m.body(m.geom_bodyid[other]).name)
+                    if name.startswith("cube_") and name != cube:
+                        return True
+        return False
 
     def place(self, *, cube: str, hand_targets: list[np.ndarray], label: str) -> None:
         """`PlaceShelfController` releasing the held cube with the hand at each target
@@ -861,9 +1454,12 @@ class PlanFollower:
     after FINAL_STEP_LIMIT steps, anywhere after FOLLOW_STEP_LIMIT per waypoint --
     and whether the skill then did its job is the scene's to say, not the follower's."""
 
-    def __init__(self, *, plan: list[np.ndarray], final: float = FINAL_TOLERANCE) -> None:
+    def __init__(
+        self, *, plan: list[np.ndarray], final: float = FINAL_TOLERANCE, gain: float = 2.0
+    ) -> None:
         self.plan = plan
         self.final = final
+        self.gain = gain
         self.index = 0
         self.count = 0
 
@@ -884,6 +1480,6 @@ class PlanFollower:
         ):
             return None
         action = np.zeros(11, dtype=np.float32)
-        action[3:10] = 2.0 * e
+        action[3:10] = self.gain * e
         action[-1] = grip
         return action
