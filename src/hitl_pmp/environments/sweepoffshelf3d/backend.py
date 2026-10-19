@@ -11,7 +11,8 @@ Every predicate is decided here, once per state, from the live scene:
 - a cube or the wiper is *held* when both gripper pads touch it;
 - `OnShelf`: not held, behind the cube shelf's open front, resting on that board;
 - `InBox`: not held and wholly inside the box -- the env's own `cube_in_box`, which is
-  exactly what the task scores (measured in the box's frame: see `OrientedBox`);
+  exactly what the task scores (measured in the box's own frame; nothing is in a box
+  tipped past 5 deg);
 - `OnFloor`: any other unheld cube -- including two places no robot skill reaches.
   A cube that goes over the box's far rim passes through the 67 mm opening between
   that rim and the cube shelf's underside and comes to rest on the cupboard's bottom
@@ -330,19 +331,18 @@ class SweepOffShelf3DBackend(BaseModel):
 
 
 class OrientedBox:
-    """The box's interior in its own frame, so a box the robot has turned still scores.
+    """A `box_interior` that answers for a turned box instead of raising.
 
-    KINDER's `box_interior` raises for any box not axis-aligned, and its `cube_in_box`
-    and `_check_goals` -- which every `env.step` calls -- go through it, so a pick that
-    nudges the box a few degrees used to crash the episode. `install` rebinds both on
-    this scene's own object-centric env; nothing upstream changes. For an axis-aligned
-    box both answer exactly as upstream's do.
+    KINDER's `box_interior` raises for any box not axis-aligned, so a pick that nudges
+    the box a few degrees would crash every caller. `install` rebinds it on this scene's
+    own object-centric env; for an axis-aligned box it answers exactly as upstream's
+    does. Containment itself is upstream's `cube_in_box`, unchanged: measured in the
+    box's own frame, and nothing is in a box tipped past 5 deg.
     """
 
     @staticmethod
     def install(*, core: Any) -> None:
         core.box_interior = types.MethodType(OrientedBox.interior, core)
-        core.cube_in_box = types.MethodType(OrientedBox.cube_in_box, core)
 
     @staticmethod
     def _frame(core: Any) -> tuple[Any, np.ndarray, Any, float, float]:  # noqa: PLR0917
@@ -367,25 +367,3 @@ class OrientedBox:
         high = position[:2] + corners[:, :2].max(axis=0)
         bound = (float(low[0]), float(low[1]), float(high[0]), float(high[1]))
         return bound, float(position[2]) + box.height
-
-    @staticmethod
-    def cube_in_box(core: Any, name: str) -> bool:  # noqa: PLR0917
-        """All eight cube corners inside the inner walls and below the rim, both
-        measured in the box's own frame."""
-        from scipy.spatial.transform import Rotation
-
-        box, position, rotation, half_x, half_y = OrientedBox._frame(core)
-        cube = core._objects_dict[name]  # noqa: SLF001
-        cube_position, cube_quaternion = cube.get_pose()
-        cube_rotation = Rotation.from_quat(np.asarray(cube_quaternion, dtype=float)[[1, 2, 3, 0]])
-        signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
-        corners = cube_rotation.apply(signs * np.asarray(cube.size)) + cube_position
-        x, y, z = rotation.inv().apply(corners - position).T
-        tolerance = 1e-9
-        return bool(
-            np.all(
-                (np.abs(x) <= half_x + tolerance)
-                & (np.abs(y) <= half_y + tolerance)
-                & (z < box.height)
-            )
-        )
