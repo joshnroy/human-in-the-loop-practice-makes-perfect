@@ -56,3 +56,20 @@ class SkillNote(BaseModel):
     kind: str
     reason: str
     params: list[float] | None = None
+
+
+class FloorGrasp(BaseModel):
+    """One candidate for the floor and box picks (`floor_pick.py`): pinch-site poses
+    for the grasp, the pre-grasp it descends from and the end of the straight lift, the
+    base it is reached from, and the arm at each, solved and checked in MuJoCo."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    lean_deg: float
+    hand: np.ndarray
+    pre: np.ndarray
+    lift: np.ndarray
+    base: np.ndarray
+    grasp_conf: np.ndarray
+    pre_conf: np.ndarray
+    lift_conf: np.ndarray
