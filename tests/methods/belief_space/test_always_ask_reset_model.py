@@ -211,6 +211,33 @@ def test_the_reset_price_decides_whether_practice_is_worth_it(
     assert choices[1e6][0].skill.name == "STOP"
 
 
+def test_the_reset_keeps_the_search_cost_bookkeeping_exact(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Expectimax carries `summed_cost + step cost` beside each belief's own
+    accumulated cost and asserts they agree. Adding the toss and the reset as two
+    separate float additions broke that on a real run (decision 80 of the first smoke
+    run); these values are one case where (a + c) + 5 - a, added back to a, misses."""
+    method = _method(solver="expectimax", wrapped=True)
+    _start_session(method=method, monkeypatch=monkeypatch)
+    holding = _holding(method=method)
+    toss = _ground(method=method, name=TOSS_SKILL, atoms=holding)
+    state = method.pomdp_state.model_copy(
+        update={
+            "accumulated_cost": 2.054962064177668,
+            "expected_execution_costs": {str(toss): 0.779211200935358},
+        }
+    )
+    model = method._pomdp_model  # noqa: SLF001
+    search_state = make_tossing3d_search_state(state=state, true_atoms=holding)
+    for next_environment, cost, _ in model.transition_outcomes(
+        environment_state=search_state, practice_action=toss, belief_state=state
+    ):
+        assert state.accumulated_cost + cost == next_environment.state.accumulated_cost
+    method._pomdp_state = state  # noqa: SLF001
+    method.select_skill_to_practice(true_atoms=holding)
+
+
 def test_a_skill_without_continuous_parameters_is_not_followed_by_a_reset(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -431,11 +431,17 @@ class Tossing3DPracticeModel(BaseModel):
         reset = self.forced_start_reset
         if reset is None or action.skill.param_dim == 0:
             return branches
+        # One step cost for skill and reset together, added to the parent's cost once:
+        # the searches carry `summed_cost + step cost` and assert it equals the
+        # branch's own accumulated cost, which two separate float additions can miss.
         return tuple(
             (
                 probability,
                 next_state.model_copy(
-                    update={"accumulated_cost": next_state.accumulated_cost + reset.cost}
+                    update={
+                        "accumulated_cost": state.accumulated_cost
+                        + (next_state.accumulated_cost + reset.cost - state.accumulated_cost)
+                    }
                 ),
                 reset.start_atoms,
             )
