@@ -44,6 +44,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
+from hitl_pmp.methods.belief_space.types.forced_start_reset import ForcedStartReset
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -557,3 +558,78 @@ def test_a_model_without_symmetry_reports_no_classes(*, ground_skills):
         state=_belief(domain=CHEAP_DOMAIN), true_atoms=STATES["start"]
     )
     assert model.object_symmetry_for(environment_state=state).classes == ()
+
+
+# The always-ask wrapper's reset (`ForcedStartReset`): every sweep is followed by a jump
+# to one fixed state, which a swap must map onto itself.
+RESET_DESTINATIONS = {
+    "start": STATES["start"],
+    "cube_4_on_the_floor": _atoms(shelf=range(4), floor=(4,)),
+}
+
+
+def _with_forced_reset(*, model: Tossing3DPracticeModel, destination: str):
+    return model.model_copy(
+        update={
+            "forced_start_reset": ForcedStartReset(
+                start_atoms=RESET_DESTINATIONS[destination], cost=5.0
+            )
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("destination", "expected"),
+    [("start", set(CUBES)), ("cube_4_on_the_floor", set(CUBES[:4]))],
+)
+def test_the_reset_destination_must_be_symmetric_too(*, ground_skills, destination, expected):
+    model = _with_forced_reset(
+        model=Tossing3DPracticeModel(
+            ground_skills=ground_skills, domain=CHEAP_DOMAIN, object_symmetry=True
+        ),
+        destination=destination,
+    )
+    found = model.object_symmetry_for(
+        environment_state=make_tossing3d_search_state(
+            state=_belief(domain=CHEAP_DOMAIN), true_atoms=STATES["start"]
+        )
+    )
+    assert [set(c) for c in found.classes] == [expected]
+
+
+def test_a_sweep_under_the_wrapper_lands_in_the_start_state(*, ground_skills):
+    """SweepShelf is the shelf's one skill with continuous parameters, so the same
+    model change makes the shelf's wrapped planners reset-aware too."""
+    naive = Tossing3DPracticeModel(ground_skills=ground_skills, domain=CHEAP_DOMAIN)
+    model = _with_forced_reset(model=naive, destination="start")
+    belief = _belief(domain=CHEAP_DOMAIN)
+    sweep = next(g for g in ground_skills if g.skill.name == "SweepShelf")
+    search_state = make_tossing3d_search_state(
+        state=belief, true_atoms=sweep.preconditions | STATIC
+    )
+    outcomes = model.outcomes(environment_state=search_state, state=belief, action=sweep)
+    before = naive.outcomes(environment_state=search_state, state=belief, action=sweep)
+    assert len(outcomes) == len(before) > 0
+    for (p, state, after), (q, naive_state, _) in zip(outcomes, before, strict=True):
+        assert (p, after) == (q, STATES["start"])
+        assert state.accumulated_cost == pytest.approx(naive_state.accumulated_cost + 5.0)
+
+
+@pytest.mark.parametrize("destination", sorted(RESET_DESTINATIONS))
+@pytest.mark.parametrize("state", ["start", "scattered"])
+def test_exact_with_a_forced_reset(*, ground_skills, state, destination):
+    model = _with_forced_reset(
+        model=Tossing3DPracticeModel(
+            ground_skills=ground_skills,
+            domain=CHEAP_DOMAIN,
+            linear_cost_lambda=LINEAR_COST_LAMBDA,
+        ),
+        destination=destination,
+    )
+    _assert_exact(
+        ground_skills=ground_skills,
+        model=model,
+        atoms=STATES[state],
+        depth=3,
+        belief=BELIEFS["carry_trained"](CHEAP_DOMAIN),
+    )
