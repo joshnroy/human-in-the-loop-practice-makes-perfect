@@ -98,6 +98,12 @@ export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 kinder_src="$REPO_ROOT/reference/kindergarden/src"
 [ -d "$kinder_src" ] && export PYTHONPATH="$kinder_src:$PYTHONPATH"
 
+# kinder_models is the second half of the same install, from a different submodule,
+# with its own editable .pth naming the main checkout. Fixing only `kinder` above
+# left a worktree testing its own kindergarden against the main checkout's models.
+kinder_models_src="$REPO_ROOT/reference/kinder-baselines/kinder-models/src"
+[ -d "$kinder_models_src" ] && export PYTHONPATH="$kinder_models_src:$PYTHONPATH"
+
 # --- rendering backend -----------------------------------------------------
 # KINDER installs into THIS env now (the `tossing3d` extra), so a plain `pytest`
 # imports it, and the EGL pair has to be set here rather than in a second wrapper.
@@ -124,6 +130,7 @@ if [ "$#" -eq 0 ]; then
     echo "MUJOCO_GL     $MUJOCO_GL"
     python -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
     python -c 'import kinder; print("kinder        " + kinder.__file__)' 2>/dev/null || echo "kinder        <not installed -- tossing3d tests will skip>"
+    python -c 'import kinder_models; print("kinder_models " + kinder_models.__file__)' 2>/dev/null || echo "kinder_models <not installed -- tossing3d tests will skip>"
     exit 0
 fi
 
