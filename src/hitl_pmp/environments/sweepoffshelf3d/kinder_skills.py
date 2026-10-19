@@ -141,6 +141,9 @@ SHELF_PICK_UNREACHABLE_BASES = 3
 # close, 11 mm long), with a few millimetres' margin.
 JAW_HALF_WIDTH = 0.016
 JAW_DEPTH = (0.0, 0.05)
+# A cupboard geom whose top is no more than this (m) above the cube's bottom face is the
+# board the cube rests on, not something the closing pads could clamp.
+SUPPORT_SLACK = 0.002
 # Largest joint change (rad) from the grasp to the pre-grasp: more is another IK branch.
 SHELF_PICK_MAX_JUMP = 0.5
 # A cube resting on a board starts the held-object retract plan touching it, which the
@@ -759,13 +762,19 @@ class KinderSkills:
         hand: np.ndarray,
         label: str,
         entry: tuple[np.ndarray, ...] = (),
+        cube: str | None = None,
     ) -> Callable[[], None]:
         """The approach from the pre-grasp (`PreGraspApproach`) to the pinch-site pose
         `hand`, in straight lines on MuJoCo's own kinematics: KINDER solves IK in
         PyBullet, whose arm sits up to ~5 mm from MuJoCo's at the same joints -- enough
         to put a pad on top of a 15 mm wiper head or a 2 cm cube. The pre-grasp is
         `entry`'s first pose, the hand passing through the rest on the way in; with no
-        `entry`, `PRE_GRASP_RISE` straight above the grasp."""
+        `entry`, `PRE_GRASP_RISE` straight above the grasp.
+
+        A move that stops short is tolerated, since the hand may still have arrived
+        close enough; but given a `cube`, the approach fails unless that cube is between
+        the pads (`cube_in_jaws`). Tolerated without that check, an approach stalled
+        17 cm short closed the gripper on air (layout-56)."""
 
         def settle() -> None:
             shelf = self.shelf
@@ -774,13 +783,20 @@ class KinderSkills:
             above = hand.copy()
             above[2, 3] += PRE_GRASP_RISE
             first, *rest = entry or (above,)
-            with contextlib.suppress(SkillFailed):
+            stopped = ""
+            try:
                 shelf.settle_at(pose=first, label=label)
                 for pose in rest:
                     shelf.path(position=pose[:3, 3], rotation=pose[:3, :3], label=label, count=6)
                 shelf.path(position=hand[:3, 3], rotation=hand[:3, :3], label=label, count=3)
+            except SkillFailed as exc:
+                stopped = f" ({exc})"
             with contextlib.suppress(SkillFailed):
                 shelf.settle_at(pose=hand, label=label)
+            if cube is not None and not self.cube_in_jaws(cube=cube):
+                raise SkillFailed(
+                    f"{label}: the approach ended with {cube} not between the pads{stopped}"
+                )
 
         return settle
 
@@ -1074,7 +1090,7 @@ class KinderSkills:
             ):
                 pick = controller(objects=[robot, target], pybullet_sim=self.planning_sim())
                 pick.settle = self.settler(
-                    hand=hand, entry=entry, label="pick_cube_from_shelf_settle"
+                    hand=hand, entry=entry, label="pick_cube_from_shelf_settle", cube=cube
                 )
                 pick.lift = self.lifter(
                     pre=pre,
@@ -1084,7 +1100,14 @@ class KinderSkills:
                 pick.pre_conf = pre_conf.tolist()
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
                 params = self.facing_params(base=base, centre=centre, cube=cube)
-                outcome = self.drive(controller=pick, params=params, label="pick_cube_from_shelf")
+                try:
+                    outcome = self.drive(
+                        controller=pick, params=params, label="pick_cube_from_shelf"
+                    )
+                except SkillFailed:
+                    # Executed and failed: the next attempt must not run it again.
+                    tried.append(hand[:3, 2].copy())
+                    raise
             if outcome == "done":
                 tried.append(hand[:3, 2].copy())
                 return True
@@ -1104,7 +1127,8 @@ class KinderSkills:
         has been offered, and so does one whose hand touches another cube at the grasp
         or the pre-grasp: in a cluster the jaws squeeze or shove the neighbour, but in a
         tight one there may be no other grasp, and a grasp grazing a neighbour still
-        picked the cube on `main`.
+        picked the cube on `main`. A grasp whose pads would close on the cupboard
+        itself (`cupboard_between_pads`) is not offered at all.
 
         Each pre-grasp is an entry of its own; after them, one that starts outside the
         cupboard's front (`shelf_exit`) and comes in through the first pre-grasp: into
@@ -1115,6 +1139,8 @@ class KinderSkills:
         drivable: dict[int, bool] = {}
         for hand, pres in self.shelf_hands(cube=cube, centre=centre):
             if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried):
+                continue
+            if self.cupboard_between_pads(hand=hand, cube=cube):
                 continue
             unreachable = 0
             for i, base in enumerate(bases):
@@ -1304,12 +1330,7 @@ class KinderSkills:
         the shelf and stacked it on its neighbour."""
         shelf = self.shelf
         m, d = shelf.model, shelf.ik_data
-        here = np.linalg.inv(shelf.site_pose())
-        pads = [
-            np.mean([(here @ np.r_[shelf.data.geom_xpos[g], 1.0])[:3] for g in side], axis=0)
-            for side in shelf.pad_sides
-        ]
-        half_gap = 0.5 * abs(float(pads[0][0] - pads[1][0]))
+        half_gap = self.jaw_half_gap()
         d.qpos[:] = shelf.data.qpos
         d.qpos[shelf.ba] = base
         d.qpos[shelf.qa] = arm
@@ -1336,6 +1357,73 @@ class KinderSkills:
             if inside.any():
                 return other
         return None
+
+    def jaw_half_gap(self) -> float:
+        """Half the distance between the pads as they are now, across the closing axis."""
+        shelf = self.shelf
+        here = np.linalg.inv(shelf.site_pose())
+        pads = [
+            np.mean([(here @ np.r_[shelf.data.geom_xpos[g], 1.0])[:3] for g in side], axis=0)
+            for side in shelf.pad_sides
+        ]
+        return 0.5 * abs(float(pads[0][0] - pads[1][0]))
+
+    def cupboard_between_pads(self, *, hand: np.ndarray, cube: str) -> str | None:
+        """The cupboard geom (side panel, back, a board other than the one the cube
+        rests on) inside the space between the open pads at grasp `hand`, from the site
+        to the cube's centre (`CUBE_STANDOFF` ahead): the pads would close on it, not
+        the cube. A cube 6 mm from a side panel, grasped across the panel's normal, put
+        the open outer pad outside the 1 cm panel; the jaws clamped the panel and the
+        lift stalled on it. The board under the cube is left out: the pads close above
+        it, and `shelf_grasp_conf` already refuses a pad that touches it."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.data
+        jaw_half = np.array([self.jaw_half_gap(), JAW_HALF_WIDTH, 0.5 * CUBE_STANDOFF])
+        jaw_centre = hand[:3, 3] + 0.5 * CUBE_STANDOFF * hand[:3, 2]
+        bottom = float(shelf.cube_position(cube=cube)[2]) - O.cube_half_size
+        for g in sorted(shelf.cupboard_geoms):
+            if m.geom_type[g] != shelf.mujoco.mjtGeom.mjGEOM_BOX:
+                continue
+            rotation = d.geom_xmat[g].reshape(3, 3)
+            half = m.geom_size[g]
+            if float(d.geom_xpos[g][2] + np.abs(rotation[2]) @ half) <= bottom + SUPPORT_SLACK:
+                continue
+            if self.boxes_overlap(
+                first=(jaw_centre, hand[:3, :3], jaw_half),
+                second=(d.geom_xpos[g], rotation, half),
+            ):
+                return str(m.geom(g).name)
+        return None
+
+    @staticmethod
+    def boxes_overlap(
+        *,
+        first: tuple[np.ndarray, np.ndarray, np.ndarray],
+        second: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> bool:
+        """Whether two oriented boxes, each (centre, rotation, half-extents), intersect:
+        the separating-axis test over both boxes' face normals and their edge crossings."""
+        (ca, ra, ha), (cb, rb, hb) = first, second
+        axes = [*ra.T, *rb.T]
+        axes += [np.cross(a, b) for a in ra.T for b in rb.T]
+        gap = np.asarray(cb) - np.asarray(ca)
+        for axis in axes:
+            if np.linalg.norm(axis) < 1e-9:
+                continue
+            reach = np.abs(ra.T @ axis) @ ha + np.abs(rb.T @ axis) @ hb
+            if abs(float(gap @ axis)) > float(reach):
+                return False
+        return True
+
+    def cube_in_jaws(self, *, cube: str) -> bool:
+        """Whether the cube's centre lies between the pads, as the hand is now."""
+        shelf = self.shelf
+        local = np.linalg.inv(shelf.site_pose()) @ np.r_[shelf.cube_position(cube=cube), 1.0]
+        return bool(
+            abs(local[0]) < self.jaw_half_gap()
+            and abs(local[1]) < JAW_HALF_WIDTH
+            and JAW_DEPTH[0] < local[2] < JAW_DEPTH[1]
+        )
 
     def shelf_pre_conf(
         self, *, pre: np.ndarray, base: np.ndarray, grasp_conf: np.ndarray, cube: str
