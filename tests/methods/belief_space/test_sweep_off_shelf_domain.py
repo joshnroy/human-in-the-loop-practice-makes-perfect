@@ -256,3 +256,47 @@ def test_the_shelf_method_builds_from_the_shelfs_own_skills(*, solver: str) -> N
     )
     beliefs = set(method.pomdp_state.skill_beliefs)
     assert {name for name, _ in SWEEP_OFF_SHELF_DOMAIN.belief_sources} <= beliefs
+
+
+@pytest.mark.parametrize("solver", ["determinized_astar", "expectimax"])
+@pytest.mark.parametrize("human_reset", [True, False])
+def test_the_shelf_method_builds_with_and_without_the_human_reset(
+    *, solver: str, human_reset: bool
+) -> None:
+    """`--no-human-reset` offers neither human skill, so the practice domain drops
+    their beliefs, aliases and failure-effect entries -- the same filtering the
+    always-ask wrapper applies -- instead of failing its completeness check. With the
+    reset offered, both human skills keep their beliefs and actions."""
+    from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
+    from hitl_pmp.environments.sweepoffshelf3d.skill_provider import (
+        SweepOffShelf3DSkillProvider,
+    )
+    from hitl_pmp.methods.belief_space.practice_domain import SHELF_HUMAN_SKILLS
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+
+    env = SweepOffShelf3DEnvironment()
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=SweepOffShelf3DSkillProvider(env=env, offer_human_reset=human_reset),
+        pomdp_domain=SWEEP_OFF_SHELF_DOMAIN,
+        pomdp_solver=solver,
+        pomdp_search_depth=2,
+        seed=0,
+    )
+    human = set(SHELF_HUMAN_SKILLS)
+    domain = method.pomdp_domain
+    beliefs = {name for name, _ in domain.belief_sources}
+    actions = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert (human <= beliefs) is human_reset
+    assert (human <= set(method.pomdp_state.skill_beliefs)) is human_reset
+    assert (human <= actions) is human_reset
+    assert (human <= domain.failure_effect_skills) is human_reset
+    if not human_reset:
+        assert not (human & beliefs)
+        assert not (human & set(method.pomdp_state.skill_beliefs))
+        assert not (human & actions)
+        assert not (human & domain.failure_effect_skills)
+        assert not (human & {n for pair in domain.shared_beliefs for n in pair})
+    # Robot beliefs are never dropped, and the shared domain is never modified.
+    assert set(SHELF_ROBOT_SKILLS) <= beliefs
+    assert human <= {name for name, _ in SWEEP_OFF_SHELF_DOMAIN.belief_sources}

@@ -24,6 +24,8 @@ class ReplayStatus(BaseModel):
     history: tuple[str, ...] = ()
     banner: str | None = None
     banner_tone: Literal["human", "success", "failure"] | None = None
+    # Replaces "<speedup>x speed" for a playback that is not a speed-up of real time.
+    pacing: str | None = None
 
 
 class ReplaySummary(BaseModel):

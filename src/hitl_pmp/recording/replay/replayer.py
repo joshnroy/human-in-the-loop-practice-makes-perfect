@@ -1,8 +1,10 @@
 from collections.abc import Iterable
+from typing import ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
 from hitl_pmp.core.renderer.renderer import VideoStream
 from hitl_pmp.recording.run_record.types import (
     ActionEntry,
@@ -46,6 +48,10 @@ class RecordingReplayer(BaseModel):
     _shown: int = PrivateAttr(default=0)
     _recorded: int = PrivateAttr(default=0)
     _action: ActionEntry | None = PrivateAttr(default=None)
+    _action_drawn: bool = PrivateAttr(default=False)
+
+    # The full reset rebuilds the whole scene, so it is named for what it does.
+    SAMPLED_START_RESET_LABEL: ClassVar[str] = "HUMAN RESET to a sampled start state"
 
     def play(
         self, *, header: RecordingHeader, entries: Iterable[RecordEntry], video: VideoStream
@@ -57,6 +63,7 @@ class RecordingReplayer(BaseModel):
             method=header.method,
             phase=Phase.PRACTICE,
             speedup=self.practice_speedup,
+            pacing="1 frame / action" if self.renderer.storyboard else None,
         )
         for entry in entries:
             if isinstance(entry, TickEntry):
@@ -99,18 +106,23 @@ class RecordingReplayer(BaseModel):
 
     def _begin_action(self, *, action: ActionEntry) -> None:
         self._action = action
+        self._action_drawn = False
         self._counter = 0
         name = action.label or (
             f"{action.skill}({', '.join(action.objects)})" if action.objects else action.skill
         )
-        if action.actor == "human":
+        skill = action.label or action.skill
+        if action.actor == "human" and action.skill == SAMPLED_START_RESET_SKILL_NAME:
+            name = RecordingReplayer.SAMPLED_START_RESET_LABEL
+            skill = name.removeprefix("HUMAN ")
+        elif action.actor == "human":
             name = f"HUMAN {name}"
         if action.success is False:
             name += " ✗"
         self._history.append(name)
         self._update(
             actor=action.actor,
-            skill=action.label or action.skill,
+            skill=skill,
             start_step=action.start_step,
             end_step=action.end_step,
             cycle=action.cycle if action.cycle is not None else self._require().cycle,
@@ -122,9 +134,14 @@ class RecordingReplayer(BaseModel):
         action = self._action
         if action is not None and action.actor == "human" and tick.seq == action.seq:
             moved = ", ".join(sorted(action.moved_objects or {})) or "nothing"
+            title = (
+                RecordingReplayer.SAMPLED_START_RESET_LABEL
+                if action.skill == SAMPLED_START_RESET_SKILL_NAME
+                else f"HUMAN: {action.skill}"
+            )
             self._show(
                 tick=tick,
-                banner=f"HUMAN: {action.skill}\nmoved {moved}",
+                banner=f"{title}\nmoved {moved}",
                 tone="human",
                 repeat=self._hold(),
             )
@@ -153,6 +170,14 @@ class RecordingReplayer(BaseModel):
         if self._skipped is not None:
             tick, self._skipped = self._skipped, None
             self._show(tick=tick)
+        if (
+            self.renderer.storyboard
+            and self._action is not None
+            and not self._action_drawn
+            and self._scene is not None
+        ):
+            self._action_drawn = True
+            self._append(frame=self._scene, banner=None, tone=None, repeat=1)
 
     def _show(
         self,
@@ -163,6 +188,7 @@ class RecordingReplayer(BaseModel):
         repeat: int = 1,
     ) -> None:
         self._scene = self.renderer.show(state=tick.state)
+        self._action_drawn = True
         self._shown += 1
         self._append(frame=self._scene, banner=banner, tone=tone, repeat=repeat)
 

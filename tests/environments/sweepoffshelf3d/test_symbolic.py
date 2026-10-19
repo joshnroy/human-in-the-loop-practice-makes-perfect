@@ -219,6 +219,48 @@ def test_fast_downward_plans_to_the_goal_from_the_start():
     assert [ground.skill.name for ground in plan] == ["PickWiper", "SweepShelf"]
 
 
+_LAYOUTS = {
+    "all on the shelf": {"on_shelf": O.cubes},
+    "all on the floor": {"on_shelf": (), "on_floor": O.cubes},
+    "mixed": {"on_shelf": O.cubes[:2], "on_floor": O.cubes[2:4], "in_box": O.cubes[4:]},
+    "one left on the floor": {"on_shelf": (), "on_floor": O.cubes[:1], "in_box": O.cubes[1:]},
+}
+
+
+@pytest.mark.parametrize("layout", sorted(_LAYOUTS))
+@pytest.mark.parametrize("wiper_home", [True, False])
+@pytest.mark.parametrize("holding", ["nothing", "wiper", "cube"])
+def test_the_robot_alone_can_reach_the_goal_from_every_kind_of_scene(
+    *, layout, wiper_home, holding
+):
+    """The always-ask wrapper's stranded trigger fires only when no robot-only plan
+    reaches the goal. Every cube can be picked from the shelf or the floor and placed
+    without the wiper, so even a fallen wiper -- which only the human can recover --
+    strands nothing, and p (the human's competence at reset_cubes, which robot-only
+    planning never uses) cannot make the trigger fire."""
+    if holding == "wiper" and not wiper_home:
+        pytest.skip("a fallen wiper cannot be in the hand")
+    atoms = _start(wiper_home=wiper_home, **_LAYOUTS[layout])
+    if holding == "wiper":
+        atoms = _holding_wiper(atoms=atoms)
+    elif holding == "cube":
+        pick = next(
+            g
+            for skill in (S.PICK_CUBE_FROM_SHELF, S.PICK_CUBE_FROM_FLOOR)
+            for g in _groundings(skill=skill, atoms=atoms)
+        )
+        atoms = _apply(ground=pick, atoms=atoms)
+    plan = FastDownwardPlanner.plan(
+        skills=S.robot_skills(),
+        objects=O.all_objects(),
+        predicates=SweepOffShelf3DPredicates.all(),
+        types=O.all_types(),
+        init_atoms=atoms,
+        goal=SweepOffShelf3DPredicates.goal_atoms(),
+    )
+    assert plan
+
+
 # --- competence semantics: no skill can succeed vacuously ---------------------
 
 

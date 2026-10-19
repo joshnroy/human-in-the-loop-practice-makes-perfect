@@ -66,6 +66,14 @@ class RecordingVideo:
             return Tossing3DReplayRenderer(
                 scene=header.scene, scene_bg=True if realistic_background else None
             )
+        if header.environment == "sweepoffshelf3d":
+            from hitl_pmp.environments.sweepoffshelf3d.recording import (
+                SweepOffShelf3DReplayRenderer,
+            )
+
+            return SweepOffShelf3DReplayRenderer(
+                scene=header.scene, scene_bg=True if realistic_background else None
+            )
         raise NotImplementedError(f"no replay renderer exists yet for {header.environment!r}")
 
     @staticmethod
