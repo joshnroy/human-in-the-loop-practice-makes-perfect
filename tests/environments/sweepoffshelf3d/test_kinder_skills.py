@@ -10,6 +10,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SweepOffShelf3DEnvironment,
 )
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import HOME_ARM, RETRACT_TOLERANCE
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -44,6 +45,14 @@ def _arm_from_home(*, env):
     return float(np.max(np.abs((arm - HOME_ARM + np.pi) % (2 * np.pi) - np.pi)))
 
 
+def _wiper_carried_clear(*, env):
+    """`KinderSkills.retract`'s end state holding the wiper: the hand at the carry height
+    and the whole wiper outside the cupboard's open front."""
+    skills = env.controllers()._skills  # noqa: SLF001
+    far = env.controllers()._kinder.wiper_far_x()  # noqa: SLF001
+    return skills.site_pose()[2, 3] > CARRY_Z - 0.02 and far < skills.front_x
+
+
 def _teleport(*, env, name, position):
     obj = env.backend().core().get_object(name)
     obj.set_pose(list(position), [1.0, 0.0, 0.0, 0.0])
@@ -53,11 +62,68 @@ def _teleport(*, env, name, position):
         env.backend().env().step(np.zeros(11))
 
 
-def test_pick_wiper_takes_it_off_its_shelf_and_retracts_the_arm(*, env):
+def test_pick_wiper_takes_it_off_its_shelf_and_carries_it_clear(*, env):
     env.reset_to_seed(seed=0)
     atoms = _act(env=env, skill="PickWiper")
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
-    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+    assert _wiper_carried_clear(env=env)
+
+
+def _turn_wiper_in_its_slot(*, env, degrees):
+    backend = env.backend()
+    obj = backend.core().get_object("wiper_0")
+    position, quaternion = (np.asarray(v, dtype=float) for v in obj.get_pose())
+    w, x, y, z = quaternion
+    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)) + np.radians(degrees)
+    obj.set_pose(list(position), [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+    obj.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+    for _ in range(30):
+        backend.env().step(np.zeros(11))
+    env.controllers().on_objects_moved()
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
+    assert ("WiperHome", ("wiper_0",)) in env.backend().abstract_atoms()
+
+
+@pytest.mark.parametrize("degrees", [-0.2, 0.15, 0.3])
+def test_pick_wiper_takes_a_wiper_sitting_a_fraction_of_a_degree_off_square(*, env, degrees):
+    """The EES p0 stage-5 tally (56 failures of "the wiper did not come with the hand"):
+    the wiper home at 90.05 deg instead of 90.00. Upstream's retract, planned blind to
+    the held wiper, then took the hand 9 cm deeper into the cupboard, the wiper struck
+    the back panel and was torn out of the pads, left turned ~25 deg on its shelf --
+    where every later attempt failed too."""
+    env.reset_to_seed(seed=0)
+    _turn_wiper_in_its_slot(env=env, degrees=degrees)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+    assert _wiper_carried_clear(env=env)
+
+
+def test_pick_wiper_from_an_arm_left_over_the_box(*, env):
+    """PR #445's one PickWiper failure (Lane B's E2, seed 3): the arm where a
+    PlaceCubeInBox leaves it. With the base square on to the wiper no candidate planned
+    (17 tried); swung a little to one side, one does."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames
+
+    env.reset_to_seed(seed=3)
+    skills = env.controllers()._skills  # noqa: SLF001
+    rotation = Frames.leaned(
+        closing=np.array([0.0, 1.0, 0.0]), lean_toward=np.array([1.0, 0.0, 0.0]), lean_deg=30.0
+    )
+    base = np.array([0.75, 0.0, 0.0])
+    arm, _ = skills.ik(position=[1.235, 0.0, 0.36], rotation=rotation, base=base)
+    _pose_robot(env=env, base=base, arm=arm)
+    env.current_state = env._observed_state(seed=3, steps_taken=0)  # noqa: SLF001
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+
+
+def test_pick_wiper_takes_a_wiper_left_turned_on_its_shelf(*, env):
+    """Where a torn-out pick left it in the stage-5 rerun: 25 deg off square, 5 cm in."""
+    env.reset_to_seed(seed=0)
+    _turn_wiper_in_its_slot(env=env, degrees=-26.6)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
 
 
 def test_a_cube_on_the_open_floor_is_picked_up(*, env):
@@ -90,6 +156,114 @@ def test_pick_cube_from_shelf_takes_a_cube_out_of_the_cupboard(*, env, cube):
     atoms = _act(env=env, skill="PickCubeFromShelf", cube=cube)
     assert ("HoldingCube", ("robot", f"cube_{cube}")) in atoms, env.last_skill_error()
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+# Cube layouts a human `reset_cubes` left (`_cube_placements`, human seeds 0, 61 and
+# 77), as fixed poses: position, then MuJoCo's (w, x, y, z) quaternion. Each failed
+# the shelf pick before it screened its arm configurations in MuJoCo:
+# - seed 0, cube_0 7 cm from the -y side panel and cube_2 at the back: no grasp planned;
+# - seed 61, cube_1 in the back corner: no grasp planned, and then no retract or
+#   approach plan from the pre-grasp until both went through the open front;
+# - seed 77, cube_4 with cube_1 and cube_3 under 4 cm away: the close shoved it 9 cm
+#   along the shelf onto its neighbour, and every retry missed the same way.
+RESET_LAYOUT = {
+    "cube_0": ([1.4678, -0.2203, 0.2899], [-0.8328, 0.0, 0.0, 0.5536]),
+    "cube_1": ([1.5578, 0.0512, 0.2899], [-0.1366, 0.0, 0.0, 0.9906]),
+    "cube_2": ([1.5609, 0.1516, 0.2899], [-0.9013, 0.0, 0.0, 0.4331]),
+    "cube_3": ([1.4347, 0.1102, 0.2899], [-0.9090, 0.0, 0.0, 0.4167]),
+    "cube_4": ([1.5058, -0.0961, 0.2899], [0.9960, 0.0, 0.0, 0.0889]),
+}
+BACK_CORNER_LAYOUT = {
+    "cube_0": ([1.5381, 0.0821, 0.2899], [0.2066, 0.0, 0.0, 0.9784]),
+    "cube_1": ([1.5696, 0.2391, 0.2899], [0.8230, 0.0, 0.0, 0.5680]),
+    "cube_2": ([1.5218, -0.1253, 0.2899], [0.9703, 0.0, 0.0, 0.2420]),
+    "cube_3": ([1.5475, -0.2305, 0.2899], [-0.9802, 0.0, 0.0, 0.1982]),
+    "cube_4": ([1.5658, 0.1722, 0.2899], [0.8802, 0.0, 0.0, 0.4745]),
+}
+CLUSTER_LAYOUT = {
+    "cube_0": ([1.5072, -0.1229, 0.2899], [0.5393, 0.0, 0.0, 0.8421]),
+    "cube_1": ([1.4846, 0.1446, 0.2899], [0.3867, 0.0, 0.0, 0.9222]),
+    "cube_2": ([1.5408, 0.1242, 0.2899], [0.9168, 0.0, 0.0, 0.3993]),
+    "cube_3": ([1.4804, 0.1780, 0.2899], [-0.6059, 0.0, 0.0, 0.7956]),
+    "cube_4": ([1.4525, 0.1817, 0.2899], [0.4834, 0.0, 0.0, 0.8754]),
+}
+
+
+def _pour(*, env, layout):
+    backend = env.backend()
+    for name, (position, quaternion) in layout.items():
+        obj = backend.core().get_object(name)
+        obj.set_pose(position, list(np.asarray(quaternion) / np.linalg.norm(quaternion)))
+        obj.set_velocity([0.0] * 3, [0.0] * 3)
+    backend.sim().forward()
+    env.controllers().on_objects_moved()
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
+
+
+@pytest.mark.parametrize("yaw_deg", [0.0, 20.0, 45.0, 70.0])
+def test_every_shelf_grasp_closes_the_pads_on_opposite_faces(*, env, yaw_deg):
+    """Josh, 2026-10-15: no grasp closes the pads across the cube off its faces."""
+    from scipy.spatial.transform import Rotation
+
+    env.reset_to_seed(seed=0)
+    position, _ = env.backend().core().get_object("cube_1").get_pose()
+    yaw = np.deg2rad(yaw_deg)
+    _pour(
+        env=env, layout={"cube_1": (list(position), [np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])}
+    )
+    kinder = env.controllers()._kinder  # noqa: SLF001
+    centre = kinder.shelf.cube_position(cube="cube_1")
+    quaternion = env.backend().core().get_object("cube_1").get_pose()[1]
+    faces = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()[:, :2]
+    hands = kinder.shelf_hands(cube="cube_1", centre=centre)
+    assert hands
+    for hand, _ in hands:
+        closing = hand[:3, 0]
+        assert np.max(np.abs(faces.T @ closing)) > np.cos(np.deg2rad(1.0)), closing
+
+
+def _picks_from(*, env, layout, cube):
+    env.reset_to_seed(seed=0)
+    _pour(env=env, layout=layout)
+    assert ("OnShelf", (f"cube_{cube}",)) in env.get_current_state().abstract_atoms
+    atoms = _act(env=env, skill="PickCubeFromShelf", cube=cube)
+    assert ("HoldingCube", ("robot", f"cube_{cube}")) in atoms, env.last_skill_error()
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+@pytest.mark.parametrize("cube", [0, 2], ids=["by-side-panel", "back-of-shelf"])
+def test_pick_cube_from_shelf_takes_a_cube_from_a_human_reset_layout(*, env, cube):
+    _picks_from(env=env, layout=RESET_LAYOUT, cube=cube)
+
+
+@pytest.mark.main_only
+@pytest.mark.parametrize(
+    ("layout", "cube"),
+    [
+        pytest.param(
+            BACK_CORNER_LAYOUT,
+            1,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="only a grasp with the pads turned off the cube's faces reached it, "
+                "and Josh ruled those out (2026-10-15)",
+            ),
+            id="back-corner",
+        ),
+        pytest.param(
+            CLUSTER_LAYOUT,
+            4,
+            marks=pytest.mark.xfail(
+                strict=False,
+                reason="marginal without turned grasps: picked in the lab2 benchmark, but "
+                "closes on nothing in this plain scene -- the remaining-miss class",
+            ),
+            id="cluster",
+        ),
+    ],
+)
+def test_pick_cube_from_shelf_takes_a_cornered_or_crowded_cube(*, env, layout, cube):
+    _picks_from(env=env, layout=layout, cube=cube)
 
 
 def test_a_wiper_lost_from_the_hand_is_not_still_believed_held(*, env):
@@ -199,3 +373,28 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
     assert "no base pose" not in error, error
     assert ("HandEmpty", ("robot",)) in atoms
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+
+
+def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, env, monkeypatch):
+    """`raise_hand` catches `SkillFailed` from each 3 cm lift and stops there, so the
+    per-step `HoldingWiper` check's failure was swallowed: the stroke went on with no
+    wiper in hand and died on `recalibrate_grasp`'s assert. That crashed the stage-5
+    CCCC determinized p1 relaunch (job 15616001_1, 2026-10-15)."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
+
+    raise_hand = ShelfSkills.raise_hand
+    dropped = []
+
+    def drop_then_raise(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        if self.watch_wiper and not dropped:  # inside a stroke, with the check on
+            dropped.append(True)
+            _teleport(env=env, name="wiper_0", position=[1.235, 0.0, 0.05])  # into the box
+        raise_hand(self, **kwargs)
+
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    monkeypatch.setattr(ShelfSkills, "raise_hand", drop_then_raise)
+    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    error = env.last_skill_error() or ""
+    assert "wiper left the hand" in error, error
+    assert ("HandEmpty", ("robot",)) in atoms
