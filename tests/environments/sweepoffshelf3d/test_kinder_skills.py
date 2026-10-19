@@ -398,3 +398,18 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert ("HandEmpty", ("robot",)) in atoms
+
+
+def test_every_attempt_leaves_a_trace_naming_what_it_tried(*, env):
+    from hitl_pmp.environments.sweepoffshelf3d.skill_trace import SkillTraces
+
+    env.reset_to_seed(seed=0)
+    _act(env=env, skill="SweepShelf")
+    trace = SkillTraces.last(env=env)
+    assert trace is not None and trace.outcome == "plan_failure"
+    assert "wiper is not in hand" in (trace.error or "")
+    _act(env=env, skill="PickWiper")
+    trace = SkillTraces.last(env=env)
+    assert trace is not None and trace.outcome == "success", trace
+    assert [n.kind for n in trace.notes if n.stage == "pick_wiper"][-1] == "executed"
+    assert "HoldingWiper(robot,wiper_0)" in trace.added
