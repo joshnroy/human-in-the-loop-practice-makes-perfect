@@ -593,6 +593,12 @@ class SweepRunner:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env", required=True)
+    parser.add_argument(
+        "--skip-skill-benchmark-gate",
+        action="store_true",
+        help="Launch even without a passing skill benchmark report for this commit "
+        "(hitl_pmp/launch_gate.py); forwarded to every run.",
+    )
     parser.add_argument("--methods", nargs="+", required=True)
     parser.add_argument("--num-seeds", type=int, default=10)
     parser.add_argument("--results-root", type=Path, required=True)
@@ -627,12 +633,20 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
+    # Before anything is planned or spawned: a sweep of a gated domain is the long run
+    # the gate exists for. The override reaches every child run, which checks again.
+    from hitl_pmp.launch_gate import OVERRIDE_FLAG, LaunchGate
+
+    LaunchGate.enforce(domain=args.env, override=args.skip_skill_benchmark_gate)
+    shared = shlex.split(args.shared_args)
+    if args.skip_skill_benchmark_gate and OVERRIDE_FLAG not in shared:
+        shared.append(OVERRIDE_FLAG)
     runs = SweepRunner.plan(
         env=args.env,
         methods=args.methods,
         seeds=SweepRunner.default_seeds(num_seeds=args.num_seeds),
         results_root=args.results_root,
-        shared_args=shlex.split(args.shared_args),
+        shared_args=shared,
         method_args=SweepRunner.parse_method_args(raw=args.method_args),
     )
     sweep_id = SweepRunner.new_sweep_id()

@@ -4,6 +4,7 @@ domain before it served every domain, moved here unchanged."""
 import argparse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
@@ -90,3 +91,9 @@ class Tossing3DStepProtocol:
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
         return Tossing3DStepProtocol.env(problem=problem).last_skill_error()
+
+    @staticmethod
+    def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
+        # Tossing3D keeps no per-candidate trace; its error string is the whole account.
+        del problem
+        return None
