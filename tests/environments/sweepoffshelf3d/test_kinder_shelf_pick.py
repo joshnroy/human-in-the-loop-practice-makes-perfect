@@ -103,7 +103,6 @@ def test_no_grasp_offered_beside_a_side_panel_closes_the_jaws_on_it(*, env, stat
             break
 
 
-@pytest.mark.main_only
 @pytest.mark.parametrize(
     ("state_id", "cube"),
     [
