@@ -737,6 +737,14 @@ class StepPracticeRunner:
                     status()
                     if clock.steps >= clock.budget or early_stop:
                         break
+                    environment.practice_progress(
+                        problem=problem,
+                        cycle=cycle,
+                        action=action_index + 1,
+                        max_actions=args.max_steps_per_interaction,
+                        steps=clock.steps,
+                        budget=clock.budget,
+                    )
                     method.observe_practice_action_budget(
                         remaining_actions=args.max_steps_per_interaction - action_index
                     )

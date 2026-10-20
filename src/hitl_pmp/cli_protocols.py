@@ -136,6 +136,15 @@ class StepProtocolEnvironment(Protocol):
     def last_skill_error(*, problem: Problem) -> str | None: ...
 
     @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        """Practice's place as its next action starts: `action` of `max_actions` in
+        session `cycle`, at `steps` of `budget`. For a domain with a person watching
+        (the real robot); a simulated domain ignores it."""
+        ...
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         """A compact, JSON-ready account of the last robot skill -- its outcome and
         every candidate it rejected -- logged as the step event's `skill_trace`; None

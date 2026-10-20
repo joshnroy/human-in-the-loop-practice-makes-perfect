@@ -30,6 +30,7 @@ from .backend import TerminalPerson
 from .contract import DEFAULT_PORT, SkillServerClient
 from .environment import RealTossing3DEnvironment
 from .fake_robot import FakePerson, FakeTossingRobot
+from .session_log import RealSessionLog
 from .tasks import RealTossing3DTasks
 
 # Past any practice budget a real run could have, so only the final measurement runs.
@@ -95,6 +96,8 @@ class Tossing3DRealCli:
     def build_problem(*, args: argparse.Namespace, evaluation: bool) -> Tossing3DProblem:
         robot: FakeTossingRobot | SkillServerClient
         person: TerminalPerson
+        if getattr(args, "output_dir", None) is not None:
+            RealSessionLog.configure(output_dir=Path(args.output_dir))
         if args.robot == "fake":
             fake = FakeTossingRobot()
             robot, person = fake, FakePerson(robot=fake)

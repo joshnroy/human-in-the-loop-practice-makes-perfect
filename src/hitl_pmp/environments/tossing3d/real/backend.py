@@ -33,9 +33,12 @@ every geometry and safety check -- moved nothing and is charged nothing.
 ## A human reset is a prompt
 
 `reset` (a task's scene) and `reset_cube_and_bin` (the planner's paid reset) tell the
-person where to put the cube and the bin, in map coordinates, wait for y, and
-observe what was actually placed. The robot does not move first and nothing is checked
-or retried: the planner sees the scene as placed.
+person, in one line, which spot the bin goes to (`SAME`, the robot's side, or `FAR`)
+and that the cube goes anywhere on the robot's side; the coordinates go to the session
+log only (`real/session_log.py`). They wait for y and observe what was actually placed.
+Nothing is checked or retried: the planner sees the scene as placed. A human reset moves
+no robot; a task's scene drives home first and opens the gripper, as the sim's reset
+restores it open.
 """
 
 import math
@@ -59,6 +62,7 @@ from hitl_pmp.environments.tossing3d.types import (
 
 from .contract import CanPickReply, ObserveReply, PickReply, TossingRobot, TossReply
 from .frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME, BinSpot, RealRoomFrame
+from .session_log import RealSessionLog
 
 ROBOT_NAME = "robot"
 CUBE_NAME = "cube_0"
@@ -91,6 +95,34 @@ class RealSkillStepCosts(BaseModel):
     open_gripper: int = Field(default=1, gt=0)
 
 
+class PracticeProgress(BaseModel):
+    """Where practice is as an action starts (`StepProtocolEnvironment.practice_progress`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    cycle: int
+    action: int
+    max_actions: int
+    steps: int
+    budget: int
+
+    def line(self, *, width: int = 10) -> str:
+        """`cycle 0 [######----] action 13/20 · steps 1050/1500`: the bar is the cycle."""
+        filled = min(width, width * self.action // max(self.max_actions, 1))
+        bar = "#" * filled + "-" * (width - filled)
+        return (
+            f"cycle {self.cycle} [{bar}] action {self.action}/{self.max_actions} · "
+            f"steps {self.steps}/{self.budget}"
+        )
+
+
+# The bin's spot as the person is told it: on the robot's side of the tape, or across.
+SPOT_NAMES: Final[dict[Tossing3DSide, str]] = {
+    Tossing3DSide.ROBOT: "SAME",
+    Tossing3DSide.OPPOSITE: "FAR",
+}
+
+
 class PlacementRequest(BaseModel):
     """Where a person is asked to put the cube and the bin (map frame)."""
 
@@ -100,28 +132,41 @@ class PlacementRequest(BaseModel):
     destination: Tossing3DSide
     cube: tuple[float, float]
     bin: BinSpot
+    # Said when the cube may still be in the gripper (`RealTossingBackend.reset`).
+    gripper_note: str | None = None
 
     def instructions(self) -> str:
-        return "\n".join((
-            f"[{self.kind}] Please place the cube and the bin (robot map frame, metres):",
-            "  cube: anywhere on the floor on the robot's side of the tape, resting on a face",
-            f"  bin:  centred at ({self.bin.center[0]:.2f}, {self.bin.center[1]:.2f}), "
-            f"upright: {self.bin.description}",
-            "  Do not move the robot.",
-        ))
+        """One line: the bin's spot by name, and the cube anywhere on the robot's side."""
+        spot = "the close spot, our side of the tape"
+        if self.destination is Tossing3DSide.OPPOSITE:
+            spot = "the far spot, across the tape"
+        note = "" if self.gripper_note is None else f"; {self.gripper_note}"
+        return (
+            f"{self.kind}: {SPOT_NAMES[self.destination]} (bin at {spot}); "
+            f"cube anywhere on our side, on a face; do not move the robot{note}"
+        )
+
+    def details(self) -> str:
+        """The coordinates, for the session log only."""
+        return (
+            f"{self.kind} {SPOT_NAMES[self.destination]} (robot map frame, metres): bin "
+            f"centred at ({self.bin.center[0]:.2f}, {self.bin.center[1]:.2f}), yaw "
+            f"{self.bin.yaw:.2f}: {self.bin.description}; cube nominally at "
+            f"({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+        )
 
 
 class TerminalPerson(BaseModel):
-    """The person at this terminal: shown each request, answers y."""
+    """The person at this terminal: shown each request, answers y. Every line and
+    prompt goes through the session log (`RealSessionLog`), timestamped and flushed."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # Flushed at once: the run's output usually goes through `tee`, and a buffered
-    # progress line is one the person never sees while the robot is busy.
-    write: Callable[[str], None] = lambda line: print(line, flush=True)
-    read: Callable[[str], str] = input
+    write: Callable[[str], None] = RealSessionLog.say
+    read: Callable[[str], str] = RealSessionLog.ask
 
     def place(self, *, request: PlacementRequest) -> None:
+        RealSessionLog.detail(line=request.details())
         self.write(request.instructions())
         self._yes(question="Are the cube and the bin in place?", declined=request.kind)
         self.write("observing the scene (the cameras take up to ~30 s) ...")
@@ -184,6 +229,7 @@ class RealTossingBackend(BaseModel):
     _ticks: list[RealSceneSnapshot] = PrivateAttr(default_factory=list)
     _before: Callable[[], None] | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
+    _progress: PracticeProgress | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
@@ -197,7 +243,24 @@ class RealTossingBackend(BaseModel):
             self.person.confirm(action="GoHome (drive to the close-side toss stand)")
         self._say(line="driving home ...")
         self.robot.go_home()
-        return self._placed(kind="scene", destination=Tossing3DSide.OPPOSITE)
+        # The sim's scene reset restores the gripper open. Practice can end on a pick
+        # with the cube held, and a gripper still commanded closed leaves `HandEmpty`
+        # false for the whole task (run 9's evaluation: no plan at step 0).
+        self._say(line="opening the gripper ...")
+        self.robot.open_gripper()
+        return self._placed(
+            kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
+        )
+
+    def _gripper_note(self) -> str | None:
+        """What to tell the person about a cube that may still be in the gripper. A
+        backend that has not looked yet (evaluation's, built after practice ended) does
+        not know, so it asks the person to check."""
+        if self._last is None:
+            return "if the cube is still in the gripper, take it out"
+        if self._last.reply.holding:
+            return "the robot was holding the cube: take it out of the gripper"
+        return None
 
     def reset_cube_and_bin(
         self, *, bin_region: dict[str, object] | None = None
@@ -209,12 +272,19 @@ class RealTossingBackend(BaseModel):
             if bin_region is None
             else Tossing3DSide(str(bin_region["destination"]))
         )
+        self._say_progress()
         return self._placed(kind="human reset", destination=destination)
 
-    def _placed(self, *, kind: str, destination: Tossing3DSide) -> Tossing3DObservation:
+    def _placed(
+        self, *, kind: str, destination: Tossing3DSide, gripper_note: str | None = None
+    ) -> Tossing3DObservation:
         self.person.place(
             request=PlacementRequest(
-                kind=kind, destination=destination, cube=CUBE_SPOT, bin=BIN_SPOTS[destination]
+                kind=kind,
+                destination=destination,
+                cube=CUBE_SPOT,
+                bin=BIN_SPOTS[destination],
+                gripper_note=gripper_note,
             )
         )
         self._seen = None
@@ -395,6 +465,7 @@ class RealTossingBackend(BaseModel):
         error from the call (a stopped or busy skill, a lost connection) may have come
         mid-motion, so it is the action's failure, charged in full, never retried.
         """
+        self._say_progress()
         if self.confirm_each_skill:
             self.person.confirm(action=action)
         self._say(line=f"running {action} ...")
@@ -421,6 +492,20 @@ class RealTossingBackend(BaseModel):
             for _ in range(run.steps):
                 self._after()
         return run
+
+    def practice_progress(
+        self, *, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        """Practice's place as its next action starts, shown before that action runs.
+        Only practice's backend is told; evaluation's shows no progress line."""
+        self._progress = PracticeProgress(
+            cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
+        )
+
+    def _say_progress(self) -> None:
+        if self._progress is not None:
+            self._say(line=self._progress.line())
+            self._progress = None
 
     def _say(self, *, line: str) -> None:
         """A progress line for the person, at once, so a slow step never looks hung."""
