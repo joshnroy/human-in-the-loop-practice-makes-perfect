@@ -48,8 +48,9 @@ class JsonlLog:
             return resolved.open(encoding="utf-8")
         raw = resolved.open("rb")
         try:
+            # A streaming writer appends one frame per record; never stop at the first.
             reader = zstandard.ZstdDecompressor(max_window_size=_MAX_WINDOW_SIZE).stream_reader(
-                raw, closefd=True
+                raw, closefd=True, read_across_frames=True
             )
         except BaseException:
             raw.close()

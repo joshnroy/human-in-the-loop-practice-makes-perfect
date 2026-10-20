@@ -56,6 +56,19 @@ def test_a_compressed_path_can_be_named_directly(*, tmp_path: Path) -> None:
         assert [json.loads(line) for line in stream] == ROWS
 
 
+def test_a_log_written_one_zstd_frame_per_record_reads_every_record(
+    *, tmp_path: Path
+) -> None:
+    """A streaming writer appends one frame per record; reading must not stop at the first."""
+    compressed = tmp_path / "pomdp_decisions.jsonl.zst"
+    compressor = zstandard.ZstdCompressor()
+    with compressed.open("ab") as stream:
+        for row in ROWS:
+            stream.write(compressor.compress((json.dumps(row) + "\n").encode("utf-8")))
+    with JsonlLog.open_text(path=tmp_path / "pomdp_decisions.jsonl") as stream:
+        assert [json.loads(line) for line in stream] == ROWS
+
+
 def test_a_long_window_beyond_the_default_limit_still_decodes(*, tmp_path: Path) -> None:
     # zstd's default decoder refuses windows above 2**27; `--long=31` needs the limit lifted.
     path = tmp_path / "pomdp_decisions.jsonl"
