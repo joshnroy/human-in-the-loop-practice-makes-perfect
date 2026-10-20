@@ -136,6 +136,8 @@ SHELF_PICK_MIN_SIDEWAYS = -0.35
 SHELF_PICK_SAME_APPROACH = float(np.cos(np.deg2rad(8.0)))
 # Bases in a row from which a grasp is not clear before the grasp is given up.
 SHELF_PICK_UNREACHABLE_BASES = 3
+# A shelf-pick candidate: (grasp, entry poses, base, grasp arm, arm at the entry's first).
+ShelfCandidate = tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray, np.ndarray]
 # The space the pads sweep as they close, in the pinch site's frame (m): across the
 # closing axis, and along the approach (the pads ride 11-24 mm ahead of the site as they
 # close, 11 mm long), with a few millimetres' margin.
@@ -1118,9 +1120,7 @@ class KinderSkills:
 
     def shelf_candidates(
         self, *, cube: str, centre: np.ndarray, tried: list[np.ndarray]
-    ) -> Generator[
-        tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarray, np.ndarray], None, None
-    ]:
+    ) -> Generator[ShelfCandidate, None, None]:
         """(grasp, entry, base, grasp arm, arm at the entry's first pose) candidates
         clear in MuJoCo, lazily, in `shelf_hands` order -- except that a grasp with
         another cube where the pads close (`cube_between_pads`) waits until every other
@@ -1133,16 +1133,26 @@ class KinderSkills:
         Each pre-grasp is an entry of its own; after them, one that starts outside the
         cupboard's front (`shelf_exit`) and comes in through the first pre-grasp: into
         the back of the shelf, the plan to a pre-grasp can be refused by the MuJoCo
-        re-check from every base while the way in from the front is clear."""
-        crowded = []
+        re-check from every base while the way in from the front is clear.
+
+        Whether a grasp is clear barely depends on the base, so the first pass gives a
+        grasp up after `SHELF_PICK_UNREACHABLE_BASES` unreachable bases in a row. Once
+        everything that pass found has been offered, a grasp it gave up that was clear
+        from some base it did try gets the bases after the run, with no early exit: a
+        cube by a side panel had one clear grasp, clear from 16/39 bases but with
+        pre-grasps from only three of them, all after a run of three unreachable ones.
+        The first pass is unchanged, so a pick it finds pays nothing for the second."""
         bases = [b for b in self.shelf_pick_bases(centre=centre) if self.base_clear(base=b)]
         drivable: dict[int, bool] = {}
+        crowded: list[ShelfCandidate] = []
+        given_up: list[tuple[np.ndarray, tuple[np.ndarray, ...], int]] = []
         for hand, pres in self.shelf_hands(cube=cube, centre=centre):
             if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried):
                 continue
             if self.cupboard_between_pads(hand=hand, cube=cube):
                 continue
             unreachable = 0
+            clear_somewhere = False
             for i, base in enumerate(bases):
                 if i not in drivable:
                     drivable[i] = self.base_drivable(base=base)
@@ -1150,37 +1160,74 @@ class KinderSkills:
                     continue
                 grasp_conf = self.shelf_grasp_conf(hand=hand, base=base, cube=cube)
                 if grasp_conf is None:
-                    # Whether a grasp is clear barely depends on the base; give up on
-                    # this one once it has failed from several bases in a row.
                     unreachable += 1
                     if unreachable >= SHELF_PICK_UNREACHABLE_BASES:
+                        if clear_somewhere:
+                            given_up.append((hand, pres, i + 1))
                         break
                     continue
                 unreachable = 0
-                squeezed = bool(
-                    self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
-                ) or self.touches_other_cube(base=base, arm=grasp_conf, cube=cube)
-                entries: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
-                for pre in pres:
-                    pre_conf = self.shelf_pre_conf(
-                        pre=pre, base=base, grasp_conf=grasp_conf, cube=cube
-                    )
-                    if pre_conf is not None:
-                        entries.append(((pre,), pre_conf))
-                if entries:
-                    (first,), first_conf = entries[0]
-                    out, out_conf = self.shelf_exit(
-                        pre=first, pre_conf=first_conf, base=base, cube=cube
-                    )
-                    if out_conf is not None:
-                        entries.append(((out, first), out_conf))
-                for entry, conf in entries:
-                    candidate = (hand, entry, base, grasp_conf, conf)
-                    if squeezed or self.touches_other_cube(base=base, arm=conf, cube=cube):
-                        crowded.append(candidate)
-                    else:
-                        yield candidate
+                clear_somewhere = True
+                yield from self.shelf_base_candidates(
+                    hand=hand,
+                    pres=pres,
+                    base=base,
+                    grasp_conf=grasp_conf,
+                    cube=cube,
+                    crowded=crowded,
+                )
         yield from crowded
+        crowded = []
+        for hand, pres, start in given_up:
+            for i in range(start, len(bases)):
+                if i not in drivable:
+                    drivable[i] = self.base_drivable(base=bases[i])
+                if not drivable[i]:
+                    continue
+                grasp_conf = self.shelf_grasp_conf(hand=hand, base=bases[i], cube=cube)
+                if grasp_conf is not None:
+                    yield from self.shelf_base_candidates(
+                        hand=hand,
+                        pres=pres,
+                        base=bases[i],
+                        grasp_conf=grasp_conf,
+                        cube=cube,
+                        crowded=crowded,
+                    )
+        yield from crowded
+
+    def shelf_base_candidates(
+        self,
+        *,
+        hand: np.ndarray,
+        pres: tuple[np.ndarray, ...],
+        base: np.ndarray,
+        grasp_conf: np.ndarray,
+        cube: str,
+        crowded: list[ShelfCandidate],
+    ) -> Generator[ShelfCandidate, None, None]:
+        """`shelf_candidates`' candidates for one grasp, clear from `base`: one per
+        pre-grasp clear on the grasp's IK branch, then the way in from outside the front.
+        Those whose hand touches or squeezes another cube go to `crowded` instead."""
+        squeezed = bool(
+            self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
+        ) or self.touches_other_cube(base=base, arm=grasp_conf, cube=cube)
+        entries: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
+        for pre in pres:
+            pre_conf = self.shelf_pre_conf(pre=pre, base=base, grasp_conf=grasp_conf, cube=cube)
+            if pre_conf is not None:
+                entries.append(((pre,), pre_conf))
+        if entries:
+            (first,), first_conf = entries[0]
+            out, out_conf = self.shelf_exit(pre=first, pre_conf=first_conf, base=base, cube=cube)
+            if out_conf is not None:
+                entries.append(((out, first), out_conf))
+        for entry, conf in entries:
+            candidate = (hand, entry, base, grasp_conf, conf)
+            if squeezed or self.touches_other_cube(base=base, arm=conf, cube=cube):
+                crowded.append(candidate)
+            else:
+                yield candidate
 
     @staticmethod
     def fixed_ik(*, conf: np.ndarray) -> Callable[..., list[float]]:

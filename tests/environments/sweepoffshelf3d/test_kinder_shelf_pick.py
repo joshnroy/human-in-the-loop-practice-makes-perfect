@@ -25,6 +25,12 @@ SIDE_PANELS = ("cupboard_1_left_panel", "cupboard_1_right_panel")
 # (state, cube) of the benchmark's three execution failures.
 BESIDE_PANEL = [("shelf-shelf-left-front", "cube_0"), ("shelf-shelf-right-front", "cube_2")]
 STALLED_APPROACH = ("layout-56", "cube_1")
+# One clear grasp, whose first plans the MuJoCo re-check refused.
+FEW_CLEAR = ("layout-44", "cube_4")
+# A cube in a back corner of the shelf, 6 mm from two panels.
+BACK_CORNER = [("shelf-shelf-left-back", "cube_1"), ("shelf-shelf-right-back", "cube_3")]
+# One clear grasp with a pre-grasp from one base only, whose plans the re-check refused.
+ONE_ENTRY = ("layout-5", "cube_0")
 
 pytestmark = [
     pytest.mark.skipif(
@@ -103,25 +109,65 @@ def test_no_grasp_offered_beside_a_side_panel_closes_the_jaws_on_it(*, env, stat
             break
 
 
-@pytest.mark.parametrize(
-    ("state_id", "cube"),
-    [
-        BESIDE_PANEL[0],
-        pytest.param(
-            *BESIDE_PANEL[1],
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="the one clear grasp left, leaning along the shelf, is given up "
-                "after three unreachable bases in a row (SHELF_PICK_UNREACHABLE_BASES), "
-                "before the bases it has pre-grasps from: no grasp planned",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize(("state_id", "cube"), BESIDE_PANEL)
 def test_pick_cube_from_shelf_takes_a_cube_beside_a_side_panel(*, env, states, state_id, cube):
     _restore(env=env, states=states, state_id=state_id)
     atoms = _pick(env=env, cube=cube)
     assert ("HoldingCube", ("robot", cube)) in atoms, env.last_skill_error()
+
+
+def test_pick_cube_from_shelf_tries_the_bases_beyond_a_run_of_unreachable_ones(*, env, states):
+    """layout-44: the one clear grasp's plans from the first base that has a
+    pre-grasp were refused (pre-grasp planning failed; the bracelet hit the board
+    above), and the three bases after it were unreachable, so the grasp was given up
+    with twelve bases left that have pre-grasps of their own."""
+    state_id, cube = FEW_CLEAR
+    _restore(env=env, states=states, state_id=state_id)
+    atoms = _pick(env=env, cube=cube)
+    assert ("HoldingCube", ("robot", cube)) in atoms, env.last_skill_error()
+
+
+def test_a_cube_by_a_side_panel_has_a_way_in_from_one_base_only(*, env, states):
+    """layout-5, still not picked: of every drivable base, its one clear grasp has a
+    pre-grasp from base 0 alone, so more bases cannot help it; both plans from there
+    are refused by the MuJoCo re-check, and so were BiRRT seeds 1-6 (2026-10-19)."""
+    state_id, cube = ONE_ENTRY
+    kinder = _restore(env=env, states=states, state_id=state_id)
+    centre = kinder.shelf.cube_position(cube=cube)
+    bases = [
+        b
+        for b in kinder.shelf_pick_bases(centre=centre)
+        if kinder.base_clear(base=b) and kinder.base_drivable(base=b)
+    ]
+    clear = [
+        (hand, pres)
+        for hand, pres in kinder.shelf_hands(cube=cube, centre=centre)
+        if kinder.shelf_grasp_conf(hand=hand, base=bases[0], cube=cube) is not None
+    ]
+    assert len(clear) == 1
+    (hand, pres), entered = clear[0], []
+    for i, base in enumerate(bases):
+        grasp_conf = kinder.shelf_grasp_conf(hand=hand, base=base, cube=cube)
+        if grasp_conf is not None and any(
+            kinder.shelf_pre_conf(pre=pre, base=base, grasp_conf=grasp_conf, cube=cube) is not None
+            for pre in pres
+        ):
+            entered.append(i)
+    assert entered == [0], entered
+
+
+@pytest.mark.parametrize(("state_id", "cube"), BACK_CORNER)
+def test_every_grasp_on_a_cube_in_a_back_corner_closes_the_jaws_on_a_panel(
+    *, env, states, state_id, cube
+):
+    """A cube 6 mm from the back and a side panel: the pads close across a face
+    normal, so one pair straddles the side panel and the other the back panel. No base
+    or lean changes that; the candidate family has no grasp here."""
+    kinder = _restore(env=env, states=states, state_id=state_id)
+    centre = kinder.shelf.cube_position(cube=cube)
+    hands = kinder.shelf_hands(cube=cube, centre=centre)
+    assert hands
+    assert all(kinder.cupboard_between_pads(hand=hand, cube=cube) for hand, _ in hands)
 
 
 class _CloseLog:
@@ -242,3 +288,47 @@ def test_a_candidate_whose_execution_raises_is_still_recorded_as_tried(*, monkey
         kinder.shelf_pick_attempt(cube="cube_0", tried=tried)
     assert len(tried) == 1, tried
     assert np.allclose(tried[0], hand[:3, 2])
+
+
+def _stub_candidates(*, monkeypatch, clear: dict[int, set[int]], bases: int) -> KinderSkills:
+    """A `KinderSkills` whose grasp `h` (tagged in its bottom row) is clear from
+    exactly the bases in `clear[h]`, each with one pre-grasp, and nothing crowded."""
+    kinder = object.__new__(KinderSkills)
+    hands = []
+    for h in range(len(clear)):
+        hand = np.eye(4)
+        angle = np.deg2rad(30.0 * h)
+        hand[:3, 2] = [np.cos(angle), np.sin(angle), 0.0]
+        hand[3, 0] = h
+        hands.append((hand, (hand,)))
+    stubs = {
+        "shelf_pick_bases": lambda **_: [np.array([0.0, float(b), 0.0]) for b in range(bases)],
+        "base_clear": lambda **_: True,
+        "base_drivable": lambda **_: True,
+        "shelf_hands": lambda **_: hands,
+        "cupboard_between_pads": lambda **_: None,
+        "cube_between_pads": lambda **_: None,
+        "touches_other_cube": lambda **_: False,
+        "shelf_grasp_conf": lambda *, hand, base, **_: (
+            np.zeros(7) if int(base[1]) in clear[int(hand[3, 0])] else None
+        ),
+        "shelf_pre_conf": lambda **_: np.zeros(7),
+        "shelf_exit": lambda **_: (None, None),
+    }
+    for name, stub in stubs.items():
+        monkeypatch.setattr(kinder, name, stub, raising=False)
+    return kinder
+
+
+def test_a_grasp_given_up_after_unreachable_bases_is_offered_its_remaining_bases_last(
+    *, monkeypatch
+):
+    """Grasp 0 is clear from base 0, unreachable from bases 1-3 and clear again from
+    base 5: the first pass gives it up after base 3 and goes on to grasp 1 (clear from
+    base 0); only once the first pass is exhausted does grasp 0 get bases 4 onward.
+    Grasp 2, clear from none of the bases the first pass tried, is not searched again:
+    that a grasp's clearance barely depends on the base still holds for it."""
+    kinder = _stub_candidates(monkeypatch=monkeypatch, clear={0: {0, 5}, 1: {0}, 2: {6}}, bases=8)
+    candidates = kinder.shelf_candidates(cube="cube_0", centre=np.zeros(3), tried=[])
+    offered = [(int(hand[3, 0]), int(base[1])) for hand, _, base, *_ in candidates]
+    assert offered == [(0, 0), (1, 0), (0, 5)], offered
