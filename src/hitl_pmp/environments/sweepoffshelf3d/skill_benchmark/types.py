@@ -36,10 +36,20 @@ class BenchmarkReport(BaseModel):
 
 class SkillVerdict(BaseModel):
     skill: str
-    target: str  # "every state" | "some setting per state"
+    # "every state" | "some setting per state" | "at least x/y" (| " of <families>")
+    target: str
     passed: bool
+    # Every valid run of the skill, gated or not.
     successes: int
     total: int
+    # The runs the target judges, and the ones only reported (a threshold's families
+    # exclude them). A skill without a threshold gates on every run.
+    gated_successes: int = 0
+    gated_total: int = 0
+    reported_successes: int = 0
+    reported_total: int = 0
+    # Why the verdict failed when it is not a count below target (a changed denominator).
+    reason: str = ""
     # Per simulator-attribution label, how many runs ended there.
     labels: dict[str, int] = Field(default_factory=dict)
     # Continuous-parameter skills only: per state, settings that succeeded / tried.
@@ -47,6 +57,25 @@ class SkillVerdict(BaseModel):
     # Runs whose skill planned in KINDER's PyBullet scene at every stage it reached
     # (None for a skill that does not plan there).
     pybullet_planned: int | None = None
+
+
+class SkillThreshold(BaseModel):
+    """A skill passes with at least `min_successes` of its gated runs succeeding, and
+    only if exactly `out_of` gated runs were valid: a different count means the state
+    set changed under the threshold, which is refused rather than rescaled. `families`
+    are the state families that gate (None: every family); the rest are reported only."""
+
+    model_config = ConfigDict(frozen=True)
+
+    min_successes: int
+    out_of: int
+    families: frozenset[str] | None = None
+
+    def target(self) -> str:
+        line = f"at least {self.min_successes}/{self.out_of}"
+        if self.families is None:
+            return line
+        return f"{line} of {', '.join(sorted(self.families))}"
 
 
 class CaseResult(BaseModel):

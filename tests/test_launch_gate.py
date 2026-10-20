@@ -62,9 +62,65 @@ def test_a_failing_report_blocks_and_names_the_skills_below_target(*, tmp_path: 
             {"skill": "PlaceCubeInBox", "passed": True, "successes": 5, "total": 5},
         ],
     )
-    with pytest.raises(LaunchBlocked, match=r"PickWiper 15/31") as blocked:
+    with pytest.raises(LaunchBlocked, match=r"PickWiper gated 15/31") as blocked:
         _check(root=tmp_path)
     assert "PlaceCubeInBox" not in str(blocked.value)
+
+
+def test_the_refusal_shows_each_failing_skills_gated_and_reported_only_counts(
+    *, tmp_path: Path
+) -> None:
+    _report(
+        root=tmp_path,
+        passed=False,
+        skills=[
+            {
+                "skill": "ReturnCubeToShelfFromBox",
+                "target": "at least 3/8 of harvested",
+                "passed": False,
+                "successes": 7,
+                "total": 21,
+                "gated_successes": 2,
+                "gated_total": 8,
+                "reported_successes": 5,
+                "reported_total": 13,
+            },
+            {
+                "skill": "PickCubeFromShelf",
+                "target": "at least 97/100",
+                "passed": False,
+                "successes": 99,
+                "total": 99,
+                "gated_successes": 99,
+                "gated_total": 99,
+                "reported_successes": 0,
+                "reported_total": 0,
+                "reason": "the benchmark ran 99 gated case(s), the threshold is out of 100",
+            },
+            {
+                "skill": "PickCubeFromFloor",
+                "target": "at least 11/12",
+                "passed": True,
+                "successes": 11,
+                "total": 12,
+                "gated_successes": 11,
+                "gated_total": 12,
+                "reported_successes": 0,
+                "reported_total": 0,
+            },
+        ],
+    )
+    with pytest.raises(LaunchBlocked) as blocked:
+        _check(root=tmp_path)
+    message = str(blocked.value)
+    assert (
+        "ReturnCubeToShelfFromBox gated 2/8 (target at least 3/8 of harvested), "
+        "reported-only 5/13" in message
+    )
+    assert "PickCubeFromShelf gated 99/99 (target at least 97/100)" in message
+    assert "the benchmark ran 99 gated case(s), the threshold is out of 100" in message
+    assert "PickCubeFromFloor" not in message
+    assert "--skip-skill-benchmark-gate" in message
 
 
 @pytest.mark.parametrize(

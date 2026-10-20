@@ -3,8 +3,10 @@ skill benchmark passed on exactly the code being launched (Josh, 2026-10-15).
 
 "Exactly" means: a `report.json` written by `scripts/skill_benchmark.py` for this
 checkout's commit, benchmarked on a clean tree, against the same two KINDER trees this
-process imports, with every skill at its target. Anything else blocks with the reason,
-naming each skill below target. `--skip-skill-benchmark-gate` is the explicit override;
+process imports, with every skill at its target (each domain's benchmark sets its
+targets; SweepOffShelf3D's per-skill thresholds are `verdicts.THRESHOLDS`). Anything else
+blocks with the reason, naming each skill below target with its gated and reported-only
+x/y. `--skip-skill-benchmark-gate` is the explicit override;
 the run's config snapshot records that it was given.
 
 Reports live at `<root>/<domain>/<commit>/report.json`, `root` being
@@ -133,12 +135,10 @@ class LaunchGate:
                 f"launching on {identity.kinder_models_commit}"
             )
         below = [
-            f"{s['skill']} {s['successes']}/{s['total']}"
-            for s in report.get("skills", [])
-            if not s.get("passed")
+            LaunchGate.describe(skill=s) for s in report.get("skills", []) if not s.get("passed")
         ]
         if not report.get("passed") or below:
-            problems.append("skills below their benchmark target: " + ", ".join(below or ["?"]))
+            problems.append("skills below their benchmark target: " + "; ".join(below or ["?"]))
         if problems:
             raise LaunchBlocked(
                 f"skill benchmark gate blocked {domain} at {identity.git_commit} ({path}): "
@@ -146,3 +146,18 @@ class LaunchGate:
                 + f". Fix them, or pass {OVERRIDE_FLAG}"
             )
         return f"skill benchmark gate passed for {domain} at {identity.git_commit}: {path}"
+
+    @staticmethod
+    def describe(*, skill: dict[str, object]) -> str:
+        """One report skill entry as `<skill> gated x/y (target ...), reported-only x/y`.
+        Reads the JSON rather than the benchmark's types: this module gates any domain."""
+        gated = (
+            f"{skill.get('gated_successes', skill.get('successes'))}/"
+            f"{skill.get('gated_total', skill.get('total'))}"
+        )
+        line = (
+            f"{skill.get('skill')} gated {gated} (target {skill.get('target', '?')}), "
+            f"reported-only {skill.get('reported_successes', 0)}/"
+            f"{skill.get('reported_total', 0)}"
+        )
+        return f"{line}: {skill['reason']}" if skill.get("reason") else line
