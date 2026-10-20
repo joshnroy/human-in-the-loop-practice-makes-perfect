@@ -84,7 +84,21 @@ def test_a_full_agentic_run_loads_through_its_adapter() -> None:
 
 
 def test_an_environment_without_a_replay_renderer_is_refused() -> None:
-    with pytest.raises(NotImplementedError, match="sweepoffshelf3d"):
+    with pytest.raises(NotImplementedError, match="toy"):
         RecordingVideo.default_renderer(
-            header=RecordingHeader(environment="sweepoffshelf3d"), realistic_background=True
+            header=RecordingHeader(environment="toy"), realistic_background=True
         )
+
+
+@pytest.mark.parametrize("realistic", [True, False])
+def test_the_shelf_replays_through_its_storyboard_renderer(*, realistic: bool) -> None:
+    """Built lazily: choosing the renderer builds no scene."""
+    from hitl_pmp.environments.sweepoffshelf3d.recording import SweepOffShelf3DReplayRenderer
+
+    renderer = RecordingVideo.default_renderer(
+        header=RecordingHeader(environment="sweepoffshelf3d", scene={"scene_bg": False}),
+        realistic_background=realistic,
+    )
+    assert isinstance(renderer, SweepOffShelf3DReplayRenderer)
+    assert renderer.scene_bg is (True if realistic else None)
+    assert renderer.storyboard

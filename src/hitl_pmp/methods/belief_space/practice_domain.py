@@ -56,6 +56,9 @@ class PracticeDomain(BaseModel, abc.ABC):
     competence_weighted_skills: frozenset[str] = frozenset()
     # Skills whose failed executions teach the empirical failure-effect model.
     failure_effect_skills: frozenset[str] = frozenset()
+    # The human's skills this domain models. A method that does not offer one (the
+    # always-ask wrapper, `--no-human-reset`) drops it: `PracticeDomainWithoutSkills`.
+    human_skill_names: frozenset[str] = frozenset()
     # The Beta prior on an untrained skill's competence; None keeps InferenceConfig's.
     initial_competence_alpha: float | None = None
     initial_competence_beta: float | None = None
@@ -111,6 +114,7 @@ class Tossing3DPracticeDomain(PracticeDomain):
     )
     deterministic_skills: frozenset[str] = RESET_SKILLS
     competence_weighted_skills: frozenset[str] = frozenset({RESET_SKILL})
+    human_skill_names: frozenset[str] = frozenset({RESET_SKILL})
     failure_effect_skills: frozenset[str] = frozenset({
         *PICK_SKILLS,
         TOSS_SKILL,
@@ -283,6 +287,7 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
         *RETURN_CUBE_SKILLS,
         *SHELF_HUMAN_SKILLS,
     })
+    human_skill_names: frozenset[str] = frozenset(SHELF_HUMAN_SKILLS)
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
@@ -327,6 +332,13 @@ class PracticeDomainWithoutSkills:
     left alone -- they describe a skill only if it is offered, and keeping them keeps a
     domain with no such belief (Tossing3D) exactly equal to the original. A
     static-method container."""
+
+    @staticmethod
+    def keep_offered(*, domain: PracticeDomain, offered: frozenset[str]) -> PracticeDomain:
+        """Drop every human skill the domain models that the method does not offer."""
+        return PracticeDomainWithoutSkills.drop(
+            domain=domain, skill_names=domain.human_skill_names - offered
+        )
 
     @staticmethod
     def drop(*, domain: PracticeDomain, skill_names: frozenset[str]) -> PracticeDomain:

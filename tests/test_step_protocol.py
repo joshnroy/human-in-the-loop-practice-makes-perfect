@@ -6,6 +6,7 @@ import pickle
 import time
 from concurrent.futures import Future
 from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
 
@@ -881,3 +882,62 @@ def test_a_stop_is_charged_one_robot_step_through_the_accounting():
     clock.stop_invoked()
     assert clock.steps == 1
     assert accounting.total_cost == pytest.approx(price)
+
+
+_ALWAYS_ASK_PLANNERS = [
+    {"method": "ees"},
+    {"method": "pomdp", "pomdp_solver": "expectimax"},
+    {"method": "pomdp", "pomdp_solver": "determinized_astar"},
+]
+
+
+@pytest.mark.parametrize("planner", _ALWAYS_ASK_PLANNERS)
+def test_an_always_ask_run_whose_cost_file_cannot_price_its_reset_is_refused_up_front(
+    *, tmp_path, planner
+):
+    """Its first full reset would otherwise raise `Unknown human skill` mid-run, after
+    the first sweep -- as it does on the shelf's canonical cost file."""
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    costs = tmp_path / "costs.json"
+    costs.write_text(json.dumps({"human_skills": {"reset_cubes": {}, "reset_wiper": {}}}))
+    args = _step_args(
+        output_dir=tmp_path / "run",
+        budget=10,
+        interval=5,
+        practice_cost_config=costs,
+        always_ask_reset=True,
+        **planner,
+    )
+    with pytest.raises(ValueError, match="reset_to_sampled_start"):
+        StepProtocolValidation.check(args=args)
+    # Without the wrapper nothing requests it, so the same file stays valid.
+    StepProtocolValidation.check(
+        args=argparse.Namespace(**{**vars(args), "always_ask_reset": False})
+    )
+
+
+@pytest.mark.parametrize("planner", _ALWAYS_ASK_PLANNERS)
+@pytest.mark.parametrize(
+    "name",
+    [
+        "normalized_practice_costs_sampled_start.json",
+        "sweepoffshelf3d_practice_costs_sampled_start.json",
+    ],
+)
+def test_an_always_ask_run_whose_cost_file_prices_its_reset_is_accepted(
+    *, tmp_path, name: str, planner
+):
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    configs = Path(__file__).resolve().parents[1] / "configs"
+    StepProtocolValidation.check(
+        args=_step_args(
+            output_dir=tmp_path / "run",
+            budget=10,
+            interval=5,
+            practice_cost_config=configs / name,
+            always_ask_reset=True,
+            **planner,
+        )
+    )

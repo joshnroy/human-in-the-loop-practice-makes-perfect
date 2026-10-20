@@ -698,3 +698,22 @@ def test_the_stop_skill_is_priced_at_one_robot_step_under_step_accounting():
     method.configure_practice_accounting(accounting=accounting)
     price = accounting.robot_charge().cost
     assert method._pomdp_model.stop_cost == pytest.approx(price)  # noqa: SLF001
+
+
+@pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+def test_practice_without_the_human_reset_leaves_the_tossing3d_domain_unchanged(
+    *, solver: str
+) -> None:
+    """Tossing3D's reset is a deterministic skill, not a belief, so dropping the
+    unoffered human skills from the practice domain is a no-op there."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        pomdp_solver=solver,
+        seed=0,
+        pomdp_search_depth=2,
+    )
+    assert method.pomdp_domain == TOSSING3D_DOMAIN
