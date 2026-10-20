@@ -101,8 +101,7 @@ class PlacementRequest(BaseModel):
     def instructions(self) -> str:
         return "\n".join((
             f"[{self.kind}] Please place the cube and the bin (robot map frame, metres):",
-            f"  cube: on the floor at ({self.cube[0]:.2f}, {self.cube[1]:.2f}), "
-            "on the robot's side of the tape, resting on a face",
+            "  cube: anywhere on the floor on the robot's side of the tape, resting on a face",
             f"  bin:  centred at ({self.bin.center[0]:.2f}, {self.bin.center[1]:.2f}), "
             f"upright: {self.bin.description}",
             "  Do not move the robot.",
@@ -125,6 +124,11 @@ class TerminalPerson(BaseModel):
     def placed(self, *, request: PlacementRequest) -> None:
         """After Enter. A real person has already done it; a fake one does it here."""
         del request
+
+    def confirm(self, *, action: str) -> None:
+        """Before a skill moves the robot: anything but y ends the run, as Ctrl-C would."""
+        if self.read(f"{action} -- run it? [y/N] ").strip().lower() != "y":
+            raise KeyboardInterrupt(f"the person declined: {action}")
 
 
 class RealSceneSnapshot(FixedTossDirection):
@@ -154,6 +158,8 @@ class RealTossingBackend(BaseModel):
     parameters: TossParameterSet
     frame: RealRoomFrame = ROOM_FRAME
     step_costs: RealSkillStepCosts = RealSkillStepCosts()
+    # The person says y at the terminal before each skill moves the robot.
+    confirm_each_skill: bool = False
 
     _last: RealSceneSnapshot | None = PrivateAttr(default=None)
     _ticks: list[RealSceneSnapshot] = PrivateAttr(default_factory=list)
@@ -302,14 +308,14 @@ class RealTossingBackend(BaseModel):
             error = None if reply.held else f"pick did not hold: {reply.note}"
             return ControllerRun(steps=self.step_costs.pick_cube, terminated=True, error=error)
 
-        return self._skill(act=act, cost=self.step_costs.pick_cube)
+        return self._skill(action="PickCube", act=act, cost=self.step_costs.pick_cube)
 
     def run_open_gripper(self) -> ControllerRun:
         def act() -> ControllerRun:
             self.robot.open_gripper()
             return ControllerRun(steps=self.step_costs.open_gripper, terminated=True)
 
-        return self._skill(act=act, cost=self.step_costs.open_gripper)
+        return self._skill(action="OpenGripper", act=act, cost=self.step_costs.open_gripper)
 
     def run_move_to_toss_location_and_toss(
         self,
@@ -343,15 +349,21 @@ class RealTossingBackend(BaseModel):
                 )
             return ControllerRun(steps=cost, terminated=True)
 
-        return self._skill(act=act, cost=cost)
+        action = (
+            f"MoveToTossLocationAndToss(standoff {distance:.2f} m, "
+            f"{release_speed_deg_s:.0f} deg/s, release {gripper_release_ms:.0f} ms)"
+        )
+        return self._skill(action=action, act=act, cost=cost)
 
-    def _skill(self, *, act: Callable[[], ControllerRun], cost: int) -> ControllerRun:
+    def _skill(self, *, action: str, act: Callable[[], ControllerRun], cost: int) -> ControllerRun:
         """One robot skill, one fresh observation, then its charged steps.
 
         A `ValueError` is the robot side refusing before it moved: uncharged. Any other
         error from the call (a stopped or busy skill, a lost connection) may have come
         mid-motion, so it is the action's failure, charged in full, never retried.
         """
+        if self.confirm_each_skill:
+            self.person.confirm(action=action)
         if self._before is not None:
             self._before()
         try:

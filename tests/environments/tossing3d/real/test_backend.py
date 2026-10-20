@@ -69,7 +69,7 @@ def test_a_human_reset_prompts_for_the_named_spot_moves_no_robot_and_reobserves(
     spot = BIN_SPOTS[Tossing3DSide(destination)]
     prompt = "\n".join(written)
     assert f"{spot.center[0]:.2f}, {spot.center[1]:.2f}" in prompt
-    assert f"{CUBE_SPOT[0]:.2f}, {CUBE_SPOT[1]:.2f}" in prompt
+    assert "anywhere on the floor on the robot's side of the tape" in prompt
     assert "Enter" in prompt
     assert not MOTION & {name for name, _ in robot.calls}
     assert robot.calls[0][0] == "observe"  # only after the person is done
@@ -176,3 +176,51 @@ def test_the_fixed_direction_is_the_one_the_robot_reports_for_the_bins_spot() ->
     snapshot = env.get_current_state().object_centric
     reported = robot.observe()["toss_direction"]
     assert snapshot.toss_azimuth() == pytest.approx(ROOM_FRAME.yaw_to_domain(yaw=reported))
+
+
+class _Asked(FakePerson):
+    """A FakePerson who records each confirmation and answers from a script."""
+
+    answers: list[str] = []
+    asked: list[str] = []
+
+    def model_post_init(self, __context: object) -> None:
+        super().model_post_init(__context)
+        self.read = lambda prompt: self._answer(prompt=prompt)
+
+    def _answer(self, *, prompt: str) -> str:
+        if "[y/N]" not in prompt:
+            return ""
+        self.asked.append(prompt)
+        return self.answers.pop(0)
+
+
+def test_every_skill_waits_for_the_persons_y_before_the_robot_moves() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "Y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    env.backend().run_open_gripper()
+    assert len(person.asked) == 2
+    assert "PickCube" in person.asked[0] and "OpenGripper" in person.asked[1]
+
+
+def test_anything_but_y_stops_the_run_before_the_robot_moves() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["n"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    before = robot.observe()["robot"]
+    with pytest.raises(KeyboardInterrupt):
+        env.backend().run_pick_cube()
+    assert robot.observe()["robot"] == before and not robot.observe()["holding"]
+
+
+def test_without_confirmation_no_skill_asks() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=[], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    assert person.asked == []
