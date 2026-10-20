@@ -56,9 +56,7 @@ def test_a_compressed_path_can_be_named_directly(*, tmp_path: Path) -> None:
         assert [json.loads(line) for line in stream] == ROWS
 
 
-def test_a_log_written_one_zstd_frame_per_record_reads_every_record(
-    *, tmp_path: Path
-) -> None:
+def test_a_log_written_one_zstd_frame_per_record_reads_every_record(*, tmp_path: Path) -> None:
     """A streaming writer appends one frame per record; reading must not stop at the first."""
     compressed = tmp_path / "pomdp_decisions.jsonl.zst"
     compressor = zstandard.ZstdCompressor()
