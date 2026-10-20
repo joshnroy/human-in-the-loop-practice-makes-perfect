@@ -82,3 +82,7 @@ def test_a_fake_robot_run_practises_and_ends_with_one_evaluation(*, tmp_path: Pa
     # far-side toss is refused (a refused toss is charged no steps).
     assert all(event["end_step"] > event["start_step"] for event in far_tosses)
     assert (output / "evaluations" / "0000").exists()
+    session = (output / "robot_session.log").read_text().splitlines()
+    assert any("cycle 0 [" in line and "action 1/20 · steps 0/1500" in line for line in session)
+    assert any("running PickCube" in line for line in session)
+    assert any("scene: FAR" in line for line in session)

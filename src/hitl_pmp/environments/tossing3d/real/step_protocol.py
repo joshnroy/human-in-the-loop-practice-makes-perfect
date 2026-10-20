@@ -5,6 +5,9 @@
   spawned process beside practice would need a second robot.
 - **The problems** are `Tossing3DRealCli`'s: real environment, planned tasks.
 - **The recording** describes the real backend's states and has no static colliders.
+
+It also hands practice's progress to the backend (`practice_progress`), for the line the
+person sees before each skill; the sim's adapter ignores it.
 """
 
 import argparse
@@ -20,6 +23,7 @@ from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
+from .backend import RealTossingBackend
 from .cli import Tossing3DRealCli
 
 
@@ -59,6 +63,17 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     @staticmethod
     def evaluation_pool() -> InProcessEvaluations:
         return InProcessEvaluations()
+
+    @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        """Handed to the backend, which shows it before the next skill runs."""
+        backend = Tossing3DStepProtocol.env(problem=problem).backend()
+        assert isinstance(backend, RealTossingBackend)
+        backend.practice_progress(
+            cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
+        )
 
     @staticmethod
     def attach_recording(

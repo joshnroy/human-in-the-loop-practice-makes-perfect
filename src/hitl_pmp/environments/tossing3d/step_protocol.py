@@ -98,6 +98,13 @@ class Tossing3DStepProtocol:
         return Tossing3DStepProtocol.env(problem=problem).last_skill_error()
 
     @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        """Nobody is watching a simulated run."""
+        del problem, cycle, action, max_actions, steps, budget
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         # Tossing3D keeps no per-candidate trace; its error string is the whole account.
         del problem
