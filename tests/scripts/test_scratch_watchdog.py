@@ -62,6 +62,7 @@ def test_low_space_terminates_the_child_and_writes_a_stop_record(*, tmp_path: Pa
     assert record["free_bytes"] == 150 * GB
     assert record["threshold_bytes"] == 200 * GB
     assert record["signal"] == "SIGTERM"
+    assert record["reason"] == "low_disk"
     assert record["time_unix"] == pytest.approx(time.time(), abs=60)
     assert "time_utc" in record
 
@@ -158,3 +159,84 @@ def test_main_reads_a_free_space_command_and_the_default_threshold(*, tmp_path: 
     record = json.loads((output / STOP_RECORD).read_text())
     assert record["threshold_bytes"] == 200 * GB
     assert record["free_bytes"] == 199 * GB
+
+
+def _unreadable_after_first() -> Callable[[], int]:
+    calls = iter([900 * GB])
+
+    def probe() -> int:
+        value = next(calls, None)
+        if value is None:
+            raise RuntimeError("free-space command 'mmlsquota' gave '' (exit 1): quota down")
+        return value
+
+    return probe
+
+
+def test_space_unreadable_for_the_limit_of_consecutive_polls_stops_the_run(
+    *, tmp_path: Path
+) -> None:
+    marker = tmp_path / "got_sigterm"
+    child = (
+        "import signal, sys, time, pathlib\n"
+        "def stop(*_):\n"
+        f"    pathlib.Path({str(marker)!r}).write_text('term')\n"
+        "    sys.exit(0)\n"
+        "signal.signal(signal.SIGTERM, stop)\n"
+        "time.sleep(60)\n"
+    )
+    watchdog = ScratchWatchdog(
+        output_dir=tmp_path / "run",
+        threshold_bytes=200 * GB,
+        poll_seconds=0.05,
+        grace_seconds=5.0,
+        max_unreadable_polls=3,
+        free_space=_unreadable_after_first(),
+    )
+    started = time.monotonic()
+    assert watchdog.run(command=_python(code=child)) == STOP_EXIT_CODE
+    assert time.monotonic() - started < 10
+    assert marker.read_text() == "term"
+    record = json.loads((tmp_path / "run" / STOP_RECORD).read_text())
+    assert record["reason"] == "free_space_unreadable"
+    assert record["unreadable_polls"] == 3
+    assert "quota down" in record["last_error"]
+    assert record["free_bytes"] is None
+    assert record["signal"] == "SIGTERM"
+
+
+def test_a_good_reading_resets_the_unreadable_count(*, tmp_path: Path) -> None:
+    readings = iter([900 * GB, None, None, 900 * GB, None, None, 900 * GB])
+
+    def flaky() -> int:
+        value = next(readings, 900 * GB)
+        if value is None:
+            raise RuntimeError("free-space command failed")
+        return value
+
+    watchdog = ScratchWatchdog(
+        output_dir=tmp_path / "run",
+        threshold_bytes=200 * GB,
+        poll_seconds=0.05,
+        grace_seconds=1.0,
+        max_unreadable_polls=3,
+        free_space=flaky,
+    )
+    assert watchdog.run(command=_python(code="import time; time.sleep(0.6)")) == 0
+    assert not (tmp_path / "run" / STOP_RECORD).exists()
+
+
+def test_main_exposes_the_unreadable_poll_limit_defaulting_to_ten(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[int] = []
+
+    def fake_run(self: ScratchWatchdog, *, command: list[str]) -> int:  # noqa: PLR0917
+        seen.append(self.max_unreadable_polls)
+        return 0
+
+    monkeypatch.setattr(ScratchWatchdog, "run", fake_run)
+    base = ["--path", str(tmp_path), "--output-dir", str(tmp_path / "run"), "--"]
+    ScratchWatchdog.main(argv=[*base, "true"])
+    ScratchWatchdog.main(argv=["--max-unreadable-polls", "4", *base, "true"])
+    assert seen == [10, 4]

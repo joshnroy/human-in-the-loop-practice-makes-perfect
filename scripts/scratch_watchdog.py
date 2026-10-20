@@ -2,7 +2,8 @@
 
     python scripts/scratch_watchdog.py --path /scratch/gpfs/... --output-dir <run dir> \
         [--threshold-gb 200] [--poll-seconds 60] [--grace-seconds 120] \
-        [--free-cmd '<shell command printing free bytes>'] -- <command> [args...]
+        [--free-cmd '<shell command printing free bytes>'] [--max-unreadable-polls 10] \
+        -- <command> [args...]
 
 Every `--poll-seconds` it reads the free bytes on `--path`. Below the threshold it sends
 the command's whole process group SIGTERM, then SIGKILL after `--grace-seconds`, writes
@@ -20,7 +21,11 @@ is one integer, the bytes left. For a fileset quota that is limit minus usage, e
 The columns of `mmlsquota` (and Della's own `checkquota`) must be checked on Della before
 relying on this; the command is the user's to supply, and the watchdog only parses an
 integer. A probe that fails mid-run is reported on stderr and skipped, so a transient
-quota-command error cannot stop a run; a probe that fails before launch is fatal.
+quota-command error cannot stop a run; but `--max-unreadable-polls` (default 10, about
+10 minutes at 60 s) consecutive failures stop it exactly as low disk does, since a run
+writing blind could fill the disk unseen. A probe that fails before launch is fatal.
+`watchdog_stop.json`'s `reason` is `low_disk` or `free_space_unreadable` (with
+`last_error` and `unreadable_polls`).
 
 A process killed by SIGKILL, or one that does not handle SIGTERM (Python's default
 action terminates without running `finally` blocks), leaves its own status files as they
@@ -40,7 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 STOP_RECORD = "watchdog_stop.json"
 STOP_EXIT_CODE = 75
@@ -53,18 +58,20 @@ class ScratchWatchdog(BaseModel):
     threshold_bytes: int
     poll_seconds: float = 60.0
     grace_seconds: float = 120.0
+    max_unreadable_polls: int = Field(default=10, ge=1)
     free_space: Callable[[], int]
 
     def run(self, *, command: list[str]) -> int:
         free = self.free_space()
         if free < self.threshold_bytes:
-            self._write_stop(free_bytes=free, sent=None, returncode=None)
+            self._write_stop(reason="low_disk", free_bytes=free, sent=None, returncode=None)
             return STOP_EXIT_CODE
         child = subprocess.Popen(command, start_new_session=True)  # noqa: S603
         previous = {
             number: signal.signal(number, ScratchWatchdog._forwarder(child=child))
             for number in (signal.SIGTERM, signal.SIGINT)
         }
+        unreadable = 0
         try:
             while True:
                 try:
@@ -76,11 +83,30 @@ class ScratchWatchdog(BaseModel):
                 try:
                     free = self.free_space()
                 except RuntimeError as error:
-                    print(f"scratch_watchdog: probe skipped: {error}", file=sys.stderr)
-                    continue
+                    unreadable += 1
+                    print(
+                        f"scratch_watchdog: probe {unreadable}/{self.max_unreadable_polls} "
+                        f"failed: {error}",
+                        file=sys.stderr,
+                    )
+                    if unreadable < self.max_unreadable_polls:
+                        continue
+                    sent = self._stop(child=child)
+                    self._write_stop(
+                        reason="free_space_unreadable",
+                        free_bytes=None,
+                        sent=sent,
+                        returncode=child.returncode,
+                        last_error=str(error),
+                        unreadable_polls=unreadable,
+                    )
+                    return STOP_EXIT_CODE
+                unreadable = 0
                 if free < self.threshold_bytes:
                     sent = self._stop(child=child)
-                    self._write_stop(free_bytes=free, sent=sent, returncode=child.returncode)
+                    self._write_stop(
+                        reason="low_disk", free_bytes=free, sent=sent, returncode=child.returncode
+                    )
                     return STOP_EXIT_CODE
         finally:
             for number, handler in previous.items():
@@ -98,21 +124,33 @@ class ScratchWatchdog(BaseModel):
         ScratchWatchdog._signal_group(child=child, number=signal.SIGKILL)
         return "SIGTERM"
 
-    def _write_stop(self, *, free_bytes: int, sent: str | None, returncode: int | None) -> None:
+    def _write_stop(
+        self,
+        *,
+        reason: str,
+        free_bytes: int | None,
+        sent: str | None,
+        returncode: int | None,
+        last_error: str | None = None,
+        unreadable_polls: int = 0,
+    ) -> None:
         now = time.time()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         record = {
             "time_unix": now,
             "time_utc": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+            "reason": reason,
             "free_bytes": free_bytes,
             "threshold_bytes": self.threshold_bytes,
             "signal": sent,
             "child_returncode": returncode,
+            "last_error": last_error,
+            "unreadable_polls": unreadable_polls,
         }
         (self.output_dir / STOP_RECORD).write_text(json.dumps(record, indent=2) + "\n")
         print(
-            f"scratch_watchdog: {free_bytes} bytes free < {self.threshold_bytes}; "
-            f"stopped ({sent or 'never started'})",
+            f"scratch_watchdog: {reason} ({free_bytes} bytes free, threshold "
+            f"{self.threshold_bytes}); stopped ({sent or 'never started'})",
             file=sys.stderr,
         )
 
@@ -137,6 +175,7 @@ class ScratchWatchdog(BaseModel):
         parser.add_argument("--poll-seconds", type=float, default=60.0)
         parser.add_argument("--grace-seconds", type=float, default=120.0)
         parser.add_argument("--free-cmd", default=None)
+        parser.add_argument("--max-unreadable-polls", type=int, default=10)
         parser.add_argument("command", nargs=argparse.REMAINDER)
         args = parser.parse_args(argv)
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -148,6 +187,7 @@ class ScratchWatchdog(BaseModel):
             threshold_bytes=int(args.threshold_gb * GB),
             poll_seconds=args.poll_seconds,
             grace_seconds=args.grace_seconds,
+            max_unreadable_polls=args.max_unreadable_polls,
             free_space=source.bytes_free,
         ).run(command=command)
 
