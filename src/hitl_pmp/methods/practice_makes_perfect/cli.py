@@ -335,6 +335,13 @@ class Tossing3DPomdpCli(EesCli):
             help="Log every determinized A* node, queue pop, and generated edge.",
         )
         parser.add_argument(
+            "--pomdp-compress-decision-log",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Write pomdp_decisions.jsonl.zst, one zstd frame per record, instead of "
+            "plain pomdp_decisions.jsonl. Belief dumps make the plain log reach TB per run.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -473,7 +480,12 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 pomdp_domain=domain,
                 decision_log=(
-                    args.output_dir / "pomdp_decisions.jsonl"
+                    args.output_dir
+                    / (
+                        "pomdp_decisions.jsonl.zst"
+                        if args.pomdp_compress_decision_log
+                        else "pomdp_decisions.jsonl"
+                    )
                     if args.output_dir is not None
                     else None
                 ),

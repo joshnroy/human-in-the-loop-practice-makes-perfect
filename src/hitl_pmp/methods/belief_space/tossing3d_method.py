@@ -24,6 +24,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     EesMethod,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .competence_inference import BayesianSkillBelief, InferenceConfig, smooth_history
 from .determinized import DeterminizedAStarPlanner
@@ -121,6 +122,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     robot_duration_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
+    # A `.jsonl.zst` path is written one zstd frame per record (see JsonlLog.append).
     decision_log: Path | None = None
     # What the belief-space model knows about this domain (see practice_domain.py).
     pomdp_domain: PracticeDomain = Field(default=TOSSING3D_DOMAIN, exclude=True)
@@ -251,8 +253,7 @@ class Tossing3DPomdpMethod(EesMethod):
             "decision": self._decision_index,
             **fields,
         }
-        with self.decision_log.open("a", encoding="utf-8") as stream:
-            stream.write(LogTiming.encode(record=record))
+        JsonlLog.append(path=self.decision_log, line=LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
         """Offer every provider-owned reset mechanism to belief-space planning.

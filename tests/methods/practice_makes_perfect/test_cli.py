@@ -483,3 +483,41 @@ def test_the_always_ask_reset_flag_wraps_every_planner(
     assert isinstance(built.always_ask_reset, AlwaysAskReset) is wrapped
     if method == "pomdp":
         assert built.pomdp_solver == extra[-1]
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], "pomdp_decisions.jsonl.zst"),
+        (["--no-pomdp-compress-decision-log"], "pomdp_decisions.jsonl"),
+    ],
+)
+def test_the_pomdp_decision_log_is_compressed_by_default(
+    *, argv: list[str], expected: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+
+    built: list[object] = []
+
+    def _run_method(*, method_factory: object, **_kwargs: object) -> None:
+        env = Tossing3DEnvironment(scene_bg=False)
+        built.append(
+            method_factory(  # type: ignore[operator]
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", "pomdp", "--output-dir", str(tmp_path), *argv])
+    (method,) = built
+    assert method.decision_log == tmp_path / expected  # type: ignore[attr-defined]

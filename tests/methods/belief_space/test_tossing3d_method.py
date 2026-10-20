@@ -31,6 +31,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossin
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 
 def _build(**kwargs: object) -> Tossing3DPomdpMethod:
@@ -717,3 +718,27 @@ def test_practice_without_the_human_reset_leaves_the_tossing3d_domain_unchanged(
         pomdp_search_depth=2,
     )
     assert method.pomdp_domain == TOSSING3D_DOMAIN
+
+
+@pytest.mark.parametrize("name", ["decisions.jsonl", "decisions.jsonl.zst"])
+def test_the_decision_log_is_written_plain_or_one_zstd_frame_per_record(
+    *, name: str, tmp_path: Path
+) -> None:
+    import zstandard
+
+    method = _build()
+    method.decision_log = tmp_path / "run" / name
+    method.record_diagnostic(event="decision", belief="x" * 50_000)
+    method.record_diagnostic(event="outcome", success=True)
+    raw = method.decision_log.read_bytes()
+    with JsonlLog.open_text(path=method.decision_log) as stream:
+        events = [json.loads(line)["event"] for line in stream]
+    assert events == ["decision", "outcome"]
+    if name.endswith(".zst"):
+        decoder = zstandard.ZstdDecompressor().decompressobj()
+        first = decoder.decompress(raw)
+        assert json.loads(first)["event"] == "decision"
+        assert decoder.unused_data, "each record must be its own frame"
+        assert len(raw) < 5_000
+    else:
+        assert raw.decode("utf-8").count("\n") == 2
