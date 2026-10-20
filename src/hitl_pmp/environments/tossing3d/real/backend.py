@@ -169,9 +169,14 @@ class RealTossingBackend(BaseModel):
     # --- the scene, set by a person ---------------------------------------------------
 
     def reset(self, *, seed: int) -> Tossing3DObservation:
-        """A task's scene: every task starts with the bin across the tape, as in the sim.
+        """A task's scene: the robot at home and the bin across the tape, as in the sim.
         There is one spot per side, so `seed` names the same scene for every task."""
         del seed
+        # The robot starts each task at its home, the close-side toss stand, as the
+        # sim's does; it drives there before the person sets the scene around it.
+        if self.confirm_each_skill:
+            self.person.confirm(action="GoHome (drive to the close-side toss stand)")
+        self.robot.go_home()
         return self._placed(kind="scene", destination=Tossing3DSide.OPPOSITE)
 
     def reset_cube_and_bin(
