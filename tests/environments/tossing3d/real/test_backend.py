@@ -128,9 +128,10 @@ def test_a_toss_outside_the_real_set_is_refused_without_calling_the_robot() -> N
 def test_a_server_refusal_is_an_uncharged_failed_toss() -> None:
     env, robot = _env()
     env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
-    # Across the tape from the far bin at a short standoff: the robot side refuses.
+    # A bin placed past its spot puts the stand across the tape: the robot side refuses.
+    robot.bin = (0.24, 1.60, 0.0)
     env.take_action(
-        action=np.array([env.move_to_toss_location_and_toss_id, 0.9, -math.pi / 2, 120, 675])
+        action=np.array([env.move_to_toss_location_and_toss_id, 1.4, -math.pi / 2, 120, 675])
     )
     assert env.last_controller_steps() == (0,)
     assert "refused" in (env.last_skill_error() or "")

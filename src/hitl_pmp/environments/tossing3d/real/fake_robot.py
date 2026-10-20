@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
+from hitl_pmp.environments.tossing3d.types import TossParameterSet
 
 from .backend import PlacementRequest, TerminalPerson
 from .frame import ROOM_FRAME
@@ -24,6 +24,10 @@ _STAND_MARGIN_M = 0.38
 _PICK_MARGIN_M = 0.15
 _SHORT_LANDING_M = 0.45
 _BIN = {"length": 0.39, "width": 0.29, "height": 0.21}
+# The robot side's own `real_toss_bounds`, wider than this package's real set.
+_SERVER_TOSS_BOUNDS = TossParameterSet(
+    standoff_bounds=(0.9, 1.45), speed_bounds=(100.0, 140.0), release_ms_bounds=(500.0, 850.0)
+)
 
 
 class FakeTossingRobot(BaseModel):
@@ -128,7 +132,7 @@ class FakeTossingRobot(BaseModel):
         self, *, standoff: float, speed: float, release_ms: float, direction: float
     ) -> dict[str, Any]:
         self.calls.append(("toss", (standoff, speed, release_ms, direction)))
-        refusal = REAL_TOSS_PARAMETERS.violation(params=(standoff, speed, release_ms))
+        refusal = _SERVER_TOSS_BOUNDS.violation(params=(standoff, speed, release_ms))
         if refusal is not None:
             raise ValueError(refusal)
         if not self.holding:

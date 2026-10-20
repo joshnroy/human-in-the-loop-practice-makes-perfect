@@ -40,7 +40,9 @@ def test_the_sim_set_is_the_constants_every_sim_run_used() -> None:
 
 
 def test_the_real_set_is_the_real_swings() -> None:
-    assert REAL_TOSS_PARAMETERS.standoff_bounds == (0.9, 1.45)
+    # The standoff is the far spot's tape-clearance window (Josh, 2026-10-20), for both
+    # spots; the robot side's own bounds are 0.9-1.45 m.
+    assert REAL_TOSS_PARAMETERS.standoff_bounds == (1.37, 1.45)
     assert REAL_TOSS_PARAMETERS.speed_bounds == (100.0, 140.0)
     assert REAL_TOSS_PARAMETERS.release_ms_bounds == (500.0, 850.0)
 
@@ -82,10 +84,11 @@ def test_a_real_environment_draws_only_inside_the_real_set() -> None:
 
 
 def test_violation_names_the_parameter_and_the_bound() -> None:
-    assert REAL_TOSS_PARAMETERS.violation(params=(1.0, 120.0, 600.0)) is None
-    assert "speed" in str(REAL_TOSS_PARAMETERS.violation(params=(1.0, 150.0, 600.0)))
+    assert REAL_TOSS_PARAMETERS.violation(params=(1.4, 120.0, 600.0)) is None
+    assert "speed" in str(REAL_TOSS_PARAMETERS.violation(params=(1.4, 150.0, 600.0)))
     assert "standoff" in str(REAL_TOSS_PARAMETERS.violation(params=(2.0, 120.0, 600.0)))
-    assert "release" in str(REAL_TOSS_PARAMETERS.violation(params=(1.0, 120.0, 900.0)))
+    assert "standoff" in str(REAL_TOSS_PARAMETERS.violation(params=(1.0, 120.0, 600.0)))
+    assert "release" in str(REAL_TOSS_PARAMETERS.violation(params=(1.4, 120.0, 900.0)))
 
 
 def test_a_parameter_set_refuses_an_empty_or_inverted_range() -> None:
