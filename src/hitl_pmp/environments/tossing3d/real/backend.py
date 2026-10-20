@@ -119,6 +119,7 @@ class TerminalPerson(BaseModel):
     def place(self, *, request: PlacementRequest) -> None:
         self.write(request.instructions())
         self.read("Press Enter when the cube and the bin are in place: ")
+        self.write("observing the scene (the cameras take up to ~30 s) ...")
         self.placed(request=request)
 
     def placed(self, *, request: PlacementRequest) -> None:
@@ -126,9 +127,13 @@ class TerminalPerson(BaseModel):
         del request
 
     def confirm(self, *, action: str) -> None:
-        """Before a skill moves the robot: anything but y ends the run, as Ctrl-C would."""
-        if self.read(f"{action} -- run it? [y/N] ").strip().lower() != "y":
+        """Before a skill moves the robot: y runs it, a blank line asks again (a stray
+        Enter must not end a run), and anything else ends the run, as Ctrl-C would."""
+        while not (answer := self.read(f"{action} -- run it? [y/n] ").strip().lower()):
+            pass
+        if answer != "y":
             raise KeyboardInterrupt(f"the person declined: {action}")
+        self.write(f"running {action} ...")
 
 
 class RealSceneSnapshot(FixedTossDirection):
