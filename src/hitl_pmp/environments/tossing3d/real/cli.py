@@ -58,9 +58,10 @@ class Tossing3DRealCli:
             help="File holding the skill server's RPC authkey; default $TIDYBOT_RPC_AUTHKEY.",
         )
         parser.add_argument(
-            "--no-robot-confirm",
+            "--robot-confirm-each-skill",
             action="store_true",
-            help="With --robot real, run each skill without first asking the person for y.",
+            help="With --robot real, also ask the person for y before every skill (by "
+            "default only before the drive home at a task's start, and at each placement).",
         )
         parser.set_defaults(
             measurement_interval_steps=END_ONLY_MEASUREMENT_INTERVAL,
@@ -109,7 +110,8 @@ class Tossing3DRealCli:
         env = RealTossing3DEnvironment(
             tossing_robot=robot,
             person=person,
-            confirm_each_skill=args.robot == "real" and not args.no_robot_confirm,
+            confirm_start=args.robot == "real",
+            confirm_each_skill=args.robot == "real" and args.robot_confirm_each_skill,
             canonical_seed=args.canonical_seed,
             evaluation=evaluation,
         )

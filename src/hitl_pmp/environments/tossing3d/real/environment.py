@@ -33,6 +33,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
     # Evaluation's episodes each open with `reset_to_task`, which asks for the scene, so
     # its `hard_reset` would ask for the same scene once more for nothing.
     evaluation: bool = False
+    confirm_start: bool = False
     confirm_each_skill: bool = False
 
     def build_backend(self) -> Tossing3DBackend:
@@ -43,6 +44,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             person=self.person,
             parameters=self.toss_parameters or REAL_TOSS_PARAMETERS,
             step_costs=self.step_costs,
+            confirm_start=self.confirm_start,
             confirm_each_skill=self.confirm_each_skill,
         )
 

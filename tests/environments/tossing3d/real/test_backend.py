@@ -197,18 +197,18 @@ class _Asked(FakePerson):
 
 def test_every_skill_waits_for_the_persons_y_before_the_robot_moves() -> None:
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "y", "Y"], asked=[])
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "Y"], asked=[])
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
     env.hard_reset()
     env.backend().run_pick_cube()
     env.backend().run_open_gripper()
-    assert len(person.asked) == 3
-    assert "PickCube" in person.asked[1] and "OpenGripper" in person.asked[2]
+    assert len(person.asked) == 2
+    assert "PickCube" in person.asked[0] and "OpenGripper" in person.asked[1]
 
 
 def test_anything_but_y_stops_the_run_before_the_robot_moves() -> None:
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "n"], asked=[])
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["n"], asked=[])
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
     env.hard_reset()
     before = robot.observe()["robot"]
@@ -229,7 +229,7 @@ def test_without_confirmation_no_skill_asks() -> None:
 def test_a_task_scene_drives_home_first_and_a_human_reset_does_not() -> None:
     robot = FakeTossingRobot()
     person = _Asked(robot=robot, write=lambda _line: None, answers=["y"], asked=[])
-    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_start=True)
     env.hard_reset()
     names = [name for name, _ in robot.calls]
     assert "go_home" in names
@@ -242,20 +242,37 @@ def test_a_task_scene_drives_home_first_and_a_human_reset_does_not() -> None:
 
 def test_a_blank_answer_asks_again_instead_of_ending_the_run() -> None:
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "", "  ", "y"], asked=[])
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["", "  ", "y"], asked=[])
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
     env.hard_reset()
     env.backend().run_pick_cube()
-    assert len(person.asked) == 4
+    assert len(person.asked) == 3
     assert robot.observe()["holding"]
 
 
 def test_the_person_is_told_the_robot_is_busy_after_each_answer() -> None:
     lines: list[str] = []
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lines.append, answers=["y", "y"], asked=[])
-    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    person = _Asked(robot=robot, write=lines.append, answers=[], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
     env.hard_reset()
     env.backend().run_pick_cube()
-    assert any("observing the scene" in line for line in lines)
-    assert any("running PickCube" in line for line in lines)
+    said = "\n".join(lines)
+    for line in (
+        "driving home",
+        "observing the scene",
+        "planning the next skill",
+        "running PickCube",
+        "PickCube: ok",
+    ):
+        assert line in said
+
+
+def test_by_default_a_real_run_asks_only_at_the_start_and_at_placements() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_start=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    env.backend().run_open_gripper()
+    assert len(person.asked) == 1 and "GoHome" in person.asked[0]
