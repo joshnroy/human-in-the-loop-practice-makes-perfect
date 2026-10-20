@@ -341,9 +341,11 @@ def test_grasp_clear_matches_the_live_grasp_planners_verdict() -> None:
 )
 def test_exp22s_refused_in_bin_pick_is_not_clear_and_a_centred_one_picks() -> None:
     """Predicate <=> planner inside an upright bin placed where EXP-22 froze (robot-side
-    reset region, bin yaw 180): the gpoff frozen cube (offset -0.0667, +0.0601, yaw 34
-    deg) is not clear and the live grasp planner refuses it; a centred cube is clear
-    and is picked and held."""
+    reset region, bin yaw 180): a cube nearer the wall than the gpoff frozen one (its
+    offset -0.0667, +0.0601 scaled x1.2, yaw 34 deg) is not clear and the live grasp
+    planner refuses it; a centred cube is clear and is picked and held. The frozen
+    offset itself is picked by the partly opened, tilted pick (kinder-baselines #178,
+    measured at 734c1a8), so it no longer brackets a refusal."""
     import json as jsonlib
     import math
 
@@ -355,7 +357,7 @@ def test_exp22s_refused_in_bin_pick_is_not_clear_and_a_centred_one_picks() -> No
         env.reset_to_seed(seed=125)
         base = KinderBackend.snapshot_to_plain(snapshot=env.backend().snapshot())
         bin_x, bin_y = -0.262, -1.5252
-        for offset, expect_clear in (((-0.0667, 0.0601), False), ((0.0, 0.0), True)):
+        for offset, expect_clear in (((-0.0667 * 1.2, 0.0601 * 1.2), False), ((0.0, 0.0), True)):
             plain = jsonlib.loads(jsonlib.dumps(base))
             plain["bin_0"][0:7] = [bin_x, bin_y, 0.0, 0.0, 0.0, 0.0, 1.0]
             half_yaw = math.radians(34.0) / 2

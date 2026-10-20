@@ -259,15 +259,16 @@ def test_the_pick_dispatch_ignores_every_parameter_slot(*, monkeypatch: pytest.M
 )
 def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() -> None:
     """The recovery-state lifecycle on the trap-2 stuck state saved from the
-    2026-09-22 grasp-clear validation run: dispatching the pick there is refused
-    ("No collision-free cube grasp", 0 steps); the refusal must surface as an
-    observed atom that removes PickupUnblocked from the state without changing whether
-    the pick is applicable -- a retry is dispatched and refused again, one more failed
-    attempt -- and a movables reset must clear the atom and leave the cube pickable
-    again. The cube lies in the bin 0.033 m from an inner wall, so the in-bin
-    GraspClear calibration now makes the pick inapplicable here before and after the
-    refusal alike; that the refusal itself is not a mask is pinned symbolically in
-    test_skills.py."""
+    2026-09-22 grasp-clear validation run, with the cube moved so that the partly
+    opened, tilted pick (kinder-baselines #178) refuses it too: its offset from the
+    bin's centre scaled x1.2 and its yaw turned to 45 degrees (the logged cube itself
+    is now picked). Dispatching the pick there is refused ("No collision-free cube
+    grasp", 0 steps); the refusal must surface as an observed atom that removes
+    PickupUnblocked from the state without changing whether the pick is applicable --
+    a retry is dispatched and refused again, one more failed attempt -- and a movables
+    reset must clear the atom and leave the cube pickable again. The cube lies in the
+    bin near an inner wall, so GraspClear does not hold; that the refusal itself is not
+    a mask is pinned symbolically in test_skills.py."""
     import json as jsonlib
     from pathlib import Path
 
@@ -280,7 +281,7 @@ def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() ->
     from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
     from hitl_pmp.planning.grounding import SkillGrounder
 
-    stuck_path = Path(__file__).parent / "fixtures" / "trap2_stuck_state.json"
+    stuck_path = Path(__file__).parent / "fixtures" / "trap2_stuck_state_nearer_wall.json"
     plain = jsonlib.loads(stuck_path.read_text())
     env = Tossing3DEnvironment()
     try:

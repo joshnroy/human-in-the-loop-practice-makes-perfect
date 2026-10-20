@@ -61,6 +61,12 @@ _NEEDS_KINDER = pytest.mark.skipif(
 
 # Every known state the planners stuck in, by the experiment that found it. In each the
 # logged run dispatched a pick that the controller refused.
+#
+# Five of the logged states are picked by the partly opened, tilted pick
+# (kinder-baselines #178), so each is replaced by the same scene with the cube moved
+# until that pick refuses it too (the `*_nearer_wall` and `*_touching` fixtures; the
+# cube is moved only, nothing else in the scene changes). Measured on kinder-baselines
+# 734c1a8: the dry run refused each and the dispatched pick was refused at 0 steps.
 _STUCK_STATES = {
     # EXP-22b: a toss overshot the robot-side bin and the cube rests between the bin
     # and the room's south wall. Every base standing spot 0.55 m from the cube collides
@@ -69,19 +75,29 @@ _STUCK_STATES = {
     "exp22b gpoff local_trend 3e-6 seed 1": "pick_plannable/exp22b_s1.json",
     "exp22b gpoff local_trend 3e-6 seed 2": "pick_plannable/exp22b_s2.json",
     "exp22b gpon local_trend 3e-6 seed 0": "pick_plannable/exp22b_gp0.json",
-    "exp22b ees gpon cost 5 seed 0": "pick_plannable/exp22b_ees0.json",
+    # The logged cube moved 2 cm further toward the south wall (y -2.917 -> -2.937).
+    "exp22b ees gpon cost 5 seed 0, cube 2 cm nearer the wall": (
+        "pick_plannable/exp22b_ees0_nearer_wall.json"
+    ),
     # EXP-22: the cube rests inside the upright bin 0.035-0.043 m from an inner wall.
-    "exp22 gpoff local_trend 3e-6": "pick_plannable/exp22_A.json",
+    # Two of the four have the cube's offset from the bin's centre scaled (x1.3 and
+    # x1.2), which keeps it inside the bin and nearer the same inner wall.
+    "exp22 gpoff local_trend 3e-6, offset x1.3": "pick_plannable/exp22_A_nearer_wall.json",
     "exp22 gpon global_curve 3e-6": "pick_plannable/exp22_C.json",
-    "exp22 gpon local_trend 3e-6": "pick_plannable/exp22_D.json",
+    "exp22 gpon local_trend 3e-6, offset x1.2": "pick_plannable/exp22_D_nearer_wall.json",
     "exp22 gpon global_curve 0": "pick_plannable/exp22_F.json",
     # EXP-21: the bin tipped onto its side, or came to rest on top of the cube.
     "exp21 seed 0, bin on its side": "exp21_tipped_bin_state.json",
     "exp21 seed 1, bin resting on the cube": "pick_plannable/exp21_bin_on_cube_s1.json",
     "exp21 seed 2, bin level on the cube": "pick_plannable/exp21_bin_on_cube_s2.json",
-    # EXP-21: evaluation cubes 0.024 and 0.030 m from the barrier's face.
-    "exp21 seed 0 evaluation, checkpoint 11": "pick_plannable/exp21_barrier_eval11.json",
-    "exp21 seed 0 evaluation, checkpoint 40": "pick_plannable/exp21_barrier_eval40.json",
+    # EXP-21: evaluation cubes logged 0.024 and 0.030 m from the barrier's face, moved
+    # to 0.005 m from it (and, at checkpoint 11, turned to 45 degrees of yaw).
+    "exp21 seed 0 evaluation, checkpoint 11, cube 5 mm from the barrier at 45 deg": (
+        "pick_plannable/exp21_barrier_eval11_touching.json"
+    ),
+    "exp21 seed 0 evaluation, checkpoint 40, cube 5 mm from the barrier": (
+        "pick_plannable/exp21_barrier_eval40_touching.json"
+    ),
 }
 
 
