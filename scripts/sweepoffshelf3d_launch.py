@@ -11,8 +11,9 @@ into `<results-root>/<arm>/<method>/<seed>/`. Run it through `scripts/with_env.s
 the checkout under test, so `hitl_pmp` and KINDER both import from it.
 
 The plan (Josh, 2026-10-14 and 2026-10-20):
-- arms: EES, ours with determinized A*, ours with expectimax at depth 6 and at depth 7
-  (`--expectimax-depths`), and an always-ask variant of each. "Ours" is
+- arms: EES, ours with determinized A*, ours with expectimax at depth 6, and an
+  always-ask variant of each: six arms. Depth 7 was dropped (Josh, 2026-10-20: "let's
+  drop d7") and stays selectable with `--expectimax-depths 6 7`. "Ours" is
   `--method pomdp` with Model B (`local_trend`).
 - p = 1 (`--reset-cubes-success-probability 1`), seeds 0-5 (six, because a paired exact
   sign-flip test over five pairs cannot reach p < 0.05).
@@ -47,9 +48,13 @@ Every other log is still written plain.
 On a cluster, `print` gives each arm's per-seed argv; run it with the job's own
 `scripts/with_env.sh` and the same `<arm>/<method>/<seed>` output layout.
 
-`della` writes `<out>/manifest.tsv` (one line per arm x seed, 48 for the plan:
-name, sha, arm, seed, output dir, `hitl_pmp.cli` argv, tab-separated) and
-`<out>/array.sbatch`, and submits nothing. Code is the worktree
+`della` writes one Slurm array per time group, since an array shares one `--time`:
+`<out>/manifest-<group>.tsv` (one line per arm x seed: name, sha, arm, seed, output dir,
+`hitl_pmp.cli` argv, tab-separated) and `<out>/array-<group>.sbatch`, 36 tasks in all for
+the plan, and submits nothing. The groups and their limits are `DELLA_GROUPS`: `ees`
+24 h, `determinized` 72 h (to be set from its Della dry run), `expectimax` 72 h;
+`--della-time GROUP=HH:MM:SS` and `--della-qos GROUP=QOS` override them. No QOS is set
+by default: Della's `cpu` partition assigns it from `--time`. Code is the worktree
 `/scratch/gpfs/TSILVER/jr2860/code/<sha>` (`--sha` defaults to this checkout's HEAD);
 results go to `/scratch/gpfs/TSILVER/jr2860/results/<tag>/<arm>/<method>/<seed>`. Each
 task pre-flights `import zstandard` and the KINDER-import isolation check, then runs
@@ -58,7 +63,7 @@ task pre-flights `import zstandard` and the KINDER-import isolation check, then 
 needs the skill benchmark report for `<sha>` under the code worktree's
 `benchmark-reports/` (or `$HITL_SKILL_BENCHMARK_DIR`), and is skipped only when
 `--skip-skill-benchmark-gate` is passed here. Submit with
-`sbatch <out>/array.sbatch <out>/manifest.tsv`.
+`sbatch <out>/array-<group>.sbatch <out>/manifest-<group>.tsv`, once per group.
 """
 
 import argparse
@@ -78,6 +83,23 @@ SEEDS = 6
 P = "1"
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
 DELLA_QUOTA_PATH = "/scratch/gpfs/TSILVER"
+
+
+class DellaGroup(BaseModel):
+    """One Slurm array: the arms that share a time limit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time: str
+    qos: str | None = None
+
+
+# Josh, 2026-10-20. The determinized limit is a placeholder until its Della dry run.
+DELLA_GROUPS = {
+    "ees": DellaGroup(time="24:00:00"),
+    "determinized": DellaGroup(time="72:00:00"),
+    "expectimax": DellaGroup(time="72:00:00"),
+}
 
 
 class Budget(BaseModel):
@@ -244,18 +266,39 @@ class ShelfLaunch:
         return lines
 
     @staticmethod
-    def della_sbatch(*, tag: str, tasks: int) -> str:
+    def della_group(*, arm: ShelfArm) -> str:
+        if arm.method == "ees":
+            return "ees"
+        return "determinized" if "determinized" in arm.name else "expectimax"
+
+    @staticmethod
+    def della_groups(*, overrides: list[str], field: str) -> dict[str, DellaGroup]:
+        """`DELLA_GROUPS` with each `GROUP=VALUE` override applied to `field`."""
+        groups = dict(DELLA_GROUPS)
+        for override in overrides:
+            group, sep, value = override.partition("=")
+            if not sep or not value or group not in groups:
+                raise SystemExit(
+                    f"bad override {override!r}: want GROUP=VALUE, GROUP one of {list(groups)}"
+                )
+            groups[group] = groups[group].model_copy(update={field: value})
+        return groups
+
+    @staticmethod
+    def della_sbatch(*, tag: str, group: str, limits: DellaGroup, tasks: int) -> str:
+        qos = f"#SBATCH --qos={limits.qos}\n" if limits.qos else ""
         return f"""#!/bin/bash
-# One SweepOffShelf3D run per array task: sbatch array.sbatch manifest.tsv
+# One SweepOffShelf3D run per array task, group {group}:
+#   sbatch array-{group}.sbatch manifest-{group}.tsv
 # Written by `python -m scripts.sweepoffshelf3d_launch della`; never edit by hand.
 # Manifest line i = <name>\\t<sha>\\t<arm>\\t<seed>\\t<output dir>\\t<hitl_pmp.cli argv>
 #SBATCH --account=tsilver
 #SBATCH --partition=cpu
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=12G
-#SBATCH --time=72:00:00
-#SBATCH --array=1-{tasks}
-#SBATCH --job-name={tag}
+#SBATCH --time={limits.time}
+{qos}#SBATCH --array=1-{tasks}
+#SBATCH --job-name={tag}-{group}
 #SBATCH --output={DELLA}/slurm-logs/%x-%A_%a.out
 set -eo pipefail
 S={DELLA}
@@ -367,7 +410,7 @@ exit $rc
         )
         parser.add_argument("mode", choices=["print", "check", "launch", "della"])
         parser.add_argument("--arms", nargs="+", help="Default: every arm of the plan.")
-        parser.add_argument("--expectimax-depths", nargs="+", type=int, default=[6, 7])
+        parser.add_argument("--expectimax-depths", nargs="+", type=int, default=[6])
         parser.add_argument("--size", choices=sorted(SIZES), default="full")
         parser.add_argument("--results-root", type=Path)
         parser.add_argument("--max-workers", type=int, default=3, help="Runs in flight per arm.")
@@ -379,7 +422,21 @@ exit $rc
         parser.add_argument("--go", action="store_true", help="Required by launch.")
         parser.add_argument("--tag", help="della: the results directory and job name.")
         parser.add_argument("--sha", help="della: the commit to run. Default: HEAD.")
-        parser.add_argument("--out", type=Path, help="della: where to write the two files.")
+        parser.add_argument("--out", type=Path, help="della: where to write the files.")
+        parser.add_argument(
+            "--della-time",
+            action="append",
+            default=[],
+            metavar="GROUP=HH:MM:SS",
+            help=f"della: a group's --time. Groups: {list(DELLA_GROUPS)}.",
+        )
+        parser.add_argument(
+            "--della-qos",
+            action="append",
+            default=[],
+            metavar="GROUP=QOS",
+            help="della: a group's --qos. Default: none (the partition picks it).",
+        )
         return parser.parse_args(argv)
 
 
@@ -417,19 +474,30 @@ def main(*, argv: list[str] | None = None) -> int:
         if args.tag is None or args.out is None:
             raise SystemExit("della needs --tag and --out")
         sha = args.sha or ShelfLaunch.head_commit()
-        lines = ShelfLaunch.della_manifest(
-            arms=selected,
-            size=size,
-            sha=sha,
-            tag=args.tag,
-            skip_gate=args.skip_skill_benchmark_gate,
-        )
+        groups = ShelfLaunch.della_groups(overrides=args.della_time, field="time")
+        for group, limits in ShelfLaunch.della_groups(
+            overrides=args.della_qos, field="qos"
+        ).items():
+            groups[group] = groups[group].model_copy(update={"qos": limits.qos})
         args.out.mkdir(parents=True, exist_ok=True)
-        (args.out / "manifest.tsv").write_text("\n".join(lines) + "\n")
-        (args.out / "array.sbatch").write_text(
-            ShelfLaunch.della_sbatch(tag=args.tag, tasks=len(lines))
-        )
-        print(f"wrote {len(lines)} tasks: sbatch {args.out}/array.sbatch {args.out}/manifest.tsv")
+        for group, limits in groups.items():
+            members = [arm for arm in selected if ShelfLaunch.della_group(arm=arm) == group]
+            if not members:
+                continue
+            lines = ShelfLaunch.della_manifest(
+                arms=members,
+                size=size,
+                sha=sha,
+                tag=args.tag,
+                skip_gate=args.skip_skill_benchmark_gate,
+            )
+            manifest = args.out / f"manifest-{group}.tsv"
+            sbatch = args.out / f"array-{group}.sbatch"
+            manifest.write_text("\n".join(lines) + "\n")
+            sbatch.write_text(
+                ShelfLaunch.della_sbatch(tag=args.tag, group=group, limits=limits, tasks=len(lines))
+            )
+            print(f"{group}: {len(lines)} tasks, --time={limits.time}: sbatch {sbatch} {manifest}")
         return 0
 
     if not args.go:

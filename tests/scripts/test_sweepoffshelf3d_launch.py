@@ -16,6 +16,7 @@ from scripts.sweepoffshelf3d_launch import (
 )
 
 CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6", "cccc-expectimax-d7"]
+DEFAULT_CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6"]
 ALWAYS_ASK_ARMS = [f"{arm}-always-ask" for arm in CANONICAL_ARMS]
 
 
@@ -33,15 +34,24 @@ def always_ask_missing(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ShelfLaunch, "always_ask_supported", lambda *, method: False)
 
 
-def test_the_decided_plan_is_eight_arms() -> None:
+def test_depths_six_and_seven_give_eight_arms() -> None:
     arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
     assert list(arms) == [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS]
     assert {arm.method for arm in arms.values()} == {"ees", "pomdp"}
     assert [name for name, arm in arms.items() if arm.always_ask] == ALWAYS_ASK_ARMS
 
 
-def test_the_default_depths_are_six_and_seven() -> None:
-    assert ShelfLaunch.parse(argv=["print"]).expectimax_depths == [6, 7]
+def test_the_default_depth_is_six_only() -> None:
+    # Josh, 2026-10-20: "let's drop d7"; depth 7 stays selectable by flag.
+    assert ShelfLaunch.parse(argv=["print"]).expectimax_depths == [6]
+
+
+def test_the_default_plan_is_six_arms() -> None:
+    depths = ShelfLaunch.parse(argv=["print"]).expectimax_depths
+    assert list(ShelfLaunch.arms(expectimax_depths=depths)) == [
+        *DEFAULT_CANONICAL_ARMS,
+        *(f"{arm}-always-ask" for arm in DEFAULT_CANONICAL_ARMS),
+    ]
 
 
 @pytest.mark.parametrize("depth", [5, 6, 7])
@@ -205,29 +215,106 @@ def test_dependencies_outside_the_checkout_are_named(*, tmp_path: Path) -> None:
 
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
 SHA = "0123456789abcdef0123456789abcdef01234567"
+GROUPS = ["ees", "determinized", "expectimax"]
 
 
-def _della(*, tmp_path: Path, extra: list[str] | None = None) -> tuple[list[list[str]], str]:
+def _della(
+    *, tmp_path: Path, extra: list[str] | None = None
+) -> dict[str, tuple[list[list[str]], str]]:
+    """Each array group's manifest rows and sbatch text."""
     out = tmp_path / "della"
     argv = ["della", "--tag", "shelf-20261020", "--sha", SHA, "--out", str(out), *(extra or [])]
     assert main(argv=argv) == 0
-    rows = [line.split("\t") for line in (out / "manifest.tsv").read_text().splitlines() if line]
-    return rows, (out / "array.sbatch").read_text()
+    groups = {}
+    for manifest in sorted(out.glob("manifest-*.tsv")):
+        group = manifest.stem.removeprefix("manifest-")
+        rows = [line.split("\t") for line in manifest.read_text().splitlines() if line]
+        groups[group] = (rows, (out / f"array-{group}.sbatch").read_text())
+    return groups
 
 
-def test_della_writes_one_task_per_arm_and_seed(*, tmp_path: Path) -> None:
-    rows, _ = _della(tmp_path=tmp_path)
-    assert len(rows) == 48
-    arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
-    expected = [(name, str(seed)) for name in arms for seed in range(6)]
-    assert [(row[2], row[3]) for row in rows] == expected
+def _all_rows(*, groups: dict[str, tuple[list[list[str]], str]]) -> list[list[str]]:
+    return [row for rows, _ in groups.values() for row in rows]
+
+
+def _directives(*, sbatch: str) -> list[str]:
+    return [line for line in sbatch.splitlines() if line.startswith("#SBATCH")]
+
+
+def test_della_writes_36_tasks_in_three_time_groups(*, tmp_path: Path) -> None:
+    groups = _della(tmp_path=tmp_path)
+    assert sorted(groups) == sorted(GROUPS)
+    rows = _all_rows(groups=groups)
+    assert len(rows) == 36
+    arms = ShelfLaunch.arms(expectimax_depths=[6])
+    assert sorted((row[2], row[3]) for row in rows) == sorted(
+        (name, str(seed)) for name in arms for seed in range(6)
+    )
     assert {row[1] for row in rows} == {SHA}
-    assert len({row[0] for row in rows}) == 48
+    assert len({row[0] for row in rows}) == 36
+    assert {group: sorted({row[2] for row in groups[group][0]}) for group in groups} == {
+        "ees": ["ees", "ees-always-ask"],
+        "determinized": ["cccc-determinized", "cccc-determinized-always-ask"],
+        "expectimax": ["cccc-expectimax-d6", "cccc-expectimax-d6-always-ask"],
+    }
+
+
+def test_della_d7_is_absent_by_default_and_present_on_request(*, tmp_path: Path) -> None:
+    default = _all_rows(groups=_della(tmp_path=tmp_path / "default"))
+    assert not any("d7" in row[2] for row in default)
+    both = _della(tmp_path=tmp_path / "both", extra=["--expectimax-depths", "6", "7"])
+    assert len(_all_rows(groups=both)) == 48
+    rows, sbatch = both["expectimax"]
+    assert len(rows) == 24
+    assert {row[2] for row in rows} >= {"cccc-expectimax-d7", "cccc-expectimax-d7-always-ask"}
+    assert "#SBATCH --array=1-24" in _directives(sbatch=sbatch)
+
+
+def test_della_each_group_gets_its_own_time_limit(*, tmp_path: Path) -> None:
+    groups = _della(tmp_path=tmp_path)
+    shared = [
+        "#SBATCH --account=tsilver",
+        "#SBATCH --partition=cpu",
+        "#SBATCH --cpus-per-task=2",
+        "#SBATCH --mem=12G",
+        "#SBATCH --array=1-12",
+    ]
+    times = {"ees": "24:00:00", "determinized": "72:00:00", "expectimax": "72:00:00"}
+    for group, (_, sbatch) in groups.items():
+        directives = _directives(sbatch=sbatch)
+        for directive in shared:
+            assert directive in directives
+        assert f"#SBATCH --time={times[group]}" in directives
+        assert f"#SBATCH --job-name=shelf-20261020-{group}" in directives
+        # Della's cpu partition picks the QOS from --time unless one is set.
+        assert not any(line.startswith("#SBATCH --qos") for line in directives)
+        assert sbatch.startswith("#!/bin/bash\n")
+
+
+def test_della_time_and_qos_are_overridable_per_group(*, tmp_path: Path) -> None:
+    groups = _della(
+        tmp_path=tmp_path,
+        extra=["--della-time", "determinized=36:00:00", "--della-qos", "expectimax=medium"],
+    )
+    determinized = _directives(sbatch=groups["determinized"][1])
+    assert "#SBATCH --time=36:00:00" in determinized
+    expectimax = _directives(sbatch=groups["expectimax"][1])
+    assert "#SBATCH --qos=medium" in expectimax
+    assert "#SBATCH --time=72:00:00" in expectimax
+    assert "#SBATCH --time=24:00:00" in _directives(sbatch=groups["ees"][1])
+
+
+@pytest.mark.parametrize("flag", [["--della-time", "nosuch=1:00:00"], ["--della-qos", "ees"]])
+def test_della_rejects_an_unknown_group_or_a_malformed_override(
+    *, flag: list[str], tmp_path: Path
+) -> None:
+    with pytest.raises(SystemExit):
+        main(argv=["della", "--tag", "t", "--sha", SHA, "--out", str(tmp_path), *flag])
 
 
 def test_della_tasks_run_the_launchers_own_argv_with_della_paths(*, tmp_path: Path) -> None:
-    rows, _ = _della(tmp_path=tmp_path)
-    arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
+    rows = _all_rows(groups=_della(tmp_path=tmp_path))
+    arms = ShelfLaunch.arms(expectimax_depths=[6])
     code = f"{DELLA}/code/{SHA}"
     for name, _sha, arm_name, seed, output_dir, joined in rows:
         arm = arms[arm_name]
@@ -236,79 +323,64 @@ def test_della_tasks_run_the_launchers_own_argv_with_della_paths(*, tmp_path: Pa
         local = ShelfLaunch.cli_argv(
             arm=arm, size=FULL, seed=int(seed), output_dir=Path(output_dir)
         )
-        della_costs = (ALWAYS_ASK_COSTS if arm.always_ask else COSTS).relative_to(REPO)
+        costs = ALWAYS_ASK_COSTS if arm.always_ask else COSTS
         assert argv == [
-            f"{code}/{della_costs}"
-            if token == str(ALWAYS_ASK_COSTS if arm.always_ask else COSTS)
-            else token
-            for token in local
+            f"{code}/{costs.relative_to(REPO)}" if token == str(costs) else token for token in local
         ]
         assert not any(str(REPO) in token for token in argv)
         assert Cli.parse_args(argv=argv).seed == int(seed)
-        assert name.startswith(f"shelf-20261020-{arm_name}-s{seed}")
+        assert name == f"shelf-20261020-{arm_name}-s{seed}"
 
 
 def test_della_never_skips_the_gate_unless_asked(*, tmp_path: Path) -> None:
-    rows, sbatch = _della(tmp_path=tmp_path)
-    assert all("--skip-skill-benchmark-gate" not in row[5] for row in rows)
-    assert "skip-skill-benchmark-gate" not in sbatch
-    skipped, _ = _della(tmp_path=tmp_path / "skip", extra=["--skip-skill-benchmark-gate"])
-    assert all(shlex.split(row[5])[-1] == "--skip-skill-benchmark-gate" for row in skipped)
-
-
-def test_della_sbatch_requests_the_decided_resources(*, tmp_path: Path) -> None:
-    _, sbatch = _della(tmp_path=tmp_path)
-    for directive in [
-        "#SBATCH --account=tsilver",
-        "#SBATCH --partition=cpu",
-        "#SBATCH --cpus-per-task=2",
-        "#SBATCH --mem=12G",
-        "#SBATCH --time=72:00:00",
-        "#SBATCH --array=1-48",
-        "#SBATCH --job-name=shelf-20261020",
-    ]:
-        assert directive in sbatch.splitlines()
-    assert sbatch.startswith("#!/bin/bash\n")
+    groups = _della(tmp_path=tmp_path)
+    assert all("--skip-skill-benchmark-gate" not in row[5] for row in _all_rows(groups=groups))
+    assert all("skip-skill-benchmark-gate" not in sbatch for _, sbatch in groups.values())
+    skipped = _della(tmp_path=tmp_path / "skip", extra=["--skip-skill-benchmark-gate"])
+    assert all(
+        shlex.split(row[5])[-1] == "--skip-skill-benchmark-gate"
+        for row in _all_rows(groups=skipped)
+    )
 
 
 def test_della_sbatch_preflights_then_runs_under_the_watchdog(*, tmp_path: Path) -> None:
-    _, sbatch = _della(tmp_path=tmp_path)
-    zstd = sbatch.index("import zstandard")
-    isolation = sbatch.index("ShelfLaunch.require_isolated()")
-    watchdog = sbatch.index("scripts/scratch_watchdog.py")
-    assert zstd < watchdog and isolation < watchdog
-    assert "pip install zstandard" in sbatch
-    # One logical bash line: backslash-newline continuations joined.
-    logical = sbatch.replace("\\\n", " ").splitlines()
-    run = next(line for line in logical if "scripts/scratch_watchdog.py" in line)
-    assert "--path /scratch/gpfs/TSILVER" in run
-    assert '--output-dir "$OUT"' in run
-    assert "-m hitl_pmp.cli" in run
-    assert run.index("--path") < run.index(" -- ") < run.index("hitl_pmp.cli")
-    assert f'CODE="{DELLA}/code/$SHA"' in sbatch
+    for _, sbatch in _della(tmp_path=tmp_path).values():
+        zstd = sbatch.index("import zstandard")
+        isolation = sbatch.index("ShelfLaunch.require_isolated()")
+        watchdog = sbatch.index("scripts/scratch_watchdog.py")
+        assert zstd < watchdog and isolation < watchdog
+        assert "pip install zstandard" in sbatch
+        # One logical bash line: backslash-newline continuations joined.
+        logical = sbatch.replace("\\\n", " ").splitlines()
+        run = next(line for line in logical if "scripts/scratch_watchdog.py" in line)
+        assert "--path /scratch/gpfs/TSILVER" in run
+        assert '--output-dir "$OUT"' in run
+        assert "-m hitl_pmp.cli" in run
+        assert run.index("--path") < run.index(" -- ") < run.index("hitl_pmp.cli")
+        assert f'CODE="{DELLA}/code/$SHA"' in sbatch
 
 
 def test_della_bash_text_is_syntactically_valid(*, tmp_path: Path) -> None:
     import subprocess
 
-    out = tmp_path / "della"
-    main(argv=["della", "--tag", "t", "--sha", SHA, "--out", str(out)])
-    subprocess.run(["bash", "-n", str(out / "array.sbatch")], check=True)
+    _della(tmp_path=tmp_path)
+    for sbatch in sorted((tmp_path / "della").glob("array-*.sbatch")):
+        subprocess.run(["bash", "-n", str(sbatch)], check=True)
 
 
 def test_della_refuses_without_a_tag(*, tmp_path: Path) -> None:
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match="della needs"):
         main(argv=["della", "--sha", SHA, "--out", str(tmp_path)])
 
 
 def test_della_sbatch_parses_a_manifest_line_back_to_the_same_argv(*, tmp_path: Path) -> None:
     import subprocess
 
-    rows, sbatch = _della(tmp_path=tmp_path)
+    rows, sbatch = _della(tmp_path=tmp_path)["expectimax"]
     lines = sbatch.splitlines()
     read = next(line for line in lines if line.startswith("IFS="))
     split = next(line for line in lines if line.startswith('eval "ARGS='))
-    manifest = tmp_path / "della" / "manifest.tsv"
+    manifest = tmp_path / "della" / "manifest-expectimax.tsv"
     script = (
         f'LINE=$(sed -n "7p" {manifest})\n{read}\n{split}\n'
         'printf "%s\\n" "$NAME" "$ARM" "$SEED" "$OUT"; printf "%s\\n" "${ARGS[@]}"\n'
