@@ -7,8 +7,8 @@ one gave up -- the absorbing failure behind CCCC's PickWiper tally (`KinderSkill
 
 Where each controller comes from:
 
-- `pick_cube_from_floor`: `tossing.PickCubeController` as it is upstream, with this
-  scene's box added to its planning scene.
+- `pick_cube_from_floor`, and the pick in `return_cube_to_shelf`: `floor_pick.py`'s
+  grasp x base candidate search over `shelf.PickShelfController`'s planners.
 - `pick_wiper`, `pick_cube_from_shelf`, `place_cube_in_box`, `return_cube_to_shelf`:
   `sweep3D.PickWiperOriController`, `shelf.PickShelfController` and
   `shelf.PlaceShelfController`. Their planners -- base BiRRT, PyBullet inverse
@@ -965,17 +965,13 @@ class KinderSkills:
             raise SkillFailed("pick_wiper: the wiper did not come with the hand")
 
     def pick_cube_from_floor(self, *, cube: str) -> None:
-        """`tossing.PickCubeController` as it is upstream, the box in its scene."""
+        """The grasp x base candidate search of `floor_pick.FloorPicks`."""
+        from .floor_pick import FloorPicks  # it imports this module
+
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("pick_cube_from_floor: the hand is not empty")
-        robot, target = self.objects("robot", cube)
-        controller = KinderControllers.get(name="PickCube")
-        self.first_that_plans(
-            make=lambda: controller(objects=[robot, target], pybullet_sim=self.planning_sim()),
-            candidates=[np.zeros(0)],
-            label="pick_cube_from_floor",
-        )
+        FloorPicks(kinder=self).pick(cube=cube, label="pick_cube_from_floor")
         if not self.held(name=cube):
             raise SkillFailed(f"pick_cube_from_floor: {cube} did not come with the hand")
 
@@ -1565,19 +1561,12 @@ class KinderSkills:
     def return_cube_to_shelf(self, *, cube: str) -> None:
         """Pick the cube from the box or the floor and drop it onto the cube shelf from
         `SHELF_DROP_RISES` above the board: both `ReturnCubeToShelf*` planner skills."""
+        from .floor_pick import FloorPicks  # it imports this module
+
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("return_cube_to_shelf: the hand is not empty")
-        robot, target = self.objects("robot", cube)
-        controller = KinderControllers.get(name="PickCube")
-
-        def make() -> Any:
-            pick = controller(objects=[robot, target], pybullet_sim=self.planning_sim())
-            if self.core.cube_in_box(cube):
-                pick.HELD_OBJECT_COLLISION_THRESHOLD = pick.BIN_HELD_OBJECT_COLLISION_THRESHOLD
-            return pick
-
-        self.first_that_plans(make=make, candidates=[np.zeros(0)], label="return_pick")
+        FloorPicks(kinder=self).pick(cube=cube, label="return_pick")
         if not self.held(name=cube):
             raise SkillFailed(f"return_cube_to_shelf: {cube} did not come with the hand")
         board = float(self.shelf.board[1])
