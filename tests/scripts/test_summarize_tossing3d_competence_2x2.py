@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import zstandard
 
 from scripts.summarize_tossing3d_competence_2x2 import (
     ARMS,
@@ -195,3 +196,25 @@ def test_jsonl_reader_is_incremental_and_reports_truncated_tail(*, tmp_path: Pat
     assert next(records) == {"event": "first"}
     with pytest.raises(ValueError, match="large.jsonl:2"):
         next(records)
+
+
+def test_a_compressed_decision_log_summarizes_identically(*, tmp_path: Path) -> None:
+    plain_root, compressed_root = tmp_path / "plain", tmp_path / "compressed"
+    for root in (plain_root, compressed_root):
+        root.mkdir()
+        _completed_tree(root=root)
+    for arm in ARMS:
+        path = compressed_root / arm / "seed_00" / "pomdp_decisions.jsonl"
+        path.with_name(path.name + ".zst").write_bytes(
+            zstandard.ZstdCompressor().compress(path.read_bytes())
+        )
+        path.unlink()
+    plain = summarize_results(results_root=plain_root)
+    compressed = summarize_results(results_root=compressed_root)
+    assert compressed["valid"], compressed["errors"]
+    assert [run["total_dispatches"] for run in compressed["runs"]] == [
+        run["total_dispatches"] for run in plain["runs"]
+    ]
+    assert [run["ancestry_diagnostics"] for run in compressed["runs"]] == [
+        run["ancestry_diagnostics"] for run in plain["runs"]
+    ]

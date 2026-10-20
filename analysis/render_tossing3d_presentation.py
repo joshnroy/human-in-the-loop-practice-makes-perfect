@@ -30,6 +30,7 @@ from hitl_pmp.core.renderer.renderer import VideoStream
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
 from hitl_pmp.recording.replay.compositor import PresentationStyle
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 WIDTH = 1920
 HEIGHT = 960
@@ -525,7 +526,13 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
     state_path = run / "tossing3d_state_log.jsonl"
     decision_path = run / "pomdp_decisions.jsonl"
     state_rows = [json.loads(line) for line in state_path.read_text().splitlines()]
-    diagnostic_rows = [json.loads(line) for line in decision_path.read_text().splitlines()]
+    # Only the event kinds read below are kept, so a multi-GB log is never held whole.
+    with JsonlLog.open_text(path=decision_path) as stream:
+        diagnostic_rows = [
+            row
+            for row in map(json.loads, filter(str.strip, stream))
+            if row.get("event") in ("decision", "session_start", "dispatch", "refit")
+        ]
     decisions = {
         int(row["decision"]): row for row in diagnostic_rows if row.get("event") == "decision"
     }

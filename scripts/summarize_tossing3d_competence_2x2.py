@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
+
 ARMS = ("global_curve-particle", "global_curve-grid", "local_trend-particle", "local_trend-grid")
 TOSS_SKILL = "MoveToTossLocationAndToss"
 RESET_SKILLS = ("ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only")
@@ -25,7 +27,7 @@ def read_json(*, path: Path) -> Any:
 
 def iter_jsonl(*, path: Path) -> Iterator[dict[str, Any]]:
     """Keep at most one log record in memory, including large grid-belief records."""
-    with path.open(encoding="utf-8") as stream:
+    with JsonlLog.open_text(path=path) as stream:
         for number, line in enumerate(stream, 1):
             if not line.strip():
                 continue
@@ -159,7 +161,7 @@ def scan_sampler(*, path: Path, num_cycles: int) -> dict[str, Any]:
     by_cycle = [{"attempts": 0, "successes": 0} for _ in range(num_cycles)]
     consultations: Counter[str] = Counter()
     errors = []
-    if path.exists():
+    if JsonlLog.exists(path=path):
         for row in iter_jsonl(path=path):
             cycle = int(row["cycle"])
             if not 0 <= cycle < num_cycles:

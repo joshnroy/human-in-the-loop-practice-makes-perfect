@@ -1,3 +1,6 @@
+import pytest
+import zstandard
+
 from analysis.render_tossing3d_presentation import (
     _cycle_end_reason,
     _decision_values,
@@ -82,8 +85,9 @@ def test_expectimax_values_render_without_sampled_path_fields() -> None:
     assert frame.shape == (960, 1920, 3)
 
 
+@pytest.mark.parametrize("compressed", [False, True], ids=["plain", "zst"])
 def test_renderer_retains_stop_only_cycles_and_excludes_between_cycle_evaluation(
-    *, tmp_path, monkeypatch
+    *, tmp_path, monkeypatch, compressed
 ) -> None:
     import json
     from types import SimpleNamespace
@@ -131,7 +135,13 @@ def test_renderer_retains_stop_only_cycles_and_excludes_between_cycle_evaluation
         {"event": "refit", "cycle": 1, "timestamp": stamp(seconds=7)},
     ]
     (tmp_path / "tossing3d_state_log.jsonl").write_text("\n".join(map(json.dumps, rows)))
-    (tmp_path / "pomdp_decisions.jsonl").write_text("\n".join(map(json.dumps, events)))
+    decisions = "\n".join(map(json.dumps, events)).encode()
+    if compressed:
+        (tmp_path / "pomdp_decisions.jsonl.zst").write_bytes(
+            zstandard.ZstdCompressor().compress(decisions)
+        )
+    else:
+        (tmp_path / "pomdp_decisions.jsonl").write_bytes(decisions)
     restored = []
     backend = SimpleNamespace(
         render=lambda **_: np.zeros((4, 4, 3), dtype=np.uint8),
