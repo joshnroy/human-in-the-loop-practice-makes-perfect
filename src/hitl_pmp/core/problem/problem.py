@@ -9,7 +9,12 @@ from hitl_pmp.core.renderer.renderer import Renderer
 from .environment.environment import Environment
 from .environment.types import Action, State
 from .human.human import HumanOracle
-from .human.types import CommandGoalDescription, CommandStartStateDescription, Cost
+from .human.types import (
+    SAMPLED_START_RESET_DESTINATION,
+    CommandGoalDescription,
+    CommandStartStateDescription,
+    Cost,
+)
 from .tasks.tasks import Tasks
 from .tasks.types import Goal, Task
 
@@ -105,12 +110,29 @@ class Problem(BaseModel, abc.ABC):
         to build, unlike `execute_human_command`.
 
         Reached only from `HumanCubeBinResetRequested`, only ever raised against a
-        domain whose `SkillProvider.human_cube_bin_reset_skill` opted in."""
+        domain whose `SkillProvider.human_cube_bin_reset_skill` opted in -- or, with
+        `SAMPLED_START_RESET_DESTINATION`, from `HumanStartResetRequested`, which asks
+        for the *full* reset instead (`execute_sampled_start_reset`)."""
         assert self.human is not None, "execute_movables_reset needs self.human set."
+        if destination == SAMPLED_START_RESET_DESTINATION:
+            self.execute_sampled_start_reset()
+            return
         if destination is None:
             self.human.execute_movables_reset(env=self.env)
         else:
             self.human.execute_movables_reset(env=self.env, destination=destination)
+
+    def execute_sampled_start_reset(self) -> None:
+        """The *full* reset: the human puts the whole scene, robot included, into a
+        freshly sampled start state (`Tasks.sample_reset_start_task`). It is a
+        `target_state` command like any other reset, so the human executes it through
+        `set_state`, the override it owns.
+
+        Reached through `execute_movables_reset` rather than a harness branch of its
+        own, so every harness counts, charges and records it as it does a partial
+        reset."""
+        task = self.tasks.sample_reset_start_task()
+        self.execute_human_command(goal=task.goal, target_state=task.initial_state)
 
     def sample_train_task(self) -> Task:
         return self.tasks.sample_train_task()

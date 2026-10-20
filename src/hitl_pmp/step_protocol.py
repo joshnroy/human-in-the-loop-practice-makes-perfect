@@ -32,6 +32,10 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.practice_costs import ExecutionCharge, PracticeAccounting, PracticeCosts
+from hitl_pmp.core.problem.human.types import (
+    SAMPLED_START_RESET_DESTINATION,
+    SAMPLED_START_RESET_SKILL_NAME,
+)
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
@@ -532,6 +536,17 @@ class StepPracticeRunner:
         return accounting
 
     @staticmethod
+    def human_skill_names(*, environment: type[StepProtocolEnvironment]) -> dict[str, str]:
+        """Every reset destination a practice method may request, mapped to the name it
+        is charged and logged under: the domain's own, plus the full reset to a sampled
+        start state, which `Problem` implements for any domain whose `Tasks` samples
+        start states."""
+        return {
+            **environment.human_skill_names(),
+            SAMPLED_START_RESET_DESTINATION: SAMPLED_START_RESET_SKILL_NAME,
+        }
+
+    @staticmethod
     def session_endpoint(*, actions: int, stop_on_no_practice_action: bool) -> str | None:
         """The endpoint a finished session forces, or `None` to keep practising.
 
@@ -563,8 +578,10 @@ class StepPracticeRunner:
         cycle = 0
         robot_invocations = 0
         learning_updates = 0
-        human_skills = environment.human_skill_names()
-        reset_counts = dict.fromkeys(human_skills, 0)
+        human_skills = StepPracticeRunner.human_skill_names(environment=environment)
+        # The domain's own destinations only, in their order, as before; a full reset
+        # gets its key the first time one is granted.
+        reset_counts = dict.fromkeys(environment.human_skill_names(), 0)
         records: list[dict[str, Any]] = []
         futures: list[tuple[dict[str, Any], Any]] = []
         started = time.monotonic()
@@ -742,7 +759,7 @@ class StepPracticeRunner:
                             problem.execute_movables_reset(destination=destination)
                             success = True
                         finally:
-                            reset_counts[destination] += 1
+                            reset_counts[destination] = reset_counts.get(destination, 0) + 1
                             clock.human_invoked(charge=charge)
                             cost = (
                                 accounting.total_cost - before_cost if accounting else request.cost

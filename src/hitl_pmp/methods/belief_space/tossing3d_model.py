@@ -29,6 +29,7 @@ from .tossing3d_transition_model import (
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
+from .types.forced_start_reset import ForcedStartReset
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
 
@@ -63,13 +64,19 @@ class Tossing3DPracticeModel(BaseModel):
     # method turns both on for expectimax on a domain with `reduce_expectimax_search`.
     object_symmetry: bool = False
     merge_beliefs_by_counts: bool = False
+    # The always-ask wrapper's reset, known to the planner (Josh, 2026-10-19): every
+    # skill with continuous parameters is followed by it. None for every other arm,
+    # whose model is then exactly the one without this field. Excluded from dumps so
+    # those arms' decision logs are unchanged; the method logs it on its own.
+    forced_start_reset: ForcedStartReset | None = Field(default=None, exclude=True)
 
     _rng: np.random.Generator = PrivateAttr()
     _dynamic_predicates: frozenset[str] = PrivateAttr(default=frozenset())
-    # (costs, failure records, starved pools, static atoms, symmetry) of the last
-    # detection; the first three compared by identity, as they are fixed in a search.
+    # (costs, failure records, starved pools, forced reset, static atoms, symmetry) of
+    # the last detection; the first four compared by identity, as they are fixed in a
+    # search.
     _symmetry_cache: (
-        tuple[object, object, object, frozenset[GroundAtom], InterchangeableObjects] | None
+        tuple[object, object, object, object, frozenset[GroundAtom], InterchangeableObjects] | None
     ) = PrivateAttr(default=None)
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
@@ -265,9 +272,10 @@ class Tossing3DPracticeModel(BaseModel):
             and cached[0] is belief.expected_execution_costs
             and cached[1] is self.failure_effect_counts
             and cached[2] is self.starved_pools
-            and cached[3] == static
+            and cached[3] is self.forced_start_reset
+            and cached[4] == static
         ):
-            return cached[4]
+            return cached[5]
         symmetry = InterchangeableObjects.detect(
             ground_skills=self.ground_skills,
             dynamic_predicates=self._dynamic_predicates,
@@ -275,11 +283,19 @@ class Tossing3DPracticeModel(BaseModel):
             cost_of=lambda ground_skill: estimated_action_cost(state=belief, action=ground_skill),
             failure_effect_counts=self.failure_effect_counts,
             starved_pools=self.starved_pools,
+            # The reset's destination is one fixed state, so a swap is a symmetry of
+            # the search only if it maps that state onto itself.
+            invariant_atoms=(
+                frozenset()
+                if self.forced_start_reset is None
+                else self.forced_start_reset.start_atoms
+            ),
         )
         self._symmetry_cache = (
             belief.expected_execution_costs,
             self.failure_effect_counts,
             self.starved_pools,
+            self.forced_start_reset,
             static,
             symmetry,
         )
@@ -395,7 +411,12 @@ class Tossing3DPracticeModel(BaseModel):
         state: Tossing3DBeliefState,
         action: GroundSkill,
     ) -> tuple[tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]], ...]:
-        return transition_outcomes(
+        """The skill's own outcome branches; under the always-ask wrapper a skill with
+        continuous parameters is then followed, in every branch, by the human's reset:
+        the branch keeps its belief update and lands in the start state, and the
+        reset's price joins the plan cost. A toss is then worth "learn, then be reset
+        and practise again" rather than a dead end."""
+        branches = transition_outcomes(
             environment_state=environment_state,
             state=state,
             action=action,
@@ -406,6 +427,25 @@ class Tossing3DPracticeModel(BaseModel):
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
             domain=self._domain,
+        )
+        reset = self.forced_start_reset
+        if reset is None or action.skill.param_dim == 0:
+            return branches
+        # One step cost for skill and reset together, added to the parent's cost once:
+        # the searches carry `summed_cost + step cost` and assert it equals the
+        # branch's own accumulated cost, which two separate float additions can miss.
+        return tuple(
+            (
+                probability,
+                next_state.model_copy(
+                    update={
+                        "accumulated_cost": state.accumulated_cost
+                        + (next_state.accumulated_cost + reset.cost - state.accumulated_cost)
+                    }
+                ),
+                reset.start_atoms,
+            )
+            for probability, next_state, _atoms in branches
         )
 
     def sample_next_states(

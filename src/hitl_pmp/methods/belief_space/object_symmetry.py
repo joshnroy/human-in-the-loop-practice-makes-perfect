@@ -10,9 +10,11 @@ the search reads:
 2. the beliefs -- competence is per lifted skill, so no belief names an object;
 3. the stopping value -- J reads only the beliefs, never the atoms;
 4. what is learned per exact ground skill and state -- failure-effect records and
-   starved parameter pools: the swap must map the set of them onto itself.
+   starved parameter pools: the swap must map the set of them onto itself;
+5. any fixed state a transition can jump to (the always-ask wrapper's reset
+   destination): the swap must map it onto itself.
 
-(1) and (4) are checked here; (2) and (3) hold for every `PracticeDomain`, whose J
+(1), (4) and (5) are checked here; (2) and (3) hold for every `PracticeDomain`, whose J
 and deployment value are functions of `skill_beliefs` alone. Swaps that are
 automorphisms compose, and conjugating one by another gives a third, so "swapping
 a and b is an automorphism" is an equivalence relation: its classes are found by
@@ -62,6 +64,7 @@ class InterchangeableObjects(BaseModel):
         cost_of: Callable[[GroundSkill], float],
         failure_effect_counts: Iterable[FailureEffectCount] = (),
         starved_pools: Iterable[tuple[frozenset[GroundAtom], GroundSkill]] = (),
+        invariant_atoms: frozenset[GroundAtom] = frozenset(),
     ) -> "InterchangeableObjects":
         """The interchangeable classes given the root's static atoms and cost forecasts,
         which no search transition changes."""
@@ -106,6 +109,7 @@ class InterchangeableObjects(BaseModel):
                 )
                 and all(renamer.rename_record(key=r, mapping=mapping) in records for r in records)
                 and all(renamer.rename_pool(key=p, mapping=mapping) in pools for p in pools)
+                and renamer.rename_atoms(atoms=invariant_atoms, mapping=mapping) == invariant_atoms
             )
 
         by_type: dict[str, list[Object]] = {}
@@ -127,6 +131,7 @@ class InterchangeableObjects(BaseModel):
             *(atom for s in signatures for atom in renamer.signature_atoms(signature=s)),
             *(atom for r in records for atom in renamer.record_atoms(key=r)),
             *(atom for p in pools for atom in p[0] if atom.predicate.name in dynamic_predicates),
+            *(atom for atom in invariant_atoms if atom.predicate.name in dynamic_predicates),
         ]
         classes: list[tuple[Object, ...]] = []
         claimed: set[Object] = set()

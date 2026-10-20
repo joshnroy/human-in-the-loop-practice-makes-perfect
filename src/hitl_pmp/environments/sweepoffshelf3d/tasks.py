@@ -22,13 +22,17 @@ class SweepOffShelf3DTasks(Tasks):
     env: SweepOffShelf3DEnvironment
     seed: int = 0
     test_env_seed_offset: int = 10000
+    # The human full reset's own stream; see `sample_reset_start_task`.
+    reset_start_seed_offset: int = 20000
 
     _train_rng: np.random.Generator = PrivateAttr()
     _test_rng: np.random.Generator = PrivateAttr()
+    _reset_start_rng: np.random.Generator = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._train_rng = np.random.default_rng(self.seed)
         self._test_rng = np.random.default_rng(self.seed + self.test_env_seed_offset)
+        self._reset_start_rng = np.random.default_rng(self.seed + self.reset_start_seed_offset)
 
     @staticmethod
     def goal() -> Goal:
@@ -39,6 +43,12 @@ class SweepOffShelf3DTasks(Tasks):
 
     def sample_test_task(self) -> Task:
         return self.build_task(scene_seed=int(self._test_rng.integers(0, SCENE_SEED_LIMIT)))
+
+    def sample_reset_start_task(self) -> Task:
+        """A fresh scene for the human full reset, drawn the way a train task's is but
+        from its own stream, so the train and test scenes stay those of a run without
+        it."""
+        return self.build_task(scene_seed=int(self._reset_start_rng.integers(0, SCENE_SEED_LIMIT)))
 
     def sample_train_task_in_place(self) -> Task:
         return Task(initial_state=self.env.get_current_state(), goal=self.goal())

@@ -1,5 +1,6 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
+import logging
 import time
 from collections import Counter
 from pathlib import Path
@@ -29,7 +30,7 @@ from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
-from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain, PracticeDomainWithoutSkills
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
@@ -48,6 +49,7 @@ from .tossing3d_observation_model import (
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
+from .types.forced_start_reset import ForcedStartReset
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
@@ -55,6 +57,8 @@ from .types.search_trace import SearchTrace
 from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
+
+logger = logging.getLogger(__name__)
 
 
 def make_belief_space_planner(
@@ -129,6 +133,8 @@ class Tossing3DPomdpMethod(EesMethod):
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
+    # A full reset the always-ask wrapper forced, awaiting its completion.
+    _pending_start_reset: bool = PrivateAttr(default=False)
     _pending_reset_before_atoms: frozenset[GroundAtom] = PrivateAttr(default=frozenset())
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
@@ -169,7 +175,12 @@ class Tossing3DPomdpMethod(EesMethod):
             return
         ground = self._execution_ground_skill
         assert ground is not None, "execution without dispatch"
-        if complete and ground not in self.skill_provider.human_cube_bin_reset_skills():
+        # A forced full reset's steps are the human's, not the last robot skill's.
+        if (
+            complete
+            and not self._pending_start_reset
+            and ground not in self.skill_provider.human_cube_bin_reset_skills()
+        ):
             self._execution_durations.setdefault(ground, []).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
@@ -247,12 +258,25 @@ class Tossing3DPomdpMethod(EesMethod):
         """Offer every provider-owned reset mechanism to belief-space planning.
 
         Empty when the provider offers none (`--no-human-reset`): the robot then has no
-        way out of a stuck scene, which is what that baseline measures."""
+        way out of a stuck scene, which is what that baseline measures. Empty, too, under
+        the always-ask wrapper, whose forced full reset is then the only human reset."""
+        if self.always_ask_reset is not None:
+            return ()
         resets = self.skill_provider.movables_reset_skills()
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
+        if self.always_ask_reset is not None:
+            # The wrapper offers no human skill (see `human_skills`), so a belief over
+            # one would be about an action this planner can never take: drop them from
+            # the practice domain rather than weaken its completeness check below.
+            self.pomdp_domain = PracticeDomainWithoutSkills.drop(
+                domain=self.pomdp_domain,
+                skill_names=frozenset(
+                    reset.skill.name for reset in self.skill_provider.movables_reset_skills()
+                ),
+            )
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
@@ -341,6 +365,8 @@ class Tossing3DPomdpMethod(EesMethod):
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
         self._practice_values.clear()
+        if self.always_ask_reset is not None and self._pomdp_model.forced_start_reset is None:
+            self.model_forced_start_reset(start_atoms=self.abstract_state(state=task.initial_state))
         self.record_diagnostic(
             event="session_start",
             previous_session_cost=previous_session_cost,
@@ -348,6 +374,21 @@ class Tossing3DPomdpMethod(EesMethod):
             estimated_costs=self.practice_skill_costs(),
         )
         return super().get_practice_policy(task=task)
+
+    def model_forced_start_reset(self, *, start_atoms: frozenset[GroundAtom]) -> None:
+        """Make the planner reset-aware (Josh, 2026-10-19): under the always-ask
+        wrapper the search model follows every skill with continuous parameters by the
+        forced reset to `start_atoms`, at the price the real one is charged. Read once,
+        from the first practice session's scene: every sampled start abstracts to the
+        same atoms, and a reset that lands elsewhere is reported, not adopted."""
+        assert self.always_ask_reset is not None
+        reset = ForcedStartReset(start_atoms=start_atoms, cost=self.start_reset_cost())
+        self._pomdp_model = self._pomdp_model.model_copy(update={"forced_start_reset": reset})
+        self.record_diagnostic(
+            event="forced_reset_model",
+            start_atoms=sorted(str(atom) for atom in start_atoms),
+            cost=reset.cost,
+        )
 
     def goal_failure_enters_random_mode(self) -> bool:
         """Never: a failed goal plan falls through to this planner's own practice
@@ -481,6 +522,23 @@ class Tossing3DPomdpMethod(EesMethod):
             summed_cost=self._pomdp_state.accumulated_cost,
         )
 
+    def record_forced_reset(self, *, reason: str, cost: float, consecutive_stranded: int) -> None:
+        """The always-ask wrapper overrode this step's decision with a full reset: charge
+        it to the session like any action, remember to expect its completion, and log
+        it apart from the planner's own choices."""
+        action_cost = cost if self._practice_accounting is None else 0.0
+        self._pomdp_state = self._pomdp_state.model_copy(
+            update={"accumulated_cost": self._pomdp_state.accumulated_cost + action_cost}
+        )
+        self._pending_start_reset = True
+        self.record_diagnostic(
+            event="forced_reset",
+            reason=reason,
+            cost=action_cost,
+            consecutive_stranded=consecutive_stranded,
+            summed_cost=self._pomdp_state.accumulated_cost,
+        )
+
     def observe_symbolic_transition(
         self,
         *,
@@ -519,6 +577,24 @@ class Tossing3DPomdpMethod(EesMethod):
         human's skill is judged like any robot skill -- did its promised effects come
         true -- and a failure teaches the empirical failure-effect model."""
         super().observe_help_granted(state=state)
+        if self._pending_start_reset:
+            # The wrapper's full reset is not a skill this planner models or chose, so
+            # there is no belief to condition; the next decision reads the new scene.
+            self._pending_start_reset = False
+            self.record_diagnostic(event="forced_reset_complete")
+            modelled = self._pomdp_model.forced_start_reset
+            if modelled is not None:
+                observed = self.abstract_state(state=state)
+                if observed != modelled.start_atoms:
+                    logger.warning(
+                        "forced reset landed in a symbolic state the model does not expect"
+                    )
+                    self.record_diagnostic(
+                        event="forced_reset_start_mismatch",
+                        observed=sorted(str(atom) for atom in observed),
+                        modelled=sorted(str(atom) for atom in modelled.start_atoms),
+                    )
+            return
         reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
         observed_cost = (
