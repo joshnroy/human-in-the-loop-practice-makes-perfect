@@ -73,6 +73,9 @@ class ObserveReply(BaseModel):
     barrier_x: float | None
     cube_inside_bin: bool
     toss_direction: float | None
+    # API v3: `can_pick()`'s verdict from this reply's own localization, so a look is
+    # one camera round; an older server leaves it out and is asked separately.
+    can_pick: "CanPickReply | None" = None
 
 
 class CanPickReply(BaseModel):

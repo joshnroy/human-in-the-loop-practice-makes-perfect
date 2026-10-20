@@ -114,7 +114,9 @@ class TerminalPerson(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    write: Callable[[str], None] = print
+    # Flushed at once: the run's output usually goes through `tee`, and a buffered
+    # progress line is one the person never sees while the robot is busy.
+    write: Callable[[str], None] = lambda line: print(line, flush=True)
     read: Callable[[str], str] = input
 
     def place(self, *, request: PlacementRequest) -> None:
@@ -173,6 +175,9 @@ class RealTossingBackend(BaseModel):
     confirm_each_skill: bool = False
 
     _last: RealSceneSnapshot | None = PrivateAttr(default=None)
+    # The last look, reused until a skill or a placement changes the scene: a look is
+    # ~18 s of camera work on the robot.
+    _seen: Tossing3DObservation | None = PrivateAttr(default=None)
     _ticks: list[RealSceneSnapshot] = PrivateAttr(default_factory=list)
     _before: Callable[[], None] | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
@@ -209,6 +214,7 @@ class RealTossingBackend(BaseModel):
                 kind=kind, destination=destination, cube=CUBE_SPOT, bin=BIN_SPOTS[destination]
             )
         )
+        self._seen = None
         observation = self.observe()
         self._say(line="planning the next skill ...")
         return observation
@@ -216,6 +222,8 @@ class RealTossingBackend(BaseModel):
     # --- observation and abstraction ----------------------------------------------------
 
     def observe(self) -> Tossing3DObservation:
+        if self._seen is not None:
+            return self._seen
         reply = ObserveReply.model_validate(self.robot.observe())
         if reply.barrier is None:
             raise ValueError(
@@ -225,7 +233,8 @@ class RealTossingBackend(BaseModel):
         self._last = RealSceneSnapshot(
             reply=reply, can_pick=self._pick_verdict(reply=reply), frame=self.frame
         )
-        return self.to_observation(snapshot=self._last)
+        self._seen = self.to_observation(snapshot=self._last)
+        return self._seen
 
     def to_observation(self, *, snapshot: RealSceneSnapshot) -> Tossing3DObservation:
         reply = snapshot.reply
@@ -295,6 +304,8 @@ class RealTossingBackend(BaseModel):
         """`can_pick()`, only where the sim's `PickPlannable` gate would run its dry run."""
         if reply.holding or RealAtoms.cube_across_barrier(reply=reply, frame=self.frame):
             return None
+        if reply.can_pick is not None:
+            return reply.can_pick.feasible
         return CanPickReply.model_validate(self.robot.can_pick()).feasible
 
     def snapshot(self) -> RealSceneSnapshot:
@@ -399,6 +410,7 @@ class RealTossingBackend(BaseModel):
         # step (evaluation's) sees the scene the skill left, as a sim tick would.
         outcome = "ok" if run.error is None else run.error
         self._say(line=f"{action}: {outcome} ({time.monotonic() - started:.0f} s); observing ...")
+        self._seen = None
         self.observe()
         self._say(line="planning the next skill ...")
         self._ticks.append(self.snapshot())

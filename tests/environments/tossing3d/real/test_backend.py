@@ -276,3 +276,37 @@ def test_by_default_a_real_run_asks_only_at_the_start_and_at_placements() -> Non
     env.backend().run_pick_cube()
     env.backend().run_open_gripper()
     assert len(person.asked) == 1 and "GoHome" in person.asked[0]
+
+
+def test_a_scene_is_looked_at_once_until_something_happens() -> None:
+    env, robot = _env()
+    robot.calls.clear()
+    env.backend().observe()
+    env.backend().observe()
+    env.get_current_state()
+    assert [name for name, _ in robot.calls].count("observe") == 0
+    env.backend().run_pick_cube()
+    names = [name for name, _ in robot.calls]
+    assert names.count("observe") == 1
+    robot.calls.clear()
+    env.backend().observe()
+    assert robot.calls == []
+
+
+class _OneLookRobot(FakeTossingRobot):
+    """A server whose observe reply already carries its can_pick verdict (API v3)."""
+
+    def observe(self) -> dict[str, object]:
+        reply = super().observe()
+        reply["can_pick"] = {"feasible": True, "note": None, "refused": False, "reason": None}
+        return reply
+
+
+def test_a_can_pick_in_the_observe_reply_saves_the_second_camera_round() -> None:
+    robot = _OneLookRobot()
+    person = FakePerson(robot=robot, write=lambda _line: None)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env.hard_reset()
+    assert "can_pick" not in [name for name, _ in robot.calls]
+    atoms = {name for name, _ in env.get_current_state().abstract_atoms or ()}
+    assert "PickPlannable" in atoms
