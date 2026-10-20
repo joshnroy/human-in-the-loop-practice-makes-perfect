@@ -201,3 +201,120 @@ def test_dependencies_outside_the_checkout_are_named(*, tmp_path: Path) -> None:
     assert ShelfLaunch.outside(repo=tmp_path, files={"kinder": inside, "km": outside}) == [
         f"km: {outside}"
     ]
+
+
+DELLA = "/scratch/gpfs/TSILVER/jr2860"
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _della(*, tmp_path: Path, extra: list[str] | None = None) -> tuple[list[list[str]], str]:
+    out = tmp_path / "della"
+    argv = ["della", "--tag", "shelf-20261020", "--sha", SHA, "--out", str(out), *(extra or [])]
+    assert main(argv=argv) == 0
+    rows = [line.split("\t") for line in (out / "manifest.tsv").read_text().splitlines() if line]
+    return rows, (out / "array.sbatch").read_text()
+
+
+def test_della_writes_one_task_per_arm_and_seed(*, tmp_path: Path) -> None:
+    rows, _ = _della(tmp_path=tmp_path)
+    assert len(rows) == 48
+    arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
+    expected = [(name, str(seed)) for name in arms for seed in range(6)]
+    assert [(row[2], row[3]) for row in rows] == expected
+    assert {row[1] for row in rows} == {SHA}
+    assert len({row[0] for row in rows}) == 48
+
+
+def test_della_tasks_run_the_launchers_own_argv_with_della_paths(*, tmp_path: Path) -> None:
+    rows, _ = _della(tmp_path=tmp_path)
+    arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
+    code = f"{DELLA}/code/{SHA}"
+    for name, _sha, arm_name, seed, output_dir, joined in rows:
+        arm = arms[arm_name]
+        assert output_dir == f"{DELLA}/results/shelf-20261020/{arm_name}/{arm.method}/{seed}"
+        argv = shlex.split(joined)
+        local = ShelfLaunch.cli_argv(
+            arm=arm, size=FULL, seed=int(seed), output_dir=Path(output_dir)
+        )
+        della_costs = (ALWAYS_ASK_COSTS if arm.always_ask else COSTS).relative_to(REPO)
+        assert argv == [
+            f"{code}/{della_costs}"
+            if token == str(ALWAYS_ASK_COSTS if arm.always_ask else COSTS)
+            else token
+            for token in local
+        ]
+        assert not any(str(REPO) in token for token in argv)
+        assert Cli.parse_args(argv=argv).seed == int(seed)
+        assert name.startswith(f"shelf-20261020-{arm_name}-s{seed}")
+
+
+def test_della_never_skips_the_gate_unless_asked(*, tmp_path: Path) -> None:
+    rows, sbatch = _della(tmp_path=tmp_path)
+    assert all("--skip-skill-benchmark-gate" not in row[5] for row in rows)
+    assert "skip-skill-benchmark-gate" not in sbatch
+    skipped, _ = _della(tmp_path=tmp_path / "skip", extra=["--skip-skill-benchmark-gate"])
+    assert all(shlex.split(row[5])[-1] == "--skip-skill-benchmark-gate" for row in skipped)
+
+
+def test_della_sbatch_requests_the_decided_resources(*, tmp_path: Path) -> None:
+    _, sbatch = _della(tmp_path=tmp_path)
+    for directive in [
+        "#SBATCH --account=tsilver",
+        "#SBATCH --partition=cpu",
+        "#SBATCH --cpus-per-task=2",
+        "#SBATCH --mem=12G",
+        "#SBATCH --time=72:00:00",
+        "#SBATCH --array=1-48",
+        "#SBATCH --job-name=shelf-20261020",
+    ]:
+        assert directive in sbatch.splitlines()
+    assert sbatch.startswith("#!/bin/bash\n")
+
+
+def test_della_sbatch_preflights_then_runs_under_the_watchdog(*, tmp_path: Path) -> None:
+    _, sbatch = _della(tmp_path=tmp_path)
+    zstd = sbatch.index("import zstandard")
+    isolation = sbatch.index("ShelfLaunch.require_isolated()")
+    watchdog = sbatch.index("scripts/scratch_watchdog.py")
+    assert zstd < watchdog and isolation < watchdog
+    assert "pip install zstandard" in sbatch
+    # One logical bash line: backslash-newline continuations joined.
+    logical = sbatch.replace("\\\n", " ").splitlines()
+    run = next(line for line in logical if "scripts/scratch_watchdog.py" in line)
+    assert "--path /scratch/gpfs/TSILVER" in run
+    assert '--output-dir "$OUT"' in run
+    assert "-m hitl_pmp.cli" in run
+    assert run.index("--path") < run.index(" -- ") < run.index("hitl_pmp.cli")
+    assert f'CODE="{DELLA}/code/$SHA"' in sbatch
+
+
+def test_della_bash_text_is_syntactically_valid(*, tmp_path: Path) -> None:
+    import subprocess
+
+    out = tmp_path / "della"
+    main(argv=["della", "--tag", "t", "--sha", SHA, "--out", str(out)])
+    subprocess.run(["bash", "-n", str(out / "array.sbatch")], check=True)
+
+
+def test_della_refuses_without_a_tag(*, tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(argv=["della", "--sha", SHA, "--out", str(tmp_path)])
+
+
+def test_della_sbatch_parses_a_manifest_line_back_to_the_same_argv(*, tmp_path: Path) -> None:
+    import subprocess
+
+    rows, sbatch = _della(tmp_path=tmp_path)
+    lines = sbatch.splitlines()
+    read = next(line for line in lines if line.startswith("IFS="))
+    split = next(line for line in lines if line.startswith('eval "ARGS='))
+    manifest = tmp_path / "della" / "manifest.tsv"
+    script = (
+        f'LINE=$(sed -n "7p" {manifest})\n{read}\n{split}\n'
+        'printf "%s\\n" "$NAME" "$ARM" "$SEED" "$OUT"; printf "%s\\n" "${ARGS[@]}"\n'
+    )
+    out = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    name, _sha, arm, seed, output_dir, joined = rows[6]
+    assert out == [name, arm, seed, output_dir, *shlex.split(joined)]
