@@ -33,7 +33,7 @@ every geometry and safety check -- moved nothing and is charged nothing.
 ## A human reset is a prompt
 
 `reset` (a task's scene) and `reset_cube_and_bin` (the planner's paid reset) tell the
-person where to put the cube and the bin, in map coordinates, wait for Enter, and
+person where to put the cube and the bin, in map coordinates, wait for y, and
 observe what was actually placed. The robot does not move first and nothing is checked
 or retried: the planner sees the scene as placed.
 """
@@ -109,7 +109,7 @@ class PlacementRequest(BaseModel):
 
 
 class TerminalPerson(BaseModel):
-    """The person at this terminal: shown the request, answers with Enter."""
+    """The person at this terminal: shown each request, answers y."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -118,22 +118,26 @@ class TerminalPerson(BaseModel):
 
     def place(self, *, request: PlacementRequest) -> None:
         self.write(request.instructions())
-        self.read("Press Enter when the cube and the bin are in place: ")
+        self._yes(question="Are the cube and the bin in place?", declined=request.kind)
         self.write("observing the scene (the cameras take up to ~30 s) ...")
         self.placed(request=request)
 
     def placed(self, *, request: PlacementRequest) -> None:
-        """After Enter. A real person has already done it; a fake one does it here."""
+        """After y. A real person has already done it; a fake one does it here."""
         del request
 
     def confirm(self, *, action: str) -> None:
-        """Before a skill moves the robot: y runs it, a blank line asks again (a stray
-        Enter must not end a run), and anything else ends the run, as Ctrl-C would."""
-        while not (answer := self.read(f"{action} -- run it? [y/n] ").strip().lower()):
+        """Before a skill moves the robot (see `_yes`)."""
+        self._yes(question=f"{action} -- run it?", declined=action)
+        self.write(f"running {action} ...")
+
+    def _yes(self, *, question: str, declined: str) -> None:
+        """y goes on; a blank line asks again (a stray Enter must not end a run);
+        anything else ends the run, as Ctrl-C would."""
+        while not (answer := self.read(f"{question} [y/n] ").strip().lower()):
             pass
         if answer != "y":
-            raise KeyboardInterrupt(f"the person declined: {action}")
-        self.write(f"running {action} ...")
+            raise KeyboardInterrupt(f"the person declined: {declined}")
 
 
 class RealSceneSnapshot(FixedTossDirection):
