@@ -197,18 +197,18 @@ class _Asked(FakePerson):
 
 def test_every_skill_waits_for_the_persons_y_before_the_robot_moves() -> None:
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "Y"], asked=[])
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "y", "Y"], asked=[])
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
     env.hard_reset()
     env.backend().run_pick_cube()
     env.backend().run_open_gripper()
-    assert len(person.asked) == 2
-    assert "PickCube" in person.asked[0] and "OpenGripper" in person.asked[1]
+    assert len(person.asked) == 3
+    assert "PickCube" in person.asked[1] and "OpenGripper" in person.asked[2]
 
 
 def test_anything_but_y_stops_the_run_before_the_robot_moves() -> None:
     robot = FakeTossingRobot()
-    person = _Asked(robot=robot, write=lambda _line: None, answers=["n"], asked=[])
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "n"], asked=[])
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
     env.hard_reset()
     before = robot.observe()["robot"]
@@ -224,3 +224,17 @@ def test_without_confirmation_no_skill_asks() -> None:
     env.hard_reset()
     env.backend().run_pick_cube()
     assert person.asked == []
+
+
+def test_a_task_scene_drives_home_first_and_a_human_reset_does_not() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    names = [name for name, _ in robot.calls]
+    assert "go_home" in names
+    assert names.index("go_home") < names.index("observe")
+    assert person.asked and "GoHome" in person.asked[0]
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination="robot_side")
+    assert "go_home" not in [name for name, _ in robot.calls]
