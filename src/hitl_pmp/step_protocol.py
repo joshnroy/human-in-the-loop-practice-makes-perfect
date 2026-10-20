@@ -895,6 +895,19 @@ class StepPracticeRunner:
                     break
                 if budget_reached or clock.steps >= clock.budget:
                     endpoint = "practice_step_budget"
+                    # The cycle the budget ended is learned from before the final
+                    # measurement; otherwise a run of one cycle measures its prior.
+                    if actions > 0:
+                        method.end_cycle()
+                        learning_updates += 1
+                        StepFiles.event(
+                            path=events,
+                            event="learning_update",
+                            cycle=cycle,
+                            practice_steps=clock.steps,
+                            actions=actions,
+                            reason=endpoint,
+                        )
                     break
                 metrics.practice_session_ends.append(
                     PracticeSessionEnd(
