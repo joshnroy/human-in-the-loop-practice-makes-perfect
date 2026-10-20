@@ -123,7 +123,7 @@ class SkillBenchmarkCli:
         page = SkillBenchmarkPage.render(out=args.out)
         for verdict in report.skills:
             mark = "pass" if verdict.passed else "FAIL"
-            print(f"{verdict.skill:<28}{verdict.successes}/{verdict.total} {mark} {verdict.labels}")
+            print(f"{mark} {LaunchGate.describe(skill=verdict.model_dump())} {verdict.labels}")
         print(f"{'PASSED' if report.passed else 'FAILED'}: {page}")
         return 0
 

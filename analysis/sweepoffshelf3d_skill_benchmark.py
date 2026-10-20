@@ -72,10 +72,13 @@ class SkillBenchmarkPage:
             bottoms = [b + h for b, h in zip(bottoms, heights, strict=True)]
         for i, verdict in enumerate(report.skills):
             mark = "pass" if verdict.passed else "FAIL"
+            counts = f"gated {verdict.gated_successes}/{verdict.gated_total}"
+            if verdict.reported_total:
+                counts += f"\nreported-only {verdict.reported_successes}/{verdict.reported_total}"
             ax.text(
                 i,
                 bottoms[i] + 0.5,
-                f"{verdict.successes}/{verdict.total}\n{mark}",
+                f"{counts}\n{mark}",
                 ha="center",
                 va="bottom",
                 fontsize=8,
@@ -126,8 +129,10 @@ class SkillBenchmarkPage:
             pybullet = "n/a" if v.pybullet_planned is None else f"{v.pybullet_planned}/{v.total}"
             verdict_rows.append(
                 f"<tr class='{'pass' if v.passed else 'fail'}'><td>{esc(v.skill)}</td>"
-                f"<td>{esc(v.target)}</td><td>{v.successes}/{v.total}</td>"
-                f"<td>{'pass' if v.passed else 'FAIL'}</td><td>{pybullet}</td><td>{labels}</td></tr>"
+                f"<td>{esc(v.target)}</td><td>{v.gated_successes}/{v.gated_total}</td>"
+                f"<td>{v.reported_successes}/{v.reported_total}</td>"
+                f"<td>{'pass' if v.passed else 'FAIL'}{': ' + esc(v.reason) if v.reason else ''}"
+                f"</td><td>{pybullet}</td><td>{labels}</td></tr>"
             )
         sweep_rows = []
         for v in report.skills:
@@ -178,7 +183,7 @@ found no route), <b>plan_blocked</b> (planned in PyBullet, refused by the MuJoCo
 <b>execution_failed</b> (a plan ran in MuJoCo and failed), <b>effects_missing</b> (no error, a promised effect absent).
 "PyBullet planned" counts runs whose every reached stage had a plan in PyBullet.</p>
 <img src="{FIGURE}" alt="Runs per skill, stacked by outcome label">
-<div class="wrap"><table><tr><th>skill</th><th>target</th><th>success</th><th>verdict</th><th>PyBullet planned</th><th>labels</th></tr>
+<div class="wrap"><table><tr><th>skill</th><th>target</th><th>gated success</th><th>reported-only success</th><th>verdict</th><th>PyBullet planned</th><th>labels</th></tr>
 {"".join(verdict_rows)}</table></div>
 <h2>SweepShelf: succeeding settings per state</h2>
 <img src="{SWEEP_FIGURE}" alt="Succeeding sweep settings per state">

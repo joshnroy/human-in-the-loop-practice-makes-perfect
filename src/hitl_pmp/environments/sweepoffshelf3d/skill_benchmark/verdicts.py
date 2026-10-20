@@ -5,6 +5,10 @@ every benchmark state; a skill with continuous parameters (only `SweepShelf`) mu
 from every state, at least one setting on `SWEEP_GRID` that succeeds. A skill with no
 valid benchmark case has not been shown to meet anything, so it does not pass.
 
+`THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for four skills with x/y of their
+gated runs. `ReturnCubeToShelfFromBox` gates on the states harvested from practice only;
+its synthetic container states still run and are reported, but do not gate.
+
 ## Which simulator a failure belongs to
 
 KINDER's controllers plan in PyBullet and execute in MuJoCo; that gap is deliberate (it
@@ -21,8 +25,18 @@ from collections import Counter, defaultdict
 from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
 from hitl_pmp.environments.sweepoffshelf3d.types import SkillNote, SkillTrace
 
-from .types import CaseResult, SkillVerdict
+from .types import CaseResult, SkillThreshold, SkillVerdict
 
+# The count, not a fraction: a state set that gains or loses a case changes the
+# denominator, and the gate then refuses instead of passing at a rate never agreed.
+THRESHOLDS: dict[str, SkillThreshold] = {
+    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=97, out_of=100),
+    S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=12),
+    S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=12),
+    S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
+        min_successes=3, out_of=8, families=frozenset({"harvested"})
+    ),
+}
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(
     (height, speed) for height in (0.0, 0.01, 0.02, 0.03, 0.04) for speed in (0.05, 0.15, 0.25)
 )
@@ -90,7 +104,18 @@ class Verdicts:
             pybullet = (
                 None if skill in SCRIPTED_SKILLS else sum(r.pybullet == "planned" for r in runs)
             )
-            if Verdicts.has_continuous_parameters(skill=skill):
+            threshold = THRESHOLDS.get(skill)
+            if threshold is not None:
+                verdicts.append(
+                    Verdicts.against_threshold(
+                        skill=skill,
+                        threshold=threshold,
+                        runs=runs,
+                        labels=labels,
+                        pybullet_planned=pybullet,
+                    )
+                )
+            elif Verdicts.has_continuous_parameters(skill=skill):
                 per_state: dict[str, list[int]] = {}
                 for run in runs:
                     tally = per_state.setdefault(run.state_id, [0, 0])
@@ -104,6 +129,8 @@ class Verdicts:
                         passed=passed,
                         successes=successes,
                         total=len(runs),
+                        gated_successes=successes,
+                        gated_total=len(runs),
                         labels=labels,
                         per_state=per_state,
                         pybullet_planned=pybullet,
@@ -117,11 +144,47 @@ class Verdicts:
                         passed=bool(runs) and successes == len(runs),
                         successes=successes,
                         total=len(runs),
+                        gated_successes=successes,
+                        gated_total=len(runs),
                         labels=labels,
                         pybullet_planned=pybullet,
                     )
                 )
         return verdicts
+
+    @staticmethod
+    def against_threshold(
+        *,
+        skill: str,
+        threshold: SkillThreshold,
+        runs: list[CaseResult],
+        labels: dict[str, int],
+        pybullet_planned: int | None,
+    ) -> SkillVerdict:
+        gates = [threshold.families is None or r.family in threshold.families for r in runs]
+        gated = [r for r, g in zip(runs, gates, strict=True) if g]
+        reported = [r for r, g in zip(runs, gates, strict=True) if not g]
+        gated_successes = sum(r.label == "success" for r in gated)
+        reason = ""
+        if len(gated) != threshold.out_of:
+            reason = (
+                f"the benchmark ran {len(gated)} gated case(s), the threshold is out of "
+                f"{threshold.out_of}; the state set changed, so set the threshold again"
+            )
+        return SkillVerdict(
+            skill=skill,
+            target=threshold.target(),
+            passed=not reason and bool(gated) and gated_successes >= threshold.min_successes,
+            successes=sum(r.label == "success" for r in runs),
+            total=len(runs),
+            gated_successes=gated_successes,
+            gated_total=len(gated),
+            reported_successes=sum(r.label == "success" for r in reported),
+            reported_total=len(reported),
+            labels=labels,
+            pybullet_planned=pybullet_planned,
+            reason=reason,
+        )
 
     @staticmethod
     def passed(*, verdicts: list[SkillVerdict]) -> bool:
