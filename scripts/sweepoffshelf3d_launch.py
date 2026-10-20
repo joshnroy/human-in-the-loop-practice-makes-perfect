@@ -3,6 +3,7 @@
     python -m scripts.sweepoffshelf3d_launch print  [--arms A ...]
     python -m scripts.sweepoffshelf3d_launch check  [--arms A ...]
     python -m scripts.sweepoffshelf3d_launch launch --arms A ... --results-root DIR --go
+    python -m scripts.sweepoffshelf3d_launch della  --tag TAG --out DIR [--sha SHA]
 
 `print` writes each arm's `hitl_pmp.cli` argv (seed 0); `check` parses every arm with
 the real CLI; `launch` runs `scripts/run_sweep.py` once per arm, one arm after another,
@@ -10,8 +11,9 @@ into `<results-root>/<arm>/<method>/<seed>/`. Run it through `scripts/with_env.s
 the checkout under test, so `hitl_pmp` and KINDER both import from it.
 
 The plan (Josh, 2026-10-14 and 2026-10-20):
-- arms: EES, ours with determinized A*, ours with expectimax at depth 6 and at depth 7
-  (`--expectimax-depths`), and an always-ask variant of each. "Ours" is
+- arms: EES, ours with determinized A*, ours with expectimax at depth 6, and an
+  always-ask variant of each: six arms. Depth 7 was dropped (Josh, 2026-10-20: "let's
+  drop d7") and stays selectable with `--expectimax-depths 6 7`. "Ours" is
   `--method pomdp` with Model B (`local_trend`).
 - p = 1 (`--reset-cubes-success-probability 1`), seeds 0-5 (six, because a paired exact
   sign-flip test over five pairs cannot reach p < 0.05).
@@ -34,19 +36,34 @@ Before a launch:
    the MimicLabs meshes and textures copied in; `launch` refuses if `hitl_pmp`, `kinder`
    or `kinder_models` imports from outside it.
 2. A skill benchmark report for that commit, or Josh's explicit gate override.
-3. Disk: a POMDP run's `pomdp_decisions.jsonl` is tens of GB. Check free space first
-   (`df -h` locally; `checkquota` on a cluster scratch filesystem).
+3. Disk: a POMDP run writes `pomdp_decisions.jsonl.zst`, one zstd frame per record
+   (PR #504); the analysis readers open it through `JsonlLog`. Check free space first
+   (`df -h` locally; on Della `df` on `/scratch/gpfs/TSILVER` reports the fileset quota),
+   and wrap long runs in `scripts/scratch_watchdog.py`.
 4. On agni, run each arm as its own systemd service (a `--scope` dies with its shell)
    inside `agents.slice`, with `MemorySwapMax=0`; budget about 3 GiB per run.
 
-After a run finishes, compress its decision logs:
-
-    find <results-root>/<arm> -name '*_decisions.jsonl' -exec zstd -T0 --rm {} +
-
-Nothing on main reads `.jsonl.zst` yet, so decompress (`zstd -d`) before analysis.
+Every other log is still written plain.
 
 On a cluster, `print` gives each arm's per-seed argv; run it with the job's own
 `scripts/with_env.sh` and the same `<arm>/<method>/<seed>` output layout.
+
+`della` writes one Slurm array per time group, since an array shares one `--time`:
+`<out>/manifest-<group>.tsv` (one line per arm x seed: name, sha, arm, seed, output dir,
+`hitl_pmp.cli` argv, tab-separated) and `<out>/array-<group>.sbatch`, 36 tasks in all for
+the plan, and submits nothing. The groups and their limits are `DELLA_GROUPS`: `ees`
+24 h, `determinized` 72 h (to be set from its Della dry run), `expectimax` 72 h;
+`--della-time GROUP=HH:MM:SS` and `--della-qos GROUP=QOS` override them. No QOS is set
+by default: Della's `cpu` partition assigns it from `--time`. Code is the worktree
+`/scratch/gpfs/TSILVER/jr2860/code/<sha>` (`--sha` defaults to this checkout's HEAD);
+results go to `/scratch/gpfs/TSILVER/jr2860/results/<tag>/<arm>/<method>/<seed>`. Each
+task pre-flights `import zstandard` and the KINDER-import isolation check, then runs
+`hitl_pmp.cli` under `scripts/scratch_watchdog.py --path /scratch/gpfs/TSILVER`
+(`statvfs` there reports the fileset quota). The launch gate runs inside each task; it
+needs the skill benchmark report for `<sha>` under the code worktree's
+`benchmark-reports/` (or `$HITL_SKILL_BENCHMARK_DIR`), and is skipped only when
+`--skip-skill-benchmark-gate` is passed here. Submit with
+`sbatch <out>/array-<group>.sbatch <out>/manifest-<group>.tsv`, once per group.
 """
 
 import argparse
@@ -64,6 +81,25 @@ ENV = "sweepoffshelf3d"
 ALWAYS_ASK_FLAG = "--always-ask-reset"
 SEEDS = 6
 P = "1"
+DELLA = "/scratch/gpfs/TSILVER/jr2860"
+DELLA_QUOTA_PATH = "/scratch/gpfs/TSILVER"
+
+
+class DellaGroup(BaseModel):
+    """One Slurm array: the arms that share a time limit."""
+
+    model_config = ConfigDict(frozen=True)
+
+    time: str
+    qos: str | None = None
+
+
+# Josh, 2026-10-20. The determinized limit is a placeholder until its Della dry run.
+DELLA_GROUPS = {
+    "ees": DellaGroup(time="24:00:00"),
+    "determinized": DellaGroup(time="72:00:00"),
+    "expectimax": DellaGroup(time="72:00:00"),
+}
 
 
 class Budget(BaseModel):
@@ -174,9 +210,11 @@ class ShelfLaunch:
         return {arm.name: arm for arm in [*canonical, *always_ask]}
 
     @staticmethod
-    def method_args(*, arm: ShelfArm, size: Budget) -> list[str]:
-        """Every `hitl_pmp.cli` flag except `--env/--method/--seed/--output-dir`."""
-        costs = ALWAYS_ASK_COSTS if arm.always_ask else COSTS
+    def method_args(*, arm: ShelfArm, size: Budget, repo: Path = REPO) -> list[str]:
+        """Every `hitl_pmp.cli` flag except `--env/--method/--seed/--output-dir`.
+
+        `repo` is the checkout the run executes from, which holds the cost files."""
+        costs = repo / (ALWAYS_ASK_COSTS if arm.always_ask else COSTS).relative_to(REPO)
         return [
             *arm.flags,
             "--practice-step-budget", str(size.practice_steps),
@@ -196,15 +234,105 @@ class ShelfLaunch:
         ]  # fmt: skip
 
     @staticmethod
-    def cli_argv(*, arm: ShelfArm, size: Budget, seed: int, output_dir: Path) -> list[str]:
+    def cli_argv(
+        *, arm: ShelfArm, size: Budget, seed: int, output_dir: Path, repo: Path = REPO
+    ) -> list[str]:
         """One run's argv after `python -m hitl_pmp.cli`, as `run_sweep` builds it."""
         return [
             "--env", ENV,
             "--method", arm.method,
             "--seed", str(seed),
             "--output-dir", str(output_dir),
-            *ShelfLaunch.method_args(arm=arm, size=size),
+            *ShelfLaunch.method_args(arm=arm, size=size, repo=repo),
         ]  # fmt: skip
+
+    @staticmethod
+    def della_manifest(
+        *, arms: list[ShelfArm], size: Budget, sha: str, tag: str, skip_gate: bool
+    ) -> list[str]:
+        """One tab-separated line per arm x seed, arm-major, in array-task order."""
+        code = Path(f"{DELLA}/code/{sha}")
+        lines = []
+        for arm in arms:
+            for seed in range(SEEDS):
+                output_dir = Path(f"{DELLA}/results/{tag}/{arm.name}/{arm.method}/{seed}")
+                argv = ShelfLaunch.cli_argv(
+                    arm=arm, size=size, seed=seed, output_dir=output_dir, repo=code
+                )
+                if skip_gate:
+                    argv.append("--skip-skill-benchmark-gate")
+                fields = [f"{tag}-{arm.name}-s{seed}", sha, arm.name, str(seed)]
+                lines.append("\t".join([*fields, str(output_dir), shlex.join(argv)]))
+        return lines
+
+    @staticmethod
+    def della_group(*, arm: ShelfArm) -> str:
+        if arm.method == "ees":
+            return "ees"
+        return "determinized" if "determinized" in arm.name else "expectimax"
+
+    @staticmethod
+    def della_groups(*, overrides: list[str], field: str) -> dict[str, DellaGroup]:
+        """`DELLA_GROUPS` with each `GROUP=VALUE` override applied to `field`."""
+        groups = dict(DELLA_GROUPS)
+        for override in overrides:
+            group, sep, value = override.partition("=")
+            if not sep or not value or group not in groups:
+                raise SystemExit(
+                    f"bad override {override!r}: want GROUP=VALUE, GROUP one of {list(groups)}"
+                )
+            groups[group] = groups[group].model_copy(update={field: value})
+        return groups
+
+    @staticmethod
+    def della_sbatch(*, tag: str, group: str, limits: DellaGroup, tasks: int) -> str:
+        qos = f"#SBATCH --qos={limits.qos}\n" if limits.qos else ""
+        return f"""#!/bin/bash
+# One SweepOffShelf3D run per array task, group {group}:
+#   sbatch array-{group}.sbatch manifest-{group}.tsv
+# Written by `python -m scripts.sweepoffshelf3d_launch della`; never edit by hand.
+# Manifest line i = <name>\\t<sha>\\t<arm>\\t<seed>\\t<output dir>\\t<hitl_pmp.cli argv>
+#SBATCH --account=tsilver
+#SBATCH --partition=cpu
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=12G
+#SBATCH --time={limits.time}
+{qos}#SBATCH --array=1-{tasks}
+#SBATCH --job-name={tag}-{group}
+#SBATCH --output={DELLA}/slurm-logs/%x-%A_%a.out
+set -eo pipefail
+S={DELLA}
+LINE=$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" "$1")
+IFS=$'\\t' read -r NAME SHA ARM SEED OUT ARGV <<<"$LINE"
+[ -n "$ARGV" ] || {{ echo "no manifest line ${{SLURM_ARRAY_TASK_ID}}" >&2; exit 2; }}
+CODE="{DELLA}/code/$SHA"
+[ -d "$CODE" ] || {{ echo "no code worktree $CODE" >&2; exit 2; }}
+echo "task=$SLURM_ARRAY_TASK_ID name=$NAME arm=$ARM seed=$SEED node=$(hostname) start=$(date -Is)"
+export CONDA_SH=/usr/licensed/anaconda3/2026.7.1/etc/profile.d/conda.sh
+export HITL_PMP_CONDA_ENV="$S/envs/hitl-pmp"
+export FD_EXEC_PATH="$S/downward"
+export DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1
+export XDG_RUNTIME_DIR="${{TMPDIR:-/tmp}}/xdg-$SLURM_JOB_ID-$SLURM_ARRAY_TASK_ID"
+mkdir -p "$XDG_RUNTIME_DIR"
+export LD_PRELOAD="$HITL_PMP_CONDA_ENV/lib/libstdc++.so.6"
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+cd "$CODE"
+"$CODE/scripts/with_env.sh" python -c "import zstandard" || {{
+  echo "preflight: zstandard does not import in $HITL_PMP_CONDA_ENV; run: pip install zstandard" >&2
+  exit 3
+}}
+"$CODE/scripts/with_env.sh" python -c \\
+  "from scripts.sweepoffshelf3d_launch import ShelfLaunch; ShelfLaunch.require_isolated()"
+eval "ARGS=($ARGV)"
+mkdir -p "$OUT"
+set +e
+"$CODE/scripts/with_env.sh" python "$CODE/scripts/scratch_watchdog.py" \\
+  --path {DELLA_QUOTA_PATH} --output-dir "$OUT" \\
+  -- "$CODE/scripts/with_env.sh" python -m hitl_pmp.cli "${{ARGS[@]}}"
+rc=$?
+echo "end=$(date -Is) rc=$rc"
+exit $rc
+"""
 
     @staticmethod
     def sweep_command(
@@ -270,13 +398,19 @@ class ShelfLaunch:
             raise SystemExit(f"refusing to launch: imports from outside {REPO}: {stray}")
 
     @staticmethod
+    def head_commit() -> str:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    @staticmethod
     def parse(*, argv: list[str]) -> argparse.Namespace:
         parser = argparse.ArgumentParser(
             description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
         )
-        parser.add_argument("mode", choices=["print", "check", "launch"])
+        parser.add_argument("mode", choices=["print", "check", "launch", "della"])
         parser.add_argument("--arms", nargs="+", help="Default: every arm of the plan.")
-        parser.add_argument("--expectimax-depths", nargs="+", type=int, default=[6, 7])
+        parser.add_argument("--expectimax-depths", nargs="+", type=int, default=[6])
         parser.add_argument("--size", choices=sorted(SIZES), default="full")
         parser.add_argument("--results-root", type=Path)
         parser.add_argument("--max-workers", type=int, default=3, help="Runs in flight per arm.")
@@ -286,6 +420,23 @@ class ShelfLaunch:
             help="Forward the launch gate override to run_sweep. Josh's explicit call only.",
         )
         parser.add_argument("--go", action="store_true", help="Required by launch.")
+        parser.add_argument("--tag", help="della: the results directory and job name.")
+        parser.add_argument("--sha", help="della: the commit to run. Default: HEAD.")
+        parser.add_argument("--out", type=Path, help="della: where to write the files.")
+        parser.add_argument(
+            "--della-time",
+            action="append",
+            default=[],
+            metavar="GROUP=HH:MM:SS",
+            help=f"della: a group's --time. Groups: {list(DELLA_GROUPS)}.",
+        )
+        parser.add_argument(
+            "--della-qos",
+            action="append",
+            default=[],
+            metavar="GROUP=QOS",
+            help="della: a group's --qos. Default: none (the partition picks it).",
+        )
         return parser.parse_args(argv)
 
 
@@ -317,6 +468,36 @@ def main(*, argv: list[str] | None = None) -> int:
                 argv=ShelfLaunch.cli_argv(arm=arm, size=size, seed=0, output_dir=Path("/unused"))
             )
             print(f"ok  {arm.name}: --method {parsed.method}, {parsed.practice_step_budget} steps")
+        return 0
+
+    if args.mode == "della":
+        if args.tag is None or args.out is None:
+            raise SystemExit("della needs --tag and --out")
+        sha = args.sha or ShelfLaunch.head_commit()
+        groups = ShelfLaunch.della_groups(overrides=args.della_time, field="time")
+        for group, limits in ShelfLaunch.della_groups(
+            overrides=args.della_qos, field="qos"
+        ).items():
+            groups[group] = groups[group].model_copy(update={"qos": limits.qos})
+        args.out.mkdir(parents=True, exist_ok=True)
+        for group, limits in groups.items():
+            members = [arm for arm in selected if ShelfLaunch.della_group(arm=arm) == group]
+            if not members:
+                continue
+            lines = ShelfLaunch.della_manifest(
+                arms=members,
+                size=size,
+                sha=sha,
+                tag=args.tag,
+                skip_gate=args.skip_skill_benchmark_gate,
+            )
+            manifest = args.out / f"manifest-{group}.tsv"
+            sbatch = args.out / f"array-{group}.sbatch"
+            manifest.write_text("\n".join(lines) + "\n")
+            sbatch.write_text(
+                ShelfLaunch.della_sbatch(tag=args.tag, group=group, limits=limits, tasks=len(lines))
+            )
+            print(f"{group}: {len(lines)} tasks, --time={limits.time}: sbatch {sbatch} {manifest}")
         return 0
 
     if not args.go:
