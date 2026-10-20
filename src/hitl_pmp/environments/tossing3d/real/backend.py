@@ -39,6 +39,7 @@ or retried: the planner sees the scene as placed.
 """
 
 import math
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -129,7 +130,6 @@ class TerminalPerson(BaseModel):
     def confirm(self, *, action: str) -> None:
         """Before a skill moves the robot (see `_yes`)."""
         self._yes(question=f"{action} -- run it?", declined=action)
-        self.write(f"running {action} ...")
 
     def _yes(self, *, question: str, declined: str) -> None:
         """y goes on; a blank line asks again (a stray Enter must not end a run);
@@ -167,7 +167,9 @@ class RealTossingBackend(BaseModel):
     parameters: TossParameterSet
     frame: RealRoomFrame = ROOM_FRAME
     step_costs: RealSkillStepCosts = RealSkillStepCosts()
-    # The person says y at the terminal before each skill moves the robot.
+    # The person says y at the terminal before the robot drives home at a task's start
+    # (each placement is a y too); with `confirm_each_skill`, also before every skill.
+    confirm_start: bool = False
     confirm_each_skill: bool = False
 
     _last: RealSceneSnapshot | None = PrivateAttr(default=None)
@@ -183,8 +185,9 @@ class RealTossingBackend(BaseModel):
         del seed
         # The robot starts each task at its home, the close-side toss stand, as the
         # sim's does; it drives there before the person sets the scene around it.
-        if self.confirm_each_skill:
+        if self.confirm_start:
             self.person.confirm(action="GoHome (drive to the close-side toss stand)")
+        self._say(line="driving home ...")
         self.robot.go_home()
         return self._placed(kind="scene", destination=Tossing3DSide.OPPOSITE)
 
@@ -206,7 +209,9 @@ class RealTossingBackend(BaseModel):
                 kind=kind, destination=destination, cube=CUBE_SPOT, bin=BIN_SPOTS[destination]
             )
         )
-        return self.observe()
+        observation = self.observe()
+        self._say(line="planning the next skill ...")
+        return observation
 
     # --- observation and abstraction ----------------------------------------------------
 
@@ -378,6 +383,8 @@ class RealTossingBackend(BaseModel):
         """
         if self.confirm_each_skill:
             self.person.confirm(action=action)
+        self._say(line=f"running {action} ...")
+        started = time.monotonic()
         if self._before is not None:
             self._before()
         try:
@@ -390,12 +397,21 @@ class RealTossingBackend(BaseModel):
             )
         # Observed before the steps are charged, so a goal check made at each charged
         # step (evaluation's) sees the scene the skill left, as a sim tick would.
+        outcome = "ok" if run.error is None else run.error
+        self._say(line=f"{action}: {outcome} ({time.monotonic() - started:.0f} s); observing ...")
         self.observe()
+        self._say(line="planning the next skill ...")
         self._ticks.append(self.snapshot())
         if self._after is not None:
             for _ in range(run.steps):
                 self._after()
         return run
+
+    def _say(self, *, line: str) -> None:
+        """A progress line for the person, at once, so a slow step never looks hung."""
+        write = getattr(self.person, "write", None)
+        if write is not None:
+            write(line)
 
     # --- recording, and what a real room cannot do --------------------------------------
 
