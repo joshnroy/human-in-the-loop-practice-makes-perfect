@@ -189,7 +189,7 @@ class _Asked(FakePerson):
         self.read = lambda prompt: self._answer(prompt=prompt)
 
     def _answer(self, *, prompt: str) -> str:
-        if "[y/N]" not in prompt:
+        if "[y/n]" not in prompt:
             return ""
         self.asked.append(prompt)
         return self.answers.pop(0)
@@ -238,3 +238,24 @@ def test_a_task_scene_drives_home_first_and_a_human_reset_does_not() -> None:
     robot.calls.clear()
     UnconditionalHumanOracle.execute_movables_reset(env=env, destination="robot_side")
     assert "go_home" not in [name for name, _ in robot.calls]
+
+
+def test_a_blank_answer_asks_again_instead_of_ending_the_run() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "", "  ", "y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    assert len(person.asked) == 4
+    assert robot.observe()["holding"]
+
+
+def test_the_person_is_told_the_robot_is_busy_after_each_answer() -> None:
+    lines: list[str] = []
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lines.append, answers=["y", "y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    assert any("observing the scene" in line for line in lines)
+    assert any("running PickCube" in line for line in lines)
