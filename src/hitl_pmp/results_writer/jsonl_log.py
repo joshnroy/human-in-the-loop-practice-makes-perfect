@@ -12,7 +12,13 @@ name, so a compressed copy beside it is the older one.
 lines from a bounded buffer, as reading the plain file line by line always did.
 
 **The decoder's window limit is lifted.** `zstd --long=N` for `N > 27` writes frames the
-default decoder rejects; reading them must not depend on how a file was compressed."""
+default decoder rejects; reading them must not depend on how a file was compressed.
+
+**A run can also write the compressed name directly**, one zstd frame per record:
+`append` to a `.zst` path compresses each line on its own and appends the frame. A
+belief-dump record is tens of MB of highly repetitive JSON, so a frame per record keeps
+almost all of the ratio while a run killed mid-write loses only the record in flight, and
+the file needs no finalising step."""
 
 import io
 from pathlib import Path
@@ -23,6 +29,9 @@ import zstandard
 COMPRESSED_SUFFIX = ".zst"
 # The format's own maximum window (`ZSTD_WINDOWLOG_MAX` on 64-bit builds).
 _MAX_WINDOW_SIZE = 2**31
+# Measured on an 84 MB SweepOffShelf3D expectimax decision record: level 3 compresses
+# ~1860x at ~7 GB/s; level 10 gains ~14% more ratio at a third of the speed.
+COMPRESSION_LEVEL = 3
 
 
 class JsonlLog:
@@ -39,6 +48,17 @@ class JsonlLog:
     @staticmethod
     def exists(*, path: Path) -> bool:
         return JsonlLog.resolve(path=path).exists()
+
+    @staticmethod
+    def append(*, path: Path, line: str) -> None:
+        """Append one record: plain text, or one zstd frame if `path` ends in `.zst`."""
+        if path.suffix != COMPRESSED_SUFFIX:
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(line)
+            return
+        frame = zstandard.ZstdCompressor(level=COMPRESSION_LEVEL).compress(line.encode("utf-8"))
+        with path.open("ab") as stream:
+            stream.write(frame)
 
     @staticmethod
     def open_text(*, path: Path) -> TextIO:

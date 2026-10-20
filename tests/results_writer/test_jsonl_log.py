@@ -110,3 +110,39 @@ def test_lines_stream_without_holding_the_whole_log_in_memory(*, tmp_path: Path)
         tracemalloc.stop()
     assert count == 20_000
     assert peak < decompressed_size / 4
+
+
+def _frames(*, data: bytes) -> list[bytes]:
+    """Split concatenated zstd frames, decompressing each one on its own."""
+    frames = []
+    while data:
+        decoder = zstandard.ZstdDecompressor(max_window_size=2**31).decompressobj()
+        frames.append(decoder.decompress(data))
+        data = decoder.unused_data
+    return frames
+
+
+def test_appending_to_a_zst_path_writes_one_frame_per_record(*, tmp_path: Path) -> None:
+    # Each record is its own frame, so a run killed mid-write loses only its last record.
+    path = tmp_path / "pomdp_decisions.jsonl.zst"
+    lines = [json.dumps(row) + "\n" for row in ROWS]
+    for line in lines:
+        JsonlLog.append(path=path, line=line)
+    assert _frames(data=path.read_bytes()) == [line.encode("utf-8") for line in lines]
+
+
+def test_appending_to_a_plain_path_writes_plain_text(*, tmp_path: Path) -> None:
+    path = tmp_path / "pomdp_decisions.jsonl"
+    for row in ROWS:
+        JsonlLog.append(path=path, line=json.dumps(row) + "\n")
+    assert [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] == ROWS
+
+
+def test_a_log_appended_through_jsonl_log_round_trips(*, tmp_path: Path) -> None:
+    # The writer and the reader together: what a run appends live is what analysis reads.
+    path = tmp_path / "pomdp_decisions.jsonl"
+    rows = [{"event": "decision", "i": index, "belief": "x" * 70_000} for index in range(5)]
+    for row in rows:
+        JsonlLog.append(path=path.with_name(path.name + ".zst"), line=json.dumps(row) + "\n")
+    with JsonlLog.open_text(path=path) as stream:
+        assert [json.loads(line) for line in stream] == rows

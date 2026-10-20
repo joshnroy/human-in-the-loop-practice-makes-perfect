@@ -7,6 +7,7 @@ from analysis.render_tossing3d_presentation import (
     _is_applicable,
     reset_destination,
 )
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 
 def test_reset_destination_reads_the_bound_side_object() -> None:
@@ -85,9 +86,9 @@ def test_expectimax_values_render_without_sampled_path_fields() -> None:
     assert frame.shape == (960, 1920, 3)
 
 
-@pytest.mark.parametrize("compressed", [False, True], ids=["plain", "zst"])
+@pytest.mark.parametrize("layout", ["plain", "zst", "zst-frames"])
 def test_renderer_retains_stop_only_cycles_and_excludes_between_cycle_evaluation(
-    *, tmp_path, monkeypatch, compressed
+    *, tmp_path, monkeypatch, layout
 ) -> None:
     import json
     from types import SimpleNamespace
@@ -136,10 +137,16 @@ def test_renderer_retains_stop_only_cycles_and_excludes_between_cycle_evaluation
     ]
     (tmp_path / "tossing3d_state_log.jsonl").write_text("\n".join(map(json.dumps, rows)))
     decisions = "\n".join(map(json.dumps, events)).encode()
-    if compressed:
+    if layout == "zst":
         (tmp_path / "pomdp_decisions.jsonl.zst").write_bytes(
             zstandard.ZstdCompressor().compress(decisions)
         )
+    elif layout == "zst-frames":
+        # What a run writes live: one frame per record.
+        for event in events:
+            JsonlLog.append(
+                path=tmp_path / "pomdp_decisions.jsonl.zst", line=json.dumps(event) + "\n"
+            )
     else:
         (tmp_path / "pomdp_decisions.jsonl").write_bytes(decisions)
     restored = []
