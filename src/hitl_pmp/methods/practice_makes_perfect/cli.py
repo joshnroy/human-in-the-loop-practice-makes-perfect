@@ -284,6 +284,7 @@ class Tossing3DPomdpCli(EesCli):
     # method-CLI never imports an environment.
     DOMAINS: dict[str, PracticeDomain] = {
         "Tossing3DCli": TOSSING3D_DOMAIN,
+        "Tossing3DRealCli": TOSSING3D_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
     }
 

@@ -30,6 +30,7 @@ from .skills import (
     TOSS_RELEASE_MS_BOUNDS,
     TOSS_SPEED_BOUNDS,
 )
+from .types import TossParameterSet
 
 # The easternmost legal stand x, measured 2026-09-23 through the geometry gate
 # itself (0.55 m robot footprint against the barrier at x = 1.3: the shortest
@@ -62,6 +63,24 @@ WIDE_TOSS_STANDOFF_BOUNDS = (
 WIDE_TOSS_SPEED_BOUNDS = TOSS_SPEED_BOUNDS
 WIDE_TOSS_RELEASE_MS_BOUNDS = TOSS_RELEASE_MS_BOUNDS
 
+# The simulator's parameter set: exactly the three constants above, so a sim run draws
+# what it always drew.
+SIM_TOSS_PARAMETERS = TossParameterSet(
+    standoff_bounds=WIDE_TOSS_STANDOFF_BOUNDS,
+    speed_bounds=WIDE_TOSS_SPEED_BOUNDS,
+    release_ms_bounds=WIDE_TOSS_RELEASE_MS_BOUNDS,
+)
+
+# The real TidyBot's set, derived from the real swing (2026-10-14), inside what the real
+# robot's `toss` accepts (standoff 0.9-1.45 m); nothing a real run draws may fall outside
+# it. It differs from the sim's on all three axes; the sim's bounds are untouched by it.
+REAL_TOSS_PARAMETERS = TossParameterSet(
+    # The far spot's tape-clearance window, used for both spots (Josh, 2026-10-20).
+    standoff_bounds=(1.37, 1.45),
+    speed_bounds=(100.0, 140.0),
+    release_ms_bounds=(500.0, 850.0),
+)
+
 
 class WideLongRangeTossProposal:
     """A state-independent proposal; it neither simulates nor supplies labels."""
@@ -72,39 +91,41 @@ class WideLongRangeTossProposal:
         return 450.0 + (420.0 - speed) / 3.0
 
     @staticmethod
-    def far_standoff_bounds(*, bin_x: float) -> tuple[float, float]:
+    def far_standoff_bounds(
+        *, bin_x: float, parameters: TossParameterSet = SIM_TOSS_PARAMETERS
+    ) -> tuple[float, float]:
         """The standoff band a bin across the barrier can actually be thrown at from.
 
         The robot must stand west of the barrier (x <= `FAR_STAND_X_LIMIT_M`) and west
         of the bin, `standoff` from it, so any standoff below `bin_x - limit` has no
         stand at all. Computed from the bin pose before drawing, so nothing is
         rejected and redrawn -- a filtered draw would silently reshape the pool's
-        standoff distribution. For a near-barrier bin the controller floor binds."""
+        standoff distribution. For a near-barrier bin the controller floor binds.
+
+        Sim geometry only: `FAR_STAND_X_LIMIT_M` was measured in the sim's room. A real
+        bin's band comes from the four-direction scan instead (see `toss.py`)."""
         return (
-            max(WIDE_TOSS_STANDOFF_BOUNDS[0], bin_x - FAR_STAND_X_LIMIT_M),
-            WIDE_TOSS_STANDOFF_BOUNDS[1],
+            max(parameters.standoff_bounds[0], bin_x - FAR_STAND_X_LIMIT_M),
+            parameters.standoff_bounds[1],
         )
 
     @staticmethod
     def sample(
         *,
         rng: np.random.Generator,
-        standoff_bounds: tuple[float, float] = WIDE_TOSS_STANDOFF_BOUNDS,
+        standoff_bounds: tuple[float, float] | None = None,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
     ) -> np.ndarray:
         """Return metres, degrees/second, and milliseconds -- all three drawn
-        jointly and uniformly, the standoff over `standoff_bounds` (the full band
-        unless a per-bin band is supplied)."""
-        standoff = float(rng.uniform(*standoff_bounds))
-        speed = float(rng.uniform(*WIDE_TOSS_SPEED_BOUNDS))
-        release = float(rng.uniform(*WIDE_TOSS_RELEASE_MS_BOUNDS))
+        jointly and uniformly from `parameters`, the standoff over `standoff_bounds`
+        (the set's full band unless a per-bin band is supplied)."""
+        standoff = float(rng.uniform(*(standoff_bounds or parameters.standoff_bounds)))
+        speed = float(rng.uniform(*parameters.speed_bounds))
+        release = float(rng.uniform(*parameters.release_ms_bounds))
         return np.array([standoff, speed, release])
 
     @staticmethod
-    def contains(*, params: np.ndarray) -> bool:
+    def contains(*, params: np.ndarray, parameters: TossParameterSet = SIM_TOSS_PARAMETERS) -> bool:
         """Whether a `(standoff, speed, release)` row lies in the closed support."""
         standoff, speed, release = (float(value) for value in params)
-        return (
-            WIDE_TOSS_STANDOFF_BOUNDS[0] <= standoff <= WIDE_TOSS_STANDOFF_BOUNDS[1]
-            and WIDE_TOSS_SPEED_BOUNDS[0] <= speed <= WIDE_TOSS_SPEED_BOUNDS[1]
-            and WIDE_TOSS_RELEASE_MS_BOUNDS[0] <= release <= WIDE_TOSS_RELEASE_MS_BOUNDS[1]
-        )
+        return parameters.violation(params=(standoff, speed, release)) is None

@@ -27,6 +27,8 @@ from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.environments.sweepoffshelf3d.step_protocol import SweepOffShelf3DStepProtocol
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+from hitl_pmp.environments.tossing3d.real.cli import Tossing3DRealCli
+from hitl_pmp.environments.tossing3d.real.step_protocol import Tossing3DRealStepProtocol
 from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
@@ -50,6 +52,8 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "lightswitch": LightSwitchCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
     "tossing3d": Tossing3DCli,
+    # The same domain on the real TidyBot, or a fake robot: see tossing3d/real/cli.py.
+    "tossing3d_real": Tossing3DRealCli,
     # Tossing Room: split `ThrowTrash`/`ThrowRecycling` lifted skills, with the item
     # WEIGHT drawn at pickup off a per-task pre-sampled array instead of frozen into the
     # task's initial state, and the bin throw distance fixed. Drawing the weight at
@@ -68,6 +72,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
 STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
+    "tossing3d_real": Tossing3DRealStepProtocol,
 }
 
 
@@ -108,6 +113,14 @@ class Cli:
             default=None,
         )
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
+        parser.add_argument(
+            "--initial-measurement",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Measure the untrained policy at practice step 0 (step protocol). Off by "
+            "default for --env tossing3d_real, where each evaluation task is a scene a "
+            "person sets up.",
+        )
         parser.add_argument(
             "--stop-on-no-practice-action",
             action="store_true",

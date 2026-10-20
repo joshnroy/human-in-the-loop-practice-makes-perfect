@@ -381,8 +381,8 @@ def test_a_far_bin_with_no_feasible_standoff_band_empties_the_pool_instead_of_ra
     fixed_direction(direction_deg=0)
     original = Tossing3DToss.standoff_bounds
 
-    def empty_band(*, ground_skill, state):
-        del ground_skill, state
+    def empty_band(*, ground_skill, state, parameters):
+        del ground_skill, state, parameters
         raise InfeasibleStandoffBandError("far standoff band is empty: stubbed")
 
     monkeypatch.setattr(Tossing3DToss, "standoff_bounds", staticmethod(empty_band))
