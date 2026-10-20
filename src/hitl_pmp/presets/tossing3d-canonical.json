@@ -19,6 +19,9 @@
       "layout": "barrier",
       "evaluation_layout": "barrier",
       "max_steps_per_interaction": 20
+    },
+    "tossing3d_real": {
+      "max_steps_per_interaction": 20
     }
   }
 }

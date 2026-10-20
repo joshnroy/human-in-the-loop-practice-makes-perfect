@@ -91,6 +91,10 @@ class FakeStepProtocol:
         )
 
     @staticmethod
+    def evaluation_pool() -> None:
+        return None
+
+    @staticmethod
     def evaluation_skill_provider(*, problem: Any) -> SkillProvider:
         return LightSwitchSkillProvider(env=problem.env)
 
