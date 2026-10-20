@@ -7,7 +7,7 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE
-from hitl_pmp.environments.tossing3d.real.backend import RealSkillStepCosts
+from hitl_pmp.environments.tossing3d.real.backend import RealSkillStepCosts, TerminalPerson
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME
@@ -310,3 +310,15 @@ def test_a_can_pick_in_the_observe_reply_saves_the_second_camera_round() -> None
     assert "can_pick" not in [name for name, _ in robot.calls]
     atoms = {name for name, _ in env.get_current_state().abstract_atoms or ()}
     assert "PickPlannable" in atoms
+
+
+def test_only_y_or_n_answers_anything_else_asks_again() -> None:
+    lines: list[str] = []
+    answers = iter(["yy", "ok", "Yes", "y"])
+    person = TerminalPerson(write=lines.append, read=lambda _prompt: next(answers))
+    person.confirm(action="PickCube")
+    assert sum("please type y or n" in line for line in lines) == 2
+    declines = iter(["", "No"])
+    person = TerminalPerson(write=lines.append, read=lambda _prompt: next(declines))
+    with pytest.raises(KeyboardInterrupt):
+        person.confirm(action="PickCube")

@@ -41,7 +41,7 @@ or retried: the planner sees the scene as placed.
 import math
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -67,6 +67,8 @@ BARRIER_NAME = "cuboid_barrier"
 
 # Upstream's `GRIPPER_OPEN_COMMAND_TOLERANCE`, copied so this path imports no KINDER.
 GRIPPER_OPEN_COMMAND_TOLERANCE = 1e-3
+# The only answers a y/n prompt takes; anything else is asked again.
+_ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
 CUBE_HALF_SIZE_M = 0.025
 
 _UNKNOWN = math.nan
@@ -134,11 +136,12 @@ class TerminalPerson(BaseModel):
         self._yes(question=f"{action} -- run it?", declined=action)
 
     def _yes(self, *, question: str, declined: str) -> None:
-        """y goes on; a blank line asks again (a stray Enter must not end a run);
-        anything else ends the run, as Ctrl-C would."""
-        while not (answer := self.read(f"{question} [y/n] ").strip().lower()):
-            pass
-        if answer != "y":
+        """y (or yes) goes on; n (or no) ends the run, as Ctrl-C would. Anything else,
+        a stray Enter or a typo, asks again: only a clear answer moves or stops."""
+        while (answer := self.read(f"{question} [y/n] ").strip().lower()) not in _ANSWERS:
+            if answer:
+                self.write(f"{answer!r}: please type y or n.")
+        if not _ANSWERS[answer]:
             raise KeyboardInterrupt(f"the person declined: {declined}")
 
 
