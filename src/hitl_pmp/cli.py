@@ -122,6 +122,24 @@ class Cli:
             "person sets up.",
         )
         parser.add_argument(
+            "--checkpoint-cycles",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Write <output-dir>/checkpoint.pickle at the end of every practice cycle "
+            "(step protocol), so an interrupted run can be resumed with --resume. On by "
+            "default for --env tossing3d_real, the one domain that can resume.",
+        )
+        parser.add_argument(
+            "--resume",
+            type=Path,
+            default=None,
+            metavar="OUTPUT_DIR",
+            help="Carry on the interrupted step-protocol run in OUTPUT_DIR from its last "
+            "cycle checkpoint. Pass the original command's flags too: a resolved config "
+            "that differs from OUTPUT_DIR/config_snapshot.json is refused. The scene is "
+            "re-observed, not restored, and a cycle cut off part-way is discarded.",
+        )
+        parser.add_argument(
             "--stop-on-no-practice-action",
             action="store_true",
             help="End the run when a practice session executes zero actions. Off by "
