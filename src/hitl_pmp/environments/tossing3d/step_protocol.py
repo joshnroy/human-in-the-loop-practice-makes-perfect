@@ -37,6 +37,14 @@ class Tossing3DStepProtocol:
         return Tossing3DCli.build_evaluation_problem(args=args)
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Not offered: a fresh process has a fresh simulator, so there is no scene left
+        to re-observe, and a resume restores nothing about the world. The real-robot
+        adapter overrides this."""
+        del problem, state
+        raise NotImplementedError("--resume is supported for --env tossing3d_real only")
+
+    @staticmethod
     def evaluation_pool() -> Any:
         """`None`, the protocol's default: one fresh spawned process per evaluation."""
         return None

@@ -10,10 +10,16 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
-from hitl_pmp.environments.tossing3d.types import Tossing3DBackend, TossParameterSet
+from hitl_pmp.environments.tossing3d.types import (
+    KB_PICKUP_BLOCKED,
+    Tossing3DBackend,
+    Tossing3DState,
+    TossParameterSet,
+)
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
 from .backend import RealSkillStepCosts, RealTossingBackend
@@ -47,6 +53,22 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
     def hard_reset(self) -> None:
         if not self.evaluation:
             super().hard_reset()
+
+    def reobserve(self, *, state: State) -> None:
+        """Carry on from a resumed run's last practice `state`, in the room as it is now.
+
+        Nothing about the world is restored or asked for: the scene is observed afresh,
+        whatever was moved meanwhile, and the planner sees it as found. `state` supplies
+        only what the room cannot show -- the episode bookkeeping (`seed`,
+        `steps_taken`) and the observed pickup-refusal channel.
+        """
+        assert isinstance(state, Tossing3DState)
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        self._pickup_blocked = (KB_PICKUP_BLOCKED, (self.cube.name,)) in (
+            state.abstract_atoms or frozenset()
+        )
+        self._adopt(state=self._observed_state(seed=seed, steps_taken=steps_taken))
 
     def bin_reset_region(self, *, destination: str | None) -> dict[str, object] | None:
         """The side's one spot, by name: `RealTossingBackend.reset_cube_and_bin` asks the

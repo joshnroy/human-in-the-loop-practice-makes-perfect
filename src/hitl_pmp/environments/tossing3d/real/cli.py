@@ -60,6 +60,7 @@ class Tossing3DRealCli:
         parser.set_defaults(
             measurement_interval_steps=END_ONLY_MEASUREMENT_INTERVAL,
             initial_measurement=False,
+            checkpoint_cycles=True,
             scene_bg=False,
         )
 

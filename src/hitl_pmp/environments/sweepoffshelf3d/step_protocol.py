@@ -41,6 +41,13 @@ class SweepOffShelf3DStepProtocol:
         return SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed + 1)
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Not offered: a fresh process has a fresh simulator, so there is no scene left
+        to re-observe, and a resume restores nothing about the world."""
+        del problem, state
+        raise NotImplementedError("--resume is supported for --env tossing3d_real only")
+
+    @staticmethod
     def evaluation_pool() -> None:
         """The protocol's default: one fresh spawned process per evaluation."""
         return None

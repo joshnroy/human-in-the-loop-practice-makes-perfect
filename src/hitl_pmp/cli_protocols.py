@@ -81,6 +81,15 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Carry a resumed run's practice environment on from the scene as it is now
+        (`step_protocol.PracticeCheckpoint`): re-observe it, restoring nothing about the
+        world, with `state` -- the checkpoint's last state -- supplying only the
+        episode bookkeeping. Raise `NotImplementedError` where a fresh process cannot
+        see the world the run left (a simulator, whose scene died with the process)."""
+        ...
+
+    @staticmethod
     def evaluation_pool() -> Any:
         """Where evaluations run: `None` for the protocol's default (a fresh spawned
         process per evaluation, beside practice); a domain whose evaluation cannot run
