@@ -215,6 +215,9 @@ class FakePerson(TerminalPerson):
         self.read = lambda prompt: self._press_enter(prompt=prompt)
 
     def _press_enter(self, *, prompt: str) -> str:
+        if "[y/N]" in prompt:
+            self.write(f"{prompt}y")
+            return "y"
         self.write(f"{prompt}[Enter]")
         return ""
 
