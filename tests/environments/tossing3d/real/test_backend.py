@@ -70,7 +70,7 @@ def test_a_human_reset_prompts_for_the_named_spot_moves_no_robot_and_reobserves(
     prompt = "\n".join(written)
     assert f"{spot.center[0]:.2f}, {spot.center[1]:.2f}" in prompt
     assert "anywhere on the floor on the robot's side of the tape" in prompt
-    assert "Enter" in prompt
+    assert "in place? [y/n]" in prompt
     assert not MOTION & {name for name, _ in robot.calls}
     assert robot.calls[0][0] == "observe"  # only after the person is done
     assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {expected_side}
@@ -189,8 +189,8 @@ class _Asked(FakePerson):
         self.read = lambda prompt: self._answer(prompt=prompt)
 
     def _answer(self, *, prompt: str) -> str:
-        if "[y/n]" not in prompt:
-            return ""
+        if "run it?" not in prompt:
+            return "y"
         self.asked.append(prompt)
         return self.answers.pop(0)
 
