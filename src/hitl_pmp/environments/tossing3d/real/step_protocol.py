@@ -19,6 +19,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
@@ -63,6 +64,12 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
         return Tossing3DRealCli.build_evaluation_problem(args=args)
+
+    @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        env = Tossing3DStepProtocol.env(problem=problem)
+        assert isinstance(env, RealTossing3DEnvironment)
+        env.reobserve(state=state)
 
     @staticmethod
     def evaluation_pool() -> InProcessEvaluations:

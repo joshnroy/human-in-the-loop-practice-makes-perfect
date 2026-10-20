@@ -8,10 +8,12 @@ their environments, policies and RNGs; they return measurements only to the logg
 
 import argparse
 import hashlib
+import io
 import json
 import multiprocessing
 import os
 import pickle
+import random
 import threading
 import time
 import traceback
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+import torch
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.cli_protocols import EnvironmentCli, StepProtocolEnvironment
@@ -32,11 +35,13 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.practice_costs import ExecutionCharge, PracticeAccounting, PracticeCosts
+from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.human.types import (
     SAMPLED_START_RESET_DESTINATION,
     SAMPLED_START_RESET_SKILL_NAME,
 )
 from hitl_pmp.core.problem.problem import Problem
+from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, Phase
@@ -304,6 +309,208 @@ class StepFiles:
             stream.write(LogTiming.encode(record=record))
 
 
+CHECKPOINT_FILENAME = "checkpoint.pickle"
+PREVIOUS_CHECKPOINT_FILENAME = "checkpoint.previous.pickle"
+
+
+class PracticeCheckpoint:
+    """Everything an interrupted practice run needs to carry on as if it had not stopped.
+
+    Written at every cycle end, after the method's learning update, so nothing is in
+    flight: no skill, no plan, no session-local state. One pickle graph holds the method
+    (its whole learner and belief state and its own RNGs -- `DeploymentSnapshot` keeps
+    only what deployment reads, not the practice tallies or a POMDP's belief), the cost
+    accounting it points at, the metrics, the clock's counts, the loop's counters and
+    every other RNG practice draws from: the practice problem's `Tasks` and
+    `Environment` streams and the process-global numpy, `random` and torch states.
+
+    The run's live environment, problem and predicates are pickled as references
+    (`persistent_id`) and bound to the resuming process's own on load, so a resumed
+    method acts on the world as it is now, never on a copy; any other `Environment` or
+    `Problem` the graph reaches is refused. A predicate's classifier is a module-level
+    lambda pickle cannot carry, and it is the same predicate in any process, found by
+    name.
+
+    The file is a small plain-data header (`header`) followed by the graph, written to a
+    temporary file and renamed over the last one, which is first kept as
+    `PREVIOUS_CHECKPOINT_FILENAME`: an interruption at any instant leaves a whole
+    checkpoint in place.
+    """
+
+    @staticmethod
+    def predicate_key(*, name: str) -> str:
+        return f"predicate:{name}"
+
+    @staticmethod
+    def live_objects(*, problem: Any, skill_provider: Any) -> dict[str, Any]:
+        """The objects a checkpoint refers to rather than copies, by key."""
+        live: dict[str, Any] = {"env": problem.env, "problem": problem}
+        if skill_provider is not None:
+            for predicate in skill_provider.predicates():
+                live[PracticeCheckpoint.predicate_key(name=predicate.name)] = predicate
+        return live
+
+    @staticmethod
+    def save(
+        *, output: Path, live: dict[str, Any], header: dict[str, Any], payload: dict[str, Any]
+    ) -> None:
+        buffer = io.BytesIO()
+        pickle.dump(header, buffer, protocol=pickle.HIGHEST_PROTOCOL)
+        _ReferencingPickler(buffer, live=live).dump(payload)
+        path = output / CHECKPOINT_FILENAME
+        temporary = output / (CHECKPOINT_FILENAME + ".tmp")
+        temporary.write_bytes(buffer.getvalue())
+        if path.exists():
+            # A second name for the last checkpoint, swapped in whole, so the current
+            # one is never absent: at worst both names hold the same checkpoint.
+            kept = output / (PREVIOUS_CHECKPOINT_FILENAME + ".tmp")
+            kept.unlink(missing_ok=True)
+            os.link(path, kept)
+            kept.replace(output / PREVIOUS_CHECKPOINT_FILENAME)
+        temporary.replace(path)
+
+    @staticmethod
+    def header(*, path: Path) -> dict[str, Any]:
+        """The checkpoint's plain-data summary, readable without rebuilding the run."""
+        with path.open("rb") as handle:
+            header: dict[str, Any] = pickle.load(handle)  # trusted, locally written
+        return header
+
+    @staticmethod
+    def load(*, path: Path, live: dict[str, Any]) -> dict[str, Any]:
+        with path.open("rb") as handle:
+            pickle.load(handle)  # the header
+            payload: dict[str, Any] = _ReferencingUnpickler(handle, live=live).load()
+        return payload
+
+
+class _ReferencingPickler(pickle.Pickler):
+    def __init__(self, file: Any, *, live: dict[str, Any]) -> None:  # noqa: PLR0917
+        super().__init__(file, protocol=pickle.HIGHEST_PROTOCOL)
+        self._references = {
+            id(obj): key for key, obj in live.items() if not key.startswith("predicate:")
+        }
+        self._live = live
+
+    def persistent_id(self, obj: Any) -> str | None:  # noqa: PLR0917 -- pickle's API
+        key = self._references.get(id(obj))
+        if key is not None:
+            return key
+        if isinstance(obj, Predicate):
+            key = PracticeCheckpoint.predicate_key(name=obj.name)
+            if self._live.get(key) is not obj:
+                raise TypeError(
+                    f"a practice checkpoint reached predicate {obj.name!r}, which is not "
+                    "one of this run's skill provider's predicates"
+                )
+            return key
+        if isinstance(obj, Environment | Problem):
+            raise TypeError(
+                f"a practice checkpoint reached a live {type(obj).__name__} that is not "
+                "this run's own; pickling it would resume against a copy of the world"
+            )
+        return None
+
+
+class _ReferencingUnpickler(pickle.Unpickler):
+    def __init__(self, file: Any, *, live: dict[str, Any]) -> None:  # noqa: PLR0917
+        super().__init__(file)  # trusted, locally written run checkpoints
+        self._live = live
+
+    def persistent_load(self, pid: Any) -> Any:  # noqa: PLR0917 -- pickle's API
+        if pid not in self._live:
+            raise pickle.UnpicklingError(
+                f"the checkpoint refers to {pid!r}, which this run does not have"
+            )
+        return self._live[pid]
+
+
+class RngStates:
+    """Every RNG an object holds as a field or private attribute, by name."""
+
+    @staticmethod
+    def capture(*, owner: Any) -> dict[str, Any]:
+        attributes = {**vars(owner), **(getattr(owner, "__pydantic_private__", None) or {})}
+        return {
+            name: value.bit_generator.state
+            for name, value in attributes.items()
+            if isinstance(value, np.random.Generator)
+        }
+
+    @staticmethod
+    def restore(*, owner: Any, states: dict[str, Any]) -> None:
+        for name, state in states.items():
+            getattr(owner, name).bit_generator.state = state
+
+    @staticmethod
+    def capture_global() -> dict[str, Any]:
+        return {
+            "numpy": np.random.get_state(),
+            "random": random.getstate(),
+            "torch": torch.get_rng_state(),
+        }
+
+    @staticmethod
+    def restore_global(*, states: dict[str, Any]) -> None:
+        np.random.set_state(states["numpy"])
+        random.setstate(states["random"])
+        torch.set_rng_state(states["torch"])
+
+
+class StepProtocolResume:
+    """`--resume <output-dir>`: what is checked before anything is built, and how the
+    interrupted run's event log is accounted for."""
+
+    @staticmethod
+    def prepare(*, args: argparse.Namespace) -> None:
+        """Refuse a resume that cannot carry the run on, before any world is touched."""
+        resume = Path(args.resume)
+        if args.output_dir is None:
+            args.output_dir = resume
+        elif Path(args.output_dir).resolve() != resume.resolve():
+            raise ValueError(
+                f"--resume {resume} names a different run than --output-dir "
+                f"{args.output_dir}; pass the same directory, or omit --output-dir"
+            )
+        if not (resume / CHECKPOINT_FILENAME).exists():
+            raise FileNotFoundError(
+                f"--resume needs a cycle checkpoint at {resume / CHECKPOINT_FILENAME}; "
+                "none was written there (no practice cycle finished, or the run did not "
+                "checkpoint)"
+            )
+        snapshot = json.loads((resume / "config_snapshot.json").read_text())
+        original = StepProtocolResume.comparable(arguments=snapshot["args"])
+        now = StepProtocolResume.comparable(
+            arguments={key: str(value) for key, value in vars(args).items()}
+        )
+        differing = sorted(
+            key for key in original.keys() | now.keys() if original.get(key) != now.get(key)
+        )
+        if differing:
+            details = "; ".join(
+                f"{key}: {original.get(key, '<absent>')} -> {now.get(key, '<absent>')}"
+                for key in differing
+            )
+            raise ValueError(
+                f"refusing to resume {resume}: the resolved config differs from its "
+                f"config_snapshot.json in {', '.join(differing)} ({details})"
+            )
+
+    @staticmethod
+    def comparable(*, arguments: dict[str, str]) -> dict[str, str]:
+        """The resolved flags a resume must repeat: all but `--resume` itself, and the
+        output directory, which `prepare` has already matched as a path."""
+        return {k: v for k, v in arguments.items() if k not in {"resume", "output_dir"}}
+
+    @staticmethod
+    def interrupted_events(*, events: Path, offset: int) -> tuple[int, list[dict[str, Any]]]:
+        """The event log past the checkpoint's position: the number of lines before
+        `offset`, and every event written after it by the interrupted process."""
+        raw = events.read_bytes() if events.exists() else b""
+        before, after = raw[:offset], raw[offset:]
+        return before.count(b"\n"), [json.loads(line) for line in after.splitlines() if line]
+
+
 class DeploymentSnapshot:
     """Both structured arms inherit EES deployment; practice-only state is excluded."""
 
@@ -519,6 +726,8 @@ class StepProtocolValidation:
                 "--always-ask-reset requests"
             )
         output = Path(args.output_dir)
+        if getattr(args, "resume", None) is not None:
+            return  # Carries on the run there; `StepProtocolResume.prepare` checked it.
         existing = [name for name in StepProtocolValidation.RUN_OUTPUTS if (output / name).exists()]
         if existing:
             raise FileExistsError(
@@ -536,28 +745,56 @@ class StepProtocolEntry:
         env_cli: type[EnvironmentCli],
         environment: type[StepProtocolEnvironment],
     ) -> None:
+        resuming = getattr(args, "resume", None) is not None
+        if resuming:
+            StepProtocolResume.prepare(args=args)
         StepProtocolValidation.check(args=args)
         if getattr(args, "measure_every_cycles", None) and environment.evaluation_pool() is None:
             # Its point is a scene the evaluation disturbs, which only happens in-process.
             raise ValueError(f"--measure-every-cycles needs in-process evaluations ({args.env})")
+        if (resuming or getattr(args, "checkpoint_cycles", False)) and (
+            environment.evaluation_pool() is None
+        ):
+            # A checkpoint is taken with every evaluation finished, which an evaluation
+            # running in a spawned process beside practice cannot promise.
+            raise ValueError(
+                f"--checkpoint-cycles and --resume need in-process evaluations, which "
+                f"--env {args.env} does not run; only --env tossing3d_real resumes"
+            )
 
         # Method CLI factories remain authoritative for all algorithm configuration.
         def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
             problem = environment.build_practice_problem(args=args)
             output = Path(args.output_dir)
             output.mkdir(parents=True, exist_ok=True)
-            writer = environment.attach_recording(
-                args=args, problem=problem, output_path=output / RECORDING_FILENAME
-            )
+            recording = output / RECORDING_FILENAME
+            if resuming:
+                # Its own file: the recording writer truncates, and the interrupted
+                # process's recording is part of this run.
+                earlier = len(list(output.glob(f"resume-*-{RECORDING_FILENAME}")))
+                recording = output / f"resume-{earlier + 1:02d}-{RECORDING_FILENAME}"
+            writer = environment.attach_recording(args=args, problem=problem, output_path=recording)
             context = environment.practice_context(args=args, problem=problem)
+            saved = (
+                PracticeCheckpoint.load(
+                    path=output / CHECKPOINT_FILENAME,
+                    live=PracticeCheckpoint.live_objects(
+                        problem=problem, skill_provider=context.skill_provider
+                    ),
+                )
+                if resuming
+                else None
+            )
             try:
                 StepPracticeRunner.run(
                     args=args,
-                    method=method_factory(context),
+                    # A resumed run's method is the checkpoint's, never a fresh one.
+                    method=method_factory(context) if saved is None else saved["method"],
                     problem=problem,
                     environment=environment,
                     evaluations=environment.evaluation_pool(),
                     recorder=writer,
+                    saved=saved,
                 )
             finally:
                 writer.close()
@@ -601,6 +838,81 @@ class StepPracticeRunner:
         }
 
     @staticmethod
+    def outcome(*, future: Any) -> tuple[str, Any]:
+        """A finished evaluation future as plain data a checkpoint can carry."""
+        try:
+            return ("result", future.result())
+        except Exception as error:  # noqa: BLE001 -- recorded, as the final report does
+            return ("error", repr(error))
+
+    @staticmethod
+    def completed_future(*, outcome: tuple[str, Any]) -> Future:
+        future: Future = Future()
+        kind, value = outcome
+        if kind == "result":
+            future.set_result(value)
+        else:
+            future.set_exception(RuntimeError(value))
+        return future
+
+    @staticmethod
+    def set_aside(*, directory: Path) -> None:
+        """Move an interrupted process's partial evaluation out of a resumed run's way:
+        the checkpoint predates it, so the resumed run measures at the same index."""
+        if not directory.exists():
+            return
+        attempt = 1
+        while (aside := directory.with_name(f"{directory.name}.interrupted-{attempt}")).exists():
+            attempt += 1
+        directory.rename(aside)
+
+    @staticmethod
+    def record_resume(*, args: argparse.Namespace, events: Path, saved: dict[str, Any]) -> None:
+        """Account in the event log for what the interrupted process did after its last
+        checkpoint. Those events stay where they are; a cycle it had begun is named by a
+        `cycle_discarded` event, its steps uncharged and its outcomes never learned
+        from, since the method and clock carry on from the checkpoint before it."""
+        header = saved["header"]
+        lines_before, after = StepProtocolResume.interrupted_events(
+            events=events, offset=header["event_log_bytes"]
+        )
+        first_line = lines_before + 1 if after else None
+        last_line = lines_before + len(after) if after else None
+        if any(event.get("event") == "session_start" for event in after):
+            reached = max(
+                (
+                    event.get("end_step", event.get("practice_steps", header["practice_steps"]))
+                    for event in after
+                ),
+                default=header["practice_steps"],
+            )
+            StepFiles.event(
+                path=events,
+                event="cycle_discarded",
+                cycle=header["next_cycle"],
+                first_line=first_line,
+                last_line=last_line,
+                practice_steps=header["practice_steps"],
+                practice_steps_discarded=reached - header["practice_steps"],
+                robot_actions_discarded=sum(event.get("event") == "robot" for event in after),
+                human_resets_discarded=sum(event.get("event") == "human" for event in after),
+                stops_discarded=sum(event.get("event") == "stop" for event in after),
+            )
+        snapshot = ConfigSnapshot.collect(args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH"))
+        StepFiles.event(
+            path=events,
+            event="resume",
+            cycle=header["next_cycle"],
+            practice_steps=header["practice_steps"],
+            learning_updates=header["learning_updates"],
+            checkpoint_written_unix=header["written_unix"],
+            interrupted_first_line=first_line,
+            interrupted_last_line=last_line,
+            git_commit=snapshot.git_commit,
+            git_dirty=snapshot.git_dirty,
+        )
+
+    @staticmethod
     def session_endpoint(*, actions: int, stop_on_no_practice_action: bool) -> str | None:
         """The endpoint a finished session forces, or `None` to keep practising.
 
@@ -619,13 +931,17 @@ class StepPracticeRunner:
         environment: type[StepProtocolEnvironment],
         evaluations: Any = None,
         recorder: RunRecordWriter | None = None,
+        saved: dict[str, Any] | None = None,
     ) -> Metrics:
         """Run persistent practice to the step budget. `StepProtocolValidation.check`
         must already have passed: by the time a problem exists, the state log beside
-        these outputs has been opened, so the existing-run check cannot live here."""
+        these outputs has been opened, so the existing-run check cannot live here.
+
+        `saved` is a loaded `PracticeCheckpoint` payload (`--resume`), whose `method`
+        must be the `method` passed: the run carries on from the end of its cycle."""
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
-        (output / "snapshots").mkdir()
+        (output / "snapshots").mkdir(exist_ok=saved is not None)
         configuration = vars(args).copy()
         events = output / "step_events.jsonl"
         metrics = Metrics()
@@ -641,12 +957,35 @@ class StepPracticeRunner:
         started = time.monotonic()
         endpoint = "running"
         early_stop = False
-        problem.hard_reset()
+        stop_streak = 0
+        accounting: PracticeAccounting | None
+        if saved is None:
+            problem.hard_reset()
+            accounting = StepPracticeRunner.configure_accounting(
+                args=args, method=method, problem=problem, output=output
+            )
+        else:
+            # Before anything is written: a domain that cannot re-observe refuses here.
+            environment.resume_practice_environment(problem=problem, state=saved["env_state"])
+            RngStates.restore(owner=problem.tasks, states=saved["rngs"]["tasks"])
+            RngStates.restore(owner=problem.env, states=saved["rngs"]["env"])
+            RngStates.restore_global(states=saved["rngs"]["global"])
+            accounting = saved["accounting"]
+            metrics = saved["metrics"]
+            cycle = saved["cycle"]
+            robot_invocations = saved["robot_invocations"]
+            learning_updates = saved["learning_updates"]
+            reset_counts = saved["reset_counts"]
+            records = saved["records"]
+            futures = [
+                (record, StepPracticeRunner.completed_future(outcome=outcome))
+                for record, outcome in saved["evaluations"]
+            ]
+            stop_streak = saved["stop_streak"]
+            started -= saved["elapsed_seconds"]
+            StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
         recorder = recorder or RunRecordWriter.disabled()
         recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
-        accounting = StepPracticeRunner.configure_accounting(
-            args=args, method=method, problem=problem, output=output
-        )
         stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
         pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
@@ -680,6 +1019,7 @@ class StepPracticeRunner:
             index = len(records)
             path = output / "snapshots" / f"{index:04d}.pickle"
             path.write_bytes(raw)
+            StepPracticeRunner.set_aside(directory=output / "evaluations" / f"{index:04d}")
             record = {
                 "index": index,
                 "practice_steps": clock.measurement_steps,
@@ -738,44 +1078,117 @@ class StepPracticeRunner:
                 **restored,
             )
 
+        if saved is not None:
+            for field in ("robot_steps", "stop_steps", "human_invocations", "counted_human_steps"):
+                setattr(clock, field, saved["clock"][field])
+        checkpoint_cycles = getattr(args, "checkpoint_cycles", False)
+        live = PracticeCheckpoint.live_objects(
+            problem=problem, skill_provider=getattr(method, "skill_provider", None)
+        )
+
+        def checkpoint(*, completed_cycle: int) -> None:
+            pending = sum(not future.done() for _, future in futures)
+            if pending:
+                raise RuntimeError(
+                    f"a cycle checkpoint needs every evaluation finished; {pending} running"
+                )
+            # The event first, then the checkpoint that points past it: an interruption
+            # between the two leaves the previous checkpoint current, and its log
+            # position puts this event in the cycle a resume discards.
+            StepFiles.event(
+                path=events,
+                event="checkpoint",
+                cycle=completed_cycle,
+                next_cycle=cycle,
+                practice_steps=clock.steps,
+                learning_updates=learning_updates,
+            )
+            header = {
+                "next_cycle": cycle,
+                "practice_steps": clock.steps,
+                "learning_updates": learning_updates,
+                "human_invocations": clock.human_invocations,
+                "event_log_bytes": events.stat().st_size,
+                "written_unix": time.time(),
+            }
+            PracticeCheckpoint.save(
+                output=output,
+                live=live,
+                header=header,
+                payload={
+                    "header": header,
+                    "method": method,
+                    "accounting": accounting,
+                    "metrics": metrics,
+                    "cycle": cycle,
+                    "robot_invocations": robot_invocations,
+                    "learning_updates": learning_updates,
+                    "reset_counts": reset_counts,
+                    "records": records,
+                    "evaluations": [
+                        (record, StepPracticeRunner.outcome(future=future))
+                        for record, future in futures
+                    ],
+                    "stop_streak": stop_streak,
+                    "elapsed_seconds": time.monotonic() - started,
+                    "clock": {
+                        "robot_steps": clock.robot_steps,
+                        "stop_steps": clock.stop_steps,
+                        "human_invocations": clock.human_invocations,
+                        "counted_human_steps": clock.counted_human_steps,
+                    },
+                    "env_state": problem.get_current_state(),
+                    "rngs": {
+                        "tasks": RngStates.capture(owner=problem.tasks),
+                        "env": RngStates.capture(owner=problem.env),
+                        "global": RngStates.capture_global(),
+                    },
+                },
+            )
+
         problem.env.set_control_step_observers(
             before=clock.before_robot_step, after=clock.after_robot_step
         )
-        StepFiles.json(
-            path=output / "step_protocol.json",
-            value={
-                "practice_step_budget": clock.budget,
-                "measurement_interval_steps": clock.interval,
-                "human_skill_steps": clock.human_steps,
-                "evaluation_control_steps": args.evaluation_control_steps,
-                "learning_session_action_limit": args.max_steps_per_interaction,
-                "learning_cycle_count_limit": None,
-                "original_num_cycles_flag_superseded_by_step_budget": args.num_cycles,
-                "evaluation_process": "spawn, one fresh process per evaluation",
-                "evaluation_x_axis": "practice_steps",
-                "evaluation_feedback": False,
-                "normalized_costs": accounting is not None,
-                "stop_after_perfect_evaluations": getattr(
-                    args, "stop_after_perfect_evaluations", 0
-                ),
-                "stop_on_no_practice_action": stop_on_no_practice_action,
-                "stop_skill_steps": 1,
-                "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
-                "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
-            },
-        )
-        StepFiles.json(
-            path=output / "config_snapshot.json",
-            value=ConfigSnapshot.collect(
-                args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
-            ).model_dump(mode="json"),
-        )
+        # A resumed run's protocol and config records stay as the first process wrote
+        # them: they are what `--resume` was checked against.
+        if saved is None:
+            StepFiles.json(
+                path=output / "step_protocol.json",
+                value={
+                    "practice_step_budget": clock.budget,
+                    "measurement_interval_steps": clock.interval,
+                    "human_skill_steps": clock.human_steps,
+                    "evaluation_control_steps": args.evaluation_control_steps,
+                    "learning_session_action_limit": args.max_steps_per_interaction,
+                    "learning_cycle_count_limit": None,
+                    "original_num_cycles_flag_superseded_by_step_budget": args.num_cycles,
+                    "evaluation_process": "spawn, one fresh process per evaluation",
+                    "evaluation_x_axis": "practice_steps",
+                    "evaluation_feedback": False,
+                    "normalized_costs": accounting is not None,
+                    "stop_after_perfect_evaluations": getattr(
+                        args, "stop_after_perfect_evaluations", 0
+                    ),
+                    "stop_on_no_practice_action": stop_on_no_practice_action,
+                    "stop_skill_steps": 1,
+                    "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
+                    "robot_duration_prior_steps": getattr(
+                        method, "robot_duration_prior_steps", None
+                    ),
+                },
+            )
+            StepFiles.json(
+                path=output / "config_snapshot.json",
+                value=ConfigSnapshot.collect(
+                    args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
+                ).model_dump(mode="json"),
+            )
         budget_reached = False
-        stop_streak = 0
         try:
             # The untrained policy's measurement; off where every evaluation task costs a
-            # person a scene set-up (`--env tossing3d_real`).
-            if getattr(args, "initial_measurement", True):
+            # person a scene set-up (`--env tossing3d_real`), and never repeated by a
+            # resumed run.
+            if getattr(args, "initial_measurement", True) and saved is None:
                 measure()
             while clock.steps < clock.budget:
                 if (output / "STOP").exists():
@@ -1010,6 +1423,8 @@ class StepPracticeRunner:
                 if measure_every_cycles and learning_updates % measure_every_cycles == 0:
                     measure_cycle_end()
                 cycle += 1
+                if checkpoint_cycles:
+                    checkpoint(completed_cycle=cycle - 1)
                 status()
             if endpoint == "running":
                 endpoint = "practice_step_budget"
