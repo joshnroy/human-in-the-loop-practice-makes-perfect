@@ -71,11 +71,12 @@ SIM_TOSS_PARAMETERS = TossParameterSet(
     release_ms_bounds=WIDE_TOSS_RELEASE_MS_BOUNDS,
 )
 
-# The real TidyBot's set, derived from the real swing (2026-10-14): what the real
-# robot's `toss` accepts, and nothing a real run draws may fall outside it. It differs
-# from the sim's on all three axes; the sim's bounds are untouched by it.
+# The real TidyBot's set, derived from the real swing (2026-10-14), inside what the real
+# robot's `toss` accepts (standoff 0.9-1.45 m); nothing a real run draws may fall outside
+# it. It differs from the sim's on all three axes; the sim's bounds are untouched by it.
 REAL_TOSS_PARAMETERS = TossParameterSet(
-    standoff_bounds=(0.9, 1.45),
+    # The far spot's tape-clearance window, used for both spots (Josh, 2026-10-20).
+    standoff_bounds=(1.37, 1.45),
     speed_bounds=(100.0, 140.0),
     release_ms_bounds=(500.0, 850.0),
 )

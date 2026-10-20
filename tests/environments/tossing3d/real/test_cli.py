@@ -70,4 +70,15 @@ def test_a_fake_robot_run_practises_and_ends_with_one_evaluation(*, tmp_path: Pa
     measurements = [event for event in events if event["event"] == "measurement"]
     assert len(measurements) == 1
     assert measurements[0]["practice_steps"] > 0
+    far_tosses = [
+        event
+        for event in events
+        if event["event"] == "robot"
+        and str(event.get("label", "")).startswith("MoveToTossLocationAndToss")
+        and "opposite_side)" in str(event["label"])
+    ]
+    assert far_tosses
+    # The real standoff window keeps the base clear of the tape at the far spot, so no
+    # far-side toss is refused (a refused toss is charged no steps).
+    assert all(event["end_step"] > event["start_step"] for event in far_tosses)
     assert (output / "evaluations" / "0000").exists()
