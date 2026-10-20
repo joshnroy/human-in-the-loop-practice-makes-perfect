@@ -19,6 +19,7 @@ bins) and evaluation (far-side bins), so it made evaluation rows look unlike pra
 rows for no physical reason.
 """
 
+import math
 from typing import Any, ClassVar
 
 import numpy as np
@@ -35,7 +36,7 @@ from .toss_direction import (
     TossDirectionSelector,
     TossStandoffBand,
 )
-from .types import TossParameterSet
+from .types import FixedTossDirection, TossParameterSet
 from .wide_long_range_proposal import (
     SIM_TOSS_PARAMETERS,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
@@ -118,6 +119,10 @@ class Tossing3DToss:
         robot_x = state.get(obj=robot, feature_name="pos_base_x")
         far = (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0
         snapshot = getattr(state, "object_centric", None)
+        if isinstance(snapshot, FixedTossDirection):
+            # One fixed stand per side: the whole range, and the robot refuses a stand
+            # it may not drive to when the toss is executed.
+            return parameters.standoff_bounds
         geometry = (
             None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
         )
@@ -136,7 +141,46 @@ class Tossing3DToss:
 
     @staticmethod
     def choose_direction(*, state: State, params: np.ndarray) -> TossDirectionChoice:
+        snapshot = getattr(state, "object_centric", None)
+        if isinstance(snapshot, FixedTossDirection):
+            return Tossing3DToss._fixed_direction(
+                state=state, snapshot=snapshot, standoff=float(params[0])
+            )
         return TossDirectionSelector.select_for_state(state=state, standoff=float(params[0]))
+
+    @staticmethod
+    def _fixed_direction(
+        *, state: State, snapshot: FixedTossDirection, standoff: float
+    ) -> TossDirectionChoice:
+        """The backend's one direction, in the action's rotation slot as a domain-frame
+        azimuth from the bin to the stand (the sim's slot is relative to the bin's yaw;
+        a real state carries no bin yaw, and the backend reads this slot back itself)."""
+        env = Tossing3DEnvironment
+        bin_xy = (
+            state.get(obj=env.bin, feature_name="x"),
+            state.get(obj=env.bin, feature_name="y"),
+        )
+        azimuth = snapshot.toss_azimuth()
+        if azimuth is None:
+            robot = tuple(
+                state.get(obj=env.robot, feature_name=name)
+                for name in ("pos_base_x", "pos_base_y", "pos_base_rot")
+            )
+            raise NoFeasibleTossDirectionError(
+                standoff=standoff,
+                bin_pose=(*bin_xy, math.nan),
+                robot_pose=(robot[0], robot[1], robot[2]),
+                reasons={0: "no bin localized"},
+            )
+        return TossDirectionChoice(
+            direction_deg=int(round(math.degrees(azimuth))) % 360,
+            rotation=azimuth,
+            stand_xy=(
+                bin_xy[0] + standoff * math.cos(azimuth),
+                bin_xy[1] + standoff * math.sin(azimuth),
+            ),
+            clearance_m=math.inf,
+        )
 
     @staticmethod
     def rejection_reason(

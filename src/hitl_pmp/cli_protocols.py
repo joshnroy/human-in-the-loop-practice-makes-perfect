@@ -81,6 +81,13 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_pool() -> Any:
+        """Where evaluations run: `None` for the protocol's default (a fresh spawned
+        process per evaluation, beside practice); a domain whose evaluation cannot run
+        beside practice (one real robot) returns a pool that runs it in place."""
+        ...
+
+    @staticmethod
     def evaluation_skill_provider(*, problem: Problem) -> SkillProvider:
         """Deployment offers no human skill."""
         ...

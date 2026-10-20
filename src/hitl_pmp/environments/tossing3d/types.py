@@ -47,6 +47,7 @@ deep-copying a `Tossing3DStateAbstractor` would clone a PyBullet client. The abs
 lives on `KinderBackend` for its whole lifetime; only its *output* travels.
 """
 
+import abc
 from collections.abc import Callable
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -128,6 +129,24 @@ class TossFeasibilityGeometry(BaseModel):
     obstacles: tuple[PlanarCollisionBox, ...]
     sampling_x_bounds: tuple[float, float]
     sampling_y_bounds: tuple[float, float]
+
+
+class FixedTossDirection(BaseModel, abc.ABC):
+    """A state snapshot from a backend that throws from one fixed stand direction per
+    bin side, rather than choosing among four per state as the simulator does.
+
+    `Tossing3DToss` checks for it on `Tossing3DState.object_centric`: such a state's
+    standoff band is its parameter set's whole standoff range, and its stand direction
+    is `toss_azimuth()`. Whether a stand is allowed is then the backend's to decide when
+    the toss is executed (the real robot refuses one it may not drive to), not this
+    package's.
+    """
+
+    @abc.abstractmethod
+    def toss_azimuth(self) -> float | None:
+        """The domain-frame azimuth from the bin to the stand, or `None` when no bin is
+        localized."""
+        raise NotImplementedError
 
 
 class Tossing3DState(State):

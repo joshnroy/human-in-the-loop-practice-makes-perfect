@@ -609,12 +609,7 @@ class Tossing3DEnvironment(Environment):
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
         backend = self.backend()
-        bin_region = None
-        if destination is not None:
-            bin_region = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)]
-        backend.reset_cube_and_bin(
-            bin_region=None if bin_region is None else bin_region.model_dump(mode="json")
-        )
+        backend.reset_cube_and_bin(bin_region=self.bin_reset_region(destination=destination))
         # The reset relocated the cube, which physically heals every observed
         # refusal instance -- the symbolic reset skills promise PickupUnblocked,
         # and this is what makes the promise true.
@@ -628,6 +623,14 @@ class Tossing3DEnvironment(Environment):
         )
         self._adopt(state=next_state)
         return True
+
+    def bin_reset_region(self, *, destination: str | None) -> dict[str, object] | None:
+        """What `reset_movables` hands the backend for `destination`: the side's
+        continuous placement region in the sim. A backend with named spots instead
+        (the real room) overrides this."""
+        if destination is None:
+            return None
+        return BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)].model_dump(mode="json")
 
     def set_substep_recording(self, *, enabled: bool) -> None:
         """Forwards to `KinderBackend.set_substep_recording` -- see `core.Environment`'s

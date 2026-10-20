@@ -41,6 +41,11 @@ class SweepOffShelf3DStepProtocol:
         return SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed + 1)
 
     @staticmethod
+    def evaluation_pool() -> None:
+        """The protocol's default: one fresh spawned process per evaluation."""
+        return None
+
+    @staticmethod
     def practice_context(*, args: argparse.Namespace, problem: Problem) -> DomainContext:
         env = SweepOffShelf3DStepProtocol.env(problem=problem)
         return DomainContext(
