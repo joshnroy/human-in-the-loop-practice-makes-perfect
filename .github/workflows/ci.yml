@@ -218,6 +218,7 @@ jobs:
             tests/environments/lightswitch \
             tests/methods \
             tests/humans \
+            tests/presets \
             tests/test_*.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
