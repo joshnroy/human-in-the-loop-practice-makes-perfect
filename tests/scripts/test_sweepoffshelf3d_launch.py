@@ -390,3 +390,41 @@ def test_della_sbatch_parses_a_manifest_line_back_to_the_same_argv(*, tmp_path: 
     ).stdout.splitlines()
     name, _sha, arm, seed, output_dir, joined = rows[6]
     assert out == [name, arm, seed, output_dir, *shlex.split(joined)]
+
+
+def test_every_della_run_records_evaluation_motion_and_seed_zero_records_practice(
+    *, tmp_path: Path
+) -> None:
+    rows = _all_rows(groups=_della(tmp_path=tmp_path))
+    scopes = {
+        (arm, int(seed)): Cli.parse_args(argv=shlex.split(joined)).record_motion
+        for _name, _sha, arm, seed, _out, joined in rows
+    }
+    assert len(scopes) == 36
+    for (_, seed), scope in scopes.items():
+        assert scope == ("all" if seed == 0 else "evaluation")
+    assert {arm for arm, seed in scopes if seed == 0} == set(
+        ShelfLaunch.arms(expectimax_depths=[6])
+    )
+
+
+@pytest.mark.parametrize("seed", [0, 1, 5])
+def test_a_single_runs_argv_records_motion_by_seed(*, seed: int) -> None:
+    arm = ShelfLaunch.arms(expectimax_depths=[6])["ees"]
+    argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=seed, output_dir=Path("/x"))
+    assert Cli.parse_args(argv=argv).record_motion == ("all" if seed == 0 else "evaluation")
+
+
+def test_the_agni_sweep_records_evaluation_motion_for_every_seed(*, tmp_path: Path) -> None:
+    """`run_sweep` shares one argv across seeds, so practice motion is della/print only."""
+    arm = ShelfLaunch.arms(expectimax_depths=[6])["ees"]
+    command = ShelfLaunch.sweep_command(
+        arm=arm, size=FULL, results_root=tmp_path, max_workers=3, skip_gate=False
+    )
+    assert _value(argv=_shared(command=command), flag="--record-motion") == "evaluation"
+
+
+def test_no_arm_asks_for_episode_traces_the_step_protocol_refuses() -> None:
+    for arm in ShelfLaunch.arms(expectimax_depths=[6, 7]).values():
+        argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/x"))
+        assert "--record-episode-traces" not in argv

@@ -74,10 +74,23 @@ class SweepOffShelf3DBackend(BaseModel):
     cube_names: ClassVar[tuple[str, ...]] = tuple(cube.name for cube in O.cubes)
     wiper_name: ClassVar[str] = O.wiper.name
     box_name: ClassVar[str] = O.box.name
+    # KINDER control steps per simulated second (`TidyBot3DConfig.control_frequency`).
+    CONTROL_FREQUENCY: ClassVar[int] = 10
+    # Every robot joint, in qpos order: the base, the arm, then both Robotiq linkages.
+    ROBOT_JOINTS: ClassVar[tuple[str, ...]] = (
+        *(f"robot_joint_{axis}" for axis in ("x", "y", "th")),
+        *(f"robot_joint_{index}" for index in range(1, 8)),
+        *(
+            f"robot_{side}_{link}_joint"
+            for side in ("right", "left")
+            for link in ("driver", "coupler", "spring_link", "follower")
+        ),
+    )
 
     _env: Any = PrivateAttr(default=None)
     _before_step: Callable[[], None] | None = PrivateAttr(default=None)
     _after_step: Callable[[], None] | None = PrivateAttr(default=None)
+    _on_tick: Callable[[], None] | None = PrivateAttr(default=None)
     _human_rng: np.random.Generator = PrivateAttr()
     _pads: tuple[frozenset[int], frozenset[int]] = PrivateAttr(default=(frozenset(), frozenset()))
     _wiper_start: Any = PrivateAttr(default=None)
@@ -119,6 +132,12 @@ class SweepOffShelf3DBackend(BaseModel):
         self._before_step = before
         self._after_step = after
 
+    def set_tick_observer(self, *, observer: Callable[[], None] | None) -> None:
+        """Call `observer` right after every KINDER control step, ahead of the `after`
+        step observer; `None` detaches. Separate from `set_step_observers`, whose
+        slots the step protocol's clocks own and clear."""
+        self._on_tick = observer
+
     def _observe_steps(self, *, env: Any) -> None:
         step = env.step
 
@@ -126,6 +145,8 @@ class SweepOffShelf3DBackend(BaseModel):
             if self._before_step is not None:
                 self._before_step()
             result = step(action)
+            if self._on_tick is not None:
+                self._on_tick()
             if self._after_step is not None:
                 self._after_step()
             return result
@@ -201,6 +222,21 @@ class SweepOffShelf3DBackend(BaseModel):
         out[self.wiper_name] = np.array([*np.asarray(position, dtype=float), yaw])
         (x0, y0, x1, y1), rim = core.box_interior()
         out[self.box_name] = np.array([x0, y0, x1, y1, rim])
+        return out
+
+    def motion_state(self) -> dict[str, list[float]]:
+        """`features` with what a full-motion redraw also needs: every robot joint
+        (`robot_joints`, in `ROBOT_JOINTS` order) and, after each movable's own
+        features, its free joint's pose (x, y, z, qw, qx, qy, qz). Read only."""
+        model, data = self.model(), self.data()
+        out = {name: [float(v) for v in values] for name, values in self.features().items()}
+        for name in (*self.cube_names, self.wiper_name, self.box_name):
+            address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+            out[name] += [float(v) for v in data.qpos[address : address + 7]]
+        out["robot_joints"] = [
+            float(data.qpos[model.jnt_qposadr[model.joint(joint).id]])
+            for joint in self.ROBOT_JOINTS
+        ]
         return out
 
     def abstract_atoms(self) -> frozenset[tuple[str, tuple[str, ...]]]:

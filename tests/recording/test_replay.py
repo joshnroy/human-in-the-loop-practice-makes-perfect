@@ -239,3 +239,28 @@ def test_a_skill_the_goal_latch_cut_short_is_not_marked_failed(
     seen = _statuses(monkeypatch=monkeypatch)
     _play(path=path, tmp_path=tmp_path)
     assert seen[-1].history[-2:] == ("Push(cube) \u2713 goal reached", "Pick(cube) \u2717")
+
+
+class _SlowSpy(_SpyRenderer):
+    def fps(self) -> int:
+        return FPS // 5
+
+
+def test_a_drawing_holds_for_its_renderers_frame_time_in_a_faster_video(*, tmp_path: Path) -> None:
+    """One video holds a storyboard practice (few frames per second) and a full-motion
+    evaluation: each drawing is repeated so it lasts its own renderer's 1 / fps."""
+    path = tmp_path / "recording.jsonl"
+    _record(path=path, phase=Phase.EVALUATION, ticks=3, human=False)
+    renderer = _SlowSpy()
+    video = VideoStream(output_path=tmp_path / "out.mp4", fps=FPS)
+    try:
+        summary = RecordingReplayer(renderer=renderer, pause_seconds=1.0).play(
+            header=RunRecordReader.header(path=path),
+            entries=RunRecordReader.entries(path=path),
+            video=video,
+        )
+    finally:
+        video.close()
+    # The start and three ticks, five video frames each, then a one-second verdict.
+    assert summary.ticks_shown == 4
+    assert summary.frames_written == 4 * 5 + FPS
