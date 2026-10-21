@@ -162,11 +162,18 @@ class StepProtocolEnvironment(Protocol):
 
     @staticmethod
     def evaluation_progress(
-        *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
+        *,
+        problem: Problem,
+        index: int,
+        after_cycle: int | None,
+        task: int,
+        num_tasks: int,
+        before_practice: bool = False,
     ) -> None:
         """Evaluation `index` (measuring the update after `after_cycle`, `None` for the
-        final one) is at `task` of `num_tasks`, told to the evaluation's problem before
-        each task's scene and each action. A simulated domain ignores it."""
+        final one, or the untrained policy's if `before_practice`) is at `task` of
+        `num_tasks`, told to the evaluation's problem before each task's scene and each
+        action. A simulated domain ignores it."""
         ...
 
     @staticmethod

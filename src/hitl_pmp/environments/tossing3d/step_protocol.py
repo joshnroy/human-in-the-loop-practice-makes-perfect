@@ -119,10 +119,16 @@ class Tossing3DStepProtocol:
 
     @staticmethod
     def evaluation_progress(
-        *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
+        *,
+        problem: Problem,
+        index: int,
+        after_cycle: int | None,
+        task: int,
+        num_tasks: int,
+        before_practice: bool = False,
     ) -> None:
         """Nobody is watching a simulated run."""
-        del problem, index, after_cycle, task, num_tasks
+        del problem, index, after_cycle, task, num_tasks, before_practice
 
     @staticmethod
     def practice_scene(*, problem: Problem) -> Any:
