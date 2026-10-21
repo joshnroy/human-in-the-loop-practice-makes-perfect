@@ -7,3 +7,6 @@
 [submodule "reference/kindergarden"]
 	path = reference/kindergarden
 	url = https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden.git
+[submodule "reference/prpl-tidybot"]
+	path = reference/prpl-tidybot
+	url = https://github.com/Princeton-Robot-Planning-and-Learning/prpl-tidybot.git
