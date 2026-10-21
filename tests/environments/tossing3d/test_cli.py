@@ -211,7 +211,8 @@ def test_the_human_reset_flag_reaches_both_practice_methods(
 
     monkeypatch.setattr(tossing3d_cli.MethodRunner, "run", capture)
     flag = "--human-reset" if human_reset else "--no-human-reset"
-    Cli.main(argv=["--env", "tossing3d", "--method", method, "--no-scene-bg", flag])
+    weight = ["--pomdp-observation-probability-weight", "0.1"] if method == "pomdp" else []
+    Cli.main(argv=["--env", "tossing3d", "--method", method, *weight, "--no-scene-bg", flag])
     (built_method,) = built
     provider = built_method.skill_provider  # type: ignore[attr-defined]
     assert provider.offer_human_reset is human_reset

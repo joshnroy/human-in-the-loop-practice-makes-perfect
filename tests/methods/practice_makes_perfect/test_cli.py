@@ -15,6 +15,11 @@ from hitl_pmp.methods.practice_makes_perfect.cli import (
 )
 
 
+def _weight(*, method: str) -> list[str]:
+    # A pomdp launch must name its observation weight; 0.1 keeps these tests' old arm.
+    return ["--pomdp-observation-probability-weight", "0.1"] if method == "pomdp" else []
+
+
 @pytest.fixture(autouse=True)
 def _restore_lightswitch_config() -> Iterator[None]:
     """RandomSkillsCli.run() delegates to LightSwitchCli.run_method(), which still
@@ -418,7 +423,9 @@ def test_the_goal_pursuit_schedule_flags_reach_both_methods(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", "tossing3d", "--method", method_name, *argv])
+    Cli.main(
+        argv=["--env", "tossing3d", "--method", method_name, *_weight(method=method_name), *argv]
+    )
     (method,) = built
     assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == expected  # type: ignore[attr-defined]
 
@@ -445,7 +452,7 @@ def test_the_pomdp_search_depth_defaults_to_the_domains(
 
     env_cli = {"tossing3d": Tossing3DCli, "sweepoffshelf3d": SweepOffShelf3DCli}[env_name]
     monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", env_name, "--method", "pomdp", *argv])
+    Cli.main(argv=["--env", env_name, "--method", "pomdp", *_weight(method="pomdp"), *argv])
     assert seen == [expected]
 
 
@@ -475,7 +482,9 @@ def test_the_always_ask_reset_flag_wraps_every_planner(
         Tossing3DCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
     )
     flag = ["--always-ask-reset"] if wrapped else []
-    Cli.main(argv=["--env", "tossing3d", "--method", method, *extra, *flag])
+    Cli.main(
+        argv=["--env", "tossing3d", "--method", method, *_weight(method=method), *extra, *flag]
+    )
     env = Tossing3DEnvironment(scene_bg=False)
     built = captured["method_factory"](  # type: ignore[operator]
         SimpleNamespace(env=env, skill_provider=Tossing3DSkillProvider(env=env))
@@ -518,6 +527,11 @@ def test_the_pomdp_decision_log_is_compressed_by_default(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", "tossing3d", "--method", "pomdp", "--output-dir", str(tmp_path), *argv])
+    Cli.main(
+        argv=[
+            *("--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp")),
+            *("--output-dir", str(tmp_path), *argv),
+        ]
+    )
     (method,) = built
     assert method.decision_log == tmp_path / expected  # type: ignore[attr-defined]

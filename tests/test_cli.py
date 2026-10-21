@@ -391,3 +391,36 @@ def test_wandb_tag_is_repeatable_and_defaults_to_none() -> None:
     )
     assert args.wandb_tag == ["human-ladder-v2", "reset-cost-sweep"]
     assert not hasattr(args, "mean_steps_between_human_interventions")
+
+
+POMDP_SIM = ["--env", "tossing3d", "--method", "pomdp"]
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ["--pomdp-observation-probability-weight", "0.0"],
+        ["--pomdp-observation-probability-weight=0.1"],
+        ["--pomdp-observation-prob", "0.0"],
+        ["--preset", "tossing3d-canonical", "--practice-step-budget", "1000"],
+    ],
+)
+def test_a_pomdp_launch_that_names_its_observation_weight_is_accepted(*, flag: list[str]) -> None:
+    argv = [*POMDP_SIM, *flag]
+    Cli.require_explicit_observation_weight(argv=argv, args=Cli.parse_args(argv=argv))
+
+
+def test_a_pomdp_launch_on_the_default_observation_weight_refuses_to_start() -> None:
+    # Refused before anything is built: a run would otherwise never reach practice.
+    with pytest.raises(SystemExit, match="--pomdp-observation-probability-weight") as refused:
+        Cli.main(argv=[*POMDP_SIM, "--num-test-tasks", "1"])
+    assert "0.1" in str(refused.value) and "STOP" in str(refused.value)
+
+
+def test_the_observation_weight_default_itself_stays_point_one() -> None:
+    assert Cli.parse_args(argv=POMDP_SIM).pomdp_observation_probability_weight == 0.1
+
+
+def test_a_method_without_the_observation_weight_is_not_asked_for_it() -> None:
+    argv = ["--env", "tossing3d", "--method", "ees"]
+    Cli.require_explicit_observation_weight(argv=argv, args=Cli.parse_args(argv=argv))
