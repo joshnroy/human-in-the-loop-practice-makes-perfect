@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Real run dashboard</title>
+<style>
+:root {
+  --bg: #f6f6f3; --card: #ffffff; --fg: #1c1c1c; --muted: #6b6b6b; --line: #dcdcd6;
+  --grid: #ececE6; --ours: #0072B2; --out: #D55E00; --ink: #1c1c1c; --ref: #999999;
+  --prompt-bg: #fff4d6; --prompt-line: #E69F00; --tape: #c9a227;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121314; --card: #1c1d1f; --fg: #e8e8e6; --muted: #9a9a96; --line: #34363a;
+    --grid: #2a2c2f; --ink: #f0f0ee; --prompt-bg: #3a2f12; --tape: #b8942a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: baseline; gap: 16px; padding: 14px 20px 6px; flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+header .meta { color: var(--muted); font-size: 12px; }
+header .meta.stale { color: var(--out); font-weight: 600; }
+main { display: grid; gap: 14px; padding: 8px 20px 24px;
+  grid-template-columns: repeat(12, minmax(0, 1fr)); }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; min-width: 0; }
+section h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; }
+#status { grid-column: span 12; }
+#eval-curve { grid-column: span 7; }
+#room { grid-column: span 5; grid-row: span 2; }
+#tosses { grid-column: span 7; }
+#timing { grid-column: span 12; }
+@media (max-width: 1100px) { #eval-curve, #room, #tosses { grid-column: span 12; grid-row: auto; } }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.tile .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .s { font-size: 12px; color: var(--muted); }
+.bar { height: 6px; background: var(--grid); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--ours); }
+.wide { grid-column: span 2; }
+.prompt { margin-top: 10px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); }
+.prompt.waiting { background: var(--prompt-bg); border-color: var(--prompt-line); }
+.prompt .q { font-size: 16px; font-weight: 600; }
+.prompt .c { color: var(--muted); font-size: 13px; }
+details { margin-top: 8px; }
+pre { margin: 6px 0 0; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap;
+  max-height: 220px; overflow: auto; background: var(--bg); padding: 8px; border-radius: 6px; }
+svg { display: block; width: 100%; height: auto; }
+svg text { fill: var(--fg); font: 11px system-ui, sans-serif; }
+svg .muted { fill: var(--muted); }
+svg .axis { stroke: var(--muted); stroke-width: 1; }
+svg .grid { stroke: var(--grid); stroke-width: 1; }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 800px) { .two, .row { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px;
+  vertical-align: -1px; border-radius: 50%; }
+.legend .in::before { background: var(--ink); }
+.legend .out::before { content: "\00d7"; width: auto; height: auto; color: var(--out); font-weight: 700; }
+.legend .unk::before { border: 1.5px solid var(--ref); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tossing3D (real) — practice run</h1>
+  <span class="meta" id="run-dir"></span>
+  <span class="meta" id="updated">loading …</span>
+</header>
+<main>
+  <section id="status"><h2>Status</h2><div id="status-body"></div></section>
+  <section id="eval-curve"><h2>Evaluation</h2><div id="eval-body"></div></section>
+  <section id="room"><h2>Room, map frame (m)</h2><div id="room-body"></div></section>
+  <section id="tosses"><h2>Practice tosses</h2><div id="tosses-body"></div></section>
+  <section id="timing"><h2>Skills: timing, picks, competence</h2><div id="timing-body"></div></section>
+</main>
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const POLL_MS = 5000;
+
+function el(tag, attrs, ...kids) {
+  const node = tag.startsWith("svg:") ? document.createElementNS(NS, tag.slice(4)) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v !== null && v !== undefined) node.setAttribute(k, v);
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined)
+    node.appendChild(typeof kid === "string" ? document.createTextNode(kid) : kid);
+  return node;
+}
+const s = (tag, attrs, ...kids) => el("svg:" + tag, attrs, ...kids);
+const title = (text) => s("title", {}, text);
+const fmt = (v, d = 0) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : Number(v).toFixed(d);
+function hms(seconds) {
+  if (seconds === null || seconds === undefined) return "—";
+  const t = Math.round(seconds), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return (h ? h + "h " : "") + String(m).padStart(h ? 2 : 1, "0") + "m " + String(sec).padStart(2, "0") + "s";
+}
+function niceTicks(lo, hi, count) {
+  const span = hi - lo || 1, raw = span / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((f) => span / f <= count) || mag * 10;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+
+// A plot frame: returns the svg, scales and the plotting group.
+function frame({ w, h, m, x, y, xticks, yticks, xlabel, ylabel, xfmt, yfmt }) {
+  const svg = s("svg", { viewBox: `0 0 ${w} ${h}`, role: "img" });
+  const sx = (v) => m.l + (v - x[0]) / (x[1] - x[0] || 1) * (w - m.l - m.r);
+  const sy = (v) => h - m.b - (v - y[0]) / (y[1] - y[0] || 1) * (h - m.t - m.b);
+  for (const t of yticks) {
+    svg.appendChild(s("line", { class: "grid", x1: m.l, x2: w - m.r, y1: sy(t), y2: sy(t) }));
+    svg.appendChild(s("text", { x: m.l - 6, y: sy(t) + 4, "text-anchor": "end", class: "muted" }, (yfmt || String)(t)));
+  }
+  for (const t of xticks) {
+    svg.appendChild(s("line", { class: "axis", x1: sx(t), x2: sx(t), y1: h - m.b, y2: h - m.b + 4 }));
+    svg.appendChild(s("text", { x: sx(t), y: h - m.b + 16, "text-anchor": "middle", class: "muted" }, (xfmt || String)(t)));
+  }
+  svg.appendChild(s("line", { class: "axis", x1: m.l, x2: w - m.r, y1: h - m.b, y2: h - m.b }));
+  svg.appendChild(s("line", { class: "axis", x1: m.l, x2: m.l, y1: m.t, y2: h - m.b }));
+  if (xlabel) svg.appendChild(s("text", { x: (m.l + w - m.r) / 2, y: h - 4, "text-anchor": "middle" }, xlabel));
+  if (ylabel) svg.appendChild(s("text", { x: 12, y: (m.t + h - m.b) / 2, "text-anchor": "middle",
+    transform: `rotate(-90 12 ${(m.t + h - m.b) / 2})` }, ylabel));
+  return { svg, sx, sy };
+}
+
+// In bin: a filled ink dot. Out: a vermillion cross. Unknown: a hollow grey ring.
+function outcomeMark(cx, cy, inBin, r, tip, opacity) {
+  const o = opacity === undefined ? 1 : opacity;
+  if (inBin === true) return s("circle", { cx, cy, r, fill: "var(--ink)", opacity: o }, title(tip));
+  if (inBin === false) {
+    const d = r * 0.9;
+    return s("path", { d: `M${cx - d},${cy - d}L${cx + d},${cy + d}M${cx - d},${cy + d}L${cx + d},${cy - d}`,
+      stroke: "var(--out)", "stroke-width": 2, opacity: o, fill: "none" }, title(tip));
+  }
+  return s("circle", { cx, cy, r, fill: "none", stroke: "var(--ref)", "stroke-width": 1.5, opacity: o }, title(tip));
+}
+const outcomeWord = (v) => v === true ? "in bin" : v === false ? "not in bin" : "outcome unknown";
+
+function tile(k, v, sub, extra) {
+  return el("div", { class: "tile" + (extra && extra.wide ? " wide" : "") }, el("div", { class: "k" }, k),
+    el("div", { class: "v" }, v), sub ? el("div", { class: "s" }, sub) : null, extra && extra.bar !== undefined
+      ? el("div", { class: "bar" }, el("div", { style: `width:${Math.min(100, 100 * extra.bar)}%` })) : null);
+}
+
+function renderStatus(st) {
+  const body = document.getElementById("status-body");
+  const proj = st.projected_cycles ? `≈${fmt(st.projected_cycles)} at this pace` : "no cycle finished yet";
+  const budget = st.step_budget || 0;
+  const current = st.running ? "running: " + st.running : (st.last_skill || "—");
+  const currentSub = st.running ? "" : (st.last_skill_detail ? "last finished · " + st.last_skill_detail : "last finished");
+  const comp = Object.entries(st.competences || {}).filter(([k]) => !k.startsWith("ask_for"))
+    .map(([k, v]) => `${k} ${fmt(v, 2)}`).join(" · ");
+  const tiles = el("div", { class: "tiles" },
+    tile("Cycle", String(st.cycle), proj),
+    tile("Practice steps", `${st.practice_steps.toLocaleString()} / ${budget ? budget.toLocaleString() : "?"}`,
+      budget ? `${fmt(100 * st.practice_steps / budget, 1)}% of the budget` : "", { bar: budget ? st.practice_steps / budget : 0 }),
+    tile("Session time", hms(st.session_seconds),
+      `robot calls ${hms(st.robot_call_seconds)} · wall ${hms(st.wall_seconds)}`),
+    tile("Human resets", `SAME ${st.human_resets.SAME || 0} · FAR ${st.human_resets.FAR || 0}`,
+      `${(st.human_resets.SAME || 0) + (st.human_resets.FAR || 0)} in all`),
+    tile(st.running ? "Current skill" : "Last skill", current, currentSub, { wide: true }),
+    tile("Phase", st.phase || "—", (st.progress || "") + (comp ? (st.progress ? " · " : "") + "competence " + comp : "")),
+  );
+  const waiting = !!st.prompt;
+  const since = st.prompt_since ? Date.parse(st.prompt_since.replace(" ", "T")) : null;
+  const prompt = el("div", { class: "prompt" + (waiting ? " waiting" : "") },
+    waiting
+      ? [el("div", { class: "q" }, "Waiting for the person: " + st.prompt),
+         el("div", { class: "c" }, (st.prompt_context ? st.prompt_context + " · " : "") +
+           (since ? "asked " + hms((Date.now() - since) / 1000) + " ago" : ""))]
+      : el("div", { class: "c" }, st.sources["robot_session.log"]
+          ? "No prompt waiting." : "No robot_session.log in this run directory (prompts are shown once it exists)."));
+  const notes = (st.notes || []).length
+    ? el("div", { class: "note" }, "Events: " + st.notes.map((n) => `${n.event}${n.summary ? " (" + n.summary + ")" : ""}`).join("; ") +
+      (st.discarded_lines ? ` · ${st.discarded_lines} interrupted lines discarded by a resume` : ""))
+    : null;
+  const log = st.session_tail && st.session_tail.length
+    ? el("details", {}, el("summary", {}, "Session log, last lines"), el("pre", {}, st.session_tail.join("\n"))) : null;
+  body.replaceChildren(tiles, prompt, notes || "", log || "");
+}
+
+function renderEval(curve) {
+  const body = document.getElementById("eval-body");
+  const pts = curve.points;
+  const total = Math.max(1, ...pts.map((p) => p.total));
+  const totals = [...new Set(pts.map((p) => p.total))];
+  const xmax = Math.max(curve.step_budget || 0, ...pts.map((p) => p.practice_steps), 1);
+  const { svg, sx, sy } = frame({ w: 720, h: 300, m: { l: 46, r: 16, t: 30, b: 40 }, x: [0, xmax], y: [0, total],
+    xticks: niceTicks(0, xmax, 8), yticks: niceTicks(0, total, Math.min(total, 6)).filter((t) => Number.isInteger(t)),
+    xlabel: "practice steps", ylabel: "solved per evaluation", xfmt: (t) => t >= 1000 ? (t / 1000) + "k" : String(t) });
+  const done = pts.filter((p) => p.complete);
+  if (done.length > 1) svg.appendChild(s("polyline", { fill: "none", stroke: curve.colour, "stroke-width": 2.3,
+    "stroke-dasharray": curve.dashed ? "8 4" : null, points: done.map((p) => `${sx(p.practice_steps)},${sy(p.solved)}`).join(" ") }));
+  const every = Math.max(1, Math.ceil(pts.length / 20));
+  pts.forEach((p, i) => {
+    const tip = `evaluation ${p.index}: ${p.label} solved at ${p.practice_steps} practice steps, cycle ${p.cycle ?? "?"}` + (p.complete ? "" : " (running)");
+    svg.appendChild(s("circle", { cx: sx(p.practice_steps), cy: sy(p.solved), r: 4.5, fill: p.complete ? curve.colour : "var(--card)",
+      stroke: curve.colour, "stroke-width": 2 }, title(tip)));
+    if (i % every === 0 || i === pts.length - 1) {
+      svg.appendChild(s("text", { x: sx(p.practice_steps), y: sy(p.solved) - 9, "text-anchor": "middle" }, p.label));
+      svg.appendChild(s("text", { x: sx(p.practice_steps), y: 16, "text-anchor": "middle", class: "muted" }, "c" + (p.cycle ?? "?")));
+    }
+  });
+  svg.appendChild(s("text", { x: 46, y: 16, class: "muted", "text-anchor": "end" }, "cycle"));
+  const swatch = s("svg", { viewBox: "0 0 30 10", width: 30, height: 10, style: "display:inline-block;width:30px;vertical-align:-1px;margin-right:4px" },
+    s("line", { x1: 0, x2: 30, y1: 5, y2: 5, stroke: curve.colour, "stroke-width": 2.3, "stroke-dasharray": curve.dashed ? "8 4" : null }),
+    s("circle", { cx: 15, cy: 5, r: 3.5, fill: curve.colour }));
+  const leg = el("div", { class: "note" }, swatch, curve.legend + (curve.dashed ? " (no human reset)" : ""));
+  const head = el("div", { class: "note" }, `Tossing3D (real) · tasks per evaluation: ${totals.length ? totals.join(", ") : "—"}` +
+    (pts.some((p) => !p.complete) ? " · hollow marker = evaluation still running" : ""));
+  body.replaceChildren(head, svg, leg, pts.length ? "" : el("div", { class: "note" }, "No evaluation yet."));
+}
+
+function renderTosses(t) {
+  const body = document.getElementById("tosses-body");
+  const pts = t.points, n = pts.length;
+  const xmax = Math.max(n - 1, 1);
+  // The blue line is the trailing in-bin fraction (0..1); each toss's own mark sits just
+  // above 1 (in) or just below 0 (out).
+  const top = frame({ w: 720, h: 210, m: { l: 46, r: 30, t: 14, b: 36 }, x: [-0.5, xmax + 0.5], y: [-0.18, 1.18],
+    xticks: niceTicks(0, xmax, 10).filter(Number.isInteger), yticks: [0, 0.5, 1], xlabel: "practice toss",
+    ylabel: "in-bin fraction", yfmt: String });
+  top.svg.appendChild(s("text", { x: 716, y: top.sy(1.08) + 4, "text-anchor": "end", class: "muted" }, "in"));
+  top.svg.appendChild(s("text", { x: 716, y: top.sy(-0.08) + 4, "text-anchor": "end", class: "muted" }, "out"));
+  const roll = t.rolling.filter((r) => r[2] > 0);
+  if (roll.length > 1) top.svg.appendChild(s("polyline", { fill: "none", stroke: "var(--ours)", "stroke-width": 2.3,
+    points: roll.map((r) => `${top.sx(r[0])},${top.sy(r[1] / r[2])}`).join(" ") }));
+  roll.forEach((r) => top.svg.appendChild(s("circle", { cx: top.sx(r[0]), cy: top.sy(r[1] / r[2]), r: 2, fill: "var(--ours)" },
+    title(`trailing ${t.rolling_window} at toss ${r[0]}: ${r[1]}/${r[2]} in bin`))));
+  const r = n > 120 ? 2.5 : 4;
+  pts.forEach((p) => {
+    const y = p.in_bin === true ? 1.08 : p.in_bin === false ? -0.08 : 0.5;
+    top.svg.appendChild(outcomeMark(top.sx(p.index), top.sy(y), p.in_bin, r,
+      `toss ${p.index} (step ${p.step}, cycle ${p.cycle}, bin ${p.spot || "?"}): ${outcomeWord(p.in_bin)}` +
+      (p.inside_bin !== null ? `, inside footprint: ${p.inside_bin}` : "") + `\nstandoff ${fmt(p.standoff, 2)} m · ${fmt(p.speed_deg_s)} deg/s · release ${fmt(p.release_ms)} ms` +
+      (p.note ? "\n" + p.note : "")));
+  });
+  const panel = (key, label, d) => {
+    const vals = pts.map((p) => p[key]);
+    const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.1 || Math.abs(hi) * 0.05 || 1;
+    const f = frame({ w: 240, h: 150, m: { l: 42, r: 8, t: 18, b: 30 }, x: [-0.5, xmax + 0.5], y: [lo - pad, hi + pad],
+      xticks: niceTicks(0, xmax, 4).filter(Number.isInteger), yticks: niceTicks(lo - pad, hi + pad, 4), xlabel: "practice toss",
+      yfmt: (v) => fmt(v, d) });
+    f.svg.appendChild(s("text", { x: 42, y: 12 }, label));
+    pts.forEach((p) => f.svg.appendChild(outcomeMark(f.sx(p.index), f.sy(p[key]), p.in_bin, n > 120 ? 2 : 3,
+      `toss ${p.index}: ${label} ${fmt(p[key], d + 1)} — ${outcomeWord(p.in_bin)}`)));
+    return f.svg;
+  };
+  const head = el("div", { class: "note" },
+    `in bin, all practice tosses: ${t.in_bin_label} · trailing ${t.rolling_window}: ${t.rolling_label}` +
+    ` · outcomes from ${t.outcome_source || "—"}`);
+  const legend = el("div", { class: "legend" }, el("span", { class: "in" }, "in bin (scored)"),
+    el("span", { class: "out" }, "not in bin"), el("span", { class: "unk" }, "unknown"),
+    el("span", { style: "" }, `blue line: in-bin fraction over the trailing ${t.rolling_window} tosses`));
+  body.replaceChildren(head, top.svg, legend, n ? el("div", { class: "row" },
+    panel("standoff", "standoff (m)", 2), panel("speed_deg_s", "speed (deg/s)", 0), panel("release_ms", "release (ms)", 0))
+    : el("div", { class: "note" }, "No practice toss yet."));
+}
+
+function renderRoom(room) {
+  const body = document.getElementById("room-body");
+  const X = [-2.05, 2.25], Y = [-2.05, 2.05], W = 520;
+  const m = { l: 36, r: 10, t: 10, b: 30 };
+  const sc = (W - m.l - m.r) / (X[1] - X[0]);
+  const Hh = Math.round((Y[1] - Y[0]) * sc) + m.t + m.b;
+  const { svg, sx, sy } = frame({ w: W, h: Hh, m, x: X, y: Y, xticks: [-2, -1, 0, 1, 2], yticks: [-2, -1, 0, 1, 2],
+    xlabel: "map x (m)", ylabel: "map y (m)" });
+  const [bx0, bx1, by0, by1] = room.drivable_box;
+  svg.appendChild(s("rect", { x: sx(bx0), y: sy(by1), width: sx(bx1) - sx(bx0), height: sy(by0) - sy(by1), fill: "none",
+    stroke: "var(--ref)", "stroke-dasharray": "4 3" }, title("drivable box (skill server, 2026-10-20)")));
+  // The band runs from the robot-side edge across the tape (+y), its thickness measured square to it.
+  const a = room.tape_intercept, b = room.tape_slope, th = room.tape_thickness * Math.sqrt(1 + b * b);
+  const tape = [[X[0], a + b * X[0]], [X[1], a + b * X[1]], [X[1], a + th + b * X[1]], [X[0], a + th + b * X[0]]];
+  svg.appendChild(s("polygon", { points: tape.map(([x, y]) => `${sx(x)},${sy(y)}`).join(" "), fill: "var(--tape)", opacity: 0.85 },
+    title(`tape: robot-side edge y = ${a.toFixed(3)} + ${b.toFixed(4)} x, ${room.tape_thickness} m thick`)));
+  svg.appendChild(s("text", { x: sx(X[1]) - 4, y: sy(a + b * X[1]) + 14, "text-anchor": "end", class: "muted" },
+    `tape  y = ${a.toFixed(3)} + ${b.toFixed(4)} x`));
+  const binRect = (spot, style) => {
+    const c = Math.cos(spot.yaw), sn = Math.sin(spot.yaw), hl = spot.length / 2, hw = spot.width / 2;
+    const corners = [[hl, hw], [-hl, hw], [-hl, -hw], [hl, -hw]].map(([u, v]) => [spot.x + u * c - v * sn, spot.y + u * sn + v * c]);
+    return s("polygon", Object.assign({ points: corners.map(([x, y]) => `${sx(x)},${sy(y)}`).join(" ") }, style),
+      title(`${spot.name}: (${spot.x.toFixed(2)}, ${spot.y.toFixed(2)}), yaw ${spot.yaw.toFixed(2)}`));
+  };
+  for (const spot of room.bin_spots) {
+    svg.appendChild(binRect(spot, { fill: "var(--grid)", stroke: "var(--muted)", "stroke-width": 1.5 }));
+    svg.appendChild(s("text", { x: sx(spot.x), y: sy(spot.y + spot.length / 2) - 6, "text-anchor": "middle" }, spot.name));
+  }
+  if (room.observed_bin) svg.appendChild(binRect(room.observed_bin, { fill: "none", stroke: "var(--ours)", "stroke-width": 1.5,
+    "stroke-dasharray": "3 2" }));
+  const obs = room.observation;
+  if (obs && obs.robot) {
+    const [x, y, yaw] = obs.robot, L = 0.18;
+    const p = [[x + L * Math.cos(yaw), y + L * Math.sin(yaw)], [x + L * 0.6 * Math.cos(yaw + 2.4), y + L * 0.6 * Math.sin(yaw + 2.4)],
+      [x + L * 0.6 * Math.cos(yaw - 2.4), y + L * 0.6 * Math.sin(yaw - 2.4)]];
+    svg.appendChild(s("polygon", { points: p.map(([u, v]) => `${sx(u)},${sy(v)}`).join(" "), fill: "var(--muted)" },
+      title(`robot, last observed: (${x.toFixed(2)}, ${y.toFixed(2)}), yaw ${yaw.toFixed(2)}`)));
+  }
+  if (obs && obs.cube) svg.appendChild(s("rect", { x: sx(obs.cube[0]) - 4, y: sy(obs.cube[1]) - 4, width: 8, height: 8,
+    fill: "none", stroke: "var(--fg)", "stroke-width": 1.5 }, title(`cube, last observed: (${obs.cube[0].toFixed(2)}, ${obs.cube[1].toFixed(2)})`)));
+  const L = room.landings, k = L.length;
+  L.forEach((p, i) => svg.appendChild(outcomeMark(sx(p.x), sy(p.y), p.in_bin, 5,
+    `toss ${p.index} (bin ${p.spot || "?"}): landed (${p.x.toFixed(2)}, ${p.y.toFixed(2)}), ${outcomeWord(p.in_bin)}` +
+    (p.inside_bin !== null ? `, inside footprint: ${p.inside_bin}` : ""), 0.35 + 0.65 * (i + 1) / k)));
+  const inCount = L.filter((p) => p.in_bin === true).length;
+  const note = el("div", { class: "note" }, k
+    ? `last ${k} landings: ${inCount}/${k} in bin · older ones fainter · grey boxes: the SAME/FAR spots · dashed blue: bin as last observed · triangle: robot`
+    : "No landings: pass --skill-calls with the skill server's skill_calls.jsonl to see where tosses land.");
+  const legend = el("div", { class: "legend" }, el("span", { class: "in" }, "in bin"), el("span", { class: "out" }, "not in bin"));
+  body.replaceChildren(svg, legend, note);
+}
+
+function renderTiming(t, competence) {
+  const body = document.getElementById("timing-body");
+  const table = (rows, caption) => el("table", {}, el("caption", { style: "text-align:left;color:var(--muted);font-size:12px;padding-bottom:4px" }, caption),
+    el("thead", {}, el("tr", {}, ["", "n", "median (s)", "mean (s)", "last (s)"].map((h) => el("th", {}, h)))),
+    el("tbody", {}, rows.map((r) => el("tr", {}, el("td", {}, r.name), el("td", {}, String(r.n)), el("td", {}, fmt(r.median_s, 1)),
+      el("td", {}, fmt(r.mean_s, 1)), el("td", {}, fmt(r.last_s, 1))))));
+  const left = el("div", {},
+    el("div", { class: "tiles" }, tile("Picks held (practice)", t.pick_label, "PickCube with no skill error"),
+      tile("Picks held (skill server)", t.server_pick_label || "—", t.server_pick_label ? "every pick call, evaluation included" : "no skill_calls.jsonl")),
+    t.skill_server.length ? table(t.skill_server, "Skill server calls (robot time; evaluation included)") : el("div", { class: "note" }, "No skill_calls.jsonl given: robot-call timings need --skill-calls."),
+    table(t.practice, "Practice actions, wall time since the previous event (planning, the person's y, and the skill)"));
+  const mini = (name, series) => {
+    const xmax = Math.max(1, ...series.map((p) => p.decision));
+    const f = frame({ w: 560, h: 170, m: { l: 40, r: 12, t: 22, b: 32 }, x: [0, xmax], y: [0, 1], xticks: niceTicks(0, xmax, 6).filter(Number.isInteger),
+      yticks: [0, 0.5, 1], xlabel: "practice decision" });
+    f.svg.appendChild(s("text", { x: 40, y: 14 }, `${name}: belief-mean competence` + (series.length ? ` (now ${series[series.length - 1].value.toFixed(2)})` : "")));
+    if (series.length > 1) f.svg.appendChild(s("polyline", { fill: "none", stroke: "var(--ours)", "stroke-width": 2,
+      points: series.map((p) => `${f.sx(p.decision)},${f.sy(p.value)}`).join(" ") }));
+    const last = series[series.length - 1];
+    if (last) f.svg.appendChild(s("circle", { cx: f.sx(last.decision), cy: f.sy(last.value), r: 3, fill: "var(--ours)" },
+      title(`decision ${last.decision}, cycle ${last.cycle}: ${last.value.toFixed(3)}`)));
+    return f.svg;
+  };
+  const right = el("div", {}, ...Object.entries(competence).map(([k, v]) => mini(k === "MoveToTossLocationAndToss" ? "Toss" : k, v)),
+    el("div", { class: "note" }, "From pomdp_decisions.jsonl; the method's own belief, not a measurement."));
+  body.replaceChildren(el("div", { class: "two" }, left, right));
+}
+
+let lastOk = 0;
+function render(state) {
+  const stamp = document.getElementById("updated");
+  document.getElementById("run-dir").textContent = state.run_dir;
+  for (const [name, draw] of [["status", () => renderStatus(state.status)], ["eval-curve", () => renderEval(state.eval_curve)],
+    ["tosses", () => renderTosses(state.tosses)], ["room", () => renderRoom(state.room)],
+    ["timing", () => renderTiming(state.timing, state.competence)]]) {
+    try { draw(); } catch (error) {
+      console.error(error);
+      document.getElementById(name).lastElementChild.replaceChildren(el("div", { class: "note" }, "could not draw: " + error.message));
+    }
+  }
+  lastOk = Date.now();
+  const age = state.status.status_age_seconds;
+  stamp.className = "meta";
+  stamp.textContent = `read ${state.updated} · every ${POLL_MS / 1000} s` +
+    (age !== null && age !== undefined ? ` · status.json written ${hms(age)} ago` : "");
+}
+async function poll() {
+  let state;
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status + " " + response.statusText);
+    state = await response.json();
+  } catch (error) {
+    const stamp = document.getElementById("updated");
+    stamp.className = "meta stale";
+    stamp.textContent = `cannot reach the dashboard server (${error.message})` + (lastOk ? ` · last good ${hms((Date.now() - lastOk) / 1000)} ago` : "");
+    return;
+  }
+  render(state);
+}
+// The server writes the state at page load into the page itself, so the first paint
+// needs no round trip.
+const INITIAL_STATE = /*INITIAL_STATE*/null;
+if (INITIAL_STATE) render(INITIAL_STATE); else poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
