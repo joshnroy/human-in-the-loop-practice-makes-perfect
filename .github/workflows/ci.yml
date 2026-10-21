@@ -216,6 +216,7 @@ jobs:
             tests/results_writer \
             tests/environments/ballring \
             tests/environments/lightswitch \
+            tests/environments/tossing3d/real \
             tests/methods \
             tests/humans \
             tests/presets \
@@ -422,8 +423,13 @@ jobs:
       # `--durations=25` so the slowest tests stay visible in the log.
       # SweepOffShelf3D is also a KINDER Dynamic3D scene (lab2), so its simulator tests need
       # this job's OSMesa rendering too; no other job collects them (tests/test_ci_coverage.py).
+      # The real-robot domain (`tossing3d/real`) imports no MuJoCo but runs whole practice
+      # cycles in-process, and the first torch optimizer a learning update builds imports
+      # triton: in a worker an earlier simulator test loaded OSMesa into, that segfaults,
+      # and the crashed worker then stalls the run until the 6-hour limit. Those tests run
+      # in `test / unit & core` instead.
       - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d tests/environments/sweepoffshelf3d
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
