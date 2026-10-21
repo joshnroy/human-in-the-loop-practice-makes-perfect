@@ -113,6 +113,11 @@ class Tossing3DStepProtocol:
         del problem, cycle, action, max_actions, steps, budget
 
     @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        """A simulator keeps no logs elsewhere."""
+        del args, output, final
+
+    @staticmethod
     def evaluation_progress(
         *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
     ) -> None:

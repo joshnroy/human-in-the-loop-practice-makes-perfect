@@ -90,6 +90,13 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        """A cycle checkpoint was just written to `output` (`final`: the run ended).
+        The real robot copies the skill server's logs beside it, in the background;
+        a simulated domain does nothing."""
+        ...
+
+    @staticmethod
     def evaluation_pool() -> Any:
         """Where evaluations run: `None` for the protocol's default (a fresh spawned
         process per evaluation, beside practice); a domain whose evaluation cannot run

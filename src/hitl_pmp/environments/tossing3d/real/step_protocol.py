@@ -30,6 +30,7 @@ from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from .backend import PracticeScene, RealTossingBackend
 from .cli import Tossing3DRealCli
 from .environment import RealTossing3DEnvironment
+from .nuc_logs import NucLogs
 
 
 class InProcessEvaluations:
@@ -70,6 +71,11 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
         env = Tossing3DStepProtocol.env(problem=problem)
         assert isinstance(env, RealTossing3DEnvironment)
         env.reobserve(state=state)
+
+    @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        """Copy the skill server's session logs beside the checkpoint (`NucLogs`)."""
+        NucLogs.pull_for_run(args=args, output=output, final=final)
 
     @staticmethod
     def evaluation_pool() -> InProcessEvaluations:
