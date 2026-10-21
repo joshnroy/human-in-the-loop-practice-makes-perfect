@@ -150,9 +150,10 @@ class RunRecordWriter(SkillTickSink):
             name=label.split("(", 1)[0], objects=objects, params=[], controller={}
         )
         if not pending.objects:
-            # A skill reported by name only takes its objects from the label, as an
-            # unreported one does.
-            pending.objects = objects
+            # A skill reported by name only (it brought ticks, not its binding) is named
+            # by the label exactly as an unreported one is, so recording ticks never
+            # changes the action line.
+            pending.name, pending.objects = label.split("(", 1)[0], objects
         self._pending = None
         if self.state_provider is not None:
             settled = self.state_provider()
