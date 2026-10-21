@@ -110,6 +110,20 @@ SHELF_DROP_CLEARANCE = 0.046
 SHELF_DROP_TARGETS = 3
 SHELF_DROP_TARGET_SPACING = 0.03
 BOX_RELEASE_Z = 0.32
+# Where in the box a cube is let go: a point on a grid this fine (m), inside the drop
+# region, as far as the grid allows from every cube already in the box (the region's
+# centre first, in an empty box). Dropped all at the box's centre, five cubes ended in
+# one touching row with none pickable. The region is where a lone cube in the box can be
+# picked again (>= 1 `FloorPicks` candidate, which keeps upstream's 1 cm clearance):
+# 31/66 points of a 6 x 11 grid over the interior, all at least 10 cm from the near (-x)
+# wall, 3 cm from the far one and 11 cm from the side walls; each margin here adds 1 cm
+# for where a dropped cube lands (within 3 cm of its target, measured).
+BOX_DROP_GRID = 0.005
+BOX_DROP_X_MARGINS = (0.11, 0.04)
+BOX_DROP_Y_MARGIN = 0.12
+# Drop points tried, in turn, if the best does not plan, each this far (m) from the others.
+BOX_DROP_TARGETS = 3
+BOX_DROP_TARGET_SPACING = 0.03
 PLACE_REACHES = (0.8, 0.7, 0.6)
 PLACE_Y_OFFSETS = (0.0, 0.1, -0.1)
 PICK_WIPER_DISTANCES = (0.7, 0.6, 0.8, 0.55)
@@ -1776,16 +1790,74 @@ class KinderSkills:
     def place_cube_in_box(self, *, cube: str) -> None:
         if cube not in self.held_cubes:
             raise SkillFailed(f"place_cube_in_box: not holding {cube}")
-        box = np.asarray(self.core.get_object(BOX).get_pose()[0], dtype=float)
+        dx, dy = self.held_cube_offset(cube=cube)
         self.place(
             cube=cube,
-            hand_targets=[np.array([box[0], box[1], BOX_RELEASE_Z])],
+            hand_targets=[
+                np.array([x - dx, y - dy, BOX_RELEASE_Z]) for x, y in self.box_drop_points()
+            ],
             label="place_in_box",
         )
         for _ in range(15):
             self.env_step(action=FollowPlans._hold(grip=0.0), label="settle")  # noqa: SLF001
         if not self.core.cube_in_box(cube):
             raise SkillFailed(f"place_cube_in_box: {cube} not in the box")
+
+    def held_cube_offset(self, *, cube: str) -> tuple[float, float]:
+        """Where the held cube hangs (m, world xy) from the hand target `place` drives
+        the end effector to: the measured end-effector-to-cube transform, turned by the
+        placement's fixed hand orientation. A cube picked off the shelf hangs ~47 mm
+        ahead of it, and every cube dropped at the box's centre landed ~5 cm toward its
+        far wall."""
+        import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
+
+        held = self.held_transform(sim=self.planning_sim(), cube=cube)
+        orientation = shelf_skills.ARM_MOVEMENT_CUPBOARD.orientation
+        offset = Rotation.from_quat(orientation).apply(np.asarray(held.position, dtype=float))
+        return float(offset[0]), float(offset[1])
+
+    def box_drop_points(self) -> list[tuple[float, float]]:
+        """Where a held cube should land in the box, best first: the grid points of the
+        drop region (`BOX_DROP_X_MARGINS`, `BOX_DROP_Y_MARGIN` inside the inner walls),
+        ranked by their distance to the nearest cube already in the box, farthest first
+        (ties: nearest the region's centre, then smallest x, y), taking up to
+        `BOX_DROP_TARGETS` that are `BOX_DROP_TARGET_SPACING` apart. Deterministic in the
+        cubes' positions."""
+        (x0, y0, x1, y1), _ = self.core.box_interior()
+        near, far = BOX_DROP_X_MARGINS
+        xs = self.grid(low=x0 + near, high=x1 - far)
+        ys = self.grid(low=y0 + BOX_DROP_Y_MARGIN, high=y1 - BOX_DROP_Y_MARGIN)
+        centre = np.array([(x0 + near + x1 - far) / 2, (y0 + y1) / 2])
+        if not xs or not ys:
+            return [(float(centre[0]), float(centre[1]))]
+        inside = [
+            np.asarray(self.core.get_object(c).get_pose()[0][:2], dtype=float)
+            for c in (f"cube_{i}" for i in range(5))
+            if c not in self.held_cubes and self.core.cube_in_box(c)
+        ]
+
+        def rank(*, point: tuple[float, float]) -> tuple[float, float, float, float]:
+            xy = np.asarray(point)
+            free = min((float(np.linalg.norm(xy - c)) for c in inside), default=np.inf)
+            return (-round(free, 6), round(float(np.linalg.norm(xy - centre)), 6), *point)
+
+        out: list[tuple[float, float]] = []
+        points = [(x, y) for x in xs for y in ys]
+        for point in sorted(points, key=lambda p: rank(point=p)):
+            if all(np.hypot(point[0] - a, point[1] - b) >= BOX_DROP_TARGET_SPACING for a, b in out):
+                out.append(point)
+            if len(out) == BOX_DROP_TARGETS:
+                break
+        return out
+
+    @staticmethod
+    def grid(*, low: float, high: float) -> list[float]:
+        """`BOX_DROP_GRID`-spaced values from `low` to `high`, centred in that range."""
+        if high < low:
+            return []
+        count = int(np.floor((high - low) / BOX_DROP_GRID + 1e-9))
+        start = (low + high) / 2 - count * BOX_DROP_GRID / 2
+        return [float(start + i * BOX_DROP_GRID) for i in range(count + 1)]
 
     def return_cube_to_shelf(self, *, cube: str) -> None:
         """Pick the cube from the box or the floor and drop it onto the cube shelf from
