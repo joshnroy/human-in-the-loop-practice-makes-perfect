@@ -2,6 +2,7 @@
 on the shelf, with its two human skills and KINDER's own goal verdict."""
 
 import argparse
+import functools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,10 +14,12 @@ from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
+from .backend import SweepOffShelf3DBackend
 from .cli import SweepOffShelf3DCli
 from .environment import SweepOffShelf3DEnvironment
 from .objects import SweepOffShelf3DObjects as O
 from .problem import SweepOffShelf3DProblem
+from .recording import SweepOffShelf3DReplayRenderer
 from .skill_provider import SweepOffShelf3DOracle, SweepOffShelf3DSkillProvider
 from .skill_trace import SkillTraces
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
@@ -33,12 +36,18 @@ class SweepOffShelf3DStepProtocol:
 
     @staticmethod
     def build_practice_problem(*, args: argparse.Namespace) -> SweepOffShelf3DProblem:
-        return SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed)
+        practice, _ = SweepOffShelf3DCli.MOTION_SCOPES[getattr(args, "record_motion", "off")]
+        return SweepOffShelf3DCli.build_problem(
+            args=args, human_seed=args.seed, motion_recording=practice
+        )
 
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> SweepOffShelf3DProblem:
         # As `SweepOffShelf3DCli.run_method`: its own human stream, the same test tasks.
-        return SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed + 1)
+        _, evaluation = SweepOffShelf3DCli.MOTION_SCOPES[getattr(args, "record_motion", "off")]
+        return SweepOffShelf3DCli.build_problem(
+            args=args, human_seed=args.seed + 1, motion_recording=evaluation
+        )
 
     @staticmethod
     def evaluation_pool() -> None:
@@ -68,24 +77,45 @@ class SweepOffShelf3DStepProtocol:
         *, args: argparse.Namespace, problem: Problem, output_path: Path
     ) -> RunRecordWriter:
         """Every action and its outcome, and the live scene at each action boundary.
-        The shelf drains no per-tick states, so the recording carries no ticks."""
+
+        With `env.motion_recording` (`--record-motion`), also every stride-th control
+        step of each robot skill, arm joints and full object poses included, and the
+        header's `scene.motion` says so -- what `SweepOffShelf3DReplayRenderer` plays
+        as full motion. Without it the recording carries no per-step ticks."""
         env = SweepOffShelf3DStepProtocol.env(problem=problem)
-        return RunRecordWriter(
+        scene: dict[str, Any] = {
+            "scene_bg": args.scene_bg,
+            "canonical_seed": args.canonical_seed,
+            "reset_cubes_success_probability": args.reset_cubes_success_probability,
+            "test_env_seed_offset": args.test_env_seed_offset,
+        }
+        state: Callable[[], dict[str, list[float]]] = functools.partial(
+            SweepOffShelf3DStepProtocol.live_state, env=env
+        )
+        if env.motion_recording:
+            # Every state in a motion recording has the same shape, boundaries included.
+            state = env.backend().motion_state
+            stride = SweepOffShelf3DReplayRenderer.motion_stride()
+            scene["motion"] = {
+                "fps": SweepOffShelf3DReplayRenderer.MOTION_FPS,
+                "stride": stride,
+                "control_frequency": SweepOffShelf3DBackend.CONTROL_FREQUENCY,
+                "robot_joints": list(SweepOffShelf3DBackend.ROBOT_JOINTS),
+            }
+        writer = RunRecordWriter(
             output_path=output_path,
             header=RecordingHeader(
                 environment="sweepoffshelf3d",
                 method=args.method,
                 run_seed=args.seed,
-                scene={
-                    "scene_bg": args.scene_bg,
-                    "canonical_seed": args.canonical_seed,
-                    "reset_cubes_success_probability": args.reset_cubes_success_probability,
-                    "test_env_seed_offset": args.test_env_seed_offset,
-                },
+                scene=scene,
             ),
-            state_provider=lambda: SweepOffShelf3DStepProtocol.live_state(env=env),
+            state_provider=state,
             task_seed_provider=lambda task: SweepOffShelf3DStepProtocol.task_seed(task=task),
         )
+        if env.motion_recording:
+            env.attach_motion_sink(sink=writer, stride=scene["motion"]["stride"])
+        return writer
 
     @staticmethod
     def live_state(*, env: SweepOffShelf3DEnvironment) -> dict[str, list[float]]:

@@ -225,6 +225,10 @@ class EvaluationClock(BaseModel):
         self.steps += 1
         self.solved = self.solved or self.check_goal()
 
+    def interruption(self) -> str:
+        """Why `before` cut the running skill off: the goal latch takes precedence."""
+        return "stopped: goal reached" if self.solved else "interrupted: evaluation step budget"
+
 
 class FreshProcessEvaluations(BaseModel):
     """Evaluations run one at a time, each in a freshly spawned process.
@@ -402,7 +406,7 @@ class StepEvaluation:
                                 start_step=previous,
                                 end_step=clock.steps,
                                 success=False,
-                                outcome="interrupted: evaluation step budget",
+                                outcome=clock.interruption(),
                                 goal_reached=clock.solved,
                             )
                             break
@@ -489,6 +493,12 @@ class StepProtocolValidation:
             raise ValueError("Step protocol requires an output directory and no automatic resets")
         if not args.defer_rendering:
             raise ValueError("Use --defer-rendering; videos are reconstructed from recorded states")
+        if getattr(args, "record_episode_traces", False):
+            raise ValueError(
+                "The step protocol writes no --record-episode-traces file: it never runs "
+                "run_task_episode. Every evaluation action is in evaluations/NNNN/"
+                "actions.jsonl and recording.jsonl instead; drop the flag."
+            )
         cost_path = getattr(args, "practice_cost_config", None)
         if cost_path and args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")

@@ -31,11 +31,11 @@ class _Blank(ReplayRenderer):
         return self.state
 
 
-def _write(*, path: Path, phase: Phase, checkpoint: int | None) -> None:
+def _write(*, path: Path, phase: Phase, checkpoint: int | None, scene: dict | None = None) -> None:
     state = {"cube": [0.0]}
     writer = RunRecordWriter(
         output_path=path,
-        header=RecordingHeader(environment="toy"),
+        header=RecordingHeader(environment="toy", scene=scene or {}),
         state_provider=lambda: dict(state),
     )
     writer.begin_segment(phase=phase, checkpoint=checkpoint, task_index=0)
@@ -102,3 +102,40 @@ def test_the_shelf_replays_through_its_storyboard_renderer(*, realistic: bool) -
     assert isinstance(renderer, SweepOffShelf3DReplayRenderer)
     assert renderer.scene_bg is (True if realistic else None)
     assert renderer.storyboard
+
+
+class _Fast(_Blank):
+    def fps(self) -> int:
+        return 12
+
+
+def test_the_video_runs_at_the_fastest_sources_rate(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A storyboard practice and a full-motion evaluation share one video, at the
+    motion's rate, so the motion is not slowed down to the storyboard's."""
+    import analysis.render_recording as module
+
+    _write(path=tmp_path / "recording.jsonl", phase=Phase.PRACTICE, checkpoint=None)
+    _write(
+        path=tmp_path / "evaluations" / "0000" / "recording.jsonl",
+        phase=Phase.EVALUATION,
+        checkpoint=0,
+        scene={"motion": {"fps": 12}},
+    )
+    rates: list[int] = []
+
+    class _Stream(module.VideoStream):
+        def model_post_init(self, __context: object) -> None:
+            rates.append(self.fps)
+
+    monkeypatch.setattr(module, "VideoStream", _Stream)
+    summaries = RecordingVideo.render(
+        run=tmp_path,
+        output=tmp_path / "out.mp4",
+        checkpoint=None,
+        full_agentic=False,
+        renderer_factory=lambda header: _Fast() if header.scene else _Blank(),
+    )
+    assert rates == [12]
+    assert len(summaries) == 2
