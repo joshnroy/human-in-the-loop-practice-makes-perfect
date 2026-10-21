@@ -104,12 +104,13 @@ def test_a_cube_in_the_box_is_returned_to_the_shelf(*, env, states, state_id, cu
 
 def test_a_cube_face_to_face_with_another_is_not_taken_with_it(*, env, states):
     # A real practice state: cube_2 rests against cube_1's side in the box. Pads closing
-    # on cube_1 also close on cube_2's edge, and carried both out together; no grasp
-    # keeps upstream's clearance from cube_2, so the pick is refused.
+    # on cube_1 also close on cube_2's edge, and carried both out together. No centred
+    # grasp keeps upstream's clearance from cube_2 (once refused outright); a grasp
+    # shifted away from cube_2 does, and returns cube_1 alone.
     _restore(env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19")
     atoms = _act(env=env, skill="ReturnCubeToShelfFromBox", cube="cube_1")
-    assert {("InBox", ("cube_1", "box_0")), ("InBox", ("cube_2", "box_0"))} <= atoms
-    assert env.last_skill_error() is not None
+    assert ("InBox", ("cube_2", "box_0")) in atoms
+    assert ("OnShelf", ("cube_1",)) in atoms, env.last_skill_error()
 
 
 def test_a_cube_wedged_in_a_box_corner_is_refused_without_moving_it(*, env, states):
