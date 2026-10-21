@@ -555,6 +555,9 @@ class StepPracticeRunner:
     # A run whose planner opens this many sessions in a row with a STOP has stopped
     # practising: nothing changes between them, so the next would stop too.
     REPEATED_STOP_LIMIT: ClassVar[int] = 10
+    # A session of skills each refused at planning executes no control step, so the
+    # next session plans from the same state and refuses the same way.
+    REPEATED_ZERO_STEP_LIMIT: ClassVar[int] = 5
 
     @staticmethod
     def configure_accounting(
@@ -630,6 +633,9 @@ class StepPracticeRunner:
             args=args, method=method, problem=problem, output=output
         )
         stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
+        zero_step_limit = getattr(
+            args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
+        )
         pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
         def status() -> None:
@@ -722,6 +728,7 @@ class StepPracticeRunner:
                 "stop_on_no_practice_action": stop_on_no_practice_action,
                 "stop_skill_steps": 1,
                 "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
+                "repeated_zero_step_limit": zero_step_limit,
                 "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
             },
         )
@@ -733,6 +740,7 @@ class StepPracticeRunner:
         )
         budget_reached = False
         stop_streak = 0
+        zero_step_streak = 0
         try:
             # The untrained policy's measurement; off where every evaluation task costs a
             # person a scene set-up (`--env tossing3d_real`).
@@ -752,6 +760,8 @@ class StepPracticeRunner:
                 )
                 actions = 0
                 stopped = False
+                session_robot_steps = clock.robot_steps
+                session_human_invocations = clock.human_invocations
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
@@ -936,6 +946,17 @@ class StepPracticeRunner:
                 stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
                 if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
+                    break
+                # A STOP's own charge is not a control step, and a STOP-only session
+                # (no actions) is `repeated_stop`'s: it neither extends nor breaks this.
+                if actions > 0:
+                    progressed = (
+                        clock.robot_steps > session_robot_steps
+                        or clock.human_invocations > session_human_invocations
+                    )
+                    zero_step_streak = 0 if progressed else zero_step_streak + 1
+                if zero_step_streak >= zero_step_limit:
+                    endpoint = "repeated_zero_step"
                     break
                 method.end_cycle()
                 learning_updates += 1
