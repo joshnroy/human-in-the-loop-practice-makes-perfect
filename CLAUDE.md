@@ -246,9 +246,12 @@ collision the same way. Each CI test job runs `pytest -n auto --dist loadgroup`
 across processes breaks there first. A module with a module-scoped fixture needs
 `pytest.mark.xdist_group`, or every worker rebuilds it (`tests/test_xdist_groups.py`).
 
-**Run the gate locally; do not block on GitHub CI.** Local is ~1 minute against CI's ~10,
-and it is the same commands. Open the PR, report whatever state CI is in, and finish. If
-CI later fails on something local passed, *that divergence* is the bug worth reporting.
+**Run targeted tests locally; CI runs the full suite.** Running everything twice, locally
+*and* on CI, buys nothing. Locally: the touched and new tests (written first and watched
+failing) plus `ruff check`, `ruff format --check`, `mypy src` and `lint-imports`, which
+are cheap. Then push and let CI run the whole suite. A PR is ready only once CI is green;
+open it as a draft, report whatever state CI is in, and finish. Run the full suite locally
+only when chasing a failure whose blast radius you do not know.
 
 **A branch that is `BEHIND` gets rebased before it is surfaced** — it has never been
 tested against what it would merge into, and `MERGEABLE` only means "no textual conflict".
@@ -273,6 +276,14 @@ body pinned to a full SHA (re-pin as the last step after the final force-push), 
   verifies a change did not alter results.
 - **`analysis/` is post-run only** — it reads `--output-dir` output back in and never
   drives a `Method`. That is `hitl_pmp/cli.py`'s job.
+- **On agni, run every simulator experiment as `run-heavy <cmd>`** (e.g.
+  `run-heavy scripts/with_env.sh python -m scripts.run_sweep ...`). Quick and unit tests
+  do not queue there. Never start a heavy job when MemAvailable is below 12 GB.
+  `run-heavy` queues for one of 2 slots and runs inside `agents.slice`, a **48 GB ceiling
+  shared by all agents**; a user-level hook blocks bare `-m hitl_pmp.cli`, `run_sweep.py`
+  and parallel `pytest -n N`. Per-job caps alone do not protect the machine: on
+  2026-10-14 ~50 individually capped jobs summed to ~56 GiB, the kernel OOM-killed
+  globally, then crashed.
 - **Always cap memory.** Both systemd managers here run `DefaultOOMPolicy=stop`, so an
   uncapped OOM tears down the **entire session** — this happened on 2026-08-03 (~48 GB,
   two mid-flight agents lost). Swap is 100% consumed and all of it is tmpfs, so a spike
