@@ -43,7 +43,7 @@ def _run(*, output: Path, record_motion: str) -> None:
 
 # Differ between any two processes, recording or not: the wall clock, and the snapshot's
 # pickle bytes, whose memo order follows string-set iteration and so PYTHONHASHSEED.
-PER_PROCESS = {"elapsed_seconds", "policy_sha256"}
+PER_PROCESS = {"elapsed_seconds", "policy_file_sha256"}
 
 
 def _without_per_process(*, path: Path) -> list[dict]:

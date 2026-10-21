@@ -1,5 +1,6 @@
 import argparse
 import functools
+import hashlib
 import json
 import os
 import pickle
@@ -23,6 +24,7 @@ from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from hitl_pmp.step_protocol import (
     DeploymentSnapshot,
+    PolicyFileHash,
     PracticeClock,
     StepPracticeRunner,
     StepProtocolEntry,
@@ -1213,3 +1215,17 @@ def test_an_always_ask_run_whose_cost_file_prices_its_reset_is_accepted(
             **planner,
         )
     )
+
+
+def test_a_policy_snapshot_is_identified_by_its_files_bytes_under_the_new_key() -> None:
+    raw = b"pickled policy"
+    record = PolicyFileHash.record(raw=raw)
+    assert record == {"policy_file_sha256": hashlib.sha256(raw).hexdigest()}
+    assert "policy_sha256" not in record
+
+
+def test_a_record_written_before_the_rename_still_reads() -> None:
+    digest = hashlib.sha256(b"x").hexdigest()
+    assert PolicyFileHash.read(record={"policy_sha256": digest}) == digest
+    assert PolicyFileHash.read(record={"policy_file_sha256": digest}) == digest
+    assert PolicyFileHash.read(record={}) is None
