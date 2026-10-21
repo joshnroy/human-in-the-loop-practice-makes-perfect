@@ -63,7 +63,7 @@ class RecordingReplayer(BaseModel):
             method=header.method,
             phase=Phase.PRACTICE,
             speedup=self.practice_speedup,
-            pacing="1 frame / action" if self.renderer.storyboard else None,
+            pacing="1 frame / action" if self.renderer.is_storyboard() else None,
         )
         for entry in entries:
             if isinstance(entry, TickEntry):
@@ -173,7 +173,7 @@ class RecordingReplayer(BaseModel):
             tick, self._skipped = self._skipped, None
             self._show(tick=tick)
         if (
-            self.renderer.storyboard
+            self.renderer.is_storyboard()
             and self._action is not None
             and not self._action_drawn
             and self._scene is not None
@@ -200,6 +200,9 @@ class RecordingReplayer(BaseModel):
         assert self._video is not None
         status = self._require().model_copy(update={"banner": banner, "banner_tone": tone})
         composed = ReplayCompositor.compose(frame=frame, status=status)
+        # A video faster than this renderer (one shared with a full-motion recording)
+        # holds each drawing for the renderer's own frame time.
+        repeat *= max(1, round(self._video.fps / self.renderer.fps()))
         for _ in range(repeat):
             self._video.append(frame=composed)
             self._frames += 1
