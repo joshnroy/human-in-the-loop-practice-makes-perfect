@@ -51,8 +51,15 @@ from .predicates import SweepOffShelf3DAtoms
 TASK_ID = "kinder/SweepOffShelf3D-o5-v0"
 CUPBOARD = "cupboard_1"
 CUBE_SHELF = 1
-WIPER_SHELF = 2
+# The wiper's home: the cupboard's top board, above the third shelf.
+WIPER_SHELF = 3
 CUBE_REGION = "cubes_init_region"
+# `WiperHome`: flat within this (deg), centre of mass at least this far behind the open
+# front and handle tip at least this far past it (m). Its start has the centre of mass
+# 3.5 cm behind and the tip 12.25 cm past; 1 cm past the front it falls off.
+WIPER_HOME_LEVEL_DEG = 5.0
+WIPER_HOME_COM_MARGIN = 0.005
+WIPER_HOME_MIN_OVERHANG = 0.05
 SUPPORT_PREFIXES = ("floor", f"{CUPBOARD}_shelf")
 WIPER_SHIFTS = (0.0, 0.05, -0.05, 0.1, -0.1, 0.15, -0.15)
 MAX_CUBE_SAMPLES = 400
@@ -262,12 +269,36 @@ class SweepOffShelf3DBackend(BaseModel):
             atoms.add(("HoldingWiper", (O.robot.name, self.wiper_name)))
             holding = True
         else:
-            x, _, z = core.get_object(self.wiper_name).get_pose()[0]
-            home = x > front and wiper_board - 0.003 < z < wiper_board + 0.06
+            home = self.wiper_at_home(front=front, wiper_board=wiper_board)
             atoms.add(("WiperHome" if home else "WiperOnFloor", (self.wiper_name,)))
         if not holding:
             atoms.add(("HandEmpty", (O.robot.name,)))
         return SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(atoms))
+
+    def wiper_at_home(self, *, front: float, wiper_board: float) -> bool:
+        """The unheld wiper lies flat on its board (`WIPER_HOME_LEVEL_DEG`), its centre
+        of mass behind the open front (`WIPER_HOME_COM_MARGIN`) and its handle tip
+        overhanging it (`WIPER_HOME_MIN_OVERHANG`): where a hand outside the cupboard
+        can take it at the grasp it sweeps with. The cupboard opens toward -x."""
+        model, data = self.model(), self.data()
+        body = model.body(self.wiper_name).id
+        z = float(data.xpos[body][2])
+        rotation = data.xmat[body].reshape(3, 3)
+        tilt = float(np.rad2deg(np.arccos(np.clip(rotation[2, 2], -1.0, 1.0))))
+        com_x = float(data.subtree_com[body][0])
+        geoms = [g for g in range(model.ngeom) if model.geom_bodyid[g] == body]
+        handle = geoms[int(np.argmax(model.geom_size[geoms][:, 0]))]
+        signs = np.array([[x, y, w] for x in (-1, 1) for y in (-1, 1) for w in (-1, 1)])
+        corners = (signs * model.geom_size[handle]) @ data.geom_xmat[handle].reshape(
+            3, 3
+        ).T + data.geom_xpos[handle]
+        tip_x = float(corners[:, 0].min())
+        return bool(
+            wiper_board - 0.003 < z < wiper_board + 0.06
+            and tilt < WIPER_HOME_LEVEL_DEG
+            and com_x > front + WIPER_HOME_COM_MARGIN
+            and tip_x < front - WIPER_HOME_MIN_OVERHANG
+        )
 
     # --- human resets -----------------------------------------------------
 
