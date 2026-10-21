@@ -134,6 +134,43 @@ def test_a_refresh_picks_up_what_the_run_appended_since_the_last(*, tmp_path):
     assert state.status.cycle == 1
 
 
+def test_epsilon_random_tosses_are_marked_and_tallied_apart(*, tmp_path):
+    run = tmp_path / "run"
+    shutil.copytree(RUN9, run)
+    # Mark run9's second and last toss outcomes as epsilon-random draws.
+    lines = (run / "pomdp_decisions.jsonl").read_text().splitlines()
+    tosses = [
+        number
+        for number, line in enumerate(lines)
+        if json.loads(line)["event"] == "outcome"
+        and json.loads(line)["skill"] == "MoveToTossLocationAndToss"
+    ]
+    for number in (tosses[1], tosses[-1]):
+        record = json.loads(lines[number])
+        record["random_exploration"] = True
+        lines[number] = json.dumps(record)
+    (run / "pomdp_decisions.jsonl").write_text("\n".join(lines) + "\n")
+    state = RealRunDashboard(run_dir=run, skill_calls=FIXTURES / "skill_calls.jsonl").refresh()
+    assert [point.random for point in state.tosses.points] == [
+        False,
+        True,
+        False,
+        False,
+        False,
+        False,
+        True,
+    ]
+    # The in-bin toss (the last) was the random one; the recorded total is unchanged.
+    assert state.tosses.in_bin_label == "1/7"
+    assert state.tosses.greedy_label == "0/5"
+    assert state.tosses.random_label == "1/2"
+
+
+def test_run9_tosses_were_all_greedy(*, run9_state):
+    assert all(point.random is False for point in run9_state.tosses.points)
+    assert (run9_state.tosses.greedy_label, run9_state.tosses.random_label) == ("1/7", "0/0")
+
+
 def test_run9_skill_timing_and_pick_success(*, run9_state):
     timing = run9_state.timing
     by_call = {row.name: row for row in timing.skill_server}

@@ -162,6 +162,21 @@ def test_an_evaluation_in_progress_is_read_from_its_progress_file(*, tmp_path):
     assert (last.num_solved, last.num_total) == (2, 3)
 
 
+def test_a_finished_evaluation_is_read_from_its_results_before_the_summary_exists(*, tmp_path):
+    # Run 10 (2026-10-21) had evaluations/0000/results.json and no step_evaluations.json.
+    folder = tmp_path / "evaluations" / "0000"
+    folder.mkdir(parents=True)
+    tasks = [{"task": index, "solved": index != 3} for index in range(5)]
+    (folder / "results.json").write_text(json.dumps({"complete": True, "tasks": tasks}))
+    (folder / "progress.json").write_text(json.dumps({"tasks": tasks[:2]}))
+    (tmp_path / "measurements.json").write_text(
+        json.dumps([{"index": 0, "practice_steps": 1883, "learning_updates": 1}])
+    )
+    (only,) = Evaluations.read(run_dir=tmp_path)
+    assert (only.num_solved, only.num_total, only.complete) == (4, 5, True)
+    assert (only.practice_steps, only.learning_updates) == (1883, 1)
+
+
 def test_a_half_written_evaluations_file_reads_as_none(*, tmp_path):
     (tmp_path / "step_evaluations.json").write_text('[{"index": 0, "practi')
     assert Evaluations.read(run_dir=tmp_path) is None
