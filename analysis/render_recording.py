@@ -89,16 +89,19 @@ class RecordingVideo:
         video: VideoStream | None = None
         renderer: ReplayRenderer | None = None
         scene: dict | None = None
+        sources = RecordingVideo.sources(run=run, checkpoint=checkpoint, full_agentic=full_agentic)
+        # Building a renderer builds no scene, so asking each source's rate is free. The
+        # video runs at the fastest, so a full-motion evaluation after a storyboard
+        # practice plays at its own speed; slower drawings are held (RecordingReplayer).
+        fps = max((renderer_factory(header).fps() for header, _ in sources), default=1)
         try:
-            for header, entries in RecordingVideo.sources(
-                run=run, checkpoint=checkpoint, full_agentic=full_agentic
-            ):
+            for header, entries in sources:
                 if renderer is None or header.scene != scene:
                     if renderer is not None:
                         renderer.close()
                     renderer, scene = renderer_factory(header), header.scene
                 if video is None:
-                    video = VideoStream(output_path=output, fps=renderer.fps())
+                    video = VideoStream(output_path=output, fps=fps)
                 summaries.append(
                     RecordingReplayer(renderer=renderer).play(
                         header=header, entries=entries, video=video
