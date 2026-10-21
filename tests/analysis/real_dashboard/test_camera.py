@@ -26,6 +26,8 @@ CROP_ORIGIN = (300, 140)  # (column, row) of the crop's top-left in the stitched
 OBSERVED_BIN = (0.226875, 1.3700000000000028, 0.01636246173744693)
 RIM_HEIGHT = 0.21
 
+pytestmark = pytest.mark.xdist_group("test_real_dashboard_camera")
+
 
 @pytest.fixture(scope="module")
 def calibration():
