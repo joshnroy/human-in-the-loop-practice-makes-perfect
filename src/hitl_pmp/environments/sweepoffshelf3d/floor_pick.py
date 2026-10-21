@@ -64,6 +64,15 @@ PAD_TIP_REACH = 0.042
 PAD_HALF_WIDTH = 0.011
 # How far (m) the closed pads' tips stay above the cube's support (floor or box bottom).
 PAD_SUPPORT_MARGIN = 0.003
+# Off-centre grasps, for a cube with a neighbour on one side along the pads' width (the
+# lean direction): the hand shifted this far (m) away from the neighbour, so the 22 mm
+# pads overhang the free side instead of clipping the neighbour. A neighbour counts when
+# its centre is within ADJACENT_ALONG along that axis and ADJACENT_ACROSS along the
+# closing axis (the open jaw's reach). In a touching row in the box, the end cube's only
+# grasp was the hand 6 mm off centre (2026-10-21 refusal diagnosis, case 1).
+FLOOR_PICK_OFFSETS = (0.006, 0.009, 0.012)
+ADJACENT_ALONG = 0.04
+ADJACENT_ACROSS = 0.055
 # The pre-grasp: this far (m) back along the approach.
 FLOOR_PICK_PRE_BACK = 0.05
 # The lift: straight up this far (m), and in the box until the cube's bottom clears the
@@ -261,11 +270,16 @@ class FloorPicks:
     def hands(self, *, cube: str, centre: np.ndarray) -> list[tuple[float, np.ndarray]]:
         """(lean, pinch-site pose) grasps on the cube as it lies, least lean first: the
         pads close on a pair of opposite side faces, the approach leans along the other
-        faces' normal (`Frames.leaned`), the site `standoff` back from the centre."""
+        faces' normal (`Frames.leaned`), the site `standoff` back from the centre.
+
+        After every centred grasp, the off-centre ones: for a grasp with a neighbour
+        on one side along the pads' width (`neighbour_side`), the same grasp shifted
+        `FLOOR_PICK_OFFSETS` away from it. A cube with neighbours on both sides gets none."""
         quaternion = self.shelf.core.get_object(cube).get_pose()[1]
         axes = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()
         normal = float(np.arctan2(axes[1, 0], axes[0, 0]))
         out = []
+        shifted = []
         for lean in FLOOR_PICK_LEANS_DEG:
             standoff = FloorPicks.standoff(lean_deg=lean)
             for k in range(4):
@@ -277,7 +291,30 @@ class FloorPicks:
                     rotation=rotation, position=np.asarray(centre) - standoff * rotation[:, 2]
                 )
                 out.append((lean, hand))
-        return out
+                side = self.neighbour_side(cube=cube, centre=centre, along=toward, across=closing)
+                for offset in FLOOR_PICK_OFFSETS if side else ():
+                    moved = hand.copy()
+                    moved[:3, 3] -= side * offset * toward
+                    shifted.append((lean, moved))
+        return out + shifted
+
+    def neighbour_side(
+        self, *, cube: str, centre: np.ndarray, along: np.ndarray, across: np.ndarray
+    ) -> float:
+        """+1 or -1: the side, along `along`, of the one neighbouring cube's side the
+        pads would clip; 0 for no neighbour there, or neighbours on both sides."""
+        sides = set()
+        for i in range(5):
+            other = f"cube_{i}"
+            if other == cube:
+                continue
+            offset = self.shelf.cube_position(cube=other) - np.asarray(centre)
+            if abs(float(offset[2])) > 2 * O.cube_half_size:
+                continue
+            a, b = float(offset @ along), float(offset @ across)
+            if O.cube_half_size <= abs(a) < ADJACENT_ALONG and abs(b) < ADJACENT_ACROSS:
+                sides.add(float(np.sign(a)))
+        return sides.pop() if len(sides) == 1 else 0.0
 
     @staticmethod
     def standoff(*, lean_deg: float) -> float:
