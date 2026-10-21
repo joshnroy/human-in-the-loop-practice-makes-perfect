@@ -35,8 +35,9 @@ cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./b
 | `reference/kinder-baselines` | `joshnroy/kinder-baselines` |
 | `reference/kindergarden` | `joshnroy/kindergarden` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` |
+| `reference/prpl-tidybot` | `Princeton-Robot-Planning-and-Learning/prpl-tidybot` |
 
-**All three point at the canonical upstream remote**, and the two KINDER rows did not
+**All four point at the canonical upstream remote**, and the two KINDER rows did not
 until 2026-08-14. Forks bought exactly one thing: a submodule *hard-fails* when its pinned
 SHA is force-pushed away, and a fork Josh controls cannot be force-pushed under us. That
 protection is given up here, knowingly. Two rows to watch: `kinder-baselines` @ `2f3fc902`
@@ -45,7 +46,9 @@ one **open topic branch**, so a rebase there orphans it; and `kindergarden` @ `c
 reachable from **no** PRPL ref at all — `git submodule update --init` succeeds only because
 GitHub serves the bare SHA out of the fork network's shared object store, which holds only
 while the fork does. `predicators` never needed a fork: read-only reference, pinned on its
-default branch (`master`, not `main`).
+default branch (`master`, not `main`). `prpl-tidybot` is pinned to the head of open
+PR #157 (`josh/tidybot-real-tossing3d`), not lab `main`: under the josh-main convention
+#157 is approved but not merged, so a force-push to that branch orphans the pin.
 
 A fresh clone gets empty directories until you populate them:
 
