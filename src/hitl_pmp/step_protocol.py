@@ -1263,8 +1263,13 @@ class StepPracticeRunner:
                 else:
                     # In this process, so it uses the room practice's reset just set up:
                     # remembered first, put back by the person before cycle 0 practises.
+                    # Checkpointed between the two, as a cycle-end evaluation is: a run
+                    # that dies in cycle 0 resumes there, asks for the scene again, and
+                    # never re-runs the baseline.
                     scene = environment.practice_scene(problem=problem)
                     measure(before_practice=True)
+                    if checkpoint_cycles:
+                        checkpoint(completed_cycle=-1, practice_scene=scene)
                     restore_practice(scene=scene)
             if saved is not None and saved.get("practice_scene") is not None:
                 # The checkpoint's cycle-end evaluation, if it never finished, then the
