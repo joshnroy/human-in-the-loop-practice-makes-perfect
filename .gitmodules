@@ -10,3 +10,6 @@
 [submodule "reference/prpl-tidybot"]
 	path = reference/prpl-tidybot
 	url = https://github.com/Princeton-Robot-Planning-and-Learning/prpl-tidybot.git
+[submodule "reference/tidybot_real"]
+	path = reference/tidybot_real
+	url = https://github.com/yixuanhuang98/tidybot_real.git
