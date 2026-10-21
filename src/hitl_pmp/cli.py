@@ -128,6 +128,14 @@ class Cli:
             "default; on reproduces step-protocol runs recorded before it was opt-in.",
         )
         parser.add_argument(
+            "--repeated-zero-step-limit",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=5,
+            help="End practice after this many sessions in a row that execute actions "
+            "but no robot control step and no human reset (step protocol). A STOP's own "
+            "charge is not a control step; a STOP-only session is left to repeated_stop.",
+        )
+        parser.add_argument(
             "--practice-cost-config",
             type=Path,
             default=None,
