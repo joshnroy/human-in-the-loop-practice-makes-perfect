@@ -1,0 +1,9 @@
+{
+  "args": {
+    "env": "tossing3d_real",
+    "method": "pomdp",
+    "pomdp_competence_model": "local_trend",
+    "human_reset": "True",
+    "output_dir": "/home/josh/Documents/repos/research/hitl-pmp-results/tidybot-real/pilot-20261020/run9"
+  }
+}

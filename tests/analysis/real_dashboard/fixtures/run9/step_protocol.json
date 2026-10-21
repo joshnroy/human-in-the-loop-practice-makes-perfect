@@ -1,0 +1,18 @@
+{
+  "practice_step_budget": 1500,
+  "measurement_interval_steps": 1000000000,
+  "human_skill_steps": 1,
+  "evaluation_control_steps": 500,
+  "learning_session_action_limit": 20,
+  "learning_cycle_count_limit": null,
+  "original_num_cycles_flag_superseded_by_step_budget": 10,
+  "evaluation_process": "spawn, one fresh process per evaluation",
+  "evaluation_x_axis": "practice_steps",
+  "evaluation_feedback": false,
+  "normalized_costs": true,
+  "stop_after_perfect_evaluations": 0,
+  "stop_on_no_practice_action": false,
+  "stop_skill_steps": 1,
+  "repeated_stop_limit": 10,
+  "robot_duration_prior_steps": 1
+}
