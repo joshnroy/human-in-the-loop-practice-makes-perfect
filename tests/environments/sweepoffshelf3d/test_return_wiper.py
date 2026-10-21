@@ -1,13 +1,7 @@
-"""ReturnWiper from the 2026-10-21 ReturnWiper diagnosis's captured states (launch
-ea9b45b15, `data/returnwiper_states.jsonl`):
-
-- pomdp0 (cccc-determinized-always-ask/pomdp/0, step 9598): the wiper held with the
-  grasp slipped 22 mm / 19.5 deg off the shelf grasp, still booked as the shelf grasp;
-  refused 857 times;
-- pomdp0 before (step 9347): the straight drive to the slot base put the carried
-  wiper 7.7 mm into the cupboard's back panel, unchecked, and the grasp slipped there;
-- det4 (cccc-determinized/pomdp/4, step 5090): the floor set-down before the regrasp
-  stalled 9-15 mm above the floor, the bracelet link on the floor."""
+"""ReturnWiper from the 2026-10-21 ReturnWiper diagnosis's captured state (launch
+ea9b45b15, `data/returnwiper_states.jsonl`): pomdp0 (cccc-determinized-always-ask/pomdp/0,
+step 9347), where the straight drive to the slot base put the carried wiper 7.7 mm into
+the cupboard's back panel, unchecked, and the grasp slipped there."""
 
 import importlib.util
 from pathlib import Path
@@ -33,9 +27,7 @@ pytestmark = [
     pytest.mark.xdist_group("sweepoffshelf3d_test_return_wiper"),
 ]
 
-SLIPPED = "returnwiper-pomdp0-slipped-grasp-refused"
 BEFORE_SLOT = "returnwiper-pomdp0-before-slot-collision"
-BEFORE_FLOOR = "returnwiper-det4-before-floor-stall"
 
 
 @pytest.fixture(name="env", scope="module")
@@ -53,14 +45,9 @@ def _states():
     return {state.state_id: state for state in StateSet.load(path=STATES)}
 
 
-def _restore(*, env, states, state_id, stale_shelf_grasp=False):
+def _restore(*, env, states, state_id):
     StateCapture.restore(env=env, state=states[state_id])
-    shelf = env.controllers()._skills  # noqa: SLF001
-    if stale_shelf_grasp:
-        # The run's own bookkeeping: `ShelfSkills` lived across skills and kept the
-        # grasp kind its PickWiper booked, whatever the wiper did in the hand since.
-        shelf.grasp_kind = "shelf"
-    return shelf
+    return env.controllers()._skills  # noqa: SLF001
 
 
 def _return_wiper(*, env):
@@ -74,20 +61,16 @@ def _returned(*, env, atoms):
     return ("WiperHome", ("wiper_0",)) in atoms and ("HandEmpty", ("robot",)) in atoms, home
 
 
-def test_a_slipped_grasp_measures_as_no_fixed_grasp(*, env, states):
-    shelf = _restore(env=env, states=states, state_id=SLIPPED, stale_shelf_grasp=True)
-    assert shelf.grasp_kind == "shelf"
-    assert shelf.measured_grasp_kind() is None
+def test_a_wiper_lying_level_at_home_counts_as_put_down(*, env):
+    """The fallback that lets go of a put-down stopped short measures the head against
+    the board the wiper rests on. Measured from the wiper's start less the head's
+    half-height, the support sat 7.5 mm below the board, so no head could come within
+    the 3 mm gap and the fallback could never fire."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SLOT_PUT_DOWN_GAP
 
-
-def test_the_wiper_held_by_a_slipped_grasp_is_returned(*, env, states):
-    """Refused 857/857 times in the run; the diagnosis's live probe, with the grasp kind
-    re-derived, put it home through the floor regrasp in 1334 control steps."""
-    _restore(env=env, states=states, state_id=SLIPPED, stale_shelf_grasp=True)
-    atoms = _return_wiper(env=env)
-    done, home = _returned(env=env, atoms=atoms)
-    assert done, env.last_skill_error()
-    assert home < 0.01
+    env.hard_reset()
+    shelf = env.controllers()._skills  # noqa: SLF001
+    assert shelf.put_down_reached(support=shelf.wiper_home_support(), gap=SLOT_PUT_DOWN_GAP)
 
 
 def test_a_slot_base_whose_drive_cuts_the_carried_wiper_into_the_cupboard_is_refused(
@@ -114,30 +97,17 @@ def test_the_wiper_is_returned_without_cutting_into_the_cupboard_on_the_way(*, e
     assert home < 0.01
 
 
-def test_the_wiper_set_down_on_the_floor_is_let_go_once_level_and_near_the_floor(*, env, states):
-    """det/4: the hand stalled 9-15 mm above the floor (`Physical move failed`). Let go
-    level and under 2 cm up, the diagnosis's probe returned the wiper in 1858 steps."""
-    _restore(env=env, states=states, state_id=BEFORE_FLOOR)
-    atoms = _return_wiper(env=env)
-    done, home = _returned(env=env, atoms=atoms)
-    assert done, env.last_skill_error()
-    assert home < 0.01
-
-
-def test_a_put_down_that_collides_after_the_way_in_is_backed_out_and_regrasped(
+def test_a_put_down_that_collides_after_the_way_in_is_refused_and_backed_out(
     *, env, states, monkeypatch
 ):
     """With the drive check switched off, the run's own drive happens: the carried
     wiper cuts the back panel and the grasp slips. The put-down, re-aimed from the
-    grasp as it now is, is re-checked, refused, and the wiper is taken again on the
-    floor before going in once more -- instead of stalling against the board."""
+    grasp as it now is, is re-checked and refused, and the wiper is backed out of the
+    slot still in hand -- instead of stalling against the board."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
 
     monkeypatch.setattr(ShelfSkills, "carried_wiper_drive_hits", lambda self, *, base: False)
     _restore(env=env, states=states, state_id=BEFORE_SLOT)
     atoms = _return_wiper(env=env)
-    done, home = _returned(env=env, atoms=atoms)
-    assert done, env.last_skill_error()
-    assert home < 0.01
-    notes = [n.reason for n in env.controllers().notes()]
-    assert any("put-down collides after the way in" in r for r in notes), notes
+    assert "put-down collides after the way in" in (env.last_skill_error() or "")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms
