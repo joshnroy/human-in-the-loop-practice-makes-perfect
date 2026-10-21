@@ -126,9 +126,9 @@ class Cli:
             "--initial-measurement",
             action=argparse.BooleanOptionalAction,
             default=True,
-            help="Measure the untrained policy at practice step 0 (step protocol). Off by "
-            "default for --env tossing3d_real, where each evaluation task is a scene a "
-            "person sets up.",
+            help="Measure the untrained policy at practice step 0 (step protocol). With "
+            "--env tossing3d_real it runs in this process, after practice's scene is set "
+            "up, and the person then puts that scene back before practice starts.",
         )
         parser.add_argument(
             "--checkpoint-cycles",

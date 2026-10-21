@@ -66,6 +66,9 @@ def test_evaluate_only_records_one_step_zero_measurement_and_nothing_else(
     assert not (output / PREVIOUS_CHECKPOINT_FILENAME).exists()
     for name in ("robot_session.log", "config_snapshot.json"):
         assert (output / name).exists()
+    session = (output / "robot_session.log").read_text()
+    assert "eval 0 (before practice): task 5/5" in session
+    assert "(final)" not in session
     marker = json.loads((output / "evaluate_only.json").read_text())
     assert marker["evaluate_only"] is True
     assert json.loads((output / "step_protocol.json").read_text())["evaluate_only"] is True
