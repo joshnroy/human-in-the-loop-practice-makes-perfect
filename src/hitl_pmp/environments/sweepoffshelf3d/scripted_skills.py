@@ -10,29 +10,30 @@ video passes a `Recorder`, which is told about every control step and every mome
 worth a keyframe; with no recorder the skills run headless. Each of the six planner
 skills is one call that runs to completion or raises `SkillFailed`:
 
-- `pick_wiper()`: take the wiper off shelf index 2.
+- `pick_wiper()`: take the wiper off its home on top of the cupboard.
 - `sweep_shelf(height=, speed=)`: pull every cube on shelf index 1 over the open front
   edge into the box. `height` is the head's clearance over the board in metres,
   [0, 0.04]; `speed` the pull speed in m/s, [0.05, 0.25].
-- `return_wiper()`: put the held wiper back where it started on shelf index 2.
+- `return_wiper()`: put the held wiper back where it started on top of the cupboard.
 - `pick_cube_from_shelf(cube=)`, `pick_cube_from_floor(cube=)`,
   `place_cube_in_box(cube=)`.
 
 Nothing here edits the environment. The friction grasp is the environment's own; the
 only state ever set directly is `drop_cube_into_box`, a documented scene setup.
 
-The wiper is only ever held at one of two fixed grasps, each a constant hand pose in
-the wiper's own frame (`ShelfSkills.grasp_in_wiper`): "shelf" on the head, used to take
-it off and put it back on its shelf, and "sweep" on the handle at its centre of mass,
-used to sweep. Between them it is put down on the floor and taken again. Base poses
-and arm routes adapt to where the wiper lies; the grasp never does, and every grasp
-taken is recorded with its measured hand-to-wiper pose (`grasps_taken`).
+The wiper is only ever held at one fixed grasp, a constant hand pose in the wiper's own
+frame (`ShelfSkills.grasp_in_wiper`): on the handle at its centre of mass, the wrist
+over the handle's free end. Its home is the cupboard's top board with the handle
+overhanging the open front, so the hand takes it, sweeps with it and puts it back at
+that one grasp, from outside the cupboard. Base poses and arm routes adapt to where the
+wiper lies; the grasp never does, and every grasp taken is recorded with its measured
+hand-to-wiper pose (`grasps_taken`).
 
 Four facts shape every motion. The cupboard slots are 0.254 m tall, too short for a
 vertical gripper (the wrist hits the board above), so every grasp in the cupboard
 leans the gripper about its closing axis; a lean keeps the pads on the same two faces.
 The 2F-85's friction grasp resists rotation about its closing axis worst of all, so
-both wiper grasps sit beside its centre of mass. Lowered behind the cubes, the flat
+the wiper grasp sits beside its centre of mass. Lowered behind the cubes, the flat
 wiper's handle comes down on any cube in its line, so strokes are placed with no cube
 under the handle (`Strokes.plan`). And the box keeps the base at least BASE_X back
 from the cupboard while the leaned hand only reaches 0.6 m or more in front of the
@@ -62,7 +63,8 @@ SKILLS = (
     "place_cube_in_box",
 )
 CUBE_SHELF = 1
-WIPER_SHELF = 2
+# The wiper's home: the cupboard's top board, above the third shelf.
+WIPER_SHELF = 3
 CONTROL_DT = 0.1
 # The base stays this far back so its front casters clear the box's near wall (x 1.11).
 BASE_X = 0.80
@@ -74,14 +76,9 @@ WIPER_STANDOFF = 0.035
 CUBE_STANDOFF = 0.035
 CUBE_LEANS_DEG = (30.0, 40.0, 50.0, 60.0)
 PAD_HALF_LENGTH = 0.011
-# The two fixed wiper grasps. SHELF: on the head, SHELF_HEAD_OFFSET from its centre
-# toward the open front, pads closing along the handle, wrist leaning out of the slot;
-# it reaches the wiper wherever it lies on its shelf (a grasp on the handle puts the
-# wrist into the cupboard's side panel when the wiper lies toward that side). SWEEP:
-# on the handle at the centre of mass (None), wrist over the free end, the side it must
-# be on to pull the head toward the robot. Each becomes a pose in the wiper's own frame
-# once, at reset, and is never searched over.
-SHELF_HEAD_OFFSET = 0.035
+# The one fixed wiper grasp: on the handle at the centre of mass (None), wrist over the
+# free end, the side it must be on to pull the head toward the robot. It becomes a pose
+# in the wiper's own frame once, at reset, and is never searched over.
 SWEEP_ALONG = None
 SLOT_ENTRY_RISE = 0.02
 # Joint-space jump allowed between neighbouring waypoints of a planned route: more is a
@@ -95,8 +92,7 @@ CARRIED_WIPER_ALLOWANCE = 0.004
 # How closely each intermediate waypoint is tracked (rad): looser lets the pads cut the
 # corner onto the handle before the hand is over it.
 ROUTE_TRACKING = 0.02
-# Put-down spot on the open floor beside the box, for every regrasp.
-FLOOR_HEAD_XY = (0.95, 0.55)
+# Base x positions for setting a cube down on the open floor beside the box.
 FLOOR_BASE_XS = (0.45, 0.35, 0.55, 0.25)
 CUBE_FLOOR_XY = (0.95, 0.45)
 SWEEP_STEM = (-1.0, 0.0, 0.0)
@@ -287,7 +283,8 @@ class ShelfSkills:
         self.head_geom = self.wiper_geoms[int(np.argmax(sizes[:, 1]))]
         self.wiper_body = self.model.body("wiper_0").id
         self.board = {
-            shelf: self.core.shelf_top_z(shelf=shelf) for shelf in (CUBE_SHELF, WIPER_SHELF)
+            shelf: self.core.shelf_top_z(shelf=shelf)
+            for shelf in (CUBE_SHELF, CUBE_SHELF + 1, WIPER_SHELF)
         }
         self.front_x = self.core.shelf_front_x()
         self.wiper_start = self.wiper_pose()
@@ -305,7 +302,6 @@ class ShelfSkills:
         self.arm_cupboard_contact_steps = 0
         self.box_contact_steps = 0
         self._in_hand: np.ndarray | None = None
-        self.grasp_kind: str | None = None
         self.held_cube: str | None = None
         self.slip: float | None = None
         self.slip_deg = 0.0
@@ -313,14 +309,11 @@ class ShelfSkills:
         # While a sweep runs, `HoldingWiper` is re-evaluated after every control step.
         self.watch_wiper = False
         self.wiper_unheld_steps = 0
-        # Hand pose in the wiper's frame for each fixed grasp, and the measured
-        # hand-to-wiper pose every time one is taken.
-        self.grasp_in_wiper = {
-            "shelf": np.linalg.inv(self.wiper_start)
-            @ self.leaned_head_grasp(offset=SHELF_HEAD_OFFSET),
-            "sweep": np.linalg.inv(self.wiper_start)
-            @ self.leaned_handle_grasp(along=SWEEP_ALONG, lean_sign=-1.0),
-        }
+        # Hand pose in the wiper's frame for the fixed grasp, and the measured
+        # hand-to-wiper pose every time it is taken.
+        self.grasp_in_wiper = np.linalg.inv(self.wiper_start) @ self.leaned_handle_grasp(
+            along=SWEEP_ALONG, lean_sign=-1.0
+        )
         self.grasps_taken: list[dict[str, Any]] = []
         self.closed_in_hand = np.eye(4)
         # Head speed actually achieved over each pull (m/s); the base tops out at
@@ -415,7 +408,7 @@ class ShelfSkills:
             for name in CUBES
             if self.cube_position(cube=name)[0] > self.front_x
             and self.cube_position(cube=name)[2] > self.board[CUBE_SHELF]
-            and self.cube_position(cube=name)[2] < self.board[WIPER_SHELF]
+            and self.cube_position(cube=name)[2] < self.board[CUBE_SHELF + 1]
         ]
 
     def tally_contacts(self) -> None:
@@ -485,7 +478,7 @@ class ShelfSkills:
         self.wiper_unheld_steps += 1
         if self.wiper_unheld_steps >= WIPER_LOST_STEPS:
             self.watch_wiper = False
-            self.in_hand, self.grasp_kind = None, None
+            self.in_hand = None
             raise WiperLost(f"the wiper left the hand during {label}")
 
     @contextlib.contextmanager
@@ -849,9 +842,9 @@ class ShelfSkills:
 
     # --- the wiper ---------------------------------------------------------------
 
-    def wiper_grasp(self, *, kind: str) -> np.ndarray:
-        """World hand pose for fixed grasp `kind` on the wiper as it lies now."""
-        return self.wiper_pose() @ self.grasp_in_wiper[kind]
+    def wiper_grasp(self) -> np.ndarray:
+        """World hand pose for the fixed grasp on the wiper as it lies now."""
+        return self.wiper_pose() @ self.grasp_in_wiper
 
     def leaned_handle_grasp(
         self, *, along: float | None, lean_sign: float, lean_deg: float = WIPER_LEAN_DEG
@@ -872,20 +865,6 @@ class ShelfSkills:
         point[2] = handle[2]
         closing = np.array([-u[1], u[0], 0.0])
         rotation = Frames.leaned(closing=closing, lean_toward=lean_sign * u, lean_deg=lean_deg)
-        return Frames.pose(rotation=rotation, position=point - WIPER_STANDOFF * rotation[:, 2])
-
-    def leaned_head_grasp(self, *, offset: float, lean_deg: float = WIPER_LEAN_DEG) -> np.ndarray:
-        """Pinch-site pose for a lean grasp on the head, `offset` metres from its centre
-        toward the cupboard's open front, pads closing along the handle. The wrist leans
-        out of the slot toward the robot, and the grasp sits beside the centre of mass,
-        so the head barely droops: on the handle, 13 cm from the centre of mass, it
-        drooped 15 deg and fell out while being put back."""
-        u = self.stem_direction()
-        head = self.data.geom_xpos[self.head_geom].copy()
-        along_head = self.data.geom_xmat[self.head_geom].reshape(3, 3)[:, 1].copy()
-        front = along_head if along_head[0] < 0 else -along_head
-        point = head + offset * front
-        rotation = Frames.leaned(closing=u, lean_toward=-front, lean_deg=lean_deg)
         return Frames.pose(rotation=rotation, position=point - WIPER_STANDOFF * rotation[:, 2])
 
     def slot_bases(self, *, y: float) -> list[np.ndarray]:
@@ -917,19 +896,17 @@ class ShelfSkills:
         moved = float(self.data.site_xpos[self.site][2]) - hand
         return moved > 0.005 and rose > 0.5 * moved
 
-    def take_wiper(self, *, kind: str, label: str) -> None:
+    def take_wiper(self, *, label: str) -> None:
         """Record the grasp just closed, and how far the measured hand-to-wiper pose is
         from the fixed one: the friction grasp is the same grasp every time only if
         this stays small. Measured as the gripper closed, before the test lift lets
         the wiper settle a few millimetres in the pads."""
         self.in_hand = np.linalg.inv(self.site_pose()) @ self.wiper_pose()
-        self.grasp_kind = kind
-        nominal = np.linalg.inv(self.grasp_in_wiper[kind])
+        nominal = np.linalg.inv(self.grasp_in_wiper)
         closed = self.closed_in_hand
         hand_in_wiper = np.linalg.inv(closed)
         turn = Rotation.from_matrix(closed[:3, :3] @ nominal[:3, :3].T).magnitude()
         self.grasps_taken.append({
-            "kind": kind,
             "label": label,
             "tick": self.ticks,
             "hand_in_wiper_xyz": [round(float(v), 4) for v in hand_in_wiper[:3, 3]],
@@ -944,15 +921,13 @@ class ShelfSkills:
     def let_go_of_wiper(self, *, label: str) -> None:
         self.grip = 0.0
         self.in_hand = None
-        self.grasp_kind = None
         self.hold(count=20, label=f"{label}_release")
 
     def pick_wiper(self) -> None:
-        """Take the wiper off shelf index 2 by friction and lift it clear of the
-        cupboard. On the shelf only a lean toward the handle's free end clears the
-        board above, so the grasp is on the handle's middle; the hand comes in level,
-        pads 2 cm above the handle, along a route planned joint by joint so the arm
-        never changes IK branch (and swings through the cupboard) on the way."""
+        """Take the wiper off its home on top of the cupboard by friction, at the
+        grasp it sweeps with, and lift it clear. The hand comes in level, pads 2 cm
+        above the handle, along a route planned joint by joint so the arm never changes
+        IK branch (and swings through the cupboard) on the way."""
         if self.in_hand is not None:
             raise SkillFailed("pick_wiper: already holding the wiper")
         self.grip = 0.0
@@ -967,7 +942,7 @@ class ShelfSkills:
         self.mark(label="pads around handle")
         if not self.close_and_check(label="pick_wiper"):
             raise SkillFailed("pick_wiper: the wiper did not come with the hand")
-        self.take_wiper(kind="shelf", label="pick_wiper")
+        self.take_wiper(label="pick_wiper")
         self.leave_wiper_slot(grasp=grasp, holding=True, label="lift_wiper")
         self.mark(label=f"lifted, wiper +{self.wiper_lift():.2f} m")
         if self.wiper_lift() < 0.05:
@@ -981,7 +956,7 @@ class ShelfSkills:
         at `target` (a wiper body pose)."""
         options = []
         if target is None:
-            options.append(self.wiper_grasp(kind="shelf"))
+            options.append(self.wiper_grasp())
         else:
             assert self.in_hand is not None
             options.append(target @ np.linalg.inv(self.in_hand))
@@ -1054,51 +1029,6 @@ class ShelfSkills:
                 f"(turned {self.slip_deg:.0f} deg in the grasp)"
             )
 
-    def set_wiper_down_on_floor(self, *, label: str) -> None:
-        """Lay the held wiper flat on the floor beside the box, handle along +y."""
-        assert self.in_hand is not None
-        half = float(self.model.geom_size[self.head_geom][2])
-        head = np.array([*FLOOR_HEAD_XY, half + 0.004])
-        stem = self.stem_start
-        target = self.wiper_target(head=head, stem=stem) @ np.linalg.inv(self.in_hand)
-        above = self.wiper_target(head=head + [0.0, 0.0, 0.30], stem=stem) @ np.linalg.inv(
-            self.in_hand
-        )
-        self.raise_hand(z=CARRY_Z, label=label, holding=True)
-        found = None
-        for base in [
-            np.array([x, head[1] + dy, 0.0]) for x in FLOOR_BASE_XS for dy in (0.0, -0.15, 0.15)
-        ]:
-            route = self.plan_route(waypoints=[above], base=base, holding=True)
-            # The descent from there must be reachable too (planned, not followed).
-            if route is not None and self.plan_route(
-                waypoints=[target],
-                base=base,
-                holding=True,
-                start_arm=route[-1],
-                allowance=CONTACT_PENETRATION,
-            ):
-                found = (base, route)
-                break
-        if found is None:
-            raise SkillFailed(f"{label}: no route sets the wiper down on the floor")
-        base, route = found
-        self.move_base(target=base, label=label)
-        # To 30 cm above the spot along a planned route, then down in short lines.
-        self.follow(route=route, label=label, settle=0.04)
-        for z in (0.15, 0.05, 0.015):
-            self.move_wiper(head=head + [0.0, 0.0, z], label=label, stem=stem)
-        self.move_wiper(head=head, label=label, stem=stem)
-        self.let_go_of_wiper(label=label)
-        approach = self.site_pose()[:3, 2]
-        self.path(
-            position=self.data.site_xpos[self.site] - 0.06 * approach + [0.0, 0.0, 0.06],
-            rotation=self.site_pose()[:3, :3],
-            label=f"{label}_back_off",
-            count=3,
-        )
-        self.mark(label="wiper on the floor")
-
     def wiper_home_support(self) -> float:
         """Height of the board the wiper rests on at home. The wiper's body origin is
         its bottom face, so this is not its start less the head's half-height, which is
@@ -1110,61 +1040,6 @@ class ShelfSkills:
         `gap` above `support`: close enough to let go, though the hand stopped short."""
         tilt = float(np.rad2deg(np.arccos(np.clip(self.wiper_pose()[2, 2], -1.0, 1.0))))
         return tilt < PUT_DOWN_LEVEL_DEG and self.head_bottom() - support < gap
-
-    def take_wiper_from_floor(self, *, kind: str, label: str) -> None:
-        for attempt in range(REGRASP_TRIES):
-            grasp = self.wiper_grasp(kind=kind)
-            pre = grasp.copy()
-            pre[2, 3] += 0.04
-            lifted = grasp.copy()
-            lifted[2, 3] += 0.25
-            self.raise_hand(z=0.30, label=label, holding=False)
-            bases = [
-                np.array([x, grasp[1, 3] + dy, 0.0])
-                for x in FLOOR_BASE_XS
-                for dy in (0.0, -0.15, 0.15)
-            ]
-            # A later attempt starts its search further down the list of base poses.
-            found = self.first_route(
-                waypoints=[lifted, pre, grasp],
-                bases=bases[attempt:] + bases[:attempt],
-                holding=False,
-            )
-            if found is None:
-                raise SkillFailed(f"{label}: no route reaches the wiper on the floor")
-            base, route = found
-            self.move_base(target=base, label=label)
-            try:
-                self.follow(route=route, label=label)
-                self.settle_at(pose=grasp, label=label)
-            except SkillFailed as exc:
-                self.notes.append(f"{label}: approach {attempt + 1} blocked ({exc}), retrying")
-                continue
-            if self.close_and_check(label=label):
-                self.take_wiper(kind=kind, label=label)
-                self.path(
-                    position=lifted[:3, 3],
-                    rotation=lifted[:3, :3],
-                    label=label,
-                    count=5,
-                    holding=True,
-                )
-                self.mark(label=f"wiper taken again ({kind} grasp)")
-                return
-            self.notes.append(f"{label}: grasp {attempt + 1} missed, retrying")
-            self.grip = 0.0
-            self.hold(count=15, label=label)
-            self.path(position=pre[:3, 3], rotation=pre[:3, :3], label=label, count=3)
-        raise SkillFailed(f"{label}: {REGRASP_TRIES} grasps on the floor missed")
-
-    def regrasp_for_sweep(self) -> None:
-        """The shelf grasp holds the head, the part that does the sweeping. Put the
-        wiper down on the open floor and take it again at the sweep grasp."""
-        self.notes.append(
-            f"shelf grasp held with max slip {self.slip or 0:.3f} m / {self.slip_deg:.1f} deg"
-        )
-        self.set_wiper_down_on_floor(label="regrasp")
-        self.take_wiper_from_floor(kind="sweep", label="regrasp")
 
     def level_target(self, *, x: float, above_board: float) -> np.ndarray:
         """Hand pose that would take the wiper from where it is now to flat, head centre
@@ -1331,13 +1206,13 @@ class ShelfSkills:
 
     def regrasp_on_shelf(self, *, label: str) -> None:
         for attempt in range(REGRASP_TRIES):
-            grasp = self.wiper_grasp(kind="sweep")
+            grasp = self.wiper_grasp()
             pre = grasp.copy()
             pre[2, 3] += 0.025
             self.hand_to(target=pre, label=f"{label}_regrasp")
             self.hand_to(target=grasp, label=f"{label}_regrasp", tolerance=0.003)
             if self.close_and_check(label=f"{label}_regrasp"):
-                self.take_wiper(kind="sweep", label=label)
+                self.take_wiper(label=label)
                 return
             self.notes.append(f"{label}: regrasp {attempt + 1} missed, retrying")
             self.grip = 0.0
@@ -1396,8 +1271,6 @@ class ShelfSkills:
         settings = SweepSettings(height=height, speed=speed)
         if self.in_hand is None:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
-        if self.grasp_kind != "sweep":
-            self.regrasp_for_sweep()
         self.watch_wiper, self.wiper_unheld_steps = True, 0
         try:
             for sweep_pass in range(SWEEP_PASSES):
@@ -1420,14 +1293,10 @@ class ShelfSkills:
             raise SkillFailed(f"sweep_shelf: {len(left)} cube(s) still on the shelf: {left}")
 
     def return_wiper(self) -> None:
-        """Put the held wiper back where it started on shelf index 2. Only the shelf
-        grasp fits the wiper slot, so a wiper held at the sweep grasp is put down on the
-        floor and taken again first."""
+        """Put the held wiper back where it started on top of the cupboard, at the
+        grasp it is held by."""
         if self.in_hand is None:
             raise SkillFailed("return_wiper: the wiper is not in hand")
-        if self.grasp_kind != "shelf":
-            self.set_wiper_down_on_floor(label="return")
-            self.take_wiper_from_floor(kind="shelf", label="return")
         grasp = self.into_wiper_slot()
         if grasp is None:
             # The grasp moved on the way in, and from the grasp as it is now the
