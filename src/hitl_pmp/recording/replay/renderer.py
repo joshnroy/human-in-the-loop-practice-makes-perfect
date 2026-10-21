@@ -20,6 +20,11 @@ class ReplayRenderer(BaseModel, abc.ABC):
     # still gets a frame, on the scene as it stands.
     storyboard: ClassVar[bool] = False
 
+    def is_storyboard(self) -> bool:
+        """Whether this recording is played as a storyboard; a renderer whose recordings
+        may or may not carry motion answers per recording."""
+        return self.storyboard
+
     @abc.abstractmethod
     def fps(self) -> int: ...
 

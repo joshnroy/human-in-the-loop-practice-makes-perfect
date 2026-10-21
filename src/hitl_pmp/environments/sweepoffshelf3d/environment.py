@@ -24,6 +24,7 @@ from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
+from hitl_pmp.recording.run_record.sink import SkillTickSink
 
 from .backend import SweepOffShelf3DBackend
 from .controllers import ControllerFailure, SweepOffShelf3DControllers
@@ -43,6 +44,7 @@ SKILL_IDS: dict[str, int] = {
     "ReturnCubeToShelfFromBox": 6,
     "ReturnCubeToShelfFromFloor": 7,
 }
+SKILL_NAMES: dict[int, str] = {skill_id: name for name, skill_id in SKILL_IDS.items()}
 NOOP_ID = -1
 
 
@@ -72,6 +74,9 @@ class SweepOffShelf3DEnvironment(Environment):
     human_seed: int = 0
     # Control steps one skill may take before it is cut off as a failure.
     skill_step_limit: int = 12000
+    # Whether this environment's run recording streams per-control-step states
+    # (`--record-motion`); read by the step protocol's `attach_recording`.
+    motion_recording: bool = False
 
     _backend: SweepOffShelf3DBackend | None = PrivateAttr(default=None)
     _controllers: SweepOffShelf3DControllers | None = PrivateAttr(default=None)
@@ -80,6 +85,9 @@ class SweepOffShelf3DEnvironment(Environment):
     _last_action: np.ndarray | None = PrivateAttr(default=None)
     _atoms_before: frozenset[AbstractAtom] = PrivateAttr(default=frozenset())
     _human_events: list[HumanEvent] = PrivateAttr(default_factory=list)
+    _motion_sink: SkillTickSink | None = PrivateAttr(default=None)
+    _motion_stride: int = PrivateAttr(default=1)
+    _motion_steps: int = PrivateAttr(default=0)
 
     def backend(self) -> SweepOffShelf3DBackend:
         if self._backend is None:
@@ -116,6 +124,25 @@ class SweepOffShelf3DEnvironment(Environment):
             return None
         after = getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
         return self._last_action, self._atoms_before, after, self.controllers().notes()
+
+    def attach_motion_sink(self, *, sink: SkillTickSink, stride: int) -> None:
+        """Report each robot skill to `sink`, then every `stride`-th of its control
+        steps as `backend.motion_state()`. A pure observer: it only reads the scene."""
+        self._motion_sink, self._motion_stride = sink, max(1, stride)
+        self.backend().set_tick_observer(observer=self._record_motion_tick)
+
+    def _record_motion_tick(self) -> None:
+        self._motion_steps += 1
+        if self._motion_sink is not None and self._motion_steps % self._motion_stride == 0:
+            self._motion_sink.record_tick(state=self.backend().motion_state())
+
+    def _begin_motion(self, *, skill_id: int) -> None:
+        """Opens the skill its ticks belong to, named as the skill's own action label
+        names it, so the action line matches a recording without motion."""
+        self._motion_steps = 0
+        name = SKILL_NAMES.get(skill_id)
+        if self._motion_sink is not None and name is not None:
+            self._motion_sink.record_skill(name=name, objects=(), params=(), controller={})
 
     def human_events(self) -> tuple[HumanEvent, ...]:
         return tuple(self._human_events)
@@ -155,6 +182,7 @@ class SweepOffShelf3DEnvironment(Environment):
         try:
             if values.shape != (4,) or not np.all(np.isfinite(values)):
                 raise ControllerFailure(f"malformed action {action!r}")
+            self._begin_motion(skill_id=int(round(values[0])))
             self._dispatch(skill_id=int(round(values[0])), values=values)
         except ControllerFailure as failure:
             self._last_skill_error = str(failure)

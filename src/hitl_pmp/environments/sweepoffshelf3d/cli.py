@@ -14,6 +14,7 @@ log used it: its only runs were the cancelled batch that exposed vacuous resets.
 
 import argparse
 from collections.abc import Callable
+from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
@@ -28,6 +29,13 @@ from .tasks import SweepOffShelf3DTasks
 
 class SweepOffShelf3DCli:
     """A static-method container, never instantiated."""
+
+    # `--record-motion` value -> whether it records (practice, evaluation).
+    MOTION_SCOPES: ClassVar[dict[str, tuple[bool, bool]]] = {
+        "off": (False, False),
+        "evaluation": (False, True),
+        "all": (True, True),
+    }
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -71,6 +79,16 @@ class SweepOffShelf3DCli:
             default=True,
             help="Offer the human skills to practice. Evaluation never offers them.",
         )
+        parser.add_argument(
+            "--record-motion",
+            choices=list(SweepOffShelf3DCli.MOTION_SCOPES),
+            default="off",
+            help="Step protocol only: stream every control step's state, arm joints "
+            "included, into the run recording so render_recording.py can draw full motion "
+            "rather than a storyboard. 'evaluation' records every evaluation episode (in "
+            "each evaluations/NNNN/recording.jsonl); 'all' also records practice. A pure "
+            "observer: results are unchanged.",
+        )
         parser.set_defaults(scene_bg=True, defer_rendering=True)
 
     @staticmethod
@@ -81,13 +99,16 @@ class SweepOffShelf3DCli:
         return p
 
     @staticmethod
-    def build_problem(*, args: argparse.Namespace, human_seed: int) -> SweepOffShelf3DProblem:
+    def build_problem(
+        *, args: argparse.Namespace, human_seed: int, motion_recording: bool = False
+    ) -> SweepOffShelf3DProblem:
         env = SweepOffShelf3DEnvironment(
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,
             reset_cubes_success_probability=args.reset_cubes_success_probability,
             human_seed=human_seed,
             skill_step_limit=args.skill_step_limit,
+            motion_recording=motion_recording,
         )
         tasks = SweepOffShelf3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
@@ -102,6 +123,11 @@ class SweepOffShelf3DCli:
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
+        if getattr(args, "record_motion", "off") != "off":
+            raise ValueError(
+                "--record-motion needs the step protocol (--practice-step-budget): only it "
+                "writes a run recording"
+            )
         practice = SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed)
         evaluation = SweepOffShelf3DCli.build_problem(args=args, human_seed=args.seed + 1)
         context = DomainContext(
