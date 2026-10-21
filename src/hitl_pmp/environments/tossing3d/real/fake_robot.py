@@ -205,7 +205,7 @@ class FakeTossingRobot(BaseModel):
 
 class FakePerson(TerminalPerson):
     """`TerminalPerson` -- shown the same request, through the same prompt -- whose
-    Enter is pressed at once and who puts everything exactly where asked."""
+    y is typed at once and who puts everything exactly where asked."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -215,8 +215,8 @@ class FakePerson(TerminalPerson):
         self.read = lambda prompt: self._press_enter(prompt=prompt)
 
     def _press_enter(self, *, prompt: str) -> str:
-        self.write(f"{prompt}[Enter]")
-        return ""
+        self.write(f"{prompt}y")
+        return "y"
 
     def placed(self, *, request: PlacementRequest) -> None:
         self.robot.put(cube=request.cube, bin_center=request.bin.center, bin_yaw=request.bin.yaw)

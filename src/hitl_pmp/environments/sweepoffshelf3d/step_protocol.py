@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from hitl_pmp.cli_protocols import SimulatedStepProtocolHooks
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
@@ -22,7 +23,7 @@ from .skill_trace import SkillTraces
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
 
 
-class SweepOffShelf3DStepProtocol:
+class SweepOffShelf3DStepProtocol(SimulatedStepProtocolHooks):
     """A static-method container, never instantiated. Takes any `Problem`, as the
     protocol does, and narrows it to this domain's environment."""
 

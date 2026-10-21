@@ -1,16 +1,24 @@
 """The real backend under the sim's own environment, predicates and toss pipeline."""
 
+import logging
 import math
+import re
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE
-from hitl_pmp.environments.tossing3d.real.backend import RealSkillStepCosts
+from hitl_pmp.environments.tossing3d.real.backend import (
+    PracticeScene,
+    RealSkillStepCosts,
+    TerminalPerson,
+)
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME
+from hitl_pmp.environments.tossing3d.real.session_log import RealSessionLog
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide, Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
@@ -50,27 +58,43 @@ def test_the_task_scene_is_the_cube_at_its_spot_and_the_bin_across_the_tape() ->
     assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {"opposite_side"}
     atoms = {name for name, _ in state.abstract_atoms or ()}
     assert {"HandEmpty", "OnGround", "MovableIsDownX", "BinOnGround", "PickPlannable"} <= atoms
-    assert "0.24, 1.40" in "\n".join(written)
+    prompt = "\n".join(written)
+    assert "scene: FAR" in prompt
+    assert "0.24, 1.40" not in prompt  # coordinates go to the log file only
 
 
 @pytest.mark.parametrize(
-    ("destination", "expected_side"),
-    [("robot_side", "robot_side"), ("opposite_side", "opposite_side")],
+    ("destination", "expected_side", "spot_name"),
+    [("robot_side", "robot_side", "SAME"), ("opposite_side", "opposite_side", "FAR")],
 )
 def test_a_human_reset_prompts_for_the_named_spot_moves_no_robot_and_reobserves(
-    *, destination: str, expected_side: str
+    *, destination: str, expected_side: str, spot_name: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     written: list[str] = []
     env, robot = _env(written=written)
     robot.cube = None  # lost: only a reset recovers it
     written.clear()
     robot.calls.clear()
-    UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    logger = RealSessionLog.LOGGER
+    level = logger.level
+    logger.addHandler(caplog.handler)
+    logger.setLevel(logging.DEBUG)
+    caplog.handler.setLevel(logging.DEBUG)
+    try:
+        UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(level)
     spot = BIN_SPOTS[Tossing3DSide(destination)]
     prompt = "\n".join(written)
-    assert f"{spot.center[0]:.2f}, {spot.center[1]:.2f}" in prompt
-    assert f"{CUBE_SPOT[0]:.2f}, {CUBE_SPOT[1]:.2f}" in prompt
-    assert "Enter" in prompt
+    (request,) = [line for line in written if line.startswith("human reset:")]
+    assert request.startswith(f"human reset: {spot_name} ")
+    assert "\n" not in request
+    assert "cube anywhere on our side" in request
+    coordinates = f"{spot.center[0]:.2f}, {spot.center[1]:.2f}"
+    assert coordinates not in prompt
+    assert coordinates in caplog.text  # the log file keeps the coordinates
+    assert "in place? [y/n]" in prompt
     assert not MOTION & {name for name, _ in robot.calls}
     assert robot.calls[0][0] == "observe"  # only after the person is done
     assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {expected_side}
@@ -176,3 +200,301 @@ def test_the_fixed_direction_is_the_one_the_robot_reports_for_the_bins_spot() ->
     snapshot = env.get_current_state().object_centric
     reported = robot.observe()["toss_direction"]
     assert snapshot.toss_azimuth() == pytest.approx(ROOM_FRAME.yaw_to_domain(yaw=reported))
+
+
+class _Asked(FakePerson):
+    """A FakePerson who records each confirmation and answers from a script."""
+
+    answers: list[str] = []
+    asked: list[str] = []
+
+    def model_post_init(self, __context: object) -> None:
+        super().model_post_init(__context)
+        self.read = lambda prompt: self._answer(prompt=prompt)
+
+    def _answer(self, *, prompt: str) -> str:
+        if "run it?" not in prompt:
+            return "y"
+        self.asked.append(prompt)
+        return self.answers.pop(0)
+
+
+def test_every_skill_waits_for_the_persons_y_before_the_robot_moves() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y", "Y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    env.backend().run_open_gripper()
+    assert len(person.asked) == 2
+    assert "PickCube" in person.asked[0] and "OpenGripper" in person.asked[1]
+
+
+def test_anything_but_y_stops_the_run_before_the_robot_moves() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["n"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_each_skill=True)
+    env.hard_reset()
+    before = robot.observe()["robot"]
+    with pytest.raises(KeyboardInterrupt):
+        env.backend().run_pick_cube()
+    assert robot.observe()["robot"] == before and not robot.observe()["holding"]
+
+
+def test_without_confirmation_no_skill_asks() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=[], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    assert person.asked == []
+
+
+def test_a_task_scene_drives_home_first_and_a_human_reset_does_not() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_start=True)
+    env.hard_reset()
+    names = [name for name, _ in robot.calls]
+    assert "go_home" in names
+    assert names.index("go_home") < names.index("observe")
+    assert person.asked and "GoHome" in person.asked[0]
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination="robot_side")
+    assert "go_home" not in [name for name, _ in robot.calls]
+
+
+def test_the_person_is_told_the_robot_is_busy_after_each_answer() -> None:
+    lines: list[str] = []
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lines.append, answers=[], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    said = "\n".join(lines)
+    for line in (
+        "driving home",
+        "observing the scene",
+        "planning the next skill",
+        "running PickCube",
+        "PickCube: ok",
+    ):
+        assert line in said
+
+
+def test_by_default_a_real_run_asks_only_at_the_start_and_at_placements() -> None:
+    robot = FakeTossingRobot()
+    person = _Asked(robot=robot, write=lambda _line: None, answers=["y"], asked=[])
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, confirm_start=True)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    env.backend().run_open_gripper()
+    assert len(person.asked) == 1 and "GoHome" in person.asked[0]
+
+
+def test_a_scene_is_looked_at_once_until_something_happens() -> None:
+    env, robot = _env()
+    robot.calls.clear()
+    env.backend().observe()
+    env.backend().observe()
+    env.get_current_state()
+    assert [name for name, _ in robot.calls].count("observe") == 0
+    env.backend().run_pick_cube()
+    names = [name for name, _ in robot.calls]
+    assert names.count("observe") == 1
+    robot.calls.clear()
+    env.backend().observe()
+    assert robot.calls == []
+
+
+class _OneLookRobot(FakeTossingRobot):
+    """A server whose observe reply already carries its can_pick verdict (API v3)."""
+
+    def observe(self) -> dict[str, object]:
+        reply = super().observe()
+        reply["can_pick"] = {"feasible": True, "note": None, "refused": False, "reason": None}
+        return reply
+
+
+def test_a_can_pick_in_the_observe_reply_saves_the_second_camera_round() -> None:
+    robot = _OneLookRobot()
+    person = FakePerson(robot=robot, write=lambda _line: None)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env.hard_reset()
+    assert "can_pick" not in [name for name, _ in robot.calls]
+    atoms = {name for name, _ in env.get_current_state().abstract_atoms or ()}
+    assert "PickPlannable" in atoms
+
+
+def test_only_y_or_n_answers_anything_else_asks_again() -> None:
+    lines: list[str] = []
+    answers = iter(["yy", "ok", "Yes", "y"])
+    person = TerminalPerson(write=lines.append, read=lambda _prompt: next(answers))
+    person.confirm(action="PickCube")
+    assert sum("please type y or n" in line for line in lines) == 2
+    # A blank answer (a stray Enter) asks again rather than ending the run.
+    declines = iter(["", "  ", "No"])
+    person = TerminalPerson(write=lines.append, read=lambda _prompt: next(declines))
+    with pytest.raises(KeyboardInterrupt):
+        person.confirm(action="PickCube")
+
+
+def test_an_evaluation_reset_after_practice_ends_holding_leaves_the_cube_pickable() -> None:
+    """Run 9 (2026-10-20): practice's last action was a pick, so the robot still held
+    the cube; evaluation's scene reset drove home with the gripper still commanded
+    closed, `HandEmpty` never held, and the planner found no plan at step 0."""
+    practice, robot = _env()
+    practice.take_action(action=np.array([practice.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    assert robot.holding and robot.gripper_command == 1.0
+    written: list[str] = []
+    # Evaluation builds its own problem over the same, one robot.
+    evaluation = RealTossing3DEnvironment(
+        tossing_robot=robot, person=FakePerson(robot=robot, write=written.append), evaluation=True
+    )
+    robot.calls.clear()
+    evaluation.backend().reset(seed=0)
+    atoms = {name for name, _ in evaluation.backend().abstract_atoms()}
+    assert {"HandEmpty", "OnGround", "PickPlannable"} <= atoms
+    assert "Holding" not in atoms
+    names = [name for name, _ in robot.calls]
+    assert names.index("go_home") < names.index("open_gripper") < names.index("observe")
+    (request,) = [line for line in written if line.startswith("scene:")]
+    assert "gripper" in request  # the person is told to take a held cube out
+
+
+def test_a_scene_reset_after_seeing_the_cube_held_says_to_take_it_out() -> None:
+    written: list[str] = []
+    env, _ = _env(written=written)
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    written.clear()
+    env.backend().reset(seed=0)
+    (request,) = [line for line in written if line.startswith("scene:")]
+    assert "was holding the cube" in request
+    written.clear()
+    env.backend().reset(seed=0)  # last seen with the gripper empty: nothing to take out
+    (request,) = [line for line in written if line.startswith("scene:")]
+    assert "gripper" not in request
+
+
+def test_each_skill_is_preceded_by_a_progress_line_for_the_practice_cycle() -> None:
+    written: list[str] = []
+    env, _ = _env(written=written)
+    written.clear()
+    env.backend().practice_progress(cycle=0, action=13, max_actions=20, steps=1050, budget=1500)
+    env.backend().run_pick_cube()
+    progress = written.index("cycle 0 [######----] action 13/20 · steps 1050/1500")
+    assert written[progress + 1].startswith("running PickCube")
+
+
+def test_an_evaluation_skill_has_no_practice_progress_line() -> None:
+    written: list[str] = []
+    env, _ = _env(written=written)
+    written.clear()
+    env.backend().run_pick_cube()
+    assert not any(line.startswith("cycle ") for line in written)
+
+
+STAMP = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} "
+
+
+def test_every_line_and_prompt_is_timestamped_on_the_terminal_and_in_the_session_log(
+    *, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    RealSessionLog.configure(output_dir=tmp_path)
+    try:
+        prompts: list[str] = []
+
+        def typed(prompt: str) -> str:  # noqa: PLR0917 -- `input`'s signature
+            prompts.append(prompt)
+            return "y"
+
+        monkeypatch.setattr("builtins.input", typed)
+        person = TerminalPerson()
+        person.write("driving home ...")
+        person.confirm(action="PickCube")
+        shown = capsys.readouterr().out
+        assert re.search(f"^{STAMP}driving home \\.\\.\\.$", shown, flags=re.MULTILINE)
+        (prompt,) = prompts
+        assert re.fullmatch(f"{STAMP}PickCube -- run it\\? \\[y/n\\] ", prompt)
+        logged = (tmp_path / RealSessionLog.FILENAME).read_text()
+        assert re.search(f"^{STAMP}driving home \\.\\.\\.$", logged, flags=re.MULTILINE)
+        assert re.search(f"^{STAMP}PickCube -- run it\\? \\[y/n\\]$", logged, flags=re.MULTILINE)
+        assert re.search(f"^{STAMP}answer: 'y'$", logged, flags=re.MULTILINE)
+    finally:
+        RealSessionLog.close()
+
+
+# --- evaluation after each cycle: the practice scene is remembered and restored ---------
+
+
+def test_the_practice_scene_remembers_the_cubes_map_spot_and_the_bins_side() -> None:
+    env, _ = _env()
+    scene = env.backend().practice_scene()
+    assert scene.cube == pytest.approx(CUBE_SPOT)
+    assert scene.bin_side is Tossing3DSide.OPPOSITE
+    assert not scene.holding
+
+
+def test_restoring_practice_drives_home_opens_the_gripper_and_asks_for_the_scene() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = PracticeScene(cube=(0.66, -0.98), holding=False, bin_side=Tossing3DSide.ROBOT)
+    robot.calls.clear()
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    names = [name for name, _ in robot.calls]
+    assert names.index("go_home") < names.index("open_gripper") < names.index("observe")
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert request == (
+        "restore practice: SAME (bin at the close spot, our side of the tape); "
+        "cube at (0.66, -0.98) on our side, on a face; do not move the robot"
+    )
+    # Practice carries on from the scene as placed, re-observed.
+    assert robot.cube is not None and robot.cube[:2] == pytest.approx((0.66, -0.98))
+    state = env.get_current_state()
+    cube_x, _ = ROOM_FRAME.to_domain(x=0.66, y=-0.98)
+    assert state.get(obj=env.cube, feature_name="x") == pytest.approx(cube_x)
+    assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {"robot_side"}
+
+
+def test_a_practice_scene_holding_the_cube_asks_for_it_on_the_floor_where_the_robot_was() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    scene = env.backend().practice_scene()
+    assert scene.holding
+    assert scene.cube == pytest.approx(robot.robot[:2])
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert "holding the cube" in request and "where the robot was" in request
+    atoms = {name for name, _ in env.get_current_state().abstract_atoms or ()}
+    assert {"HandEmpty", "OnGround"} <= atoms
+    assert "Holding" not in atoms
+
+
+def test_restoring_practice_costs_no_steps_and_keeps_the_episode_bookkeeping() -> None:
+    env, _ = _env()
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    before = env.get_current_state().get(obj=env.scene, feature_name="steps_taken")
+    charged: list[str] = []
+    env.set_control_step_observers(
+        before=lambda: charged.append("before"), after=lambda: charged.append("after")
+    )
+    env.restore_practice_scene(scene=env.backend().practice_scene())
+    assert charged == []
+    assert env.get_current_state().get(obj=env.scene, feature_name="steps_taken") == before
+
+
+def test_each_evaluation_skill_is_preceded_by_the_evaluations_number_and_task() -> None:
+    written: list[str] = []
+    env, _ = _env(written=written)
+    written.clear()
+    env.backend().evaluation_progress(index=3, label="after cycle 3", task=2, num_tasks=5)
+    env.backend().run_pick_cube()
+    progress = written.index("eval 3 after cycle 3: task 2/5")
+    assert written[progress + 1].startswith("running PickCube")
+    written.clear()
+    env.backend().evaluation_progress(index=4, label="(final)", task=1, num_tasks=5)
+    env.backend().reset(seed=0)
+    assert written[0] == "eval 4 (final): task 1/5"

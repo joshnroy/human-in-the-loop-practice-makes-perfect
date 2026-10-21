@@ -5,6 +5,10 @@
   spawned process beside practice would need a second robot.
 - **The problems** are `Tossing3DRealCli`'s: real environment, planned tasks.
 - **The recording** describes the real backend's states and has no static colliders.
+
+It also implements the real-robot hooks the sim's adapter leaves as no-ops: progress
+lines for the person, and remembering and restoring practice's scene around an
+in-process evaluation.
 """
 
 import argparse
@@ -20,7 +24,9 @@ from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
+from .backend import PracticeScene
 from .cli import Tossing3DRealCli
+from .environment import RealTossing3DEnvironment
 
 
 class InProcessEvaluations:
@@ -59,6 +65,41 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     @staticmethod
     def evaluation_pool() -> InProcessEvaluations:
         return InProcessEvaluations()
+
+    @staticmethod
+    def real_env(*, problem: Problem) -> RealTossing3DEnvironment:
+        assert isinstance(problem.env, RealTossing3DEnvironment)
+        return problem.env
+
+    @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        Tossing3DRealStepProtocol.real_env(problem=problem).real_backend().practice_progress(
+            cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
+        )
+
+    @staticmethod
+    def evaluation_progress(
+        *, problem: Problem, index: int, label: str, task: int, num_tasks: int
+    ) -> None:
+        Tossing3DRealStepProtocol.real_env(problem=problem).real_backend().evaluation_progress(
+            index=index, label=label, task=task, num_tasks=num_tasks
+        )
+
+    @staticmethod
+    def practice_scene(*, problem: Problem) -> PracticeScene:
+        return Tossing3DRealStepProtocol.real_env(problem=problem).real_backend().practice_scene()
+
+    @staticmethod
+    def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
+        assert isinstance(scene, PracticeScene)
+        env = Tossing3DRealStepProtocol.real_env(problem=problem)
+        env.restore_practice_scene(scene=scene)
+        return {
+            "scene": scene.model_dump(mode="json"),
+            "observed": env.real_backend().practice_scene().model_dump(mode="json"),
+        }
 
     @staticmethod
     def attach_recording(

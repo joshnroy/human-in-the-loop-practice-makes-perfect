@@ -284,6 +284,14 @@ class FakeStepProtocol:
     def interrupted(*, problem, action) -> None:
         pass
 
+    @staticmethod
+    def practice_progress(**progress) -> None:
+        del progress
+
+    @staticmethod
+    def evaluation_progress(**progress) -> None:
+        del progress
+
 
 class ScriptedMethod(EesMethod):
     """A real `EesMethod` (so deployment snapshots encode), with a scripted practice
