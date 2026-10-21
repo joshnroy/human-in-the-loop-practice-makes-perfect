@@ -17,6 +17,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
@@ -27,6 +28,7 @@ from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from .backend import PracticeScene
 from .cli import Tossing3DRealCli
 from .environment import RealTossing3DEnvironment
+from .nuc_logs import NucLogs
 
 
 class InProcessEvaluations:
@@ -61,6 +63,15 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
         return Tossing3DRealCli.build_evaluation_problem(args=args)
+
+    @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        Tossing3DRealStepProtocol.real_env(problem=problem).reobserve(state=state)
+
+    @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        """Copy the skill server's session logs beside the checkpoint (`NucLogs`)."""
+        NucLogs.pull_for_run(args=args, output=output, final=final)
 
     @staticmethod
     def evaluation_pool() -> InProcessEvaluations:

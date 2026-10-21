@@ -81,6 +81,18 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """Carry a resumed run on from the scene as it is now, re-observed; `state`, the
+        checkpoint's last, supplies only the episode bookkeeping."""
+        ...
+
+    @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        """A cycle checkpoint was just written to `output` (`final`: the run ended); the
+        real robot copies the skill server's logs beside it."""
+        ...
+
+    @staticmethod
     def evaluation_pool() -> Any:
         """Where evaluations run: `None` for the protocol's default (a fresh spawned
         process per evaluation, beside practice); a domain whose evaluation cannot run
@@ -198,3 +210,13 @@ class SimulatedStepProtocolHooks:
     def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
         del problem, scene
         raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
+
+    @staticmethod
+    def resume_practice_environment(*, problem: Problem, state: State) -> None:
+        """A fresh process has a fresh simulator: no scene is left to re-observe."""
+        del problem, state
+        raise NotImplementedError("--resume is supported for --env tossing3d_real only")
+
+    @staticmethod
+    def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
+        del args, output, final
