@@ -38,6 +38,7 @@ from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills
 from hitl_pmp.environments.sweepoffshelf3d.types import SweepOffShelf3DState
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import IN_BIN
+from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
@@ -45,6 +46,7 @@ from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import (
     PARAMETERIZED_SKILL,
+    STOP_ONLY_SESSION,
     STRANDED,
     AlwaysAskReset,
 )
@@ -410,6 +412,48 @@ def test_under_step_accounting_the_reset_is_charged_by_its_own_name(*, world: _W
     assert request.value.cost == 21.0
 
 
+@pytest.mark.parametrize("name", sorted(DOMAINS))
+def test_a_stop_only_session_owes_one_forced_reset(*, name: str, world: _World) -> None:
+    """The third trigger, read by the step protocol at the end of a session that was
+    only a STOP: priced like the others and counted under its own reason."""
+    del world
+    domain = DOMAINS[name]()
+    assert domain.method.stop_only_session_reset() == PRICE
+    assert _rule(domain=domain).forced == {STOP_ONLY_SESSION: 1}
+    assert DOMAINS[name](wrapped=False).method.stop_only_session_reset() is None
+
+
+def test_the_pomdp_planner_takes_a_stop_only_reset_before_any_dispatch(
+    *, world: _World, tmp_path
+) -> None:
+    """A run whose first session is only a STOP has dispatched nothing yet; its forced
+    reset is still charged, completed and logged without a belief update."""
+    del world
+    env, provider = _tossing_env_and_provider()
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        pomdp_num_particles=16,
+        always_ask_reset=AlwaysAskReset(cost=PRICE),
+        decision_log=tmp_path / "decisions.jsonl",
+    )
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                human_skills={"reset_to_sampled_start": HumanCharge(cost=ChargeFunction(value=1))}
+            )
+        )
+    )
+    domain = _tossing_domain(method=method, env=env)
+    method.stop_only_session_reset()
+    method.observe_execution_cost(cost=1.0, steps=1, complete=True)
+    method.observe_help_granted(state=domain.state)
+    events = (tmp_path / "decisions.jsonl").read_text()
+    assert f'"reason": "{STOP_ONLY_SESSION}"' in events
+    assert '"forced_reset_complete"' in events
+    assert method._execution_durations == {}  # noqa: SLF001
+
+
 # --- the trigger is read off the skill definitions ------------------------------------
 
 
@@ -436,6 +480,28 @@ def test_only_the_toss_and_the_sweep_have_continuous_parameters() -> None:
         if AlwaysAskReset.triggers(ground_skill=_any_grounding(skill=skill))
     }
     assert triggering == {"MoveToTossLocationAndToss", "SweepShelf"}
+
+
+@pytest.mark.parametrize(
+    ("environment", "skills"),
+    [
+        ("sweepoffshelf3d", lambda: SweepOffShelf3DSkillProvider(env=SweepOffShelf3DEnvironment())),
+        ("tossing3d", lambda: _tossing_env_and_provider()[1]),
+        ("tossing3d same-side", lambda: SameSideSkills),
+    ],
+)
+def test_each_always_ask_environment_has_exactly_one_parameterized_skill(
+    *, environment: str, skills
+) -> None:
+    """The reset trigger is "after the environment's parameterized skill" (Josh,
+    2026-10-21), which presumes there is one. A second one would silently add a trigger.
+    These are the domains that implement the full reset always-ask requests."""
+    triggering = [
+        skill.name
+        for skill in skills().skills()
+        if AlwaysAskReset.triggers(ground_skill=_any_grounding(skill=skill))
+    ]
+    assert len(triggering) == 1, (environment, triggering)
 
 
 def test_the_trigger_follows_the_definition_not_the_name() -> None:
