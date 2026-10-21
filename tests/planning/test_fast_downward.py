@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.environment.types import Object
+from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
+from hitl_pmp.core.problem.environment.types import Object, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.predicates import (
@@ -90,6 +90,49 @@ def test_integration_ground_skill_costs_change_the_chosen_plan() -> None:
     # The all-MoveRobot route: 4 moves (cell0 -> cell4) plus TurnOnLight.
     assert len(costly_plan) == 5
     assert sum(step.skill is LightSwitchSkills.MOVE_ROBOT for step in costly_plan) == 4
+
+
+def test_integration_ground_skill_costs_apply_to_a_parameter_free_skill() -> None:
+    """FD names a parameter-free operator "<skill> " with a trailing space, so an
+    exact lookup of the SAS name missed it and the operator silently kept
+    `default_cost`. Here a one-step `shortcut` is priced above the two-step detour:
+    only a cost that actually lands makes the planner take the detour."""
+    marker = Type(name="marker", feature_names=())
+    start, middle, done = (
+        Predicate(name=name, types=(), holds=lambda _state, _objects: False)
+        for name in ("start", "middle", "done")
+    )
+
+    def skill(*, name: str, pre: Predicate, add: Predicate) -> Skill:
+        return Skill(
+            name=name,
+            parameters=(),
+            preconditions=frozenset({LiftedAtom(predicate=pre, variables=())}),
+            add_effects=frozenset({LiftedAtom(predicate=add, variables=())}),
+            delete_effects=frozenset(),
+            param_dim=0,
+        )
+
+    shortcut = skill(name="shortcut", pre=start, add=done)
+    detour_out = skill(name="detourout", pre=start, add=middle)
+    detour_back = skill(name="detourback", pre=middle, add=done)
+    setup = {
+        "skills": (shortcut, detour_out, detour_back),
+        "predicates": (start, middle, done),
+        "types": (marker,),
+        "objects": (Object(name="m", type=marker),),
+        "init_atoms": frozenset({GroundAtom(predicate=start, objects=())}),
+        "goal": frozenset({GroundAtom(predicate=done, objects=())}),
+    }
+
+    assert FastDownwardPlanner.plan(**setup) == [GroundSkill(skill=shortcut, objects=())]
+    costly_plan = FastDownwardPlanner.plan(
+        **setup, ground_skill_costs={GroundSkill(skill=shortcut, objects=()): 10.0}
+    )
+    assert costly_plan == [
+        GroundSkill(skill=detour_out, objects=()),
+        GroundSkill(skill=detour_back, objects=()),
+    ]
 
 
 def test_integration_plan_is_empty_when_the_goal_already_holds() -> None:
