@@ -1,9 +1,10 @@
 """The always-ask reset: a full human reset forced after every attempt at a skill with
-continuous parameters, and whenever the robot cannot plan to the goal on its own.
+continuous parameters, whenever the robot cannot plan to the goal on its own, and after
+every practice session that was only a STOP.
 
 A wrapper, not a planner. The method's own planner (EES, expectimax or determinized A*)
 still chooses every robot action and learns from every outcome; this rule only inserts
-a reset at two moments:
+a reset at three moments:
 
 1. **Parameterized skill.** After the robot executes any skill with continuous
    parameters (`param_dim > 0`), whether it succeeded or failed. Read off the skill
@@ -13,6 +14,10 @@ a reset at two moments:
    with no human reset offered). There is no cap: a reset that does not cure the
    stranding fires again on the next step, and each re-fire is logged with its run
    length so the need for a cap can be judged.
+3. **STOP-only session.** After a practice session whose only act was a STOP. The
+   session is over, so the step protocol executes this one at the session's end
+   (`EesMethod.stop_only_session_reset`); the session stays STOP-only, so it still
+   counts toward `repeated_stop`.
 
 The reset is the human *full* reset to a freshly sampled start state
 (`HumanStartResetRequested`), at the domain's existing human-reset price unless
@@ -30,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 PARAMETERIZED_SKILL = "parameterized_skill"
 STRANDED = "stranded"
+STOP_ONLY_SESSION = "stop_only_session"
 
 
 class AlwaysAskReset(BaseModel):
