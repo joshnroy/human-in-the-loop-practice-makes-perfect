@@ -9,7 +9,12 @@ import pytest
 
 from hitl_pmp.cli import Cli
 from hitl_pmp.recording.run_record.reader import RunRecordReader
-from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, TickEntry
+from hitl_pmp.recording.run_record.types import (
+    RECORDING_FILENAME,
+    ActionEntry,
+    SegmentEnd,
+    TickEntry,
+)
 from scripts.sweepoffshelf3d_launch import Budget, ShelfLaunch
 
 pytestmark = [
@@ -36,9 +41,14 @@ def _run(*, output: Path, record_motion: str) -> None:
     )  # fmt: skip
 
 
-def _without_timing(*, path: Path) -> list[dict]:
+# Differ between any two processes, recording or not: the wall clock, and the snapshot's
+# pickle bytes, whose memo order follows string-set iteration and so PYTHONHASHSEED.
+PER_PROCESS = {"elapsed_seconds", "policy_sha256"}
+
+
+def _without_per_process(*, path: Path) -> list[dict]:
     return [
-        {key: value for key, value in record.items() if key != "elapsed_seconds"}
+        {key: value for key, value in record.items() if key not in PER_PROCESS}
         for record in json.loads(path.read_text())
     ]
 
@@ -50,13 +60,21 @@ def _motion_ticks(*, path: Path) -> int:
     )
 
 
+def _actions(*, path: Path) -> list[dict]:
+    """Every action and segment outcome, less the tick count motion adds."""
+    return [
+        entry.model_dump(exclude={"num_ticks"})
+        for entry in RunRecordReader.entries(path=path)
+        if isinstance(entry, ActionEntry | SegmentEnd)
+    ]
+
+
 def test_recording_motion_changes_no_result(*, tmp_path: Path) -> None:
     _run(output=tmp_path / "off", record_motion="off")
     _run(output=tmp_path / "all", record_motion="all")
     off, on = tmp_path / "off", tmp_path / "all"
     assert (on / "stats.json").read_bytes() == (off / "stats.json").read_bytes()
-    # The only per-run difference is the wall clock each evaluation took.
-    assert _without_timing(path=on / "step_evaluations.json") == _without_timing(
+    assert _without_per_process(path=on / "step_evaluations.json") == _without_per_process(
         path=off / "step_evaluations.json"
     )
     evaluations = sorted((on / "evaluations").glob(f"*/{RECORDING_FILENAME}"))
@@ -64,3 +82,7 @@ def test_recording_motion_changes_no_result(*, tmp_path: Path) -> None:
     assert _motion_ticks(path=on / RECORDING_FILENAME) > 0
     assert all(_motion_ticks(path=path) > 0 for path in evaluations)
     assert _motion_ticks(path=off / RECORDING_FILENAME) == 0
+    # The recordings themselves say the same thing happened, ticks aside.
+    for path in [on / RECORDING_FILENAME, *evaluations]:
+        relative = path.relative_to(on)
+        assert _actions(path=path) == _actions(path=off / relative), relative
