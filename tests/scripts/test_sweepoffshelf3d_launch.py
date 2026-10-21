@@ -5,12 +5,18 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.cli import Cli
+from hitl_pmp.core.practice_costs import PracticeCosts, SkillStepCosts
 from scripts.run_sweep import SweepRunner
 from scripts.sweepoffshelf3d_launch import (
-    ALWAYS_ASK_COSTS,
-    COSTS,
+    EES_ALWAYS_ASK_COSTS,
+    EES_COSTS,
+    EES_HUMAN_RESET_COST,
     FULL,
+    PLANNER_ALWAYS_ASK_COSTS,
+    PLANNER_COSTS,
+    PLANNER_HUMAN_RESET_COST,
     REPO,
+    SKILL_STEP_COSTS,
     ShelfLaunch,
     main,
 )
@@ -86,7 +92,7 @@ def test_every_arm_parses_to_the_decided_settings(*, name: str) -> None:
     assert args.num_test_tasks == 10
     assert args.stop_after_perfect_evaluations == 3
     assert args.reset_cubes_success_probability == 1.0
-    assert args.practice_cost_config == (ALWAYS_ASK_COSTS if arm.always_ask else COSTS)
+    assert args.practice_cost_config == ShelfLaunch.cost_config(arm=arm)
     assert args.always_ask_reset is arm.always_ask
     assert args.scene_bg is True  # the lab2 scene
     assert args.skip_skill_benchmark_gate is False
@@ -183,9 +189,10 @@ def test_an_always_ask_arm_adds_the_flag_and_the_sampled_start_costs() -> None:
         asked = ShelfLaunch.method_args(arm=arms[f"{name}-always-ask"], size=FULL)
         assert arms[f"{name}-always-ask"].method == arms[name].method
         assert "--always-ask-reset" in asked and "--always-ask-reset" not in plain
-        assert _value(argv=asked, flag="--practice-cost-config") == str(ALWAYS_ASK_COSTS)
-        rest = [t for t in asked if t not in {"--always-ask-reset", str(ALWAYS_ASK_COSTS)}]
-        assert rest == [t for t in plain if t != str(COSTS)]
+        sampled = ShelfLaunch.cost_config(arm=arms[f"{name}-always-ask"])
+        assert _value(argv=asked, flag="--practice-cost-config") == str(sampled)
+        rest = [t for t in asked if t not in {"--always-ask-reset", str(sampled)}]
+        assert rest == [t for t in plain if t != str(ShelfLaunch.cost_config(arm=arms[name]))]
 
 
 def test_launch_refuses_without_go(*, tmp_path: Path) -> None:
@@ -195,13 +202,84 @@ def test_launch_refuses_without_go(*, tmp_path: Path) -> None:
 
 
 def test_the_cost_files_are_tracked_and_price_the_stage5_accounting() -> None:
-    assert COSTS.parent == ALWAYS_ASK_COSTS.parent == REPO / "configs"
-    canonical = json.loads(COSTS.read_text())
-    sampled = json.loads(ALWAYS_ASK_COSTS.read_text())
-    assert canonical["objective_lambda"] == sampled["objective_lambda"] == 3e-6
-    assert canonical["robot_step"] == {"value": 1}
-    assert set(canonical["human_skills"]) == {"reset_cubes", "reset_wiper"}
-    assert set(sampled["human_skills"]) == {"reset_cubes", "reset_wiper", "reset_to_sampled_start"}
+    files = [PLANNER_COSTS, PLANNER_ALWAYS_ASK_COSTS, EES_COSTS, EES_ALWAYS_ASK_COSTS]
+    assert {path.parent for path in files} == {REPO / "configs"}
+    for canonical, sampled in [
+        (PLANNER_COSTS, PLANNER_ALWAYS_ASK_COSTS),
+        (EES_COSTS, EES_ALWAYS_ASK_COSTS),
+    ]:
+        plain = json.loads(canonical.read_text())
+        asked = json.loads(sampled.read_text())
+        assert plain["objective_lambda"] == asked["objective_lambda"] == 3e-6
+        assert plain["robot_step"] == {"value": 1}
+        assert set(plain["human_skills"]) == {"reset_cubes", "reset_wiper"}
+        assert set(asked["human_skills"]) == {
+            "reset_cubes",
+            "reset_wiper",
+            "reset_to_sampled_start",
+        }
+
+
+# Josh, 2026-10-21: one rule, two units. The planner arms price a human reset in
+# control steps (500, Tossing3D's canonical price); EES prices it in its own plan-cost
+# units, where a robot skill costs -log(competence) (5, the EXP-22c ees-lamcost5 price).
+@pytest.mark.parametrize(
+    ("name", "reset_cost"),
+    [
+        ("ees", EES_HUMAN_RESET_COST),
+        ("ees-always-ask", EES_HUMAN_RESET_COST),
+        ("cccc-determinized", PLANNER_HUMAN_RESET_COST),
+        ("cccc-determinized-always-ask", PLANNER_HUMAN_RESET_COST),
+        ("cccc-expectimax-d6", PLANNER_HUMAN_RESET_COST),
+        ("cccc-expectimax-d6-always-ask", PLANNER_HUMAN_RESET_COST),
+    ],
+)
+def test_each_method_prices_every_human_reset_in_its_own_units(
+    *, name: str, reset_cost: float
+) -> None:
+    arm = ShelfLaunch.arms(expectimax_depths=[6])[name]
+    args = Cli.parse_args(
+        argv=ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/out"))
+    )
+    costs = PracticeCosts.load(path=args.practice_cost_config)
+    expected = {"reset_cubes", "reset_wiper"} | (
+        {"reset_to_sampled_start"} if arm.always_ask else set()
+    )
+    assert set(costs.human_skills) == expected
+    for charge in costs.human_skills.values():
+        assert charge.cost.value == reset_cost
+        assert charge.cost.function is None
+        # A reset is still one counted step of the practice budget.
+        assert charge.duration.value == 1
+
+
+def test_the_two_reset_prices_are_the_decided_ones() -> None:
+    assert PLANNER_HUMAN_RESET_COST == 500
+    assert EES_HUMAN_RESET_COST == 5
+
+
+@pytest.mark.parametrize("name", [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS])
+def test_only_the_planner_arms_get_the_fixed_skill_step_costs(*, name: str) -> None:
+    arm = ShelfLaunch.arms(expectimax_depths=[6, 7])[name]
+    argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/out"))
+    args = Cli.parse_args(argv=argv)
+    if arm.method == "pomdp":
+        assert args.pomdp_skill_step_costs == SKILL_STEP_COSTS
+        table = SkillStepCosts.load(path=args.pomdp_skill_step_costs)
+        assert set(table.skill_steps) == {
+            "PickWiper",
+            "SweepShelf",
+            "ReturnWiper",
+            "PickCubeFromShelf",
+            "PickCubeFromFloor",
+            "PlaceCubeInBox",
+            "ReturnCubeToShelfFromBox",
+            "ReturnCubeToShelfFromFloor",
+        }
+    else:
+        assert "--pomdp-skill-step-costs" not in argv
+        # The flag is the pomdp method's own; EES's parser does not define it.
+        assert not hasattr(args, "pomdp_skill_step_costs")
 
 
 def test_dependencies_outside_the_checkout_are_named(*, tmp_path: Path) -> None:
@@ -323,10 +401,11 @@ def test_della_tasks_run_the_launchers_own_argv_with_della_paths(*, tmp_path: Pa
         local = ShelfLaunch.cli_argv(
             arm=arm, size=FULL, seed=int(seed), output_dir=Path(output_dir)
         )
-        costs = ALWAYS_ASK_COSTS if arm.always_ask else COSTS
-        assert argv == [
-            f"{code}/{costs.relative_to(REPO)}" if token == str(costs) else token for token in local
-        ]
+        repo_files = {
+            str(path): f"{code}/{path.relative_to(REPO)}"
+            for path in [ShelfLaunch.cost_config(arm=arm), SKILL_STEP_COSTS]
+        }
+        assert argv == [repo_files.get(token, token) for token in local]
         assert not any(str(REPO) in token for token in argv)
         assert Cli.parse_args(argv=argv).seed == int(seed)
         assert name == f"shelf-20261020-{arm_name}-s{seed}"

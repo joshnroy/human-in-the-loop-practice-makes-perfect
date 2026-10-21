@@ -1,0 +1,39 @@
+{
+  "source": {
+    "benchmark_commit": "1df856b04451c64f6264381351ea21205edd3945",
+    "report_sha256": "c01d46b69cd052e8508fc6d0c9f7bb02db364e4ab331cd3de0f0bbfb4aee3090",
+    "report_dir": "/home/josh/Documents/repos/research/hitl-pmp-results/wt-restack-20261021/benchmark-reports/sweepoffshelf3d/1df856b04451c64f6264381351ea21205edd3945",
+    "statistic": "mean controller_steps per skill over every benchmark case that executed, successful and failed; cases refused at planning (0 control steps) are excluded",
+    "cases": {
+      "PickCubeFromFloor": 11,
+      "PickCubeFromShelf": 97,
+      "PickWiper": 60,
+      "PlaceCubeInBox": 6,
+      "ReturnCubeToShelfFromBox": 7,
+      "ReturnCubeToShelfFromFloor": 11,
+      "ReturnWiper": 10,
+      "SweepShelf": 120
+    },
+    "planning_refusals_excluded": {
+      "PickCubeFromFloor": 1,
+      "PickCubeFromShelf": 3,
+      "PickWiper": 0,
+      "PlaceCubeInBox": 0,
+      "ReturnCubeToShelfFromBox": 14,
+      "ReturnCubeToShelfFromFloor": 1,
+      "ReturnWiper": 0,
+      "SweepShelf": 0
+    },
+    "command": "python -m scripts.skill_step_costs /home/josh/Documents/repos/research/hitl-pmp-results/wt-restack-20261021/benchmark-reports/sweepoffshelf3d/1df856b04451c64f6264381351ea21205edd3945"
+  },
+  "skill_steps": {
+    "PickCubeFromFloor": 698.5,
+    "PickCubeFromShelf": 624.8,
+    "PickWiper": 701.4,
+    "PlaceCubeInBox": 482.5,
+    "ReturnCubeToShelfFromBox": 937.0,
+    "ReturnCubeToShelfFromFloor": 1223.5,
+    "ReturnWiper": 892.7,
+    "SweepShelf": 2272.5
+  }
+}
