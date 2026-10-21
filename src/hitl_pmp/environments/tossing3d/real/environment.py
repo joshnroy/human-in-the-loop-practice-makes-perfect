@@ -10,13 +10,14 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.types import Tossing3DBackend, TossParameterSet
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
-from .backend import RealSkillStepCosts, RealTossingBackend
+from .backend import PracticeScene, RealSkillStepCosts, RealTossingBackend
 from .contract import TossingRobot
 
 
@@ -58,3 +59,24 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
         if destination is None:
             return None
         return {"destination": Tossing3DSide(destination).value}
+
+    def practice_scene(self) -> PracticeScene:
+        """Practice's scene as last observed (`RealTossingBackend.practice_scene`)."""
+        backend = self.backend()
+        assert isinstance(backend, RealTossingBackend)
+        return backend.practice_scene()
+
+    def restore_practice_scene(self, *, scene: PracticeScene) -> State:
+        """Have the person put practice's `scene` back after an evaluation used the room,
+        and carry on from it as observed. Not a skill or a reset the method chose: no
+        step is charged, and the episode bookkeeping and the observed pickup-refusal
+        channel carry over, since the scene is practice's own."""
+        backend = self.backend()
+        assert isinstance(backend, RealTossingBackend)
+        state = self.get_current_state()
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        backend.restore_practice_scene(scene=scene)
+        restored = self._observed_state(seed=seed, steps_taken=steps_taken)
+        self._adopt(state=restored)
+        return restored
