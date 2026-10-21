@@ -1,4 +1,5 @@
-"""The dashboard's HTTP server: the page at `/`, the run's state as JSON at `/api/state`.
+"""The dashboard's HTTP server: the page at `/`, the run's state as JSON at `/api/state`,
+and the newest ceiling-camera frame at `/api/camera.jpg`.
 
 Standard library only, read-only: GET and HEAD, nothing else. The page is one static
 file with its script inline and polls the JSON; it fetches nothing from the network.
@@ -37,6 +38,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send(content=page, kind="text/html; charset=utf-8", body=body)
         elif path == "/api/state":
             self._send(content=self._state(), kind="application/json", body=body)
+        elif path == "/api/camera.jpg":
+            feed = type(self).dashboard.camera
+            frame = feed.frame() if feed is not None else None
+            if frame is None:
+                self.send_error(HTTPStatus.NOT_FOUND, "no camera frame")
+            else:
+                self._send(content=frame, kind="image/jpeg", body=body)
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 

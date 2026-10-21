@@ -302,7 +302,13 @@ class Evaluations:
         for folder in running:
             if not folder.name.isdigit() or int(folder.name) in by_index:
                 continue
-            progress = Evaluations._json(path=folder / "progress.json")
+            # A finished evaluation's `results.json` may come before the run rewrites
+            # `step_evaluations.json` (a run measuring every cycle writes that at the end).
+            results = Evaluations._json(path=folder / "results.json")
+            finished_here = isinstance(results, dict) and bool(results.get("complete"))
+            progress = (
+                results if finished_here else Evaluations._json(path=folder / "progress.json")
+            )
             point = points.get(int(folder.name))
             if not isinstance(progress, dict) or point is None:
                 continue
@@ -313,7 +319,7 @@ class Evaluations:
                 learning_updates=point.get("learning_updates"),
                 num_solved=sum(bool(task.get("solved")) for task in tasks),
                 num_total=len(tasks),
-                complete=False,
+                complete=finished_here,
             )
         return [by_index[index] for index in sorted(by_index)]
 
@@ -396,6 +402,61 @@ class DecisionLog(BaseModel):
     def _int(*, line: str, key: str) -> int:
         found = re.search(_DECISION_INT.format(key=key), line)
         return int(found.group(1)) if found else 0
+
+
+class Annotation(BaseModel):
+    """One human correction of one evaluation task, from `--annotations`: a JSONL file
+    kept beside the run. The recorded result is never rewritten; this sits beside it."""
+
+    evaluation_index: int
+    task: int
+    recorded_solved: bool
+    recorded_reason: str | None
+    corrected_solved: bool
+    why: str
+    by: str | None
+    time: str | None
+
+    def describe(self) -> str:
+        word = {True: "solved", False: "unsolved"}
+        reason = f" ({self.recorded_reason})" if self.recorded_reason else ""
+        source = ", ".join(part for part in (self.by, self.time) if part)
+        return (
+            f"task {self.task}: recorded {word[self.recorded_solved]}{reason}, corrected "
+            f"to {word[self.corrected_solved]}. {self.why}" + (f" ({source})" if source else "")
+        )
+
+
+class Annotations:
+    @staticmethod
+    def read(*, path: Path | None) -> list[Annotation]:
+        """Every well-formed line; a line that is not is skipped, never an error."""
+        if path is None:
+            return []
+        try:
+            lines = path.read_text().splitlines()
+        except (FileNotFoundError, UnicodeDecodeError):
+            return []
+        annotations = []
+        for line in lines:
+            try:
+                record = json.loads(line)
+                recorded, corrected = record["recorded"], record["corrected"]
+                annotations.append(
+                    Annotation(
+                        evaluation_index=int(record["evaluation_index"]),
+                        task=int(record["task"]),
+                        recorded_solved=bool(recorded["solved"]),
+                        recorded_reason=recorded.get("reason"),
+                        corrected_solved=bool(corrected["solved"]),
+                        why=str(record.get("why", "")),
+                        by=record.get("by"),
+                        time=record.get("time"),
+                    )
+                )
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                continue
+        return annotations
 
 
 class TossResult(BaseModel):

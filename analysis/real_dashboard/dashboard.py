@@ -27,10 +27,14 @@ from pydantic import BaseModel, PrivateAttr
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, ROOM_FRAME
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 
+from .camera import CameraFeed, CameraState
+from .room import BIN_SIZE_M, BinSpotView, Landing, Room
 from .sources import (
     PICK_SKILL,
     SPOT_NAMES,
     TOSS_SKILL,
+    Annotation,
+    Annotations,
     DecisionLog,
     Evaluation,
     Evaluations,
@@ -59,8 +63,9 @@ TAPE_THICKNESS_M: Final = 0.05
 # (-1.846, 2.046, -1.846, 1.846)`: x min, x max, y min, y max). Drawn for orientation
 # only; the robot side owns the real one.
 DRIVABLE_BOX: Final = (-1.846, 2.046, -1.846, 1.846)
-BIN_SIZE_M: Final = (0.39, 0.29)
 _MATCH_TOLERANCE: Final = 1e-6
+# A skill is never this long on the robot (a toss is ~45 s, a pick ~30 s, a look ~20 s).
+STALE_LOG_SECONDS: Final = 180.0
 _OUTCOME_MATCH_SECONDS: Final = 10.0
 
 
@@ -88,6 +93,10 @@ class Status(BaseModel):
     discarded_lines: int
     notes: list[EventNote]
     session_tail: list[str]
+    # Seconds since any of the run's logs last changed, and whether that is too long:
+    # a skill is running and nothing has been written for `STALE_LOG_SECONDS`.
+    logs_age_seconds: float | None
+    stale: bool
     sources: dict[str, bool]
 
 
@@ -99,6 +108,10 @@ class EvalPoint(BaseModel):
     total: int
     label: str
     complete: bool
+    # A human's correction (`--annotations`), beside the recorded value, never over it.
+    corrected: int | None = None
+    corrected_label: str | None = None
+    corrections: list[str] = []
 
 
 class EvalCurve(BaseModel):
@@ -108,6 +121,7 @@ class EvalCurve(BaseModel):
     dashed: bool
     legend: str
     step_budget: int | None
+    corrected_legend: str | None = None
 
 
 class TossPoint(BaseModel):
@@ -124,6 +138,9 @@ class TossPoint(BaseModel):
     note: str | None
     source: str | None
     timestamp: str | None
+    # The method's epsilon-greedy draw (the decision log's `random_exploration`): a random
+    # toss is not counted toward competence. `None` when the decision log has no match.
+    random: bool | None = None
 
 
 class Tosses(BaseModel):
@@ -134,35 +151,8 @@ class Tosses(BaseModel):
     rolling_label: str
     # (toss index, in bin, known) over the trailing window ending at each toss.
     rolling: list[tuple[int, int, int]]
-
-
-class BinSpotView(BaseModel):
-    name: str
-    x: float
-    y: float
-    yaw: float
-    length: float
-    width: float
-
-
-class Landing(BaseModel):
-    index: int
-    x: float
-    y: float
-    in_bin: bool | None
-    inside_bin: bool | None
-    spot: str | None
-
-
-class Room(BaseModel):
-    bin_spots: list[BinSpotView]
-    tape_intercept: float
-    tape_slope: float
-    tape_thickness: float
-    drivable_box: tuple[float, float, float, float]
-    landings: list[Landing]
-    observation: Observation | None
-    observed_bin: BinSpotView | None
+    greedy_label: str
+    random_label: str
 
 
 class TimingRow(BaseModel):
@@ -195,6 +185,7 @@ class DashboardState(BaseModel):
     room: Room
     timing: Timing
     competence: dict[str, list[CompetencePoint]]
+    camera: CameraState | None
 
 
 class RealRunDashboard(BaseModel):
@@ -203,6 +194,8 @@ class RealRunDashboard(BaseModel):
     run_dir: Path
     skill_calls: Path | None = None
     landings_shown: int = 30
+    camera: CameraFeed | None = None
+    annotations: Path | None = None
 
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _event_tail: LogTail | None = PrivateAttr(default=None)
@@ -269,6 +262,9 @@ class RealRunDashboard(BaseModel):
             calls=self._calls.calls if self._calls_tail is not None else None,
             outcomes=self._decisions.outcomes,
         )
+        room = RoomBuilder.build(
+            tosses=tosses, observation=self._calls.last_observation(), shown=self.landings_shown
+        )
         return DashboardState(
             run_dir=str(self.run_dir),
             updated=datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -277,11 +273,11 @@ class RealRunDashboard(BaseModel):
                 evaluations=self._evaluations,
                 args=config.get("args", {}),
                 budget=budget,
+                annotations=Annotations.read(path=self.annotations),
             ),
             tosses=tosses,
-            room=RoomBuilder.build(
-                tosses=tosses, observation=self._calls.last_observation(), shown=self.landings_shown
-            ),
+            room=room,
+            camera=self.camera.state(room=room) if self.camera is not None else None,
             timing=TimingBuilder.build(
                 events=events, calls=self._calls.calls if self._calls_tail is not None else None
             ),
@@ -294,6 +290,21 @@ class RealRunDashboard(BaseModel):
                 for skill in (PICK_SKILL, TOSS_SKILL)
             },
         )
+
+    def _logs_age(self) -> float | None:
+        paths = [
+            self.run_dir / name
+            for name in (
+                "step_events.jsonl",
+                "robot_session.log",
+                "pomdp_decisions.jsonl",
+                "status.json",
+            )
+        ]
+        if self.skill_calls is not None:
+            paths.append(self.skill_calls)
+        newest = _LogAge.newest(paths=paths)
+        return None if newest is None else max(0.0, datetime.now().timestamp() - newest)
 
     def _status(self, *, events: StepEvents, budget: int | None) -> Status:
         status = _Files.json(path=self.run_dir / "status.json") or {}
@@ -311,6 +322,7 @@ class RealRunDashboard(BaseModel):
                 projected = budget / (steps / events.learning_updates)
         updated_unix = status.get("updated_unix")
         calls = self._calls.calls if self._calls_tail is not None else None
+        logs_age = self._logs_age()
         return Status(
             phase=status.get("phase"),
             status_age_seconds=(datetime.now().timestamp() - updated_unix)
@@ -343,6 +355,10 @@ class RealRunDashboard(BaseModel):
             discarded_lines=events.discarded_lines,
             notes=events.notes[-10:],
             session_tail=session.tail,
+            logs_age_seconds=logs_age,
+            stale=session.running is not None
+            and logs_age is not None
+            and logs_age > STALE_LOG_SECONDS,
             sources={
                 "step_events.jsonl": bool(self._events),
                 "step_evaluations.json": bool(self._evaluations),
@@ -355,10 +371,27 @@ class RealRunDashboard(BaseModel):
         )
 
 
+class _LogAge:
+    @staticmethod
+    def newest(*, paths: list[Path]) -> float | None:
+        times = []
+        for path in paths:
+            for candidate in (path, path.with_name(path.name + ".zst")):
+                try:
+                    times.append(candidate.stat().st_mtime)
+                except FileNotFoundError:
+                    continue
+        return max(times) if times else None
+
+
 class EvalCurveBuilder:
     @staticmethod
     def build(
-        *, evaluations: list[Evaluation], args: dict[str, Any], budget: int | None
+        *,
+        evaluations: list[Evaluation],
+        args: dict[str, Any],
+        budget: int | None,
+        annotations: list[Annotation],
     ) -> EvalCurve:
         method = str(args.get("method", ""))
         model = args.get("pomdp_competence_model") if method == "pomdp" else None
@@ -375,8 +408,22 @@ class EvalCurveBuilder:
             )
             for evaluation in evaluations
         ]
+        # The last annotation of a task stands; each one moves the count by its change.
+        latest: dict[tuple[int, int], Annotation] = {}
+        for annotation in annotations:
+            latest[(annotation.evaluation_index, annotation.task)] = annotation
+        for point in points:
+            mine = [a for (index, _), a in latest.items() if index == point.index]
+            if not mine:
+                continue
+            change = sum(int(a.corrected_solved) - int(a.recorded_solved) for a in mine)
+            point.corrected = point.solved + change
+            point.corrected_label = f"{point.corrected}/{point.total}"
+            point.corrections = [a.describe() for a in mine]
+        corrected = sum(point.corrected is not None for point in points)
         complete = sum(point.complete for point in points)
         return EvalCurve(
+            corrected_legend=f"corrected (human-confirmed), n={corrected}" if corrected else None,
             points=points,
             method_label=label,
             colour=colour,
@@ -434,9 +481,10 @@ class TossBuilder:
                 point.landed, point.source = result.landed, "skill_calls"
                 point.note = result.note or point.note
                 break
-            if point.source is None:
-                match = TossBuilder._outcome(action=action, outcomes=decided, used=decided_used)
-                if match is not None:
+            match = TossBuilder._outcome(action=action, outcomes=decided, used=decided_used)
+            if match is not None:
+                point.random = decided[match].random_exploration
+                if point.source is None:
                     point.in_bin, point.source = decided[match].success, "pomdp_decisions"
             points.append(point)
         sources = {point.source for point in points if point.source is not None}
@@ -450,7 +498,11 @@ class TossBuilder:
             ]
             rolling.append((point.index, sum(bool(other.in_bin) for other in window), len(window)))
         last = rolling[-1] if rolling else (0, 0, 0)
+        greedy = [point for point in known if point.random is False]
+        random = [point for point in known if point.random is True]
         return Tosses(
+            greedy_label=f"{sum(bool(point.in_bin) for point in greedy)}/{len(greedy)}",
+            random_label=f"{sum(bool(point.in_bin) for point in random)}/{len(random)}",
             points=points,
             outcome_source=None if not sources else sources.pop() if len(sources) == 1 else "mixed",
             in_bin_label=f"{sum(bool(point.in_bin) for point in known)}/{len(known)}",
