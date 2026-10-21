@@ -1,6 +1,7 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
 import logging
+import math
 import time
 from collections import Counter
 from pathlib import Path
@@ -121,6 +122,10 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_learning_time_scale: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     robot_duration_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
+    # A fixed price per robot skill, in control steps, replacing the learned per-grounding
+    # average and its prior (SkillStepCosts). Only the planner's price: the run is still
+    # charged each execution's real steps.
+    pomdp_skill_step_costs: dict[str, float] | None = None
     goal_pursuit_horizon: int | None = 0
     # A `.jsonl.zst` path is written one zstd frame per record (see JsonlLog.append).
     decision_log: Path | None = None
@@ -149,23 +154,55 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         self._refresh_execution_forecasts()
 
+    def _human_resets(self) -> dict[tuple[str, str | None], GroundSkill]:
+        """The provider's human resets by (skill, destination). The model grounds a
+        human skill over every object tuple (SweepOffShelf3D's `reset_cubes` over all
+        cube tuples, repeats included), but each is the same reset, dispatched and
+        charged by its destination."""
+        return {
+            (
+                human.skill.name,
+                self.skill_provider.movables_reset_destination(ground_skill=human),
+            ): (human)
+            for human in self.skill_provider.human_cube_bin_reset_skills()
+        }
+
+    def _human_reset(
+        self, *, ground: GroundSkill, resets: dict[tuple[str, str | None], GroundSkill]
+    ) -> GroundSkill | None:
+        """The provider's grounding of the human reset `ground` performs, or `None` for
+        a robot skill."""
+        if ground.skill.name not in {name for name, _ in resets}:
+            return None
+        destination = self.skill_provider.movables_reset_destination(ground_skill=ground)
+        return resets.get((ground.skill.name, destination))
+
     def _refresh_execution_forecasts(self) -> None:
         accounting = self._practice_accounting
         if accounting is None:
             return
         price = accounting.robot_charge().cost
-        humans = self.skill_provider.human_cube_bin_reset_skills()
+        fixed = self.pomdp_skill_step_costs
+        resets = self._human_resets()
         estimates = {}
+        missing = set()
         for ground in self._pomdp_model.ground_skills:
+            human = self._human_reset(ground=ground, resets=resets)
+            if human is not None:
+                estimates[str(ground)] = self.practice_action_cost(ground_skill=human)
+                continue
             durations = self._execution_durations.get(ground, [])
-            duration = (
-                sum(durations) / len(durations) if durations else self.robot_duration_prior_steps
-            )
-            estimates[str(ground)] = (
-                self.practice_action_cost(ground_skill=ground)
-                if ground in humans
-                else duration * price
-            )
+            if fixed is not None:
+                duration = fixed.get(ground.skill.name, math.nan)
+                if math.isnan(duration):
+                    missing.add(ground.skill.name)
+            elif durations:
+                duration = sum(durations) / len(durations)
+            else:
+                duration = self.robot_duration_prior_steps
+            estimates[str(ground)] = duration * price
+        if missing:
+            raise ValueError(f"pomdp_skill_step_costs prices no step count for {sorted(missing)}")
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"expected_execution_costs": estimates}
         )
@@ -182,9 +219,9 @@ class Tossing3DPomdpMethod(EesMethod):
         if (
             complete
             and not self._pending_start_reset
-            and ground not in self.skill_provider.human_cube_bin_reset_skills()
+            and ground is not None
+            and self._human_reset(ground=ground, resets=self._human_resets()) is None
         ):
-            assert ground is not None
             self._execution_durations.setdefault(ground, []).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}

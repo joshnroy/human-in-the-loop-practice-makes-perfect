@@ -740,6 +740,7 @@ class StepPracticeRunner:
                 "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
                 "repeated_zero_step_limit": zero_step_limit,
                 "robot_duration_prior_steps": getattr(method, "robot_duration_prior_steps", None),
+                "robot_skill_step_costs": getattr(method, "pomdp_skill_step_costs", None),
             },
         )
         StepFiles.json(
