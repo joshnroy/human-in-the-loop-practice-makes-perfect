@@ -103,7 +103,13 @@ def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice
     )
     events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
     kinds = [event["event"] for event in events]
-    updates = [i for i, kind in enumerate(kinds) if kind == "learning_update"]
+    # A cycle's learning updates; the one for a cycle the budget cut short is the
+    # final measurement's, not a cycle-end one.
+    updates = [
+        i
+        for i, event in enumerate(events)
+        if event["event"] == "learning_update" and event["reason"] != "practice_step_budget"
+    ]
     assert len(updates) >= 2
     for position in updates:
         # Learn, then measure the policy just updated, then put practice's scene back.
