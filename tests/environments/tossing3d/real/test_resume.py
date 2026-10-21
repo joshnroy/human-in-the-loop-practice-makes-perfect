@@ -268,3 +268,22 @@ def test_a_ctrl_c_mid_skill_leaves_the_last_checkpoint_readable(
     assert header["next_cycle"] == learned >= 1
     assert not list(output.glob("*.tmp"))
     del room
+
+
+def test_every_checkpoint_carries_the_zero_step_streak(
+    *, room: FakeTossingRobot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`repeated_zero_step` counts sessions in a row, so a resume that started the count
+    again would let a stuck run practise K more sessions than one left alone."""
+    payloads: list[dict[str, Any]] = []
+    save = PracticeCheckpoint.save
+
+    def saving(**kwargs: Any) -> None:
+        payloads.append(kwargs["payload"])
+        save(**kwargs)
+
+    monkeypatch.setattr(PracticeCheckpoint, "save", staticmethod(saving))
+    Cli.main(argv=_argv(output=tmp_path / "run"))
+    assert payloads
+    assert all(isinstance(payload["zero_step_streak"], int) for payload in payloads)
+    del room
