@@ -33,7 +33,7 @@ def test_the_canonical_preset_applies_to_the_real_domain_with_weight_zero() -> N
     assert Path(args.practice_cost_config).name == "tossing3d_tick_priced_costs.json"
     assert args.max_steps_per_interaction == 20
     assert args.robot == "fake"
-    assert args.initial_measurement is False
+    assert args.initial_measurement is True
 
 
 def test_the_real_problems_carry_the_real_toss_set_and_evaluation_skips_hard_reset() -> None:
@@ -63,13 +63,16 @@ def test_real_evaluations_run_in_this_process(
     assert isinstance(seen["evaluations"], InProcessEvaluations)
 
 
-def test_a_fake_robot_run_practises_and_ends_with_one_evaluation(*, tmp_path: Path) -> None:
+def test_a_fake_robot_run_measures_the_baseline_practises_and_ends_with_one_evaluation(
+    *, tmp_path: Path
+) -> None:
     output = tmp_path / "run"
     Cli.main(argv=[*FAKE_RUN, "--practice-step-budget", "1500", "--output-dir", str(output)])
     events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
     measurements = [event for event in events if event["event"] == "measurement"]
-    assert len(measurements) == 1
-    assert measurements[0]["practice_steps"] > 0
+    assert len(measurements) == 2
+    assert measurements[0]["practice_steps"] == 0
+    assert measurements[1]["practice_steps"] > 0
     far_tosses = [
         event
         for event in events
@@ -82,6 +85,7 @@ def test_a_fake_robot_run_practises_and_ends_with_one_evaluation(*, tmp_path: Pa
     # far-side toss is refused (a refused toss is charged no steps).
     assert all(event["end_step"] > event["start_step"] for event in far_tosses)
     assert (output / "evaluations" / "0000").exists()
+    assert (output / "evaluations" / "0001").exists()
     session = (output / "robot_session.log").read_text().splitlines()
     assert any("cycle 0 [" in line and "action 1/20 · steps 0/1500" in line for line in session)
     assert any("running PickCube" in line for line in session)
@@ -98,6 +102,8 @@ def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice
             *("--practice-step-budget", "1500", "--measure-every-cycles", "1"),
             # Short cycles, so a small budget holds several.
             *("--max-steps-per-interaction", "4"),
+            # Cycle-end measurements only; the step-0 one is `test_baseline_first.py`'s.
+            "--no-initial-measurement",
             *("--output-dir", str(output)),
         ]
     )

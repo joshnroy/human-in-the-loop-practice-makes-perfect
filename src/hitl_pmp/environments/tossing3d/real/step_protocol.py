@@ -94,13 +94,23 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
 
     @staticmethod
     def evaluation_progress(
-        *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
+        *,
+        problem: Problem,
+        index: int,
+        after_cycle: int | None,
+        task: int,
+        num_tasks: int,
+        before_practice: bool = False,
     ) -> None:
         """Handed to the evaluation's backend: `eval 3 after cycle 3: task 2/5`."""
         backend = Tossing3DStepProtocol.env(problem=problem).backend()
         assert isinstance(backend, RealTossingBackend)
         backend.evaluation_progress(
-            index=index, after_cycle=after_cycle, task=task, num_tasks=num_tasks
+            index=index,
+            after_cycle=after_cycle,
+            task=task,
+            num_tasks=num_tasks,
+            before_practice=before_practice,
         )
 
     @staticmethod

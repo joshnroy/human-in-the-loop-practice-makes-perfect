@@ -290,6 +290,10 @@ class FakeStepProtocol:
     def evaluation_progress(**progress) -> None:
         del progress
 
+    @staticmethod
+    def evaluation_pool() -> None:
+        return None  # Evaluations beside practice, as in every simulated domain.
+
 
 class ScriptedMethod(EesMethod):
     """A real `EesMethod` (so deployment snapshots encode), with a scripted practice
