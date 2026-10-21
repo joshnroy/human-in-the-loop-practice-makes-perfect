@@ -89,7 +89,9 @@ def _record_one_skill(*, tmp_path: Path, record_motion: str) -> tuple[Path, int]
         writer.begin_segment(phase=Phase.EVALUATION, checkpoint=0, task_index=0)
         problem.take_action(action=np.array([float(SKILL_IDS["PickWiper"]), 0.0, 0.0, 0.0]))
         steps = problem.env.last_controller_steps()
-        writer.robot_action(label="PickWiper", start_step=0, end_step=steps, success=True)
+        writer.robot_action(
+            label="PickWiper(robot, wiper_0)", start_step=0, end_step=steps, success=True
+        )
         writer.end_segment(success=False, outcome="step_budget", steps=steps)
         writer.close()
     finally:
@@ -114,7 +116,11 @@ def test_motion_ticks_carry_the_arm_at_the_stride(*, tmp_path: Path) -> None:
     assert steps // stride <= len(ticks) <= steps // stride + 1
     assert action.num_ticks == len(ticks)
     # The action line is the same one a recording without motion writes.
-    assert (action.skill, action.objects, action.params) == ("PickWiper", [], [])
+    assert (action.skill, action.objects, action.params) == (
+        "PickWiper",
+        ["robot", "wiper_0"],
+        [],
+    )
     joints = [np.asarray(t.state["robot_joints"]) for t in ticks]
     assert all(j.shape == (len(SweepOffShelf3DBackend.ROBOT_JOINTS),) for j in joints)
     arm = np.array([j[3:10] for j in joints])
