@@ -112,6 +112,15 @@ class Cli:
             type=lambda value: Cli.parse_positive_int(value=value),
             default=None,
         )
+        parser.add_argument(
+            "--evaluate-only",
+            action="store_true",
+            help="Step protocol: build the run exactly as a fresh one (same seed, preset "
+            "and method factory), measure the untrained policy once -- the step-0 "
+            "measurement -- and exit: no practice, no learning update, no checkpoint, no "
+            "restore prompt. --practice-step-budget is optional and ignored (recorded in "
+            "config_snapshot.json as given). Refused with --resume.",
+        )
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
         parser.add_argument(
             "--initial-measurement",
@@ -360,7 +369,9 @@ class Cli:
                 parser=parser, env=known_args.env, method=known_args.method
             )
         args = parser.parse_args(argv)
-        if args.preset is not None and args.practice_step_budget is None:
+        if args.evaluate_only and args.resume is not None:
+            parser.error("--evaluate-only measures a fresh run's policy; it cannot --resume")
+        if args.preset is not None and args.practice_step_budget is None and not args.evaluate_only:
             # A preset prices practice with its cost file, which only the step protocol
             # reads: in cycle mode the run would silently not be the preset's arm.
             parser.error(f"--preset {args.preset} runs only under --practice-step-budget")
@@ -369,7 +380,7 @@ class Cli:
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
-        if args.practice_step_budget is not None:
+        if args.practice_step_budget is not None or args.evaluate_only:
             from hitl_pmp.step_protocol import StepProtocolEntry
 
             if args.env not in STEP_PROTOCOL_ENVIRONMENTS:
