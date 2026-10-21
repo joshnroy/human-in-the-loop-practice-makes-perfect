@@ -46,6 +46,7 @@ def _skills() -> KinderSkills:
     skills.state = lambda: None  # type: ignore[method-assign]
     skills.plan_blocked = lambda *, controller: None  # type: ignore[method-assign]
     skills.sync = lambda: None  # type: ignore[method-assign]
+    skills.robot_borne = lambda: []  # type: ignore[method-assign]
 
     def env_step(*, action: np.ndarray, label: str) -> None:
         shelf.ticks += 1
