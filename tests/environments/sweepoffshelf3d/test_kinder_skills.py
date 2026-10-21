@@ -341,11 +341,16 @@ def test_an_arm_stranded_in_the_cupboard_front_is_retracted_after_the_next_skill
     """The absorbing state behind CCCC's PickCubeFromShelf/PickWiper plan-time tally:
     the retract planned from a start PyBullet calls a collision, never planned, and left
     the arm out; every later skill planned its approach from there and failed with 0
-    control steps, and so did its own retract."""
+    control steps, and so did its own retract. From the wiper's home on top of the
+    cupboard the first PickWiper may itself succeed; either way its retract leaves the
+    arm out of the cupboard front."""
     env.reset_to_seed(seed=0)
     _pose_robot(env=env, base=STRANDED_BASE, arm=STRANDED_ARM)
     assert _arm_from_home(env=env) > RETRACT_TOLERANCE
-    _act(env=env, skill="PickWiper")
+    atoms = _act(env=env, skill="PickWiper")
+    if ("HoldingWiper", ("robot", "wiper_0")) in atoms:
+        assert _wiper_carried_clear(env=env)
+        return
     assert _arm_from_home(env=env) < RETRACT_TOLERANCE, env.last_skill_error()
     atoms = _act(env=env, skill="PickWiper")
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
