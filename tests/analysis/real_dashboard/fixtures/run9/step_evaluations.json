@@ -1,0 +1,38 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 1586,
+    "clock_steps": 1586,
+    "robot_steps": 1582,
+    "human_invocations": 4,
+    "human_resets_by_destination": {
+      "robot_side": 4,
+      "opposite_side": 0
+    },
+    "robot_invocations": 15,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_sha256": "b89b187f3edf4e63efd0b7525c4f615cdb5fb7f943e83695fa2f0f96da40839c",
+    "robot_cost": 1582.0,
+    "human_cost": 2000.0,
+    "physical_cost": 3582.0,
+    "human_steps": 4,
+    "human_invocations_by_skill": {
+      "reset_cube_and_bin_near": 4
+    },
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 0,
+        "reason": "no_plan"
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "elapsed_seconds": 64.2132027168991
+  }
+]
