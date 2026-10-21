@@ -538,9 +538,11 @@ class StepEvaluation:
         environment: type[StepProtocolEnvironment],
         checkpoint: int | None = None,
         after_cycle: int | None = None,
+        before_practice: bool = False,
     ) -> dict[str, Any]:
         """`after_cycle` is the learning cycle whose update this evaluation measures
-        (`--measure-every-cycles`), `None` for the run's final or a step-interval one."""
+        (`--measure-every-cycles`), `None` for the run's final or a step-interval one;
+        `before_practice` marks the untrained policy's step-0 measurement."""
         args = argparse.Namespace(**configuration)
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
@@ -568,6 +570,7 @@ class StepEvaluation:
                         after_cycle=after_cycle,
                         task=task_number,
                         num_tasks=len(tasks),
+                        before_practice=before_practice,
                     )
 
                 progress()
@@ -1019,7 +1022,7 @@ class StepPracticeRunner:
                 },
             )
 
-        def measure(*, after_cycle: int | None = None) -> None:
+        def measure(*, after_cycle: int | None = None, before_practice: bool = False) -> None:
             raw = DeploymentSnapshot.encode(method=method)
             index = len(records)
             path = output / "snapshots" / f"{index:04d}.pickle"
@@ -1052,6 +1055,7 @@ class StepPracticeRunner:
                     environment=environment,
                     checkpoint=index,
                     after_cycle=after_cycle,
+                    before_practice=before_practice,
                 ),
             ))
             StepFiles.json(path=output / "measurements.json", value=records)
@@ -1217,9 +1221,7 @@ class StepPracticeRunner:
             )
         budget_reached = False
         try:
-            # The untrained policy's measurement; off where every evaluation task costs a
-            # person a scene set-up (`--env tossing3d_real`), and never repeated by a
-            # resumed run.
+            # The untrained policy's measurement, never repeated by a resumed run.
             if evaluate_only:
                 StepFiles.json(
                     path=output / "evaluate_only.json",
@@ -1230,10 +1232,17 @@ class StepPracticeRunner:
                         "practice_step_budget_ignored": args.practice_step_budget,
                     },
                 )
-                measure()
+                measure(before_practice=True)
                 endpoint = "evaluate_only"
             elif getattr(args, "initial_measurement", True) and saved is None:
-                measure()
+                if environment.evaluation_pool() is None:  # Spawned beside practice.
+                    measure(before_practice=True)
+                else:
+                    # In this process, so it uses the room practice's reset just set up:
+                    # remembered first, put back by the person before cycle 0 practises.
+                    scene = environment.practice_scene(problem=problem)
+                    measure(before_practice=True)
+                    restore_practice(scene=scene)
             if saved is not None and saved.get("practice_scene") is not None:
                 # The checkpoint's cycle-end evaluation, if it never finished, then the
                 # person puts practice's scene back as the checkpoint remembered it.

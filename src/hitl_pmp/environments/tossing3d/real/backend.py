@@ -133,10 +133,18 @@ class EvaluationProgress(BaseModel):
     after_cycle: int | None
     task: int
     num_tasks: int
+    # The untrained policy's step-0 measurement (`--evaluate-only`'s too).
+    before_practice: bool = False
 
     def line(self) -> str:
-        """`eval 3 after cycle 3: task 2/5`, or `eval 4 (final): task 1/5`."""
-        when = "(final)" if self.after_cycle is None else f"after cycle {self.after_cycle}"
+        """`eval 3 after cycle 3: task 2/5`, `eval 4 (final): task 1/5`, or
+        `eval 0 (before practice): task 1/5`."""
+        if self.before_practice:
+            when = "(before practice)"
+        elif self.after_cycle is None:
+            when = "(final)"
+        else:
+            when = f"after cycle {self.after_cycle}"
         return f"eval {self.index} {when}: task {self.task}/{self.num_tasks}"
 
 
@@ -600,11 +608,21 @@ class RealTossingBackend(BaseModel):
         )
 
     def evaluation_progress(
-        self, *, index: int, after_cycle: int | None, task: int, num_tasks: int
+        self,
+        *,
+        index: int,
+        after_cycle: int | None,
+        task: int,
+        num_tasks: int,
+        before_practice: bool = False,
     ) -> None:
         """Which evaluation and task is running, shown before its scene and each skill."""
         self._progress = EvaluationProgress(
-            index=index, after_cycle=after_cycle, task=task, num_tasks=num_tasks
+            index=index,
+            after_cycle=after_cycle,
+            task=task,
+            num_tasks=num_tasks,
+            before_practice=before_practice,
         )
 
     def _say_progress(self) -> None:

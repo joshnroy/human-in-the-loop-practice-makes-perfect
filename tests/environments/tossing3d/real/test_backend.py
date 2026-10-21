@@ -507,3 +507,9 @@ def test_each_evaluation_skill_is_preceded_by_the_evaluations_number_and_task() 
     env.backend().evaluation_progress(index=4, after_cycle=None, task=1, num_tasks=5)
     env.backend().reset(seed=0)
     assert written[0] == "eval 4 (final): task 1/5"
+    written.clear()
+    env.backend().evaluation_progress(
+        index=0, after_cycle=None, task=1, num_tasks=5, before_practice=True
+    )
+    env.backend().reset(seed=0)
+    assert written[0] == "eval 0 (before practice): task 1/5"
