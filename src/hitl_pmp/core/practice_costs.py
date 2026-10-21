@@ -8,7 +8,7 @@ import importlib
 import math
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -63,6 +63,33 @@ class PracticeCosts(BaseModel):
             if path is None
             else PracticeCosts.model_validate_json(Path(path).read_text())
         )
+
+
+class SkillStepCosts(BaseModel):
+    """A planner's fixed price per robot skill, in control steps, and where it came from.
+
+    A price only: what a run is charged is still the steps each execution took."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    source: "SkillStepCostSource"
+    skill_steps: dict[str, Annotated[float, Field(gt=0, allow_inf_nan=False)]] = Field(min_length=1)
+
+    @staticmethod
+    def load(*, path: str | Path) -> "SkillStepCosts":
+        return SkillStepCosts.model_validate_json(Path(path).read_text())
+
+
+class SkillStepCostSource(BaseModel):
+    """The skill benchmark report a `SkillStepCosts` table was measured from."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    benchmark_commit: str = Field(pattern=r"^[0-9a-f]{40}$")
+    report_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    report_dir: str
+    statistic: str
+    cases: dict[str, int]
+    planning_refusals_excluded: dict[str, int]
+    command: str
 
 
 class ExecutionCharge(BaseModel):
