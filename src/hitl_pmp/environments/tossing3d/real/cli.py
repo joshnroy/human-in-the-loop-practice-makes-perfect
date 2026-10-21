@@ -11,11 +11,14 @@ and the human, who is the person at this terminal (`TerminalPerson`). Simulated
 execution of the same domain is `--env tossing3d`.
 
 Budgets are in the sim's control steps: a real skill is charged its mean sim tick count
-(`RealSkillStepCosts`). Evaluation runs once, at the end, in this process: the interval
-defaults past any budget and the step-0 measurement is off, since each evaluation task
-is a scene a person sets up and the robot cannot practise and be evaluated at once.
+(`RealSkillStepCosts`). Evaluations run in this process, since each evaluation task is
+a scene a person sets up and the robot cannot practise and be evaluated at once: the
+untrained policy's (step 0) before any practice, and the final one; the interval
+defaults past any budget, so no step-interval evaluation runs between them.
 `--measure-every-cycles K` adds an evaluation after every K-th learning update, for a
-learning curve; after each, the person puts practice's scene back.
+learning curve. After every evaluation but the final one -- the step-0 one included --
+the person puts practice's scene back. The step-0 one is checkpointed, so a run that
+dies in cycle 0 resumes without redoing it. `--no-initial-measurement` skips step 0.
 """
 
 import argparse
@@ -79,7 +82,6 @@ class Tossing3DRealCli:
         NucLogs.add_arguments(parser=parser)
         parser.set_defaults(
             measurement_interval_steps=END_ONLY_MEASUREMENT_INTERVAL,
-            initial_measurement=False,
             checkpoint_cycles=True,
             scene_bg=False,
         )
