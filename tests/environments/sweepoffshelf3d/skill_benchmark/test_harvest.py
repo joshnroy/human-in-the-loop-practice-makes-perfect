@@ -92,3 +92,20 @@ def test_other_domains_recordings_are_ignored_and_the_cap_holds(*, tmp_path: Pat
     _write(path=tmp_path / "b" / "recording.jsonl", records=records)
     harvests = HarvestedStates.candidates(paths=[tmp_path], per_skill=3)
     assert [h.skill for h in harvests] == ["PickCubeFromShelf"] * 3
+
+
+def test_a_skill_the_goal_latch_cut_short_is_not_harvested_as_a_failure(*, tmp_path: Path) -> None:
+    latched = {
+        **_action(skill="PickCubeFromShelf", objects=["robot", "cube_0"], success=False, seq=0),
+        "goal_reached": True,
+    }
+    _write(
+        path=tmp_path / "run" / "recording.jsonl",
+        records=[
+            {"kind": "header", "environment": "sweepoffshelf3d"},
+            {"kind": "segment", "scene_seed": 3},
+            _tick(features=FEATURES),
+            latched,
+        ],
+    )
+    assert HarvestedStates.candidates(paths=[tmp_path]) == []

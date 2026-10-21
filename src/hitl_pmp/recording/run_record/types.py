@@ -77,7 +77,9 @@ class ActionEntry(BaseModel):
 
     `success` is whether the skill ran to completion without a controller error -- not
     whether it achieved anything, which only the task outcome says. `outcome` carries
-    the reason when it did not (interruption, planner refusal). `start_step`/`end_step`
+    the reason when it did not (interruption, planner refusal). `goal_reached` marks an
+    evaluation skill the goal latch stopped mid-execution because the task was solved:
+    it did not complete, so `success` stays False. `start_step`/`end_step`
     are the counted practice (or evaluation) steps around it. A human skill also lists
     `moved_objects`: the resulting state of every object whose state it changed."""
 
@@ -98,6 +100,7 @@ class ActionEntry(BaseModel):
     start_step: int | None = None
     end_step: int | None = None
     success: bool | None = None
+    goal_reached: bool = False
     outcome: str | None = None
     cost: float | None = None
     moved_objects: PlainState | None = None

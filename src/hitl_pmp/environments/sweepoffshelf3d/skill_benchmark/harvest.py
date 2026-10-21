@@ -96,7 +96,12 @@ class HarvestedStates:
                     features = record["state"]
                 elif kind == "action":
                     state, features = features, None
-                    if state is None or record.get("actor") != "robot" or record.get("success"):
+                    if (
+                        state is None
+                        or record.get("actor") != "robot"
+                        or record.get("success")
+                        or record.get("goal_reached")
+                    ):
                         continue
                     skill = str(record.get("skill", "")).removeprefix(RANDOM_PREFIX)
                     if skill in {"", "STOP", "no-op"}:

@@ -381,6 +381,7 @@ class StepEvaluation:
                                 end_step=clock.steps,
                                 success=False,
                                 outcome="interrupted: evaluation step budget",
+                                goal_reached=clock.solved,
                             )
                             break
                         error = environment.last_skill_error(problem=problem)
