@@ -1,7 +1,11 @@
-"""ReturnWiper from the 2026-10-21 ReturnWiper diagnosis's captured state (launch
-ea9b45b15, `data/returnwiper_states.jsonl`): pomdp0 (cccc-determinized-always-ask/pomdp/0,
-step 9347), where the straight drive to the slot base put the carried wiper 7.7 mm into
-the cupboard's back panel, unchecked, and the grasp slipped there."""
+"""ReturnWiper to the wiper's home on top of the cupboard, from a captured state
+(`data/returnwiper_states.jsonl`): seed 0 after PickWiper and SweepShelf(0.005, 0.05),
+the wiper held at its one grasp with every cube in the box.
+
+The checks come from the 2026-10-21 ReturnWiper diagnosis of launch ea9b45b15, whose
+states had the wiper's old home in a slot on the third shelf and so cannot be restored
+on this scene: there the drive to the slot base carried the wiper 7.7 mm into the back
+panel unchecked, the grasp slipped, and the put-down re-aimed from it stalled."""
 
 import importlib.util
 from pathlib import Path
@@ -27,7 +31,7 @@ pytestmark = [
     pytest.mark.xdist_group("sweepoffshelf3d_test_return_wiper"),
 ]
 
-BEFORE_SLOT = "returnwiper-pomdp0-before-slot-collision"
+AFTER_SWEEP = "returnwiper-edge-s0-after-sweep"
 
 
 @pytest.fixture(name="env", scope="module")
@@ -73,24 +77,20 @@ def test_a_wiper_lying_level_at_home_counts_as_put_down(*, env):
     assert shelf.put_down_reached(support=shelf.wiper_home_support(), gap=SLOT_PUT_DOWN_GAP)
 
 
-def test_a_slot_base_whose_drive_cuts_the_carried_wiper_into_the_cupboard_is_refused(
-    *, env, states
-):
-    """The run drove to (0.80, 0.065), whose arm route is clear, but whose straight
-    drive put the carried wiper 7.7 mm into the back panel; (0.64, 0.065) is clean."""
+def test_a_base_whose_drive_cuts_the_carried_wiper_into_the_cupboard_is_refused(*, env, states):
+    """From the carry pose, a drive to x 0.90 puts the carried wiper into the cupboard;
+    the base ReturnWiper's route goes from, (0.72, 0.087), is clear."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z
 
-    shelf = _restore(env=env, states=states, state_id=BEFORE_SLOT)
+    shelf = _restore(env=env, states=states, state_id=AFTER_SWEEP)
     shelf.raise_hand(z=CARRY_Z, label="test", holding=True)
     shelf.recalibrate_grasp()
-    assert shelf.carried_wiper_drive_hits(base=np.array([0.80, 0.065, 0.0]))
-    assert not shelf.carried_wiper_drive_hits(base=np.array([0.64, 0.065, 0.0]))
+    assert shelf.carried_wiper_drive_hits(base=np.array([0.90, 0.087, 0.0]))
+    assert not shelf.carried_wiper_drive_hits(base=np.array([0.72, 0.087, 0.0]))
 
 
-def test_the_wiper_is_returned_without_cutting_into_the_cupboard_on_the_way(*, env, states):
-    """In the run the wiper slipped on the drive and the put-down stalled in the slot;
-    with the drive checked, the diagnosis's probe returned it in 350 control steps."""
-    _restore(env=env, states=states, state_id=BEFORE_SLOT)
+def test_the_wiper_is_returned_home_at_the_grasp_it_swept_with(*, env, states):
+    _restore(env=env, states=states, state_id=AFTER_SWEEP)
     atoms = _return_wiper(env=env)
     done, home = _returned(env=env, atoms=atoms)
     assert done, env.last_skill_error()
@@ -100,14 +100,25 @@ def test_the_wiper_is_returned_without_cutting_into_the_cupboard_on_the_way(*, e
 def test_a_put_down_that_collides_after_the_way_in_is_refused_and_backed_out(
     *, env, states, monkeypatch
 ):
-    """With the drive check switched off, the run's own drive happens: the carried
-    wiper cuts the back panel and the grasp slips. The put-down, re-aimed from the
-    grasp as it now is, is re-checked and refused, and the wiper is backed out of the
-    slot still in hand -- instead of stalling against the board."""
+    """The grasp slips 3 cm on the way in (as the drive into the back panel made it
+    slip in the run): the put-down, re-aimed from the grasp as it now is, is re-checked
+    and refused, and the wiper is backed out still in hand -- instead of the hand
+    stalling against the board."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
 
-    monkeypatch.setattr(ShelfSkills, "carried_wiper_drive_hits", lambda self, *, base: False)
-    _restore(env=env, states=states, state_id=BEFORE_SLOT)
+    recalibrate = ShelfSkills.recalibrate_grasp
+    calls = []
+
+    def slipped_on_the_way_in(self):  # noqa: PLR0917 -- stands in for a method
+        recalibrate(self)
+        calls.append(None)
+        if len(calls) == 2:  # the re-aim after the way in
+            shift = np.eye(4)
+            shift[2, 3] = 0.03
+            self.in_hand = self.in_hand @ shift
+
+    monkeypatch.setattr(ShelfSkills, "recalibrate_grasp", slipped_on_the_way_in)
+    _restore(env=env, states=states, state_id=AFTER_SWEEP)
     atoms = _return_wiper(env=env)
     assert "put-down collides after the way in" in (env.last_skill_error() or "")
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms
