@@ -358,7 +358,8 @@ class FastDownwardPlanner:
                 f"Expected an unset SAS cost line ('1') at index {cost_idx}, "
                 f"got {lines[cost_idx]!r} -- FD's SAS operator layout may have changed."
             )
-            cost = remaining.pop(lines[idx + 1], default_cost)
+            # FD emits a trailing space for parameter-free operators.
+            cost = remaining.pop(lines[idx + 1].strip(), default_cost)
             lines[cost_idx] = str(int((10**cost_precision) * cost))
         # Leftover entries are normal, not an error: FD's translator drops operators
         # it proves irrelevant to the goal (predicators only logs a warning too).
