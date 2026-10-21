@@ -101,7 +101,9 @@ def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice
             *("--output-dir", str(output)),
         ]
     )
-    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    lines = (output / "step_events.jsonl").read_text().splitlines()
+    # Cycle checkpoints sit between these events; the order checked here is without them.
+    events = [e for e in map(json.loads, lines) if e["event"] != "checkpoint"]
     kinds = [event["event"] for event in events]
     updates = [i for i, kind in enumerate(kinds) if kind == "learning_update"]
     assert len(updates) >= 2
