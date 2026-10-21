@@ -741,6 +741,71 @@ class StepPracticeRunner:
         budget_reached = False
         stop_streak = 0
         zero_step_streak = 0
+        # The scene a human reset starts from: set by every session before one can run.
+        state: Any = None
+
+        def grant_human(
+            *, destination: str, request_cost: float, forced: str | None = None
+        ) -> bool:
+            """One human reset through the practice clock; `False`, with the budget reached,
+            when it does not fit in what remains."""
+            nonlocal state, budget_reached
+            name = human_skills[destination]
+            try:
+                charge = clock.before_human(skill=name)
+            except ControlStepLimitReached:
+                # The human does not fit in what remains: the budget is
+                # reached here exactly as it is by a robot step, so practice
+                # ends normally and the final measurement still runs.
+                budget_reached = True
+                StepFiles.event(
+                    path=events,
+                    event="human_refused_at_budget",
+                    cycle=cycle,
+                    practice_steps=clock.steps,
+                    destination=destination,
+                    skill=name,
+                    cost=request_cost,
+                )
+                return False
+            before_count = clock.steps
+            before_cost = accounting.total_cost if accounting else 0
+            method.observe_environment_reset(state=state)
+            success = False
+            try:
+                problem.execute_movables_reset(destination=destination)
+                success = True
+            finally:
+                reset_counts[destination] = reset_counts.get(destination, 0) + 1
+                clock.human_invoked(charge=charge)
+                cost = accounting.total_cost - before_cost if accounting else request_cost
+                metrics.record_human_intervention(cost=cost)
+                method.observe_execution_cost(cost=cost, steps=charge.steps, complete=success)
+                StepFiles.event(
+                    path=events,
+                    event="human",
+                    cycle=cycle,
+                    start_step=before_count,
+                    end_step=clock.steps,
+                    destination=destination,
+                    skill=name,
+                    cost=cost,
+                    success=success,
+                    **({"forced": forced} if forced else {}),
+                )
+                recorder.human_action(
+                    skill=name,
+                    objects=(destination,),
+                    start_step=before_count,
+                    end_step=clock.steps,
+                    success=success,
+                    cost=cost,
+                    cycle=cycle,
+                )
+            state = problem.get_current_state()
+            method.observe_help_granted(state=state)
+            return True
+
         try:
             # The untrained policy's measurement; off where every evaluation task costs a
             # person a scene set-up (`--env tossing3d_real`).
@@ -782,63 +847,8 @@ class StepPracticeRunner:
                                 f"Unexpected reset destination: {destination!r}"
                             ) from request
                         assert destination is not None
-                        name = human_skills[destination]
-                        try:
-                            charge = clock.before_human(skill=name)
-                        except ControlStepLimitReached:
-                            # The human does not fit in what remains: the budget is
-                            # reached here exactly as it is by a robot step, so practice
-                            # ends normally and the final measurement still runs.
-                            budget_reached = True
-                            StepFiles.event(
-                                path=events,
-                                event="human_refused_at_budget",
-                                cycle=cycle,
-                                practice_steps=clock.steps,
-                                destination=destination,
-                                skill=name,
-                                cost=request.cost,
-                            )
+                        if not grant_human(destination=destination, request_cost=request.cost):
                             break
-                        before_count = clock.steps
-                        before_cost = accounting.total_cost if accounting else 0
-                        method.observe_environment_reset(state=state)
-                        success = False
-                        try:
-                            problem.execute_movables_reset(destination=destination)
-                            success = True
-                        finally:
-                            reset_counts[destination] = reset_counts.get(destination, 0) + 1
-                            clock.human_invoked(charge=charge)
-                            cost = (
-                                accounting.total_cost - before_cost if accounting else request.cost
-                            )
-                            metrics.record_human_intervention(cost=cost)
-                            method.observe_execution_cost(
-                                cost=cost, steps=charge.steps, complete=success
-                            )
-                            StepFiles.event(
-                                path=events,
-                                event="human",
-                                cycle=cycle,
-                                start_step=before_count,
-                                end_step=clock.steps,
-                                destination=destination,
-                                skill=name,
-                                cost=cost,
-                                success=success,
-                            )
-                            recorder.human_action(
-                                skill=name,
-                                objects=(destination,),
-                                start_step=before_count,
-                                end_step=clock.steps,
-                                success=success,
-                                cost=cost,
-                                cycle=cycle,
-                            )
-                        state = problem.get_current_state()
-                        method.observe_help_granted(state=state)
                         actions += 1
                         continue
                     except InteractionComplete as completion:
@@ -944,6 +954,16 @@ class StepPracticeRunner:
                     endpoint = forced
                     break
                 stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
+                # The always-ask wrapper's reset after a STOP-only session is that
+                # session's own last act, so the session stays STOP-only for both streaks.
+                owed = method.stop_only_session_reset() if stopped and actions == 0 else None
+                if owed is not None and not grant_human(
+                    destination=SAMPLED_START_RESET_DESTINATION,
+                    request_cost=owed,
+                    forced="stop_only_session",
+                ):
+                    endpoint = "practice_step_budget"
+                    break
                 if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
                     break

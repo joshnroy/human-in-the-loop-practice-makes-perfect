@@ -1014,6 +1014,96 @@ def test_stop_only_sessions_are_left_to_repeated_stop(*, tmp_path):
     assert len(_session_starts(output=output)) == 3
 
 
+def _always_ask_method(*, script: list) -> ScriptedMethod:
+    from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import AlwaysAskReset
+
+    env = LightSwitchEnvironment(grid_size=4)
+    method = ScriptedMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        always_ask_reset=AlwaysAskReset(cost=1.0),
+    )
+    method._script = list(script)
+    return method
+
+
+def _human_events(*, output) -> list[dict]:
+    return [e for e in _events(output=output) if e["event"] == "human"]
+
+
+@pytest.mark.parametrize("wrapped", [True, False], ids=["always-ask", "plain"])
+def test_under_always_ask_each_stop_only_session_ends_with_a_forced_reset(*, tmp_path, wrapped):
+    """The reset is the STOP session's own last act, so the session stays STOP-only:
+    ten in a row still end practice as `repeated_stop`, each followed by a reset."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    output = tmp_path / "run"
+    build = _always_ask_method if wrapped else _scripted_method
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=build(script=[stop] * 12),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    stops = _stop_events(output=output)
+    assert len(stops) == 10
+    humans = _human_events(output=output)
+    if not wrapped:
+        assert humans == []
+        return
+    assert [h["cycle"] for h in humans] == [s["cycle"] for s in stops]
+    assert [h["start_step"] for h in humans] == [s["end_step"] for s in stops]
+    assert {h["destination"] for h in humans} == {"sampled_start"}
+    assert {h["skill"] for h in humans} == {"reset_to_sampled_start"}
+    assert {h["forced"] for h in humans} == {"stop_only_session"}
+    # One STOP and one reset per session: 2 steps each.
+    assert _measured(output=output)[-1] == 20
+
+
+def test_a_stop_only_sessions_reset_is_not_progress_for_the_zero_step_streak(*, tmp_path):
+    """Zero-step, STOP-only (then reset), zero-step: the reset does not break the streak,
+    so K = 2 ends the run on the third session."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=1,
+            repeated_zero_step_limit=2,
+        ),
+        method=_always_ask_method(script=[0, InteractionComplete(planner_stop=True), 0]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    assert len(_session_starts(output=output)) == 3
+    assert len(_human_events(output=output)) == 1
+
+
+def test_a_stop_only_sessions_reset_that_does_not_fit_ends_practice_at_the_budget(*, tmp_path):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=2, interval=100, human_steps=2),
+        method=_always_ask_method(script=[InteractionComplete(planner_stop=True)]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert _human_events(output=output) == []
+    assert [e["event"] for e in _events(output=output)].count("human_refused_at_budget") == 1
+
+
 def test_the_zero_step_limit_defaults_to_five_on_the_cli():
     from hitl_pmp.cli import Cli
 
