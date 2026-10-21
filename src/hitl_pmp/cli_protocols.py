@@ -145,6 +145,29 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_progress(
+        *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
+    ) -> None:
+        """Evaluation `index` (measuring the update after `after_cycle`, `None` for the
+        final one) is at `task` of `num_tasks`, told to the evaluation's problem before
+        each task's scene and each action. A simulated domain ignores it."""
+        ...
+
+    @staticmethod
+    def practice_scene(*, problem: Problem) -> Any:
+        """Practice's scene, as plain data, before an in-process evaluation uses the room
+        (`--measure-every-cycles`). A domain whose evaluations run beside practice
+        refuses (`NotImplementedError`): its practice scene is never disturbed."""
+        ...
+
+    @staticmethod
+    def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
+        """Put `practice_scene`'s `scene` back after that evaluation -- the person's job,
+        charged nothing -- and carry practice on from it as observed. Returns the
+        `practice_scene_restored` event's fields."""
+        ...
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         """A compact, JSON-ready account of the last robot skill -- its outcome and
         every candidate it rejected -- logged as the step event's `skill_trace`; None

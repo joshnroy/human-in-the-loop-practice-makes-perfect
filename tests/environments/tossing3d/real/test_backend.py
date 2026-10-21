@@ -10,7 +10,11 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE
-from hitl_pmp.environments.tossing3d.real.backend import RealSkillStepCosts, TerminalPerson
+from hitl_pmp.environments.tossing3d.real.backend import (
+    PracticeScene,
+    RealSkillStepCosts,
+    TerminalPerson,
+)
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME
@@ -427,3 +431,79 @@ def test_every_line_and_prompt_is_timestamped_on_the_terminal_and_in_the_session
         assert re.search(f"^{STAMP}answer: 'y'$", logged, flags=re.MULTILINE)
     finally:
         RealSessionLog.close()
+
+
+# --- evaluation after each cycle: the practice scene is remembered and restored ---------
+
+
+def test_the_practice_scene_remembers_the_cubes_map_spot_and_the_bins_side() -> None:
+    env, _ = _env()
+    scene = env.backend().practice_scene()
+    assert scene.cube == pytest.approx(CUBE_SPOT)
+    assert scene.bin_side is Tossing3DSide.OPPOSITE
+    assert not scene.holding
+
+
+def test_restoring_practice_drives_home_opens_the_gripper_and_asks_for_the_scene() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = PracticeScene(cube=(0.66, -0.98), holding=False, bin_side=Tossing3DSide.ROBOT)
+    robot.calls.clear()
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    names = [name for name, _ in robot.calls]
+    assert names.index("go_home") < names.index("open_gripper") < names.index("observe")
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert request == (
+        "restore practice: SAME (bin at the close spot, our side of the tape); "
+        "cube at (0.66, -0.98) on our side, on a face; do not move the robot"
+    )
+    # Practice carries on from the scene as placed, re-observed.
+    assert robot.cube is not None and robot.cube[:2] == pytest.approx((0.66, -0.98))
+    state = env.get_current_state()
+    cube_x, _ = ROOM_FRAME.to_domain(x=0.66, y=-0.98)
+    assert state.get(obj=env.cube, feature_name="x") == pytest.approx(cube_x)
+    assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {"robot_side"}
+
+
+def test_a_practice_scene_holding_the_cube_asks_for_it_on_the_floor_where_the_robot_was() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    scene = env.backend().practice_scene()
+    assert scene.holding
+    assert scene.cube == pytest.approx(robot.robot[:2])
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert "holding the cube" in request and "where the robot was" in request
+    atoms = {name for name, _ in env.get_current_state().abstract_atoms or ()}
+    assert {"HandEmpty", "OnGround"} <= atoms
+    assert "Holding" not in atoms
+
+
+def test_restoring_practice_costs_no_steps_and_keeps_the_episode_bookkeeping() -> None:
+    env, _ = _env()
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    before = env.get_current_state().get(obj=env.scene, feature_name="steps_taken")
+    charged: list[str] = []
+    env.set_control_step_observers(
+        before=lambda: charged.append("before"), after=lambda: charged.append("after")
+    )
+    env.restore_practice_scene(scene=env.backend().practice_scene())
+    assert charged == []
+    assert env.get_current_state().get(obj=env.scene, feature_name="steps_taken") == before
+
+
+def test_each_evaluation_skill_is_preceded_by_the_evaluations_number_and_task() -> None:
+    written: list[str] = []
+    env, _ = _env(written=written)
+    written.clear()
+    env.backend().evaluation_progress(index=3, after_cycle=3, task=2, num_tasks=5)
+    env.backend().run_pick_cube()
+    progress = written.index("eval 3 after cycle 3: task 2/5")
+    assert written[progress + 1].startswith("running PickCube")
+    written.clear()
+    env.backend().evaluation_progress(index=4, after_cycle=None, task=1, num_tasks=5)
+    env.backend().reset(seed=0)
+    assert written[0] == "eval 4 (final): task 1/5"

@@ -132,6 +132,24 @@ class SweepOffShelf3DStepProtocol:
         del problem, cycle, action, max_actions, steps, budget
 
     @staticmethod
+    def evaluation_progress(
+        *, problem: Problem, index: int, after_cycle: int | None, task: int, num_tasks: int
+    ) -> None:
+        """Nobody is watching a simulated run."""
+        del problem, index, after_cycle, task, num_tasks
+
+    @staticmethod
+    def practice_scene(*, problem: Problem) -> Any:
+        """Refused: a simulated evaluation runs in its own process and scene."""
+        del problem
+        raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
+
+    @staticmethod
+    def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
+        del problem, scene
+        raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         trace = SkillTraces.last(env=SweepOffShelf3DStepProtocol.env(problem=problem))
         return None if trace is None else trace.model_dump(mode="json")

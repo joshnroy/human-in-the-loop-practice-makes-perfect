@@ -39,6 +39,13 @@ log only (`real/session_log.py`). They wait for y and observe what was actually 
 Nothing is checked or retried: the planner sees the scene as placed. A human reset moves
 no robot; a task's scene drives home first and opens the gripper, as the sim's reset
 restores it open.
+
+An evaluation in the middle of practice (`--measure-every-cycles`) uses the room, so
+practice's scene is remembered first (`practice_scene`: the cube's map spot, or the
+robot's if it was held, and the bin's side) and put back after
+(`restore_practice_scene`): home and open as a task's scene does, then one
+`restore practice:` prompt with the cube's spot. It is the person's job, not a reset the
+method chose, and is charged nothing.
 """
 
 import math
@@ -116,6 +123,52 @@ class PracticeProgress(BaseModel):
         )
 
 
+class EvaluationProgress(BaseModel):
+    """Which evaluation is running, and its task (`StepProtocolEnvironment.evaluation_progress`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int
+    # The learning cycle whose update it measures; `None` for the run's final one.
+    after_cycle: int | None
+    task: int
+    num_tasks: int
+
+    def line(self) -> str:
+        """`eval 3 after cycle 3: task 2/5`, or `eval 4 (final): task 1/5`."""
+        when = "(final)" if self.after_cycle is None else f"after cycle {self.after_cycle}"
+        return f"eval {self.index} {when}: task {self.task}/{self.num_tasks}"
+
+
+class PracticeScene(BaseModel):
+    """Practice's scene as last observed, kept while an in-process evaluation uses the
+    room, so the person can put it back (`RealTossingBackend.restore_practice_scene`).
+    Plain data in the map frame, so it can be logged and saved."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # The cube's map position; where the robot was when it was holding it; `None` if
+    # the last look saw no cube.
+    cube: tuple[float, float] | None
+    holding: bool
+    # The bin's side of the tape (SAME or FAR), `None` if the last look saw no bin.
+    bin_side: Tossing3DSide | None
+
+    @staticmethod
+    def of(*, snapshot: "RealSceneSnapshot") -> "PracticeScene":
+        reply, frame = snapshot.reply, snapshot.frame
+        cube: tuple[float, float] | None = None
+        if reply.holding:
+            cube = (reply.robot[0], reply.robot[1])
+        elif reply.cube is not None:
+            cube = (reply.cube[0], reply.cube[1])
+        side = None
+        if reply.bin is not None:
+            bin_x, _ = frame.to_domain(x=reply.bin.x, y=reply.bin.y)
+            side = Tossing3DSide.ROBOT if bin_x < 0.0 else Tossing3DSide.OPPOSITE
+        return PracticeScene(cube=cube, holding=reply.holding, bin_side=side)
+
+
 # The bin's spot as the person is told it: on the robot's side of the tape, or across.
 SPOT_NAMES: Final[dict[Tossing3DSide, str]] = {
     Tossing3DSide.ROBOT: "SAME",
@@ -134,16 +187,22 @@ class PlacementRequest(BaseModel):
     bin: BinSpot
     # Said when the cube may still be in the gripper (`RealTossingBackend.reset`).
     gripper_note: str | None = None
+    # The cube goes at `cube` exactly (a restore), not anywhere on the robot's side.
+    cube_exact: bool = False
 
     def instructions(self) -> str:
-        """One line: the bin's spot by name, and the cube anywhere on the robot's side."""
+        """One line: the bin's spot by name, and the cube anywhere on the robot's side
+        (or, for a restore, at its spot)."""
         spot = "the close spot, our side of the tape"
         if self.destination is Tossing3DSide.OPPOSITE:
             spot = "the far spot, across the tape"
         note = "" if self.gripper_note is None else f"; {self.gripper_note}"
+        cube = "anywhere"
+        if self.cube_exact:
+            cube = f"at ({self.cube[0]:.2f}, {self.cube[1]:.2f})"
         return (
             f"{self.kind}: {SPOT_NAMES[self.destination]} (bin at {spot}); "
-            f"cube anywhere on our side, on a face; do not move the robot{note}"
+            f"cube {cube} on our side, on a face; do not move the robot{note}"
         )
 
     def details(self) -> str:
@@ -229,7 +288,7 @@ class RealTossingBackend(BaseModel):
     _ticks: list[RealSceneSnapshot] = PrivateAttr(default_factory=list)
     _before: Callable[[], None] | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
-    _progress: PracticeProgress | None = PrivateAttr(default=None)
+    _progress: PracticeProgress | EvaluationProgress | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
@@ -237,6 +296,13 @@ class RealTossingBackend(BaseModel):
         """A task's scene: the robot at home and the bin across the tape, as in the sim.
         There is one spot per side, so `seed` names the same scene for every task."""
         del seed
+        self._say_progress()
+        self._home_and_open()
+        return self._placed(
+            kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
+        )
+
+    def _home_and_open(self) -> None:
         # The robot starts each task at its home, the close-side toss stand, as the
         # sim's does; it drives there before the person sets the scene around it.
         if self.confirm_start:
@@ -248,8 +314,31 @@ class RealTossingBackend(BaseModel):
         # false for the whole task (run 9's evaluation: no plan at step 0).
         self._say(line="opening the gripper ...")
         self.robot.open_gripper()
+
+    def practice_scene(self) -> PracticeScene:
+        """Practice's scene as last observed, to put back after an evaluation."""
+        return PracticeScene.of(snapshot=self.snapshot())
+
+    def restore_practice_scene(self, *, scene: PracticeScene) -> Tossing3DObservation:
+        """After an in-process evaluation: home and open, as a task's scene starts, then
+        the person puts the cube and the bin back as practice left them. The person's
+        job, not a reset the method chose: nothing is charged."""
+        self._home_and_open()
+        notes = []
+        if scene.holding:
+            notes.append(
+                "the robot was holding the cube: take it out of the gripper and put it on "
+                "the floor there, where the robot was"
+            )
+        elif scene.cube is None:
+            notes.append("the last look saw no cube: put it where it was")
+        if scene.bin_side is None:
+            notes.append("the last look saw no bin: put it at the far spot")
         return self._placed(
-            kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
+            kind="restore practice",
+            destination=scene.bin_side or Tossing3DSide.OPPOSITE,
+            cube=scene.cube,
+            gripper_note="; ".join(notes) or None,
         )
 
     def _gripper_note(self) -> str | None:
@@ -276,15 +365,23 @@ class RealTossingBackend(BaseModel):
         return self._placed(kind="human reset", destination=destination)
 
     def _placed(
-        self, *, kind: str, destination: Tossing3DSide, gripper_note: str | None = None
+        self,
+        *,
+        kind: str,
+        destination: Tossing3DSide,
+        gripper_note: str | None = None,
+        cube: tuple[float, float] | None = None,
     ) -> Tossing3DObservation:
+        """`cube` is a restore's exact spot; otherwise the cube goes anywhere on the
+        robot's side (nominally `CUBE_SPOT`)."""
         self.person.place(
             request=PlacementRequest(
                 kind=kind,
                 destination=destination,
-                cube=CUBE_SPOT,
+                cube=CUBE_SPOT if cube is None else cube,
                 bin=BIN_SPOTS[destination],
                 gripper_note=gripper_note,
+                cube_exact=cube is not None,
             )
         )
         self._seen = None
@@ -497,9 +594,17 @@ class RealTossingBackend(BaseModel):
         self, *, cycle: int, action: int, max_actions: int, steps: int, budget: int
     ) -> None:
         """Practice's place as its next action starts, shown before that action runs.
-        Only practice's backend is told; evaluation's shows no progress line."""
+        Only practice's backend is told; evaluation's is told `evaluation_progress`."""
         self._progress = PracticeProgress(
             cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
+        )
+
+    def evaluation_progress(
+        self, *, index: int, after_cycle: int | None, task: int, num_tasks: int
+    ) -> None:
+        """Which evaluation and task is running, shown before its scene and each skill."""
+        self._progress = EvaluationProgress(
+            index=index, after_cycle=after_cycle, task=task, num_tasks=num_tasks
         )
 
     def _say_progress(self) -> None:

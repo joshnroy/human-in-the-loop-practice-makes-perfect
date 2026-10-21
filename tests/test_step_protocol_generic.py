@@ -160,6 +160,10 @@ class FakeStepProtocol:
             "budget": budget,
         })
 
+    @staticmethod
+    def evaluation_progress(**progress: Any) -> None:
+        del progress
+
 
 class AsksForTheWiperOnce(EesMethod):
     """EES that opens practice by asking the human for `reset_wiper`."""

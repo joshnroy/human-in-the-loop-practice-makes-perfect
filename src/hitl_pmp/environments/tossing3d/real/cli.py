@@ -14,6 +14,8 @@ Budgets are in the sim's control steps: a real skill is charged its mean sim tic
 (`RealSkillStepCosts`). Evaluation runs once, at the end, in this process: the interval
 defaults past any budget and the step-0 measurement is off, since each evaluation task
 is a scene a person sets up and the robot cannot practise and be evaluated at once.
+`--measure-every-cycles K` adds an evaluation after every K-th learning update, for a
+learning curve; after each, the person puts practice's scene back.
 """
 
 import argparse
@@ -64,11 +66,27 @@ class Tossing3DRealCli:
             help="With --robot real, also ask the person for y before every skill (by "
             "default only before the drive home at a task's start, and at each placement).",
         )
+        parser.add_argument(
+            "--measure-every-cycles",
+            type=Tossing3DRealCli.positive_int,
+            default=None,
+            metavar="K",
+            help="Also evaluate after every K-th learning update (1: after every cycle), in "
+            "this process, then ask the person to put practice's scene back. Off by "
+            "default: only the final evaluation runs.",
+        )
         parser.set_defaults(
             measurement_interval_steps=END_ONLY_MEASUREMENT_INTERVAL,
             initial_measurement=False,
             scene_bg=False,
         )
+
+    @staticmethod
+    def positive_int(value: str) -> int:  # noqa: PLR0917 -- argparse's `type` callable
+        number = int(value)
+        if number < 1:
+            raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
+        return number
 
     @staticmethod
     def run_method(
