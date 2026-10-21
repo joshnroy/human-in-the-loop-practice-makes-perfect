@@ -21,7 +21,11 @@ The plan (Josh, 2026-10-14 and 2026-10-20):
   held-out task, 10 tasks, stop after 3 perfect evaluations, sessions of <= 20 actions.
 - `--pomdp-observation-probability-weight 0.0`: the method's default is 0.1, and at 0.1
   the planner STOPs at the root. EES uses a Beta(1, 3) prior, a labelled deviation from
-  the paper's Beta(10, 1). Step accounting is `configs/sweepoffshelf3d_practice_costs.json`
+  the paper's Beta(10, 1). EES also runs WITHOUT skip_perfect, a second labelled deviation:
+  predicators' default (`active_sampler_explorer_skip_perfect = True`) scores a skill
+  whose measured success rate is 1.0 at -inf, and a skill can measure 1.0 after only a
+  few samples, so it would be wrongly treated as mastered (Josh, 2026-10-21).
+  Step accounting is `configs/sweepoffshelf3d_practice_costs.json`
   (1 per control step, each human reset costs 1 and takes 1 step, lambda 3e-6). The lab2
   scene is the environment's default; no arm passes `--no-scene-bg`.
 
@@ -142,7 +146,6 @@ EES = [
     "--ees-score-human-skills",
     "--reproduce-predicators-explore-target-only",
     "--reproduce-predicators-seen-task-order",
-    "--reproduce-predicators-skip-perfect",
     "--reproduce-predicators-random-when-stranded",
 ]  # fmt: skip
 PLANNER = [
