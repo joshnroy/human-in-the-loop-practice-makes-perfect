@@ -96,6 +96,10 @@ def test_every_arm_parses_to_the_decided_settings(*, name: str) -> None:
         assert args.pomdp_competence_model == "local_trend"
     else:
         assert (args.ees_prior_alpha, args.ees_prior_beta) == (1.0, 3.0)
+        # A deviation from predicators (whose default is True): a skill can measure 1.0
+        # after a few samples, and skip_perfect would then treat it as mastered.
+        assert args.reproduce_predicators_skip_perfect is False
+        assert "--reproduce-predicators-skip-perfect" not in argv
 
 
 def test_p_is_one_and_the_plain_scene_is_never_requested() -> None:
