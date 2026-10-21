@@ -179,6 +179,28 @@ class EvaluationStopping:
         return records
 
 
+class PolicyFileHash:
+    """A static-method container, never instantiated.
+
+    The sha256 of a deployment snapshot's pickled bytes. It identifies the *file*, not
+    the policy: pickle's memo order follows string-set iteration, which depends on
+    PYTHONHASHSEED, so the same policy pickled in two processes hashes differently. Use
+    it to tie an evaluation to the snapshot file it read, never to match runs."""
+
+    KEY = "policy_file_sha256"
+    LEGACY_KEY = "policy_sha256"
+
+    @staticmethod
+    def record(*, raw: bytes) -> dict[str, str]:
+        return {PolicyFileHash.KEY: hashlib.sha256(raw).hexdigest()}
+
+    @staticmethod
+    def read(*, record: dict[str, object]) -> str | None:
+        """The hash under the current key, or the key results were written with before."""
+        value = record.get(PolicyFileHash.KEY, record.get(PolicyFileHash.LEGACY_KEY))
+        return None if value is None else str(value)
+
+
 class EvaluationClock(BaseModel):
     """Counts one held-out evaluation episode's control steps and scores it.
 
@@ -422,7 +444,7 @@ class StepEvaluation:
                 "tasks": results,
                 "num_solved": sum(r["solved"] for r in results),
                 "num_total": len(results),
-                "policy_sha256": hashlib.sha256(raw).hexdigest(),
+                **PolicyFileHash.record(raw=raw),
                 "elapsed_seconds": time.monotonic() - started,
             }
             StepFiles.json(path=directory / "results.json", value=result)
@@ -649,7 +671,7 @@ class StepPracticeRunner:
                 "robot_invocations": robot_invocations,
                 "learning_updates": learning_updates,
                 "session_index": cycle,
-                "policy_sha256": hashlib.sha256(raw).hexdigest(),
+                **PolicyFileHash.record(raw=raw),
                 **(accounting.summary() if accounting else {}),
             }
             records.append(record)
