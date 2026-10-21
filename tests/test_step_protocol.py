@@ -108,6 +108,25 @@ def test_evaluation_clock_stops_at_goal_or_exact_budget():
     assert successful.solved and successful.steps == 1
 
 
+def test_a_skill_the_goal_stopped_is_recorded_as_reaching_the_goal_not_the_budget():
+    """The recording named every evaluation cut-off the step budget, including a sweep
+    the goal latch stopped at ~1,800 of 3,000 steps on a task it solved."""
+    from hitl_pmp.step_protocol import EvaluationClock
+
+    reached = EvaluationClock(budget=3000, check_goal=lambda: True)
+    reached.before()
+    reached.after()
+    with pytest.raises(ControlStepLimitReached):
+        reached.before()
+    assert reached.interruption() == "stopped: goal reached"
+    exhausted = EvaluationClock(budget=1, check_goal=lambda: False)
+    exhausted.before()
+    exhausted.after()
+    with pytest.raises(ControlStepLimitReached):
+        exhausted.before()
+    assert exhausted.interruption() == "interrupted: evaluation step budget"
+
+
 def test_measurement_inside_skill_does_not_end_it():
     measurements = []
     clock = PracticeClock(budget=9, interval=3, on_measure=lambda: measurements.append(clock.steps))
@@ -532,6 +551,23 @@ def test_unsupported_configurations_fail_before_anything_is_built(*, tmp_path, o
             env_cli=RecordingMethodCli,
             environment=FakeStepProtocol,
             args=_step_args(output_dir=tmp_path / "run", budget=5, interval=1, **override),
+            method_cli=RecordingMethodCli,
+        )
+    assert RecordingMethodCli.calls == []
+    assert not (tmp_path / "run").exists()
+
+
+def test_episode_traces_are_refused_rather_than_silently_not_written(*, tmp_path):
+    """The step protocol never runs `run_task_episode`, so it has no `EpisodeTrace` to
+    write: it refuses `--record-episode-traces` instead of accepting and ignoring it."""
+    RecordingMethodCli.calls.clear()
+    with pytest.raises(ValueError, match="--record-episode-traces"):
+        StepProtocolEntry.run(
+            env_cli=RecordingMethodCli,
+            environment=FakeStepProtocol,
+            args=_step_args(
+                output_dir=tmp_path / "run", budget=5, interval=1, record_episode_traces=True
+            ),
             method_cli=RecordingMethodCli,
         )
     assert RecordingMethodCli.calls == []
