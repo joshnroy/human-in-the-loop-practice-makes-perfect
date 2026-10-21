@@ -122,6 +122,18 @@ LOWER_TOLERANCE = 0.003
 LOWER_STEPS = 20
 CONTACT_STEP_LIMIT = 40
 CONTACT_PENETRATION = 0.04
+# Setting the wiper down on the floor: the descent is first planned with this much
+# penetration (m) allowed and no arm link (gripper aside) deeper than
+# FLOOR_ARM_ALLOWANCE into the floor, which `collision_cost` does not count; only if no
+# base allows that, as before, with CONTACT_PENETRATION and the floor ignored. The
+# floor stall (det/4) put the bracelet link on the floor and the hand stopped 9-15 mm up.
+SET_DOWN_PENETRATION = 0.01
+FLOOR_ARM_ALLOWANCE = 0.001
+# A put-down that stops short is let go anyway once the wiper is this level (deg) and
+# its head this close (m) above its support: the floor, or the wiper's own shelf.
+PUT_DOWN_LEVEL_DEG = 3.0
+FLOOR_PUT_DOWN_GAP = 0.02
+SLOT_PUT_DOWN_GAP = 0.003
 PULL_CHUNK = 2
 # How far below the requested height the pull aims the head, pressing it into the
 # board so the cubes it pushes cannot wedge under its front edge and lift it.
@@ -696,6 +708,30 @@ class ShelfSkills:
             here = waypoint
         return route
 
+    def carried_wiper_drive_hits(self, *, base: np.ndarray) -> bool:
+        """Whether driving the base from where it is to `base`, the arm held where it
+        is, carries the held wiper into the cupboard or the box, the route's start pose
+        at `base` included. Unchecked, the drive to the slot base put the wiper 7.7 mm
+        into the back panel, the grasp slipped 22 mm there, and the put-down stalled
+        (pomdp/0). Two paths are checked, since the base follows neither exactly: the
+        straight line, and the one `move_base` commands (each axis stepped by at most
+        `base_step_limit`, so the shorter axes arrive first). On pomdp/0 the first
+        reaches 7.3 mm into the panel, the second 3.5 mm, and the base as it really
+        drove, its heading wavering, 9.9 mm."""
+        arm = self.data.qpos[self.qa].copy()
+        start = self.data.qpos[self.ba].copy()
+        target = np.asarray(base, dtype=float)
+        steps = int(np.ceil(np.max(np.abs(target - start)) / self.base_step_limit))
+        commanded = [start]
+        for _ in range(steps):
+            step = np.clip(target - commanded[-1], -self.base_step_limit, self.base_step_limit)
+            commanded.append(commanded[-1] + step)
+        straight = [start + t * (target - start) for t in np.linspace(0.0, 1.0, steps + 1)]
+        return any(
+            self.carried_wiper_hits(pose=self.site_at(base=here, arm=arm))
+            for here in [*straight, *commanded, target]
+        )
+
     def carried_wiper_hits(self, *, pose: np.ndarray) -> bool:
         """Whether the held wiper, carried rigidly at hand pose `pose` with the grasp as
         last measured, would cut into the cupboard or the box (in the IK model)."""
@@ -756,8 +792,16 @@ class ShelfSkills:
         allowance: float = 0.0,
     ) -> tuple[np.ndarray, list[np.ndarray]] | None:
         """First base pose with a collision-free single-branch route, the arm starting
-        from where it is now."""
+        from where it is now. Holding the wiper, a base is also refused if the drive
+        there, the arm held still, carries the wiper into the cupboard or the box
+        (`carried_wiper_drive_hits`): the route is checked only from the base."""
         for base in bases:
+            if holding and self.in_hand is not None and self.carried_wiper_drive_hits(base=base):
+                self.notes.append(
+                    f"route: base {np.round(base, 3).tolist()} refused, the drive there "
+                    "carries the wiper into the cupboard or box"
+                )
+                continue
             route = self.plan_route(
                 waypoints=waypoints, base=base, holding=holding, allowance=allowance
             )
@@ -875,6 +919,17 @@ class ShelfSkills:
             "offset_mm": round(float(np.linalg.norm(closed[:3, 3] - nominal[:3, 3])) * 1000, 1),
             "offset_deg": round(float(np.rad2deg(turn)), 2),
         })
+
+    def measured_grasp_kind(self) -> str | None:
+        """The fixed wiper grasp ("shelf" or "sweep") the hand is at now, measured: within
+        2 cm and 10 deg of its nominal hand-in-wiper pose; None if neither."""
+        hand_in_wiper = np.linalg.inv(self.wiper_pose()) @ self.site_pose()
+        for kind, nominal in self.grasp_in_wiper.items():
+            offset = float(np.linalg.norm(hand_in_wiper[:3, 3] - nominal[:3, 3]))
+            turn = Rotation.from_matrix(hand_in_wiper[:3, :3] @ nominal[:3, :3].T).magnitude()
+            if offset < 0.02 and np.rad2deg(turn) < 10.0:
+                return kind
+        return None
 
     def let_go_of_wiper(self, *, label: str) -> None:
         self.grip = 0.0
@@ -1000,20 +1055,32 @@ class ShelfSkills:
             self.in_hand
         )
         self.raise_hand(z=CARRY_Z, label=label, holding=True)
-        found = None
-        for base in [
+        bases = [
             np.array([x, head[1] + dy, 0.0]) for x in FLOOR_BASE_XS for dy in (0.0, -0.15, 0.15)
-        ]:
-            route = self.plan_route(waypoints=[above], base=base, holding=True)
-            # The descent from there must be reachable too (planned, not followed).
-            if route is not None and self.plan_route(
-                waypoints=[target],
-                base=base,
-                holding=True,
-                start_arm=route[-1],
-                allowance=CONTACT_PENETRATION,
-            ):
-                found = (base, route)
+        ]
+        found = None
+        for strict in (True, False):
+            for base in bases:
+                route = self.plan_route(waypoints=[above], base=base, holding=True)
+                if route is None:
+                    continue
+                # The descent from there must be reachable too (planned, not followed).
+                descent = self.plan_route(
+                    waypoints=[target],
+                    base=base,
+                    holding=True,
+                    start_arm=route[-1],
+                    allowance=SET_DOWN_PENETRATION if strict else CONTACT_PENETRATION,
+                )
+                if descent and (not strict or not self.arm_on_floor(base=base, route=descent)):
+                    found = (base, route)
+                    break
+            if found is not None:
+                if not strict:
+                    self.notes.append(
+                        f"{label}: no set-down keeps the arm off the floor; "
+                        f"allowing {CONTACT_PENETRATION} m and the floor"
+                    )
                 break
         if found is None:
             raise SkillFailed(f"{label}: no route sets the wiper down on the floor")
@@ -1021,9 +1088,14 @@ class ShelfSkills:
         self.move_base(target=base, label=label)
         # To 30 cm above the spot along a planned route, then down in short lines.
         self.follow(route=route, label=label, settle=0.04)
-        for z in (0.15, 0.05, 0.015):
-            self.move_wiper(head=head + [0.0, 0.0, z], label=label, stem=stem)
-        self.move_wiper(head=head, label=label, stem=stem)
+        for z in (0.15, 0.05, 0.015, 0.0):
+            try:
+                self.move_wiper(head=head + [0.0, 0.0, z], label=label, stem=stem)
+            except SkillFailed as exc:
+                if not self.put_down_reached(support=0.0, gap=FLOOR_PUT_DOWN_GAP):
+                    raise
+                self.notes.append(f"{label}: let go on the floor short of the target ({exc})")
+                break
         self.let_go_of_wiper(label=label)
         approach = self.site_pose()[:3, 2]
         self.path(
@@ -1033,6 +1105,33 @@ class ShelfSkills:
             count=3,
         )
         self.mark(label="wiper on the floor")
+
+    def arm_on_floor(self, *, base: np.ndarray, route: list[np.ndarray]) -> bool:
+        """Whether any arm link (the gripper and the mobile base aside) goes more than
+        `FLOOR_ARM_ALLOWANCE` into the floor at any configuration of `route`."""
+        m, d = self.model, self.ik_data
+        floor = {g for g in range(m.ngeom) if m.geom(g).name == "floor"}
+        base_body = m.body("robot_base_link").id
+        arm = {
+            g for g in self.robot_geoms - self.gripper_geoms if int(m.geom_bodyid[g]) != base_body
+        }
+        for q in route:
+            d.qpos[:] = self.data.qpos
+            d.qpos[self.ba] = base
+            d.qpos[self.qa] = q
+            self.mujoco.mj_kinematics(m, d)
+            self.mujoco.mj_collision(m, d)
+            for contact in d.contact[: d.ncon]:
+                pair = {int(contact.geom1), int(contact.geom2)}
+                if pair & arm and pair & floor and -contact.dist > FLOOR_ARM_ALLOWANCE:
+                    return True
+        return False
+
+    def put_down_reached(self, *, support: float, gap: float) -> bool:
+        """Whether the held wiper is level (`PUT_DOWN_LEVEL_DEG`) with its head within
+        `gap` above `support`: close enough to let go, though the hand stopped short."""
+        tilt = float(np.rad2deg(np.arccos(np.clip(self.wiper_pose()[2, 2], -1.0, 1.0))))
+        return tilt < PUT_DOWN_LEVEL_DEG and self.head_bottom() - support < gap
 
     def take_wiper_from_floor(self, *, kind: str, label: str) -> None:
         for attempt in range(REGRASP_TRIES):
@@ -1342,9 +1441,45 @@ class ShelfSkills:
         floor and taken again first."""
         if self.in_hand is None:
             raise SkillFailed("return_wiper: the wiper is not in hand")
-        if self.grasp_kind != "shelf":
+        # The grasp as it is now, not only as it was booked: a shelf grasp that had
+        # slipped 22 mm / 19.5 deg along the head was still booked "shelf", and the slot
+        # put-down planned from it was refused 857 times in a row (pomdp/0).
+        if self.grasp_kind != "shelf" or self.measured_grasp_kind() != "shelf":
             self.set_wiper_down_on_floor(label="return")
             self.take_wiper_from_floor(kind="shelf", label="return")
+        grasp = self.into_wiper_slot()
+        if grasp is None:
+            # The grasp moved on the way in, and from the grasp as it is now the
+            # put-down would collide: back out with the wiper, take it again at the
+            # shelf grasp on the floor, and go in once more.
+            self.notes.append("return_wiper: the put-down collides after the way in; regrasping")
+            here = self.site_pose()
+            self.leave_wiper_slot(grasp=here, holding=True, label="return_back_out")
+            self.set_wiper_down_on_floor(label="return")
+            self.take_wiper_from_floor(kind="shelf", label="return")
+            grasp = self.into_wiper_slot()
+            if grasp is None:
+                raise SkillFailed("return_wiper: the put-down collides after the regrasp too")
+        try:
+            self.settle_at(pose=grasp, label="return_onto_shelf", holding=True)
+        except SkillFailed as exc:
+            support = float(self.wiper_start[2, 3]) - float(self.model.geom_size[self.head_geom][2])
+            if not self.put_down_reached(support=support, gap=SLOT_PUT_DOWN_GAP):
+                raise
+            self.notes.append(f"return_wiper: let go on the shelf short of the target ({exc})")
+        self.let_go_of_wiper(label="return")
+        self.leave_wiper_slot(grasp=grasp, holding=False, label="return_withdraw")
+        error = float(np.linalg.norm(self.wiper_pose()[:3, 3] - self.wiper_start[:3, 3]))
+        self.mark(label=f"wiper returned, {error:.3f} m from its start")
+        if error > 0.05 or abs(self.wiper_lift()) > 0.01:
+            raise SkillFailed(f"return_wiper: wiper ended {error:.3f} m from where it started")
+
+    def into_wiper_slot(self) -> np.ndarray | None:
+        """Raise, plan into the wiper slot, drive and follow the route in, then re-aim
+        the put-down with the grasp as it is now (`recalibrate_grasp`). Returns that
+        put-down hand pose, or None if a straight move from here to it would collide,
+        which nothing checked before: from a grasp that slipped on the way in it
+        stalled against the board above."""
         self.raise_hand(z=CARRY_Z, label="return_raise", holding=True)
         # Aim with the grasp as it is now: 13 cm from the centre of mass the head droops
         # in the friction grasp, and aimed with the grasp at closing it meets the board
@@ -1353,18 +1488,16 @@ class ShelfSkills:
         found = self.shelf_wiper_route(target=self.wiper_start)
         if found is None:
             raise SkillFailed("return_wiper: no collision-free route into the wiper slot")
-        base, route, grasp = found
+        base, route, _ = found
         self.move_base(target=base, label="return_to_cupboard")
         self.follow(route=route, label="return_into_slot", settle=0.04)
         self.recalibrate_grasp()
+        assert self.in_hand is not None
         grasp = self.wiper_start @ np.linalg.inv(self.in_hand)
-        self.settle_at(pose=grasp, label="return_onto_shelf", holding=True)
-        self.let_go_of_wiper(label="return")
-        self.leave_wiper_slot(grasp=grasp, holding=False, label="return_withdraw")
-        error = float(np.linalg.norm(self.wiper_pose()[:3, 3] - self.wiper_start[:3, 3]))
-        self.mark(label=f"wiper returned, {error:.3f} m from its start")
-        if error > 0.05 or abs(self.wiper_lift()) > 0.01:
-            raise SkillFailed(f"return_wiper: wiper ended {error:.3f} m from where it started")
+        here = self.data.qpos[self.ba].copy()
+        if self.plan_route(waypoints=[grasp], base=here, holding=True) is None:
+            return None
+        return grasp
 
     # --- cubes -------------------------------------------------------------------
 
