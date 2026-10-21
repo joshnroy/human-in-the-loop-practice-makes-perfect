@@ -1,0 +1,21 @@
+{
+  "command": [
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "reference/kindergarden/tests/envs/dynamic3d/test_tidybot3d_scoop_target.py",
+    "-k",
+    "not intermediate"
+  ],
+  "returncode": 0,
+  "elapsed_seconds": 1.6832090109819546,
+  "stdout": "........                                                                 [100%]\n8 passed, 4 deselected in 1.53s\n",
+  "stderr": "",
+  "purpose": "isolated CPU-rendered 3D native goal tests; privileged state placements are diagnostics only",
+  "renderer": "osmesa",
+  "cpu_affinity_count": 1,
+  "address_space_limit_bytes": 8589934592
+}
