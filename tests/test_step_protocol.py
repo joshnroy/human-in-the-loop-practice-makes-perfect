@@ -875,6 +875,152 @@ def test_a_session_with_an_action_resets_the_stop_streak(*, tmp_path):
     assert len(_stop_events(output=output)) == 20
 
 
+def _session_starts(*, output) -> list[int]:
+    return [e["practice_steps"] for e in _events(output=output) if e["event"] == "session_start"]
+
+
+def test_sessions_of_refused_skills_end_the_run_as_repeated_zero_step(*, tmp_path):
+    """A skill refused at planning executes 0 control steps; a session made only of
+    them changes nothing, so K of them in a row end practice."""
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=3,
+            repeated_zero_step_limit=5,
+        ),
+        method=_scripted_method(script=[2, 0, 0] + [0] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    end = [e for e in _events(output=output) if e["event"] == "practice_end"][0]
+    assert end["reason"] == "repeated_zero_step"
+    # Session 0 took 2 control steps; sessions 1-5 took none, and the fifth ends it.
+    assert end["practice_steps"] == 2
+    assert len(_session_starts(output=output)) == 6
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert protocol["repeated_zero_step_limit"] == 5
+
+
+def test_refusal_then_stop_sessions_count_as_zero_step_despite_the_stop_charge(*, tmp_path):
+    """determinized-always-ask s3's livelock: sessions of refusals alternate with "one
+    refusal, then STOP". The STOP's own 1-step charge is not a control step."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=3,
+            repeated_zero_step_limit=4,
+        ),
+        method=_scripted_method(script=[0, 0, 0, 0, stop] * 2 + [0, 0, 0] + [0] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    assert len(_session_starts(output=output)) == 4
+    assert len(_stop_events(output=output)) == 2
+    assert _measured(output=output)[-1] == 2  # two STOP charges, no control steps
+
+
+def test_a_session_with_a_control_step_resets_the_zero_step_streak(*, tmp_path):
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=2,
+            repeated_zero_step_limit=3,
+        ),
+        method=_scripted_method(script=[0, 0] * 2 + [0, 1] + [0, 0] * 10),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    # Two zero-step sessions, one with a step, then three more zero-step sessions.
+    assert len(_session_starts(output=output)) == 6
+
+
+def test_a_session_with_a_human_reset_resets_the_zero_step_streak(*, tmp_path):
+    """A human reset changes the scene, so it counts as progress."""
+    reset = HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=2,
+            repeated_zero_step_limit=3,
+        ),
+        method=_scripted_method(script=[0, 0] * 2 + [0, reset] + [0, 0] * 10),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    assert len(_session_starts(output=output)) == 6
+
+
+def test_stop_only_sessions_are_left_to_repeated_stop(*, tmp_path):
+    """A STOP-only session neither counts toward the zero-step streak nor resets it: a
+    planner that chooses to stop is `repeated_stop`'s to end, at its own limit."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=1,
+            repeated_zero_step_limit=2,
+        ),
+        method=_scripted_method(script=[stop] * 12),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    assert len(_stop_events(output=output)) == 10
+
+    # Nor does one reset the streak: zero-step, STOP-only, zero-step ends it at K=2.
+    output = tmp_path / "interleaved"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=1,
+            repeated_zero_step_limit=2,
+        ),
+        method=_scripted_method(script=[0, stop, 0] + [1] * 5),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    assert len(_session_starts(output=output)) == 3
+
+
+def test_the_zero_step_limit_defaults_to_five_on_the_cli():
+    from hitl_pmp.cli import Cli
+
+    args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"])
+    assert args.repeated_zero_step_limit == 5
+
+
 def test_a_stop_is_charged_one_robot_step_through_the_accounting():
     from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
 
