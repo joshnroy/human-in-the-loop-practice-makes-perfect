@@ -1,10 +1,14 @@
-"""SweepOffShelf3D's storyboard replay renderer.
+"""SweepOffShelf3D's replay renderer: a storyboard, or full motion when recorded.
 
-The shelf's step-protocol recording holds one state per action boundary: the robot's
-base pose and gripper command, each cube's position, the wiper's position and yaw,
-and the box's interior. It records no arm joints and no per-control-step ticks, so a
-replay is a storyboard -- one frame per action, the arm drawn at its home pose -- not a
-motion video. Full motion needs per-step arm states recorded first.
+By default the shelf's step-protocol recording holds one state per action boundary: the
+robot's base pose and gripper command, each cube's position, the wiper's position and
+yaw, and the box's interior. It has no arm joints and no per-control-step ticks, so the
+replay is a storyboard -- one frame per action, the arm drawn at its home pose.
+
+A recording made with `--record-motion` says so in its header (`scene.motion`) and holds
+every `motion_stride()`-th control step of each skill, each state also carrying every
+robot joint and each movable's full pose (`SweepOffShelf3DBackend.motion_state`). Played
+one tick per frame at `MOTION_FPS`, it is full motion at real time.
 """
 
 from typing import Any, ClassVar
@@ -26,6 +30,9 @@ class SweepOffShelf3DReplayRenderer(ReplayRenderer):
     whatever the run used. Built on first use, so choosing it costs nothing."""
 
     storyboard: ClassVar[bool] = True
+    # Frames per second of full-motion playback; the recording's stride is chosen from
+    # it, so one recorded tick is one frame at real time.
+    MOTION_FPS: ClassVar[int] = 10
     # The Robotiq linkage at a gripper command g in [0, 1], read off the live sim
     # (closed: driver 0.787, spring link 0.785, follower -0.766, coupler 0).
     _GRIPPER: ClassVar[dict[str, float]] = {
@@ -48,12 +55,60 @@ class SweepOffShelf3DReplayRenderer(ReplayRenderer):
     _home_wiper_yaw: float = PrivateAttr(default=0.0)
     _renderer: Any = PrivateAttr(default=None)
 
+    @staticmethod
+    def motion_stride() -> int:
+        """Control steps per recorded tick, so that ticks arrive at `MOTION_FPS`."""
+        return max(
+            1,
+            round(
+                SweepOffShelf3DBackend.CONTROL_FREQUENCY / SweepOffShelf3DReplayRenderer.MOTION_FPS
+            ),
+        )
+
+    def motion(self) -> dict[str, Any] | None:
+        return self.scene.get("motion")
+
+    def is_storyboard(self) -> bool:
+        return self.motion() is None
+
     def fps(self) -> int:
-        return self.frames_per_second
+        motion = self.motion()
+        return self.frames_per_second if motion is None else int(motion["fps"])
 
     def show(self, *, state: PlainState) -> np.ndarray:
         import mujoco
 
+        backend = self._built()
+        model, data = backend.model(), backend.data()
+        if "robot_joints" in state:
+            self._pose_motion(state=state)
+        else:
+            self._pose_boundary(state=state)
+        data.qvel[:] = 0.0
+        mujoco.mj_forward(model, data)
+        if self._renderer is None:
+            # The compiled model's offscreen buffer is the env's 640x480; the
+            # presentation canvas draws the scene at 960x720.
+            model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), self.width)
+            model.vis.global_.offheight = max(int(model.vis.global_.offheight), self.height)
+            self._renderer = mujoco.Renderer(model, height=self.height, width=self.width)
+        self._renderer.update_scene(data, camera="task_view")
+        return np.asarray(self._renderer.render(), dtype=np.uint8).copy()
+
+    def _pose_motion(self, *, state: PlainState) -> None:
+        """Every robot joint and every movable's free joint, exactly as recorded."""
+        backend = self._built()
+        model, data = backend.model(), backend.data()
+        joints = self.motion() or {}
+        names = joints.get("robot_joints", SweepOffShelf3DBackend.ROBOT_JOINTS)
+        for joint, value in zip(names, state["robot_joints"], strict=True):
+            data.qpos[model.jnt_qposadr[model.joint(joint).id]] = float(value)
+        backend.grip = float(state[O.robot.name][3])
+        for name in (*backend.cube_names, backend.wiper_name, backend.box_name):
+            address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+            data.qpos[address : address + 7] = np.asarray(state[name][-7:], dtype=float)
+
+    def _pose_boundary(self, *, state: PlainState) -> None:
         backend = self._built()
         model, data = backend.model(), backend.data()
         x, y, theta, grip = (float(v) for v in state[O.robot.name])
@@ -76,22 +131,13 @@ class SweepOffShelf3DReplayRenderer(ReplayRenderer):
         shift = np.array([(x0 + x1) / 2, (y0 + y1) / 2]) - self._home_box_center
         home_position, _ = self._home[backend.box_name]
         self._place(name=backend.box_name, position=home_position + np.array([*shift, 0.0]))
-        data.qvel[:] = 0.0
-        mujoco.mj_forward(model, data)
-        if self._renderer is None:
-            # The compiled model's offscreen buffer is the env's 640x480; the
-            # presentation canvas draws the scene at 960x720.
-            model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), self.width)
-            model.vis.global_.offheight = max(int(model.vis.global_.offheight), self.height)
-            self._renderer = mujoco.Renderer(model, height=self.height, width=self.width)
-        self._renderer.update_scene(data, camera="task_view")
-        return np.asarray(self._renderer.render(), dtype=np.uint8).copy()
 
     def current_state(self) -> PlainState:
         """Read back from the posed scene itself, as the live environment observes it."""
-        return {
-            name: [float(v) for v in values] for name, values in self._built().features().items()
-        }
+        backend = self._built()
+        if self.motion() is not None:
+            return backend.motion_state()
+        return {name: [float(v) for v in values] for name, values in backend.features().items()}
 
     def close(self) -> None:
         if self._renderer is not None:

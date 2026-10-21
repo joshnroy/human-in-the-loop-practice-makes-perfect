@@ -43,7 +43,11 @@ Before a launch:
 4. On agni, run each arm as its own systemd service (a `--scope` dies with its shell)
    inside `agents.slice`, with `MemorySwapMax=0`; budget about 3 GiB per run.
 
-Every other log is still written plain.
+Every other log is still written plain, `recording.jsonl` included. Every run records
+full motion for its evaluations (`--record-motion evaluation`), and seed 0 of each arm
+for practice too (`--record-motion all`), so `analysis/render_recording.py` draws
+full-motion videos. `launch` shares one argv across seeds through `run_sweep`, so there
+every seed records evaluation motion only.
 
 On a cluster, `print` gives each arm's per-seed argv; run it with the job's own
 `scripts/with_env.sh` and the same `<arm>/<method>/<seed>` output layout.
@@ -81,6 +85,8 @@ ENV = "sweepoffshelf3d"
 ALWAYS_ASK_FLAG = "--always-ask-reset"
 SEEDS = 6
 P = "1"
+# Full-motion recording: every run's evaluations, and practice too for these seeds.
+PRACTICE_MOTION_SEEDS = frozenset({0})
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
 DELLA_QUOTA_PATH = "/scratch/gpfs/TSILVER"
 
@@ -117,7 +123,8 @@ FULL = Budget(
 DRY = Budget(practice_steps=1500, evaluation_interval=1500, evaluation_control_steps=300, tasks=1)
 SIZES = {"full": FULL, "dry": DRY}
 
-# Every flag the 2026-10-13 shelf runs set, kept by the 2026-10-14 stage-5 rerun.
+# Every flag the 2026-10-13 shelf runs set, kept by the 2026-10-14 stage-5 rerun, less
+# `--record-episode-traces`: the step protocol never wrote that file and now refuses it.
 OCT13 = [
     "--no-ees-reset-gate",
     "--goal-pursuit-horizon", "0",
@@ -125,7 +132,6 @@ OCT13 = [
     "--planning-timeout", "10.0",
     "--sampler-max-train-iters", "10000",
     "--test-env-seed-offset", "10000",
-    "--record-episode-traces",
     "--record-sampler-draws",
     "--no-reproduce-predicators-double-observe",
     "--reproduce-predicators-practice-target-history",
@@ -244,7 +250,12 @@ class ShelfLaunch:
             "--seed", str(seed),
             "--output-dir", str(output_dir),
             *ShelfLaunch.method_args(arm=arm, size=size, repo=repo),
+            "--record-motion", ShelfLaunch.motion_scope(seed=seed),
         ]  # fmt: skip
+
+    @staticmethod
+    def motion_scope(*, seed: int) -> str:
+        return "all" if seed in PRACTICE_MOTION_SEEDS else "evaluation"
 
     @staticmethod
     def della_manifest(
@@ -345,7 +356,10 @@ exit $rc
             "--num-seeds", str(SEEDS),
             "--results-root", str(results_root / arm.name),
             "--max-workers", str(max_workers),
-            "--shared-args", shlex.join(ShelfLaunch.method_args(arm=arm, size=size)),
+            # One argv for every seed, so no seed records practice motion here.
+            "--shared-args", shlex.join(
+                [*ShelfLaunch.method_args(arm=arm, size=size), "--record-motion", "evaluation"]
+            ),
         ]  # fmt: skip
         if skip_gate:
             command.append("--skip-skill-benchmark-gate")
