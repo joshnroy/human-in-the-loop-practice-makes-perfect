@@ -140,16 +140,18 @@ class RunRecordWriter(SkillTickSink):
     ) -> None:
         if self.output_path is None:
             return
+        objects = [
+            part.strip()
+            for part in label.partition("(")[2].partition(")")[0].split(",")
+            if part.strip()
+        ]
         pending = self._pending or _PendingSkill(
-            name=label.split("(", 1)[0],
-            objects=[
-                part.strip()
-                for part in label.partition("(")[2].partition(")")[0].split(",")
-                if part.strip()
-            ],
-            params=[],
-            controller={},
+            name=label.split("(", 1)[0], objects=objects, params=[], controller={}
         )
+        if not pending.objects:
+            # A skill reported by name only takes its objects from the label, as an
+            # unreported one does.
+            pending.objects = objects
         self._pending = None
         if self.state_provider is not None:
             settled = self.state_provider()
