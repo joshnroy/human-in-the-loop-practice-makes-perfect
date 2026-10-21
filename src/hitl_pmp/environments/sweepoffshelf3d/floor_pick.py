@@ -118,7 +118,9 @@ class FloorPicks:
                     break
                 raise SkillFailed(f"{label}: no grasp on {cube} planned")
             if kinder.held(name=cube):
-                return
+                if not kinder.double_grasp(cube=cube, missed=missed, label=label):
+                    return
+                continue
             missed.append(f"{cube} did not come with the hand")
             kinder.note(
                 stage=label, kind="execution_failed", reason=f"attempt {len(missed)} missed"
@@ -192,7 +194,7 @@ class FloorPicks:
                 pick.settle = kinder.settler(
                     hand=grasp.hand, entry=(grasp.pre,), label=f"{label}_settle"
                 )
-                pick.lift = kinder.lifter(pre=grasp.lift, label=f"{label}_lift")
+                pick.lift = kinder.lifter(pre=grasp.lift, label=f"{label}_lift", cube=cube)
                 pick.pre_conf = grasp.pre_conf.tolist()
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
                 params = kinder.facing_params(base=grasp.base, centre=centre, cube=cube)
