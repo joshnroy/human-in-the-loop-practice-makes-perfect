@@ -459,6 +459,56 @@ def test_a_failed_run_cancels_queued_evaluations_instead_of_waiting(*, tmp_path)
     assert json.loads((output / "status.json").read_text())["phase"] == "failed"
 
 
+class CountsLearning(ScriptedMethod):
+    """Records each `end_cycle`, so a test can see which cycles were learned from."""
+
+    def model_post_init(self, context, /) -> None:  # noqa: PLR0917
+        super().model_post_init(context)
+        self._learned = 0
+
+    def end_cycle(self) -> None:
+        self._learned += 1
+
+
+@pytest.mark.parametrize(
+    ("max_actions", "expected_cycles"),
+    [
+        (20, 1),  # the budget ends the first cycle after 5 of its 20 actions
+        (5, 1),  # the first cycle's last action lands exactly on the budget
+        (3, 2),  # one full cycle, then a partial one of 2 actions
+    ],
+)
+def test_the_cycle_the_budget_ends_is_learned_from_before_the_final_measurement(
+    *, tmp_path, max_actions: int, expected_cycles: int
+):
+    output = tmp_path / "run"
+    method = CountsLearning(
+        env=LightSwitchEnvironment(grid_size=4),
+        skill_provider=LightSwitchSkillProvider(env=LightSwitchEnvironment(grid_size=4)),
+        seed=0,
+    )
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output, budget=5, interval=100, max_steps_per_interaction=max_actions
+        ),
+        method=method,
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert method._learned == expected_cycles
+    events = _events(output=output)
+    names = [e["event"] for e in events]
+    updates = [e for e in events if e["event"] == "learning_update"]
+    assert len(updates) == expected_cycles
+    assert updates[-1]["reason"] == "practice_step_budget"
+    final = max(i for i, name in enumerate(names) if name == "measurement")
+    assert names.index("learning_update") < final
+    assert max(i for i, name in enumerate(names) if name == "learning_update") < final
+    records = json.loads((output / "measurements.json").read_text())
+    assert records[-1]["learning_updates"] == expected_cycles
+
+
 def test_a_skill_interrupted_at_the_budget_is_logged_and_its_state_adopted(*, tmp_path):
     """Finding 9: the interrupted skill is reported as interrupted, with a reason, and
     the environment adopts the simulator's actual post-interruption state."""

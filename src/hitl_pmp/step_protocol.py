@@ -725,6 +725,19 @@ class StepPracticeRunner:
         # final measurement is never a duplicate of one.
         measure_every_cycles = getattr(args, "measure_every_cycles", None)
 
+        def learn(*, actions: int, reason: str) -> None:
+            nonlocal learning_updates
+            method.end_cycle()
+            learning_updates += 1
+            StepFiles.event(
+                path=events,
+                event="learning_update",
+                cycle=cycle,
+                practice_steps=clock.steps,
+                actions=actions,
+                reason=reason,
+            )
+
         def measure_cycle_end() -> None:
             scene = environment.practice_scene(problem=problem)
             measure(after_cycle=cycle)
@@ -964,6 +977,10 @@ class StepPracticeRunner:
                     break
                 if budget_reached or clock.steps >= clock.budget:
                     endpoint = "practice_step_budget"
+                    # The cycle the budget ended is learned from before the final
+                    # measurement; otherwise a run of one cycle measures its prior.
+                    if actions > 0:
+                        learn(actions=actions, reason=endpoint)
                     break
                 metrics.practice_session_ends.append(
                     PracticeSessionEnd(
@@ -983,16 +1000,7 @@ class StepPracticeRunner:
                 if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
                     break
-                method.end_cycle()
-                learning_updates += 1
-                StepFiles.event(
-                    path=events,
-                    event="learning_update",
-                    cycle=cycle,
-                    practice_steps=clock.steps,
-                    actions=actions,
-                    reason=reason,
-                )
+                learn(actions=actions, reason=reason)
                 if measure_every_cycles and learning_updates % measure_every_cycles == 0:
                     measure_cycle_end()
                 cycle += 1
