@@ -90,7 +90,9 @@ th { color: var(--muted); font-weight: 500; font-size: 12px; }
 .legend .in::before { background: var(--ink); }
 .legend .out::before { content: "\00d7"; width: auto; height: auto; color: var(--out); font-weight: 700; }
 .legend .unk::before { border: 1.5px solid var(--ref); }
-.legend .diamond::before { border-radius: 0; width: 8px; height: 8px; border: 2px solid var(--ink); transform: rotate(45deg); }
+.legend .diamond::before { border-radius: 0; width: 7px; height: 7px; transform: rotate(45deg); }
+.legend .in-d::before { background: var(--ink); border: 1.5px solid var(--ink); }
+.legend .out-d::before { background: none; border: 2px solid var(--out); }
 .legend .ring::before { background: #ffffff; border: 2px solid #000000; }
 </style>
 </head>
@@ -279,18 +281,12 @@ function renderTossStrip(t) {
     const tip = `toss ${p.index} (step ${p.step}, cycle ${p.cycle}, bin ${p.spot || "?"}): ${outcomeWord(p.in_bin)}` +
       (p.random === true ? `\n${EPSILON_NOTE}` : p.random === false ? "\ngreedy (counted toward competence)" : "") +
       `\nstandoff ${fmt(p.standoff, 2)} m · ${fmt(p.speed_deg_s)} deg/s · release ${fmt(p.release_ms)} ms` + (p.note ? "\n" + p.note : "");
-    // An epsilon-random toss is a diamond: outlined in ink when in, vermillion when out.
-    if (p.random === true) {
-      const d = r + 2;
-      f.svg.appendChild(s("polygon", { points: `${cx},${cy - d} ${cx + d},${cy} ${cx},${cy + d} ${cx - d},${cy}`, fill: "none",
-        stroke: p.in_bin === true ? "var(--ink)" : p.in_bin === false ? "var(--out)" : "var(--ref)", "stroke-width": 2 }, title(tip)));
-    } else f.svg.appendChild(outcomeMark(cx, cy, p.in_bin, r, tip));
+    f.svg.appendChild(tossMark(cx, cy, p, r, tip));
   });
   const head = el("div", { class: "note" },
     el("b", {}, `in bin ${t.in_bin_label}`), ` all practice tosses · greedy ${t.greedy_label} · random ${t.random_label}` +
     ` · last ${t.rolling_window}: ${t.rolling_label}` + (t.outcome_source ? ` · from ${t.outcome_source}` : ""));
-  const legend = el("div", { class: "legend" }, el("span", { class: "in" }, "in bin"), el("span", { class: "out" }, "not in bin"),
-    el("span", { class: "diamond", title: EPSILON_NOTE }, "ε-random (not counted toward competence)"));
+  const legend = tossLegend();
   body.replaceChildren(head, n ? f.svg : el("div", { class: "note" }, "No practice toss yet."), n ? legend : "");
 }
 
@@ -311,12 +307,28 @@ function renderTossParams(t) {
       xticks: niceTicks(0, xmax, 4).filter(Number.isInteger), yticks: niceTicks(lo - pad, hi + pad, 4), xlabel: "practice toss",
       yfmt: (v) => fmt(v, d) });
     f.svg.appendChild(s("text", { x: 42, y: 12 }, label));
-    pts.forEach((p) => f.svg.appendChild(outcomeMark(f.sx(p.index), f.sy(p[key]), p.in_bin, n > 120 ? 2 : 3,
-      `toss ${p.index}: ${label} ${fmt(p[key], d + 1)} — ${outcomeWord(p.in_bin)}`)));
+    pts.forEach((p) => f.svg.appendChild(tossMark(f.sx(p.index), f.sy(p[key]), p, n > 120 ? 2 : 3,
+      `toss ${p.index}: ${label} ${fmt(p[key], d + 1)} — ${outcomeWord(p.in_bin)}` +
+      (p.random === true ? `\n${EPSILON_NOTE}` : ""))));
     return f.svg;
   };
   body.replaceChildren(el("div", { class: "row" },
-    panel("standoff", "standoff (m)", 2), panel("speed_deg_s", "speed (deg/s)", 0), panel("release_ms", "release (ms)", 0)));
+    panel("standoff", "standoff (m)", 2), panel("speed_deg_s", "speed (deg/s)", 0), panel("release_ms", "release (ms)", 0)),
+    tossLegend());
+}
+
+// One toss's mark, shared by the strip and the parameter panels. Greedy: a dot (in) or
+// a cross (out). Epsilon-random: a diamond, filled ink when in, hollow vermillion when out.
+function tossMark(cx, cy, p, r, tip) {
+  if (p.random !== true) return outcomeMark(cx, cy, p.in_bin, r, tip);
+  const d = r + 2, points = `${cx},${cy - d} ${cx + d},${cy} ${cx},${cy + d} ${cx - d},${cy}`;
+  if (p.in_bin === true) return s("polygon", { points, fill: "var(--ink)", stroke: "var(--ink)", "stroke-width": 1.5 }, title(tip));
+  return s("polygon", { points, fill: "none", stroke: p.in_bin === false ? "var(--out)" : "var(--ref)", "stroke-width": 2 }, title(tip));
+}
+function tossLegend() {
+  return el("div", { class: "legend" }, el("span", { class: "in" }, "in bin"), el("span", { class: "out" }, "not in bin"),
+    el("span", { class: "diamond in-d", title: EPSILON_NOTE }, "ε-random, in"),
+    el("span", { class: "diamond out-d", title: EPSILON_NOTE }, "ε-random, out (not counted toward competence)"));
 }
 
 // The newest ceiling frame with the map drawn on it; the plain map when there is none.
