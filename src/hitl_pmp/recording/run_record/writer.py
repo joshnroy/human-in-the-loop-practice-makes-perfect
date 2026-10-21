@@ -137,6 +137,7 @@ class RunRecordWriter(SkillTickSink):
         outcome: str | None = None,
         cost: float | None = None,
         cycle: int | None = None,
+        goal_reached: bool = False,
     ) -> None:
         if self.output_path is None:
             return
@@ -166,6 +167,7 @@ class RunRecordWriter(SkillTickSink):
             outcome=outcome,
             cost=cost,
             cycle=cycle,
+            goal_reached=goal_reached,
         )
 
     def human_action(
@@ -263,6 +265,7 @@ class RunRecordWriter(SkillTickSink):
         cost: float | None,
         cycle: int | None,
         moved_objects: PlainState | None = None,
+        goal_reached: bool = False,
     ) -> None:
         segment = self._segment or SegmentStart(phase=Phase.PRACTICE)
         seq = self._seq
@@ -283,6 +286,7 @@ class RunRecordWriter(SkillTickSink):
                 "start_step": start_step,
                 "end_step": end_step,
                 "success": success,
+                "goal_reached": goal_reached,
                 "outcome": outcome,
                 "cost": cost,
                 "moved_objects": moved_objects,

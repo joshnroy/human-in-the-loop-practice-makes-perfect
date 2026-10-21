@@ -117,7 +117,9 @@ class RecordingReplayer(BaseModel):
             skill = name.removeprefix("HUMAN ")
         elif action.actor == "human":
             name = f"HUMAN {name}"
-        if action.success is False:
+        if action.goal_reached:
+            name += " ✓ goal reached"
+        elif action.success is False:
             name += " ✗"
         self._history.append(name)
         self._update(

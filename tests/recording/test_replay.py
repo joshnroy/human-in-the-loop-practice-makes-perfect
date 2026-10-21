@@ -210,3 +210,32 @@ def test_the_compositor_output_is_a_fixed_encoder_friendly_size() -> None:
     assert frame.shape == (ReplayCompositor.height, ReplayCompositor.width, 3)
     assert ReplayCompositor.width % 16 == 0
     assert ReplayCompositor.height % 16 == 0
+
+
+def test_a_skill_the_goal_latch_cut_short_is_not_marked_failed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "recording.jsonl"
+    state = {"cube": [0.0]}
+    writer = RunRecordWriter(
+        output_path=path,
+        header=RecordingHeader(environment="toy"),
+        state_provider=lambda: {k: list(v) for k, v in state.items()},
+    )
+    writer.begin_segment(phase=Phase.EVALUATION, checkpoint=1, task_index=0)
+    state["cube"] = [1.0]
+    writer.robot_action(
+        label="Push(cube)",
+        start_step=0,
+        end_step=1,
+        success=False,
+        outcome="stopped: goal reached",
+        goal_reached=True,
+    )
+    state["cube"] = [2.0]
+    writer.robot_action(label="Pick(cube)", start_step=1, end_step=2, success=False)
+    writer.end_segment(success=True, outcome="goal", steps=2)
+    writer.close()
+    seen = _statuses(monkeypatch=monkeypatch)
+    _play(path=path, tmp_path=tmp_path)
+    assert seen[-1].history[-2:] == ("Push(cube) \u2713 goal reached", "Pick(cube) \u2717")
