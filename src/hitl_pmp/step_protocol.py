@@ -811,6 +811,9 @@ class StepPracticeRunner:
     # A run whose planner opens this many sessions in a row with a STOP has stopped
     # practising: nothing changes between them, so the next would stop too.
     REPEATED_STOP_LIMIT: ClassVar[int] = 10
+    # A session of skills each refused at planning executes no control step, so the
+    # next session plans from the same state and refuses the same way.
+    REPEATED_ZERO_STEP_LIMIT: ClassVar[int] = 5
 
     @staticmethod
     def configure_accounting(
@@ -985,6 +988,7 @@ class StepPracticeRunner:
         endpoint = "running"
         early_stop = False
         stop_streak = 0
+        zero_step_streak = 0
         accounting: PracticeAccounting | None
         if saved is None:
             if not evaluate_only:
@@ -1010,12 +1014,18 @@ class StepPracticeRunner:
                 for record, outcome in saved["evaluations"]
             ]
             stop_streak = saved["stop_streak"]
+            # Absent from a checkpoint written before this streak existed: it then
+            # starts again, which can only delay `repeated_zero_step`, never trip it.
+            zero_step_streak = saved.get("zero_step_streak", 0)
             started -= saved["elapsed_seconds"]
             StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
         recorder = recorder or RunRecordWriter.disabled()
         if not evaluate_only:  # A practice segment needs the scene no reset observed.
             recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
         stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
+        zero_step_limit = getattr(
+            args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
+        )
         pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
         def status() -> None:
@@ -1203,6 +1213,7 @@ class StepPracticeRunner:
                         for record, future in futures
                     ],
                     "stop_streak": stop_streak,
+                    "zero_step_streak": zero_step_streak,
                     "elapsed_seconds": time.monotonic() - started,
                     "clock": clock.model_dump(
                         include={
@@ -1251,6 +1262,7 @@ class StepPracticeRunner:
                     "stop_on_no_practice_action": stop_on_no_practice_action,
                     "stop_skill_steps": 1,
                     "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
+                    "repeated_zero_step_limit": zero_step_limit,
                     "robot_duration_prior_steps": getattr(
                         method, "robot_duration_prior_steps", None
                     ),
@@ -1312,6 +1324,8 @@ class StepPracticeRunner:
                 )
                 actions = 0
                 stopped = False
+                session_robot_steps = clock.robot_steps
+                session_human_invocations = clock.human_invocations
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
@@ -1508,6 +1522,17 @@ class StepPracticeRunner:
                 stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
                 if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
+                    break
+                # A STOP's own charge is not a control step, and a STOP-only session
+                # (no actions) is `repeated_stop`'s: it neither extends nor breaks this.
+                if actions > 0:
+                    progressed = (
+                        clock.robot_steps > session_robot_steps
+                        or clock.human_invocations > session_human_invocations
+                    )
+                    zero_step_streak = 0 if progressed else zero_step_streak + 1
+                if zero_step_streak >= zero_step_limit:
+                    endpoint = "repeated_zero_step"
                     break
                 learn(actions=actions, reason=reason)
                 cycle += 1

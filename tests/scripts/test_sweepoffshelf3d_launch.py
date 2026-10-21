@@ -91,6 +91,7 @@ def test_every_arm_parses_to_the_decided_settings(*, name: str) -> None:
     assert args.evaluation_control_steps == 3000
     assert args.num_test_tasks == 10
     assert args.stop_after_perfect_evaluations == 3
+    assert args.repeated_zero_step_limit == 5  # the CLI default, K = 5
     assert args.reset_cubes_success_probability == 1.0
     assert args.practice_cost_config == ShelfLaunch.cost_config(arm=arm)
     assert args.always_ask_reset is arm.always_ask
