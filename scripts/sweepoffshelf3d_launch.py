@@ -21,14 +21,31 @@ The plan (Josh, 2026-10-14 and 2026-10-20):
   held-out task, 10 tasks, stop after 3 perfect evaluations, sessions of <= 20 actions.
 - `--pomdp-observation-probability-weight 0.0`: the method's default is 0.1, and at 0.1
   the planner STOPs at the root. EES uses a Beta(1, 3) prior, a labelled deviation from
-  the paper's Beta(10, 1). Step accounting is `configs/sweepoffshelf3d_practice_costs.json`
-  (1 per control step, each human reset costs 1 and takes 1 step, lambda 3e-6). The lab2
-  scene is the environment's default; no arm passes `--no-scene-bg`.
+  the paper's Beta(10, 1). Step accounting: 1 per control step, each human reset takes 1
+  counted step of the budget, lambda 3e-6. The lab2 scene is the environment's default;
+  no arm passes `--no-scene-bg`.
 
-The always-ask arms add `--always-ask-reset` (PR #477) and use #477's cost file, which
-also prices `reset_to_sampled_start`. Every mode refuses them on a checkout whose CLI
-does not accept that flag. The skill benchmark launch gate (`hitl_pmp/launch_gate.py`)
-is never skipped unless `--skip-skill-benchmark-gate` is passed here explicitly.
+Prices (Josh, 2026-10-21), one rule in two units, because the two methods' costs are in
+different units:
+- The planner arms (determinized, expectimax, and their always-ask variants) price a
+  robot skill at a FIXED nominal number of control steps per skill,
+  `configs/sweepoffshelf3d_skill_step_costs.json` (`--pomdp-skill-step-costs`; measured
+  from the skill benchmark by `scripts/skill_step_costs.py`, which records the commit and
+  report sha256), and every human reset at `PLANNER_HUMAN_RESET_COST` = 500 control steps,
+  Tossing3D's canonical price (`configs/sweepoffshelf3d_practice_costs_planner*.json`).
+- The EES arms price every human reset at `EES_HUMAN_RESET_COST` = 5 in EES's own
+  plan-cost units, where a robot skill costs -log(competence): EXP-22c's ees-lamcost5
+  (`configs/sweepoffshelf3d_practice_costs_ees*.json`). EES reads the JSON human cost as
+  its plan cost.
+Only prices change: the practice budget and the x-axis are charged the real control
+steps each skill took and one step per human reset, whatever its price. A different
+reset price is a new pair of cost files; the tests pin each file to its constant.
+
+The always-ask arms add `--always-ask-reset` (PR #477) and use the `_sampled_start`
+cost file, which also prices `reset_to_sampled_start`. Every mode refuses them on a
+checkout whose CLI does not accept that flag. The skill benchmark launch gate
+(`hitl_pmp/launch_gate.py`) is never skipped unless `--skip-skill-benchmark-gate` is
+passed here explicitly.
 
 Before a launch:
 1. A clean worktree at the launch commit with its own `reference/` populated
@@ -75,8 +92,16 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 REPO = Path(__file__).resolve().parents[1]
-COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs.json"
-ALWAYS_ASK_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_sampled_start.json"
+# Each method's human-reset price, in its own units (see the module docstring).
+PLANNER_HUMAN_RESET_COST = 500
+EES_HUMAN_RESET_COST = 5
+PLANNER_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_planner.json"
+PLANNER_ALWAYS_ASK_COSTS = (
+    REPO / "configs" / "sweepoffshelf3d_practice_costs_planner_sampled_start.json"
+)
+EES_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_ees.json"
+EES_ALWAYS_ASK_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_ees_sampled_start.json"
+SKILL_STEP_COSTS = REPO / "configs" / "sweepoffshelf3d_skill_step_costs.json"
 ENV = "sweepoffshelf3d"
 ALWAYS_ASK_FLAG = "--always-ask-reset"
 SEEDS = 6
@@ -210,13 +235,27 @@ class ShelfLaunch:
         return {arm.name: arm for arm in [*canonical, *always_ask]}
 
     @staticmethod
+    def cost_config(*, arm: ShelfArm) -> Path:
+        """The arm's step-accounting file: its method's reset price, and the full reset
+        too for an always-ask arm."""
+        if arm.method == "ees":
+            return EES_ALWAYS_ASK_COSTS if arm.always_ask else EES_COSTS
+        return PLANNER_ALWAYS_ASK_COSTS if arm.always_ask else PLANNER_COSTS
+
+    @staticmethod
     def method_args(*, arm: ShelfArm, size: Budget, repo: Path = REPO) -> list[str]:
         """Every `hitl_pmp.cli` flag except `--env/--method/--seed/--output-dir`.
 
         `repo` is the checkout the run executes from, which holds the cost files."""
-        costs = repo / (ALWAYS_ASK_COSTS if arm.always_ask else COSTS).relative_to(REPO)
+        costs = repo / ShelfLaunch.cost_config(arm=arm).relative_to(REPO)
+        fixed = (
+            ["--pomdp-skill-step-costs", str(repo / SKILL_STEP_COSTS.relative_to(REPO))]
+            if arm.method == "pomdp"
+            else []
+        )
         return [
             *arm.flags,
+            *fixed,
             "--practice-step-budget", str(size.practice_steps),
             "--measurement-interval-steps", str(size.evaluation_interval),
             "--evaluation-control-steps", str(size.evaluation_control_steps),
