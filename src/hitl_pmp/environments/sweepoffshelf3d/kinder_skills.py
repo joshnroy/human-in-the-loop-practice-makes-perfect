@@ -409,14 +409,7 @@ class KinderSkills:
 
     def nearest_wiper_grasp(self) -> str | None:
         """The fixed wiper grasp ("shelf" or "sweep") the hand is at, if any."""
-        shelf = self.shelf
-        hand_in_wiper = np.linalg.inv(shelf.wiper_pose()) @ shelf.site_pose()
-        for kind, nominal in shelf.grasp_in_wiper.items():
-            offset = float(np.linalg.norm(hand_in_wiper[:3, 3] - nominal[:3, 3]))
-            turn = Rotation.from_matrix(hand_in_wiper[:3, :3] @ nominal[:3, :3].T).magnitude()
-            if offset < 0.02 and np.rad2deg(turn) < 10.0:
-                return kind
-        return None
+        return self.shelf.measured_grasp_kind()
 
     # --- driving an upstream controller -----------------------------------------------
 
