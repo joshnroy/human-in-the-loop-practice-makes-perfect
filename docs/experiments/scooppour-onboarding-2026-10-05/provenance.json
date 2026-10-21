@@ -1,0 +1,47 @@
+{
+  "assessment_date": "2026-10-05",
+  "repos": [
+    {
+      "path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect",
+      "head": "86a188fafb12fae78922e80c4581f21a8d706396",
+      "status": " M docs/from_tom/competence_models.ipynb\n M reference/kinder-baselines\n M reference/kindergarden\n?? .codex-worktrees/\n?? artifacts/\n?? docs/experiment-logs/2026-10-03-tossing3d-agentic-claude50.md\n?? docs/experiments/tossing3d-deep-rl-scope.md\n?? scripts/tossing3d_ees_protocol.sh\n?? tests/scripts/test_tossing3d_ees_protocol.py\n?? uv.lock\n",
+      "diff_sha256": "598e9688f64060381b63e644bdf629d8776068199ac6490e23ee3bec16fc688c",
+      "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/reference/kindergarden",
+      "head": "8f600231da8ee898da1055144665a8c5f6c246f0",
+      "status": "?? .claude/\n",
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/reference/kinder-baselines",
+      "head": "c18056d2f0530599630a9962d210bb2ef9e040d5",
+      "status": "",
+      "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/tmp/hitl-packed4-method-integration",
+      "head": "292e17d8162c0ced2998d550b2db94da4decab0f",
+      "status": " M docs/packed4-method-pilot.md\n M scripts/packed4_admission_diagnostic.py\n M scripts/packed4_learning_curve.py\n M scripts/packed4_live_results.py\n M scripts/with_packed4_env.sh\n M src/hitl_pmp/core/method/types.py\n M src/hitl_pmp/environments/packed4/domain.py\n M src/hitl_pmp/environments/packed4/environment.py\n M src/hitl_pmp/environments/packed4/placement_parameters.py\n M src/hitl_pmp/environments/packed4/sesame_models.py\n M src/hitl_pmp/environments/packed4/skill_provider.py\n M src/hitl_pmp/methods/belief_space/packed4_model.py\n M src/hitl_pmp/planning/pddl.py\n M tests/environments/packed4/test_method_integration.py\n M tests/environments/packed4/test_sesame_models.py\n M tests/methods/belief_space/test_packed4_model.py\n?? artifacts/\n?? docs/packed4-full-surface-proposal.md\n?? scripts/packed4_candidate_logging.py\n?? scripts/packed4_check_features.py\n?? scripts/packed4_render_trajectory.py\n?? scripts/packed4_trajectory.py\n?? scripts/packed4_validate_trajectory.py\n?? src/hitl_pmp/environments/packed4/pick_planning.py\n?? src/hitl_pmp/environments/packed4/placement_features.py\n?? tests/environments/packed4/fixtures/\n?? tests/environments/packed4/test_pick_plannable.py\n",
+      "diff_sha256": "9e49c8cdf97288fb877aa2057c4b82a5bcd5bb0c613c19d131e52786cf63ace0",
+      "staged_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "files": {
+    "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/reference/kindergarden/src/kinder/envs/dynamic2d/dyn_scooppour2d.py": "a939bbca399fcdf5832c7cc292d23224f0a7aa4490e31a5df5e09f6160962e75",
+    "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/reference/kindergarden/src/kinder/envs/dynamic2d/base_env.py": "b28fae90d9e97faee7d79d95b7ce71208d059293df7f0181e7562e44960c4b71",
+    "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/ScoopPour3D/ScoopPour3D-o10.json": "3d503de960f80e6e45a18a32547965d0dbd83c85c967a3ecf741c25c920965bc",
+    "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/src/hitl_pmp/environments/tossing3d/toss.py": "805c36e48852ebb9714fdc16a082918fbad7522e04276060fd07d2088a0daa0a",
+    "/tmp/hitl-packed4-method-integration/src/hitl_pmp/environments/packed4/placement_features.py": "540805ba1f340bab27df645fe61fbd3858a78ffb802022a1d6cdaa2ee70501ce",
+    "/tmp/hitl-packed4-method-integration/scripts/packed4_learning_curve.py": "5b5b6df066d0bf66c313356e4d59eb29325333e570fb7e8818bcf2fa206b8efb"
+  },
+  "parent_gitlinks": "160000 commit 427ad6cdfcc79efb489ebabc8fd39d77e104bb4e\treference/kinder-baselines\n160000 commit f0d554b7b14731f33d55111f99a37f0ae2853e48\treference/kindergarden\n",
+  "resources": {
+    "logical_cpus": 24,
+    "total_memory_kib": 63772028,
+    "diagnostic_process_limit": "one CPU, 8 GiB address space; CPU rendering; serial physics jobs"
+  }
+}
