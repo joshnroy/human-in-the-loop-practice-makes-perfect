@@ -22,6 +22,7 @@ from hitl_pmp.practice_loop import PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from hitl_pmp.step_protocol import (
+    CHECKPOINT_FILENAME,
     DeploymentSnapshot,
     PracticeClock,
     StepPracticeRunner,
@@ -1003,3 +1004,21 @@ def test_an_always_ask_run_whose_cost_file_prices_its_reset_is_accepted(
             **planner,
         )
     )
+
+
+def test_a_simulated_step_zero_measurement_takes_no_checkpoint_and_no_restore(*, tmp_path):
+    """Evaluations spawned beside practice never use its scene: the step-0 measurement
+    is followed straight by practice, with no checkpoint and nothing put back."""
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=3, interval=100),
+        method=_scripted_method(script=[1, 1, 1]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    kinds = [e["event"] for e in _events(output=output)]
+    assert kinds[0] == "measurement" and kinds[1] == "session_start"
+    assert "practice_scene_restored" not in kinds
+    assert _measured(output=output)[0] == 0
+    assert not (output / CHECKPOINT_FILENAME).exists()
