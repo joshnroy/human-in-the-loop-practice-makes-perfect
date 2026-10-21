@@ -35,7 +35,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
-from .always_ask_reset import PARAMETERIZED_SKILL, STRANDED, AlwaysAskReset
+from .always_ask_reset import PARAMETERIZED_SKILL, STOP_ONLY_SESSION, STRANDED, AlwaysAskReset
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
 
@@ -1129,6 +1129,20 @@ class EesMethod(Method):
                 * self._practice_accounting.human_charge(skill=SAMPLED_START_RESET_SKILL_NAME).cost
             )
         return self.always_ask_reset.cost
+
+    def stop_only_session_reset(self) -> float | None:
+        """The always-ask wrapper's reset after a practice session that was only a STOP:
+        its price, for the harness to execute at that session's end, or `None` without
+        the wrapper. Recorded like the wrapper's other forced resets."""
+        rule = self.always_ask_reset
+        if rule is None:
+            return None
+        consecutive = rule.record_forced(reason=STOP_ONLY_SESSION)
+        cost = self.start_reset_cost()
+        self.record_forced_reset(
+            reason=STOP_ONLY_SESSION, cost=cost, consecutive_stranded=consecutive
+        )
+        return cost
 
     def record_forced_reset(self, *, reason: str, cost: float, consecutive_stranded: int) -> None:
         """A hook for a subclass that tracks session cost or keeps a decision log; the

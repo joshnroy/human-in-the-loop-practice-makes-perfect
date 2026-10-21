@@ -176,13 +176,15 @@ class Tossing3DPomdpMethod(EesMethod):
         if self._practice_accounting is None:
             return
         ground = self._execution_ground_skill
-        assert ground is not None, "execution without dispatch"
-        # A forced full reset's steps are the human's, not the last robot skill's.
+        # A forced full reset's steps are the human's, not the last robot skill's; after
+        # a STOP-only first session no robot skill has been dispatched at all.
+        assert ground is not None or self._pending_start_reset, "execution without dispatch"
         if (
             complete
             and not self._pending_start_reset
             and ground not in self.skill_provider.human_cube_bin_reset_skills()
         ):
+            assert ground is not None
             self._execution_durations.setdefault(ground, []).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
