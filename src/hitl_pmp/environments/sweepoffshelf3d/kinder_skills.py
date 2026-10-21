@@ -462,10 +462,9 @@ class KinderSkills:
         if self.held(name=WIPER):
             if shelf.in_hand is None:
                 shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ shelf.wiper_pose()
-                shelf.grasp_kind = self.nearest_wiper_grasp()
             shelf.grip = 1.0
         else:
-            shelf.in_hand, shelf.grasp_kind = None, None
+            shelf.in_hand = None
         held_cubes = [c for c in (f"cube_{i}" for i in range(5)) if self.held(name=c)]
         self.held_cubes = frozenset(held_cubes)
         if shelf.held_cube not in self.held_cubes:
@@ -525,17 +524,6 @@ class KinderSkills:
                     self.constant(module=module, name="run_base_motion_planning", value=ignoring)
                 )
             yield
-
-    def nearest_wiper_grasp(self) -> str | None:
-        """The fixed wiper grasp ("shelf" or "sweep") the hand is at, if any."""
-        shelf = self.shelf
-        hand_in_wiper = np.linalg.inv(shelf.wiper_pose()) @ shelf.site_pose()
-        for kind, nominal in shelf.grasp_in_wiper.items():
-            offset = float(np.linalg.norm(hand_in_wiper[:3, 3] - nominal[:3, 3]))
-            turn = Rotation.from_matrix(hand_in_wiper[:3, :3] @ nominal[:3, :3].T).magnitude()
-            if offset < 0.02 and np.rad2deg(turn) < 10.0:
-                return kind
-        return None
 
     # --- driving an upstream controller -----------------------------------------------
 
@@ -1073,14 +1061,14 @@ class KinderSkills:
         candidates = [(0.7, -np.pi)]  # upstream's own fixed parameter first
         for heading in PICK_WIPER_HEADINGS:
             candidates += [(d, heading - yaw) for d in PICK_WIPER_DISTANCES]
-        # In its slot only the leaned grasp clears the board above; off the shelf,
+        # At home, the one leaned grasp the wiper is swept with; anywhere else,
         # upstream's own grasp.
         grasp = sweep3d.WIPER_TRANSFORM_TO_OBJECT
         controller = KinderControllers.get(name="PickWiper")
         settle = None
         in_slot = ("WiperHome", (WIPER,)) in self.backend.abstract_atoms()
         if in_slot:
-            hand = shelf.wiper_grasp(kind="shelf")
+            hand = shelf.wiper_grasp()
             grasp = self.pose_in(obj_pose=shelf.wiper_pose(), hand=hand)
             controller = KinderControllers.get(name="PickWiperInSlot")
             settle = self.settler(hand=hand, label="pick_wiper_settle")
