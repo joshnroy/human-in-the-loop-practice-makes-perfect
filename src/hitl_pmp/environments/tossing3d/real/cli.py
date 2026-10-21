@@ -17,7 +17,8 @@ untrained policy's (step 0) before any practice, and the final one; the interval
 defaults past any budget, so no step-interval evaluation runs between them.
 `--measure-every-cycles K` adds an evaluation after every K-th learning update, for a
 learning curve. After every evaluation but the final one -- the step-0 one included --
-the person puts practice's scene back. `--no-initial-measurement` skips step 0.
+the person puts practice's scene back. The step-0 one is checkpointed, so a run that
+dies in cycle 0 resumes without redoing it. `--no-initial-measurement` skips step 0.
 """
 
 import argparse

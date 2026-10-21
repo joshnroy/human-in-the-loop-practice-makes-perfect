@@ -14,7 +14,7 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.tossing3d.real import cli as real_cli
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakeTossingRobot
-from hitl_pmp.step_protocol import PracticeCheckpoint
+from hitl_pmp.step_protocol import CHECKPOINT_FILENAME, PracticeCheckpoint, StepFiles
 
 pytestmark = pytest.mark.xdist_group("tossing3d_real_baseline_first")
 
@@ -54,7 +54,8 @@ def test_by_default_the_baseline_is_measured_then_practices_scene_is_restored(
     del room
     output = tmp_path / "run"
     Cli.main(argv=_argv(output=output))
-    events = _events(output=output)
+    # The checkpoint between them is `test_a_run_that_dies_in_cycle_zero_...`'s.
+    events = [e for e in _events(output=output) if e["event"] != "checkpoint"]
     kinds = [event["event"] for event in events]
     first = kinds.index("measurement")
     measurement, restored, start = events[first : first + 3]
@@ -121,3 +122,54 @@ def test_a_resume_never_re_runs_the_baseline_or_its_restore(
     # Without --measure-every-cycles a checkpoint remembers no scene: no restore at all.
     assert "practice_scene_restored" not in [e["event"] for e in resumed]
     assert sum(e["event"] == "practice_scene_restored" for e in _events(output=output)) == 1
+
+
+def test_a_run_that_dies_in_cycle_zero_resumes_without_redoing_the_baseline(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alone = tmp_path / "alone"
+    monkeypatch.setattr(real_cli, "FakeTossingRobot", FakeTossingRobot)
+    Cli.main(argv=_argv(output=alone))
+    expected = _curve(output=alone)
+
+    robot = FakeTossingRobot()
+    monkeypatch.setattr(real_cli, "FakeTossingRobot", lambda: robot)
+    output = tmp_path / "resumed"
+    original = StepFiles.event
+
+    def interrupting(*, path: Path, **record: Any) -> None:
+        original(path=path, **record)
+        if record.get("event") == "robot":  # cycle 0's first skill, after the baseline
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(StepFiles, "event", staticmethod(interrupting))
+        with pytest.raises(KeyboardInterrupt):
+            Cli.main(argv=_argv(output=output))
+    before = _events(output=output)
+    kinds = [e["event"] for e in before]
+    baseline = kinds.index("measurement")
+    # Measure, checkpoint (remembering practice's scene), restore, practise.
+    assert kinds[baseline : baseline + 4] == [
+        "measurement",
+        "checkpoint",
+        "practice_scene_restored",
+        "session_start",
+    ]
+    header = PracticeCheckpoint.header(path=output / CHECKPOINT_FILENAME)
+    assert header["next_cycle"] == 0 and header["practice_steps"] == 0
+    assert header["learning_updates"] == 0
+    session_lines = len((output / "robot_session.log").read_text().splitlines())
+
+    Cli.main(argv=_argv(output=output, resume=True))
+    assert _curve(output=output) == expected
+    resumed = _events(output=output)[len(before) :]
+    resumed_kinds = [e["event"] for e in resumed]
+    assert not [e for e in resumed if e["event"] == "measurement" and e["practice_steps"] == 0]
+    # The person is asked for practice's scene again, once, before practice goes on.
+    assert resumed_kinds.count("practice_scene_restored") == 1
+    assert resumed_kinds.index("practice_scene_restored") < resumed_kinds.index("session_start")
+    assert "cycle_discarded" in resumed_kinds
+    later = (output / "robot_session.log").read_text().splitlines()[session_lines:]
+    assert not any("(before practice)" in line for line in later)
+    assert any("restore practice:" in line for line in later)
