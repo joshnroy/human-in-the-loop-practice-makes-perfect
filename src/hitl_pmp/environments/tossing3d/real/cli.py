@@ -32,6 +32,7 @@ from .backend import TerminalPerson
 from .contract import DEFAULT_PORT, SkillServerClient
 from .environment import RealTossing3DEnvironment
 from .fake_robot import FakePerson, FakeTossingRobot
+from .nuc_logs import NucLogs
 from .session_log import RealSessionLog
 from .tasks import RealTossing3DTasks
 
@@ -75,6 +76,7 @@ class Tossing3DRealCli:
             "this process, then ask the person to put practice's scene back. Off by "
             "default: only the final evaluation runs.",
         )
+        NucLogs.add_arguments(parser=parser)
         parser.set_defaults(
             measurement_interval_steps=END_ONLY_MEASUREMENT_INTERVAL,
             initial_measurement=False,

@@ -823,6 +823,26 @@ class StepPracticeRunner:
             return ("error", repr(error))
 
     @staticmethod
+    def evaluation_status(
+        *,
+        records: list[dict[str, Any]],
+        futures: list[tuple[dict[str, Any], Any]],
+        completed_cycle: int,
+        pending_evaluation: int | None,
+    ) -> str | None:
+        """A checkpoint's account of its cycle's evaluation: `evaluation 3 pending`, or
+        `evaluation 3 done: 2/5` once recorded; `None` for a cycle with none."""
+        if pending_evaluation is not None:
+            return f"evaluation {len(records)} pending (after cycle {pending_evaluation})"
+        if not futures or futures[-1][0].get("after_cycle") != completed_cycle:
+            return None
+        record, future = futures[-1]
+        kind, value = StepPracticeRunner.outcome(future=future)
+        if kind != "result":
+            return f"evaluation {record['index']} failed: {value}"
+        return f"evaluation {record['index']} done: {value['num_solved']}/{value['num_total']}"
+
+    @staticmethod
     def completed_future(*, outcome: tuple[str, Any]) -> Future:
         future: Future = Future()
         kind, value = outcome
@@ -1040,20 +1060,27 @@ class StepPracticeRunner:
         # `--measure-every-cycles K` (in-process evaluations only): after every K-th
         # learning update, measure the policy just updated, then have the person put
         # practice's scene back. A cycle the budget ends is never measured here, so the
-        # final measurement is never a duplicate of one.
+        # final measurement is never a duplicate of one. With `--checkpoint-cycles` the
+        # order is: learn, checkpoint (evaluation pending), evaluate, checkpoint again
+        # (evaluation recorded), restore, practise -- so a resume re-runs an evaluation
+        # that never finished and never one that did.
         measure_every_cycles = getattr(args, "measure_every_cycles", None)
 
-        def measure_cycle_end() -> None:
-            scene = environment.practice_scene(problem=problem)
-            measure(after_cycle=cycle)
+        def restore_practice(*, scene: Any) -> None:
             restored = environment.restore_practice_scene(problem=problem, scene=scene)
             StepFiles.event(
                 path=events,
                 event="practice_scene_restored",
-                cycle=cycle,
+                cycle=cycle - 1,
                 practice_steps=clock.steps,
                 **restored,
             )
+
+        def evaluate_and_restore(*, after_cycle: int, scene: Any) -> None:
+            measure(after_cycle=after_cycle)
+            if checkpoint_cycles:
+                checkpoint(completed_cycle=after_cycle, practice_scene=scene)
+            restore_practice(scene=scene)
 
         if saved is not None:
             for field in ("robot_steps", "stop_steps", "human_invocations", "counted_human_steps"):
@@ -1063,12 +1090,25 @@ class StepPracticeRunner:
             problem=problem, skill_provider=getattr(method, "skill_provider", None)
         )
 
-        def checkpoint(*, completed_cycle: int) -> None:
+        def checkpoint(
+            *,
+            completed_cycle: int,
+            practice_scene: Any = None,
+            pending_evaluation: int | None = None,
+        ) -> None:
+            """`practice_scene` is what a restore prompt asks for (a resume asks for it
+            too); `pending_evaluation` the cycle whose evaluation is due and not yet run."""
             pending = sum(not future.done() for _, future in futures)
             if pending:
                 raise RuntimeError(
                     f"a cycle checkpoint needs every evaluation finished; {pending} running"
                 )
+            evaluation = StepPracticeRunner.evaluation_status(
+                records=records,
+                futures=futures,
+                completed_cycle=completed_cycle,
+                pending_evaluation=pending_evaluation,
+            )
             # The event first, then the checkpoint that points past it: an interruption
             # between the two leaves the previous checkpoint current, and its log
             # position puts this event in the cycle a resume discards.
@@ -1079,6 +1119,7 @@ class StepPracticeRunner:
                 next_cycle=cycle,
                 practice_steps=clock.steps,
                 learning_updates=learning_updates,
+                **({} if evaluation is None else {"evaluation": evaluation}),
             )
             header = {
                 "next_cycle": cycle,
@@ -1087,6 +1128,7 @@ class StepPracticeRunner:
                 "human_invocations": clock.human_invocations,
                 "event_log_bytes": events.stat().st_size,
                 "written_unix": time.time(),
+                "evaluation": evaluation,
             }
             PracticeCheckpoint.save(
                 output=output,
@@ -1120,8 +1162,11 @@ class StepPracticeRunner:
                         "env": RngStates.capture(owner=problem.env),
                         "global": RngStates.capture_global(),
                     },
+                    "practice_scene": practice_scene,
+                    "pending_evaluation": pending_evaluation,
                 },
             )
+            environment.run_saved(args=args, output=output, final=False)
 
         problem.env.set_control_step_observers(
             before=clock.before_robot_step, after=clock.after_robot_step
@@ -1167,6 +1212,16 @@ class StepPracticeRunner:
             # resumed run.
             if getattr(args, "initial_measurement", True) and saved is None:
                 measure()
+            if saved is not None and saved.get("practice_scene") is not None:
+                # The checkpoint's cycle-end evaluation, if it never finished, then the
+                # person puts practice's scene back as the checkpoint remembered it.
+                pending_evaluation = saved.get("pending_evaluation")
+                if pending_evaluation is not None:
+                    evaluate_and_restore(
+                        after_cycle=pending_evaluation, scene=saved["practice_scene"]
+                    )
+                else:
+                    restore_practice(scene=saved["practice_scene"])
             while clock.steps < clock.budget:
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
@@ -1397,11 +1452,23 @@ class StepPracticeRunner:
                     actions=actions,
                     reason=reason,
                 )
-                if measure_every_cycles and learning_updates % measure_every_cycles == 0:
-                    measure_cycle_end()
                 cycle += 1
+                due = (
+                    measure_every_cycles is not None
+                    and learning_updates % measure_every_cycles == 0
+                )
+                # Remembered before the evaluation uses the room.
+                scene = (
+                    environment.practice_scene(problem=problem) if measure_every_cycles else None
+                )
                 if checkpoint_cycles:
-                    checkpoint(completed_cycle=cycle - 1)
+                    checkpoint(
+                        completed_cycle=cycle - 1,
+                        practice_scene=scene,
+                        pending_evaluation=cycle - 1 if due else None,
+                    )
+                if due:
+                    evaluate_and_restore(after_cycle=cycle - 1, scene=scene)
                 status()
             if endpoint == "running":
                 endpoint = "practice_step_budget"
@@ -1430,6 +1497,8 @@ class StepPracticeRunner:
             )
             recorder.end_segment(outcome=endpoint, steps=clock.steps)
             status()
+            if checkpoint_cycles:
+                environment.run_saved(args=args, output=output, final=True)
             failed = endpoint == "failed"
             if failed:
                 # A crash or Ctrl-C must not sit behind the evaluation queue: cancel what
