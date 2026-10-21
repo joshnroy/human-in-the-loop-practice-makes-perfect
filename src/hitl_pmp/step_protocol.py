@@ -958,7 +958,13 @@ class StepPracticeRunner:
         these outputs has been opened, so the existing-run check cannot live here.
 
         `saved` is a loaded `PracticeCheckpoint` payload (`--resume`), whose `method`
-        must be the `method` passed: the run carries on from the end of its cycle."""
+        must be the `method` passed: the run carries on from the end of its cycle.
+
+        `--evaluate-only` takes the untrained policy's measurement and stops there. The
+        practice problem is built but never reset: its reset asks the person for a
+        practice scene nothing would use, and the policy measured is the method the
+        factory built, which no reset touches."""
+        evaluate_only = getattr(args, "evaluate_only", False)
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
         (output / "snapshots").mkdir(exist_ok=saved is not None)
@@ -980,7 +986,8 @@ class StepPracticeRunner:
         stop_streak = 0
         accounting: PracticeAccounting | None
         if saved is None:
-            problem.hard_reset()
+            if not evaluate_only:
+                problem.hard_reset()
             accounting = StepPracticeRunner.configure_accounting(
                 args=args, method=method, problem=problem, output=output
             )
@@ -1005,7 +1012,8 @@ class StepPracticeRunner:
             started -= saved["elapsed_seconds"]
             StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
         recorder = recorder or RunRecordWriter.disabled()
-        recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
+        if not evaluate_only:  # A practice segment needs the scene no reset observed.
+            recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
         stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
         pool = evaluations if evaluations is not None else FreshProcessEvaluations()
 
@@ -1073,7 +1081,8 @@ class StepPracticeRunner:
             status()
 
         clock = PracticeClock(
-            budget=args.practice_step_budget,
+            # Never spent under `--evaluate-only`, which needs no budget.
+            budget=args.practice_step_budget or 1,
             interval=args.measurement_interval_steps,
             human_steps=args.human_skill_steps,
             on_measure=measure,
@@ -1200,7 +1209,8 @@ class StepPracticeRunner:
             StepFiles.json(
                 path=output / "step_protocol.json",
                 value={
-                    "practice_step_budget": clock.budget,
+                    "practice_step_budget": args.practice_step_budget,
+                    "evaluate_only": evaluate_only,
                     "measurement_interval_steps": clock.interval,
                     "human_skill_steps": clock.human_steps,
                     "evaluation_control_steps": args.evaluation_control_steps,
@@ -1233,7 +1243,19 @@ class StepPracticeRunner:
             # The untrained policy's measurement; off where every evaluation task costs a
             # person a scene set-up (`--env tossing3d_real`), and never repeated by a
             # resumed run.
-            if getattr(args, "initial_measurement", True) and saved is None:
+            if evaluate_only:
+                StepFiles.json(
+                    path=output / "evaluate_only.json",
+                    value={
+                        "evaluate_only": True,
+                        "meaning": "the untrained policy's step-0 measurement only: no "
+                        "practice, no learning update, no checkpoint",
+                        "practice_step_budget_ignored": args.practice_step_budget,
+                    },
+                )
+                measure()
+                endpoint = "evaluate_only"
+            elif getattr(args, "initial_measurement", True) and saved is None:
                 measure()
             if saved is not None and saved.get("practice_scene") is not None:
                 # The checkpoint's cycle-end evaluation, if it never finished, then the
@@ -1245,7 +1267,7 @@ class StepPracticeRunner:
                     )
                 else:
                     restore_practice(scene=saved["practice_scene"])
-            while clock.steps < clock.budget:
+            while not evaluate_only and clock.steps < clock.budget:
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
                     break
@@ -1510,7 +1532,7 @@ class StepPracticeRunner:
                 and records[-1]["learning_updates"] == learning_updates
             )
             if (
-                endpoint != "failed"
+                endpoint not in {"failed", "evaluate_only"}
                 and not unchanged
                 and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
@@ -1518,7 +1540,8 @@ class StepPracticeRunner:
             StepFiles.event(
                 path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
             )
-            recorder.end_segment(outcome=endpoint, steps=clock.steps)
+            if not evaluate_only:
+                recorder.end_segment(outcome=endpoint, steps=clock.steps)
             status()
             if checkpoint_cycles:
                 environment.run_saved(args=args, output=output, final=True)
