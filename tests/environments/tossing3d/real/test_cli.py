@@ -82,3 +82,79 @@ def test_a_fake_robot_run_practises_and_ends_with_one_evaluation(*, tmp_path: Pa
     # far-side toss is refused (a refused toss is charged no steps).
     assert all(event["end_step"] > event["start_step"] for event in far_tosses)
     assert (output / "evaluations" / "0000").exists()
+    session = (output / "robot_session.log").read_text().splitlines()
+    assert any("cycle 0 [" in line and "action 1/20 · steps 0/1500" in line for line in session)
+    assert any("running PickCube" in line for line in session)
+    assert any("scene: FAR" in line for line in session)
+
+
+def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice(
+    *, tmp_path: Path
+) -> None:
+    output = tmp_path / "run"
+    Cli.main(
+        argv=[
+            *FAKE_RUN,
+            *("--practice-step-budget", "1500", "--measure-every-cycles", "1"),
+            # Short cycles, so a small budget holds several.
+            *("--max-steps-per-interaction", "4"),
+            *("--output-dir", str(output)),
+        ]
+    )
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    kinds = [event["event"] for event in events]
+    updates = [i for i, kind in enumerate(kinds) if kind == "learning_update"]
+    assert len(updates) >= 2
+    for position in updates:
+        # Learn, then measure the policy just updated, then put practice's scene back.
+        update, measurement, restored = events[position : position + 3]
+        assert measurement["event"] == "measurement"
+        assert measurement["after_cycle"] == update["cycle"]
+        assert measurement["learning_updates"] == updates.index(position) + 1
+        assert restored["event"] == "practice_scene_restored"
+        assert restored["cycle"] == update["cycle"]
+        assert restored["practice_steps"] == measurement["practice_steps"]
+        # Practice carries on from the scene the person restored.
+        assert restored["observed"]["cube"] == pytest.approx(restored["scene"]["cube"], abs=1e-6)
+        assert restored["observed"]["bin_side"] == restored["scene"]["bin_side"]
+        assert kinds[position + 3] in {"session_start", "practice_end", "measurement"}
+    measurements = [event for event in events if event["event"] == "measurement"]
+    cycle_measurements = [m for m in measurements if "after_cycle" in m]
+    assert len(cycle_measurements) == len(updates)
+    # No policy is measured twice: the final measurement runs only if an update came
+    # after the last cycle's (a cycle the budget cut short, learned from), and no
+    # restore follows it.
+    finals = measurements[len(cycle_measurements) :]
+    assert measurements[: len(cycle_measurements)] == cycle_measurements
+    assert len(finals) <= 1 and all("after_cycle" not in m for m in finals)
+    assert len({m["learning_updates"] for m in measurements}) == len(measurements)
+    assert len({m["practice_steps"] for m in measurements}) == len(measurements)
+    assert kinds.count("practice_scene_restored") == len(updates)
+    assert kinds[-1] == "practice_end"
+    evaluated = json.loads((output / "step_evaluations.json").read_text())
+    assert len(evaluated) == len(measurements)
+    assert all(record["complete"] for record in evaluated)
+    session = (output / "robot_session.log").read_text().splitlines()
+    assert any("eval 0 after cycle 0: task 1/1" in line for line in session)
+    assert all(f"eval {len(updates)} (final): task 1/1" in "\n".join(session) for _ in finals)
+    assert sum("restore practice:" in line for line in session) == len(updates)
+    # A restore is the person's, not a human reset the method chose.
+    assert kinds.count("human") == sum(" human reset: " in line for line in session)
+
+
+def test_the_simulated_domain_has_no_measure_every_cycles_flag() -> None:
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=[
+                *("--env", "tossing3d", "--method", "pomdp", "--preset", "tossing3d-canonical"),
+                *("--practice-step-budget", "100", "--output-dir", "unused"),
+                *("--measure-every-cycles", "1"),
+            ]
+        )
+
+
+def test_measuring_every_cycle_is_off_by_default_on_the_real_domain() -> None:
+    args = Cli.parse_args(
+        argv=[*FAKE_RUN, "--practice-step-budget", "100", "--output-dir", "unused"]
+    )
+    assert args.measure_every_cycles is None

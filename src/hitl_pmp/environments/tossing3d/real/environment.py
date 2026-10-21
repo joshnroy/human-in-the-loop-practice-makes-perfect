@@ -10,13 +10,14 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.types import Tossing3DBackend, TossParameterSet
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
-from .backend import RealSkillStepCosts, RealTossingBackend
+from .backend import PracticeScene, RealSkillStepCosts, RealTossingBackend
 from .contract import TossingRobot
 
 
@@ -33,6 +34,8 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
     # Evaluation's episodes each open with `reset_to_task`, which asks for the scene, so
     # its `hard_reset` would ask for the same scene once more for nothing.
     evaluation: bool = False
+    confirm_start: bool = False
+    confirm_each_skill: bool = False
 
     def build_backend(self) -> Tossing3DBackend:
         if self.layout is not Tossing3DLayout.BARRIER:
@@ -42,6 +45,8 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             person=self.person,
             parameters=self.toss_parameters or REAL_TOSS_PARAMETERS,
             step_costs=self.step_costs,
+            confirm_start=self.confirm_start,
+            confirm_each_skill=self.confirm_each_skill,
         )
 
     def hard_reset(self) -> None:
@@ -54,3 +59,22 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
         if destination is None:
             return None
         return {"destination": Tossing3DSide(destination).value}
+
+    def real_backend(self) -> RealTossingBackend:
+        backend = self.backend()
+        assert isinstance(backend, RealTossingBackend)
+        return backend
+
+    def restore_practice_scene(self, *, scene: PracticeScene) -> None:
+        """Have the person put practice's `scene` back after an evaluation used the room.
+        Not a skill or a reset the method chose: no step is charged, and the episode
+        bookkeeping and the pickup-refusal channel carry over."""
+        state = self.get_current_state()
+        self.real_backend().restore_practice_scene(scene=scene)
+        self._observe_afresh(state=state)
+
+    def _observe_afresh(self, *, state: State) -> None:
+        """Adopt the room as observed now, keeping `state`'s episode bookkeeping."""
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        self._adopt(state=self._observed_state(seed=seed, steps_taken=steps_taken))

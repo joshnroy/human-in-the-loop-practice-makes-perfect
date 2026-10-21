@@ -136,8 +136,65 @@ class StepProtocolEnvironment(Protocol):
     def last_skill_error(*, problem: Problem) -> str | None: ...
 
     @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        """Practice's place as its next action starts: `action` of `max_actions` in
+        session `cycle`, at `steps` of `budget`."""
+        ...
+
+    @staticmethod
+    def evaluation_progress(
+        *, problem: Problem, index: int, label: str, task: int, num_tasks: int
+    ) -> None:
+        """Evaluation `index` (`label`: which update it measures, e.g. `after cycle 3`)
+        is at `task` of `num_tasks`, told before each task's scene and each action."""
+        ...
+
+    @staticmethod
+    def practice_scene(*, problem: Problem) -> Any:
+        """Practice's scene, as plain data, before an in-process evaluation uses the room
+        (`--measure-every-cycles`)."""
+        ...
+
+    @staticmethod
+    def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
+        """Put `practice_scene`'s `scene` back after that evaluation -- the person's job,
+        charged nothing -- and carry practice on from it as observed. Returns the
+        `practice_scene_restored` event's fields."""
+        ...
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         """A compact, JSON-ready account of the last robot skill -- its outcome and
         every candidate it rejected -- logged as the step event's `skill_trace`; None
         for a domain that keeps none (the event then carries no such field)."""
         ...
+
+
+class SimulatedStepProtocolHooks:
+    """`StepProtocolEnvironment`'s real-robot hooks, for a simulated domain: nobody
+    watches its progress, and its evaluations run in their own process and scene, so
+    practice's scene is never disturbed (the flags that need one are refused first)."""
+
+    @staticmethod
+    def practice_progress(
+        *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        del problem, cycle, action, max_actions, steps, budget
+
+    @staticmethod
+    def evaluation_progress(
+        *, problem: Problem, index: int, label: str, task: int, num_tasks: int
+    ) -> None:
+        del problem, index, label, task, num_tasks
+
+    @staticmethod
+    def practice_scene(*, problem: Problem) -> Any:
+        del problem
+        raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
+
+    @staticmethod
+    def restore_practice_scene(*, problem: Problem, scene: Any) -> dict[str, Any]:
+        del problem, scene
+        raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
