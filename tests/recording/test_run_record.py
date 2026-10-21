@@ -249,3 +249,29 @@ def test_fixed_geometry_noise_is_not_motion(*, tmp_path: Path) -> None:
     actions = [e for e in RunRecordReader.entries(path=path) if isinstance(e, ActionEntry)]
     assert actions[0].num_ticks == 1
     assert actions[1].moved_objects == {"cube": [3.0, 0.0, 0.0]}
+
+
+def test_a_skill_the_goal_latch_cut_short_records_goal_reached(*, tmp_path: Path) -> None:
+    """A skill stopped mid-execution because the task was solved did not complete, so
+    `success` stays False; `goal_reached` says why it stopped."""
+    world = _World()
+    path = tmp_path / "recording.jsonl"
+    writer = _writer(path=path, world=world)
+    writer.begin_segment(phase=Phase.EVALUATION, checkpoint=1, task_index=0)
+    writer.robot_action(
+        label="Sweep(robot, cube)",
+        start_step=0,
+        end_step=1796,
+        success=False,
+        outcome="stopped: goal reached",
+        goal_reached=True,
+    )
+    writer.robot_action(label="Pick(robot, cube)", start_step=0, end_step=5, success=True)
+    writer.close()
+    actions = [e for e in RunRecordReader.entries(path=path) if isinstance(e, ActionEntry)]
+    assert [(a.success, a.goal_reached) for a in actions] == [(False, True), (True, False)]
+
+
+def test_an_action_line_written_before_goal_reached_existed_reads_as_false() -> None:
+    line = {"kind": "action", "seq": 0, "phase": "evaluation", "actor": "robot", "skill": "P"}
+    assert ActionEntry.model_validate(line).goal_reached is False

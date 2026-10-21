@@ -235,3 +235,32 @@ def test_a_drawing_holds_for_its_renderers_frame_time_in_a_faster_video(*, tmp_p
     # The start and three ticks, five video frames each, then a one-second verdict.
     assert summary.ticks_shown == 4
     assert summary.frames_written == 4 * 5 + FPS
+
+
+def test_a_skill_the_goal_latch_cut_short_is_not_marked_failed(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "recording.jsonl"
+    state = {"cube": [0.0]}
+    writer = RunRecordWriter(
+        output_path=path,
+        header=RecordingHeader(environment="toy"),
+        state_provider=lambda: {k: list(v) for k, v in state.items()},
+    )
+    writer.begin_segment(phase=Phase.EVALUATION, checkpoint=1, task_index=0)
+    state["cube"] = [1.0]
+    writer.robot_action(
+        label="Push(cube)",
+        start_step=0,
+        end_step=1,
+        success=False,
+        outcome="stopped: goal reached",
+        goal_reached=True,
+    )
+    state["cube"] = [2.0]
+    writer.robot_action(label="Pick(cube)", start_step=1, end_step=2, success=False)
+    writer.end_segment(success=True, outcome="goal", steps=2)
+    writer.close()
+    seen = _statuses(monkeypatch=monkeypatch)
+    _play(path=path, tmp_path=tmp_path)
+    assert seen[-1].history[-2:] == ("Push(cube) \u2713 goal reached", "Pick(cube) \u2717")
