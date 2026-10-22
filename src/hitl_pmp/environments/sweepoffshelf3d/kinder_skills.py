@@ -904,6 +904,10 @@ class KinderSkills:
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.held_cube is not None:
             raise SkillFailed("pick_wiper: the hand is not empty")
+        # Plan from home: a human reset_wiper empties a hand SweepShelf left raised, and
+        # from there all but the last fallback candidate failed to plan; that fallback
+        # left the base turned and the next sweep pressed the wiper onto the cupboard.
+        self.retract(label="pick_wiper_home_first")
         if ("WiperHome", (WIPER,)) not in self.backend.abstract_atoms():
             self.pick_wiper_once()
             return
