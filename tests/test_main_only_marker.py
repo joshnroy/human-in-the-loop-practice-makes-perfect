@@ -43,6 +43,10 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_the_wiper_sweeps_the_shelf_and_goes_back",
     "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
     "test_pick_cube_from_shelf_takes_a_cornered_or_crowded_cube",
+    "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
+    "test_a_sweep_right_after_a_fresh_pick_does_not_reseat",
+    "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
+    "test_a_turn_in_this_grasp_still_reseats",
 })
 
 
