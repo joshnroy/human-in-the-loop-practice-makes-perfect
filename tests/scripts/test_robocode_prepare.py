@@ -45,6 +45,21 @@ class TestRobocodeProvenance:
         assert RoboCodePrepare.matching(robocode=tmp_path, pinned=pinned) == (1, 2)
 
 
+class TestRobocodeRoot:
+    def test_the_frozen_robocode_is_its_own_repository_root(self, *, tmp_path: Path) -> None:
+        """RoboCode's `_find_repo_root` walks up from its own files to a `pyproject.toml`
+        and raises without one; the bootstrap froze only `src/`. The 2026-10-14 freeze
+        sat inside the hitl-pmp checkout, so it silently found hitl-pmp's file."""
+        robocode = tmp_path / "robocode"
+        (robocode / "src/robocode/utils").mkdir(parents=True)
+        RoboCodePrepare.mark_robocode_root(robocode=robocode)
+        marker = robocode / "pyproject.toml"
+        assert marker.is_file() and "robocode" in marker.read_text()
+        before = marker.read_text()
+        RoboCodePrepare.mark_robocode_root(robocode=robocode)
+        assert marker.read_text() == before
+
+
 class TestFrozenLaunch:
     def test_sandbox_settings_are_valid_and_point_into_the_root(self, *, tmp_path: Path) -> None:
         settings = SandboxSettings.model_validate(
