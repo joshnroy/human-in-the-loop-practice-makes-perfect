@@ -145,6 +145,25 @@ class FakeStepProtocol:
         del problem
         return {"skill": "fake"}
 
+    progress: ClassVar[list[dict[str, int]]] = []
+
+    @staticmethod
+    def practice_progress(
+        *, problem: Any, cycle: int, action: int, max_actions: int, steps: int, budget: int
+    ) -> None:
+        del problem
+        FakeStepProtocol.progress.append({
+            "cycle": cycle,
+            "action": action,
+            "max_actions": max_actions,
+            "steps": steps,
+            "budget": budget,
+        })
+
+    @staticmethod
+    def evaluation_progress(**progress: Any) -> None:
+        del progress
+
 
 class AsksForTheWiperOnce(EesMethod):
     """EES that opens practice by asking the human for `reset_wiper`."""
@@ -306,3 +325,22 @@ def test_a_domain_without_control_steps_is_refused():
     env = LightSwitchEnvironment(grid_size=4)
     with pytest.raises(NotImplementedError, match="control steps"):
         env.set_control_step_observers(before=lambda: None, after=lambda: None)
+
+
+def test_the_domain_is_told_each_actions_place_in_the_cycle_and_the_budget(
+    *, tmp_path: Path
+) -> None:
+    FakeStepProtocol.progress.clear()
+    _, output = _run(args=_args(output=tmp_path / "run"))
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    actions = [e for e in events if e["event"] in {"robot", "human", "stop"}]
+    progress = FakeStepProtocol.progress
+    # One call before each action, carrying the clock as that action starts.
+    assert len(progress) >= len(actions) > 0
+    for call, event in zip(progress, actions, strict=False):
+        assert call["cycle"] == event["cycle"]
+        assert call["steps"] == event["start_step"]
+    budget = 15000 + CONTROL_STEPS_PER_ACTION
+    assert all(c["budget"] == budget and c["max_actions"] == 20 for c in progress)
+    first_cycle = [c["action"] for c in progress if c["cycle"] == 0]
+    assert first_cycle == list(range(1, len(first_cycle) + 1))

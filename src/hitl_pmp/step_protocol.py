@@ -352,7 +352,9 @@ class StepEvaluation:
         output: str,
         environment: type[StepProtocolEnvironment],
         checkpoint: int | None = None,
+        label: str = "(final)",
     ) -> dict[str, Any]:
+        """`label` names the update measured, for the person watching (`after cycle 3`)."""
         args = argparse.Namespace(**configuration)
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
@@ -372,6 +374,17 @@ class StepEvaluation:
                 provider=environment.evaluation_skill_provider(problem=problem),
             )
             for index, task in enumerate(tasks):
+
+                def progress(*, task_number: int = index + 1) -> None:
+                    environment.evaluation_progress(
+                        problem=problem,
+                        index=checkpoint or 0,
+                        label=label,
+                        task=task_number,
+                        num_tasks=len(tasks),
+                    )
+
+                progress()
                 state = problem.reset_to_task(task=task)
                 seed = environment.task_seed(task=task)
                 writer.begin_segment(
@@ -392,6 +405,7 @@ class StepEvaluation:
                         if np.array_equal(action.action, problem.env.noop_action()):
                             reason = "no_plan"
                             break
+                        progress()
                         previous = clock.steps
                         try:
                             state = problem.take_action(action=action.action)
@@ -522,6 +536,9 @@ class StepProtocolEntry:
         environment: type[StepProtocolEnvironment],
     ) -> None:
         StepProtocolValidation.check(args=args)
+        if getattr(args, "measure_every_cycles", None) and environment.evaluation_pool() is None:
+            # Its point is a scene the evaluation disturbs, which only happens in-process.
+            raise ValueError(f"--measure-every-cycles needs in-process evaluations ({args.env})")
 
         # Method CLI factories remain authoritative for all algorithm configuration.
         def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
@@ -657,7 +674,7 @@ class StepPracticeRunner:
                 },
             )
 
-        def measure() -> None:
+        def measure(*, after_cycle: int | None = None) -> None:
             raw = DeploymentSnapshot.encode(method=method)
             index = len(records)
             path = output / "snapshots" / f"{index:04d}.pickle"
@@ -674,6 +691,8 @@ class StepPracticeRunner:
                 "session_index": cycle,
                 **PolicyFileHash.record(raw=raw),
                 **(accounting.summary() if accounting else {}),
+                # Only a cycle-end measurement says so: every other record is unchanged.
+                **({} if after_cycle is None else {"after_cycle": after_cycle}),
             }
             records.append(record)
             StepFiles.event(path=events, event="measurement", **record)
@@ -686,6 +705,7 @@ class StepPracticeRunner:
                     output=str(output / "evaluations" / f"{index:04d}"),
                     environment=environment,
                     checkpoint=index,
+                    label="(final)" if after_cycle is None else f"after cycle {after_cycle}",
                 ),
             ))
             StepFiles.json(path=output / "measurements.json", value=records)
@@ -699,6 +719,24 @@ class StepPracticeRunner:
             on_progress=status,
             accounting=accounting,
         )
+        # `--measure-every-cycles K` (in-process evaluations only): after every K-th
+        # learning update, measure the policy just updated, then have the person put
+        # practice's scene back. A cycle the budget ends is never measured here, so the
+        # final measurement is never a duplicate of one.
+        measure_every_cycles = getattr(args, "measure_every_cycles", None)
+
+        def measure_cycle_end() -> None:
+            scene = environment.practice_scene(problem=problem)
+            measure(after_cycle=cycle)
+            restored = environment.restore_practice_scene(problem=problem, scene=scene)
+            StepFiles.event(
+                path=events,
+                event="practice_scene_restored",
+                cycle=cycle,
+                practice_steps=clock.steps,
+                **restored,
+            )
+
         problem.env.set_control_step_observers(
             before=clock.before_robot_step, after=clock.after_robot_step
         )
@@ -760,6 +798,14 @@ class StepPracticeRunner:
                     status()
                     if clock.steps >= clock.budget or early_stop:
                         break
+                    environment.practice_progress(
+                        problem=problem,
+                        cycle=cycle,
+                        action=action_index + 1,
+                        max_actions=args.max_steps_per_interaction,
+                        steps=clock.steps,
+                        budget=clock.budget,
+                    )
                     method.observe_practice_action_budget(
                         remaining_actions=args.max_steps_per_interaction - action_index
                     )
@@ -947,6 +993,8 @@ class StepPracticeRunner:
                     actions=actions,
                     reason=reason,
                 )
+                if measure_every_cycles and learning_updates % measure_every_cycles == 0:
+                    measure_cycle_end()
                 cycle += 1
                 status()
             if endpoint == "running":
@@ -958,8 +1006,17 @@ class StepPracticeRunner:
         finally:
             problem.env.set_control_step_observers(before=None, after=None)
             clock.robot_active = False
-            if endpoint != "failed" and (
-                not records or records[-1]["practice_steps"] != clock.steps
+            # Under `--measure-every-cycles`, a policy no update has changed since the last
+            # cycle-end measurement is not measured again (each is a person's scene set-ups).
+            unchanged = bool(
+                measure_every_cycles
+                and records
+                and records[-1]["learning_updates"] == learning_updates
+            )
+            if (
+                endpoint != "failed"
+                and not unchanged
+                and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
                 measure()
             StepFiles.event(
