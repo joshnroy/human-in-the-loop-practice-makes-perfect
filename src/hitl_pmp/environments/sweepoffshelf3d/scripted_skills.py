@@ -44,6 +44,7 @@ Nothing here imports KINDER: the environment is built by `backend.py` and handed
 """
 
 import contextlib
+from collections.abc import Generator
 from typing import Any, Protocol
 
 import numpy as np
@@ -465,6 +466,18 @@ class ShelfSkills:
             self.watch_wiper = False
             self.in_hand, self.grasp_kind = None, None
             raise WiperLost(f"the wiper left the hand during {label}")
+
+    @contextlib.contextmanager
+    def wiper_unwatched(self) -> Generator[None, None, None]:
+        """Suspend the per-step `HoldingWiper` check while a skill lets go of the wiper
+        on purpose; on the way out, however it is left, the check is back as it was
+        and counts afresh."""
+        watching = self.watch_wiper
+        self.watch_wiper = False
+        try:
+            yield
+        finally:
+            self.watch_wiper, self.wiper_unheld_steps = watching, 0
 
     def hold(self, *, count: int = 15, label: str = "hold") -> None:
         arm = self.arm_reference.copy()
@@ -1239,10 +1252,20 @@ class ShelfSkills:
                 break
             self.hand_to(target=self.level_target(x=RESEAT_HEAD_X, above_board=0.0), label=label)
         self.notes.append(f"{label}: set down after turning {self.slip_deg:.1f} deg in the grasp")
-        self.let_go_of_wiper(label=label)
-        up = self.site_pose()
-        up[2, 3] += 0.02
-        self.hand_to(target=up, label=f"{label}_release")
+        # From the deliberate release until the wiper is held again, the sweep's
+        # per-step `HoldingWiper` check would call the empty hand a lost wiper.
+        with self.wiper_unwatched():
+            self.let_go_of_wiper(label=label)
+            up = self.site_pose()
+            up[2, 3] += 0.02
+            self.hand_to(target=up, label=f"{label}_release")
+            self.regrasp_on_shelf(label=label)
+        self.hand_to(
+            target=self.level_target(x=RESEAT_HEAD_X, above_board=HOVER),
+            label=f"{label}_lift",
+        )
+
+    def regrasp_on_shelf(self, *, label: str) -> None:
         for attempt in range(REGRASP_TRIES):
             grasp = self.wiper_grasp(kind="sweep")
             pre = grasp.copy()
@@ -1251,10 +1274,6 @@ class ShelfSkills:
             self.hand_to(target=grasp, label=f"{label}_regrasp", tolerance=0.003)
             if self.close_and_check(label=f"{label}_regrasp"):
                 self.take_wiper(kind="sweep", label=label)
-                self.hand_to(
-                    target=self.level_target(x=RESEAT_HEAD_X, above_board=HOVER),
-                    label=f"{label}_lift",
-                )
                 return
             self.notes.append(f"{label}: regrasp {attempt + 1} missed, retrying")
             self.grip = 0.0
