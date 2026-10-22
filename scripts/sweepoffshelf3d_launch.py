@@ -135,7 +135,7 @@ P = "1"
 # Full-motion recording: every run's evaluations, and practice too for these seeds.
 PRACTICE_MOTION_SEEDS = frozenset({0})
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
-# RoboCode (Full-Agentic, LLLL). The cost file is #528's, on main once #528 merges.
+# RoboCode (Full-Agentic, LLLL), priced with the planner arms' cost file (#528).
 ROBOCODE = "robocode"
 ROBOCODE_METHOD = "full_agentic"
 ROBOCODE_SEEDS = (0,)
