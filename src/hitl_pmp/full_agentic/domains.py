@@ -15,7 +15,6 @@ from typing import Any, ClassVar
 from hitl_pmp.core.practice_costs import HumanCharge, PracticeCosts
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.sweepoffshelf3d.agentic_bridge import SweepOffShelf3DAgenticBridge
-from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.skills import RESET_CUBES_NAME, RESET_WIPER_NAME
 from hitl_pmp.environments.sweepoffshelf3d.tasks import SweepOffShelf3DTasks
@@ -168,12 +167,9 @@ class SweepOffShelf3DFullAgentic(FullAgenticDomain):
 
     @staticmethod
     def goal_check(*, env: Any) -> Callable[[], bool]:
-        # The goal every other shelf method is scored on: each cube unheld in the box.
-        goal = {
-            ("InBox", (cube.name, SweepOffShelf3DBackend.box_name))
-            for cube in SweepOffShelf3DEnvironment.cubes
-        }
-        return lambda: goal <= env.backend().abstract_atoms()
+        # KINDER's own verdict, the one `SweepOffShelf3DStepProtocol.goal_check` scores
+        # every planner arm on: each cube wholly inside the upright box, held or not.
+        return lambda: bool(env.backend().core()._check_goals())  # noqa: SLF001
 
     @staticmethod
     def task_seed(*, env: Any, task: Task) -> int:
