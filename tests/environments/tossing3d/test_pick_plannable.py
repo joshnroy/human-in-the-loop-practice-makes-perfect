@@ -688,3 +688,30 @@ def test_the_dry_run_leaves_the_simulator_and_the_abstraction_untouched(
     assert all(np.array_equal(a, b) for a, b in zip(before, after, strict=True))
     assert backend.snapshot_to_plain(snapshot=backend.snapshot()) == state_before
     assert backend.abstract_atoms() == atoms_before
+
+
+@_NEEDS_KINDER
+def test_the_pick_verdict_does_not_depend_on_how_loaded_the_machine_is(
+    *, live_env: Tossing3DEnvironment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flake this pins: IKFast used to stop after 0.05 s of wall time, so a CI runner
+    that stalled through that window refused a pick an idle machine plans, and the
+    refusal was cached as an unplannable state. Its clock running 300x fast stands in
+    for that runner; the IK is now bounded by samples, so the verdict holds."""
+    import time
+    import types
+
+    import pybullet_helpers.ikfast.utils as ikfast_utils
+
+    env = live_env
+    env.reset_to_seed(seed=125)
+    real_clock = time.perf_counter
+    start = real_clock()
+    monkeypatch.setattr(
+        ikfast_utils,
+        "time",
+        types.SimpleNamespace(perf_counter=lambda: start + (real_clock() - start) * 300.0),
+    )
+    backend = env.backend()
+    backend._pick_plan_failures.clear()  # noqa: SLF001  (the verdict is cached per state)
+    assert backend.pick_cube_plan_failure() is None
