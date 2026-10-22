@@ -19,7 +19,9 @@ itself has no domain- or method-specific knowledge.
 """
 
 import argparse
+import sys
 from pathlib import Path
+from typing import ClassVar
 
 from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli, StepProtocolEnvironment
 from hitl_pmp.environments.ballring.cli import BallRingCli
@@ -377,9 +379,38 @@ class Cli:
             parser.error(f"--preset {args.preset} runs only under --practice-step-budget")
         return args
 
+    OBSERVATION_WEIGHT_FLAG: ClassVar[str] = "--pomdp-observation-probability-weight"
+
+    @staticmethod
+    def require_explicit_observation_weight(*, argv: list[str], args: argparse.Namespace) -> None:
+        """Refuse a pomdp launch that leaves the observation weight at its default.
+
+        At the 0.1 default the w * (-ln p) charge on practice outcomes makes STOP beat
+        practising at the priors, so the arm silently never practises; that has broken
+        four launches. The default stays 0.1 so earlier results keep their meaning; a
+        launch must say which weight it means, or use a preset that does.
+        """
+        if not hasattr(args, "pomdp_observation_probability_weight") or args.preset:
+            return
+        flag = Cli.OBSERVATION_WEIGHT_FLAG
+        # argparse accepts `--flag=value` and any unambiguous prefix of the flag.
+        if any(
+            len(name := token.split("=", 1)[0]) > len("--pomdp-o") and flag.startswith(name)
+            for token in argv
+        ):
+            return
+        raise SystemExit(
+            f"error: --method {args.method} needs {flag} set explicitly (or a --preset). "
+            "At its 0.1 default the planner prefers STOP to practising at the priors; "
+            "the canonical arms use 0.0. Pass 0.1 to keep the old behaviour."
+        )
+
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
+        Cli.require_explicit_observation_weight(
+            argv=sys.argv[1:] if argv is None else argv, args=args
+        )
         if args.practice_step_budget is not None or args.evaluate_only:
             from hitl_pmp.step_protocol import StepProtocolEntry
 

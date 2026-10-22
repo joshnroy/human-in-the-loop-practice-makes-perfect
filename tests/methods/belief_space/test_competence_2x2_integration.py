@@ -132,6 +132,8 @@ def test_cli_constructs_and_runs_each_selected_inference_arm(
             "tossing3d",
             "--method",
             "pomdp",
+            "--pomdp-observation-probability-weight",
+            "0.1",
             "--pomdp-competence-model",
             model,
             "--pomdp-inference-engine",
