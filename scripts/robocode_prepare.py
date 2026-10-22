@@ -9,7 +9,8 @@ Writes, under `--root` (refusing if `source/` exists):
   must sit exactly at the gitlinks that commit pins, so the tree a run imports is the
   tree it declares, and `ShelfLaunch.require_isolated` passes;
 - `source/robocode`: the frozen RoboCode bootstrap, refused unless every file the frozen
-  repo's `full_agentic/bootstrap_provenance.json` pins matches (135/135);
+  repo's `full_agentic/bootstrap_provenance.json` pins matches (135/135), plus the
+  root-marker `pyproject.toml` RoboCode needs to import (`mark_robocode_root`);
 - `sandbox.json`: the coder and execution sandbox settings, image resolved to its ID;
 - `source-versions.json`: every commit and the provenance count;
 - `launch.sh`: the launch, which runs only with `--go` appended, on Josh's go.
@@ -58,6 +59,19 @@ class RoboCodePrepare:
         ok, total = RoboCodePrepare.matching(robocode=robocode, pinned=pinned)
         if ok != total:
             raise SystemExit(f"refusing: RoboCode at {robocode} matches {ok}/{total} pinned files")
+
+    @staticmethod
+    def mark_robocode_root(*, robocode: Path) -> None:
+        """Give the frozen `src/`-only RoboCode the `pyproject.toml` its
+        `_find_repo_root` looks for (it raises at import without one). Nothing reads
+        the file's content: in Docker mode only `apptainer_sandbox`'s module-level
+        default paths are derived from the root."""
+        marker = robocode / "pyproject.toml"
+        if not marker.exists():
+            marker.write_text(
+                "# Repository-root marker written by scripts/robocode_prepare.py.\n"
+                '[project]\nname = "robocode"\nversion = "0+frozen"\n'
+            )
 
     @staticmethod
     def require_pin(*, name: str, pinned: str, checked_out: str) -> None:
@@ -186,6 +200,7 @@ class RoboCodePrepare:
         pinned_files = provenance["robocode_source"]
         RoboCodePrepare.verify_robocode(robocode=source / "robocode", pinned=pinned_files)
         ok, total = RoboCodePrepare.matching(robocode=source / "robocode", pinned=pinned_files)
+        RoboCodePrepare.mark_robocode_root(robocode=source / "robocode")
         image = RoboCodePrepare.image_id(image=args.image)
         (root / "resource-pool").mkdir(exist_ok=True)
         (root / "sandbox.json").write_text(
@@ -196,6 +211,7 @@ class RoboCodePrepare:
             "image_id": image,
             "robocode_origin": provenance["origin"],
             "robocode_files_matching_provenance": f"{ok}/{total}",
+            "robocode_root_marker": "pyproject.toml written by mark_robocode_root",
             "launch_hours": LAUNCH_HOURS,
         }
         (root / "source-versions.json").write_text(json.dumps(versions, indent=2) + "\n")
