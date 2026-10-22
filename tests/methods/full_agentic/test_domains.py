@@ -173,6 +173,42 @@ class TestSweepOffShelf3DDomain:
             i for i, (a, b) in enumerate(zip(tossing_api, shelf_api, strict=True)) if a != b
         ] == [14]
 
+    def test_goal_is_kinders_own_check_as_the_planners_score_it(self) -> None:
+        """A held cube lowered into a box that holds the other four: KINDER's
+        `_check_goals` (what `SweepOffShelf3DStepProtocol.goal_check` scores) says solved,
+        though no `InBox` atom names the held cube. The verdict is read live, so a scene
+        rebuilt by a reset is the one scored."""
+
+        class Core:
+            verdict = True
+
+            def _check_goals(self) -> bool:
+                return self.verdict
+
+        class Backend:
+            def __init__(self) -> None:
+                self.live = Core()
+
+            def core(self) -> Core:
+                return self.live
+
+            def abstract_atoms(self) -> frozenset[tuple[str, tuple[str, ...]]]:
+                return frozenset({("HoldingCube", ("robot", "cube_4"))})
+
+        class Env:
+            def __init__(self) -> None:
+                self.live = Backend()
+
+            def backend(self) -> Backend:
+                return self.live
+
+        env = Env()
+        check = SweepOffShelf3DFullAgentic.goal_check(env=env)
+        assert check() is True
+        env.live.live = Core()
+        env.live.live.verdict = False
+        assert check() is False
+
     def test_shelf_prompt_places_the_wiper_on_top_of_the_cupboard(self) -> None:
         # #530 moved the wiper's home to the cupboard's top board, its handle over the
         # front edge; Josh approved this wording on 2026-10-22.
