@@ -405,6 +405,96 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
     assert ("HandEmpty", ("robot",)) in atoms
 
 
+def _force_one_reseat(*, monkeypatch):
+    """After the sweep's first pull, report the wiper turned past RESEAT_TURN_DEG in the
+    grasp: the only trigger `stroke` has for `reseat_wiper`. In the 2026-10-21 harvest
+    the counter got there by real slip; seed 0's own strokes do not turn it that far, so
+    no other test reaches the reseat."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
+        RESEAT_TURN_DEG,
+        ShelfSkills,
+    )
+
+    pull = ShelfSkills.pull
+    forced = []
+
+    def pull_then_turn(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        pull(self, **kwargs)
+        if not forced:
+            forced.append(True)
+            self.slip_deg = RESEAT_TURN_DEG + 4.0
+
+    monkeypatch.setattr(ShelfSkills, "pull", pull_then_turn)
+
+
+def _reseats(*, skills):
+    return [g for g in skills.grasps_taken if g["label"].endswith("_reseat")]
+
+
+def test_a_forced_reseat_lets_go_takes_the_wiper_again_and_the_sweep_goes_on(*, env, monkeypatch):
+    """`reseat_wiper` opens the gripper on purpose while the sweep re-checks
+    `HoldingWiper` every control step: before the fix the check raised "the wiper left
+    the hand during ..._reseat_release" five steps later, and 13/13 reseats that reached
+    their release in the 2026-10-21 SweepShelf harvest failed that way."""
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    _force_one_reseat(monkeypatch=monkeypatch)
+    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    error = env.last_skill_error() or ""
+    skills = env.controllers()._skills  # noqa: SLF001
+    assert "left the hand" not in error, error
+    assert any("_reseat: set down after turning" in n for n in skills.notes), skills.notes
+    reseats = _reseats(skills=skills)
+    assert len(reseats) == 1, skills.grasps_taken
+    reseated = reseats[0]["label"].removesuffix("_reseat")
+    # The stroke that reseated ran to its end, and the sweep went on past it.
+    assert any(
+        n.startswith(f"{reseated}: ") and "in box after the stroke" in n for n in skills.notes
+    )
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, error
+
+
+def test_the_wiper_check_is_back_on_as_soon_as_a_reseat_has_taken_the_wiper(*, env, monkeypatch):
+    """Not weakened: a wiper genuinely lost right after a reseat still fails the sweep
+    at once, under the stroke's own label rather than the reseat's."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
+
+    reseat = ShelfSkills.reseat_wiper
+
+    def reseat_then_drop(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        reseat(self, **kwargs)
+        assert self.watch_wiper
+        _teleport(env=env, name="wiper_0", position=[1.235, 0.0, 0.05])  # into the box
+
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    _force_one_reseat(monkeypatch=monkeypatch)
+    monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat_then_drop)
+    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    error = env.last_skill_error() or ""
+    assert "wiper left the hand during" in error, error
+    assert "_reseat" not in error, error
+    assert _reseats(skills=env.controllers()._skills)  # noqa: SLF001
+    assert ("HandEmpty", ("robot",)) in atoms
+
+
+def test_the_wiper_check_comes_back_on_even_when_a_reseat_fails(*, env):
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
+
+    env.reset_to_seed(seed=0)
+    skills = env.controllers()._skills  # noqa: SLF001
+    skills.watch_wiper, skills.wiper_unheld_steps = True, 3
+    with pytest.raises(SkillFailed), skills.wiper_unwatched():
+        assert not skills.watch_wiper
+        raise SkillFailed("regrasp missed")
+    assert skills.watch_wiper
+    assert skills.wiper_unheld_steps == 0
+    skills.watch_wiper = False
+    with skills.wiper_unwatched():
+        pass
+    assert not skills.watch_wiper
+
+
 def test_every_attempt_leaves_a_trace_naming_what_it_tried(*, env):
     from hitl_pmp.environments.sweepoffshelf3d.skill_trace import SkillTraces
 
