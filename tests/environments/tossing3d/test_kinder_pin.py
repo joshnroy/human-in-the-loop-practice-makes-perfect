@@ -168,7 +168,9 @@ def test_the_toss_rotation_is_chosen_here_not_sampled_from_upstreams_band() -> N
     three and passes the controller one of four bin-relative right angles chosen per
     state (`toss_direction.py`). That supersedes the earlier local +-pi/2 widening of
     upstream's band, which this test used to pin. The controller's `reset` still takes
-    exactly four, with the rotation second, which is what the action encoding relies on."""
+    exactly four, with the rotation second, which is what the action encoding relies on.
+    Upstream's sampler itself is state-aware since kinder-baselines #165 and is never
+    called here, so this pins its band, not a draw from it."""
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         MoveToTossLocationAndTossController,
     )
@@ -176,13 +178,10 @@ def test_the_toss_rotation_is_chosen_here_not_sampled_from_upstreams_band() -> N
     from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
     from hitl_pmp.environments.tossing3d.toss_direction import TOSS_DIRECTIONS_DEG
 
-    drawn = MoveToTossLocationAndTossController.sample_parameters(
-        MoveToTossLocationAndTossController, None, np.random.default_rng(0)
-    )
-    assert len(drawn) == 4
     assert Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 3
     low, high = MoveToTossLocationAndTossController.TARGET_ROTATION_BOUNDS
-    assert low <= float(drawn[1]) <= high
+    assert low < 0.0 < high
+    assert high < np.deg2rad(1.0)  # a band, not one of this domain's right angles
     assert TOSS_DIRECTIONS_DEG == (0, 90, 180, 270)
 
 
