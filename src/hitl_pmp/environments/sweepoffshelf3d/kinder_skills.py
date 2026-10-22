@@ -24,10 +24,10 @@ Where each controller comes from:
   4. picks in the cupboard plan to a pre-grasp and descend the last few centimetres on
      MuJoCo's kinematics (`PreGraspApproach`, `KinderSkills.settler`);
   5. every plan is re-checked in the MuJoCo scene before it runs
-     (`KinderSkills.plan_blocked`): PyBullet's cupboard and arm are not MuJoCo's, and
-     its scene has no wiper;
+     (`KinderSkills.plan_blocked`): PyBullet's cupboard and arm are not MuJoCo's;
   6. the shelf pick's held-cube retract allows upstream's 1 mm resting contact
-     (`HELD_ON_SUPPORT_THRESHOLD`), and the box is in every planning scene;
+     (`HELD_ON_SUPPORT_THRESHOLD`), and the box and the resting wiper are in every
+     planning scene (`planning_sim`) -- upstream builds every cube but neither;
   7. the shelf pick is closed loop over its own candidates (`pick_cube_from_shelf`):
      grasps on the cube as it lies now, the pads on opposite faces (`shelf_hands`),
      each solved and checked in MuJoCo before KINDER plans to
@@ -163,6 +163,10 @@ HAND_ALLOWANCE = 0.001
 PRE_GRASP_RISE = 0.03
 # How far the hand backs out toward the base when the retract cannot plan from where it is.
 BACK_OUT = 0.15
+# The wiper this close (m) to any robot geom rests on or against the robot.
+WIPER_ROBOT_TOUCH = 0.001
+# The resting wiper's boxes grow by this much on every side in the planning scene.
+WIPER_OBSTACLE_MARGIN = 0.01
 
 
 class FollowPlans:
@@ -479,6 +483,9 @@ class KinderSkills:
         end = bases[-1]
         base = np.array([end.x, end.y, end.theta()])
         d = shelf.ik_data
+        objects = getattr(controller, "objects", None) or []
+        targets = {getattr(o, "name", None) for o in objects[1:]}
+        wiper_resting = WIPER not in targets and not self.wiper_on_robot()
         for name in ("_current_arm_joint_plan", "_current_retract_plan"):
             if name == "_current_retract_plan" and getattr(controller, "stop_after_grip", False):
                 continue
@@ -495,15 +502,28 @@ class KinderSkills:
                     shelf.mujoco.mj_kinematics(shelf.model, d)
                     if shelf.arm_touches(d=d):
                         return f"{name.split('_')[2]} plan hits {shelf.touching(d=d)}"
+                    if wiper_resting and self.robot_touches_wiper(d=d):
+                        return f"{name.split('_')[2]} plan hits the resting wiper"
                     if name == "_current_arm_joint_plan" and (hit := self.hand_hits(d=d)):
                         return f"approach plan puts the hand into {hit}"
         return None
 
+    def robot_touches_wiper(self, *, d: Any) -> bool:
+        """Whether any robot geom penetrates the wiper in `d` (contacts already computed
+        by `arm_touches`)."""
+        shelf = self.shelf
+        wiper = set(shelf.wiper_geoms)
+        for contact in d.contact[: d.ncon]:
+            pair = {int(contact.geom1), int(contact.geom2)}
+            if pair & shelf.robot_geoms and pair & wiper and contact.dist < 0.0:
+                return True
+        return False
+
     def hand_hits(self, *, d: Any) -> str | None:
         """What the gripper itself touches in `d` on the way in (contacts already
-        computed by `arm_touches`): the wiper, which KINDER's planning scene does not
-        have, or the cupboard or box beyond `HAND_ALLOWANCE` -- PyBullet's side panels
-        sit a centimetre outside MuJoCo's. Only the approach is checked so: the retract
+        computed by `arm_touches`): the wiper, which the planning scene has only at rest,
+        or the cupboard or box beyond `HAND_ALLOWANCE` -- PyBullet's side panels sit a
+        centimetre outside MuJoCo's. Only the approach is checked so: the retract
         starts at the grasp, where the pads are meant to be against things."""
         shelf = self.shelf
         wiper = set(shelf.wiper_geoms)
@@ -513,7 +533,7 @@ class KinderSkills:
             if not pair & shelf.robot_geoms:
                 continue
             if pair & wiper:
-                return "the wiper (not in KINDER's scene)"
+                return "the wiper"
             if pair & fixed and -contact.dist > HAND_ALLOWANCE:
                 other = (pair & fixed).pop()
                 return str(shelf.model.geom(other).name or "the box")
@@ -531,8 +551,10 @@ class KinderSkills:
 
     # --- planning-scene helpers -------------------------------------------------------
 
-    def planning_sim(self) -> Any:
-        """KINDER's PyBullet planning scene for the current state, with the box in it."""
+    def planning_sim(self, *, target: str | None = None) -> Any:
+        """KINDER's PyBullet planning scene for the current state. Upstream builds the
+        cupboard and every cube; this adds the box and the resting wiper -- unless the
+        wiper is `target`, the object the skill picks up, or `wiper_on_robot`."""
         from kinder_models.dynamic3d.utils import PyBulletSim
         from pybullet_helpers.geometry import Pose
 
@@ -544,7 +566,51 @@ class KinderSkills:
             tuple(x.get(box, k) for k in ("qx", "qy", "qz", "qw")),
         )
         sim.add_bin(name=BOX, pose=pose, **BOX_DIMENSIONS)
+        if target != WIPER and not self.wiper_on_robot():
+            self.add_wiper_obstacle(sim=sim)
         return sim
+
+    def wiper_on_robot(self) -> bool:
+        """Whether the robot carries the wiper: held by the pads, or resting on or
+        against any robot geom (within `WIPER_ROBOT_TOUCH`). Either way it moves with the
+        robot or starts every plan in collision, so it is no obstacle to plan around."""
+        shelf = self.shelf
+        if self.held(name=WIPER):
+            return True
+        m, d = shelf.model, shelf.data
+        body = int(m.body(WIPER).id)
+        for contact in d.contact[: d.ncon]:
+            pair = (int(contact.geom1), int(contact.geom2))
+            for mine, other in (pair, pair[::-1]):
+                if (
+                    int(m.geom_bodyid[other]) == body
+                    and mine in shelf.robot_geoms
+                    and contact.dist < WIPER_ROBOT_TOUCH
+                ):
+                    return True
+        return False
+
+    def add_wiper_obstacle(self, *, sim: Any) -> None:
+        """The wiper's two boxes, as they lie now and grown by `WIPER_OBSTACLE_MARGIN`,
+        as static colliders. At its edge home the handle overhangs the cupboard's front,
+        outside the cupboard that once shielded it from every plan, and the approaches
+        planned into it were refused by the MuJoCo re-check."""
+        from pybullet_helpers.geometry import Pose, set_pose
+        from pybullet_helpers.utils import create_pybullet_block
+
+        shelf = self.shelf
+        for g in shelf.wiper_geoms:
+            hx, hy, hz = (float(v) + WIPER_OBSTACLE_MARGIN for v in shelf.model.geom_size[g])
+            body = create_pybullet_block(
+                color=(0.2, 0.2, 0.2, 1.0),
+                half_extents=(hx, hy, hz),
+                physics_client_id=sim.physics_client_id,
+            )
+            x, y, z = (float(v) for v in shelf.data.geom_xpos[g])
+            rotation = Rotation.from_matrix(shelf.data.geom_xmat[g].reshape(3, 3))
+            qx, qy, qz, qw = (float(v) for v in rotation.as_quat())
+            set_pose(body, Pose((x, y, z), (qx, qy, qz, qw)), sim.physics_client_id)
+            sim._static_colliders[f"{WIPER}/geom{g}"] = body  # noqa: SLF001
 
     def objects(self, *names: str) -> list[Any]:
         x = self.state()
@@ -704,7 +770,7 @@ class KinderSkills:
     def carried_wiper_blocked(self, *, confs: list[np.ndarray]) -> bool:
         """Whether the held wiper, carried rigidly along these arm configurations with
         the grasp as measured, would cut into the cupboard, the box or the robot's own
-        arm or base (KINDER's planning scene has no wiper in it)."""
+        arm or base (the planning scene leaves out a carried wiper)."""
         shelf = self.shelf
         assert shelf.in_hand is not None
         m, d = shelf.model, shelf.ik_data
@@ -914,7 +980,7 @@ class KinderSkills:
     def pick_wiper_once(self) -> None:
         """One planned pick: off the shelf it is upstream's, lifted on its retract plan;
         in the slot the hand stops as the gripper closes (`FollowPlans.stop_after_grip`).
-        That retract plan is BiRRT in KINDER's planning scene, which has no wiper in it:
+        That retract plan is BiRRT in a planning scene that leaves out the wiper it picks:
         from a wiper 0.15 deg off square it took the hand 9 cm deeper into the cupboard,
         and the back panel tore the wiper out of the pads."""
         import kinder_models.dynamic3d.sweep3D.parameterized_skills as sweep3d
@@ -938,7 +1004,7 @@ class KinderSkills:
             settle = self.settler(hand=hand, label="pick_wiper_settle")
 
         def make() -> Any:
-            pick = controller(objects=[robot, wiper], pybullet_sim=self.planning_sim())
+            pick = controller(objects=[robot, wiper], pybullet_sim=self.planning_sim(target=WIPER))
             pick.settle = settle
             pick.stop_after_grip = in_slot
             return pick
