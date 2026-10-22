@@ -9,7 +9,11 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
 )
-from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import HOME_ARM, RETRACT_TOLERANCE
+from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import (
+    HOME_ARM,
+    RETRACT_TOLERANCE,
+    KinderSkills,
+)
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z, RESEAT_TURN_DEG
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
@@ -341,19 +345,15 @@ def test_an_arm_stranded_in_the_cupboard_front_is_retracted_after_the_next_skill
     """The absorbing state behind CCCC's PickCubeFromShelf/PickWiper plan-time tally:
     the retract planned from a start PyBullet calls a collision, never planned, and left
     the arm out; every later skill planned its approach from there and failed with 0
-    control steps, and so did its own retract. From the wiper's home on top of the
-    cupboard the first PickWiper may itself succeed; either way its retract leaves the
-    arm out of the cupboard front."""
+    control steps, and so did its own retract. PickWiper now retracts an empty-handed
+    arm before it plans, so the first attempt from here takes the wiper off its home on
+    top of the cupboard."""
     env.reset_to_seed(seed=0)
     _pose_robot(env=env, base=STRANDED_BASE, arm=STRANDED_ARM)
     assert _arm_from_home(env=env) > RETRACT_TOLERANCE
     atoms = _act(env=env, skill="PickWiper")
-    if ("HoldingWiper", ("robot", "wiper_0")) in atoms:
-        assert _wiper_carried_clear(env=env)
-        return
-    assert _arm_from_home(env=env) < RETRACT_TOLERANCE, env.last_skill_error()
-    atoms = _act(env=env, skill="PickWiper")
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+    assert _wiper_carried_clear(env=env)
 
 
 # Where a SweepShelf leaves the arm once a human reset_wiper has emptied the hand
@@ -396,6 +396,27 @@ def test_the_retract_from_a_raised_arm_reaches_home_without_oscillating(*, env):
     v = np.array(velocities.qvel)
     reversals = np.sum(np.sign(v[1:]) * np.sign(v[:-1]) < 0, axis=0) / (len(v) * 0.1)
     assert reversals.max() < MAX_REVERSALS_PER_SECOND, reversals.round(2).tolist()
+
+
+def test_pick_wiper_plans_from_home_when_a_reset_wiper_left_the_arm_raised(*, env, monkeypatch):
+    """Planned from the raised arm, PickWiper rejected 15 of its 16 candidates and ran
+    the 16th, at base heading +0.3; on the newer scene, the same fallback pick left the
+    base turned so the next sweep pressed the wiper onto the cupboard's top board."""
+    env.reset_to_seed(seed=0)
+    _pose_robot(env=env, base=SWEPT_BASE, arm=SWEPT_ARM)
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
+    assert _arm_from_home(env=env) > RETRACT_TOLERANCE
+    planned_from = []
+    first_that_plans = KinderSkills.first_that_plans
+
+    def recording(self, **kwargs):  # noqa: PLR0917  (stands in for a method)
+        planned_from.append(self.arm_from_home())
+        return first_that_plans(self, **kwargs)
+
+    monkeypatch.setattr(KinderSkills, "first_that_plans", recording)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+    assert planned_from[0] < RETRACT_TOLERANCE, planned_from
 
 
 def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypatch):
