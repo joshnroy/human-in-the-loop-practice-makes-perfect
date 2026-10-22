@@ -199,3 +199,12 @@ def test_the_runner_draws_held_out_scenes_from_the_planners_stream(
     for _ in range(10):
         planner.sample_test_task()
     assert ours == drawn and len(set(ours)) == 10
+
+
+@pytest.mark.skipif(not ROBOCODE_COSTS.exists(), reason="the cost file arrives with PR #528")
+def test_the_runner_accepts_the_planner_cost_file_and_prices_resets_at_500() -> None:
+    args = FullAgenticRunner.parse_args(argv=_runner_args(argv=_argv()))
+    costs = FullAgenticRunner.costs(args=args, domain=SweepOffShelf3DFullAgentic)
+    for skill in ("reset_cubes", "reset_wiper"):
+        assert costs.human_skills[skill].cost.value == 500
+        assert costs.human_skills[skill].duration.value == 1
