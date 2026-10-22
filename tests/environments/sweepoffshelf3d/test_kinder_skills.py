@@ -609,9 +609,8 @@ def test_the_slip_counter_keeps_counting_within_one_grasp(*, env):
 @pytest.mark.main_only
 def test_a_sweep_right_after_a_fresh_pick_does_not_reseat(*, env):
     """Bug B's consequence: with the counter inherited from an earlier grasp above
-    RESEAT_TURN_DEG, every stroke ended in a reseat. (On this branch's two-grasp wiper
-    the sweep's own regrasp zeroes the counter before any stroke, so the reseat half of
-    this is a guard for the one-grasp wiper; the regrasp's own note is not.)"""
+    RESEAT_TURN_DEG, every stroke ended in a reseat. With the one-grasp wiper there is
+    no regrasp before the first stroke, so only the fresh pick zeroes the counter."""
     _left_turned_by_an_earlier_grasp(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
