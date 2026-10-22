@@ -1803,19 +1803,6 @@ class KinderSkills:
         if not self.core.cube_in_box(cube):
             raise SkillFailed(f"place_cube_in_box: {cube} not in the box")
 
-    def held_cube_offset(self, *, cube: str) -> tuple[float, float]:
-        """Where the held cube hangs (m, world xy) from the hand target `place` drives
-        the end effector to: the measured end-effector-to-cube transform, turned by the
-        placement's fixed hand orientation. A cube picked off the shelf hangs ~47 mm
-        ahead of it, and every cube dropped at the box's centre landed ~5 cm toward its
-        far wall."""
-        import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
-
-        held = self.held_transform(sim=self.planning_sim(), cube=cube)
-        orientation = shelf_skills.ARM_MOVEMENT_CUPBOARD.orientation
-        offset = Rotation.from_quat(orientation).apply(np.asarray(held.position, dtype=float))
-        return float(offset[0]), float(offset[1])
-
     def box_drop_points(self) -> list[tuple[float, float]]:
         """Where a held cube should land in the box, best first: the grid points of the
         drop region (`BOX_DROP_X_MARGINS`, `BOX_DROP_Y_MARGIN` inside the inner walls),
@@ -1825,8 +1812,8 @@ class KinderSkills:
         cubes' positions."""
         (x0, y0, x1, y1), _ = self.core.box_interior()
         near, far = BOX_DROP_X_MARGINS
-        xs = self.grid(low=x0 + near, high=x1 - far)
-        ys = self.grid(low=y0 + BOX_DROP_Y_MARGIN, high=y1 - BOX_DROP_Y_MARGIN)
+        xs = self.grid(low=x0 + near, high=x1 - far, step=BOX_DROP_GRID)
+        ys = self.grid(low=y0 + BOX_DROP_Y_MARGIN, high=y1 - BOX_DROP_Y_MARGIN, step=BOX_DROP_GRID)
         centre = np.array([(x0 + near + x1 - far) / 2, (y0 + y1) / 2])
         if not xs or not ys:
             return [(float(centre[0]), float(centre[1]))]
@@ -1849,15 +1836,6 @@ class KinderSkills:
             if len(out) == BOX_DROP_TARGETS:
                 break
         return out
-
-    @staticmethod
-    def grid(*, low: float, high: float) -> list[float]:
-        """`BOX_DROP_GRID`-spaced values from `low` to `high`, centred in that range."""
-        if high < low:
-            return []
-        count = int(np.floor((high - low) / BOX_DROP_GRID + 1e-9))
-        start = (low + high) / 2 - count * BOX_DROP_GRID / 2
-        return [float(start + i * BOX_DROP_GRID) for i in range(count + 1)]
 
     def return_cube_to_shelf(self, *, cube: str) -> None:
         """Pick the cube from the box or the floor and drop it onto the cube shelf from
@@ -1891,7 +1869,9 @@ class KinderSkills:
         """Where the held cube hangs (m, world xy) from the hand target `place` drives
         the end effector to: the measured end-effector-to-cube transform, turned by the
         placement's fixed hand orientation. A cube picked off the floor hangs ~46 mm
-        ahead of it (the fixed hand target x = 1.45 landed cubes at x = 1.496)."""
+        ahead of it (the fixed hand target x = 1.45 landed cubes at x = 1.496), and one
+        picked off the shelf ~47 mm: every cube dropped at the box's centre landed ~5 cm
+        toward its far wall. Used by both the shelf return and the box drop."""
         import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
 
         held = self.held_transform(sim=self.planning_sim(), cube=cube)
@@ -1962,13 +1942,14 @@ class KinderSkills:
         return out
 
     @staticmethod
-    def grid(*, low: float, high: float) -> list[float]:
-        """`SHELF_DROP_GRID`-spaced values from `low` to `high`, centred in that range."""
+    def grid(*, low: float, high: float, step: float = SHELF_DROP_GRID) -> list[float]:
+        """`step`-spaced values from `low` to `high`, centred in that range: the shelf
+        drop region's (`SHELF_DROP_GRID`, the default) and the box's (`BOX_DROP_GRID`)."""
         if high < low:
             return []
-        count = int(np.floor((high - low) / SHELF_DROP_GRID + 1e-9))
-        start = (low + high) / 2 - count * SHELF_DROP_GRID / 2
-        return [float(start + i * SHELF_DROP_GRID) for i in range(count + 1)]
+        count = int(np.floor((high - low) / step + 1e-9))
+        start = (low + high) / 2 - count * step / 2
+        return [float(start + i * step) for i in range(count + 1)]
 
     def sweep_shelf(self, *, height: float, speed: float) -> None:
         if self.shelf.in_hand is None:
