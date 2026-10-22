@@ -173,6 +173,20 @@ class TestSweepOffShelf3DDomain:
             i for i, (a, b) in enumerate(zip(tossing_api, shelf_api, strict=True)) if a != b
         ] == [14]
 
+    def test_shelf_prompt_places_the_wiper_on_top_of_the_cupboard(self) -> None:
+        # #530 moved the wiper's home to the cupboard's top board, its handle over the
+        # front edge; Josh approved this wording on 2026-10-22.
+        lines = SweepOffShelf3DFullAgentic.task_prompt().splitlines()
+        assert (
+            "in a box on the floor; a wiper rests on top of the cupboard, "
+            "its handle over the front edge."
+        ) in lines[0]
+        assert (
+            "`reset_wiper` returns the wiper to its starting pose on top of the cupboard, "
+            "shifted sideways if that pose is blocked."
+        ) in lines[1]
+        assert "another shelf" not in lines[0] and "on its shelf" not in lines[1]
+
     def test_shelf_prompt_states_the_rerun_plans_budgets(self) -> None:
         # Stage 5 runs every shelf arm at 85,000 practice steps, an evaluation every
         # 15,000, and 3,000 control steps per held-out task (Josh, 2026-10-14).
