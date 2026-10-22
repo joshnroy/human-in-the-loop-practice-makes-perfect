@@ -1236,12 +1236,25 @@ class ShelfSkills:
                 return float(y)
         raise SkillFailed("reseat: no bare strip of board to lay the wiper on")
 
+    def head_over_cupboard(self) -> bool:
+        """Whether the wiper head's footprint, turned as it is, reaches past the
+        cupboard's open front face."""
+        rotation = self.data.geom_xmat[self.head_geom].reshape(3, 3)
+        reach = float(np.abs(rotation[0]) @ self.model.geom_size[self.head_geom])
+        return float(self.data.geom_xpos[self.head_geom][0]) + reach > self.front_x
+
     def stroke(self, *, y: float, settings: SweepSettings, name: str) -> None:
         flat = self.board[CUBE_SHELF] + float(self.model.geom_size[self.head_geom][2])
         hover = flat + HOVER
         mouth = self.front_x - 0.12
         self.raise_hand(z=CARRY_Z, label=f"{name}_raise", holding=True)
         self.move_base(target=[mouth - HEAD_AHEAD, y, 0.0], label=f"{name}_base")
+        if self.head_over_cupboard():
+            # The base move can leave the head over the top board; going straight down
+            # from there pressed it onto the board and turned the wiper ~20 deg in the
+            # grasp, after which no base pose cleared the shelf above the cubes.
+            head_z = float(self.data.geom_xpos[self.head_geom][2])
+            self.wiper_to(head=[mouth, y, head_z], label=f"{name}_to_mouth")
         self.wiper_to(head=[mouth, y, hover + 0.12], label=f"{name}_above_box")
         self.wiper_to(head=[mouth, y, hover], label=f"{name}_mouth")
         self.recalibrate_grasp()
