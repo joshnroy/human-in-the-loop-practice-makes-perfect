@@ -201,6 +201,55 @@ def test_expectimax_uses_model_j_and_records_the_configured_penalty(*, tmp_path:
     assert summary["stop_value_source"] == "model_J"
 
 
+def _decide(*, tmp_path: Path, name: str, **kwargs: object) -> tuple[list[GroundSkill], dict]:
+    decision_log = tmp_path / f"{name}.jsonl"
+    method = _build(pomdp_search_depth=3, decision_log=decision_log, **kwargs)
+    pick = _grounding(method=method, name=PICK_SKILL)
+    selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
+    return selection, json.loads(decision_log.read_text().splitlines()[-1])
+
+
+def _summary_of(*, decision: dict) -> dict:
+    return next(event for event in decision["search"] if event["event"] == "search_summary")
+
+
+def test_expectimax_has_no_node_budget_by_default() -> None:
+    method = _build()
+    assert isinstance(method.pomdp_planner, ExpectimaxPlanner)
+    assert method.pomdp_planner.max_search_nodes is None
+
+
+def test_an_unreached_node_budget_leaves_the_expectimax_decision_unchanged(
+    *, tmp_path: Path
+) -> None:
+    plain, plain_decision = _decide(tmp_path=tmp_path, name="plain")
+    nodes = _summary_of(decision=plain_decision)["unique_nodes"]
+    budgeted, budgeted_decision = _decide(
+        tmp_path=tmp_path, name="budgeted", pomdp_max_search_nodes=nodes
+    )
+    assert budgeted == plain
+    assert budgeted_decision["value"] == plain_decision["value"]
+    summary = _summary_of(decision=budgeted_decision)
+    assert summary["termination_reason"] == "horizon_or_objective_exhausted"
+    assert summary["unique_nodes"] == nodes
+
+
+def test_an_exhausted_node_budget_stops_at_the_budget_deterministically(*, tmp_path: Path) -> None:
+    _, plain_decision = _decide(tmp_path=tmp_path, name="plain")
+    budget = _summary_of(decision=plain_decision)["unique_nodes"] // 2
+    runs = [
+        _decide(tmp_path=tmp_path, name=f"budgeted-{index}", pomdp_max_search_nodes=budget)
+        for index in range(2)
+    ]
+    for _, decision in runs:
+        summary = _summary_of(decision=decision)
+        assert summary["unique_nodes"] == budget
+        assert summary["termination_reason"] == "node_budget_exhausted"
+        assert summary["max_search_nodes"] == budget
+    assert runs[0][0] == runs[1][0]
+    assert runs[0][1]["value"] == runs[1][1]["value"]
+
+
 def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     class InjectedPlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
         name = "injected"

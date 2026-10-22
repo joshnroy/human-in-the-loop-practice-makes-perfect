@@ -17,6 +17,12 @@ from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
+class SearchNodeBudgetExhausted(BaseException):
+    """Unwinds a search whose next node would exceed ``max_search_nodes``.
+
+    A ``BaseException`` so that no model code catching ``Exception`` can swallow it."""
+
+
 class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
     """Implementation of ``understanding/pomdp_formulation.py``.
 
@@ -30,8 +36,12 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
     per unique search state. Models providing an exact J can opt into using it
     directly. An optional observation penalty is integrated over chance outcomes;
     its default zero preserves the unshaped objective. Stopping wins ties.
-    The complete tree is evaluated through
-    ``horizon`` with no node or wall-clock stopping condition. Each call owns a
+    The complete tree is evaluated through ``horizon``, unless ``max_search_nodes``
+    is set: a search that would evaluate one node more stops there and returns the
+    best root choice whose value is already exact -- STOP, which is always evaluated
+    first, or a root action whose every successor completed. A node count, not a
+    clock, so a seed still determines the run; a budget the search never reaches
+    changes nothing. Each call owns a
     fresh recursive cache, so later searches see updated model parameters and,
     when configured to sample, resample theta.
     """
@@ -43,11 +53,14 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         *,
         use_model_j: bool = False,
         observation_probability_weight: float = 0.0,
+        max_search_nodes: int | None = None,
     ) -> None:
         assert math.isfinite(observation_probability_weight)
         assert observation_probability_weight >= 0.0
+        assert max_search_nodes is None or max_search_nodes >= 1
         self.use_model_j = use_model_j
         self.observation_probability_weight = observation_probability_weight
+        self.max_search_nodes = max_search_nodes
 
     def solve(
         self,
@@ -78,6 +91,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         self.action_transitions_evaluated = 0
         self.chance_outcomes_enumerated = 0
         self.nodes_by_horizon: dict[int, int] = {}
+        self.budget_exhausted = False
         started_at = time.perf_counter()
 
         result = self.cached_solve_belief_space_expectimax(
@@ -87,6 +101,9 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             horizon=horizon,
         )
         if trace is not None:
+            budget = (
+                {} if self.max_search_nodes is None else {"max_search_nodes": self.max_search_nodes}
+            )
             trace.record(
                 event="search_summary",
                 node=0,
@@ -110,7 +127,12 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                     horizon - min(self.nodes_by_horizon) if self.nodes_by_horizon else 0
                 ),
                 search_elapsed_seconds=time.perf_counter() - started_at,
-                termination_reason="horizon_or_objective_exhausted",
+                termination_reason=(
+                    "node_budget_exhausted"
+                    if self.budget_exhausted
+                    else "horizon_or_objective_exhausted"
+                ),
+                **budget,
             )
         return result
 
@@ -151,6 +173,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
         node = self.next_node
+        if self.max_search_nodes is not None and node >= self.max_search_nodes:
+            raise SearchNodeBudgetExhausted
         self.next_node += 1
         self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
         if self.use_model_j:
@@ -218,71 +242,21 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
 
         self.expanded_nodes += 1
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
-            self.action_transitions_evaluated += 1
-            value_of_state = 0.0
-            total_probability = 0.0
-            # TODO: Should samples be drawn with or without replacement?
-            next_states_and_probabilities = self.model.transition_outcomes(
-                environment_state=environment_state,
-                practice_action=practice_action,
-                belief_state=belief_state,
-            )
-            assert next_states_and_probabilities, (
-                f"action {practice_action!r} has no chance outcomes"
-            )
-            self.chance_outcomes_enumerated += len(next_states_and_probabilities)
-            for (
-                potential_next_environment_state,
-                sampled_cost,
-                probability,
-            ) in next_states_and_probabilities:
-                assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
-                    "sampled_cost must be finite and non-negative"
-                )
-                next_belief_state = self.model.compute_next_belief_state(
-                    belief_state=belief_state,
+            try:
+                value_of_state = self.action_value(
                     environment_state=environment_state,
-                    potential_next_environment_state=potential_next_environment_state,
+                    summed_cost=summed_cost,
+                    belief_state=belief_state,
+                    horizon=horizon,
                     practice_action=practice_action,
-                )
-                value_of_next_state, _ = self.cached_solve_belief_space_expectimax(
-                    environment_state=potential_next_environment_state,
-                    summed_cost=summed_cost + sampled_cost,
-                    belief_state=next_belief_state,
-                    horizon=horizon - 1,
-                )
-                assert math.isfinite(probability) and probability > 0.0, (
-                    f"chance probability must be finite and positive, got {probability}"
-                )
-                observation_surprise = -self.observation_probability_weight * math.log(probability)
-                contribution = probability * (value_of_next_state - observation_surprise)
-                value_of_state += contribution
-                total_probability += probability
-                if self.trace is not None and node == 0:
-                    self.trace.record(
-                        event="branch",
-                        node=node,
-                        action=practice_action.model_dump(mode="json", fallback=str),
-                        horizon=horizon - 1,
-                        summed_cost=summed_cost + sampled_cost,
-                        sampled_cost=sampled_cost,
-                        probability=probability,
-                        successor_value=value_of_next_state,
-                        observation_surprise=observation_surprise,
-                        contribution=contribution,
-                    )
-
-            assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
-                f"chance probabilities sum to {total_probability}, not 1"
-            )
-            # Compare only after summing every successor, including negative values.
-            if self.trace is not None and node == 0:
-                self.trace.record(
-                    event="action_value",
                     node=node,
-                    action=practice_action.model_dump(mode="json", fallback=str),
-                    value=value_of_state,
                 )
+            except SearchNodeBudgetExhausted:
+                # Only the root stops, so every value it compares is exact.
+                if node != 0:
+                    raise
+                self.budget_exhausted = True
+                break
             if current_best_value < value_of_state:
                 current_best_value = value_of_state
                 current_best_action = practice_action
@@ -297,6 +271,87 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                     else current_best_action.model_dump(mode="json", fallback=str)
                 ),
                 value=current_best_value,
-                reason="max_value_stop_wins_ties",
+                reason=(
+                    "node_budget_best_so_far"
+                    if self.budget_exhausted
+                    else "max_value_stop_wins_ties"
+                ),
             )
         return current_best_value, current_best_action
+
+    def action_value(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int,
+        practice_action: ActionT,
+        node: int,
+    ) -> float:
+        """The expected value of one action: every chance outcome, summed."""
+        self.action_transitions_evaluated += 1
+        value_of_state = 0.0
+        total_probability = 0.0
+        # TODO: Should samples be drawn with or without replacement?
+        next_states_and_probabilities = self.model.transition_outcomes(
+            environment_state=environment_state,
+            practice_action=practice_action,
+            belief_state=belief_state,
+        )
+        assert next_states_and_probabilities, f"action {practice_action!r} has no chance outcomes"
+        self.chance_outcomes_enumerated += len(next_states_and_probabilities)
+        for (
+            potential_next_environment_state,
+            sampled_cost,
+            probability,
+        ) in next_states_and_probabilities:
+            assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
+                "sampled_cost must be finite and non-negative"
+            )
+            next_belief_state = self.model.compute_next_belief_state(
+                belief_state=belief_state,
+                environment_state=environment_state,
+                potential_next_environment_state=potential_next_environment_state,
+                practice_action=practice_action,
+            )
+            value_of_next_state, _ = self.cached_solve_belief_space_expectimax(
+                environment_state=potential_next_environment_state,
+                summed_cost=summed_cost + sampled_cost,
+                belief_state=next_belief_state,
+                horizon=horizon - 1,
+            )
+            assert math.isfinite(probability) and probability > 0.0, (
+                f"chance probability must be finite and positive, got {probability}"
+            )
+            observation_surprise = -self.observation_probability_weight * math.log(probability)
+            contribution = probability * (value_of_next_state - observation_surprise)
+            value_of_state += contribution
+            total_probability += probability
+            if self.trace is not None and node == 0:
+                self.trace.record(
+                    event="branch",
+                    node=node,
+                    action=practice_action.model_dump(mode="json", fallback=str),
+                    horizon=horizon - 1,
+                    summed_cost=summed_cost + sampled_cost,
+                    sampled_cost=sampled_cost,
+                    probability=probability,
+                    successor_value=value_of_next_state,
+                    observation_surprise=observation_surprise,
+                    contribution=contribution,
+                )
+
+        assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
+            f"chance probabilities sum to {total_probability}, not 1"
+        )
+        # Compare only after summing every successor, including negative values.
+        if self.trace is not None and node == 0:
+            self.trace.record(
+                event="action_value",
+                node=node,
+                action=practice_action.model_dump(mode="json", fallback=str),
+                value=value_of_state,
+            )
+
+        return value_of_state

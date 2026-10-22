@@ -74,6 +74,7 @@ def make_belief_space_planner(
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
+    max_search_nodes: int | None = None,
 ) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
@@ -82,6 +83,7 @@ def make_belief_space_planner(
         return ExpectimaxPlanner(
             use_model_j=True,
             observation_probability_weight=observation_probability_weight,
+            max_search_nodes=max_search_nodes,
         )
     return DeterminizedAStarPlanner(
         max_iterations=max_iterations,
@@ -101,6 +103,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_log_full_search_tree: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
+    # Expectimax only. None searches the whole tree; a count, never a clock, so a seed
+    # still determines the run.
+    pomdp_max_search_nodes: int | None = Field(default=None, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
@@ -350,6 +355,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+            max_search_nodes=self.pomdp_max_search_nodes,
         )
         # Exact reductions of the expectimax tree only: determinized A* samples paths
         # over the action list, so dropping equivalent actions would change what it

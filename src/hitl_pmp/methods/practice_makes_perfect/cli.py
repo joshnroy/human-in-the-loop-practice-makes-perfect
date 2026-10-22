@@ -320,6 +320,15 @@ class Tossing3DPomdpCli(EesCli):
             help="Priority-queue iterations per determinized A* search (Algorithm 3's H).",
         )
         parser.add_argument(
+            "--pomdp-max-search-nodes",
+            type=int,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_search_nodes"].default,
+            help=(
+                "Expectimax search nodes per decision (default: unbounded). At the cap the "
+                "search returns the best root choice whose value is already exact."
+            ),
+        )
+        parser.add_argument(
             "--pomdp-observation-probability-weight",
             type=float,
             default=Tossing3DPomdpMethod.model_fields[
@@ -478,6 +487,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
+                pomdp_max_search_nodes=args.pomdp_max_search_nodes,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_num_samples=args.pomdp_num_samples,

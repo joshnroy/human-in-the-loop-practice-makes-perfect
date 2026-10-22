@@ -28,6 +28,9 @@ The plan (Josh, 2026-10-14 and 2026-10-20):
   Step accounting: 1 per control step, each human reset takes 1 counted step of the
   budget, lambda 3e-6. The lab2 scene is the environment's default; no arm passes
   `--no-scene-bg`.
+- The expectimax arms stop each search after `EXPECTIMAX_MAX_SEARCH_NODES` nodes, about
+  60 s on Della, and act on the best root choice already evaluated exactly (Josh,
+  2026-10-21). Prices, costs and the method are unchanged.
 
 Prices (Josh, 2026-10-21), one rule in two units, because the two methods' costs are in
 different units:
@@ -103,6 +106,10 @@ REPO = Path(__file__).resolve().parents[1]
 # Each method's human-reset price, in its own units (see the module docstring).
 PLANNER_HUMAN_RESET_COST = 500
 EES_HUMAN_RESET_COST = 5
+# Josh, 2026-10-21: bound expectimax's planning to about 60 s per decision, as a count so
+# a seed still determines the run. 43 search nodes/s measured on a Della cpu node at the
+# launch job shape (2 CPUs), from two depth-6 shelf decisions; see `--pomdp-max-search-nodes`.
+EXPECTIMAX_MAX_SEARCH_NODES = 2600
 PLANNER_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_planner.json"
 PLANNER_ALWAYS_ASK_COSTS = (
     REPO / "configs" / "sweepoffshelf3d_practice_costs_planner_sampled_start.json"
@@ -225,6 +232,8 @@ class ShelfLaunch:
                         "expectimax",
                         "--pomdp-search-depth",
                         str(depth),
+                        "--pomdp-max-search-nodes",
+                        str(EXPECTIMAX_MAX_SEARCH_NODES),
                         *PLANNER,
                     ],  # fmt: skip
                     always_ask=False,

@@ -121,6 +121,18 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_observation_probability_weight == 0.1
 
 
+def test_tossing3d_pomdp_cli_has_no_expectimax_node_budget_by_default() -> None:
+    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp"])
+    assert args.pomdp_max_search_nodes is None
+
+
+def test_tossing3d_pomdp_cli_accepts_an_expectimax_node_budget() -> None:
+    args = Cli.parse_args(
+        argv=["--env", "tossing3d", "--method", "pomdp", "--pomdp-max-search-nodes", "17"]
+    )
+    assert args.pomdp_max_search_nodes == 17
+
+
 def test_tossing3d_pomdp_cli_accepts_determinized_solver() -> None:
     args = Cli.parse_args(
         argv=[

@@ -11,6 +11,7 @@ from scripts.sweepoffshelf3d_launch import (
     EES_ALWAYS_ASK_COSTS,
     EES_COSTS,
     EES_HUMAN_RESET_COST,
+    EXPECTIMAX_MAX_SEARCH_NODES,
     FULL,
     PLANNER_ALWAYS_ASK_COSTS,
     PLANNER_COSTS,
@@ -261,6 +262,19 @@ def test_each_method_prices_every_human_reset_in_its_own_units(
 def test_the_two_reset_prices_are_the_decided_ones() -> None:
     assert PLANNER_HUMAN_RESET_COST == 500
     assert EES_HUMAN_RESET_COST == 5
+
+
+@pytest.mark.parametrize("name", [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS])
+def test_only_the_expectimax_arms_get_the_node_budget(*, name: str) -> None:
+    # Josh, 2026-10-21: bound d6's planning per decision to about 60 s, deterministically.
+    arm = ShelfLaunch.arms(expectimax_depths=[6, 7])[name]
+    argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/out"))
+    args = Cli.parse_args(argv=argv)
+    if "expectimax" in name:
+        assert args.pomdp_max_search_nodes == EXPECTIMAX_MAX_SEARCH_NODES
+    else:
+        assert "--pomdp-max-search-nodes" not in argv
+        assert getattr(args, "pomdp_max_search_nodes", None) is None
 
 
 @pytest.mark.parametrize("name", [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS])

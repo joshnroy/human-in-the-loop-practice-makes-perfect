@@ -554,3 +554,157 @@ def test_rejects_invalid_model_j(*, value: float) -> None:
             horizon=0,
             model=ExactModel(),
         )
+
+
+# A two-action root for the node budget: STOP 0.2, a first action worth 0.6 over two
+# leaves, a second worth 0.9 over one. Unbudgeted, the search evaluates 4 nodes.
+FIRST = Action(name="first")
+SECOND = Action(name="second")
+FIRST_LEFT = EnvironmentState(name="first_left")
+FIRST_RIGHT = EnvironmentState(name="first_right")
+SECOND_ONLY = EnvironmentState(name="second_only")
+WALL_CLOCK_FIELDS = {"timestamp", "elapsed_seconds", "search_elapsed_seconds"}
+
+
+def _budget_model() -> Model:
+    return Model(
+        transitions={
+            (INITIAL, FIRST): [(FIRST_LEFT, 0.0, 0.5), (FIRST_RIGHT, 0.0, 0.5)],
+            (INITIAL, SECOND): [(SECOND_ONLY, 0.0, 1.0)],
+        },
+        beliefs={
+            FIRST_LEFT: BeliefState(value=0.6),
+            FIRST_RIGHT: BeliefState(value=0.6),
+            SECOND_ONLY: BeliefState(value=0.9),
+        },
+    )
+
+
+def _budget_solve(
+    *, planner: ExpectimaxPlanner, model: Model, trace: SearchTrace | None = None
+) -> tuple[float, Action | StopAction]:
+    return planner.solve(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+
+
+def _summary(*, trace: SearchTrace) -> dict[str, object]:
+    return next(event for event in trace.events if event["event"] == "search_summary")
+
+
+def _comparable(*, trace: SearchTrace) -> list[dict[str, object]]:
+    return [
+        {key: value for key, value in event.items() if key not in WALL_CLOCK_FIELDS}
+        for event in trace.events
+    ]
+
+
+def test_no_node_budget_is_the_unbudgeted_search_unchanged() -> None:
+    plain_model, unbudgeted_model = _budget_model(), _budget_model()
+    plain_trace, unbudgeted_trace = SearchTrace(), SearchTrace()
+    plain = _budget_solve(planner=ExpectimaxPlanner(), model=plain_model, trace=plain_trace)
+    unbudgeted = _budget_solve(
+        planner=ExpectimaxPlanner(max_search_nodes=None),
+        model=unbudgeted_model,
+        trace=unbudgeted_trace,
+    )
+    assert plain == unbudgeted == (pytest.approx(0.9), SECOND)
+    assert plain_model.visits == unbudgeted_model.visits
+    assert _comparable(trace=plain_trace) == _comparable(trace=unbudgeted_trace)
+    assert _summary(trace=plain_trace)["unique_nodes"] == 4
+    assert _summary(trace=plain_trace)["termination_reason"] == "horizon_or_objective_exhausted"
+
+
+@pytest.mark.parametrize("budget", [4, 5, 1000])
+def test_a_node_budget_the_search_never_reaches_changes_nothing(*, budget: int) -> None:
+    plain_model, budgeted_model = _budget_model(), _budget_model()
+    plain_trace, budgeted_trace = SearchTrace(), SearchTrace()
+    plain = _budget_solve(planner=ExpectimaxPlanner(), model=plain_model, trace=plain_trace)
+    budgeted = _budget_solve(
+        planner=ExpectimaxPlanner(max_search_nodes=budget),
+        model=budgeted_model,
+        trace=budgeted_trace,
+    )
+    assert plain == budgeted
+    assert plain_model.visits == budgeted_model.visits
+    plain_events = _comparable(trace=plain_trace)
+    budgeted_events = _comparable(trace=budgeted_trace)
+    # Only the summary differs, by naming the budget.
+    assert plain_events[:-1] == budgeted_events[:-1]
+    summary = _summary(trace=budgeted_trace)
+    assert summary["max_search_nodes"] == budget
+    assert summary["termination_reason"] == "horizon_or_objective_exhausted"
+    assert {**plain_events[-1], "max_search_nodes": budget} == budgeted_events[-1]
+
+
+@pytest.mark.parametrize(
+    "budget, expected",
+    [
+        # Root and both leaves of FIRST: FIRST is exact, SECOND never started.
+        (3, (0.6, FIRST)),
+        # FIRST's second leaf is out of budget, so FIRST has no value and STOP stands.
+        (2, (0.2, STOP_ACTION)),
+        (1, (0.2, STOP_ACTION)),
+    ],
+)
+def test_an_exhausted_node_budget_returns_the_best_completed_root_choice(
+    *, budget: int, expected: tuple[float, Action | StopAction]
+) -> None:
+    model = _budget_model()
+    trace = SearchTrace()
+    value, action = _budget_solve(
+        planner=ExpectimaxPlanner(max_search_nodes=budget), model=model, trace=trace
+    )
+    assert (value, action) == (pytest.approx(expected[0]), expected[1])
+    summary = _summary(trace=trace)
+    assert summary["unique_nodes"] == budget
+    assert len(model.visits) == budget  # one stop-value sample per evaluated node
+    assert summary["termination_reason"] == "node_budget_exhausted"
+    assert summary["max_search_nodes"] == budget
+    root_values = [
+        event["action"]["name"]
+        for event in trace.events
+        if event["node"] == 0 and event["event"] == "action_value"
+    ]
+    assert root_values == (["first"] if budget == 3 else [])
+    choice = next(event for event in trace.events if event["event"] == "choice")
+    assert choice["reason"] == "node_budget_best_so_far"
+
+
+def test_an_exhausted_budget_never_returns_a_partially_evaluated_action() -> None:
+    # SECOND's first leaf alone already beats FIRST, but its other leaf is out of
+    # budget, so SECOND has no value and FIRST must win.
+    model = _budget_model()
+    model.transitions[INITIAL, SECOND] = [
+        (SECOND_ONLY, 0.0, 0.5),
+        (EnvironmentState(name="second_other"), 0.0, 0.5),
+    ]
+    value, action = _budget_solve(planner=ExpectimaxPlanner(max_search_nodes=4), model=model)
+    assert (value, action) == (pytest.approx(0.6), FIRST)
+
+
+def test_the_node_budget_is_deterministic_and_per_search() -> None:
+    planner = ExpectimaxPlanner(max_search_nodes=3)
+    traces = [SearchTrace(), SearchTrace()]
+    results = [_budget_solve(planner=planner, model=_budget_model(), trace=t) for t in traces]
+    assert results[0] == results[1] == (pytest.approx(0.6), FIRST)
+    assert _comparable(trace=traces[0]) == _comparable(trace=traces[1])
+    fresh = SearchTrace()
+    assert (
+        _budget_solve(
+            planner=ExpectimaxPlanner(max_search_nodes=3), model=_budget_model(), trace=fresh
+        )
+        == results[0]
+    )
+    assert _comparable(trace=fresh) == _comparable(trace=traces[0])
+
+
+def test_the_node_budget_must_be_positive() -> None:
+    with pytest.raises(AssertionError):
+        ExpectimaxPlanner(max_search_nodes=0)
