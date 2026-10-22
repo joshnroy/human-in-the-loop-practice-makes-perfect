@@ -13,9 +13,12 @@ import pytest
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import (
     JAW_HALF_WIDTH,
+    SHELF_PICK_NEIGHBOUR_CLEARANCE,
     SHELF_PICK_SAME_APPROACH,
     KinderSkills,
+    PadSweep,
 )
+from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CUBE_STANDOFF, SkillFailed
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture, StateSet
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.types import BenchmarkCase
@@ -309,6 +312,7 @@ def _stub_candidates(*, monkeypatch, clear: dict[int, set[int]], bases: int) -> 
         "cupboard_between_pads": lambda **_: None,
         "cube_between_pads": lambda **_: None,
         "touches_other_cube": lambda **_: False,
+        "neighbour_in_sweep": lambda **_: None,
         "shelf_grasp_conf": lambda *, hand, base, **_: (
             np.zeros(7) if int(base[1]) in clear[int(hand[3, 0])] else None
         ),
@@ -332,3 +336,137 @@ def test_a_grasp_given_up_after_unreachable_bases_is_offered_its_remaining_bases
     candidates = kinder.shelf_candidates(cube="cube_0", centre=np.zeros(3), tried=[])
     offered = [(int(hand[3, 0]), int(base[1])) for hand, _, base, *_ in candidates]
     assert offered == [(0, 0), (1, 0), (0, 5)], offered
+
+
+def test_a_grasp_whose_pads_sweep_a_neighbour_is_refused_not_tried_last(*, monkeypatch):
+    """Grasp 1's pads would sweep another cube as they come down or close, and grasp
+    2's hand touches one at the grasp: on `main` both were offered after every other
+    grasp, and in a cluster they were the only grasps left, so the pick shoved the
+    neighbour. Now neither is offered at all."""
+    kinder = _stub_candidates(monkeypatch=monkeypatch, clear={0: {0}, 1: {0}, 2: {0}}, bases=1)
+    stubs = {
+        "shelf_grasp_conf": lambda *, hand, **_: np.full(7, float(hand[3, 0])),
+        "neighbour_in_sweep": lambda *, path, **_: "cube_1" if path[-1][3, 0] == 1 else None,
+        "touches_other_cube": lambda *, arm, **_: bool(arm[0] == 2),
+    }
+    for name, stub in stubs.items():
+        monkeypatch.setattr(kinder, name, stub, raising=False)
+    refused: list[str] = []
+    candidates = kinder.shelf_candidates(
+        cube="cube_0", centre=np.zeros(3), tried=[], refused=refused
+    )
+    offered = [int(hand[3, 0]) for hand, *_ in candidates]
+    assert offered == [0], offered
+    assert "cube_1" in refused, refused
+
+
+NEIGHBOUR_STATES = Path(__file__).resolve().parent / "fixtures/neighbour_strike_states.jsonl"
+# The four executed PickCubeFromShelf failures in the new scene (867abd9e6, kindergarden
+# 490831fa5) where the closing pads struck a neighbour 3-3.5 cm away, rebuilt in this
+# scene from their cube poses: each strikes again here before the fix.
+NEIGHBOUR_STRIKES = [
+    "neighbour-layout-49",
+    "neighbour-start-s11",
+    "neighbour-wiper-container-1",
+    "neighbour-harvest-PickCubeFromShelf-1",
+]
+# How far (m) a cube may move during a pick that does not touch it: settling only.
+UNTOUCHED = 0.005
+
+
+@pytest.fixture(name="neighbour_states", scope="module")
+def _neighbour_states():
+    return {state.state_id: state for state in StateSet.load(path=NEIGHBOUR_STATES)}
+
+
+@pytest.mark.parametrize("state_id", NEIGHBOUR_STRIKES)
+def test_a_shelf_pick_never_shoves_a_neighbouring_cube(*, env, neighbour_states, state_id):
+    """Before: the pads struck the neighbour on the way down or as they closed --
+    a miss with both cubes shoved 2-6 cm, or the neighbour carried off in the jaws
+    beside the target. After: the target alone is picked, or the pick refuses
+    without having touched anything."""
+    state = neighbour_states[state_id]
+    (case,) = state.cases
+    cube = case.cube
+    kinder = _restore(env=env, states=neighbour_states, state_id=state_id)
+    shelf = kinder.shelf
+    names = [f"cube_{i}" for i in range(5)]
+    before = {name: shelf.cube_position(cube=name).copy() for name in names}
+    atoms = _pick(env=env, cube=cube)
+    moved = {
+        name: float(np.linalg.norm(shelf.cube_position(cube=name) - before[name])) for name in names
+    }
+    held = ("HoldingCube", ("robot", cube)) in atoms
+    others = {name: round(1000 * d, 1) for name, d in moved.items() if name != cube}
+    assert max(others.values()) < 1000 * UNTOUCHED, (others, env.last_skill_error())
+    if not held:
+        assert moved[cube] < UNTOUCHED, (moved, env.last_skill_error())
+        assert "no grasp" in (env.last_skill_error() or ""), env.last_skill_error()
+
+
+# The live 2F-85's pads in the pinch-site frame (m), each 8 mm thick and 22 mm wide,
+# at four stages of closing: open, a quarter, half, and three quarters of the way,
+# where their inner faces near the 2 cm cube's. They come in on an arc, riding forward.
+_STAGES_MM = [((42.7, 50.7), (-8.1, 29.4)), ((33.2, 41.4), (-1.8, 35.7))]
+_STAGES_MM += [((22.6, 31.0), (2.6, 40.2)), ((11.4, 20.0), (4.9, 42.5))]
+TRAVEL = [
+    [
+        (np.array([x0, -11.0, z0]) / 1000, np.array([x1, 11.0, z1]) / 1000),
+        (np.array([-x1, -11.0, z0]) / 1000, np.array([-x0, 11.0, z1]) / 1000),
+    ]
+    for (x0, x1), (z0, z1) in _STAGES_MM
+]
+
+
+def _neighbour_at(*, hand: np.ndarray, local_mm: tuple[float, float, float]) -> dict:
+    """A 2 cm cube aligned with the hand, centred at `local_mm` in the hand's frame."""
+    centre = (hand @ np.r_[np.asarray(local_mm) / 1000.0, 1.0])[:3]
+    return {"cube_1": (centre, hand[:3, :3], np.full(3, O.cube_half_size))}
+
+
+def _straight_down_grasp() -> np.ndarray:
+    hand = np.eye(4)
+    hand[:3, :3] = np.diag([1.0, -1.0, -1.0])  # closing along x, approach straight down
+    hand[:3, 3] = [1.5, 0.0, 0.32]
+    return hand
+
+
+@pytest.mark.parametrize(
+    ("local_mm", "struck"),
+    [
+        # The layout-49 neighbour: 30 mm along the closing axis, at the cube's depth.
+        ((30.0, 0.0, 1000 * CUBE_STANDOFF), True),
+        # Beyond the open pad's outer face.
+        ((65.0, 0.0, 1000 * CUBE_STANDOFF), False),
+        # The same 30 mm, but across the pads' width: 9 mm from the pad's edge.
+        ((0.0, 30.0, 1000 * CUBE_STANDOFF), False),
+        # Beyond where the closing pads' tips reach.
+        ((30.0, 0.0, 85.0), False),
+        # Just outside the open pad and ahead of it: the pads ride forward only as they
+        # come in, so they pass it -- inside one box bounding open and closed pads.
+        ((55.0, 0.0, 46.0), False),
+    ],
+)
+def test_the_closing_sweep_reaches_a_neighbour_along_the_closing_axis(*, local_mm, struck):
+    hand = _straight_down_grasp()
+    hit = PadSweep.first_hit(
+        sweep=PadSweep.closing(hand=hand, travel=TRAVEL),
+        others=_neighbour_at(hand=hand, local_mm=local_mm),
+        clearance=SHELF_PICK_NEIGHBOUR_CLEARANCE,
+    )
+    assert (hit == "cube_1") is struck, (local_mm, hit)
+
+
+def test_the_descent_sweep_reaches_a_neighbour_the_closing_pads_do_not():
+    """The start-s11 strike: the right pad met the neighbour on the way down, above
+    where it closes. A neighbour in line with the open pad, 50 mm back along the
+    approach, is clear of the close but in the way of a 60 mm descent."""
+    hand = _straight_down_grasp()
+    pre = hand.copy()
+    pre[:3, 3] -= 0.06 * hand[:3, 2]
+    others = _neighbour_at(hand=hand, local_mm=(46.6, 0.0, -50.0))
+    clearance = SHELF_PICK_NEIGHBOUR_CLEARANCE
+    closing = PadSweep.closing(hand=hand, travel=TRAVEL)
+    descent = PadSweep.descent(path=[pre, hand], pads=TRAVEL[0])
+    assert PadSweep.first_hit(sweep=closing, others=others, clearance=clearance) is None
+    assert PadSweep.first_hit(sweep=descent, others=others, clearance=clearance) == "cube_1"
