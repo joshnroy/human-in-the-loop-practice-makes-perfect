@@ -299,7 +299,7 @@ class ShelfSkills:
         self.cupboard_contact_steps = 0
         self.arm_cupboard_contact_steps = 0
         self.box_contact_steps = 0
-        self.in_hand: np.ndarray | None = None
+        self._in_hand: np.ndarray | None = None
         self.grasp_kind: str | None = None
         self.held_cube: str | None = None
         self.slip: float | None = None
@@ -321,6 +321,23 @@ class ShelfSkills:
         # Head speed actually achieved over each pull (m/s); the base tops out at
         # 0.15 m/s, so a commanded speed above that is reached only with the arm.
         self.pull_speeds: list[float] = []
+
+    @property
+    def in_hand(self) -> np.ndarray | None:
+        """The measured hand-to-wiper pose of the grasp held now; None while the wiper
+        is out of the hand."""
+        return self._in_hand
+
+    @in_hand.setter
+    def in_hand(self, value: np.ndarray | None) -> None:  # noqa: PLR0917 -- a setter
+        # The slip counters measure how far the wiper has moved in the grasp held now,
+        # so they start from zero each time the hand takes it. Every way of taking it
+        # -- `take_wiper`, and `KinderSkills.sync` after a practice PickWiper --
+        # sets this from None; re-measuring a grasp still held (`recalibrate_grasp`)
+        # does not reset them, and letting go leaves the last grasp's turn readable.
+        if value is not None and self._in_hand is None:
+            self.slip, self.slip_deg = 0.0, 0.0
+        self._in_hand = value
 
     @property
     def mujoco(self) -> Any:
@@ -858,7 +875,6 @@ class ShelfSkills:
         the wiper settle a few millimetres in the pads."""
         self.in_hand = np.linalg.inv(self.site_pose()) @ self.wiper_pose()
         self.grasp_kind = kind
-        self.slip, self.slip_deg = 0.0, 0.0
         nominal = np.linalg.inv(self.grasp_in_wiper[kind])
         closed = self.closed_in_hand
         hand_in_wiper = np.linalg.inv(closed)
