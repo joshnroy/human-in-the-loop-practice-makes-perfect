@@ -15,6 +15,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
 )
+from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import KinderSkills
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture, StateSet
 
 STATES = Path(__file__).resolve().parent / "data/refusal_states.jsonl"
@@ -110,10 +111,14 @@ def test_either_of_two_held_cubes_is_placed_in_the_box(*, env, states, cube):
     assert env.last_controller_steps() > 0
 
 
-def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states):
+def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states, monkeypatch):
     """From case 3's start, the run's own PickCubeFromShelf(cube_4) missed once, then
     closed on cube_4 and cube_1 together and reported success. Now the pick opens and
     tries again, and never ends with a second cube in the hand."""
+    # The neighbour refusals (pad sweep, hand touching a cube) now prevent this double
+    # grasp; both off, so this still covers the miss handling behind them.
+    monkeypatch.setattr(KinderSkills, "neighbour_in_sweep", lambda self, *, path, cube: None)
+    monkeypatch.setattr(KinderSkills, "touches_other_cube", lambda self, *, base, arm, cube: False)
     kinder = _restore(
         env=env, states=states, state_id="refusal-case3-pomdp3-start-before-double-grasp"
     )
@@ -123,3 +128,16 @@ def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states):
     assert kinder.held_cubes <= {"cube_4"}
     reasons = [n.reason for n in env.controllers().notes()]
     assert any("cube_1" in r and "two cubes" in r for r in reasons), reasons
+
+
+def test_the_neighbour_sweep_refusal_now_prevents_that_double_grasp(*, env, states):
+    """The same start with the neighbour-sweep refusal on: every grasp on cube_4 would
+    sweep cube_1, so the pick refuses at 0 control steps instead of closing on both."""
+    kinder = _restore(
+        env=env, states=states, state_id="refusal-case3-pomdp3-start-before-double-grasp"
+    )
+    atoms = _act(env=env, skill="PickCubeFromShelf", cube="cube_4")
+    assert not {a for a in atoms if a[0] == "HoldingCube"}
+    assert not kinder.held_cubes
+    assert env.last_controller_steps() == 0
+    assert "refused grasps sweeping cube_1" in env.last_skill_error()
