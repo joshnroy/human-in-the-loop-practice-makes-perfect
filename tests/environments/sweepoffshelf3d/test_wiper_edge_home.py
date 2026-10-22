@@ -10,6 +10,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
 )
+from tests.environments.sweepoffshelf3d.test_kinder_skills import _force_one_reseat
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -127,13 +128,16 @@ def test_reset_wiper_teleports_a_fallen_wiper_to_its_edge_home(*, env):
     assert HOME in env.backend().abstract_atoms()
 
 
-def test_one_grasp_picks_sweeps_and_returns_the_wiper(*, env):
+def test_one_grasp_picks_sweeps_and_returns_the_wiper(*, env, monkeypatch):
     """PickWiper, SweepShelf and ReturnWiper all hold the wiper at the one sweep grasp:
-    every grasp taken is it, and nothing is ever set down on the floor to regrasp."""
+    every grasp taken is it, and nothing is ever set down on the floor to regrasp. One
+    reseat is forced, since seed 0's own strokes never turn the wiper far enough to
+    reseat and a check over no grasps at all would pass vacuously."""
     env.reset_to_seed(seed=0)
     shelf = env.controllers()._skills  # noqa: SLF001
     atoms = _act(env=env, skill="PickWiper")
     assert HELD in atoms, env.last_skill_error()
+    _force_one_reseat(monkeypatch=monkeypatch)
     atoms = _act(env=env, skill="SweepShelf")
     assert ("AnyCubeOffShelf", ()) in atoms, env.last_skill_error()
     assert HELD in atoms
@@ -144,6 +148,7 @@ def test_one_grasp_picks_sweeps_and_returns_the_wiper(*, env):
     assert home < 0.01
     # The pick closes through KINDER's controller; any grasp the scripted skills take
     # after it is a reseat of the same grasp on the cube shelf mid-sweep.
+    assert len(shelf.grasps_taken) >= 1, shelf.notes
     assert all(grasp["label"].endswith("_reseat") for grasp in shelf.grasps_taken)
     assert all("kind" not in grasp for grasp in shelf.grasps_taken)
 
