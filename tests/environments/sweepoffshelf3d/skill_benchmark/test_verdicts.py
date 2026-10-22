@@ -207,7 +207,7 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
 @pytest.mark.parametrize(
     ("skill", "needed", "out_of"),
     [
-        ("PickCubeFromShelf", 97, 100),
+        ("PickCubeFromShelf", 95, 100),
         ("PickCubeFromFloor", 11, 12),
         ("ReturnCubeToShelfFromFloor", 11, 12),
     ],
@@ -234,21 +234,21 @@ def test_a_thresholded_skill_passes_at_exactly_its_threshold_and_fails_one_below
 def test_the_box_return_gates_on_harvested_states_and_only_reports_synthetic_ones() -> None:
     skill = "ReturnCubeToShelfFromBox"
     assert THRESHOLDS[skill] == SkillThreshold(
-        min_successes=3, out_of=8, families=frozenset({"harvested"})
+        min_successes=5, out_of=8, families=frozenset({"harvested"})
     )
     at = _verdict(
         skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=3, total=8, prefix="h")
+        results=_runs(skill=skill, family="harvested", successes=5, total=8, prefix="h")
         + _runs(skill=skill, family="near_walls", successes=0, total=13, prefix="c"),
     )
     assert at.passed
-    assert (at.gated_successes, at.gated_total) == (3, 8)
+    assert (at.gated_successes, at.gated_total) == (5, 8)
     assert (at.reported_successes, at.reported_total) == (0, 13)
-    assert (at.successes, at.total) == (3, 21)
-    assert at.target == "at least 3/8 of harvested"
+    assert (at.successes, at.total) == (5, 21)
+    assert at.target == "at least 5/8 of harvested"
     below = _verdict(
         skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=2, total=8, prefix="h")
+        results=_runs(skill=skill, family="harvested", successes=4, total=8, prefix="h")
         + _runs(skill=skill, family="near_walls", successes=13, total=13, prefix="c"),
     )
     assert not below.passed
@@ -335,5 +335,5 @@ def test_a_verdict_summarises_gated_and_reported_only_counts() -> None:
     summary = LaunchGate.describe(skill=_verdict(skill=skill, results=results).model_dump())
     assert summary.startswith(skill)
     assert "gated 2/8" in summary
-    assert "at least 3/8 of harvested" in summary
+    assert "at least 5/8 of harvested" in summary
     assert "reported-only 5/13" in summary
