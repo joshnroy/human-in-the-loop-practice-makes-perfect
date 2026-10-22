@@ -48,12 +48,14 @@ from typing import Any, ClassVar
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from .backend import CUBE_REGION
 from .objects import SweepOffShelf3DObjects as O
 from .scripted_skills import (
     CARRY_Z,
     CUBE_LEANS_DEG,
     CUBE_SHELF,
     CUBE_STANDOFF,
+    WIPER_SHELF,
     Frames,
     ShelfSkills,
     SkillFailed,
@@ -83,7 +85,24 @@ BOX_DIMENSIONS = {"length": 0.25, "width": 0.5, "height": 0.2, "wall_thickness":
 # Where the held cube is let go over the shelf, above the board: a short drop, not a
 # set-down, since the leaned wrist cannot reach lower without meeting the board above.
 SHELF_DROP_RISES = (0.06, 0.09, 0.12)
-SHELF_PLACE_XY = (1.45, 0.0)
+# Where on the cube shelf a returned cube is let go: a point on a grid this fine (m),
+# inside the drop region, as far as the grid allows from every cube already on the shelf
+# (the region's centre first, on an empty shelf). Let go at one fixed point, a returned
+# cube landed on any cube already there. The region is KINDER's own `cubes_init_region`,
+# where every shelf pick starts (x 1.43-1.57, y +-0.24 in this scene), inset by these
+# margins (m) from its near (-x) and far edges and its sides to the points measured: on
+# an empty shelf, a cube returned from the floor to each of 28 targets over x 1.45-1.54,
+# y +-0.21 landed on the board within 8 mm of it and was picked off it again, 28/28.
+SHELF_DROP_GRID = 0.005
+SHELF_DROP_X_MARGINS = (0.02, 0.03)
+SHELF_DROP_Y_MARGIN = 0.03
+# No point nearer than this (m) to a cube on the shelf: two cubes' half-diagonals
+# (28 mm), upstream's 1 cm grasp clearance and the 8 mm a dropped cube lands from its
+# target. With no such point, the return refuses rather than stack.
+SHELF_DROP_CLEARANCE = 0.046
+# Drop points tried, in turn, if the best does not plan, each this far (m) from the others.
+SHELF_DROP_TARGETS = 3
+SHELF_DROP_TARGET_SPACING = 0.03
 BOX_RELEASE_Z = 0.32
 PLACE_REACHES = (0.8, 0.7, 0.6)
 PLACE_Y_OFFSETS = (0.0, 0.1, -0.1)
@@ -1569,14 +1588,105 @@ class KinderSkills:
         FloorPicks(kinder=self).pick(cube=cube, label="return_pick")
         if not self.held(name=cube):
             raise SkillFailed(f"return_cube_to_shelf: {cube} did not come with the hand")
-        board = float(self.shelf.board[1])
+        points = self.shelf_drop_points()
+        if not points:
+            raise SkillFailed("return_cube_to_shelf: no free spot on the cube shelf")
+        board = float(self.shelf.board[CUBE_SHELF])
+        dx, dy = self.held_cube_offset(cube=cube)
         self.place(
             cube=cube,
-            hand_targets=[np.array([*SHELF_PLACE_XY, board + rise]) for rise in SHELF_DROP_RISES],
+            hand_targets=[
+                np.array([x - dx, y - dy, board + rise])
+                for x, y in points
+                for rise in SHELF_DROP_RISES
+            ],
             label="return_place",
         )
         if ("OnShelf", (cube,)) not in self.backend.abstract_atoms():
             raise SkillFailed(f"return_cube_to_shelf: {cube} is not resting on the cube shelf")
+
+    def held_cube_offset(self, *, cube: str) -> tuple[float, float]:
+        """Where the held cube hangs (m, world xy) from the hand target `place` drives
+        the end effector to: the measured end-effector-to-cube transform, turned by the
+        placement's fixed hand orientation. A cube picked off the floor hangs ~46 mm
+        ahead of it (the fixed hand target x = 1.45 landed cubes at x = 1.496)."""
+        import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
+
+        held = self.held_transform(sim=self.planning_sim(), cube=cube)
+        orientation = shelf_skills.ARM_MOVEMENT_CUPBOARD.orientation
+        offset = Rotation.from_quat(orientation).apply(np.asarray(held.position, dtype=float))
+        return float(offset[0]), float(offset[1])
+
+    def shelf_region(self) -> tuple[float, float, float, float]:
+        """KINDER's `cubes_init_region` in world (x0, y0, x1, y1): its ranges, in the
+        cupboard's frame, turned by the cupboard's yaw and moved to its position."""
+        cupboard = self.core._fixtures_dict[CUPBOARD]  # noqa: SLF001
+        x0, y0, _, x1, y1, _ = cupboard.regions[CUBE_REGION]["ranges"][0]
+        yaw = float(cupboard.yaw)
+        turn = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+        corners = np.array([[x, y] for x in (x0, x1) for y in (y0, y1)]) @ turn.T
+        corners += np.asarray(cupboard.position, dtype=float)[:2]
+        low, high = corners.min(axis=0), corners.max(axis=0)
+        return float(low[0]), float(low[1]), float(high[0]), float(high[1])
+
+    def shelf_cube_xys(self) -> list[np.ndarray]:
+        """Where (world xy) each cube lies on the cube shelf, the held cube aside:
+        anything inside the cupboard between the cube board and the board above."""
+        shelf = self.shelf
+        out = []
+        for name in (f"cube_{i}" for i in range(5)):
+            if self.held(name=name):
+                continue
+            x, y, z = shelf.cube_position(cube=name)
+            if x > shelf.front_x and shelf.board[CUBE_SHELF] < z < shelf.board[WIPER_SHELF]:
+                out.append(np.array([x, y]))
+        return out
+
+    def shelf_drop_points(self) -> list[tuple[float, float]]:
+        """Where a held cube should land on the cube shelf, best first: the grid points
+        of the drop region (`shelf_region`, inset by `SHELF_DROP_X_MARGINS` and
+        `SHELF_DROP_Y_MARGIN`) at least `SHELF_DROP_CLEARANCE` from every cube on the
+        shelf, ranked by their distance to the nearest of them, farthest first (ties:
+        nearest the region's centre, then smallest x, y), taking up to
+        `SHELF_DROP_TARGETS` that are `SHELF_DROP_TARGET_SPACING` apart. Deterministic
+        in the cubes' positions; empty when no point is clear."""
+        x0, y0, x1, y1 = self.shelf_region()
+        near, far = SHELF_DROP_X_MARGINS
+        x0, x1 = x0 + near, x1 - far
+        y0, y1 = y0 + SHELF_DROP_Y_MARGIN, y1 - SHELF_DROP_Y_MARGIN
+        centre = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
+        xs, ys = self.grid(low=x0, high=x1), self.grid(low=y0, high=y1)
+        if not xs or not ys:
+            return []
+        cubes = self.shelf_cube_xys()
+
+        def free(*, point: tuple[float, float]) -> float:
+            xy = np.asarray(point)
+            return min((float(np.linalg.norm(xy - c)) for c in cubes), default=np.inf)
+
+        def rank(*, point: tuple[float, float]) -> tuple[float, float, float, float]:
+            near_centre = round(float(np.linalg.norm(np.asarray(point) - centre)), 6)
+            return (-round(free(point=point), 6), near_centre, *point)
+
+        out: list[tuple[float, float]] = []
+        points = [(x, y) for x in xs for y in ys if free(point=(x, y)) >= SHELF_DROP_CLEARANCE]
+        for point in sorted(points, key=lambda p: rank(point=p)):
+            if all(
+                np.hypot(point[0] - a, point[1] - b) >= SHELF_DROP_TARGET_SPACING for a, b in out
+            ):
+                out.append(point)
+            if len(out) == SHELF_DROP_TARGETS:
+                break
+        return out
+
+    @staticmethod
+    def grid(*, low: float, high: float) -> list[float]:
+        """`SHELF_DROP_GRID`-spaced values from `low` to `high`, centred in that range."""
+        if high < low:
+            return []
+        count = int(np.floor((high - low) / SHELF_DROP_GRID + 1e-9))
+        start = (low + high) / 2 - count * SHELF_DROP_GRID / 2
+        return [float(start + i * SHELF_DROP_GRID) for i in range(count + 1)]
 
     def sweep_shelf(self, *, height: float, speed: float) -> None:
         if self.shelf.in_hand is None:

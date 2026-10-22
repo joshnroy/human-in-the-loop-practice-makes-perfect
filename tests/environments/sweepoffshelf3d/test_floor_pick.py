@@ -88,9 +88,11 @@ def test_a_cube_beside_the_box_is_returned_to_the_shelf(*, env, states):
 @pytest.mark.parametrize(
     ("state_id", "cube"),
     [
-        # A real practice state: 4-6 cm from the box's far wall. (In -17, the same cube
-        # picked is dropped onto cube_0, which sits where the return lets go.)
+        # A real practice state: 4-6 cm from the box's far wall.
         ("harvest-ReturnCubeToShelfFromBox-18", "cube_1"),
+        # The same cube, with cube_0 on the shelf where a fixed place point let go: it
+        # was dropped onto cube_0 until the drop point moved to a free spot.
+        ("harvest-ReturnCubeToShelfFromBox-17", "cube_1"),
         # The one box state upstream's pick already returned.
         ("container-in-mid-centre", "cube_4"),
     ],
