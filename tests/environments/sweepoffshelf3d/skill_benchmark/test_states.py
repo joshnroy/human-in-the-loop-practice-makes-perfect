@@ -7,6 +7,7 @@ import pytest
 
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import (
     CupboardGeometry,
+    FloorSupport,
     Placements,
     StateCapture,
     StateSet,
@@ -119,3 +120,21 @@ def test_panel_and_shelf_edge_placements_sit_outside_and_inside_the_panels() -> 
     for _, x, y in Placements.shelf_edges(cupboard=cupboard, half=0.01):
         assert abs(y) + 0.01 < 0.291
         assert x - 0.01 > 1.373 and x + 0.01 < 1.617
+
+
+@pytest.mark.parametrize(
+    ("supports", "valid"),
+    [
+        ({"floor"}, True),
+        ({"cupboard_1_shelf1"}, False),  # over the far rim, on the cupboard's bottom board
+        ({"cube_1"}, False),  # stacked on another cube
+        ({"floor", "cube_1"}, False),  # tipped against another cube
+        ({"floor", "box_0_wall"}, False),  # leaning on the box's rim
+        (set(), False),  # resting on nothing: not settled
+    ],
+)
+def test_a_floor_case_needs_its_cube_resting_on_the_floor_alone(*, supports, valid) -> None:
+    reason = FloorSupport.judge(name="cube_2", supports=supports)
+    assert (reason is None) is valid
+    if reason is not None:
+        assert "cube_2" in reason
