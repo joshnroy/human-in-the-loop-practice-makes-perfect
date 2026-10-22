@@ -166,6 +166,28 @@ def test_an_action_the_environment_never_reported_is_still_recorded(*, tmp_path:
     assert action.outcome == "no plan"
 
 
+def test_a_skill_reported_by_name_only_is_named_by_its_label(*, tmp_path: Path) -> None:
+    """An environment that knows only which skill runs (SweepOffShelf3D) still writes
+    the same action line, from the label, as one whose actions were never reported."""
+    world = _World()
+    path = tmp_path / "recording.jsonl"
+    writer = _writer(path=path, world=world)
+    writer.begin_segment(phase=Phase.PRACTICE)
+    writer.record_skill(name="Pick", objects=(), params=(), controller={})
+    world.state["cube"] = [0.0, 0.0, 1.0]
+    writer.record_tick(state=world.plain())
+    writer.robot_action(
+        label="random: Pick(robot, cube), params=[0.5]", start_step=0, end_step=1, success=True
+    )
+    writer.close()
+    action = next(e for e in RunRecordReader.entries(path=path) if isinstance(e, ActionEntry))
+    assert (action.skill, action.objects, action.num_ticks) == (
+        "random: Pick",
+        ["robot", "cube"],
+        1,
+    )
+
+
 def test_a_skill_left_unfinished_is_flushed_on_close(*, tmp_path: Path) -> None:
     world = _World()
     path = tmp_path / "recording.jsonl"

@@ -141,16 +141,19 @@ class RunRecordWriter(SkillTickSink):
     ) -> None:
         if self.output_path is None:
             return
+        objects = [
+            part.strip()
+            for part in label.partition("(")[2].partition(")")[0].split(",")
+            if part.strip()
+        ]
         pending = self._pending or _PendingSkill(
-            name=label.split("(", 1)[0],
-            objects=[
-                part.strip()
-                for part in label.partition("(")[2].partition(")")[0].split(",")
-                if part.strip()
-            ],
-            params=[],
-            controller={},
+            name=label.split("(", 1)[0], objects=objects, params=[], controller={}
         )
+        if not pending.objects:
+            # A skill reported by name only (it brought ticks, not its binding) is named
+            # by the label exactly as an unreported one is, so recording ticks never
+            # changes the action line.
+            pending.name, pending.objects = label.split("(", 1)[0], objects
         self._pending = None
         if self.state_provider is not None:
             settled = self.state_provider()
