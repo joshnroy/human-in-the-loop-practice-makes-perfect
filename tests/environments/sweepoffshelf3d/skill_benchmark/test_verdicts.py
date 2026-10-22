@@ -208,8 +208,8 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
     ("skill", "needed", "out_of"),
     [
         ("PickCubeFromShelf", 97, 100),
-        ("PickCubeFromFloor", 11, 12),
-        ("ReturnCubeToShelfFromFloor", 11, 12),
+        ("PickCubeFromFloor", 11, 11),
+        ("ReturnCubeToShelfFromFloor", 11, 11),
     ],
 )
 def test_a_thresholded_skill_passes_at_exactly_its_threshold_and_fails_one_below(
@@ -267,11 +267,11 @@ def test_a_changed_case_count_is_refused_rather_than_judged(*, total: int) -> No
 
 
 def test_an_invalid_gated_case_changes_the_denominator_and_is_refused() -> None:
-    results = _runs(skill="PickCubeFromFloor", family="near_walls", successes=12, total=12)
+    results = _runs(skill="PickCubeFromFloor", family="near_walls", successes=11, total=11)
     results[0] = results[0].model_copy(update={"label": "invalid"})
     verdict = _verdict(skill="PickCubeFromFloor", results=results)
     assert not verdict.passed
-    assert "11 gated case(s)" in verdict.reason
+    assert "10 gated case(s)" in verdict.reason
 
 
 def test_a_thresholded_skill_with_no_valid_case_does_not_pass() -> None:

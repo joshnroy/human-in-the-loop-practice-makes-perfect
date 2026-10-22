@@ -31,8 +31,8 @@ from .types import CaseResult, SkillThreshold, SkillVerdict
 # denominator, and the gate then refuses instead of passing at a rate never agreed.
 THRESHOLDS: dict[str, SkillThreshold] = {
     S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=97, out_of=100),
-    S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=12),
-    S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=12),
+    S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
+    S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
         min_successes=3, out_of=8, families=frozenset({"harvested"})
     ),
