@@ -1,8 +1,10 @@
 import argparse
 import sys
+from pathlib import Path
 from typing import Any
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.core.practice_costs import SkillStepCosts
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -398,6 +400,14 @@ class Tossing3DPomdpCli(EesCli):
             help="Select linear G(C, theta) = g(theta) - lambda * C with this "
             "coefficient. Omit to use hard-budget G with B=20 instead.",
         )
+        parser.add_argument(
+            "--pomdp-skill-step-costs",
+            type=Path,
+            default=None,
+            help="A SkillStepCosts JSON (scripts/skill_step_costs.py): price each robot "
+            "skill at this fixed number of control steps instead of the learned "
+            "per-grounding average. The practice budget is still charged real steps.",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -431,6 +441,11 @@ class Tossing3DPomdpCli(EesCli):
         if args.pomdp_solver == "expectimax":
             sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
+        skill_step_costs = (
+            None
+            if args.pomdp_skill_step_costs is None
+            else dict(SkillStepCosts.load(path=args.pomdp_skill_step_costs).skill_steps)
+        )
         env_cli.run_method(
             args=args,
             method_factory=lambda ctx: Tossing3DPomdpMethod(
@@ -478,6 +493,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
+                pomdp_skill_step_costs=skill_step_costs,
                 pomdp_domain=domain,
                 decision_log=(
                     args.output_dir

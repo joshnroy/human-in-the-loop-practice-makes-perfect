@@ -1254,6 +1254,7 @@ class StepPracticeRunner:
                     "robot_duration_prior_steps": getattr(
                         method, "robot_duration_prior_steps", None
                     ),
+                    "robot_skill_step_costs": getattr(method, "pomdp_skill_step_costs", None),
                 },
             )
             StepFiles.json(
