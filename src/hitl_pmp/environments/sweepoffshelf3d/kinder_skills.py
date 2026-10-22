@@ -31,8 +31,10 @@ Where each controller comes from:
   7. the shelf pick is closed loop over its own candidates (`pick_cube_from_shelf`):
      grasps on the cube as it lies now, the pads on opposite faces (`shelf_hands`),
      each solved and checked in MuJoCo before KINDER plans to
-     it (`shelf_candidates`), carried out of the cupboard's front before the retract
-     plan (`lifter`), and on a miss, looked at again and replanned.
+     it (`shelf_candidates`), none whose pads would sweep another cube on the way in
+     or as they close (`PadSweep`) -- refused, not shoved -- carried out of the
+     cupboard's front before the retract plan (`lifter`), and on a miss, looked at
+     again and replanned.
 - `sweep_shelf`, `return_wiper`: KINDER has no controller for either (its
   `SweepOriController` sweeps a floor-standing target, 0/15 here), so they are this
   package's, built on `ShelfSkills`' routines, starting from the wiper as it is actually
@@ -42,6 +44,7 @@ Nothing here imports KINDER at module scope: `kinder_models` is imported on firs
 """
 
 import contextlib
+import itertools
 from collections.abc import Callable, Generator
 from typing import Any, ClassVar
 
@@ -162,6 +165,23 @@ ShelfCandidate = tuple[np.ndarray, tuple[np.ndarray, ...], np.ndarray, np.ndarra
 # close, 11 mm long), with a few millimetres' margin.
 JAW_HALF_WIDTH = 0.016
 JAW_DEPTH = (0.0, 0.05)
+# The space each pad passes through on a shelf pick (`PadSweep`) is kept this far (m)
+# from every other cube. Struck from 3-3.5 cm away, centre to centre, neighbours were
+# shoved 2-7 cm or carried off in the jaws beside the target (2026-10-22). Over the
+# skill benchmark's 100 shelf picks, a cube has no reachable grasp this clear in 2 of
+# the 74 that `main` picked leaving every neighbour within 5 mm of where it was, and
+# in 12 of the 23 it picked by moving one further; at 5 mm, 6/74 and 13/23, and at
+# 35 mm, 34/74 and 19/23.
+SHELF_PICK_NEIGHBOUR_CLEARANCE = 0.002
+# The 2F-85's linkage joints fully closed (rad), read off the live sim; each side's
+# `robot_<side>_<joint>`, coupler at 0 throughout. The pads' travel is posed at
+# fractions `PAD_TRAVEL_STEP` apart of these.
+GRIPPER_CLOSED = {"driver_joint": 0.787, "spring_link_joint": 0.785, "follower_joint": -0.766}
+PAD_TRAVEL_STEP = 0.05
+# The descent to a grasp is checked at hand poses at most this far (m) apart.
+SWEEP_STEP = 0.005
+# An oriented box: (centre, rotation, half-extents).
+OrientedBox = tuple[np.ndarray, np.ndarray, np.ndarray]
 # A cupboard geom whose top is no more than this (m) above the cube's bottom face is the
 # board the cube rests on, not something the closing pads could clamp.
 SUPPORT_SLACK = 0.002
@@ -1003,11 +1023,12 @@ class KinderSkills:
             raise SkillFailed("pick_cube_from_shelf: the hand is not empty")
         missed: list[str] = []
         tried: list[np.ndarray] = []
+        refused: list[str] = []
         for _ in range(SHELF_PICK_EXECUTIONS):
             if not self.on_cube_shelf(cube=cube):
                 break
             try:
-                planned = self.shelf_pick_attempt(cube=cube, tried=tried)
+                planned = self.shelf_pick_attempt(cube=cube, tried=tried, refused=refused)
             except StepBudgetExhausted:
                 raise
             except SkillFailed as exc:
@@ -1016,7 +1037,10 @@ class KinderSkills:
             if not planned:
                 if missed:
                     break
-                raise SkillFailed(f"pick_cube_from_shelf: no grasp on {cube} planned")
+                swept = f"; refused grasps sweeping {', '.join(sorted(set(refused)))}"
+                raise SkillFailed(
+                    f"pick_cube_from_shelf: no grasp on {cube} planned{swept if refused else ''}"
+                )
             if self.held(name=cube):
                 return
             missed.append(f"{cube} did not come with the hand")
@@ -1038,11 +1062,14 @@ class KinderSkills:
         x, _, z = shelf.cube_position(cube=cube)
         return bool(x > shelf.front_x and abs(z - shelf.board[CUBE_SHELF] - 0.01) < 0.01)
 
-    def shelf_pick_attempt(self, *, cube: str, tried: list[np.ndarray]) -> bool:
+    def shelf_pick_attempt(
+        self, *, cube: str, tried: list[np.ndarray], refused: list[str] | None = None
+    ) -> bool:
         """One grasp execution, from the first (grasp, base) candidate whose arm
         configurations are clear in MuJoCo and whose plans KINDER finds; False when
         none plans (nothing moved). Approach directions in `tried` already missed this
-        cube and are not tried again; the one executed is added."""
+        cube and are not tried again; the one executed is added. Cubes that ruled
+        grasps out (`shelf_candidates`) are added to `refused`."""
         import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
 
         shelf = self.shelf
@@ -1085,7 +1112,8 @@ class KinderSkills:
             return None
 
         for drives, (hand, entry, base, grasp_conf, pre_conf) in enumerate(
-            self.shelf_candidates(cube=cube, centre=centre, tried=tried), start=1
+            self.shelf_candidates(cube=cube, centre=centre, tried=tried, refused=refused),
+            start=1,
         ):
             if failures.get(id(hand), 0) >= SHELF_PICK_PLANS_PER_GRASP:
                 continue
@@ -1134,16 +1162,22 @@ class KinderSkills:
         return False
 
     def shelf_candidates(
-        self, *, cube: str, centre: np.ndarray, tried: list[np.ndarray]
+        self,
+        *,
+        cube: str,
+        centre: np.ndarray,
+        tried: list[np.ndarray],
+        refused: list[str] | None = None,
     ) -> Generator[ShelfCandidate, None, None]:
         """(grasp, entry, base, grasp arm, arm at the entry's first pose) candidates
-        clear in MuJoCo, lazily, in `shelf_hands` order -- except that a grasp with
-        another cube where the pads close (`cube_between_pads`) waits until every other
-        has been offered, and so does one whose hand touches another cube at the grasp
-        or the pre-grasp: in a cluster the jaws squeeze or shove the neighbour, but in a
-        tight one there may be no other grasp, and a grasp grazing a neighbour still
-        picked the cube on `main`. A grasp whose pads would close on the cupboard
-        itself (`cupboard_between_pads`) is not offered at all.
+        clear in MuJoCo, lazily, in `shelf_hands` order. A grasp whose pads would close
+        on the cupboard itself (`cupboard_between_pads`) is not offered, nor is one
+        whose pads pass within `SHELF_PICK_NEIGHBOUR_CLEARANCE` of another cube on the
+        way in or as they close (`neighbour_in_sweep`; the cube is added to `refused`),
+        nor one whose hand touches another cube at the grasp or the pre-grasp. In a
+        cluster those were offered last, after every other grasp, and were then the
+        only grasps left: the jaws struck neighbours 3-3.5 cm away, shoving them 2-7 cm
+        or carrying them off beside the target. With no other grasp, the pick refuses.
 
         Each pre-grasp is an entry of its own; after them, one that starts outside the
         cupboard's front (`shelf_exit`) and comes in through the first pre-grasp: into
@@ -1157,14 +1191,23 @@ class KinderSkills:
         cube by a side panel had one clear grasp, clear from 16/39 bases but with
         pre-grasps from only three of them, all after a run of three unreachable ones.
         The first pass is unchanged, so a pick it finds pays nothing for the second."""
+        refused = [] if refused is None else refused
         bases = [b for b in self.shelf_pick_bases(centre=centre) if self.base_clear(base=b)]
         drivable: dict[int, bool] = {}
-        crowded: list[ShelfCandidate] = []
         given_up: list[tuple[np.ndarray, tuple[np.ndarray, ...], int]] = []
-        for hand, pres in self.shelf_hands(cube=cube, centre=centre):
+        for hand, all_pres in self.shelf_hands(cube=cube, centre=centre):
             if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried):
                 continue
             if self.cupboard_between_pads(hand=hand, cube=cube):
+                continue
+            if self.swept(path=[hand], cube=cube, refused=refused):
+                continue
+            pres = tuple(
+                pre
+                for pre in all_pres
+                if not self.swept(path=[pre, hand], cube=cube, refused=refused)
+            )
+            if not pres:
                 continue
             unreachable = 0
             clear_somewhere = False
@@ -1189,10 +1232,8 @@ class KinderSkills:
                     base=base,
                     grasp_conf=grasp_conf,
                     cube=cube,
-                    crowded=crowded,
+                    refused=refused,
                 )
-        yield from crowded
-        crowded = []
         for hand, pres, start in given_up:
             for i in range(start, len(bases)):
                 if i not in drivable:
@@ -1207,9 +1248,8 @@ class KinderSkills:
                         base=bases[i],
                         grasp_conf=grasp_conf,
                         cube=cube,
-                        crowded=crowded,
+                        refused=refused,
                     )
-        yield from crowded
 
     def shelf_base_candidates(
         self,
@@ -1219,14 +1259,14 @@ class KinderSkills:
         base: np.ndarray,
         grasp_conf: np.ndarray,
         cube: str,
-        crowded: list[ShelfCandidate],
+        refused: list[str],
     ) -> Generator[ShelfCandidate, None, None]:
         """`shelf_candidates`' candidates for one grasp, clear from `base`: one per
-        pre-grasp clear on the grasp's IK branch, then the way in from outside the front.
-        Those whose hand touches or squeezes another cube go to `crowded` instead."""
-        squeezed = bool(
-            self.cube_between_pads(base=base, arm=grasp_conf, cube=cube)
-        ) or self.touches_other_cube(base=base, arm=grasp_conf, cube=cube)
+        pre-grasp clear on the grasp's IK branch, then the way in from outside the front
+        if the pads' way in from there is clear too. None whose hand touches another
+        cube at the grasp or at the entry's first pose."""
+        if self.touches_other_cube(base=base, arm=grasp_conf, cube=cube):
+            return
         entries: list[tuple[tuple[np.ndarray, ...], np.ndarray]] = []
         for pre in pres:
             pre_conf = self.shelf_pre_conf(pre=pre, base=base, grasp_conf=grasp_conf, cube=cube)
@@ -1235,14 +1275,72 @@ class KinderSkills:
         if entries:
             (first,), first_conf = entries[0]
             out, out_conf = self.shelf_exit(pre=first, pre_conf=first_conf, base=base, cube=cube)
-            if out_conf is not None:
+            if out_conf is not None and not self.swept(
+                path=[out, first, hand], cube=cube, refused=refused
+            ):
                 entries.append(((out, first), out_conf))
         for entry, conf in entries:
-            candidate = (hand, entry, base, grasp_conf, conf)
-            if squeezed or self.touches_other_cube(base=base, arm=conf, cube=cube):
-                crowded.append(candidate)
-            else:
-                yield candidate
+            if not self.touches_other_cube(base=base, arm=conf, cube=cube):
+                yield (hand, entry, base, grasp_conf, conf)
+
+    def swept(self, *, path: list[np.ndarray], cube: str, refused: list[str]) -> bool:
+        """Whether `neighbour_in_sweep` finds a cube along `path`; if so, it is added
+        to `refused`."""
+        other = self.neighbour_in_sweep(path=path, cube=cube)
+        if other is not None:
+            refused.append(other)
+        return other is not None
+
+    def neighbour_in_sweep(self, *, path: list[np.ndarray], cube: str) -> str | None:
+        """Another cube within `SHELF_PICK_NEIGHBOUR_CLEARANCE` of the space the pads
+        pass through (`PadSweep`) on the way in along `path`, pinch-site poses from
+        the first pre-grasp to the grasp, and as they close at its last pose."""
+        travel = self.pad_travel()
+        sweep = PadSweep.descent(path=path, pads=travel[0]) + PadSweep.closing(
+            hand=path[-1], travel=travel
+        )
+        others = {}
+        for i in range(len(O.cubes)):
+            other = f"cube_{i}"
+            if other != cube:
+                pose = self.cube_pose(cube=other)
+                others[other] = (pose[:3, 3], pose[:3, :3], np.full(3, O.cube_half_size))
+        return PadSweep.first_hit(
+            sweep=sweep, others=others, clearance=SHELF_PICK_NEIGHBOUR_CLEARANCE
+        )
+
+    def pad_travel(self) -> list[list[tuple[np.ndarray, np.ndarray]]]:
+        """Each side's pads as (low, high) corners in the pinch site's frame, at stages
+        `PAD_TRAVEL_STEP` apart from fully open until they would pass the face of the
+        2 cm cube: posed on the gripper's own kinematics, its linkage joints at that
+        fraction of `GRIPPER_CLOSED`."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.ik_data
+        signs = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
+        out: list[list[tuple[np.ndarray, np.ndarray]]] = []
+        for t in np.arange(0.0, 1.0 + 1e-9, PAD_TRAVEL_STEP):
+            d.qpos[:] = shelf.data.qpos
+            for side in ("left", "right"):
+                for joint, closed in GRIPPER_CLOSED.items():
+                    d.qpos[m.jnt_qposadr[m.joint(f"robot_{side}_{joint}").id]] = t * closed
+            shelf.mujoco.mj_kinematics(m, d)
+            site = Frames.pose(
+                rotation=d.site_xmat[shelf.site].reshape(3, 3), position=d.site_xpos[shelf.site]
+            )
+            here = np.linalg.inv(site)
+            pads = []
+            for side_geoms in shelf.pad_sides:
+                corners = []
+                for g in side_geoms:
+                    rotation = here[:3, :3] @ d.geom_xmat[g].reshape(3, 3)
+                    centre = (here @ np.r_[d.geom_xpos[g], 1.0])[:3]
+                    corners.append(centre + (rotation @ (signs * m.geom_size[g]).T).T)
+                stacked = np.concatenate(corners)
+                pads.append((stacked.min(axis=0), stacked.max(axis=0)))
+            if out and min(min(abs(lo[0]), abs(hi[0])) for lo, hi in pads) < O.cube_half_size:
+                break
+            out.append(pads)
+        return out
 
     @staticmethod
     def fixed_ik(*, conf: np.ndarray) -> Callable[..., list[float]]:
@@ -1710,6 +1808,59 @@ class KinderSkills:
             self.note(
                 stage="return_wiper", kind="scripted", reason=f"wiper home ({home:.3f} m); {exc}"
             )
+
+
+class PadSweep:
+    """The space the gripper's pads pass through on a pick, as oriented boxes: the open
+    pads at each pose of the descent to the grasp, and the pads at each stage of their
+    travel as they close there.
+
+    Pads are given as one (low, high) corner pair per side, axis-aligned in the pinch
+    site's frame (x the closing axis, z the approach). A travel is a list of those,
+    open first (`KinderSkills.pad_travel`): the 2F-85's pads close on an arc, riding
+    forward 13 mm along the approach as they come in, so no one box bounds them
+    without taking in space they never reach."""
+
+    @staticmethod
+    def closing(
+        *, hand: np.ndarray, travel: list[list[tuple[np.ndarray, np.ndarray]]]
+    ) -> list[OrientedBox]:
+        """The pads at every stage of `travel`, at grasp `hand`."""
+        return [
+            PadSweep.placed(hand=hand, low=np.asarray(low), high=np.asarray(high))
+            for pads in travel
+            for low, high in pads
+        ]
+
+    @staticmethod
+    def descent(
+        *, path: list[np.ndarray], pads: list[tuple[np.ndarray, np.ndarray]]
+    ) -> list[OrientedBox]:
+        """The open pads at hand poses along `path` (pre-grasp first, grasp last),
+        straight lines between them, at most `SWEEP_STEP` apart."""
+        poses = [path[0]]
+        for start, end in itertools.pairwise(path):
+            poses += Frames.line(start=start, end=end, step=SWEEP_STEP)
+        return [
+            PadSweep.placed(hand=pose, low=low, high=high) for pose in poses for low, high in pads
+        ]
+
+    @staticmethod
+    def placed(*, hand: np.ndarray, low: np.ndarray, high: np.ndarray) -> OrientedBox:
+        """The site-frame box (low, high) at hand pose `hand`, in the world."""
+        centre = hand[:3, :3] @ (0.5 * (low + high)) + hand[:3, 3]
+        return centre, hand[:3, :3], 0.5 * (high - low)
+
+    @staticmethod
+    def first_hit(
+        *, sweep: list[OrientedBox], others: dict[str, OrientedBox], clearance: float
+    ) -> str | None:
+        """The first of `others` that comes within `clearance` of any box in `sweep`."""
+        for name, (centre, rotation, half) in others.items():
+            grown = (centre, rotation, np.asarray(half) + clearance)
+            if any(KinderSkills.boxes_overlap(first=box, second=grown) for box in sweep):
+                return name
+        return None
 
 
 class PlanFollower:
