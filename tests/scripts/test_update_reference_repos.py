@@ -281,7 +281,7 @@ def test_a_non_repository_fails_rather_than_reporting_success(*, tmp_path: Path)
     assert result.returncode == EXIT_FAILED, result.stdout + result.stderr
 
 
-def test_the_recorded_pins_are_the_four_reference_repos() -> None:
+def test_the_recorded_pins_are_the_five_reference_repos() -> None:
     """`.gitmodules` is the pin now, so the set of submodules it records is part of the
     contract the script implements. Read from the file, which needs no network and does
     not touch the real `reference/` checkouts."""
@@ -291,11 +291,12 @@ def test_the_recorded_pins_are_the_four_reference_repos() -> None:
         "reference/kinder-baselines",
         "reference/predicators",
         "reference/prpl-tidybot",
+        "reference/tidybot_real",
     ):
         assert f"path = {path}" in gitmodules
     # CI's `actions/checkout` clones submodules anonymously, so an SSH URL fails there.
     urls = [line.split("=", 1)[1].strip() for line in gitmodules.splitlines() if "url =" in line]
-    assert len(urls) == 4
+    assert len(urls) == 5
     assert all(url.startswith("https://github.com/") for url in urls), urls
     # Every URL is now the canonical upstream remote. The two KINDER rows pointed at
     # forks Josh controls until this changed, because a submodule *hard-fails* when a
@@ -306,6 +307,7 @@ def test_the_recorded_pins_are_the_four_reference_repos() -> None:
     assert "Princeton-Robot-Planning-and-Learning/kinder-baselines" in gitmodules
     assert "Learning-and-Intelligent-Systems/predicators" in gitmodules
     assert "Princeton-Robot-Planning-and-Learning/prpl-tidybot" in gitmodules
+    assert "yixuanhuang98/tidybot_real" in gitmodules
     assert "joshnroy/" not in gitmodules
 
 

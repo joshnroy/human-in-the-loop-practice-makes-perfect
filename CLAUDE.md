@@ -32,23 +32,26 @@ cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./b
 
 | path | url |
 | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` |
-| `reference/kindergarden` | `joshnroy/kindergarden` |
+| `reference/kinder-baselines` | `Princeton-Robot-Planning-and-Learning/kinder-baselines` |
+| `reference/kindergarden` | `Princeton-Robot-Planning-and-Learning/kindergarden` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` |
 | `reference/prpl-tidybot` | `Princeton-Robot-Planning-and-Learning/prpl-tidybot` |
+| `reference/tidybot_real` | `yixuanhuang98/tidybot_real` |
 
-**All four point at the canonical upstream remote**, and the two KINDER rows did not
+**All five point at the canonical upstream remote**, and the two KINDER rows did not
 until 2026-08-14. Forks bought exactly one thing: a submodule *hard-fails* when its pinned
 SHA is force-pushed away, and a fork Josh controls cannot be force-pushed under us. That
-protection is given up here, knowingly. Two rows to watch: `kinder-baselines` @ `2f3fc902`
-is reachable from four PRPL branches, but the open-gripper pin above it is reachable from
-one **open topic branch**, so a rebase there orphans it; and `kindergarden` @ `c9f00e8` is
-reachable from **no** PRPL ref at all — `git submodule update --init` succeeds only because
-GitHub serves the bare SHA out of the fork network's shared object store, which holds only
-while the fork does. `predicators` never needed a fork: read-only reference, pinned on its
+protection is given up here, knowingly. The two KINDER rows carry it: neither pin is on
+lab `main`. `kinder-baselines` @ `427ad6c` is reachable from two `keep/` branches
+(`keep/hitl-pmp-main-pin-427ad6c`, `keep/hitl-pmp-480-pin-2a7c1b4`) and two `codex/`
+topic branches; `kindergarden` @ `0dac89e` from `keep-alive/0dac89e` and two topic
+branches. The keep branches are what hold each pin, so deleting one orphans it once the
+topic branches move. `predicators` never needed a fork: read-only reference, pinned on its
 default branch (`master`, not `main`). `prpl-tidybot` is pinned to the head of open
 PR #157 (`josh/tidybot-real-tossing3d`), not lab `main`: under the josh-main convention
-#157 is approved but not merged, so a force-push to that branch orphans the pin.
+#157 is approved but not merged, so a force-push to that branch can orphan the pin (other
+`josh/` topic branches also contain it today). `tidybot_real` is Yixuan Huang's old
+real-robot toss stack, a read-only reference pinned on its default branch (`main`).
 
 A fresh clone gets empty directories until you populate them:
 

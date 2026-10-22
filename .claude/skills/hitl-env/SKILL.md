@@ -63,14 +63,12 @@ the `core` / `environments` / `methods` dependency direction was violated — a 
 architectural error, not a lint nit.
 
 **Budget.** The full suite is ~2 min 20 s; lint/typecheck/import-linter are cheap once
-warm (mypy ~10 s cold). Run targeted tests while iterating
-(`scripts/with_env.sh pytest tests/<path> -x`, or `-k <expr>`); run the full gate once
-before pushing. Re-running everything *is* correct when chasing a failure whose blast
-radius you do not know, or after touching `core/`. Never skip it entirely before reporting
-done. "Push and let CI check it" is not cheaper — CI is ~4.5 min wall-clock with a slower
-path back to a fix. Get the current test count with
-`scripts/with_env.sh pytest --collect-only -q | tail -1` rather than trusting a written-down
-number.
+warm (mypy ~10 s cold). Locally, run the touched and new tests
+(`scripts/with_env.sh pytest tests/<path> -x`, or `-k <expr>`) plus the cheap ruff,
+format, mypy and lint-imports checks above; then push and let CI run the full suite, per
+`CLAUDE.md`. Run the full suite locally only when chasing a failure whose blast radius you do not know. Get the
+current test count with `scripts/with_env.sh pytest --collect-only -q | tail -1` rather
+than trusting a written-down number.
 
 ## 4. Known sharp edges
 
