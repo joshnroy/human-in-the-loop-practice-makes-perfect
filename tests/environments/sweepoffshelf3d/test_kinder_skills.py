@@ -356,6 +356,48 @@ def test_an_arm_stranded_in_the_cupboard_front_is_retracted_after_the_next_skill
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
 
 
+# Where a SweepShelf leaves the arm once a human reset_wiper has emptied the hand
+# (seed 0, 2026-10-22): 2.90 rad from HOME_ARM.
+SWEPT_BASE = (0.453, 0.145, 0.0)
+SWEPT_ARM = (0.246, 0.581, 2.818, -2.245, -0.142, 0.797, 4.958)
+# Arm-joint velocity reversals per second, worst joint. Following at gain 2, every
+# control step mirrored the arm about its waypoint: ~10/s on every joint, the most a
+# 10 Hz loop can make. At gain 1: 0.13/s; with KINDER's arm torque recomputed every
+# substep instead of held for the step: 0.
+MAX_REVERSALS_PER_SECOND = 2.0
+
+
+class _ArmVelocities:
+    """A `scripted_skills.Recorder` keeping the arm's joint velocities each step."""
+
+    def __init__(self) -> None:
+        self.qvel = []
+
+    def on_step(self, *, skills, label):
+        self.qvel.append(skills.data.qvel[skills.va].copy())
+
+    def mark(self, *, skills, label):
+        pass
+
+
+def test_the_retract_from_a_raised_arm_reaches_home_without_oscillating(*, env):
+    """At gain 2 this retract crawled: 686 control steps at one waypoint, 426 at the
+    next, its 1220-step cap spent 0.58 rad short of home."""
+    env.reset_to_seed(seed=0)
+    _pose_robot(env=env, base=SWEPT_BASE, arm=SWEPT_ARM)
+    skills = env.controllers()._skills  # noqa: SLF001
+    velocities = _ArmVelocities()
+    skills.recorder = velocities
+    try:
+        env.controllers()._kinder.retract(label="raised_arm_retract")  # noqa: SLF001
+    finally:
+        skills.recorder = None
+    assert _arm_from_home(env=env) < RETRACT_TOLERANCE
+    v = np.array(velocities.qvel)
+    reversals = np.sum(np.sign(v[1:]) * np.sign(v[:-1]) < 0, axis=0) / (len(v) * 0.1)
+    assert reversals.max() < MAX_REVERSALS_PER_SECOND, reversals.round(2).tolist()
+
+
 def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypatch):
     """`HoldingWiper` is re-evaluated at every control step of a sweep. The stage-5
     rerun's wiper turned 93 deg in the grasp and fell into the box; the sweep carried on

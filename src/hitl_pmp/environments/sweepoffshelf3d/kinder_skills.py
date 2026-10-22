@@ -82,6 +82,11 @@ GRIP_STEPS = 20
 PASS_TOLERANCE = 0.04
 FINAL_TOLERANCE = 0.02
 APPROACH_FINAL_TOLERANCE = 5e-3
+# Joint-error gain the followers command each control step with (a joint delta). KINDER
+# holds each step's arm torque for the whole 0.1 s, and the arm covers about all of a
+# commanded delta in that time, so upstream's 2.0 put it at the mirror image of its
+# waypoint every step: a 5 Hz oscillation that hovered just outside PASS_TOLERANCE.
+FOLLOW_GAIN = 1.0
 FINAL_STEP_LIMIT = 600
 BASE_STEP_LIMIT = 600
 FOLLOW_STEP_LIMIT = 60
@@ -152,9 +157,9 @@ SHELF_PICK_EXIT = 0.06
 SHELF_PICK_EXIT_RISE = 0.02
 # Penetration (m) KINDER's PyBullet planner allows the shelf pick's approach plan.
 SHELF_PICK_PLANNING_SLACK = 0.008
-# Joint-error gain for carrying a picked cube out along the retract plan, half the
-# followers' 2.0: at full speed, cubes held across a corner slipped out of the pads
-# on the way to the tucked arm, and fell into the box or onto the floor.
+# Joint-error gain for carrying a picked cube out along the retract plan. At 2.0, cubes
+# held across a corner slipped out of the pads on the way to the tucked arm, and fell
+# into the box or onto the floor.
 SHELF_PICK_CARRY_GAIN = 1.0
 # BiRRT seeds tried for each shelf-pick plan, upstream's own (0) first.
 SHELF_PICK_PLAN_SEEDS = (0, 1, 2)
@@ -253,7 +258,7 @@ class FollowPlans:
     # Set by the caller: run once, between the gripper and the retract plan.
     lift: Callable[[], None] | None = None
     # Set by the caller: the joint-error gain the retract plan is followed with.
-    retract_gain: float = 2.0
+    retract_gain: float = FOLLOW_GAIN
 
     def _follow(
         self, *, key: str, plan: list[Any], final: float = FINAL_TOLERANCE
@@ -263,7 +268,7 @@ class FollowPlans:
             follower = PlanFollower(
                 plan=[np.array(q[:7], dtype=float) for q in plan],
                 final=final,
-                gain=self.retract_gain if key == "retract" else 2.0,
+                gain=self.retract_gain if key == "retract" else FOLLOW_GAIN,
             )
             self._followers[key] = follower
         current = np.array(self._get_current_robot_arm_conf()[:7])  # type: ignore[attr-defined]
@@ -2089,7 +2094,7 @@ class PlanFollower:
     and whether the skill then did its job is the scene's to say, not the follower's."""
 
     def __init__(
-        self, *, plan: list[np.ndarray], final: float = FINAL_TOLERANCE, gain: float = 2.0
+        self, *, plan: list[np.ndarray], final: float = FINAL_TOLERANCE, gain: float = FOLLOW_GAIN
     ) -> None:
         self.plan = plan
         self.final = final
