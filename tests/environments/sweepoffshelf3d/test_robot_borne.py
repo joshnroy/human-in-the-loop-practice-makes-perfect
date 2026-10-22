@@ -110,13 +110,18 @@ def test_either_of_two_held_cubes_is_placed_in_the_box(*, env, states, cube):
     assert env.last_controller_steps() > 0
 
 
-def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states):
+def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states, monkeypatch):
     """From case 3's start, the run's own PickCubeFromShelf(cube_4) missed once, then
     closed on cube_4 and cube_1 together and reported success. Now the pick opens and
-    tries again, and never ends with a second cube in the hand."""
+    tries again, and never ends with a second cube in the hand.
+
+    The double grasp came from plans made with no wiper in the planning scene; with the
+    resting wiper in it, this pick takes cube_4 alone at the first execution. So the
+    wiper is left out here, to replay the plans that closed on two cubes."""
     kinder = _restore(
         env=env, states=states, state_id="refusal-case3-pomdp3-start-before-double-grasp"
     )
+    monkeypatch.setattr(kinder, "add_wiper_obstacle", lambda *, sim: None)
     atoms = _act(env=env, skill="PickCubeFromShelf", cube="cube_4")
     held = {a[1][1] for a in atoms if a[0] == "HoldingCube"}
     assert held <= {"cube_4"}, held
