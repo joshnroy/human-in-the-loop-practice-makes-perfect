@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a pull request cancels that PR's in-progress run; a burst of force-pushes
+# once queued ~15 full runs, all but the newest wasted. A push to main is never cancelled:
+# each gets a group of its own (`run_id`), because GitHub replaces a *pending* run in a
+# shared group with the newer one even when `cancel-in-progress` is false
+# (tests/test_ci_run_scope.py).
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-push-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # Every pytest call passes `-m "$PYTEST_MARK_EXPR"`. A pull request skips the slow
   # tests marked `main_only`; any other event (today only a push to main) gets the empty
@@ -13,6 +22,57 @@ env:
   PYTEST_MARK_EXPR: ${{ github.event_name == 'pull_request' && 'not main_only' || '' }}
 
 jobs:
+  # Whether `test / tossing3d` must run. Always `true` outside a pull request, so a push to
+  # main runs it unconditionally. On a pull request it is `true` iff the diff touches
+  # something the Tossing3D/SweepOffShelf3D tests import or read: the list below is checked
+  # against those tests' real import closure by tests/test_ci_run_scope.py, so it is
+  # deliberately broad -- cli.py registers every environment and method, which pulls nearly
+  # all of src/ in. Uses the PR files API, so no checkout.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      tossing3d: ${{ github.event_name != 'pull_request' || steps.filter.outputs.tossing3d }}
+    steps:
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            tossing3d:
+              - '.github/**'
+              - 'pyproject.toml'
+              - '.gitmodules'
+              - 'reference/**'
+              - '**/conftest.py'
+              - 'src/hitl_pmp/*.py'
+              - 'src/hitl_pmp/core/**'
+              - 'src/hitl_pmp/environments/**'
+              - 'src/hitl_pmp/humans/**'
+              - 'src/hitl_pmp/methods/**'
+              - 'src/hitl_pmp/planning/**'
+              - 'src/hitl_pmp/presets/**'
+              - 'src/hitl_pmp/recording/**'
+              - 'src/hitl_pmp/results_writer/**'
+              - 'src/hitl_pmp/agentic_runtime/__init__.py'
+              - 'src/hitl_pmp/agentic_runtime/observations.py'
+              - 'src/hitl_pmp/full_agentic/__init__.py'
+              - 'src/hitl_pmp/full_agentic/domains.py'
+              - 'scripts/__init__.py'
+              - 'scripts/run_sweep.py'
+              - 'scripts/sweepoffshelf3d_launch.py'
+              - 'scripts/tossing3d_layout_demo.py'
+              - 'tests/__init__.py'
+              - 'tests/environments/__init__.py'
+              - 'tests/mimiclabs_assets.py'
+              - 'tests/environments/tossing3d/**'
+              - 'tests/environments/sweepoffshelf3d/**'
+              - 'configs/**'
+              - 'benchmarks/**'
+              - 'docs/**/*.json'
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -334,6 +394,9 @@ jobs:
 
   test-tossing3d:
     name: "test / tossing3d (MuJoCo/OSMesa)"
+    needs: changes
+    # Skipped only on a pull request whose diff the `changes` filter says cannot affect it.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.tossing3d == 'true') }}
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
@@ -522,7 +585,36 @@ jobs:
 
   test:
     name: "test"
-    needs: [test-unit, test-tossingroom, test-tossing3d, test-scripts]
+    needs: [changes, test-unit, test-tossingroom, test-tossing3d, test-scripts]
+    # The required status check. It decides from its dependencies' results itself rather
+    # than by default `needs` semantics: a job whose dependency fails is *skipped*, and
+    # GitHub counts a skipped required check as passing. The one skip it accepts is
+    # `test / tossing3d` on a pull request the `changes` filter cleared.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo "All parallel test jobs passed successfully!"
+      - name: Check every test job passed or was intentionally skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          cleared = (
+              os.environ["EVENT"] == "pull_request"
+              and needs["changes"]["result"] == "success"
+              and needs["changes"]["outputs"].get("tossing3d") == "false"
+          )
+          bad = {
+              job: need["result"]
+              for job, need in needs.items()
+              if need["result"] != "success"
+              and not (job == "test-tossing3d" and need["result"] == "skipped" and cleared)
+          }
+          for job, need in needs.items():
+              print(f"{job}: {need['result']}")
+          if bad:
+              sys.exit(f"not passed: {bad}")
+          print("tossing3d skipped: no affected paths" if cleared else "all test jobs passed")
+          PY
