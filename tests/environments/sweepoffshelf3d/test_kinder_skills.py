@@ -10,7 +10,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SweepOffShelf3DEnvironment,
 )
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import HOME_ARM, RETRACT_TOLERANCE
-from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CARRY_Z, RESEAT_TURN_DEG
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -398,6 +398,97 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert ("HandEmpty", ("robot",)) in atoms
+
+
+# The turn a grasp that let go left in the slip counter: the 2b37e1e5b harvest's
+# diagnosis found this same 126.2 deg in four attempts with fresh picks between them.
+STALE_TURN_DEG = 126.2
+
+
+def _turned(*, in_hand, degrees):
+    """`in_hand` as if the wiper had since turned `degrees` in the pads."""
+    from scipy.spatial.transform import Rotation
+
+    turned = in_hand.copy()
+    turned[:3, :3] = Rotation.from_euler("z", degrees, degrees=True).as_matrix() @ in_hand[:3, :3]
+    return turned
+
+
+def _left_turned_by_an_earlier_grasp(*, env):
+    """Seed 0 with an empty hand, and the slip counter as a grasp that turned the wiper
+    and then let go leaves it."""
+    env.reset_to_seed(seed=0)
+    skills = env.controllers()._skills  # noqa: SLF001
+    assert skills.in_hand is None
+    skills.slip, skills.slip_deg = 0.05, STALE_TURN_DEG
+
+
+def test_a_fresh_pick_starts_the_slip_counter_from_zero(*, env):
+    """SweepShelf bug B: the slip counter was zeroed only by `ShelfSkills.take_wiper`,
+    which the practice PickWiper never calls, so a fresh grasp inherited the turn of
+    the last one."""
+    _left_turned_by_an_earlier_grasp(env=env)
+    atoms = _act(env=env, skill="PickWiper")
+    assert ("HoldingWiper", ("robot", "wiper_0")) in atoms, env.last_skill_error()
+    skills = env.controllers()._skills  # noqa: SLF001
+    assert skills.slip_deg < 2.0
+    assert skills.slip is not None and skills.slip < 0.02
+
+
+def test_the_slip_counter_keeps_counting_within_one_grasp(*, env):
+    """Only taking the wiper zeroes the counter: the bookkeeping every skill re-derives
+    (`KinderSkills.sync`) and re-measuring the held grasp keep the grasp's turn so far."""
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    skills = env.controllers()._skills  # noqa: SLF001
+    skills.in_hand = _turned(in_hand=skills.in_hand, degrees=10.0)
+    skills.track_slip()
+    assert skills.slip_deg > RESEAT_TURN_DEG
+    env.controllers()._kinder.sync()  # noqa: SLF001
+    skills.recalibrate_grasp()
+    skills.track_slip()
+    assert skills.slip_deg > RESEAT_TURN_DEG
+
+
+@pytest.mark.main_only
+def test_a_sweep_right_after_a_fresh_pick_does_not_reseat(*, env):
+    """Bug B's consequence: with the counter inherited from an earlier grasp above
+    RESEAT_TURN_DEG, every stroke ended in a reseat. (On this branch's two-grasp wiper
+    the sweep's own regrasp zeroes the counter before any stroke, so the reseat half of
+    this is a guard for the one-grasp wiper; the regrasp's own note is not.)"""
+    _left_turned_by_an_earlier_grasp(env=env)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
+    notes = env.controllers()._skills.notes  # noqa: SLF001
+    assert not [n for n in notes if "set down after turning" in n], notes
+    assert not [n for n in notes if f"{STALE_TURN_DEG:.1f} deg" in n], notes
+
+
+@pytest.mark.main_only
+def test_a_turn_in_this_grasp_still_reseats(*, env, monkeypatch):
+    """The other side of bug B's fix: a wiper that really turns in the grasp it sweeps
+    with is still set down and taken again after the stroke."""
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills, SkillFailed
+
+    pull = ShelfSkills.pull
+    reseats = []
+
+    def pull_and_turn(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
+        pull(self, **kwargs)
+        self.in_hand = _turned(in_hand=self.in_hand, degrees=10.0)
+        self.track_slip()
+
+    def reseat(self, *, label):  # noqa: PLR0917 -- stands in for a method
+        reseats.append((label, self.slip_deg))
+        raise SkillFailed("reseat reached")
+
+    env.reset_to_seed(seed=0)
+    assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
+    monkeypatch.setattr(ShelfSkills, "pull", pull_and_turn)
+    monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat)
+    _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
+    assert len(reseats) == 1, env.last_skill_error()
+    assert reseats[0][1] > RESEAT_TURN_DEG
 
 
 def test_every_attempt_leaves_a_trace_naming_what_it_tried(*, env):
