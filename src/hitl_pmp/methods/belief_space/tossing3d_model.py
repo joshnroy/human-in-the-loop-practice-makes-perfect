@@ -313,6 +313,20 @@ class Tossing3DPracticeModel(BaseModel):
     def _belief_signature(*, belief: SkillBelief) -> bytes:
         return BeliefDigest.of(belief=belief)
 
+    @staticmethod
+    def cost_key(*, cost: float) -> float:
+        """The accumulated cost as a merge key, independent of summation order.
+
+        One multiset of actions sums to costs that differ in the last bit by order
+        whenever a cost is inexact in binary (0.61 + 1.04 + ... at a 0.01 step price):
+        an error near n * 2**-52 relative. Nine significant digits leave six orders of
+        magnitude above that, so such sums share a key except in the rare case that
+        straddles a rounding boundary, while genuinely different costs -- at least
+        one control step's price apart, or a fraction of one in a mean of step counts
+        -- stay apart up to costs of order 1e5 steps. Decimal digits make the key
+        scale-free under the power-of-ten cost rescale (721 and 7.21 round alike)."""
+        return float(f"{cost:.9g}")
+
     def search_cache_key(
         self,
         *,
@@ -336,7 +350,7 @@ class Tossing3DPracticeModel(BaseModel):
                 ),
                 tuple(sorted(belief_state.pending_examples.items())),
                 tuple(sorted(belief_state.sampler_training.items())),
-                belief_state.accumulated_cost,
+                self.cost_key(cost=belief_state.accumulated_cost),
                 horizon,
             )
         # Within one search every belief descends from the root's by likelihood
@@ -354,7 +368,7 @@ class Tossing3DPracticeModel(BaseModel):
             ),
             tuple(sorted(belief_state.pending_examples.items())),
             tuple(sorted(belief_state.sampler_training.items())),
-            float(f"{belief_state.accumulated_cost:.12g}"),
+            self.cost_key(cost=belief_state.accumulated_cost),
             horizon,
         )
 

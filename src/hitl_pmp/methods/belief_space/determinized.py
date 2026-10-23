@@ -410,7 +410,11 @@ class DeterminizedAStarPlanner(
                     if key in closed:
                         closed.remove(key)
                         reopened_nodes += 1
-                    if next_path_cost < best_g:
+                    # Ranked, so a path cheaper only by roundoff does not displace
+                    # the first one found (see DeterminizedSearchQueueEntry.rank).
+                    if DeterminizedSearchQueueEntry.rank(
+                        g=next_path_cost
+                    ) < DeterminizedSearchQueueEntry.rank(g=best_g):
                         best_g = next_path_cost
                         best_objective_value = value
                         best_action = first_action
