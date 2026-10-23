@@ -362,3 +362,59 @@ def test_a_skill_stopped_by_an_external_step_budget_adopts_the_simulators_state(
         assert not np.allclose(adopted[env.robot], before[env.robot])
     finally:
         env.close()
+
+
+def test_both_pick_refusals_that_move_nothing_are_matched() -> None:
+    """kinder-baselines words a pick refused before it moves in two ways, and neither
+    is exported as a constant, so both strings are pinned here."""
+    assert Tossing3DEnvironment.PICK_REFUSAL_MARKERS == (
+        "No collision-free",
+        "Robot starts in collision with",
+    )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_a_pick_refused_because_it_starts_in_contact_blocks_the_pick_like_any_refusal() -> None:
+    """t3-final determinized s4 before seq 808: posed as the planner poses them (open), a
+    finger pad is inside the cube, so the pick refuses before it moves ("Robot starts in
+    collision with cube_0"). That must mark the pick blocked, exactly as a "No
+    collision-free" refusal does, so the next decision moves on to a reset or STOP rather
+    than dispatching the same pick until the zero-step limit ends the run."""
+    import json as jsonlib
+    from pathlib import Path
+
+    from hitl_pmp.environments.tossing3d.predicates import PICKUP_UNBLOCKED
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+    from hitl_pmp.planning.grounding import SkillGrounder
+
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "pick_plannable"
+        / "t3final_determinized_s4_seq808_stretched.json"
+    )
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=125)
+        restored = env.restore_plain_snapshot(
+            plain=jsonlib.loads(fixture.read_text()), dtype=np.float64
+        )
+        assert PICKUP_UNBLOCKED.holds(restored, (env.cube,))
+        refused = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert "Robot starts in collision with" in (env.last_skill_error() or "")
+        assert sum(env.last_controller_steps()) == 0
+        assert not PICKUP_UNBLOCKED.holds(refused, (env.cube,))
+        provider = Tossing3DSkillProvider(env=env)
+        applicable = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(),
+            objects=provider.objects(),
+            true_atoms=SkillGrounder.abstract_state(
+                state=refused, objects=provider.objects(), predicates=provider.predicates()
+            ),
+        )
+        assert not any(g.skill == Tossing3DSkills.PICK_CUBE for g in applicable)
+    finally:
+        env.close()

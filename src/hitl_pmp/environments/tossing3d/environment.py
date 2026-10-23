@@ -208,6 +208,13 @@ class Tossing3DEnvironment(Environment):
     # is often correct (measured: a lip grasp succeeded right after failing), and
     # the closed-on-nothing subset already has its ClosedEmpty/OpenGripper path.
     _pickup_blocked: bool = PrivateAttr(default=False)
+    # How kinder-baselines words a pick it refuses before moving: no grasp plans, or the
+    # robot already starts in contact (refused loudly, with no fallback, until what a
+    # skill should do there is decided). Upstream exports no constant for either.
+    PICK_REFUSAL_MARKERS: ClassVar[tuple[str, ...]] = (
+        "No collision-free",
+        "Robot starts in collision with",
+    )
     # None (the default) means every drained tick is discarded rather than persisted --
     # state capture itself is always on (see KinderBackend.drain_substep_states), but
     # nothing is written to disk without a writer attached. Set by Tossing3DCli.
@@ -448,7 +455,7 @@ class Tossing3DEnvironment(Environment):
             if (
                 not executed
                 and self._last_skill_error is not None
-                and "No collision-free" in self._last_skill_error
+                and any(m in self._last_skill_error for m in self.PICK_REFUSAL_MARKERS)
             ):
                 self._pickup_blocked = True
         elif skill_id == self.move_to_toss_location_and_toss_id and executed:
