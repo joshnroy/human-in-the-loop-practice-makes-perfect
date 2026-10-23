@@ -1,6 +1,7 @@
 """Symbolic practice transitions for Tossing3D."""
 
 from functools import cache
+from typing import ClassVar
 
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
@@ -32,12 +33,39 @@ def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -
     particle count at every depth, so planning deliberately uses its posterior
     mean and holds that estimate fixed within one search.
     """
-    if str(action) in state.expected_execution_costs:
-        return state.expected_execution_costs[str(action)]
+    key = GroundSkillText.of(ground_skill=action)
+    if key in state.expected_execution_costs:
+        return state.expected_execution_costs[key]
     belief = state.skill_beliefs.get(action.skill.name)
     if isinstance(belief, (ParticleFilterBelief, BayesianSkillBelief)):
         return belief.mean_cost()
     return action.evaluate_practice_cost()
+
+
+class GroundSkillText:
+    """`str(ground_skill)`, the key `expected_execution_costs` is written under,
+    rendered once per object: search prices an action at every transition, and the
+    pydantic repr was a fifth of search time.
+
+    Keyed by identity, not equality. A frozen ground skill's text never changes, but
+    frozenset reprs follow hash order, so two equal ground skills built apart can
+    render differently; each keeps exactly the text `str` gives it. Entries hold
+    their ground skill, so an id is never reused while cached.
+    """
+
+    MAX_ENTRIES: ClassVar[int] = 4096
+    _texts: ClassVar[dict[int, tuple[GroundSkill, str]]] = {}
+
+    @staticmethod
+    def of(*, ground_skill: GroundSkill) -> str:
+        entry = GroundSkillText._texts.get(id(ground_skill))
+        if entry is not None and entry[0] is ground_skill:
+            return entry[1]
+        text = str(ground_skill)
+        if len(GroundSkillText._texts) >= GroundSkillText.MAX_ENTRIES:
+            GroundSkillText._texts.clear()
+        GroundSkillText._texts[id(ground_skill)] = (ground_skill, text)
+        return text
 
 
 @cache
