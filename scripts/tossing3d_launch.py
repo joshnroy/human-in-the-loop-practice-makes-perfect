@@ -11,9 +11,9 @@ launcher's format) and submits nothing.
 The plan (Josh, 2026-10-19 to 2026-10-22):
 - Tossing3D-o1, barrier layout for practice and evaluation, the step protocol with
   160,000 counted practice steps and an evaluation every 3,200, 10 held-out tasks.
-- Six arms: EES, ours with expectimax, ours with determinized A*, and an always-ask
-  variant of each (`--always-ask-reset`). Seeds 0-5: six, so a paired exact sign test
-  can reach p = 0.031.
+- Eight arms: EES, ours with expectimax, ours with determinized A* (as is, and with
+  `--pomdp-draw-scope skill`), and an always-ask variant of each (`--always-ask-reset`).
+  Seeds 0-5: six, so a paired exact sign test can reach p = 0.031.
 - The planner arms are `--preset tossing3d-canonical` (Model B, expectimax depth 6,
   observation weight 0, lambda 3e-4, 0.01 per control tick, human reset 5), with
   `--pomdp-solver determinized_astar` for A*.
@@ -121,6 +121,20 @@ class Tossing3DLaunch:
                 name="determinized",
                 method="pomdp",
                 flags=[*PLANNER, "--pomdp-solver", "determinized_astar"],
+                always_ask=False,
+            ),
+            # Josh, 2026-10-23: determinized also with one sampled outcome per acting
+            # belief, so a cheap reset cannot re-roll a pick (#574).
+            Tossing3DArm(
+                name="determinized-skill-draws",
+                method="pomdp",
+                flags=[
+                    *PLANNER,
+                    "--pomdp-solver",
+                    "determinized_astar",
+                    "--pomdp-draw-scope",
+                    "skill",
+                ],  # fmt: skip
                 always_ask=False,
             ),
         ]

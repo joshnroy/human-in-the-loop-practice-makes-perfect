@@ -12,10 +12,13 @@ ARMS = [
     "ees",
     "expectimax",
     "determinized",
+    "determinized-skill-draws",
     "ees-always-ask",
     "expectimax-always-ask",
     "determinized-always-ask",
+    "determinized-skill-draws-always-ask",
 ]
+SKILL_DRAW_ARMS = ["determinized-skill-draws", "determinized-skill-draws-always-ask"]
 
 
 def _parse(*, name: str, seed: int = 0) -> object:
@@ -25,7 +28,7 @@ def _parse(*, name: str, seed: int = 0) -> object:
     )
 
 
-def test_the_plan_is_six_arms_over_seeds_zero_to_five() -> None:
+def test_the_plan_is_eight_arms_over_seeds_zero_to_five() -> None:
     # Josh, 2026-10-22: six seeds per classical arm, so a paired sign test can reach 0.031.
     assert list(Tossing3DLaunch.arms()) == ARMS
     assert SEEDS == 6
@@ -51,6 +54,8 @@ def test_the_planner_arms_are_the_canonical_preset(*, name: str) -> None:
     assert args.pomdp_observation_probability_weight == 0.0
     solver = "determinized_astar" if name.startswith("determinized") else "expectimax"
     assert args.pomdp_solver == solver
+    # Josh, 2026-10-23: determinized once as is and once with skill-keyed draws.
+    assert args.pomdp_draw_scope == ("skill" if name in SKILL_DRAW_ARMS else "node")
 
 
 @pytest.mark.parametrize("name", ARMS)
@@ -85,7 +90,7 @@ def test_every_arm_stops_after_three_perfect_evaluations_in_a_row(*, name: str) 
 def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:
     arms = list(Tossing3DLaunch.arms().values())
     lines = Tossing3DLaunch.della_manifest(arms=arms, size=FULL, sha="abc123", tag="t3")
-    assert len(lines) == 36
+    assert len(lines) == 48
     seen = set()
     for line in lines:
         name, sha, arm, seed, out, argv = line.split("\t")
@@ -96,6 +101,18 @@ def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:
         assert parsed[parsed.index("--output-dir") + 1] == out
         seen.add((arm, int(seed)))
     assert seen == {(arm, seed) for arm in ARMS for seed in range(6)}
+
+
+def test_the_skill_draw_arms_share_the_determinized_della_group() -> None:
+    groups = {
+        name: Tossing3DLaunch.della_group(arm=arm) for name, arm in Tossing3DLaunch.arms().items()
+    }
+    assert [name for name, group in groups.items() if group == "determinized"] == [
+        "determinized",
+        "determinized-skill-draws",
+        "determinized-always-ask",
+        "determinized-skill-draws-always-ask",
+    ]
 
 
 def test_the_della_time_limits_are_twice_the_dry_run_projection() -> None:
