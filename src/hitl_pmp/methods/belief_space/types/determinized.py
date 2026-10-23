@@ -1,11 +1,12 @@
 """Types used by determinized belief-space search."""
 
-from typing import ClassVar, Generic
+from typing import Generic
 
 from pydantic import BaseModel, ConfigDict
 
 from .protocol import ActionT, BeliefStateT, EnvironmentStateT
 from .stop_action import StopAction
+from .value_resolution import ValueResolution
 
 
 class DeterminizedSearchBelief(
@@ -64,21 +65,13 @@ class DeterminizedSearchQueueEntry(
     cache_info: DeterminizedNodeCacheInfo
     path_recovery_info: DeterminizedPathRecoveryInfo[ActionT]
 
-    # Path costs g are compared on this grid. One control step's cost in the objective
-    # is lambda * price = 3e-6, three orders of magnitude above it; roundoff in g is
-    # near 1e-16, seven below. Two paths of equal cost in exact arithmetic therefore
-    # tie, and the tie goes to the first one found, however their costs were summed.
-    G_RESOLUTION: ClassVar[float] = 1e-9
-
-    @staticmethod
-    def rank(*, g: float) -> int:
-        return round(g / DeterminizedSearchQueueEntry.G_RESOLUTION)
-
     def __lt__(self, other: object, /) -> bool:  # noqa: PLR0917
+        """Path cost on the shared grid, then insertion order: two paths of equal cost
+        in exact arithmetic go to the first one found (ValueResolution)."""
         if not isinstance(other, DeterminizedSearchQueueEntry):
             return NotImplemented
-        return (self.rank(g=self.g), self.cache_info.queue_sequence) < (
-            self.rank(g=other.g),
+        return (ValueResolution.rank(value=self.g), self.cache_info.queue_sequence) < (
+            ValueResolution.rank(value=other.g),
             other.cache_info.queue_sequence,
         )
 

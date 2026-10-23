@@ -15,6 +15,7 @@ from .types.protocol import (
 )
 from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
+from .types.value_resolution import ValueResolution
 
 
 class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
@@ -283,7 +284,11 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                     action=practice_action.model_dump(mode="json", fallback=str),
                     value=value_of_state,
                 )
-            if current_best_value < value_of_state:
+            # On the shared grid: an action better only by roundoff does not displace
+            # STOP or an earlier action (ValueResolution).
+            if ValueResolution.rank(value=current_best_value) < ValueResolution.rank(
+                value=value_of_state
+            ):
                 current_best_value = value_of_state
                 current_best_action = practice_action
 
