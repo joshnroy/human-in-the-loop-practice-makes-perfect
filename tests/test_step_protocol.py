@@ -979,6 +979,85 @@ def test_a_session_with_an_action_resets_the_stop_streak(*, tmp_path):
     assert len(_stop_events(output=output)) == 20
 
 
+def test_sessions_of_human_resets_and_no_robot_skill_end_the_run(*, tmp_path):
+    """t3-final determinized s4: after its arm froze, each session was human resets
+    then a STOP, with no robot skill. Ten in a row end practice."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    reset = HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=_scripted_method(script=[1, stop] + [reset, reset, reset, stop] * 12),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_no_robot_action"
+    # One session with a robot skill, then ten of resets only.
+    assert len(_session_starts(output=output)) == 11
+    assert len(_human_events(output=output)) == 30
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert protocol["repeated_no_robot_action_limit"] == 10
+
+
+def test_a_reset_only_session_needs_no_stop_to_count(*, tmp_path):
+    """A session cut off at its action cap after resets counts as one with a STOP does."""
+    reset = HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100, max_steps_per_interaction=2),
+        method=_scripted_method(script=[reset] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_no_robot_action"
+    assert len(_session_starts(output=output)) == 10
+
+
+def test_stop_only_sessions_neither_extend_nor_break_the_no_robot_action_streak(*, tmp_path):
+    """STOP-only sessions are `repeated_stop`'s, and a reset-only session breaks that
+    streak exactly as it did before."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    reset = HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    output = tmp_path / "run"
+    # Nine STOP-only sessions alternate with nine reset-only ones: neither streak
+    # reaches ten until the tenth reset-only session.
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=_scripted_method(script=[stop, reset, stop] * 9 + [reset, stop] + [stop] * 5),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_no_robot_action"
+    assert len(_session_starts(output=output)) == 19
+
+
+def test_a_robot_skill_breaks_the_no_robot_action_streak(*, tmp_path):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    reset = HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=_scripted_method(
+            script=[reset, stop] * 9 + [reset, 1, stop] + [reset, stop] * 10 + [stop] * 5
+        ),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_no_robot_action"
+    # Nine reset-only sessions, one with a robot skill, then ten more.
+    assert len(_session_starts(output=output)) == 20
+
+
 def _session_starts(*, output) -> list[int]:
     return [e["practice_steps"] for e in _events(output=output) if e["event"] == "session_start"]
 
