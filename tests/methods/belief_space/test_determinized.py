@@ -533,3 +533,133 @@ def test_first_expansion_keeps_model_sample_and_value_call_order() -> None:
         num_samples=1,
     )
     assert model.calls == ["J:0.2", "outcomes:left", "J:0.3", "outcomes:right", "J:0.6"]
+
+
+class DrawKeyedModel(Model):
+    """A model whose pick outcome reads one belief, shared by every state.
+
+    Under the "state" scope a state names its draw by `draw_keys` (a reset that changes
+    only bookkeeping maps to the state it left); under "skill" only the action does."""
+
+    draw_keys: dict[str, str] = Field(default_factory=dict)
+
+    def outcome_draw_key(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        belief_state: BeliefState,
+        action: Action,
+        scope: str,
+    ) -> object:
+        del belief_state
+        if scope == "skill":
+            return action
+        return self.draw_keys.get(environment_state.name, environment_state.name), action
+
+
+AFTER_RESET = EnvironmentState(name="after_reset")
+MOVED = EnvironmentState(name="moved")
+PICK = Action(name="pick")
+RESET = Action(name="reset")
+MOVE = Action(name="move")
+
+
+def _picks(*, state: EnvironmentState) -> list[tuple[EnvironmentState, float, float]]:
+    return [
+        (EnvironmentState(name=f"picked_{state.name}"), 0.0, 0.5),
+        (EnvironmentState(name=f"dropped_{state.name}"), 0.0, 0.5),
+    ]
+
+
+def _reroll_model() -> DrawKeyedModel:
+    """Two cheap resets: one leaves the state as it was but for bookkeeping, one moves
+    it to a different state. The pick's outcome reads the same belief from all three."""
+    states = (ROOT, AFTER_RESET, MOVED)
+    return DrawKeyedModel(
+        transitions={
+            (ROOT, RESET): [(AFTER_RESET, 0.01, 1.0)],
+            (ROOT, MOVE): [(MOVED, 0.01, 1.0)],
+            **{(state, PICK): _picks(state=state) for state in states},
+        },
+        beliefs={
+            AFTER_RESET: BeliefState(value=0.5),
+            MOVED: BeliefState(value=0.5),
+            **{
+                outcome: BeliefState(value=0.9 if outcome.name.startswith("picked") else 0.3)
+                for state in states
+                for outcome, _, _ in _picks(state=state)
+            },
+        },
+        draw_keys={AFTER_RESET.name: ROOT.name},
+    )
+
+
+def _reroll_choices(*, draw_scope: str) -> set[object]:
+    return {
+        DeterminizedAStarPlanner(
+            max_iterations=20,
+            seed=seed,
+            observation_probability_weight=0.0,
+            draw_scope=draw_scope,
+        ).solve(
+            environment_state=ROOT,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=0.5),
+            horizon=0,
+            model=_reroll_model(),
+            num_samples=1,
+        )[1]
+        for seed in range(60)
+    }
+
+
+def test_per_node_draws_let_either_cheap_reset_re_roll_the_pick() -> None:
+    assert {RESET, MOVE} <= _reroll_choices(draw_scope="node")
+
+
+def test_per_state_draws_stop_only_the_reset_that_leaves_the_state_unchanged() -> None:
+    choices = _reroll_choices(draw_scope="state")
+    assert RESET not in choices
+    assert MOVE in choices
+
+
+def test_per_skill_draws_stop_every_reset_re_roll() -> None:
+    assert _reroll_choices(draw_scope="skill") == {PICK, STOP_ACTION}
+
+
+def test_shared_draws_are_traced() -> None:
+    trace = SearchTrace()
+    DeterminizedAStarPlanner(
+        max_iterations=20, seed=0, observation_probability_weight=0.0, draw_scope="skill"
+    ).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.5),
+        horizon=0,
+        model=_reroll_model(),
+        num_samples=1,
+        trace=trace,
+        remaining_actions=None,
+    )
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["draw_scope"] == "skill"
+    assert summary["reused_outcome_draws"] == 2
+
+
+def test_an_unknown_draw_scope_is_rejected() -> None:
+    with pytest.raises(AssertionError):
+        DeterminizedAStarPlanner(max_iterations=1, seed=0, draw_scope="belief")
+
+
+def test_consistent_draws_map_one_uniform_through_the_cdf_like_choice() -> None:
+    outcomes = [(LOW, 0.0, 0.25), (HIGH, 0.0, 0.75)]
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0)
+    assert planner.sample_outcome(outcomes=outcomes, action=LEFT, uniform=0.2)[0] == LOW
+    assert planner.sample_outcome(outcomes=outcomes, action=LEFT, uniform=0.25)[0] == HIGH
+    assert planner.sample_outcome(outcomes=outcomes, action=LEFT, uniform=0.99)[0] == HIGH
+    # The uniform path agrees with Generator.choice given the same stream.
+    choice = DeterminizedAStarPlanner(max_iterations=1, seed=5)
+    uniform = np.random.default_rng(5).random()
+    assert choice.sample_outcome(outcomes=outcomes, action=LEFT) == planner.sample_outcome(
+        outcomes=outcomes, action=LEFT, uniform=uniform
+    )

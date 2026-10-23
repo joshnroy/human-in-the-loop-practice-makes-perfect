@@ -1,12 +1,17 @@
 """Types used by determinized belief-space search."""
 
-from typing import Generic
+from typing import Generic, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from .protocol import ActionT, BeliefStateT, EnvironmentStateT
 from .stop_action import StopAction
 from .value_resolution import ValueResolution
+
+# Which search nodes share one sampled outcome for an action: none ("node"), those
+# whose atoms and read beliefs agree ("state"), or those whose read beliefs agree
+# ("skill"). See DeterminizedAStarPlanner.draw_scope.
+DrawScope = Literal["node", "state", "skill"]
 
 
 class DeterminizedSearchBelief(

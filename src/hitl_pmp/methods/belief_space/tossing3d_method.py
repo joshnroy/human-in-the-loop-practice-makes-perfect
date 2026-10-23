@@ -51,6 +51,7 @@ from .tossing3d_observation_model import (
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
+from .types.determinized import DrawScope
 from .types.forced_start_reset import ForcedStartReset
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
@@ -74,10 +75,13 @@ def make_belief_space_planner(
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
+    draw_scope: DrawScope = "node",
 ) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
         return planner
+    if draw_scope != "node" and solver != "determinized_astar":
+        raise ValueError("shared draws are a determinized_astar option; expectimax samples none")
     if solver == "expectimax":
         return ExpectimaxPlanner(
             use_model_j=True,
@@ -88,6 +92,7 @@ def make_belief_space_planner(
         seed=seed,
         observation_probability_weight=observation_probability_weight,
         log_full_search_tree=log_full_search_tree,
+        draw_scope=draw_scope,
     )
 
 
@@ -102,6 +107,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
+    pomdp_draw_scope: DrawScope = "node"
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
@@ -367,6 +373,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+            draw_scope=self.pomdp_draw_scope,
         )
         # Exact reductions of the expectimax tree only: determinized A* samples paths
         # over the action list, so dropping equivalent actions would change what it
