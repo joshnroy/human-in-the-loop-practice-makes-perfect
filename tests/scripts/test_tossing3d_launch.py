@@ -98,3 +98,14 @@ def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:
         assert parsed[parsed.index("--output-dir") + 1] == out
         seen.add((arm, int(seed)))
     assert seen == {(arm, seed) for arm in ARMS for seed in range(6)}
+
+
+def test_the_della_time_limits_are_twice_the_dry_run_projection() -> None:
+    # Josh, 2026-10-22: 2x the dry run's projection per group.
+    from scripts.tossing3d_launch import DELLA_GROUPS
+
+    assert {group: limits.time for group, limits in DELLA_GROUPS.items()} == {
+        "ees": "08:00:00",
+        "determinized": "16:00:00",
+        "expectimax": "48:00:00",
+    }
