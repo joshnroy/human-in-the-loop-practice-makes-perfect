@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
+from hitl_pmp.environments.sweepoffshelf3d.skill_trace import INTERRUPTED_PREFIX
 
 from .states import Container, Setups, StateSpec
 from .types import BenchmarkCase
@@ -66,7 +67,8 @@ class HarvestedStates:
     @staticmethod
     def candidates(*, paths: list[Path], per_skill: int = PER_SKILL) -> list[Harvest]:
         """Failed robot skills from empty-handed states, deduplicated, at most
-        `per_skill` per skill, in file order."""
+        `per_skill` per skill, in file order. A skill a budget interrupted, or the goal
+        latch cut short, did not fail and is not harvested."""
         kept: dict[str, list[Harvest]] = defaultdict(list)
         seen: set[tuple[Any, ...]] = set()
         for recording in HarvestedStates.recordings(paths=paths):
@@ -101,6 +103,8 @@ class HarvestedStates:
                         or record.get("actor") != "robot"
                         or record.get("success")
                         or record.get("goal_reached")
+                        # A budget cut the skill off: it did not fail from this state.
+                        or str(record.get("outcome") or "").startswith(INTERRUPTED_PREFIX)
                     ):
                         continue
                     skill = str(record.get("skill", "")).removeprefix(RANDOM_PREFIX)

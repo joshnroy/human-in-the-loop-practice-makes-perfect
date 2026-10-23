@@ -109,3 +109,23 @@ def test_a_skill_the_goal_latch_cut_short_is_not_harvested_as_a_failure(*, tmp_p
         ],
     )
     assert HarvestedStates.candidates(paths=[tmp_path]) == []
+
+
+def test_a_skill_the_practice_budget_cut_short_is_not_harvested(*, tmp_path: Path) -> None:
+    interrupted = {
+        **_action(skill="PickCubeFromShelf", objects=["robot", "cube_0"], success=False, seq=1),
+        "outcome": "interrupted: practice_step_budget",
+    }
+    _write(
+        path=tmp_path / "run" / "recording.jsonl",
+        records=[
+            {"kind": "header", "environment": "sweepoffshelf3d"},
+            {"kind": "segment", "scene_seed": 3},
+            _tick(features=FEATURES),
+            _action(skill="PickCubeFromShelf", objects=["robot", "cube_1"], success=False, seq=0),
+            _tick(features={**FEATURES, "cube_0": [1.40, 0.1, 0.289]}),
+            interrupted,
+        ],
+    )
+    harvests = HarvestedStates.candidates(paths=[tmp_path])
+    assert [(h.skill, h.cube) for h in harvests] == [("PickCubeFromShelf", "cube_1")]
