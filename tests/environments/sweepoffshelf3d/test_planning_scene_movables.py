@@ -23,6 +23,9 @@ from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCa
 from hitl_pmp.environments.sweepoffshelf3d.skill_trace import SkillTraces
 
 STATES = Path(__file__).resolve().parents[3] / "benchmarks/sweepoffshelf3d/states.jsonl"
+# Three box-return states from the 2026-10-14 harvest, kept for these tests when the
+# benchmark's harvested set was replaced by launch shelf-20261023b's failures.
+OLD_HARVEST = Path(__file__).resolve().parent / "fixtures/harvest_20261014_box_return_states.jsonl"
 WIPER = "wiper_0"
 HELD = ("HoldingWiper", ("robot", WIPER))
 HOME = ("WiperHome", (WIPER,))
@@ -50,7 +53,8 @@ def _env():
 
 @pytest.fixture(name="states", scope="module")
 def _states():
-    return {state.state_id: state for state in StateSet.load(path=STATES)}
+    states = [*StateSet.load(path=STATES), *StateSet.load(path=OLD_HARVEST)]
+    return {state.state_id: state for state in states}
 
 
 def _kinder(*, env):
@@ -274,7 +278,10 @@ def test_a_box_return_beside_a_neighbour_keeps_its_off_centre_grasp(*, env, stat
     cube_2 returns cube_1 alone; its approach passes under the wiper's handle, which
     overhangs the cupboard's front above the box."""
     atoms = _return_from_box(
-        env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
+        env=env,
+        states=states,
+        state_id="harvest20261014-ReturnCubeToShelfFromBox-19",
+        cube="cube_1",
     )
     assert ("OnShelf", ("cube_1",)) in atoms, env.last_skill_error()
     assert ("InBox", ("cube_2", "box_0")) in atoms
@@ -287,7 +294,10 @@ def test_a_one_centimetre_margin_took_that_off_centre_grasp_away(*, env, states,
 
     monkeypatch.setattr(kinder_skills, "WIPER_OBSTACLE_MARGIN", 0.01)
     atoms = _return_from_box(
-        env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
+        env=env,
+        states=states,
+        state_id="harvest20261014-ReturnCubeToShelfFromBox-19",
+        cube="cube_1",
     )
     assert ("InBox", ("cube_1", "box_0")) in atoms
     assert "no grasp on cube_1 planned" in (env.last_skill_error() or "")
