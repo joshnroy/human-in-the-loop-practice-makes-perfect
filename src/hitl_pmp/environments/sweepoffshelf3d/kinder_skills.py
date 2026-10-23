@@ -236,8 +236,10 @@ BASE_PLANNER_MODULES = (
 )
 # The wiper this close (m) to any robot geom rests on or against the robot.
 WIPER_ROBOT_TOUCH = 0.001
-# The resting wiper's boxes grow by this much on every side in the planning scene.
-WIPER_OBSTACLE_MARGIN = 0.01
+# The resting wiper's boxes grow by this much on every side in the planning scene. At
+# 1 cm the grown handle, over the cupboard's front above the box, refused the only grasp
+# returning a cube that rests against another in the box (Josh, 2026-10-22: 6 mm).
+WIPER_OBSTACLE_MARGIN = 0.006
 
 
 class FollowPlans:
