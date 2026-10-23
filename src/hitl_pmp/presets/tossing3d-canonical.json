@@ -1,9 +1,9 @@
 {
-  "description": "The canonical Tossing3D arm of ours (Model B, expectimax), shared by the sim and the robot. Planner: EXP-22c's, with the observation-probability weight at 0 (at its 0.1 default the w*(-ln p) charge makes STOP win at the priors) and tick-priced costs: one cost per control tick, the ticks coming from MuJoCo in the sim and from the robot's per-skill step costs on the robot, and 500 per human reset, at lambda = 3e-6. Step protocol only: give --practice-step-budget. Goal pursuit is off: under the step protocol a 100-step horizon spends the whole budget before the first practice decision.",
+  "description": "The canonical Tossing3D arm of ours (Model B, expectimax), shared by the sim and the robot. Planner: EXP-22c's, with the observation-probability weight at 0 (at its 0.1 default the w*(-ln p) charge makes STOP win at the priors) and tick-priced costs: 0.01 per control tick, the ticks coming from MuJoCo in the sim and from the robot's per-skill step costs on the robot, and 5 per human reset, at lambda = 3e-4 (an exact rescale of 1 per tick, 500 per reset, lambda 3e-6). Step protocol only: give --practice-step-budget. Goal pursuit is off: under the step protocol a 100-step horizon spends the whole budget before the first practice decision.",
   "method": "pomdp",
   "shared": {
     "pomdp_observation_probability_weight": 0.0,
-    "pomdp_linear_cost_lambda": 3e-6,
+    "pomdp_linear_cost_lambda": 3e-4,
     "practice_cost_config": "tossing3d_tick_priced_costs.json",
     "pomdp_search_depth": 6,
     "pomdp_inference_engine": "grid",

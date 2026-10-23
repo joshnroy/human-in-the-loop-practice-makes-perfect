@@ -19,7 +19,7 @@ SIM_ARGV = [*PRESET_ONLY, "--practice-step-budget", "1000"]
 # these values changes every result run through the preset.
 CANONICAL_SHARED = {
     "pomdp_observation_probability_weight": 0.0,
-    "pomdp_linear_cost_lambda": 3e-6,
+    "pomdp_linear_cost_lambda": 3e-4,
     "pomdp_search_depth": 6,
     "pomdp_inference_engine": "grid",
     "pomdp_num_particles": 1024,
@@ -61,11 +61,11 @@ def test_the_cost_config_is_one_cost_per_control_tick_at_the_presets_lambda() ->
     costs = PracticeCosts.load(path=path)
     # Tick-priced: a skill costs exactly the control ticks it is charged, so no table
     # of per-skill tick counts lives here -- the sim's ticks come from MuJoCo.
-    assert costs.robot_step.value == 1 and costs.robot_step.function is None
+    assert costs.robot_step.value == 0.01 and costs.robot_step.function is None
     assert costs.objective_lambda == args.pomdp_linear_cost_lambda
     assert set(costs.human_skills) == {"reset_cube_far", "reset_cube_and_bin_near"}
     for charge in costs.human_skills.values():
-        assert (charge.cost.value, charge.duration.value) == (500, 1)
+        assert (charge.cost.value, charge.duration.value) == (5, 1)
     assert costs.human_weight == 1
 
 
@@ -117,7 +117,7 @@ def test_every_resolved_preset_value_lands_in_the_config_snapshot() -> None:
     snapshot = ConfigSnapshot.collect(args=args, fd_exec_path=None).args
     assert snapshot["preset"] == "tossing3d-canonical"
     assert snapshot["pomdp_observation_probability_weight"] == "0.0"
-    assert snapshot["pomdp_linear_cost_lambda"] == "3e-06"
+    assert snapshot["pomdp_linear_cost_lambda"] == "0.0003"
     assert snapshot["practice_cost_config"] == str(args.practice_cost_config)
 
 

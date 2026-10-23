@@ -78,8 +78,9 @@ def test_the_runner_runs_as_a_module_through_the_token_loader() -> None:
     assert argv[start + 3 : start + 6] == ["-m", "hitl_pmp.full_agentic.runner", "--env"]
 
 
-def test_the_cost_file_is_the_planner_arms_reset_500_file() -> None:
-    # PR #528's file: reset_cubes and reset_wiper cost 500 and take 1 step.
+def test_the_cost_file_is_the_planner_arms_file() -> None:
+    # PR #528's file, rescaled 2026-10-23: reset_cubes and reset_wiper cost 5 and
+    # take 1 step.
     assert ROBOCODE_COSTS == REPO / "configs/sweepoffshelf3d_practice_costs_planner.json"
     argv = _runner_args(argv=_argv())
     assert _value(argv=argv, flag="--practice-cost-config") == str(ROBOCODE_COSTS)
@@ -201,9 +202,9 @@ def test_the_runner_draws_held_out_scenes_from_the_planners_stream(
     assert ours == drawn and len(set(ours)) == 10
 
 
-def test_the_runner_accepts_the_planner_cost_file_and_prices_resets_at_500() -> None:
+def test_the_runner_accepts_the_planner_cost_file_and_prices_resets_at_5() -> None:
     args = FullAgenticRunner.parse_args(argv=_runner_args(argv=_argv()))
     costs = FullAgenticRunner.costs(args=args, domain=SweepOffShelf3DFullAgentic)
     for skill in ("reset_cubes", "reset_wiper"):
-        assert costs.human_skills[skill].cost.value == 500
+        assert costs.human_skills[skill].cost.value == 5
         assert costs.human_skills[skill].duration.value == 1

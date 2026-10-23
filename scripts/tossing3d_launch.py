@@ -15,7 +15,7 @@ The plan (Josh, 2026-10-19 to 2026-10-22):
   variant of each (`--always-ask-reset`). Seeds 0-5: six, so a paired exact sign test
   can reach p = 0.031.
 - The planner arms are `--preset tossing3d-canonical` (Model B, expectimax depth 6,
-  observation weight 0, lambda 3e-6, tick-priced costs, human reset 500), with
+  observation weight 0, lambda 3e-4, 0.01 per control tick, human reset 5), with
   `--pomdp-solver determinized_astar` for A*.
 - EES takes EXP-22c's flags (the preset is the pomdp method's only), less the
   cycle-mode ones the step protocol replaces, and prices a human reset at 5 in its own
