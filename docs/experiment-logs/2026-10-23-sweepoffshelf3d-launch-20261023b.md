@@ -155,9 +155,10 @@ Every item below is a decision Josh made on 2026-10-22, from the decision log.
 ![Held-out tasks solved per seed over practice steps, per arm, with RoboCode](2026-10-23-sweepoffshelf3d-launch-20261023b-solved-vs-practice-steps.png)
 
 *Faint lines are single seeds; bold lines are arm means, n=6. After a seed's run ends,
-its last value is carried forward, because the policy is frozen. Figures are committed
-as the analysis produced them. Their colours predate this log, and the determinized and
-expectimax arms do not use the project's method palette.*
+its last value is carried forward, because the policy is frozen. Colour carries the
+method in every figure (EES `#009E73`, determinized `#CC79A7`, expectimax d6 `#E69F00`,
+RoboCode `#F0E442`), and each always-ask arm is a lighter shade of its method's
+colour.*
 
 ![Human invocations over practice steps, per arm](2026-10-23-sweepoffshelf3d-launch-20261023b-human-vs-practice-steps.png)
 
