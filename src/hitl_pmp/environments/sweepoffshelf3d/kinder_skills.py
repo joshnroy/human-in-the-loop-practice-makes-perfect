@@ -1631,9 +1631,9 @@ class KinderSkills:
         one is too narrow to plan (cubes at the back of the shelf), then straight
         above. Raised straight up, a steeply leaned wrist meets the board above in
         KINDER's planning scene, whose boards sit 6.35 mm lower than MuJoCo's."""
-        quaternion = self.shelf.core.get_object(cube).get_pose()[1]
-        axes = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()
-        normal = np.arctan2(axes[1, 0], axes[0, 0])
+        normal = KinderSkills.side_face_yaw(
+            quaternion=self.shelf.core.get_object(cube).get_pose()[1]
+        )
         faces = [normal + k * np.pi / 2 for k in range(4)]
         out: list[tuple[np.ndarray, tuple[np.ndarray, ...]]] = []
         seen: list[float] = []
@@ -1674,14 +1674,39 @@ class KinderSkills:
                 out.append(np.array([base_x, y, heading]))
         return out
 
+    @staticmethod
+    def side_face_yaw(*, quaternion: Any) -> float:
+        """The heading of the outward normal of one of the cube's side faces, from its
+        (w, x, y, z) quaternion: the first of its own axes that is not the most nearly
+        vertical one. The other three side faces are this plus multiples of 90 deg.
+        Not its x axis: a cube tipped onto a side face has that axis vertical, and its
+        heading is then noise."""
+        axes = Rotation.from_quat(np.asarray(quaternion, dtype=float)[[1, 2, 3, 0]]).as_matrix()
+        up = int(np.argmax(np.abs(axes[2, :])))
+        side = next(i for i in range(3) if i != up)
+        return float(np.arctan2(axes[1, side], axes[0, side]))
+
+    def overhead_yaw(self, *, name: str) -> float:
+        """KINDER's own top-down yaw of `name` (`get_overhead_object_se2_pose`), the one
+        `PickShelfController.reset` adds its rotation parameter back onto. Not `yaw`:
+        at gimbal lock -- a cube tipped onto a side face, its x axis vertical -- the two
+        disagree by up to 180 deg (scipy's 'xyz' Euler reads 0, spatialmath's rpy +-180)."""
+        from kinder_models.dynamic3d.utils import get_overhead_object_se2_pose
+
+        x = self.state()
+        return float(get_overhead_object_se2_pose(x, x.get_object_from_name(name)).theta())
+
     def facing_params(
         self, *, base: np.ndarray, centre: np.ndarray, cube: str
     ) -> tuple[float, float]:
         """`PickShelfController`'s (distance, rotation) for `base`: its rotation is
-        relative to the cube's own yaw."""
+        relative to the cube's yaw as KINDER itself reads it (`overhead_yaw`), so the
+        base KINDER derives from them is `base`. With any other yaw, a tipped cube's
+        base came out mirrored through the cube, unreachable, and the skill refused."""
         back = float(centre[0] - base[0])
         side = float(centre[1] - base[1])
-        return float(np.hypot(back, side)), float(np.arctan2(side, back) - self.yaw(name=cube))
+        rotation = np.arctan2(side, back) - self.overhead_yaw(name=cube)
+        return float(np.hypot(back, side)), float(rotation)
 
     def base_drivable(self, *, base: np.ndarray) -> bool:
         """Whether upstream's own base planner (`run_base_motion_planning`, over the

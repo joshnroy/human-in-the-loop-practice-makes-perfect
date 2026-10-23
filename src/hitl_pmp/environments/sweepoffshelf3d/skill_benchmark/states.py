@@ -416,6 +416,33 @@ class Setups:
         return setup
 
 
+class TippedCubes:
+    """Orientations for cubes lying on a side face. Two of every three have the cube's
+    own x axis vertical (up, then down): that is Euler gimbal lock, where scipy's 'xyz'
+    yaw and KINDER's spatialmath yaw disagree by up to 180 deg. The third has its y
+    axis up, a side face down without gimbal lock. Yaws are spread and not multiples of
+    90 deg, so a grasp read off the wrong axis cannot line up with the faces by luck."""
+
+    NUM_SHELF_SEEDS = 10
+    UPS = ("x", "-x", "y")
+    YAWS_DEG = (17.0, 30.0, 45.0, 60.0, 100.0, 135.0, -20.0, -75.0, 160.0, -130.0, 5.0)
+
+    @staticmethod
+    def pose(*, index: int) -> tuple[str, float]:
+        """(which of the cube's own axes points up, yaw in deg) for the index-th state."""
+        ups, yaws = TippedCubes.UPS, TippedCubes.YAWS_DEG
+        return ups[index % len(ups)], yaws[index % len(yaws)]
+
+    @staticmethod
+    def quat(*, up: str, yaw_deg: float) -> list[float]:
+        """(w, x, y, z): the cube's `up` axis vertical, then turned `yaw_deg` about it."""
+        from scipy.spatial.transform import Rotation
+
+        tilt = {"x": ("Y", -90.0), "-x": ("Y", 90.0), "y": ("X", 90.0)}[up]
+        x, y, z, w = Rotation.from_euler("Z" + tilt[0], [yaw_deg, tilt[1]], degrees=True).as_quat()
+        return [float(w), float(x), float(y), float(z)]
+
+
 class StateFamilies:
     """The benchmark's families of start states (Josh, 2026-10-15): start states over
     many seeds; `reset_cubes` layouts; wiper poses `reset_wiper` produces; a dropped
@@ -635,6 +662,86 @@ class StateFamilies:
                 cases=[case(skill="ReturnWiper")],
                 provenance=f"reset_to_seed({seed}); PickWiper; SweepShelf{ORACLE_SWEEP_PARAMS}",
                 setup=Setups.chain(Setups.skill(action=pick_wiper), Setups.skill(action=sweep)),
+            )
+
+    @staticmethod
+    def tipped_specs(*, env: SweepOffShelf3DEnvironment) -> Iterator[StateSpec]:
+        """Cubes lying on a side face rather than upright (`TippedCubes`), in the box,
+        on the cube shelf and on the floor. Every other family teleports cubes upright,
+        and harvested states are rebuilt upright, so none of them could see a skill
+        that reads a tipped cube's orientation wrong (the 2026-10-23 zero-step
+        refusals). Kept in their own state file (`TIPPED_STATES`) so the main set's
+        gated denominators (`verdicts.THRESHOLDS`) do not move."""
+        env.reset_to_seed(seed=0)
+        half = O.cube_half_size
+        lift = 0.0005
+        bounds = Container.interior(env=env)
+        wall = Container.wall(env=env)
+        floor_z = Container.floor_z(env=env)
+        cupboard = CupboardGeometry.read(env=env)
+        shelf_z = cupboard.board_top_z + half + lift
+        index = 0
+
+        def spec(
+            *, state_id: str, seed: int, skills: tuple[str, ...], cube: int, where: str, at: Any
+        ) -> StateSpec:
+            nonlocal index
+            up, yaw = TippedCubes.pose(index=index)
+            index += 1
+            name = f"cube_{cube}"
+            return StateSpec(
+                state_id=f"tipped-{state_id}",
+                family="tipped",
+                seed=seed,
+                cases=[BenchmarkCase(skill=skill, cube=name) for skill in skills],
+                provenance=f"{name} {where}, on a side face: {up} axis up, yaw {yaw:g} deg",
+                setup=Setups.chain(
+                    Setups.place(name=name, position=at, quat=TippedCubes.quat(up=up, yaw_deg=yaw))
+                ),
+            )
+
+        for i, (label, x, y) in enumerate(Placements.inside(bounds=bounds, half=half)):
+            yield spec(
+                state_id=f"container-{label}",
+                seed=i,
+                skills=("ReturnCubeToShelfFromBox",),
+                cube=i % 5,
+                where=f"in the container at {label} ({x:.3f}, {y:.3f})",
+                at=[x, y, floor_z + half + lift],
+            )
+        for seed in range(TippedCubes.NUM_SHELF_SEEDS):
+            cube = seed % 5
+            env.reset_to_seed(seed=seed)
+            x, y, _ = (float(v) for v in env.backend().data().body(f"cube_{cube}").xpos)
+            yield spec(
+                state_id=f"shelf-start-s{seed}",
+                seed=seed,
+                skills=("PickCubeFromShelf",),
+                cube=cube,
+                where=f"tipped where reset_to_seed({seed}) put it on the shelf ({x:.3f}, {y:.3f})",
+                at=[x, y, shelf_z],
+            )
+        for i, (label, x, y) in enumerate(Placements.shelf_edges(cupboard=cupboard, half=half)):
+            yield spec(
+                state_id=f"shelf-{label}",
+                seed=i,
+                skills=("PickCubeFromShelf",),
+                cube=i % 5,
+                where=f"on the cube shelf at {label} ({x:.3f}, {y:.3f})",
+                at=[x, y, shelf_z],
+            )
+        floor_places = [
+            *Placements.around(bounds=bounds, wall=wall, half=half),
+            *Placements.beside_panels(cupboard=cupboard, half=half),
+        ]
+        for i, (label, x, y) in enumerate(floor_places):
+            yield spec(
+                state_id=f"floor-{label}",
+                seed=i,
+                skills=("PickCubeFromFloor", "ReturnCubeToShelfFromFloor"),
+                cube=i % 5,
+                where=f"on the floor at {label} ({x:.3f}, {y:.3f})",
+                at=[x, y, half + lift],
             )
 
     @staticmethod

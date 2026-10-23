@@ -4,6 +4,11 @@
     scripts/with_env.sh python -m scripts.skill_benchmark generate \
         [--states benchmarks/sweepoffshelf3d/states.jsonl] [--harvest <run dirs>...]
 
+    # the tipped-cube family, into its own file (`StateFamilies.tipped_specs`)
+    scripts/with_env.sh python -m scripts.skill_benchmark generate --tipped
+    run-heavy scripts/with_env.sh python -m scripts.skill_benchmark run \
+        --states benchmarks/sweepoffshelf3d/tipped_states.jsonl --out <dir>
+
     # an experiment-scale run: on agni, under run-heavy. --out defaults to where the
     # launch gate (hitl_pmp/launch_gate.py) reads this commit's report.
     run-heavy scripts/with_env.sh python -m scripts.skill_benchmark run \
@@ -33,6 +38,7 @@ from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import (
 from hitl_pmp.launch_gate import LaunchGate, LaunchIdentity
 
 DEFAULT_STATES = Path(__file__).resolve().parents[1] / "benchmarks/sweepoffshelf3d/states.jsonl"
+TIPPED_STATES = DEFAULT_STATES.with_name("tipped_states.jsonl")
 DEFAULT_WORKERS = 4
 
 
@@ -44,7 +50,14 @@ class SkillBenchmarkCli:
         parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
         sub = parser.add_subparsers(dest="command", required=True)
         generate = sub.add_parser("generate")
-        generate.add_argument("--states", type=Path, default=DEFAULT_STATES)
+        generate.add_argument(
+            "--states", type=Path, default=None, help="Default: the main set, or --tipped's."
+        )
+        generate.add_argument(
+            "--tipped",
+            action="store_true",
+            help=f"Only the tipped-cube family, into {TIPPED_STATES.name} by default.",
+        )
         generate.add_argument("--harvest", type=Path, nargs="*", default=[])
         generate.add_argument("--no-families", action="store_true")
         generate.add_argument("--only", default=None, help="comma-separated state-id prefixes")
@@ -65,6 +78,8 @@ class SkillBenchmarkCli:
         if getattr(args, "out", "unset") is None:
             args.out = SkillBenchmarkCli.default_out()
         if args.command == "generate":
+            if args.states is None:
+                args.states = TIPPED_STATES if args.tipped else DEFAULT_STATES
             return SkillBenchmarkCli.generate(args=args)
         if args.command == "run":
             started = time.monotonic()
@@ -91,7 +106,9 @@ class SkillBenchmarkCli:
         env = SweepOffShelf3DEnvironment(scene_bg=True)
         specs: list[StateSpec] = []
         try:
-            if not args.no_families:
+            if args.tipped:
+                specs += list(StateFamilies.tipped_specs(env=env))
+            elif not args.no_families:
                 specs += list(StateFamilies.specs(env=env))
             if args.harvest:
                 specs += HarvestedStates.specs(
