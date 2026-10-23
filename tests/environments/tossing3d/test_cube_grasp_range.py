@@ -151,8 +151,12 @@ def test_both_planners_see_the_band() -> None:
 
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KINDER")
 def test_the_live_pick_brackets_the_band() -> None:
-    """At the live controller, from the seed-125 scene with the cube moved: a 3.0 cm gap
-    (EXP-21's refusal) is refused, and a gap of exactly the constant is picked and held."""
+    """At the live controller, from the seed-125 scene with the cube moved: a gap of
+    exactly the constant is on the robot's side and picked and held. A 3.0 cm gap
+    (EXP-21's refusal) is outside the band, so no planner chooses the pick there, but the
+    near-wall grasps (kinder-baselines #187) now hold it when it is dispatched: the band,
+    fitted to the earlier pick, is conservative for this one. Recalibrating it changes
+    the planners' model, so it waits for its own decision."""
     import numpy as np
 
     env = Tossing3DEnvironment()
@@ -171,7 +175,7 @@ def test_the_live_pick_brackets_the_band() -> None:
             robot_side = CUBE_AT_SIDE.holds(restored, (env.cube, env.barrier, Tossing3DSides.robot))
             after = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
             outcomes[gap] = (robot_side, HOLDING.holds(after, (env.robot, env.cube)))
-        assert outcomes[0.03] == (False, False)
+        assert outcomes[0.03] == (False, True)
         assert outcomes[BARRIER_GRASP_CLEARANCE_M] == (True, True)
     finally:
         env.close()

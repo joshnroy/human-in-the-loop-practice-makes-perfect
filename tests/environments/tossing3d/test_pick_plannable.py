@@ -72,13 +72,19 @@ _STUCK_STATES = {
     "exp22b ees gpon cost 5 seed 0": "pick_plannable/exp22b_ees0.json",
     # EXP-22: the cube rests inside the upright bin 0.035-0.043 m from an inner wall.
     "exp22 gpoff local_trend 3e-6": "pick_plannable/exp22_A.json",
-    "exp22 gpon global_curve 3e-6": "pick_plannable/exp22_C.json",
-    "exp22 gpon local_trend 3e-6": "pick_plannable/exp22_D.json",
-    "exp22 gpon global_curve 0": "pick_plannable/exp22_F.json",
     # EXP-21: the bin tipped onto its side, or came to rest on top of the cube.
     "exp21 seed 0, bin on its side": "exp21_tipped_bin_state.json",
     "exp21 seed 1, bin resting on the cube": "pick_plannable/exp21_bin_on_cube_s1.json",
     "exp21 seed 2, bin level on the cube": "pick_plannable/exp21_bin_on_cube_s2.json",
+}
+
+# Stuck states the near-wall pick (kinder-baselines #187: the real TidyBot's tilted,
+# yawed and narrower grasps) now plans: the pick these runs stuck on refused them.
+_RESCUED_STATES = {
+    # EXP-22: the cube inside the upright bin near an inner wall.
+    "exp22 gpon global_curve 3e-6": "pick_plannable/exp22_C.json",
+    "exp22 gpon local_trend 3e-6": "pick_plannable/exp22_D.json",
+    "exp22 gpon global_curve 0": "pick_plannable/exp22_F.json",
     # EXP-21: evaluation cubes 0.024 and 0.030 m from the barrier's face.
     "exp21 seed 0 evaluation, checkpoint 11": "pick_plannable/exp21_barrier_eval11.json",
     "exp21 seed 0 evaluation, checkpoint 40": "pick_plannable/exp21_barrier_eval40.json",
@@ -473,6 +479,22 @@ def test_a_known_stuck_state_is_unplannable_and_leaves_only_the_resets(
     assert run.steps == 0
     assert run.error is not None
     assert "No collision-free cube grasp" in run.error
+
+
+@_NEEDS_KINDER
+@pytest.mark.parametrize("label", list(_RESCUED_STATES))
+def test_a_stuck_state_the_near_wall_pick_rescued_is_plannable_and_dispatched(
+    *, live_env: Tossing3DEnvironment, label: str
+) -> None:
+    env = live_env
+    observed = env.restore_plain_snapshot(plain=_plain(fixture=_RESCUED_STATES[label]))
+
+    assert PICK_PLANNABLE.holds(observed, (env.robot, env.cube))
+    # What the predicate predicts: the dispatched pick moves instead of being refused.
+    # (Whether PickCube is applicable is GraspClear's call too: it still masks the two
+    # cubes 2.4-3.0 cm from the barrier's face, as it did before the near-wall grasps.)
+    run = env.backend().run_pick_cube()
+    assert run.steps > 0
 
 
 def _centred_in_bin_cube() -> dict[str, list[float]]:
