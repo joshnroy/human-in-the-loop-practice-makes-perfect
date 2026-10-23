@@ -204,18 +204,27 @@ def test_human_learning_changes_next_reset_forecast_after_refit(*, learning_rate
 
 @pytest.mark.parametrize("reset_name", sorted(RESET_SKILLS))
 def test_real_reset_still_updates_identical_cost_and_performance_filters(
-    *, reset_name: str
+    *, reset_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A reset that delivers what it promised -- read here through a patched
+    `abstract_state` -- conditions its own belief exactly as a robot success would."""
     method = _method(offer_non_human_reset=True)
     reset = _reset(method=method, name=reset_name)
+    before_scene, after_scene = (
+        Tossing3DState(data={obj: np.zeros(obj.type.dim) for obj in method.objects()})
+        for _ in range(2)
+    )
+    readings = {
+        id(before_scene): frozenset(),
+        id(after_scene): reset.expected_add_effects(before_atoms=frozenset()),
+    }
+    monkeypatch.setattr(
+        Tossing3DPomdpMethod, "abstract_state", lambda _self, *, state: readings[id(state)]
+    )
+    method.env.current_state = before_scene
     before = method.pomdp_state.skill_beliefs[reset_name]
     method.record_action_cost(ground_skill=reset)
-    method.observe_help_granted(
-        state=Tossing3DState(
-            data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
-            abstract_atoms=frozenset(),
-        )
-    )
+    method.observe_help_granted(state=after_scene)
     expected = before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[reset_name] == expected
     assert method.pomdp_state.pending_examples.get(reset_name, 0) == 1

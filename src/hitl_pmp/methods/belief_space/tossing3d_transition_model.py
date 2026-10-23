@@ -158,7 +158,7 @@ def transition_outcomes(
     assert action.preconditions <= environment_state.true_atoms
     cost = estimated_action_cost(state=state, action=action)
     name = action.skill.name
-    if name in domain.deterministic_skills and name not in domain.competence_weighted_skills:
+    if name in domain.deterministic_skills:
         # The reset API either completes successfully or raises and aborts the
         # run. Its empirical performance telemetry is not uncertain dynamics.
         # Real completions still update S/F, costs and refits, but a forecast must
