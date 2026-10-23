@@ -131,13 +131,15 @@ def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states, monkeypatch):
 
 
 def test_the_neighbour_sweep_refusal_now_prevents_that_double_grasp(*, env, states):
-    """The same start with the neighbour-sweep refusal on: every grasp on cube_4 would
-    sweep cube_1, so the pick refuses at 0 control steps instead of closing on both."""
+    """The same start with the neighbour-sweep refusal on: every centred grasp on
+    cube_4 would sweep cube_1, and none is offered. An off-centre one clears it
+    (`shelf_offsets`): cube_4 is taken alone, cube_1 left on the shelf where it was."""
     kinder = _restore(
         env=env, states=states, state_id="refusal-case3-pomdp3-start-before-double-grasp"
     )
+    before = kinder.shelf.cube_position(cube="cube_1").copy()
     atoms = _act(env=env, skill="PickCubeFromShelf", cube="cube_4")
-    assert not {a for a in atoms if a[0] == "HoldingCube"}
-    assert not kinder.held_cubes
-    assert env.last_controller_steps() == 0
-    assert "refused grasps sweeping cube_1" in env.last_skill_error()
+    assert {a[1][1] for a in atoms if a[0] == "HoldingCube"} == {"cube_4"}, env.last_skill_error()
+    assert kinder.held_cubes == {"cube_4"}
+    moved = float(np.linalg.norm(kinder.shelf.cube_position(cube="cube_1") - before))
+    assert moved < 0.005, moved
