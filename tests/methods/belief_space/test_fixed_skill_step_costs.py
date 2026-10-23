@@ -91,15 +91,33 @@ def test_an_execution_does_not_move_the_fixed_price_but_is_still_charged_in_full
 
 
 @pytest.mark.parametrize("fixed", [True, False])
-def test_every_grounding_of_a_human_reset_gets_its_cost_file_price(*, fixed: bool) -> None:
+def test_every_grounding_of_a_human_reset_shares_one_estimate_from_observed_charges(
+    *, fixed: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The model grounds `reset_cubes` over every cube tuple, repeats included, while
     the provider names one canonical grounding. Each is the same human reset, charged
-    by name, so each must carry the cost file's price, not a robot skill's forecast."""
+    by name, so each carries one estimate: the shared one-step prior until a charge is
+    observed, then the observed mean -- never the cost file's price, which only the
+    environment knows. A fixed robot table does not price human skills."""
     method = _method(skill_step_costs=_steps() if fixed else None)
-    names = {reset.skill.name for reset in method.skill_provider.human_cube_bin_reset_skills()}
-    resets = [g for g in method._pomdp_model.ground_skills if g.skill.name in names]  # noqa: SLF001
-    assert len(resets) > len(names)
+    monkeypatch.setattr(Tossing3DPomdpMethod, "abstract_state", lambda _self, *, state: frozenset())
+    monkeypatch.setattr(SweepOffShelf3DEnvironment, "get_current_state", lambda _self: None)
+    canonical = next(
+        reset
+        for reset in method.skill_provider.human_cube_bin_reset_skills()
+        if reset.skill.name == "reset_cubes"
+    )
+    resets = [
+        g
+        for g in method._pomdp_model.ground_skills  # noqa: SLF001
+        if g.skill.name == "reset_cubes"
+    ]
+    assert len(resets) > 1
     for reset in resets:
+        assert estimated_action_cost(state=method.pomdp_state, action=reset) == 1
+    method.record_action_cost(ground_skill=resets[-1])
+    method.observe_execution_cost(cost=500, steps=1, complete=True)
+    for reset in [*resets, canonical]:
         assert estimated_action_cost(state=method.pomdp_state, action=reset) == 500
 
 
