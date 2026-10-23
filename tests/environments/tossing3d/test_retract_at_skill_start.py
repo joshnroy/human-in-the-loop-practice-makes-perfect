@@ -151,9 +151,7 @@ def test_the_stuck_pick_succeeds_through_a_real_retract(
     assert HOLDING.holds(held, (env.robot, env.cube))
 
 
-def test_a_pick_that_starts_in_contact_refuses_loudly(
-    *, live_env: Tossing3DEnvironment
-) -> None:
+def test_a_pick_that_starts_in_contact_refuses_loudly(*, live_env: Tossing3DEnvironment) -> None:
     """s4 before seq 808: the planner poses the fingers open, and open, a pad is inside
     the cube. The pick refuses with the reason, rather than plan from a configuration
     already in collision."""
@@ -169,9 +167,7 @@ def test_a_pick_that_starts_in_contact_refuses_loudly(
     reason="undecided: a finger already resting on the bin rim (0.23 mm clear in the "
     "planning scene, in contact in MuJoCo) stalls the retract",
 )
-def test_a_pick_with_a_finger_on_the_rim_succeeds(
-    *, live_env: Tossing3DEnvironment
-) -> None:
+def test_a_pick_with_a_finger_on_the_rim_succeeds(*, live_env: Tossing3DEnvironment) -> None:
     env = live_env
     _restore(env=env, fixture=_HOOKED_ON_RIM)
     held = env.take_action(action=np.array([float(env.pick_cube_id), 0.0, 0.0, 0.0, 0.0]))
