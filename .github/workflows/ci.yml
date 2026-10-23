@@ -267,7 +267,7 @@ jobs:
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Unit & Core tests (MSS)
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
+          pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
             tests/core \
             tests/planning \
             tests/recording \
@@ -330,7 +330,7 @@ jobs:
             pytest-${{ runner.os }}-analysis-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Historical Analysis tests
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/analysis
+        run: pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/analysis
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
@@ -382,7 +382,7 @@ jobs:
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — TossingRoom
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
+          pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
             tests/environments/tossingroom \
             tests/environments/test_noop_action.py \
             tests/environments/test_operator_dynamics_fidelity.py \
@@ -475,7 +475,8 @@ jobs:
               assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
               print(f"{mod.__name__}: {path}")
           PY
-      # `-n auto` (pytest-xdist, one worker per vCPU) does not reopen the LLVM collision
+      # `-n logical` (pytest-xdist, one worker per vCPU; `-n auto` counts physical cores and so
+      # started only 2 on this 4-vCPU runner, tests/test_xdist_groups.py) does not reopen the LLVM collision
       # this job exists to avoid: workers only ever draw tests from this job's own path, so
       # no worker process mixes OSMesa with torch's triton any more than the serial run
       # did. `--dist loadgroup` keeps each `xdist_group`-marked module on one worker, so a
@@ -492,7 +493,7 @@ jobs:
       - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
       - name: Upload per-test durations
@@ -586,7 +587,7 @@ jobs:
               print(f"{mod.__name__}: {path}")
           PY
       - name: Pytest — Scripts & Reproducibility
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/scripts
+        run: pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/scripts
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
