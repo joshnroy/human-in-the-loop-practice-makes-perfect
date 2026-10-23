@@ -20,6 +20,14 @@
 >   PENDING. It waits on #551, #553 and stack #544 (#516, #530, #536, #546) merging. The
 >   expected verdict is "launch = main minus #556, which merged after the launch". Any
 >   difference beyond that will be noted here; this text will not be rewritten.
+>
+> **Launch-equivalence verdict (2026-10-23, after #551, #553 and #516/#530/#536/#546
+> merged): equivalent to main `73284f19a` minus #556.** `git diff 1f209df65 73284f19a`
+> over `src/`, `configs/`, `scripts/` and `benchmarks/` touches one file,
+> `src/hitl_pmp/environments/sweepoffshelf3d/kinder_skills.py`, and its +/- lines are
+> identical to #556's own `src/` diff (169 diff lines each). Both reference pins are
+> equal (kindergarden `490831fa5`, kinder-baselines `1a081f28`). The rest of the tree
+> difference is tests and CI only. No other difference was found.
 
 ## TL;DR
 
@@ -152,9 +160,21 @@ Every item below is a decision Josh made on 2026-10-22, from the decision log.
 
 ## Results
 
-![Held-out tasks solved per seed over practice steps, per arm, with RoboCode](2026-10-23-sweepoffshelf3d-launch-20261023b-solved-vs-practice-steps.png)
+![Held-out tasks solved, the mean of every method, with RoboCode](2026-10-23-sweepoffshelf3d-launch-20261023b-means-all-methods.png)
 
-*Faint lines are single seeds; bold lines are arm means, n=6. After a seed's run ends,
+![EES, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-ees.png)
+
+![EES always-ask, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-ees-always-ask.png)
+
+![determinized, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-cccc-determinized.png)
+
+![determinized always-ask, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-cccc-determinized-always-ask.png)
+
+![expectimax d6, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-cccc-expectimax-d6.png)
+
+![expectimax d6 always-ask, each run](2026-10-23-sweepoffshelf3d-launch-20261023b-per-run-cccc-expectimax-d6-always-ask.png)
+
+*The first figure shows arm means, n=6; the per-run figures show one panel per seed, with a dotted line where the run ended and why. After a seed's run ends,
 its last value is carried forward, because the policy is frozen. Colour carries the
 method in every figure (EES `#009E73`, determinized `#CC79A7`, expectimax d6 `#E69F00`,
 RoboCode `#F0E442`), and each always-ask arm is a lighter shade of its method's
@@ -324,8 +344,7 @@ Notes on this table:
      remains.
 - **Re-gate the shelf pick before relaunching.** #556 has merged, so the 72/100
   lowering should not carry into the next launch.
-- **Record the launch-equivalence verdict when it lands.** Add it as a dated note here,
-  once #551, #553 and stack #544 merge.
+- **The launch-equivalence verdict** is recorded at the top: main `73284f19a` minus #556.
 
 Data: `hitl-pmp-results/shelf-launch-20261023b-results/` (`REPORT.md`,
 `analysis/table.md`, `analysis/tests.md`, `analysis/stop_diagnosis.md`,
