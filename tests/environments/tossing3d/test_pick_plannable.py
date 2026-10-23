@@ -109,8 +109,8 @@ def test_a_cube_beyond_the_barriers_centre_plane_is_across_it() -> None:
 
 
 def test_a_cube_touching_the_barrier_from_the_robots_side_is_left_to_the_planner() -> None:
-    """The gate carries none of `CubeAtSide`'s margins: inside the grasp band the verdict
-    is the dry run's, not a constant's."""
+    """The gate carries none of `CubeAtSide`'s footprint margin: next to the barrier the
+    verdict is the dry run's, not a constant's."""
     barrier = {"x": 1.3}
     assert not PickPlannableGate.cube_across_barrier(
         robot_x=0.2, cube={"x": 1.2999}, barrier=barrier
