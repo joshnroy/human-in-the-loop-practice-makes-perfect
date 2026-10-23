@@ -235,13 +235,36 @@ def grid_predict(
             * curve_cycle_mass(config=config, training_examples=total_training_examples)
         ).ravel()
     c_mass, eta_mass = local_transition_kernels(config=config, training_examples=training_examples)
-    return np.einsum(
-        "ce,cej,ef->jf",
-        weights.reshape(config.competence_bins, config.learning_rate_bins),
-        c_mass,
-        eta_mass,
-        optimize=True,
-    ).ravel()
+    weights = weights.reshape(config.competence_bins, config.learning_rate_bins)
+    path = local_prediction_path(
+        competence_bins=config.competence_bins, learning_rate_bins=config.learning_rate_bins
+    )
+    if path == TWO_STEP_PREDICTION_PATH:
+        # What `einsum` executes for that plan, step for step: an unoptimized einsum
+        # contracts c, then tensordot contracts e straight into "jf". Same operations
+        # on the same operands, so the same bytes, without re-validating the plan.
+        return np.tensordot(
+            np.einsum("cej,ce->ej", c_mass, weights), eta_mass, axes=((0,), (0,))
+        ).ravel()
+    return np.einsum("ce,cej,ef->jf", weights, c_mass, eta_mass, optimize=list(path)).ravel()
+
+
+TWO_STEP_PREDICTION_PATH = ("einsum_path", (0, 1), (0, 1))
+
+
+@lru_cache(maxsize=64)
+def local_prediction_path(*, competence_bins: int, learning_rate_bins: int) -> tuple[object, ...]:
+    """numpy's own `optimize=True` plan for Model B's prediction, made once per grid.
+
+    The greedy plan reads operand shapes alone, so replaying it is the contraction
+    `optimize=True` would choose on every call -- search predicts at every node, and
+    re-planning was most of the prediction's cost.
+    """
+    c, e = competence_bins, learning_rate_bins
+    path, _ = np.einsum_path(
+        "ce,cej,ef->jf", np.empty((c, e)), np.empty((c, e, c)), np.empty((e, e)), optimize=True
+    )
+    return tuple(path)
 
 
 def grid_backward(

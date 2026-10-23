@@ -477,3 +477,68 @@ def test_model_a_engine_priors_deliberately_diverge() -> None:
     grid = _belief(model="global_curve", config=config)
     assert particle.mean_competence() == pytest.approx(0.5, abs=0.02)
     assert grid.mean_competence() == pytest.approx(1.0 / 3.0, abs=0.03)
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        InferenceConfig(),
+        InferenceConfig(competence_bins=7, learning_rate_bins=3),
+        InferenceConfig(competence_bins=2, learning_rate_bins=40),
+    ],
+)
+@pytest.mark.parametrize("planned_branch", [True, False])
+def test_model_b_grid_prediction_is_bitwise_the_optimized_einsum_without_a_path_search(
+    *, config: InferenceConfig, planned_branch: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Search predicts every node's posterior, so re-planning the same contraction
+    each call was a fifth of search time; the planned contraction must give the
+    very bytes `einsum(optimize=True)` does, not merely close ones. Both branches:
+    the hand-executed two-step plan, and replaying any other plan through einsum."""
+    from numpy.core import einsumfunc
+
+    from hitl_pmp.methods.belief_space.competence_inference import models
+
+    if not planned_branch:
+        monkeypatch.setattr(models, "TWO_STEP_PREDICTION_PATH", ())
+
+    rng = np.random.default_rng(11)
+    cases = []
+    for training_examples in (0, 1, 3):
+        c_mass, eta_mass = local_transition_kernels(
+            config=config, training_examples=training_examples
+        )
+        weights = rng.dirichlet(np.ones(config.competence_bins * config.learning_rate_bins))
+        expected = np.einsum(
+            "ce,cej,ef->jf",
+            weights.reshape(config.competence_bins, config.learning_rate_bins),
+            c_mass,
+            eta_mass,
+            optimize=True,
+        ).ravel()
+        cases.append((weights, training_examples, expected))
+    grid_predict(
+        model="local_trend",
+        config=config,
+        weights=cases[0][0],
+        training_examples=0,
+        total_training_examples=0,
+    )
+    searches = []
+    real_path = einsumfunc.einsum_path
+    monkeypatch.setattr(
+        einsumfunc,
+        "einsum_path",
+        lambda *args, **kwargs: searches.append(kwargs) or real_path(*args, **kwargs),
+    )
+    for weights, training_examples, expected in cases:
+        predicted = grid_predict(
+            model="local_trend",
+            config=config,
+            weights=weights,
+            training_examples=training_examples,
+            total_training_examples=training_examples,
+        )
+        assert predicted.dtype == expected.dtype and predicted.shape == expected.shape
+        assert predicted.tobytes() == expected.tobytes()
+    assert [s for s in searches if s.get("optimize") is True] == []
