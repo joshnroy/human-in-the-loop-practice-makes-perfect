@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from typing import Any
+from typing import Any, get_args
 
 import numpy as np
 
@@ -23,6 +23,7 @@ from .types.determinized import (
     DeterminizedSearchDiagnostics,
     DeterminizedSearchNode,
     DeterminizedSearchQueueEntry,
+    DrawScope,
 )
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
@@ -44,14 +45,21 @@ class DeterminizedAStarPlanner(
         seed: int,
         observation_probability_weight: float = 0.1,
         log_full_search_tree: bool = False,
+        draw_scope: DrawScope = "node",
     ) -> None:
         assert math.isfinite(observation_probability_weight)
         assert observation_probability_weight >= 0.0
+        assert draw_scope in get_args(DrawScope), f"unknown draw scope {draw_scope!r}"
         self.max_iterations = max_iterations
         self.rng = np.random.default_rng(seed)
         # Algorithm 3's lambda: weight on the sampled observation log probability.
         self.observation_probability_weight = observation_probability_weight
         self.log_full_search_tree = log_full_search_tree
+        # "node": one independent draw per (search node, action) edge, so a node that a
+        # cheap reset makes new re-rolls the same skill's outcome. Otherwise one uniform
+        # per `model.outcome_draw_key(scope=...)` -- what the outcome distribution reads,
+        # with ("state") or without ("skill") the atoms -- shared by every node with it.
+        self.draw_scope = draw_scope
 
     def solve(
         self,
@@ -134,6 +142,8 @@ class DeterminizedAStarPlanner(
             object,
             list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
         ] = {}
+        outcome_uniforms: dict[object, float] = {}
+        reused_outcome_draws = 0
         reopened_nodes = 0
         cached_successor_relaxations = 0
         stale_queue_entries = 0
@@ -240,11 +250,27 @@ class DeterminizedAStarPlanner(
                         belief_state=current_node.belief.belief_state,
                     )
                     diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
+                    uniform = None
+                    if self.draw_scope != "node":
+                        draw_key = model.outcome_draw_key(
+                            environment_state=current_node.belief.environment_state,
+                            belief_state=current_node.belief.belief_state,
+                            action=action,
+                            scope=self.draw_scope,
+                        )
+                        uniform = outcome_uniforms.get(draw_key)
+                        if uniform is None:
+                            uniform = float(self.rng.random())
+                            outcome_uniforms[draw_key] = uniform
+                        else:
+                            reused_outcome_draws += 1
                     (
                         next_environment_state,
                         sampled_cost,
                         estimated_observation_probability,
-                    ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
+                    ) = self.sample_outcome(
+                        outcomes=joint_transition_outcomes, action=action, uniform=uniform
+                    )
                     next_belief = model.compute_next_belief_state(
                         belief_state=current_node.belief.belief_state,
                         environment_state=current_node.belief.environment_state,
@@ -473,6 +499,11 @@ class DeterminizedAStarPlanner(
                 selected_path_depth=best_path_depth,
                 reason="minimum_g_sampled_path_stop_wins_ties",
             )
+            draw_fields = (
+                {"draw_scope": self.draw_scope, "reused_outcome_draws": reused_outcome_draws}
+                if self.draw_scope != "node"
+                else {}
+            )
             trace.record(
                 event="search_summary",
                 node=0,
@@ -499,6 +530,7 @@ class DeterminizedAStarPlanner(
                 stop_value_evaluations=len(values_by_key),
                 search_elapsed_seconds=time.perf_counter() - started_at,
                 termination_reason=diagnostics.termination_reason,
+                **draw_fields,
             )
         return best_objective_value, best_action
 
@@ -558,8 +590,12 @@ class DeterminizedAStarPlanner(
         *,
         outcomes: list[tuple[EnvironmentStateT, float, float]],
         action: ActionT,
+        uniform: float | None = None,
     ) -> tuple[EnvironmentStateT, float, float]:
-        """Validate a chance distribution and sample one determinized successor."""
+        """Validate a chance distribution and sample one determinized successor.
+
+        A given ``uniform`` goes through the CDF exactly as ``Generator.choice`` maps
+        its own draw, so equal distributions given equal uniforms agree."""
         assert outcomes, f"action {action!r} has no chance outcomes"
         probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
         assert np.all(np.isfinite(probabilities)) and np.all(probabilities > 0.0), (
@@ -569,7 +605,13 @@ class DeterminizedAStarPlanner(
         assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
             f"chance probabilities sum to {total_probability}, not 1"
         )
-        outcome_index = int(self.rng.choice(len(outcomes), p=probabilities / total_probability))
+        if uniform is None:
+            outcome_index = int(self.rng.choice(len(outcomes), p=probabilities / total_probability))
+        else:
+            assert 0.0 <= uniform < 1.0
+            cdf = np.cumsum(probabilities / total_probability)
+            cdf /= cdf[-1]
+            outcome_index = min(int(cdf.searchsorted(uniform, side="right")), len(outcomes) - 1)
         outcome = outcomes[outcome_index]
         assert math.isfinite(outcome[1]) and outcome[1] >= 0, (
             "sampled_cost must be finite and non-negative"

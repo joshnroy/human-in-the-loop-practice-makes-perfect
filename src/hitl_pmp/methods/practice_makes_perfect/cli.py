@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.practice_costs import SkillStepCosts
@@ -12,6 +12,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
+from hitl_pmp.methods.belief_space.types.determinized import DrawScope
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
@@ -331,6 +332,15 @@ class Tossing3DPomdpCli(EesCli):
             ),
         )
         parser.add_argument(
+            "--pomdp-draw-scope",
+            choices=get_args(DrawScope),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_draw_scope"].default,
+            help="Determinized A* only: which search nodes share one sampled outcome per "
+            "action. node: none (each node draws afresh, so a cheap reset re-rolls); "
+            "state: nodes with the same atoms and acting-skill belief; skill: nodes with "
+            "the same acting-skill belief, wherever it is attempted.",
+        )
+        parser.add_argument(
             "--pomdp-log-full-search-tree",
             action=argparse.BooleanOptionalAction,
             default=Tossing3DPomdpMethod.model_fields["pomdp_log_full_search_tree"].default,
@@ -480,6 +490,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
+                pomdp_draw_scope=args.pomdp_draw_scope,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_competence_model=args.pomdp_competence_model,
