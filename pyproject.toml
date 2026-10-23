@@ -109,6 +109,7 @@ testpaths = ["tests"]
 # pull-request runs pass `-m "not main_only"` (tests/test_main_only_marker.py).
 markers = [
     "main_only: slow; skipped on pull-request CI, run on every push to main and locally",
+    "time_limit(seconds): fail the test if it runs longer (tests/environments/tossing3d)",
 ]
 
 [tool.coverage.run]

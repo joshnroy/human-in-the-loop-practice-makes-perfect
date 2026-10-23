@@ -255,13 +255,15 @@ def test_the_pick_dispatch_ignores_every_parameter_slot(*, monkeypatch: pytest.M
     assert calls == [{"pick_cube": True}, {"pick_cube": True}]
 
 
+@pytest.mark.time_limit(seconds=180)
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
 def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() -> None:
     """The recovery-state lifecycle on a stuck state the pick refuses (EXP-22's in-bin
-    state A; it used the trap-2 state from 2026-09-22's grasp-clear validation run,
-    which the near-wall grasps now pick): dispatching the pick there is refused
+    state F; it used state A, which the pick now plans from the cube's far side, and
+    before that the trap-2 state from 2026-09-22's grasp-clear validation run, which
+    the near-wall grasps pick): dispatching the pick there is refused
     ("No collision-free cube grasp", 0 steps); the refusal must surface as an
     observed atom that removes PickupUnblocked from the state without changing whether
     the pick is applicable -- a retry is dispatched and refused again, one more failed
@@ -282,9 +284,9 @@ def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() ->
     from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
     from hitl_pmp.planning.grounding import SkillGrounder
 
-    # EXP-22's in-bin stuck state A: the trap-2 state this used is now picked by the
-    # near-wall grasps (kinder-baselines #187); A is still refused.
-    stuck_path = Path(__file__).parent / "fixtures" / "pick_plannable" / "exp22_A.json"
+    # EXP-22's in-bin stuck state F, the cube in a corner of the bin: grid 36 and all
+    # four standoff sides (kinder-baselines #189) still refuse it.
+    stuck_path = Path(__file__).parent / "fixtures" / "pick_plannable" / "exp22_F.json"
     plain = jsonlib.loads(stuck_path.read_text())
     env = Tossing3DEnvironment()
     try:

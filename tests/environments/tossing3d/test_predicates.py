@@ -294,6 +294,7 @@ def test_a_corner_approach_is_measured_in_two_dimensions() -> None:
     assert not _grasp_clear_at(cube_x=2.0 - 0.19, cube_y=0.19)
 
 
+@pytest.mark.time_limit(seconds=180)
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
@@ -336,14 +337,31 @@ def test_grasp_clear_matches_the_live_grasp_planners_verdict() -> None:
         env.close()
 
 
+@pytest.mark.time_limit(seconds=180)
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
-def test_exp22s_refused_in_bin_pick_is_not_clear_and_a_centred_one_picks() -> None:
-    """Predicate <=> planner inside an upright bin placed where EXP-22 froze (robot-side
-    reset region, bin yaw 180): the gpoff frozen cube (offset -0.0667, +0.0601, yaw 34
-    deg) is not clear and the live grasp planner refuses it; a centred cube is clear
-    and is picked and held."""
+@pytest.mark.parametrize(
+    ("offset", "expect_clear", "expect_held"),
+    [
+        # The gpon global_curve 0 frozen cube, in a corner: refused by grid 36 from all
+        # four sides.
+        ((0.0678, -0.0705), False, False),
+        # A centred cube.
+        ((0.0, 0.0), True, True),
+        # The gpoff frozen cube, which this test refused until the pick stood on the
+        # cube's far sides (kinder-baselines #189): picked now, though still not clear.
+        # GraspClear is calibrated to the planner before that, so it stays conservative.
+        ((-0.0667, 0.0601), False, True),
+    ],
+)
+def test_exp22s_refused_in_bin_pick_is_not_clear_and_a_centred_one_picks(
+    *, offset: tuple[float, float], expect_clear: bool, expect_held: bool
+) -> None:
+    """Predicate and planner inside an upright bin placed where EXP-22 froze
+    (robot-side reset region, bin yaw 180, cube yaw 34 deg): a frozen corner cube is
+    not clear and the live grasp planner refuses it; a centred cube is clear and is
+    picked and held."""
     import json as jsonlib
     import math
 
@@ -355,26 +373,25 @@ def test_exp22s_refused_in_bin_pick_is_not_clear_and_a_centred_one_picks() -> No
         env.reset_to_seed(seed=125)
         base = KinderBackend.snapshot_to_plain(snapshot=env.backend().snapshot())
         bin_x, bin_y = -0.262, -1.5252
-        for offset, expect_clear in (((-0.0667, 0.0601), False), ((0.0, 0.0), True)):
-            plain = jsonlib.loads(jsonlib.dumps(base))
-            plain["bin_0"][0:7] = [bin_x, bin_y, 0.0, 0.0, 0.0, 0.0, 1.0]
-            half_yaw = math.radians(34.0) / 2
-            plain["cube_0"][0:7] = [
-                bin_x + offset[0],
-                bin_y + offset[1],
-                0.045,  # resting on the bin floor, as the frozen cubes were
-                math.cos(half_yaw),
-                0.0,
-                0.0,
-                math.sin(half_yaw),
-            ]
-            plain["robot"][0:3] = [-0.2639, 0.0537, -math.pi / 2]
-            restored = env.restore_plain_snapshot(plain=plain)
-            assert GRASP_CLEAR.holds(restored, (env.cube, env.bin)) == expect_clear, offset
-            landed = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
-            error = env.last_skill_error()
-            refused = bool(error and "No collision-free" in error)
-            assert refused == (not expect_clear), (offset, error)
-            assert HOLDING.holds(landed, (env.robot, env.cube)) == expect_clear, offset
+        plain = jsonlib.loads(jsonlib.dumps(base))
+        plain["bin_0"][0:7] = [bin_x, bin_y, 0.0, 0.0, 0.0, 0.0, 1.0]
+        half_yaw = math.radians(34.0) / 2
+        plain["cube_0"][0:7] = [
+            bin_x + offset[0],
+            bin_y + offset[1],
+            0.045,  # resting on the bin floor, as the frozen cubes were
+            math.cos(half_yaw),
+            0.0,
+            0.0,
+            math.sin(half_yaw),
+        ]
+        plain["robot"][0:3] = [-0.2639, 0.0537, -math.pi / 2]
+        restored = env.restore_plain_snapshot(plain=plain)
+        assert GRASP_CLEAR.holds(restored, (env.cube, env.bin)) == expect_clear, offset
+        landed = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        error = env.last_skill_error()
+        refused = bool(error and "No collision-free" in error)
+        assert refused == (not expect_held), (offset, error)
+        assert HOLDING.holds(landed, (env.robot, env.cube)) == expect_held, offset
     finally:
         env.close()
