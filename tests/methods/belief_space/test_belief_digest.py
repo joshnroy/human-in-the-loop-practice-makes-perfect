@@ -189,8 +189,9 @@ def test_remembered_digests_neither_keep_beliefs_alive_nor_outlive_them() -> Non
     belief = create_bayesian_prior(model="local_trend", engine="grid", seed=6, num_particles=8)
     BeliefDigest.of(belief=belief)
     reference = weakref.ref(belief)
-    remembered = len(BeliefDigest._digests)
+    key = id(belief)
+    assert key in BeliefDigest._digests
     del belief
     gc.collect()
     assert reference() is None
-    assert len(BeliefDigest._digests) == remembered - 1
+    assert key not in BeliefDigest._digests
