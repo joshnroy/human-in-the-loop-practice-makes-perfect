@@ -12,10 +12,10 @@ ARMS = [(method, always_ask) for method in ("pomdp", "ees") for always_ask in (F
 
 
 def test_the_two_reset_prices_are_the_decided_ones() -> None:
-    # Josh, 2026-10-21: one rule, two units, shared with the shelf. The planner arms
-    # price a human reset in control ticks (500); EES prices it in its own plan-cost
-    # units, where a robot skill costs -log(competence) (5, EXP-22c's ees-lamcost5).
-    assert Tossing3DArmCosts.PLANNER_HUMAN_RESET_COST == 500
+    # Josh, 2026-10-23: every arm is charged 5 per human reset. The planner arms keep
+    # their objective exactly by an exact rescale (robot step 0.01, lambda 3e-4);
+    # EES's plan cost was already 5 (EXP-22c's ees-lamcost5).
+    assert Tossing3DArmCosts.PLANNER_HUMAN_RESET_COST == 5
     assert Tossing3DArmCosts.EES_HUMAN_RESET_COST == 5
 
 
