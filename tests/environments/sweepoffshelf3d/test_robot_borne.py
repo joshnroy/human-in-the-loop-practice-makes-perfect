@@ -119,6 +119,9 @@ def test_a_pick_that_closes_on_two_cubes_is_a_miss(*, env, states, monkeypatch):
     # grasp; both off, so this still covers the miss handling behind them.
     monkeypatch.setattr(KinderSkills, "neighbour_in_sweep", lambda self, *, path, cube: None)
     monkeypatch.setattr(KinderSkills, "touches_other_cube", lambda self, *, base, arm, cube: False)
+    # The resting wiper as a planning obstacle reroutes this approach off the double
+    # grasp; off too, since this tests the miss handling, not the planning scene.
+    monkeypatch.setattr(KinderSkills, "add_wiper_obstacle", lambda self, *, sim: None)
     kinder = _restore(
         env=env, states=states, state_id="refusal-case3-pomdp3-start-before-double-grasp"
     )
