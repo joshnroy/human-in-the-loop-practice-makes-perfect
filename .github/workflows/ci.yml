@@ -65,6 +65,8 @@ jobs:
               - 'tests/__init__.py'
               - 'tests/environments/__init__.py'
               - 'tests/mimiclabs_assets.py'
+              - 'tests/ci_shard.py'
+              - 'tests/ci_shard_durations.json'
               - 'tests/environments/tossing3d/**'
               - 'tests/environments/sweepoffshelf3d/**'
               - 'configs/**'
@@ -396,6 +398,17 @@ jobs:
     # Skipped only on a pull request whose diff the `changes` filter says cannot affect it.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.tossing3d == 'true') }}
     runs-on: ubuntu-latest
+    # Sharded: as one job its four xdist workers stayed saturated for ~40 min, so only
+    # more runners could shorten it. Every shard collects the same tests and keeps a
+    # disjoint, duration-balanced share; an `xdist_group` never straddles two shards
+    # (tests/ci_shard.py, tests/test_ci_shard.py). The matrix length must equal
+    # `--shard-count` below. `fail-fast: false` so one failing shard still lets the others
+    # report every failure, as the single job did. The aggregate `test` check sees one
+    # `needs.test-tossing3d.result`, which is `success` only if every shard passed.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     env: *kinder_env
     steps:
       - name: Install LAPACK, BLAS, and OSMesa
@@ -450,9 +463,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-tossing3d-${{ matrix.shard }}-${{ hashFiles('tests/**', 'src/**') }}
           restore-keys: |
-            pytest-${{ runner.os }}-
+            pytest-${{ runner.os }}-tossing3d-${{ matrix.shard }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
       # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
@@ -493,14 +506,15 @@ jobs:
       - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n logical --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+      # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.
       - name: Upload per-test durations
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: junit-tossing3d
+          name: junit-tossing3d-${{ matrix.shard }}
           path: ${{ runner.temp }}/junit-tossing3d.xml
           retention-days: 14
 
