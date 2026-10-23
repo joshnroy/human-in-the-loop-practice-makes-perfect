@@ -121,7 +121,11 @@ class Tossing3DPomdpMethod(EesMethod):
     )
     pomdp_learning_time_scale: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-    robot_duration_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
+    # The one prior cost of every skill not yet observed, human or robot, in robot
+    # steps: the planner is never told what a human skill truly costs (Josh,
+    # 2026-10-23). Priced at the current robot step price, so it stays "one step's
+    # cost" if that price changes.
+    skill_cost_prior_steps: float = Field(default=1, gt=0, allow_inf_nan=False)
     # A fixed price per robot skill, in control steps, replacing the learned per-grounding
     # average and its prior (SkillStepCosts). Only the planner's price: the run is still
     # charged each execution's real steps.
@@ -139,6 +143,12 @@ class Tossing3DPomdpMethod(EesMethod):
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
+    # Observed charged cost of each human reset, by (skill, destination): the key it is
+    # dispatched and charged by. A human charge is not steps times a step price, so its
+    # cost itself is the observation.
+    _human_execution_costs: dict[tuple[str, str | None], list[float]] = PrivateAttr(
+        default_factory=dict
+    )
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
     # A full reset the always-ask wrapper forced, awaiting its completion.
     _pending_start_reset: bool = PrivateAttr(default=False)
@@ -177,30 +187,37 @@ class Tossing3DPomdpMethod(EesMethod):
         destination = self.skill_provider.movables_reset_destination(ground_skill=ground)
         return resets.get((ground.skill.name, destination))
 
+    def _human_reset_key(self, *, ground: GroundSkill) -> tuple[str, str | None]:
+        return (
+            ground.skill.name,
+            self.skill_provider.movables_reset_destination(ground_skill=ground),
+        )
+
     def _refresh_execution_forecasts(self) -> None:
         accounting = self._practice_accounting
         if accounting is None:
             return
         price = accounting.robot_charge().cost
+        prior = self.skill_cost_prior_steps * price
         fixed = self.pomdp_skill_step_costs
         resets = self._human_resets()
         estimates = {}
         missing = set()
         for ground in self._pomdp_model.ground_skills:
-            human = self._human_reset(ground=ground, resets=resets)
-            if human is not None:
-                estimates[str(ground)] = self.practice_action_cost(ground_skill=human)
+            if self._human_reset(ground=ground, resets=resets) is not None:
+                observed = self._human_execution_costs.get(self._human_reset_key(ground=ground), [])
+                estimates[str(ground)] = sum(observed) / len(observed) if observed else prior
                 continue
             durations = self._execution_durations.get(ground, [])
             if fixed is not None:
                 duration = fixed.get(ground.skill.name, math.nan)
                 if math.isnan(duration):
                     missing.add(ground.skill.name)
+                estimates[str(ground)] = duration * price
             elif durations:
-                duration = sum(durations) / len(durations)
+                estimates[str(ground)] = sum(durations) / len(durations) * price
             else:
-                duration = self.robot_duration_prior_steps
-            estimates[str(ground)] = duration * price
+                estimates[str(ground)] = prior
         if missing:
             raise ValueError(f"pomdp_skill_step_costs prices no step count for {sorted(missing)}")
         self._pomdp_state = self._pomdp_state.model_copy(
@@ -216,14 +233,13 @@ class Tossing3DPomdpMethod(EesMethod):
         # A forced full reset's steps are the human's, not the last robot skill's; after
         # a STOP-only first session no robot skill has been dispatched at all.
         assert ground is not None or self._pending_start_reset, "execution without dispatch"
-        if (
-            complete
-            and not self._pending_start_reset
-            and ground is not None
-            and self._human_reset(ground=ground, resets=self._human_resets()) is None
-        ):
-            assert ground is not None
-            self._execution_durations.setdefault(ground, []).append(steps)
+        if complete and not self._pending_start_reset and ground is not None:
+            if self._human_reset(ground=ground, resets=self._human_resets()) is None:
+                self._execution_durations.setdefault(ground, []).append(steps)
+            else:
+                self._human_execution_costs.setdefault(
+                    self._human_reset_key(ground=ground), []
+                ).append(cost)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
         )

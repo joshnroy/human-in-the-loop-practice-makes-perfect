@@ -83,33 +83,93 @@ def test_normalized_cost_uses_real_duration_and_forecasts_future_execution():
     assert estimated_action_cost(state=method.pomdp_state, action=pick) == 240
 
 
-def test_normalized_human_cost_is_per_grounded_destination():
+def _priced_method(*, human_cost: float = 500.0, step_price: float = 1.0):
     from hitl_pmp.core.practice_costs import (
         ChargeFunction,
         HumanCharge,
         PracticeAccounting,
         PracticeCosts,
     )
-    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
 
     method = _build(pomdp_num_particles=32)
-    method.configure_practice_accounting(
-        accounting=PracticeAccounting(
-            costs=PracticeCosts(
-                human_skills={
-                    "reset_cube_far": HumanCharge(cost=ChargeFunction(value=9)),
-                    "reset_cube_and_bin_near": HumanCharge(cost=ChargeFunction(value=2)),
-                },
-            )
+    method.env.current_state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    accounting = PracticeAccounting(
+        costs=PracticeCosts(
+            robot_step=ChargeFunction(value=step_price),
+            human_skills={
+                name: HumanCharge(cost=ChargeFunction(value=human_cost))
+                for name in ("reset_cube_far", "reset_cube_and_bin_near")
+            },
         )
     )
-    resets = method.skill_provider.human_cube_bin_reset_skills()
-    assert len(resets) == 2
-    for reset in resets:
-        side = method.skill_provider.movables_reset_destination(ground_skill=reset)
-        expected = 2 if side == "robot_side" else 9
-        assert method.practice_action_cost(ground_skill=reset) == expected
-        assert estimated_action_cost(state=method.pomdp_state, action=reset) == expected
+    method.configure_practice_accounting(accounting=accounting)
+    return method, accounting
+
+
+def _forecasts(*, method: Tossing3DPomdpMethod) -> dict[str, float]:
+    method._refresh_execution_forecasts()  # noqa: SLF001
+    return dict(method.pomdp_state.expected_execution_costs)
+
+
+def test_every_unobserved_skill_human_or_robot_is_priced_at_one_robot_step() -> None:
+    """One shared prior, the cost of one robot step: the planner does not know what a
+    human reset truly costs until it has observed one."""
+    method, _ = _priced_method(human_cost=500.0, step_price=0.25)
+    assert method.skill_cost_prior_steps == 1
+    forecasts = _forecasts(method=method)
+    assert forecasts
+    assert set(forecasts.values()) == {0.25}
+    reset_keys = {
+        str(ground)
+        for ground in method._pomdp_model.ground_skills  # noqa: SLF001
+        if ground.skill.name == RESET_SKILL
+    }
+    assert reset_keys and reset_keys <= set(forecasts)
+
+
+def test_the_planner_never_reads_the_true_human_charge(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    from hitl_pmp.core.practice_costs import PracticeAccounting
+
+    method, _ = _priced_method()
+
+    def forbidden(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("the planner read the host's HumanCharge")
+
+    monkeypatch.setattr(PracticeAccounting, "human_charge", forbidden)
+    _forecasts(method=method)
+    reset = method.skill_provider.human_cube_bin_reset_skills()[0]
+    method.record_action_cost(ground_skill=reset)
+    method.observe_execution_cost(cost=500.0, steps=1, complete=True)
+
+
+def test_an_observed_human_reset_cost_becomes_that_destinations_estimate() -> None:
+    """Prior until data, then the empirical mean of the charged costs -- per destination,
+    the key a reset is dispatched and charged by."""
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+
+    method, _ = _priced_method()
+    near, far = method.skill_provider.human_cube_bin_reset_skills()
+    assert method.skill_provider.movables_reset_destination(ground_skill=near) == "robot_side"
+    for observed in (500.0, 300.0):
+        method.record_action_cost(ground_skill=near)
+        method.observe_execution_cost(cost=observed, steps=1, complete=True)
+    _forecasts(method=method)
+    assert estimated_action_cost(state=method.pomdp_state, action=near) == 400.0
+    assert estimated_action_cost(state=method.pomdp_state, action=far) == 1.0
+
+
+def test_an_interrupted_human_reset_is_not_a_cost_observation() -> None:
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import estimated_action_cost
+
+    method, _ = _priced_method()
+    near = method.skill_provider.human_cube_bin_reset_skills()[0]
+    method.record_action_cost(ground_skill=near)
+    method.observe_execution_cost(cost=500.0, steps=1, complete=False)
+    _forecasts(method=method)
+    assert estimated_action_cost(state=method.pomdp_state, action=near) == 1.0
 
 
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
