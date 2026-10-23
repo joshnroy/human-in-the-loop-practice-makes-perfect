@@ -33,6 +33,8 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     refit_skill_belief,
 )
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+    GroundSkillText,
+    estimated_action_cost,
     make_tossing3d_search_state,
     render_atoms,
 )
@@ -918,3 +920,31 @@ def test_stopping_pays_the_stop_skills_price() -> None:
     hard = Tossing3DPracticeModel(stop_cost=1.0)
     assert hard.G(policy_value=2.5, summed_cost=19.5) == -float("inf")
     assert Tossing3DPracticeModel().stop_cost == 0.0
+
+
+def test_search_cost_lookup_renders_each_ground_skill_once(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every search transition prices its action, and rendering the ground skill's
+    pydantic repr for the key was a fifth of search time. The key stays that exact
+    text -- `expected_execution_costs` is keyed by it -- rendered once per object.
+    Per object, not per equal value: frozenset reprs follow hash order, so two equal
+    ground skills built apart need not render alike, and each must keep its own."""
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
+    toss = _ground_skill(model=model, name=TOSS_SKILL)
+    twin = pick.model_copy()
+    state = Tossing3DBeliefState(skill_beliefs={}, expected_execution_costs={str(pick): 7.25})
+    unpriced = toss.evaluate_practice_cost()
+    assert GroundSkillText.of(ground_skill=pick) == str(pick)
+    assert GroundSkillText.of(ground_skill=twin) == str(twin)
+    for ground in (pick, toss, twin):
+        estimated_action_cost(state=state, action=ground)
+
+    def no_render(self: GroundSkill) -> str:  # noqa: PLR0917 -- replaces a dunder
+        raise AssertionError("re-rendered a ground skill already keyed")
+
+    monkeypatch.setattr(GroundSkill, "__str__", no_render)
+    assert estimated_action_cost(state=state, action=pick) == 7.25
+    assert estimated_action_cost(state=state, action=twin) == 7.25
+    assert estimated_action_cost(state=state, action=toss) == unpriced
