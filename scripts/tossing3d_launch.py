@@ -29,8 +29,7 @@ The plan (Josh, 2026-10-19 to 2026-10-22):
 
 Della: code in `/scratch/gpfs/TSILVER/jr2860/code/<sha>`, results in
 `/scratch/gpfs/TSILVER/jr2860/results/<tag>/<arm>/<method>/<seed>`; submit with
-`sbatch <out>/array-<group>.sbatch <out>/manifest-<group>.tsv`, once per group. The time
-limits are placeholders until the Della dry run measures each group.
+`sbatch <out>/array-<group>.sbatch <out>/manifest-<group>.tsv`, once per group.
 """
 
 import argparse
@@ -49,10 +48,13 @@ ALWAYS_ASK_FLAG = "--always-ask-reset"
 SEEDS = 6
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
 
+# Josh, 2026-10-22: twice the Della dry run's projection per group (EXP-22c's full runs on
+# Della took at most 2.2 h for EES and 3.2 h for Model-B expectimax). A sim run that
+# hits its limit cannot resume, so it keeps only the evaluations written so far.
 DELLA_GROUPS = {
-    "ees": DellaGroup(time="24:00:00"),
-    "determinized": DellaGroup(time="72:00:00"),
-    "expectimax": DellaGroup(time="72:00:00"),
+    "ees": DellaGroup(time="08:00:00"),
+    "determinized": DellaGroup(time="16:00:00"),
+    "expectimax": DellaGroup(time="48:00:00"),
 }
 
 FULL = Budget(
