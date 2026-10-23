@@ -145,6 +145,11 @@ class FakeStepProtocol:
         del problem
         return {"skill": "fake"}
 
+    @staticmethod
+    def drain_execution_timing(*, problem: Any) -> dict[str, Any] | None:
+        del problem
+        return None
+
     progress: ClassVar[list[dict[str, int]]] = []
 
     @staticmethod

@@ -183,6 +183,12 @@ class StepProtocolEnvironment(Protocol):
         for a domain that keeps none (the event then carries no such field)."""
         ...
 
+    @staticmethod
+    def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
+        """The wall-clock phases of the last robot skill or human reset, once, written
+        to `skill_timing.jsonl` beside its event; None for a domain that times none."""
+        ...
+
 
 class SimulatedStepProtocolHooks:
     """`StepProtocolEnvironment`'s real-robot hooks, for a simulated domain: nobody
@@ -220,3 +226,8 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def run_saved(*, args: argparse.Namespace, output: Path, final: bool) -> None:
         del args, output, final
+
+    @staticmethod
+    def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
+        del problem
+        return None
