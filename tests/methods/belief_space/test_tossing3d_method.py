@@ -1,3 +1,4 @@
+import itertools
 import json
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from pydantic import ValidationError
 
 from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
@@ -385,8 +386,13 @@ def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
     assert method.pomdp_state.accumulated_cost == 0.0
 
 
-def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
+def test_reset_cost_is_charged_at_dispatch_without_another_selection(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     method = _build(human_reset_practice_cost=0.005)
+    method.env.current_state = _SymbolicScenes(method=method, monkeypatch=monkeypatch).scene(
+        atoms=frozenset()
+    )
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -402,9 +408,13 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.005
 
 
-def test_completed_human_reset_jointly_updates_performance_and_cost_without_training() -> None:
+def test_completed_human_reset_jointly_updates_performance_and_cost_without_training(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     observed_cost = 0.00001
     method = _build(human_reset_practice_cost=observed_cost)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    method.env.current_state = scenes.scene(atoms=frozenset())
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -421,10 +431,7 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
     method.record_action_cost(ground_skill=reset)
     after_dispatch = method.pomdp_state.skill_beliefs[RESET_SKILL]
     assert after_dispatch == before
-    reset_state = Tossing3DState(
-        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
-        abstract_atoms=frozenset(),
-    )
+    reset_state = scenes.scene(atoms=reset.expected_add_effects(before_atoms=frozenset()))
     method.observe_help_granted(state=reset_state)
 
     after = method.pomdp_state.skill_beliefs[RESET_SKILL]
@@ -446,8 +453,12 @@ def test_practice_offers_only_the_human_reset() -> None:
     assert not any("non_human_reset" in name for name in offered)
 
 
-def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
+def test_completed_non_human_reset_updates_only_its_own_joint_belief(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     method = _build(offer_non_human_reset=True)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    method.env.current_state = scenes.scene(atoms=frozenset())
     reset_skill = next(
         skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
     )
@@ -466,10 +477,7 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
 
     method.record_action_cost(ground_skill=reset)
     method.observe_help_granted(
-        state=Tossing3DState(
-            data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
-            abstract_atoms=frozenset(),
-        )
+        state=scenes.scene(atoms=reset.expected_add_effects(before_atoms=frozenset()))
     )
 
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
@@ -568,7 +576,9 @@ def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
     }
 
 
-def test_a_granted_movables_reset_clears_the_starved_pool_record() -> None:
+def test_a_granted_movables_reset_clears_the_starved_pool_record(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A starved pool is keyed on a symbolic state, but its cause is geometry: after a
     movables reset the bin is somewhere else, so last placement's starvations are no
     longer evidence. Both registries -- EES's selection filter and the search model's
@@ -579,9 +589,11 @@ def test_a_granted_movables_reset_clears_the_starved_pool_record() -> None:
     method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
     assert method.starved_ground_skills(true_atoms=atoms) == {toss}
     assert method._pomdp_model.starved_pools  # noqa: SLF001
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    method.env.current_state = scenes.scene(atoms=frozenset())
     reset = method.skill_provider.human_cube_bin_reset_skills()[1]
     method.record_action_cost(ground_skill=reset)
-    method.observe_help_granted(state=Tossing3DState.model_construct())
+    method.observe_help_granted(state=scenes.scene(atoms=frozenset()))
     assert method.starved_ground_skills(true_atoms=atoms) == frozenset()
     assert method._pomdp_model.starved_pools == ()  # noqa: SLF001
 
@@ -702,12 +714,13 @@ def test_the_stop_skill_is_priced_at_one_robot_step_under_step_accounting():
 
 
 @pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
-def test_practice_without_the_human_reset_leaves_the_tossing3d_domain_unchanged(
-    *, solver: str
-) -> None:
-    """Tossing3D's reset is a deterministic skill, not a belief, so dropping the
-    unoffered human skills from the practice domain is a no-op there."""
-    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+def test_practice_without_the_human_reset_drops_only_the_reset_belief(*, solver: str) -> None:
+    """The human reset carries a belief like any skill, so a method that does not offer
+    it drops exactly that belief and its failure-effect model, nothing else."""
+    from hitl_pmp.methods.belief_space.practice_domain import (
+        TOSSING3D_DOMAIN,
+        PracticeDomainWithoutSkills,
+    )
 
     env = Tossing3DEnvironment(scene_bg=False)
     method = Tossing3DPomdpMethod(
@@ -717,7 +730,11 @@ def test_practice_without_the_human_reset_leaves_the_tossing3d_domain_unchanged(
         seed=0,
         pomdp_search_depth=2,
     )
-    assert method.pomdp_domain == TOSSING3D_DOMAIN
+    assert method.pomdp_domain == PracticeDomainWithoutSkills.drop(
+        domain=TOSSING3D_DOMAIN, skill_names=frozenset({RESET_SKILL})
+    )
+    assert RESET_SKILL not in dict(method.pomdp_domain.belief_sources)
+    assert RESET_SKILL not in method.pomdp_domain.failure_effect_skills
 
 
 @pytest.mark.parametrize("name", ["decisions.jsonl", "decisions.jsonl.zst"])
@@ -742,3 +759,127 @@ def test_the_decision_log_is_written_plain_or_one_zstd_frame_per_record(
         assert len(raw) < 5_000
     else:
         assert raw.decode("utf-8").count("\n") == 2
+
+
+class _SymbolicScenes:
+    """Stand-in scenes read through a patched `abstract_state`, so a test states the
+    symbolic outcome of a reset directly instead of encoding it as KINDER atoms."""
+
+    def __init__(self, *, method: Tossing3DPomdpMethod, monkeypatch: pytest.MonkeyPatch):
+        self.method = method
+        self.readings: dict[int, frozenset[GroundAtom]] = {}
+        monkeypatch.setattr(
+            Tossing3DPomdpMethod,
+            "abstract_state",
+            lambda _self, *, state: self.readings[id(state)],
+        )
+
+    def scene(self, *, atoms: frozenset[GroundAtom]) -> Tossing3DState:
+        state = Tossing3DState(data={obj: np.zeros(obj.type.dim) for obj in self.method.objects()})
+        self.readings[id(state)] = atoms
+        return state
+
+    def dispatch_human_reset(self, *, before_atoms: frozenset[GroundAtom]) -> frozenset[GroundAtom]:
+        """Dispatch one human reset from a scene reading `before_atoms` and return what
+        the reset promises from there."""
+        self.method.env.current_state = self.scene(atoms=before_atoms)
+        reset = self.method.skill_provider.human_cube_bin_reset_skills()[0]
+        assert reset.skill.name == RESET_SKILL
+        self.method.record_action_cost(ground_skill=reset)
+        return reset.expected_add_effects(before_atoms=before_atoms)
+
+
+def _without_pick_plannable(*, atoms: frozenset[GroundAtom]) -> frozenset[GroundAtom]:
+    kept = frozenset(atom for atom in atoms if atom.predicate.name != "PickPlannable")
+    assert kept != atoms, "the reset no longer promises PickPlannable"
+    return kept
+
+
+def _last_outcome(*, path: Path) -> tuple[str, str, bool]:
+    record = json.loads(path.read_text().splitlines()[-1])
+    return record["event"], record["skill"], record["success"]
+
+
+def test_a_human_reset_whose_promised_effects_hold_is_recorded_as_a_success(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method = _build(human_reset_practice_cost=5.0)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    method.decision_log = tmp_path / "decisions.jsonl"
+    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert isinstance(before, BayesianSkillBelief)
+    promised = scenes.dispatch_human_reset(before_atoms=frozenset())
+
+    method.observe_help_granted(state=scenes.scene(atoms=promised))
+
+    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert after == before.condition_execution(success=True, observed_cost=5.0)
+    assert mean_competence(belief=after) > mean_competence(belief=before)
+    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SKILL, True)
+
+
+def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reset promises PickPlannable; a scene where it is still false afterwards is
+    a reset that did not deliver, whatever the human reported."""
+    method = _build(human_reset_practice_cost=5.0)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    method.decision_log = tmp_path / "decisions.jsonl"
+    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert isinstance(before, BayesianSkillBelief)
+    promised = scenes.dispatch_human_reset(before_atoms=frozenset())
+
+    method.observe_help_granted(state=scenes.scene(atoms=_without_pick_plannable(atoms=promised)))
+
+    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert after == before.condition_execution(success=False, observed_cost=5.0)
+    assert mean_competence(belief=after) < mean_competence(belief=before)
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
+    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SKILL, False)
+
+
+def test_repeated_undelivered_resets_drive_the_reset_belief_down(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method = _build(human_reset_practice_cost=5.0)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    trajectory = [mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL])]
+    for _ in range(5):
+        promised = scenes.dispatch_human_reset(before_atoms=frozenset())
+        method.observe_help_granted(
+            state=scenes.scene(atoms=_without_pick_plannable(atoms=promised))
+        )
+        trajectory.append(mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL]))
+    assert all(later < earlier for earlier, later in itertools.pairwise(trajectory))
+
+
+def test_the_human_reset_is_an_inferred_skill_like_any_robot_skill() -> None:
+    """Its competence is learned from checked effects, its clock advances on every
+    attempt, and its failures teach the failure-effect model -- exactly as for
+    PickCube. Only the automatic non-human reset stays a known mechanism."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+    from hitl_pmp.methods.belief_space.types.practice_example_source import (
+        PracticeExampleSource,
+    )
+
+    assert RESET_SKILL not in TOSSING3D_DOMAIN.deterministic_skills
+    assert (RESET_SKILL, PracticeExampleSource.OUTCOME) in TOSSING3D_DOMAIN.belief_sources
+    assert RESET_SKILL in TOSSING3D_DOMAIN.failure_effect_skills
+    assert TOSSING3D_DOMAIN.human_skill_names == {RESET_SKILL}
+    assert TOSSING3D_DOMAIN.deterministic_skills == {NON_HUMAN_RESET_SKILL}
+
+
+def test_an_undelivered_human_reset_teaches_the_failure_effect_model(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method = _build(human_reset_practice_cost=5.0)
+    scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
+    promised = scenes.dispatch_human_reset(before_atoms=frozenset())
+    delivered = _without_pick_plannable(atoms=promised)
+
+    method.observe_help_granted(state=scenes.scene(atoms=delivered))
+
+    (record,) = method._pomdp_model.failure_effect_counts  # noqa: SLF001
+    assert record.ground_skill.skill.name == RESET_SKILL
+    assert record.add_effects == delivered

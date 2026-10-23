@@ -542,10 +542,7 @@ class Tossing3DPomdpMethod(EesMethod):
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
-        name = ground_skill.skill.name
-        if name in self.pomdp_domain.deterministic_skills:
-            self._pending_reset = ground_skill
-        elif self.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+        if self.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
             # Its success is inferred, so remember what it was asked to change.
             self._pending_reset = ground_skill
             self._pending_reset_before_atoms = self.abstract_state(
@@ -612,9 +609,10 @@ class Tossing3DPomdpMethod(EesMethod):
     def observe_help_granted(self, *, state: State) -> None:
         """Condition one completed reset on its joint success and cost observation.
 
-        A reset the domain treats as a known mechanism always succeeds. Otherwise the
-        human's skill is judged like any robot skill -- did its promised effects come
-        true -- and a failure teaches the empirical failure-effect model."""
+        Every reset is judged like any robot skill -- did its promised effects come
+        true -- including the ones the domain calls deterministic: that label is about
+        how search forecasts them, and a human who does not deliver what the operator
+        promises is exactly what the reset belief must be able to learn."""
         super().observe_help_granted(state=state)
         if self._pending_start_reset:
             # The wrapper's full reset is not a skill this planner models or chose, so
@@ -639,18 +637,17 @@ class Tossing3DPomdpMethod(EesMethod):
         observed_cost = (
             reset.evaluate_practice_cost() if self._practice_accounting is None else None
         )
-        success = True
-        if reset.skill.name not in self.pomdp_domain.deterministic_skills:
-            before = self._pending_reset_before_atoms
-            after = self.abstract_state(state=state)
-            success = reset.expected_add_effects(before_atoms=before) <= after
-            self.observe_symbolic_transition(
-                ground_skill=reset,
-                before_atoms=before,
-                after_atoms=after,
-                success=success,
-                was_random_exploration=False,
-            )
+        before = self._pending_reset_before_atoms
+        after = self.abstract_state(state=state)
+        missing = reset.expected_add_effects(before_atoms=before) - after
+        success = not missing
+        self.observe_symbolic_transition(
+            ground_skill=reset,
+            before_atoms=before,
+            after_atoms=after,
+            success=success,
+            was_random_exploration=False,
+        )
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=reset,
@@ -663,6 +660,7 @@ class Tossing3DPomdpMethod(EesMethod):
             event="outcome",
             skill=reset.skill.name,
             success=success,
+            missing_effects=sorted(str(atom) for atom in missing),
             random_exploration=False,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),

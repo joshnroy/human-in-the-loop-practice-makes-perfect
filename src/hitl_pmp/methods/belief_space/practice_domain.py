@@ -6,8 +6,9 @@ things are not, and a `PracticeDomain` supplies them:
 - which skills carry a competence belief, which share one (Tossing3D's four picks share
   `PickCube`'s), and which event advances each one's training clock;
 - the one skill whose continuous parameters a learned sampler chooses;
-- which skills are known mechanisms that always succeed (Tossing3D's resets) rather
-  than skills whose competence is inferred;
+- which skills are known mechanisms that always succeed (Tossing3D's automatic
+  non-human reset) rather than skills whose competence is inferred -- never a human
+  skill, whose effects are checked and whose competence is learned like a robot's;
 - the value of the deployment policy -- the probability a held-out task is solved,
   with no human -- as a function of the skills' competences.
 """
@@ -22,11 +23,11 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 
 from .tossing3d_constants import (
+    NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
     RESET_SKILL,
-    RESET_SKILLS,
     TOSS_SKILL,
 )
 from .tossing3d_deployment_model import (
@@ -51,9 +52,6 @@ class PracticeDomain(BaseModel, abc.ABC):
     # Skill name -> the belief it shares.
     shared_beliefs: tuple[tuple[str, str], ...] = ()
     deterministic_skills: frozenset[str] = frozenset()
-    # Known mechanisms whose search forecast is still weighted by their inferred
-    # competence rather than assumed to succeed (Tossing3D's human reset).
-    competence_weighted_skills: frozenset[str] = frozenset()
     # Skills whose failed executions teach the empirical failure-effect model.
     failure_effect_skills: frozenset[str] = frozenset()
     # The human's skills this domain models. A method that does not offer one (the
@@ -108,17 +106,20 @@ class Tossing3DPracticeDomain(PracticeDomain):
         (PICK_SKILL, PracticeExampleSource.OUTCOME),
         (TOSS_SKILL, PracticeExampleSource.SAMPLER),
         (OPEN_GRIPPER_SKILL, PracticeExampleSource.OUTCOME),
+        # The human reset is a skill like any other: its promised effects are checked
+        # and its competence inferred, so a human whose resets fail is learned.
+        (RESET_SKILL, PracticeExampleSource.OUTCOME),
     )
     shared_beliefs: tuple[tuple[str, str], ...] = tuple(
         (name, PICK_SKILL) for name in sorted(PICK_SKILLS - {PICK_SKILL})
     )
-    deterministic_skills: frozenset[str] = RESET_SKILLS
-    competence_weighted_skills: frozenset[str] = frozenset({RESET_SKILL})
+    deterministic_skills: frozenset[str] = frozenset({NON_HUMAN_RESET_SKILL})
     human_skill_names: frozenset[str] = frozenset({RESET_SKILL})
     failure_effect_skills: frozenset[str] = frozenset({
         *PICK_SKILLS,
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
+        RESET_SKILL,
     })
 
     def sample_thetas(
@@ -328,10 +329,8 @@ SWEEP_OFF_SHELF_DOMAIN = SweepOffShelfPracticeDomain()
 
 class PracticeDomainWithoutSkills:
     """A practice domain with some skills' beliefs removed: no belief, no failure-effect
-    model, no shared-belief alias. Their deterministic / competence-weighted entries are
-    left alone -- they describe a skill only if it is offered, and keeping them keeps a
-    domain with no such belief (Tossing3D) exactly equal to the original. A
-    static-method container."""
+    model, no shared-belief alias. Their deterministic entries are left alone -- they
+    describe a skill only if it is offered. A static-method container."""
 
     @staticmethod
     def keep_offered(*, domain: PracticeDomain, offered: frozenset[str]) -> PracticeDomain:

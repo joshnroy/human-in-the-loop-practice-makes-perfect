@@ -677,12 +677,22 @@ def test_a_shelf_belief_space_planner_builds_with_and_without_the_wrapper(
 
 @pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
 @pytest.mark.parametrize("wrapped", [True, False])
-def test_the_tossing3d_belief_space_domain_is_unaffected_by_the_wrapper(
+def test_the_wrapper_drops_only_the_tossing3d_human_reset_belief(
     *, solver: str, wrapped: bool
 ) -> None:
-    """Tossing3D's beliefs are the robot's alone (its reset is a deterministic skill,
-    not a belief), so the wrapper leaves its practice domain exactly as it was."""
-    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN
+    """The wrapper offers no human skill of the planner's own, so it drops the human
+    reset's belief -- and only that -- exactly as it does SweepOffShelf3D's."""
+    from hitl_pmp.methods.belief_space.practice_domain import (
+        TOSSING3D_DOMAIN,
+        PracticeDomainWithoutSkills,
+    )
+    from hitl_pmp.methods.belief_space.tossing3d_constants import RESET_SKILL
 
     domain = _pomdp(solver=solver)(wrapped=wrapped)
-    assert domain.method.pomdp_domain == TOSSING3D_DOMAIN
+    assert domain.method.pomdp_domain == (
+        PracticeDomainWithoutSkills.drop(
+            domain=TOSSING3D_DOMAIN, skill_names=frozenset({RESET_SKILL})
+        )
+        if wrapped
+        else TOSSING3D_DOMAIN
+    )
