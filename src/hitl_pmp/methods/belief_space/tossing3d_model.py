@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable
 from typing import Any
 
@@ -12,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .belief_digest import BeliefDigest
 from .competence_inference import BayesianSkillBelief
 from .object_symmetry import InterchangeableObjects
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
@@ -311,53 +311,7 @@ class Tossing3DPracticeModel(BaseModel):
 
     @staticmethod
     def _belief_signature(*, belief: SkillBelief) -> bytes:
-        """Identify a posterior without retaining its potentially large buffers.
-
-        Search memo tables live for one solve. A persistent signature-to-integer
-        table previously kept every hypothetical posterior alive across solves,
-        including hundreds of KB per fixed-grid posterior. A SHA-256 identifier
-        is constant-size, requires no interning table, and includes all the same
-        signature information. Type tags and lengths prevent ambiguous joins.
-        """
-        digest = hashlib.sha256()
-
-        def update(*, value: object) -> None:
-            if isinstance(value, tuple):
-                digest.update(b"tuple" + len(value).to_bytes(8, "big"))
-                for item in value:
-                    update(value=item)
-                return
-            if isinstance(value, BaseModel):
-                digest.update(b"model")
-                update(
-                    value=(
-                        "pydantic",
-                        type(value).__module__,
-                        type(value).__qualname__,
-                        value.model_dump_json(),
-                    )
-                )
-                return
-            if isinstance(value, bytes):
-                tag, payload = b"bytes", value
-            elif isinstance(value, str):
-                tag, payload = b"string", value.encode("utf-8")
-            elif isinstance(value, bool):
-                tag, payload = b"bool", bytes([value])
-            elif isinstance(value, int):
-                tag, payload = b"int", str(value).encode("ascii")
-            elif isinstance(value, float):
-                # Python's old tuple keys treat positive and negative zero equally.
-                tag, payload = b"float", (0.0 if value == 0 else value).hex().encode("ascii")
-            elif value is None:
-                tag, payload = b"none", b""
-            else:
-                raise TypeError(f"unsupported belief signature component: {type(value).__name__}")
-            digest.update(tag + len(payload).to_bytes(8, "big"))
-            digest.update(payload)
-
-        update(value=(type(belief).__module__, type(belief).__qualname__, belief.signature()))
-        return digest.digest()
+        return BeliefDigest.of(belief=belief)
 
     def search_cache_key(
         self,
