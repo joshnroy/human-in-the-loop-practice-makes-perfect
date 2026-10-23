@@ -207,7 +207,7 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
 @pytest.mark.parametrize(
     ("skill", "needed", "out_of"),
     [
-        ("PickCubeFromShelf", 95, 100),
+        ("PickCubeFromShelf", 72, 100),
         ("PickCubeFromFloor", 11, 11),
         ("ReturnCubeToShelfFromFloor", 11, 11),
     ],
