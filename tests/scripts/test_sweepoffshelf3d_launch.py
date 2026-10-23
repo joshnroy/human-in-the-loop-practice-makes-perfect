@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.cli import Cli
-from hitl_pmp.core.practice_costs import PracticeCosts, SkillStepCosts
+from hitl_pmp.core.practice_costs import PracticeCosts
 from scripts.run_sweep import SweepRunner
 from scripts.sweepoffshelf3d_launch import (
     EES_ALWAYS_ASK_COSTS,
@@ -16,7 +16,6 @@ from scripts.sweepoffshelf3d_launch import (
     PLANNER_COSTS,
     PLANNER_HUMAN_RESET_COST,
     REPO,
-    SKILL_STEP_COSTS,
     ShelfLaunch,
     main,
 )
@@ -264,27 +263,14 @@ def test_the_two_reset_prices_are_the_decided_ones() -> None:
 
 
 @pytest.mark.parametrize("name", [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS])
-def test_only_the_planner_arms_get_the_fixed_skill_step_costs(*, name: str) -> None:
+def test_no_arm_prices_robot_skills_from_the_fixed_step_table(*, name: str) -> None:
+    """The shelf is set up like Tossing3D: the environment charges the real costs and
+    the planner estimates every skill's from what it observes (Josh, 2026-10-23)."""
     arm = ShelfLaunch.arms(expectimax_depths=[6, 7])[name]
     argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/out"))
+    assert "--pomdp-skill-step-costs" not in argv
     args = Cli.parse_args(argv=argv)
-    if arm.method == "pomdp":
-        assert args.pomdp_skill_step_costs == SKILL_STEP_COSTS
-        table = SkillStepCosts.load(path=args.pomdp_skill_step_costs)
-        assert set(table.skill_steps) == {
-            "PickWiper",
-            "SweepShelf",
-            "ReturnWiper",
-            "PickCubeFromShelf",
-            "PickCubeFromFloor",
-            "PlaceCubeInBox",
-            "ReturnCubeToShelfFromBox",
-            "ReturnCubeToShelfFromFloor",
-        }
-    else:
-        assert "--pomdp-skill-step-costs" not in argv
-        # The flag is the pomdp method's own; EES's parser does not define it.
-        assert not hasattr(args, "pomdp_skill_step_costs")
+    assert getattr(args, "pomdp_skill_step_costs", None) is None
 
 
 def test_dependencies_outside_the_checkout_are_named(*, tmp_path: Path) -> None:
@@ -408,7 +394,7 @@ def test_della_tasks_run_the_launchers_own_argv_with_della_paths(*, tmp_path: Pa
         )
         repo_files = {
             str(path): f"{code}/{path.relative_to(REPO)}"
-            for path in [ShelfLaunch.cost_config(arm=arm), SKILL_STEP_COSTS]
+            for path in [ShelfLaunch.cost_config(arm=arm)]
         }
         assert argv == [repo_files.get(token, token) for token in local]
         assert not any(str(REPO) in token for token in argv)

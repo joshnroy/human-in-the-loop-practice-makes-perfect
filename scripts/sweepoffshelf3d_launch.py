@@ -36,12 +36,14 @@ The plan (Josh, 2026-10-14 and 2026-10-20):
 
 Prices (Josh, 2026-10-21), one rule in two units, because the two methods' costs are in
 different units:
-- The planner arms (determinized, expectimax, and their always-ask variants) price a
-  robot skill at a FIXED nominal number of control steps per skill,
-  `configs/sweepoffshelf3d_skill_step_costs.json` (`--pomdp-skill-step-costs`; measured
-  from the skill benchmark by `scripts/skill_step_costs.py`, which records the commit and
-  report sha256), and every human reset at `PLANNER_HUMAN_RESET_COST` = 500 control steps,
-  Tossing3D's canonical price (`configs/sweepoffshelf3d_practice_costs_planner*.json`).
+- The planner arms (determinized, expectimax, and their always-ask variants) are charged
+  each robot skill's real control steps and every human reset `PLANNER_HUMAN_RESET_COST`
+  = 500 control steps, Tossing3D's canonical price
+  (`configs/sweepoffshelf3d_practice_costs_planner*.json`). As on Tossing3D, the planner
+  is told neither: it estimates every skill's cost, robot and human, from the costs it
+  observes, starting from one shared prior of one robot step (Josh, 2026-10-23). The
+  fixed per-skill table `configs/sweepoffshelf3d_skill_step_costs.json`
+  (`--pomdp-skill-step-costs`) remains a method option, but no arm passes it.
 - The EES arms price every human reset at `EES_HUMAN_RESET_COST` = 5 in EES's own
   plan-cost units, where a robot skill costs -log(competence): EXP-22c's ees-lamcost5
   (`configs/sweepoffshelf3d_practice_costs_ees*.json`). EES reads the JSON human cost as
@@ -127,7 +129,6 @@ PLANNER_ALWAYS_ASK_COSTS = (
 )
 EES_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_ees.json"
 EES_ALWAYS_ASK_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_ees_sampled_start.json"
-SKILL_STEP_COSTS = REPO / "configs" / "sweepoffshelf3d_skill_step_costs.json"
 ENV = "sweepoffshelf3d"
 ALWAYS_ASK_FLAG = "--always-ask-reset"
 SEEDS = 6
@@ -285,14 +286,8 @@ class ShelfLaunch:
 
         `repo` is the checkout the run executes from, which holds the cost files."""
         costs = repo / ShelfLaunch.cost_config(arm=arm).relative_to(REPO)
-        fixed = (
-            ["--pomdp-skill-step-costs", str(repo / SKILL_STEP_COSTS.relative_to(REPO))]
-            if arm.method == "pomdp"
-            else []
-        )
         return [
             *arm.flags,
-            *fixed,
             "--practice-step-budget", str(size.practice_steps),
             "--measurement-interval-steps", str(size.evaluation_interval),
             "--evaluation-control-steps", str(size.evaluation_control_steps),

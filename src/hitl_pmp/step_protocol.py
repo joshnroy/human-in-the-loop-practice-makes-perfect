@@ -1285,9 +1285,7 @@ class StepPracticeRunner:
                     "repeated_no_robot_action_limit": (
                         StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
                     ),
-                    "robot_duration_prior_steps": getattr(
-                        method, "robot_duration_prior_steps", None
-                    ),
+                    "skill_cost_prior_steps": getattr(method, "skill_cost_prior_steps", None),
                     "robot_skill_step_costs": getattr(method, "pomdp_skill_step_costs", None),
                 },
             )
