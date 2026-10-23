@@ -130,6 +130,14 @@ class Tossing3DCli:
             "removes it outright (not just prices it high), for the baseline that asks "
             "whether the reset is needed. Evaluation never offers it either way.",
         )
+        parser.add_argument(
+            "--skill-timing",
+            action=argparse.BooleanOptionalAction,
+            default=fields["skill_timing"].default,
+            help="Write <output-dir>/skill_timing.jsonl (step protocol): each robot skill "
+            "and human reset's wall-clock split into motion planning, MuJoCo stepping, "
+            "the PickPlannable dry run and the reset's own phases. Results are unaffected.",
+        )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
@@ -284,6 +292,7 @@ class Tossing3DCli:
             variant=args.variant,
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,
+            skill_timing=getattr(args, "skill_timing", True),
         )
         tasks = Tossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset

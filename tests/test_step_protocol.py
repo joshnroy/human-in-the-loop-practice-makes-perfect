@@ -301,6 +301,11 @@ class FakeStepProtocol:
         return None
 
     @staticmethod
+    def drain_execution_timing(*, problem):
+        del problem
+        return None
+
+    @staticmethod
     def interrupted(*, problem, action) -> None:
         pass
 

@@ -99,6 +99,10 @@ class Tossing3DStepProtocol(SimulatedStepProtocolHooks):
         return Tossing3DStepProtocol.env(problem=problem).last_skill_error()
 
     @staticmethod
+    def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
+        return Tossing3DStepProtocol.env(problem=problem).drain_execution_timing()
+
+    @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
         # Tossing3D keeps no per-candidate trace; its error string is the whole account.
         del problem

@@ -39,7 +39,8 @@ domain cannot do.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from typing import Any, ClassVar
 
 import numpy as np
@@ -53,6 +54,7 @@ from hitl_pmp.recording.run_record.sink import SkillTickSink
 from .kinder_backend import KinderBackend
 from .layout import Tossing3DLayout
 from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
+from .skill_timing import SkillTiming
 from .types import (
     KB_PICKUP_BLOCKED,
     AbstractAtom,
@@ -186,8 +188,12 @@ class Tossing3DEnvironment(Environment):
     # `Tossing3DToss.parameters_of`, since that module cannot be imported from here);
     # a real-robot environment carries the real swing's.
     toss_parameters: TossParameterSet | None = None
+    # Time each skill, movables reset and scene reset by phase (`skill_timing.py`).
+    skill_timing: bool = True
 
     _backend: Tossing3DBackend | None = PrivateAttr(default=None)
+    _open_timing: SkillTiming | None = PrivateAttr(default=None)
+    _last_timing: SkillTiming | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
     _last_controller_steps: tuple[int, ...] = PrivateAttr(default=())
     # The observed pickup-infeasibility channel (the 2026-09-22 recovery-state fix):
@@ -366,13 +372,41 @@ class Tossing3DEnvironment(Environment):
         simulator again.
         """
         backend = self.backend()
-        return self.build_state(
-            observation=backend.observe(),
-            seed=seed,
-            steps_taken=steps_taken,
-            object_centric=backend.snapshot(),
-            abstract_atoms=self._with_pickup_channel(atoms=backend.abstract_atoms()),
-        )
+        with SkillTiming.phase_of(timing=self._open_timing, name="observe_state"):
+            return self.build_state(
+                observation=backend.observe(),
+                seed=seed,
+                steps_taken=steps_taken,
+                object_centric=backend.snapshot(),
+                abstract_atoms=self._with_pickup_channel(atoms=backend.abstract_atoms()),
+            )
+
+    @contextmanager
+    def _timed(self, *, kind: str) -> Generator[None, None, None]:
+        """Time one execution, kept for `drain_execution_timing`. An execution inside
+        another (a scene reset inside a full human reset) is timed as part of it."""
+        if not self.skill_timing or self._open_timing is not None:
+            yield
+            return
+        timing = SkillTiming(kind=kind)
+        backend = self.backend()
+        self._open_timing = timing
+        if isinstance(backend, KinderBackend):
+            backend.set_timing(timing=timing)
+        try:
+            yield
+        finally:
+            timing.finish()
+            self._open_timing = None
+            if isinstance(backend, KinderBackend):
+                backend.set_timing(timing=None)
+            self._last_timing = timing
+
+    def drain_execution_timing(self) -> dict[str, Any] | None:
+        """The last timed execution's `SkillTiming.record()`, once; None if there is
+        none since the last drain."""
+        timing, self._last_timing = self._last_timing, None
+        return None if timing is None else timing.record()
 
     def _with_pickup_channel(self, *, atoms: frozenset) -> frozenset:
         """Attach the observed "PickupBlocked" marker to an abstract atom set."""
@@ -390,6 +424,10 @@ class Tossing3DEnvironment(Environment):
         distinguished here; that is competence, and the harness measures it by whether
         the goal ends up satisfied.
         """
+        with self._timed(kind="skill"):
+            return self._take_action(action=action)
+
+    def _take_action(self, *, action: Action) -> State:
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
@@ -402,7 +440,8 @@ class Tossing3DEnvironment(Environment):
         if errors:
             self._last_skill_error = "; ".join(errors)
             logger.debug("take_action: last_skill_error=%r", self._last_skill_error)
-        self._log_skill_ticks(action=action)
+        with SkillTiming.phase_of(timing=self._open_timing, name="state_log_write"):
+            self._log_skill_ticks(action=action)
         skill_id = int(round(float(action[0])))
         executed = sum(self._last_controller_steps) > 0
         if skill_id in (self.pick_cube_id, self.pick_cube_from_bin_id):
@@ -587,11 +626,12 @@ class Tossing3DEnvironment(Environment):
         immediately afterwards; `hard_reset` and `set_state` both go through here, so
         there is exactly one place that puts this domain into a known state.
         """
-        self.backend().reset(seed=seed)
-        self._pickup_blocked = False
-        state = self._observed_state(seed=seed, steps_taken=0)
-        self._adopt(state=state)
-        return state
+        with self._timed(kind="scene_reset"):
+            self.backend().reset(seed=seed)
+            self._pickup_blocked = False
+            state = self._observed_state(seed=seed, steps_taken=0)
+            self._adopt(state=state)
+            return state
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
         """Reposition `cube`/`bin` to fresh ground poses, robot untouched, and
@@ -605,6 +645,10 @@ class Tossing3DEnvironment(Environment):
         historical ``bin_init_region`` from the task configuration.
         `steps_taken`/`seed` carry forward unchanged: this is neither a skill
         execution nor a scene rebuild, so episode bookkeeping doesn't move."""
+        with self._timed(kind="movables_reset"):
+            return self._reset_movables(destination=destination)
+
+    def _reset_movables(self, *, destination: str | None) -> bool:
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
@@ -614,13 +658,14 @@ class Tossing3DEnvironment(Environment):
         # refusal instance -- the symbolic reset skills promise PickupUnblocked,
         # and this is what makes the promise true.
         self._pickup_blocked = False
-        next_state = self.build_state(
-            observation=backend.observe(),
-            seed=seed,
-            steps_taken=steps_taken,
-            object_centric=backend.snapshot(),
-            abstract_atoms=backend.abstract_atoms(),
-        )
+        with SkillTiming.phase_of(timing=self._open_timing, name="observe_state"):
+            next_state = self.build_state(
+                observation=backend.observe(),
+                seed=seed,
+                steps_taken=steps_taken,
+                object_centric=backend.snapshot(),
+                abstract_atoms=backend.abstract_atoms(),
+            )
         self._adopt(state=next_state)
         return True
 

@@ -312,8 +312,19 @@ class StepFiles:
         with path.open("a") as stream:
             stream.write(LogTiming.encode(record=record))
 
+    @staticmethod
+    def timing(
+        *, path: Path, environment: type[StepProtocolEnvironment], problem: Problem, **record: Any
+    ) -> None:
+        """One `skill_timing.jsonl` line for the execution `record` names, if the domain
+        timed it. A file of its own: wall-clock must never reach the byte-stable logs."""
+        timing = environment.drain_execution_timing(problem=problem)
+        if timing is not None:
+            StepFiles.event(path=path, **record, **timing)
+
 
 CHECKPOINT_FILENAME = "checkpoint.pickle"
+SKILL_TIMING_FILENAME = "skill_timing.jsonl"
 PREVIOUS_CHECKPOINT_FILENAME = "checkpoint.previous.pickle"
 
 
@@ -683,6 +694,7 @@ class StepProtocolValidation:
     # or rerunning into an old directory truncates the run it then refuses to replace.
     RUN_OUTPUTS: ClassVar[tuple[str, ...]] = (
         "step_events.jsonl",
+        SKILL_TIMING_FILENAME,
         RECORDING_FILENAME,
         "tossing3d_state_log.jsonl",
         "measurements.json",
@@ -974,6 +986,7 @@ class StepPracticeRunner:
         (output / "snapshots").mkdir(exist_ok=saved is not None)
         configuration = vars(args).copy()
         events = output / "step_events.jsonl"
+        timings = output / SKILL_TIMING_FILENAME
         metrics = Metrics()
         cycle = 0
         robot_invocations = 0
@@ -1307,6 +1320,9 @@ class StepPracticeRunner:
             before_cost = accounting.total_cost if accounting else 0
             method.observe_environment_reset(state=state)
             success = False
+            # Discards a timing no event owns (the run's opening scene reset), so the
+            # one written below is this reset's own.
+            environment.drain_execution_timing(problem=problem)
             try:
                 problem.execute_movables_reset(destination=destination)
                 success = True
@@ -1327,6 +1343,16 @@ class StepPracticeRunner:
                     cost=cost,
                     success=success,
                     **({"forced": forced} if forced else {}),
+                )
+                StepFiles.timing(
+                    path=timings,
+                    environment=environment,
+                    problem=problem,
+                    event="human",
+                    cycle=cycle,
+                    start_step=before_count,
+                    end_step=clock.steps,
+                    label=name,
                 )
                 recorder.human_action(
                     skill=name,
@@ -1458,6 +1484,7 @@ class StepPracticeRunner:
                     clock.robot_active = True
                     interruption: str | None = None
                     completed = False
+                    environment.drain_execution_timing(problem=problem)
                     try:
                         state = problem.take_action(action=action.action)
                         completed = True
@@ -1491,6 +1518,16 @@ class StepPracticeRunner:
                         cost=robot_cost,
                         skill_error=skill_error,
                         **StepFiles.trace(environment=environment, problem=problem),
+                    )
+                    StepFiles.timing(
+                        path=timings,
+                        environment=environment,
+                        problem=problem,
+                        event="robot",
+                        cycle=cycle,
+                        start_step=before_count,
+                        end_step=clock.steps,
+                        label=action.label,
                     )
                     # An adopted interruption is the skill's error, so it is the outcome.
                     recorder.robot_action(

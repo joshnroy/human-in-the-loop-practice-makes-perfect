@@ -104,6 +104,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
 from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
+from .skill_timing import SkillTiming
 from .types import (
     AbstractAtom,
     ControllerRun,
@@ -162,6 +163,7 @@ def _build_state_collection_class() -> Any:
         def __init__(self, env: Any) -> None:  # noqa: PLR0917 (gymnasium's own signature)
             super().__init__(env)
             self.state_list: list[Any] = []
+            self.timing: SkillTiming | None = None
 
         def reset(self, **kwargs: Any) -> Any:
             self.state_list = []
@@ -170,19 +172,24 @@ def _build_state_collection_class() -> Any:
         def step(self, action: Any) -> Any:  # noqa: PLR0917 (gymnasium's own signature)
             before = getattr(self, "before_control_step", None)
             after = getattr(self, "after_control_step", None)
+            timing = self.timing
             if before is not None:
-                before()
-            output = super().step(action)
+                with SkillTiming.phase_of(timing=timing, name="control_step_observers"):
+                    before()
+            with SkillTiming.phase_of(timing=timing, name="mujoco_step"):
+                output = super().step(action)
             # `.unwrapped` is `TidyBot3DEnv`, which delegates render() to its own
             # `_object_centric_env` (see that class's own `render()`) -- the object-
             # centric state lives one level further in than `.unwrapped` reaches.
             # Untyped past this point like the rest of this module's KINDER surface.
             unwrapped: Any = self.unwrapped
             object_centric = unwrapped._object_centric_env  # noqa: SLF001
-            self.state_list.append(object_centric._get_current_state())  # noqa: SLF001
+            with SkillTiming.phase_of(timing=timing, name="state_capture"):
+                self.state_list.append(object_centric._get_current_state())  # noqa: SLF001
             if after is not None:
                 try:
-                    after()
+                    with SkillTiming.phase_of(timing=timing, name="control_step_observers"):
+                        after()
                 except Exception as exc:
                     raise ControlStepObserverFailed() from exc
             return output
@@ -332,6 +339,8 @@ class KinderBackend(BaseModel):
     # the bound only caps memory. Evaluation episodes restart from the same few seeded
     # scenes every cycle, which is where most of the hits come from.
     _pick_plan_failures: OrderedDict[bytes, str | None] = PrivateAttr(default_factory=OrderedDict)
+    # The execution being timed (`set_timing`), or None: nothing is timed between them.
+    _timing: SkillTiming | None = PrivateAttr(default=None)
 
     @staticmethod
     def configure_headless_rendering(
@@ -414,6 +423,10 @@ class KinderBackend(BaseModel):
         alone is enough afterwards, and is what makes a differently-seeded initial state
         cheap relative to a fresh `make`.
         """
+        with SkillTiming.phase_of(timing=self._timing, name="scene_reset"):
+            return self._reset(seed=seed)
+
+    def _reset(self, *, seed: int) -> Tossing3DObservation:
         api = self.api()
         if self._raw_env is None:
             # Registered Tossing3D variants now select their own task JSON by object
@@ -548,6 +561,13 @@ class KinderBackend(BaseModel):
         self._env = self.api().state_collection(inner)
         self._env.before_control_step = self._before_control_step
         self._env.after_control_step = self._after_control_step
+        self._env.timing = self._timing
+
+    def set_timing(self, *, timing: SkillTiming | None) -> None:
+        """Time phases into `timing` from now on, or stop timing with None."""
+        self._timing = timing
+        if self._env is not None:
+            self._env.timing = timing
 
     def set_control_step_observers(
         self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
@@ -755,6 +775,11 @@ class KinderBackend(BaseModel):
         with still no clear placement an error. A reset with room leaves the robot
         exactly where it is, and neither destination is treated differently.
         """
+        with SkillTiming.phase_of(timing=self._timing, name="reset_cube_and_bin"):
+            return self._reset_cube_and_bin(bin_region=bin_region)
+
+    def _reset_cube_and_bin(self, *, bin_region: dict[str, object] | None) -> Tossing3DObservation:
+        timing = self._timing
         object_centric = self._object_centric()
         config = object_centric.task_config
         robot_aabb = self._robot_aabb(snapshot=self._require_state())
@@ -770,12 +795,13 @@ class KinderBackend(BaseModel):
         selected = {}
         if region is not None:
             try:
-                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
-                    object_centric=object_centric,
-                    region=region,
-                    robot_aabb=robot_aabb,
-                    cube_spawn=cube_spawn,
-                )
+                with SkillTiming.phase_of(timing=timing, name="bin_placement_search"):
+                    selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                        object_centric=object_centric,
+                        region=region,
+                        robot_aabb=robot_aabb,
+                        cube_spawn=cube_spawn,
+                    )
             except BinPlacementViolationError as blocked:
                 logger.warning(
                     "robot at %r blocks every bin placement; moving it to its scene-start "
@@ -784,19 +810,22 @@ class KinderBackend(BaseModel):
                     self._start_robot_pose,
                     blocked,
                 )
-                self._move_robot_to_start_pose()
-                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
-                    object_centric=object_centric,
-                    region=region,
-                    robot_aabb=self._robot_aabb(snapshot=self._require_state()),
-                    cube_spawn=cube_spawn,
-                )
+                with SkillTiming.phase_of(timing=timing, name="move_robot_to_start_pose"):
+                    self._move_robot_to_start_pose()
+                with SkillTiming.phase_of(timing=timing, name="bin_placement_search"):
+                    selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                        object_centric=object_centric,
+                        region=region,
+                        robot_aabb=self._robot_aabb(snapshot=self._require_state()),
+                        cube_spawn=cube_spawn,
+                    )
         regions, overrides = self._movables_reset_regions(
             object_centric=object_centric,
             object_names=(self.cube_name, self.bin_name),
             selected_regions=selected,
         )
-        object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
+        with SkillTiming.phase_of(timing=timing, name="reset_ground_objects"):
+            object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
         self._state = object_centric._get_current_state()  # noqa: SLF001
         placed = self._require_state()
         bin_box = self._bin_aabb(snapshot=placed)
@@ -1036,6 +1065,10 @@ class KinderBackend(BaseModel):
         read off `state`: it is a dry run of the pick controller's planning from
         `state` (`pick_cube_plan_failure`), equally pure in its argument.
         """
+        with SkillTiming.phase_of(timing=self._timing, name="abstract_atoms"):
+            return self._abstract_atoms(state=state)
+
+    def _abstract_atoms(self, *, state: Any) -> frozenset[AbstractAtom]:
         if self._abstractor is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
         subject = self._require_state() if state is None else state
@@ -1082,6 +1115,8 @@ class KinderBackend(BaseModel):
             cube=features[self.cube_name],
             barrier=features[self.barrier_name],
         ):
+            if self._timing is not None:
+                self._timing.count(name="pick_plan_gate_skip")
             plannable = False
         else:
             plannable = self.pick_cube_plan_failure(state=subject) is None
@@ -1228,16 +1263,19 @@ class KinderBackend(BaseModel):
         arrive here and both must be reported rather than propagated.
         """
         state = self._require_state()
-        controller = self._ground_controller(
-            module=module,
-            key=key,
-            object_names=object_names,
-            state=state,
-            pybullet_sim=pybullet_sim,
-        )
+        timing = self._timing
+        with SkillTiming.phase_of(timing=timing, name="controller_build"):
+            controller = self._ground_controller(
+                module=module,
+                key=key,
+                object_names=object_names,
+                state=state,
+                pybullet_sim=pybullet_sim,
+            )
 
         try:
-            controller.reset(state, params)
+            with SkillTiming.phase_of(timing=timing, name="controller_reset"):
+                controller.reset(state, params)
         except BaseException as exc:  # noqa: BLE001  (any planner failure is a failed skill)
             if isinstance(
                 exc,
@@ -1257,32 +1295,36 @@ class KinderBackend(BaseModel):
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
         for step in range(limit):
-            try:
-                action = controller.step()
-                observation, _, _, _, _ = self._env.step(action)
-            except BaseException as exc:  # noqa: BLE001  (same reasoning as above)
-                if isinstance(
-                    exc,
-                    KeyboardInterrupt
-                    | SystemExit
-                    | ControlStepLimitReached
-                    | ControlStepObserverFailed,
-                ):
-                    raise
-                logger.debug(
-                    "run_controller: %s/%s step() raised at step=%d: %s: %s",
-                    module,
-                    key,
-                    step,
-                    type(exc).__name__,
-                    exc,
-                )
-                return ControllerRun(
-                    steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
-                )
-            self._state = self._env.observation_space.devectorize(observation)
-            controller.observe(self._state)
-            if controller.terminated():
+            # Exclusive of `mujoco_step` and the wrapper's phases inside `env.step`: what
+            # is left is the controller's own per-tick work and the devectorize.
+            with SkillTiming.phase_of(timing=timing, name="controller_tick"):
+                try:
+                    action = controller.step()
+                    observation, _, _, _, _ = self._env.step(action)
+                except BaseException as exc:  # noqa: BLE001  (same reasoning as above)
+                    if isinstance(
+                        exc,
+                        KeyboardInterrupt
+                        | SystemExit
+                        | ControlStepLimitReached
+                        | ControlStepObserverFailed,
+                    ):
+                        raise
+                    logger.debug(
+                        "run_controller: %s/%s step() raised at step=%d: %s: %s",
+                        module,
+                        key,
+                        step,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    return ControllerRun(
+                        steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
+                    )
+                self._state = self._env.observation_space.devectorize(observation)
+                controller.observe(self._state)
+                terminated = controller.terminated()
+            if terminated:
                 logger.debug(
                     "run_controller: %s/%s terminated normally at step=%d",
                     module,
@@ -1334,6 +1376,10 @@ class KinderBackend(BaseModel):
     def _pick_collision_sim(self, *, state: Any) -> Any:
         """The pick's planning scene: a PyBullet client built fresh from `state`, with
         the bin added at the pose `state` gives it."""
+        with SkillTiming.phase_of(timing=self._timing, name="pick_collision_sim"):
+            return self._build_pick_collision_sim(state=state)
+
+    def _build_pick_collision_sim(self, *, state: Any) -> Any:
         from kinder_models.dynamic3d.utils import PyBulletSim
         from pybullet_helpers.geometry import Pose
 
@@ -1380,7 +1426,17 @@ class KinderBackend(BaseModel):
         )
         if key in self._pick_plan_failures:
             self._pick_plan_failures.move_to_end(key)
+            if self._timing is not None:
+                self._timing.count(name="pick_plan_cache_hit")
             return self._pick_plan_failures[key]
+        with SkillTiming.phase_of(timing=self._timing, name="pick_plan_dry_run"):
+            failure = self._plan_pick(subject=subject)
+        self._pick_plan_failures[key] = failure
+        while len(self._pick_plan_failures) > self.pick_plan_cache_size:
+            self._pick_plan_failures.popitem(last=False)
+        return failure
+
+    def _plan_pick(self, *, subject: Any) -> str | None:
         pybullet_sim = self._pick_collision_sim(state=subject)
         failure: str | None = None
         try:
@@ -1404,9 +1460,6 @@ class KinderBackend(BaseModel):
             failure = f"{type(exc).__name__}: {exc}"
         finally:
             pybullet_sim.close()
-        self._pick_plan_failures[key] = failure
-        while len(self._pick_plan_failures) > self.pick_plan_cache_size:
-            self._pick_plan_failures.popitem(last=False)
         return failure
 
     def run_pick_cube(self) -> ControllerRun:
