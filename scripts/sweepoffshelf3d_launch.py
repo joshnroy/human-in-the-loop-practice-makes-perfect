@@ -4,6 +4,11 @@
     python -m scripts.sweepoffshelf3d_launch check  [--arms A ...]
     python -m scripts.sweepoffshelf3d_launch launch --arms A ... --results-root DIR --go
     python -m scripts.sweepoffshelf3d_launch della  --tag TAG --out DIR [--sha SHA]
+    python -m scripts.sweepoffshelf3d_launch launch --arms robocode --hours H \
+        --results-root DIR --sandbox-settings FILE --token-file FILE --go
+
+The `robocode` arm (RoboCode, the Full-Agentic LLLL LLM agent) is selected only by name
+and only on its own; see "RoboCode" below.
 
 `print` writes each arm's `hitl_pmp.cli` argv (seed 0); `check` parses every arm with
 the real CLI; `launch` runs `scripts/run_sweep.py` once per arm, one arm after another,
@@ -70,6 +75,18 @@ for practice too (`--record-motion all`), so `analysis/render_recording.py` draw
 full-motion videos. `launch` shares one argv across seeds through `run_sweep`, so there
 every seed records evaluation motion only.
 
+RoboCode (`--arms robocode`, Josh, 2026-10-22) runs `python -m hitl_pmp.full_agentic.runner
+--env sweepoffshelf3d` through `scripts/with_claude_token.py`, on agni only (it drives a
+local Docker coder container), never in `della` mode. One seed, 0. The planner arms'
+budgets and their 10 held-out tasks (seed 0's test stream, offset 10000), stop after 3
+perfect evaluations, p = 1, `--model-budget 20` by default, and the planner arms' cost file
+from PR #528, `configs/sweepoffshelf3d_practice_costs_planner.json` (each human reset
+costs 500 and takes 1 step). No `--effort`: the Claude CLI's default, as in every past
+RoboCode run. `--hours` has no default here and the arm refuses to build its command
+without one; the launch script `scripts/robocode_prepare.py` writes passes the hours Josh
+chose. `launch` starts the run as a systemd user service in `agents.slice` with
+`MemorySwapMax=0`, from the frozen checkout `scripts/robocode_prepare.py` writes.
+
 On a cluster, `print` gives each arm's per-seed argv; run it with the job's own
 `scripts/with_env.sh` and the same `<arm>/<method>/<seed>` output layout.
 
@@ -93,6 +110,7 @@ needs the skill benchmark report for `<sha>` under the code worktree's
 
 import argparse
 import shlex
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -117,6 +135,16 @@ P = "1"
 # Full-motion recording: every run's evaluations, and practice too for these seeds.
 PRACTICE_MOTION_SEEDS = frozenset({0})
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
+# RoboCode (Full-Agentic, LLLL), priced with the planner arms' cost file (#528).
+ROBOCODE = "robocode"
+ROBOCODE_METHOD = "full_agentic"
+ROBOCODE_SEEDS = (0,)
+ROBOCODE_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_planner.json"
+ROBOCODE_MODEL_BUDGET = 20.0
+ROBOCODE_HOST = "agni"
+# The host process only: the practice simulator plus one evaluation worker's. The coder
+# and execution containers are Docker's, capped by the sandbox settings.
+ROBOCODE_MEMORY_MAX = "10G"
 DELLA_QUOTA_PATH = "/scratch/gpfs/TSILVER"
 
 
@@ -408,6 +436,137 @@ exit $rc
         return command
 
     @staticmethod
+    def robocode_seeds() -> list[int]:
+        return list(ROBOCODE_SEEDS)
+
+    @staticmethod
+    def robocode_argv(
+        *,
+        size: Budget,
+        seed: int,
+        output: Path,
+        sandbox_settings: Path,
+        hours: float | None,
+        model_budget: float = ROBOCODE_MODEL_BUDGET,
+        token_file: Path | None = None,
+        repo: Path = REPO,
+    ) -> list[str]:
+        """The RoboCode run's command, under the checkout's `scripts/with_env.sh`.
+
+        `token_file` holds the `CLAUDE_CODE_OAUTH_TOKEN` assignment the coder uses;
+        `None` leaves the token to the environment (for `print` and `check`)."""
+        if hours is None:
+            raise SystemExit(
+                "the robocode arm needs --hours: its adaptation wall-clock limit has no "
+                "default and is chosen per launch"
+            )
+        loader = (
+            [str(repo / "scripts" / "with_claude_token.py"), str(token_file)]
+            if token_file is not None
+            else []
+        )
+        return [
+            str(repo / "scripts" / "with_env.sh"), "python", *loader,
+            "-m", "hitl_pmp.full_agentic.runner",
+            "--env", ENV,
+            "--output", str(output),
+            "--sandbox-settings", str(sandbox_settings),
+            "--seed", str(seed),
+            "--practice-step-budget", str(size.practice_steps),
+            "--measurement-interval-steps", str(size.evaluation_interval),
+            "--evaluation-control-steps", str(size.evaluation_control_steps),
+            "--num-test-tasks", str(size.tasks),
+            "--stop-after-perfect-evaluations", "3",
+            "--reset-cubes-success-probability", P,
+            "--model-budget", f"{model_budget:g}",
+            "--practice-cost-config", str(repo / ROBOCODE_COSTS.relative_to(REPO)),
+            "--hours", f"{hours:g}",
+        ]  # fmt: skip
+
+    @staticmethod
+    def hostname() -> str:
+        return socket.gethostname().split(".")[0]
+
+    @staticmethod
+    def robocode_service(
+        *, argv: list[str], unit: str, results_root: Path, working_directory: Path
+    ) -> list[str]:
+        """`systemd-run` for one RoboCode run: a user service (a scope dies with its
+        shell) in the shared `agents.slice`, with swap off."""
+        if ShelfLaunch.hostname() != ROBOCODE_HOST:
+            raise SystemExit(
+                f"refusing: the robocode arm runs on {ROBOCODE_HOST} only "
+                f"(this is {ShelfLaunch.hostname()})"
+            )
+        log = results_root / f"{unit}.log"
+        return [
+            "systemd-run", "--user", f"--unit={unit}",
+            "--slice=agents.slice",
+            "-p", "MemorySwapMax=0",
+            "-p", f"MemoryMax={ROBOCODE_MEMORY_MAX}",
+            "-p", "OOMPolicy=continue",
+            "-p", f"StandardOutput=append:{log}",
+            "-p", f"StandardError=append:{log}",
+            f"--working-directory={working_directory}",
+            "--",
+            *argv,
+        ]  # fmt: skip
+
+    @staticmethod
+    def robocode_main(*, args: argparse.Namespace, size: Budget) -> int:
+        def argv(*, seed: int, output: Path) -> list[str]:
+            return ShelfLaunch.robocode_argv(
+                size=size,
+                seed=seed,
+                output=output,
+                sandbox_settings=args.sandbox_settings or Path("<sandbox.json>"),
+                hours=args.hours,
+                model_budget=args.model_budget,
+                token_file=args.token_file,
+            )
+
+        if args.mode == "della":
+            raise SystemExit(f"refusing: the {ROBOCODE} arm runs on {ROBOCODE_HOST} only")
+        if args.mode == "print":
+            for seed in ShelfLaunch.robocode_seeds():
+                output = Path(f"<root>/{ROBOCODE}/{ROBOCODE_METHOD}/{seed}")
+                print(f"# {ROBOCODE} seed {seed}\n{shlex.join(argv(seed=seed, output=output))}\n")
+            return 0
+        if args.mode == "check":
+            from hitl_pmp.full_agentic.runner import FullAgenticRunner
+
+            for seed in ShelfLaunch.robocode_seeds():
+                command = argv(seed=seed, output=Path("/unused"))
+                start = command.index("hitl_pmp.full_agentic.runner") + 1
+                parsed = FullAgenticRunner.parse_args(argv=command[start:])
+                print(f"ok  {ROBOCODE}: seed {parsed.seed}, {parsed.practice_step_budget} steps")
+            return 0
+        if not args.go:
+            raise SystemExit("launch starts the experiment: pass --go only on Josh's go")
+        if args.results_root is None or args.sandbox_settings is None or args.token_file is None:
+            raise SystemExit(
+                f"launch --arms {ROBOCODE} needs --results-root, --sandbox-settings and "
+                "--token-file"
+            )
+        ShelfLaunch.require_isolated()
+        failed = 0
+        for seed in ShelfLaunch.robocode_seeds():
+            output = args.results_root / ROBOCODE / ROBOCODE_METHOD / str(seed)
+            if output.exists():
+                raise SystemExit(f"refusing to overwrite {output}")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            unit = f"hitl-shelf-{ROBOCODE}-{args.results_root.name}-s{seed}"
+            command = ShelfLaunch.robocode_service(
+                argv=argv(seed=seed, output=output),
+                unit=unit,
+                results_root=args.results_root,
+                working_directory=REPO,
+            )
+            print("+", shlex.join(command), flush=True)
+            failed += subprocess.call(command, cwd=REPO) != 0
+        return failed
+
+    @staticmethod
     def always_ask_supported(*, method: str) -> bool:
         """Whether this checkout's CLI accepts `--always-ask-reset` for `method`."""
         from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli
@@ -476,6 +635,24 @@ exit $rc
             help="Forward the launch gate override to run_sweep. Josh's explicit call only.",
         )
         parser.add_argument("--go", action="store_true", help="Required by launch.")
+        parser.add_argument(
+            "--hours",
+            type=float,
+            default=None,
+            help="robocode: the adaptation wall-clock limit. No default; required.",
+        )
+        parser.add_argument(
+            "--model-budget",
+            type=float,
+            default=ROBOCODE_MODEL_BUDGET,
+            help="robocode: the coder's USD cap.",
+        )
+        parser.add_argument("--sandbox-settings", type=Path, help="robocode: sandbox.json.")
+        parser.add_argument(
+            "--token-file",
+            type=Path,
+            help="robocode launch: the file with the CLAUDE_CODE_OAUTH_TOKEN assignment.",
+        )
         parser.add_argument("--tag", help="della: the results directory and job name.")
         parser.add_argument("--sha", help="della: the commit to run. Default: HEAD.")
         parser.add_argument("--out", type=Path, help="della: where to write the files.")
@@ -500,6 +677,10 @@ def main(*, argv: list[str] | None = None) -> int:
     args = ShelfLaunch.parse(argv=sys.argv[1:] if argv is None else argv)
     arms = ShelfLaunch.arms(expectimax_depths=args.expectimax_depths)
     names = args.arms if args.arms is not None else list(arms)
+    if ROBOCODE in names:
+        if names != [ROBOCODE]:
+            raise SystemExit(f"the {ROBOCODE} arm is launched on its own: --arms {ROBOCODE}")
+        return ShelfLaunch.robocode_main(args=args, size=SIZES[args.size])
     unknown = sorted(set(names) - set(arms))
     if unknown:
         raise SystemExit(f"unknown arms {unknown}; choose from {list(arms)}")
