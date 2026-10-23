@@ -43,8 +43,8 @@ class ShardUnit(BaseModel):
 
 class CiShard:
     DURATIONS = Path(__file__).with_name("ci_shard_durations.json")
-    # xdist workers per shard: `-n logical` on a 4-vCPU `ubuntu-latest` runner.
-    WORKERS_PER_SHARD = 4
+    # xdist workers per shard: `-n auto` counts the 2 physical cores of a 4-vCPU runner.
+    WORKERS_PER_SHARD = 2
     # Most tests round to 0.00 s, so the median default is often 0; a floor keeps ties
     # among them broken by unit count rather than all landing on shard 0.
     MIN_WEIGHT = 0.01
