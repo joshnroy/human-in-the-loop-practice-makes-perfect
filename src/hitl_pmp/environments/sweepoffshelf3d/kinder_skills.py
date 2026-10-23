@@ -48,7 +48,7 @@ Nothing here imports KINDER at module scope: `kinder_models` is imported on firs
 
 import contextlib
 import itertools
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -195,14 +195,17 @@ JAW_DEPTH = (0.0, 0.05)
 # in 12 of the 23 it picked by moving one further; at 5 mm, 6/74 and 13/23, and at
 # 35 mm, 34/74 and 19/23.
 SHELF_PICK_NEIGHBOUR_CLEARANCE = 0.002
+# Shifts (m) of a grasp that check refused, along its closing axis or the pads' width
+# (`KinderSkills.shelf_offsets`). In 13 of 16 picks the check refused on the skill
+# benchmark (2026-10-22), a grasp some base reaches cleared it shifted 4-12 mm.
+SHELF_PICK_OFFSETS = (0.004, 0.008, 0.012)
 # The 2F-85's linkage joints fully closed (rad), read off the live sim; each side's
 # `robot_<side>_<joint>`, coupler at 0 throughout. The pads' travel is posed at
 # fractions `PAD_TRAVEL_STEP` apart of these.
 GRIPPER_CLOSED = {"driver_joint": 0.787, "spring_link_joint": 0.785, "follower_joint": -0.766}
 PAD_TRAVEL_STEP = 0.05
 # The descent to a grasp is checked at hand poses at most this far (m) apart.
-SWEEP_STEP = 0.005
-# An oriented box: (centre, rotation, half-extents).
+SWEEP_STEP = 0.005  # An oriented box: (centre, rotation, half-extents).
 OrientedBox = tuple[np.ndarray, np.ndarray, np.ndarray]
 # A cupboard geom whose top is no more than this (m) above the cube's bottom face is the
 # board the cube rests on, not something the closing pads could clamp.
@@ -1314,6 +1317,71 @@ class KinderSkills:
         the back of the shelf, the plan to a pre-grasp can be refused by the MuJoCo
         re-check from every base while the way in from the front is clear.
 
+        After every centred grasp, each one the neighbour check refused, shifted off
+        centre (`shelf_offsets`) and searched the same way, every check unchanged: the
+        open 2F-85's pads reach 42.7-50.7 mm from the hand's centre, so a neighbour
+        4-5 cm away in a cluster was swept by every grasp a base could reach, each
+        missing the clearance by a few millimetres. The centred grasps are unchanged
+        and come first, so a pick they find pays nothing for the shifted ones."""
+        refused = [] if refused is None else refused
+        bases = [b for b in self.shelf_pick_bases(centre=centre) if self.base_clear(base=b)]
+        drivable: dict[int, bool] = {}
+        swept: list[tuple[np.ndarray, tuple[np.ndarray, ...]]] = []
+        yield from self.shelf_grasp_search(
+            grasps=self.shelf_hands(cube=cube, centre=centre),
+            bases=bases,
+            drivable=drivable,
+            cube=cube,
+            tried=tried,
+            refused=refused,
+            swept_out=swept,
+        )
+        yield from self.shelf_grasp_search(
+            grasps=self.shelf_offsets(grasps=swept),
+            bases=bases,
+            drivable=drivable,
+            cube=cube,
+            tried=tried,
+            refused=refused,
+        )
+
+    @staticmethod
+    def shelf_offsets(
+        *, grasps: list[tuple[np.ndarray, tuple[np.ndarray, ...]]]
+    ) -> Generator[tuple[np.ndarray, tuple[np.ndarray, ...]], None, None]:
+        """Each grasp, with its pre-grasps, shifted `SHELF_PICK_OFFSETS` along its own
+        closing axis and along the pads' width, either way: smallest shift first, over
+        every grasp, before the next. Along the closing axis the first pad to arrive
+        pushes the cube the shift's length toward the hand's centre, away from the
+        neighbour the shift clears; along the width the pads close on the same two
+        faces, overhanging the free side (as `FloorPicks.hands`, for a cube on the
+        floor)."""
+        for offset in SHELF_PICK_OFFSETS:
+            for hand, pres in grasps:
+                for axis in (0, 1):
+                    for sign in (1.0, -1.0):
+                        shift = sign * offset * hand[:3, axis]
+                        moved = []
+                        for pose in (hand, *pres):
+                            copy = pose.copy()
+                            copy[:3, 3] += shift
+                            moved.append(copy)
+                        yield moved[0], tuple(moved[1:])
+
+    def shelf_grasp_search(
+        self,
+        *,
+        grasps: Iterable[tuple[np.ndarray, tuple[np.ndarray, ...]]],
+        bases: list[np.ndarray],
+        drivable: dict[int, bool],
+        cube: str,
+        tried: list[np.ndarray],
+        refused: list[str],
+        swept_out: list[tuple[np.ndarray, tuple[np.ndarray, ...]]] | None = None,
+    ) -> Generator[ShelfCandidate, None, None]:
+        """`shelf_candidates`' search over `grasps`, each (grasp, pre-grasps); a grasp
+        the neighbour check refuses is appended to `swept_out`.
+
         Whether a grasp is clear barely depends on the base, so the first pass gives a
         grasp up after `SHELF_PICK_UNREACHABLE_BASES` unreachable bases in a row. Once
         everything that pass found has been offered, a grasp it gave up that was clear
@@ -1321,16 +1389,15 @@ class KinderSkills:
         cube by a side panel had one clear grasp, clear from 16/39 bases but with
         pre-grasps from only three of them, all after a run of three unreachable ones.
         The first pass is unchanged, so a pick it finds pays nothing for the second."""
-        refused = [] if refused is None else refused
-        bases = [b for b in self.shelf_pick_bases(centre=centre) if self.base_clear(base=b)]
-        drivable: dict[int, bool] = {}
         given_up: list[tuple[np.ndarray, tuple[np.ndarray, ...], int]] = []
-        for hand, all_pres in self.shelf_hands(cube=cube, centre=centre):
+        for hand, all_pres in grasps:
             if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried):
                 continue
             if self.cupboard_between_pads(hand=hand, cube=cube):
                 continue
             if self.swept(path=[hand], cube=cube, refused=refused):
+                if swept_out is not None:
+                    swept_out.append((hand, all_pres))
                 continue
             pres = tuple(
                 pre
@@ -1338,6 +1405,8 @@ class KinderSkills:
                 if not self.swept(path=[pre, hand], cube=cube, refused=refused)
             )
             if not pres:
+                if swept_out is not None:
+                    swept_out.append((hand, all_pres))
                 continue
             unreachable = 0
             clear_somewhere = False
@@ -1421,6 +1490,16 @@ class KinderSkills:
             refused.append(other)
         return other is not None
 
+    def other_cube_boxes(self, *, cube: str) -> dict[str, OrientedBox]:
+        """Every cube but `cube`, as an oriented box."""
+        others = {}
+        for i in range(len(O.cubes)):
+            other = f"cube_{i}"
+            if other != cube:
+                pose = self.cube_pose(cube=other)
+                others[other] = (pose[:3, 3], pose[:3, :3], np.full(3, O.cube_half_size))
+        return others
+
     def neighbour_in_sweep(self, *, path: list[np.ndarray], cube: str) -> str | None:
         """Another cube within `SHELF_PICK_NEIGHBOUR_CLEARANCE` of the space the pads
         pass through (`PadSweep`) on the way in along `path`, pinch-site poses from
@@ -1429,14 +1508,10 @@ class KinderSkills:
         sweep = PadSweep.descent(path=path, pads=travel[0]) + PadSweep.closing(
             hand=path[-1], travel=travel
         )
-        others = {}
-        for i in range(len(O.cubes)):
-            other = f"cube_{i}"
-            if other != cube:
-                pose = self.cube_pose(cube=other)
-                others[other] = (pose[:3, 3], pose[:3, :3], np.full(3, O.cube_half_size))
         return PadSweep.first_hit(
-            sweep=sweep, others=others, clearance=SHELF_PICK_NEIGHBOUR_CLEARANCE
+            sweep=sweep,
+            others=self.other_cube_boxes(cube=cube),
+            clearance=SHELF_PICK_NEIGHBOUR_CLEARANCE,
         )
 
     def pad_travel(self) -> list[list[tuple[np.ndarray, np.ndarray]]]:

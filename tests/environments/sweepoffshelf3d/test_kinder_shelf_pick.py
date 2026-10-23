@@ -470,3 +470,96 @@ def test_the_descent_sweep_reaches_a_neighbour_the_closing_pads_do_not():
     descent = PadSweep.descent(path=[pre, hand], pads=TRAVEL[0])
     assert PadSweep.first_hit(sweep=closing, others=others, clearance=clearance) is None
     assert PadSweep.first_hit(sweep=descent, others=others, clearance=clearance) == "cube_1"
+
+
+def test_a_grasp_the_sweep_refuses_is_offered_shifted_off_centre_after_every_centred_one(
+    *, monkeypatch
+):
+    """Grasp 1's pads sweep a neighbour unless the hand is shifted at least 8 mm, along
+    its closing axis or the pads' width; grasp 2 is clear of every neighbour but
+    unreachable. After every centred grasp, grasp 1 is offered shifted, the smallest
+    shift that clears first; grasp 0, offered centred, and grasp 2, which the sweep
+    never refused, get no shifted copies."""
+    kinder = _stub_candidates(monkeypatch=monkeypatch, clear={0: {0}, 1: {0}, 2: set()}, bases=1)
+
+    def sweep(*, path, **_):
+        hand = path[-1]
+        swept = int(hand[3, 0]) == 1 and float(np.linalg.norm(hand[:3, 3])) < 0.0079
+        return "cube_1" if swept else None
+
+    monkeypatch.setattr(kinder, "neighbour_in_sweep", sweep, raising=False)
+    hands = {int(hand[3, 0]): hand for hand, _ in kinder.shelf_hands()}
+    offered = [
+        (int(hand[3, 0]), hand[:3, 3].copy())
+        for hand, *_ in kinder.shelf_candidates(cube="cube_0", centre=np.zeros(3), tried=[])
+    ]
+    assert [g for g, _ in offered[:2]] == [0, 1], offered
+    assert np.allclose(offered[0][1], 0.0), offered
+    assert all(g == 1 for g, _ in offered[1:]), offered
+    shifts = [float(np.linalg.norm(shift)) for _, shift in offered[1:]]
+    assert shifts[0] == pytest.approx(0.008), shifts
+    assert shifts == sorted(shifts), shifts
+    axes = hands[1][:3, :2]
+    for _, shift in offered[1:]:
+        along = axes.T @ shift
+        assert np.count_nonzero(np.abs(along) > 1e-9) == 1, along
+        assert np.allclose(axes @ along, shift), (along, shift)
+
+
+# PickCubeFromShelf cases `main` lost to the neighbour sweep (#539), in this scene too:
+# no grasp's pads clear the neighbour by SHELF_PICK_NEIGHBOUR_CLEARANCE (layout-29,
+# layout-35), or only grasps no base reaches do (layout-0, layout-41). Each misses by
+# 0.3-8 mm with the 2F-85 fully open, its inner pad faces 42.7 mm from the centre.
+NEIGHBOUR_TIGHT = [
+    ("layout-29", "cube_4"),
+    ("layout-35", "cube_0"),
+    ("layout-0", "cube_0"),
+    ("layout-41", "cube_1"),
+]
+
+
+@pytest.mark.parametrize(("state_id", "cube"), NEIGHBOUR_TIGHT)
+def test_a_cube_with_a_tight_neighbour_has_a_grasp_whose_pads_clear_it(
+    *, env, states, state_id, cube
+):
+    """Before: `shelf_candidates` offered nothing and the pick refused. After: an
+    off-centre grasp, its whole way in and its close still clear of every other cube."""
+    kinder = _restore(env=env, states=states, state_id=state_id)
+    centre = kinder.shelf.cube_position(cube=cube)
+    hand, entry, *_ = next(
+        iter(kinder.shelf_candidates(cube=cube, centre=centre, tried=[])), (None, ())
+    )
+    assert hand is not None, f"{state_id}/{cube}: no grasp offered"
+    assert kinder.neighbour_in_sweep(path=[*entry, hand], cube=cube) is None
+
+
+# The lift (`lifter`) backs the held cube out along the leaned approach and, on these
+# two, shoves the neighbour the way in cleared: 10.7 mm on layout-0, 54 mm on
+# layout-35. The grasp is not the cause; a lift that clears the neighbours is a
+# separate change to how the pick executes.
+_LIFT_SHOVES = pytest.mark.xfail(strict=True, reason="the lift shoves the neighbour")
+
+
+@pytest.mark.parametrize(
+    ("state_id", "cube"),
+    [
+        NEIGHBOUR_TIGHT[0],
+        pytest.param(*NEIGHBOUR_TIGHT[1], marks=_LIFT_SHOVES),
+        pytest.param(*NEIGHBOUR_TIGHT[2], marks=_LIFT_SHOVES),
+    ],
+)
+def test_a_cube_with_a_tight_neighbour_is_picked_without_moving_it(*, env, states, state_id, cube):
+    """Before: refused ("no grasp ... planned; refused grasps sweeping ..."). After:
+    the target is held and every other cube is where it was."""
+    kinder = _restore(env=env, states=states, state_id=state_id)
+    shelf = kinder.shelf
+    names = [f"cube_{i}" for i in range(5)]
+    before = {name: shelf.cube_position(cube=name).copy() for name in names}
+    atoms = _pick(env=env, cube=cube)
+    assert ("HoldingCube", ("robot", cube)) in atoms, env.last_skill_error()
+    moved = {
+        name: round(1000 * float(np.linalg.norm(shelf.cube_position(cube=name) - before[name])), 1)
+        for name in names
+        if name != cube
+    }
+    assert max(moved.values()) < 1000 * UNTOUCHED, moved
