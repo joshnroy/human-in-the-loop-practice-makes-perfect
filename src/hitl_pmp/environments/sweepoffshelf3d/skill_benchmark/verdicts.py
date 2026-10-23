@@ -29,9 +29,12 @@ from .types import CaseResult, SkillThreshold, SkillVerdict
 
 # The count, not a fraction: a state set that gains or loses a case changes the
 # denominator, and the gate then refuses instead of passing at a rate never agreed.
-# PickCubeFromShelf is 95, not 97: two of the 97 once counted held a second cube.
+# PickCubeFromShelf is a deliberate gate lowering (Josh, 2026-10-23): #539's neighbour
+# refusals leave about 1/4 of shelf picks refused, measured 75/100 in the wiper-on-top
+# scene with a 6 mm wiper margin; the gate is that minus 3. A fix to the shelf pick's
+# grasp and base generation is in progress; raise this back when it lands.
 THRESHOLDS: dict[str, SkillThreshold] = {
-    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=95, out_of=100),
+    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=72, out_of=100),
     S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
