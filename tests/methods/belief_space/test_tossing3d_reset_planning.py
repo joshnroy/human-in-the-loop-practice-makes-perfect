@@ -463,3 +463,42 @@ def test_a_pick_after_a_reset_reuses_the_roots_draw_within_its_scope(*, scope: s
     ):
         picked = make_tossing3d_search_state(state=picked_state, true_atoms=picked_atoms)
         assert key(node=picked, action=pick) != key(node=root, action=pick)
+
+
+def test_the_belief_key_is_the_search_key_without_the_accumulated_cost() -> None:
+    """Curtis et al.'s PO_DAStar keys a node by the belief alone. A reset that leaves
+    every atom as it was still changes its own belief and training clock, so the node
+    after it stays new; only the cost is dropped."""
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    ready = _ready_atoms(method=method)
+    root = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    dearer_state = method.pomdp_state.model_copy(update={"accumulated_cost": 7.5})
+    dearer = make_tossing3d_search_state(state=dearer_state, true_atoms=ready)
+
+    def belief_key(*, node: Tossing3DSearchState) -> object:
+        return model.belief_cache_key(environment_state=node, belief_state=node.state, horizon=4)
+
+    def search_key(*, node: Tossing3DSearchState) -> object:
+        return model.search_cache_key(
+            environment_state=node,
+            summed_cost=node.state.accumulated_cost,
+            belief_state=node.state,
+            horizon=4,
+        )
+
+    assert search_key(node=dearer) != search_key(node=root)
+    assert belief_key(node=dearer) == belief_key(node=root)
+    full = search_key(node=root)
+    assert belief_key(node=root) == (*full[:-2], full[-1])
+    reset = next(
+        action
+        for action in model.get_valid_actions(environment_state=root)
+        if action.skill.name == RESET_SKILL and action.objects[-1].name == "opposite_side"
+    )
+    _, after_state, after_atoms = model.outcomes(
+        environment_state=root, state=method.pomdp_state, action=reset
+    )[0]
+    after = make_tossing3d_search_state(state=after_state, true_atoms=after_atoms)
+    assert after_atoms == ready
+    assert belief_key(node=after) != belief_key(node=root)

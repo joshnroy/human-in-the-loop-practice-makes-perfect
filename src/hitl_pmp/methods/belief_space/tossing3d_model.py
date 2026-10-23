@@ -372,6 +372,26 @@ class Tossing3DPracticeModel(BaseModel):
             horizon,
         )
 
+    def belief_cache_key(
+        self,
+        *,
+        environment_state: Tossing3DSearchState,
+        belief_state: Tossing3DBeliefState,
+        horizon: int | None,
+    ) -> object:
+        """`search_cache_key` less the accumulated cost, which J reads only through G's
+        separate cost term. Every other field moves J itself and stays: the training
+        clocks and sampler state feed the refit J forecasts from, and the horizon bounds
+        the continuation."""
+        key = self.search_cache_key(
+            environment_state=environment_state,
+            summed_cost=belief_state.accumulated_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        assert isinstance(key, tuple)
+        return (*key[:-2], key[-1])
+
     def outcome_draw_key(
         self,
         *,
