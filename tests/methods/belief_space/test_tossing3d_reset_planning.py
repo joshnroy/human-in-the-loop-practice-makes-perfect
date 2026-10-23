@@ -28,6 +28,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefStat
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     create_fixed_performance_cost_prior,
 )
+from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillHypothesis, WeightedHypothesis
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -385,3 +386,80 @@ def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() 
     names = {action.skill.name for action in actions}
     assert PICK_SKILL in names
     assert _offered_resets(method=method) <= names
+
+
+def _ready_atoms(*, method: Tossing3DPomdpMethod) -> frozenset[GroundAtom]:
+    return frozenset(
+        _atom(method=method, name=name)
+        for name in (
+            "HandEmpty",
+            "OnGround",
+            "NotHolding",
+            "RobotAtSide",
+            "CubeAtSide",
+            "BinAtSide",
+            "GraspClear",
+            "PickPlannable",
+            "PickupUnblocked",
+            "BinOnGround",
+        )
+    )
+
+
+@pytest.mark.parametrize("scope", ["state", "skill"])
+def test_a_pick_after_a_reset_reuses_the_roots_draw_within_its_scope(*, scope: str) -> None:
+    """Determinized A*'s shared draws key a sampled outcome by what the outcome
+    distribution reads. A reset advances the cost, its own belief and its own training
+    clock, so the search node is new, but the pick's distribution is unchanged. Under
+    "state" the pick reuses the root pick's draw when the reset left every atom as it
+    was; under "skill" it does whatever the reset did to the atoms, because the pick's
+    success probability reads only the pick's own belief."""
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    ready = _ready_atoms(method=method)
+    root = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    actions = model.get_valid_actions(environment_state=root)
+    pick = next(action for action in actions if action.skill.name == PICK_SKILL)
+    resets = {
+        reset.objects[-1].name: reset
+        for reset in actions
+        if reset.skill.name == RESET_SKILL and reset.objects[-2].name == "robot_side"
+    }
+
+    def after(*, reset: GroundSkill) -> Tossing3DSearchState:
+        _, state, atoms = model.outcomes(
+            environment_state=root, state=method.pomdp_state, action=reset
+        )[0]
+        return make_tossing3d_search_state(state=state, true_atoms=atoms)
+
+    def key(*, node: Tossing3DSearchState, action: GroundSkill) -> object:
+        return model.outcome_draw_key(
+            environment_state=node, belief_state=node.state, action=action, scope=scope
+        )
+
+    unchanged, moved = after(reset=resets["opposite_side"]), after(reset=resets["robot_side"])
+    assert unchanged.true_atoms == ready
+    assert moved.true_atoms != ready
+    for node in (unchanged, moved):
+        assert model.search_cache_key(
+            environment_state=node,
+            summed_cost=node.state.accumulated_cost,
+            belief_state=node.state,
+            horizon=None,
+        ) != model.search_cache_key(
+            environment_state=root,
+            summed_cost=root.state.accumulated_cost,
+            belief_state=root.state,
+            horizon=None,
+        )
+    assert key(node=unchanged, action=pick) == key(node=root, action=pick)
+    assert (key(node=moved, action=pick) == key(node=root, action=pick)) == (scope == "skill")
+    # The reset's own outcome reads its own belief, which the reset just conditioned.
+    reset = resets["opposite_side"]
+    assert key(node=unchanged, action=reset) != key(node=root, action=reset)
+    # A second pick after an imagined pick outcome is a new trial in either scope.
+    for _, picked_state, picked_atoms in model.outcomes(
+        environment_state=root, state=method.pomdp_state, action=pick
+    ):
+        picked = make_tossing3d_search_state(state=picked_state, true_atoms=picked_atoms)
+        assert key(node=picked, action=pick) != key(node=root, action=pick)

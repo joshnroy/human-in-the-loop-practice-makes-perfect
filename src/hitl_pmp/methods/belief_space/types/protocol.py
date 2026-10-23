@@ -30,6 +30,19 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
         horizon: int | None,
     ) -> object: ...
 
+    def outcome_draw_key(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        belief_state: BeliefStateT,
+        action: ActionT,
+        scope: str,
+    ) -> object:
+        """Identify an action's outcome distribution by what it reads, for determinized
+        search's shared draws: with the state's atoms (scope "state") or without
+        ("skill")."""
+        ...
+
     def evaluate_policy(self, *, sampled_theta: ThetaT) -> float: ...
 
     def sample_policy_values_from_belief(
