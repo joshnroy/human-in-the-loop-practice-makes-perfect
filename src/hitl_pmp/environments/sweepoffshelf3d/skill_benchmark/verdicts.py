@@ -3,8 +3,8 @@
 Targets (Josh, 2026-10-15): a skill with no continuous parameters must succeed from
 every benchmark state; a skill with continuous parameters (only `SweepShelf`) must have,
 from every state, at least one setting on `SWEEP_GRID` that succeeds. Since SweepShelf
-aims one stroke at one cube (2026-10-23) that is per (state, target cube): every cube on
-the shelf of every wiper-in-hand state must be swept in by some setting. A skill with no
+aims one stroke at one cube (2026-10-23) that is per (state, target cube), and
+`SETTING_THRESHOLDS` relaxes "every pair" to a pair count. A skill with no
 valid benchmark case has not been shown to meet anything, so it does not pass.
 
 `THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for four skills with x/y of their
@@ -27,7 +27,7 @@ from collections import Counter, defaultdict
 from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
 from hitl_pmp.environments.sweepoffshelf3d.types import SkillNote, SkillTrace
 
-from .types import CaseResult, SkillThreshold, SkillVerdict
+from .types import CaseResult, SettingThreshold, SkillThreshold, SkillVerdict
 
 # The count, not a fraction: a state set that gains or loses a case changes the
 # denominator, and the gate then refuses instead of passing at a rate never agreed.
@@ -42,6 +42,12 @@ THRESHOLDS: dict[str, SkillThreshold] = {
     S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
         min_successes=5, out_of=8, families=frozenset({"harvested"})
     ),
+}
+# A pair-count target for a continuous-parameter skill (Josh, 2026-10-23): the
+# afb353fc1 gate run found a succeeding setting for 38/40 (state, target cube) pairs; the
+# two without one are corner cubes at |y| ~ 0.225 m, beyond the +/- 0.17 m lane limit.
+SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
+    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=38, out_of=40),
 }
 # (lane offset [m], pull speed [m/s]) over SweepShelf's whole allowed range.
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(
@@ -131,12 +137,29 @@ class Verdicts:
                     tally = per_state.setdefault(key, [0, 0])
                     tally[0] += run.label == "success"
                     tally[1] += 1
-                passed = bool(per_state) and all(ok > 0 for ok, _ in per_state.values())
+                covered = sum(ok > 0 for ok, _ in per_state.values())
+                setting = SETTING_THRESHOLDS.get(skill)
+                reason = ""
+                if setting is None:
+                    target = "some setting per state and target cube"
+                    passed = bool(per_state) and covered == len(per_state)
+                else:
+                    target = setting.target()
+                    if len(per_state) != setting.out_of:
+                        reason = (
+                            f"the benchmark ran {len(per_state)} (state, target cube) pair(s), "
+                            f"the threshold is out of {setting.out_of}; the state set "
+                            "changed, so set the threshold again"
+                        )
+                    passed = not reason and covered >= setting.min_pairs
                 verdicts.append(
                     SkillVerdict(
                         skill=skill,
-                        target="some setting per state and target cube",
+                        target=target,
                         passed=passed,
+                        reason=reason,
+                        gated_pairs=covered,
+                        gated_pairs_total=len(per_state),
                         successes=successes,
                         total=len(runs),
                         gated_successes=successes,
