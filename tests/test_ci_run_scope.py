@@ -278,7 +278,7 @@ def test_the_filter_covers_dependencies_ci_config_conftests_and_data(*, path: st
         "analysis/run_timing.py",
         "tests/analysis/test_run_timing.py",
         "tests/environments/lightswitch/test_environment.py",
-        "src/hitl_pmp/full_agentic/runner.py",
+        "src/hitl_pmp/adapters/__init__.py",
     ],
 )
 def test_the_filter_lets_unrelated_changes_skip_the_job(*, path: str) -> None:
