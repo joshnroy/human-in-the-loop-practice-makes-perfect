@@ -419,12 +419,26 @@ jobs:
         shard: [0, 1, 2, 3]
     env: *kinder_env
     steps:
+      # The mirror sometimes serves these ~17 MB at ~46 kB/s (9/49 installs took 5.7-8.8
+      # min, tests/test_ci_caches.py), so the downloaded .debs are cached per runner image.
+      # Still resolved against a fresh index: apt reuses a cached archive only when it is
+      # exactly the version it resolved, so a stale cache costs a download, never a skew.
+      - name: Resolve the runner image
+        id: runner-image
+        run: echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache apt archives
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-osmesa-${{ runner.os }}-${{ steps.runner-image.outputs.image }}
+          restore-keys: |
+            apt-osmesa-${{ runner.os }}-
       - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          # Resolve against this runner image; cached .deb files can require
-          # exact library versions that have changed on ubuntu-latest.
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo chown -R "$USER" ~/apt-archives
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -530,12 +544,26 @@ jobs:
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
+      # The mirror sometimes serves these ~17 MB at ~46 kB/s (9/49 installs took 5.7-8.8
+      # min, tests/test_ci_caches.py), so the downloaded .debs are cached per runner image.
+      # Still resolved against a fresh index: apt reuses a cached archive only when it is
+      # exactly the version it resolved, so a stale cache costs a download, never a skew.
+      - name: Resolve the runner image
+        id: runner-image
+        run: echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache apt archives
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-osmesa-${{ runner.os }}-${{ steps.runner-image.outputs.image }}
+          restore-keys: |
+            apt-osmesa-${{ runner.os }}-
       - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          # Resolve against this runner image; cached .deb files can require
-          # exact library versions that have changed on ubuntu-latest.
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo chown -R "$USER" ~/apt-archives
       - uses: actions/checkout@v4
         with:
           submodules: recursive

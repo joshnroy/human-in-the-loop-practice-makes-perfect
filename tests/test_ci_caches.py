@@ -74,3 +74,22 @@ def test_a_mimiclabs_cache_miss_fills_from_the_checksummed_lab2_mirror() -> None
         assert f"{MIRROR_SHA256}  " in fill["run"] and "sha256sum -c" in fill["run"]
         filled += 1
     assert filled == 2  # The Tossing3D and scripts jobs, the two that build MimicLabs scenes.
+
+
+def test_every_apt_install_reuses_cached_archives_keyed_on_the_runner_image() -> None:
+    """The ubuntu mirror sometimes serves the ~17 MB of .debs at ~46 kB/s: 9/49 install
+    steps over 25 runs took 5.7-8.8 min instead of ~0.2. apt checks every cached archive
+    against the version it resolved, so a stale one is re-downloaded, never installed."""
+    jobs = 0
+    for name, job in CiSteps.jobs().items():
+        steps = job.get("steps", [])
+        installs = [s for s in steps if "apt-get install" in str(s.get("run", ""))]
+        if not installs:
+            continue
+        jobs += 1
+        (install,) = installs
+        assert '-o Dir::Cache::Archives="$HOME/apt-archives"' in install["run"], name
+        (cache,) = [s for s in steps if "apt-archives" in str(s.get("with", {}).get("path", ""))]
+        assert steps.index(cache) < steps.index(install), name
+        assert "steps.runner-image.outputs.image" in cache["with"]["key"], name
+    assert jobs == 2  # The Tossing3D and scripts jobs, the two that render through OSMesa.
