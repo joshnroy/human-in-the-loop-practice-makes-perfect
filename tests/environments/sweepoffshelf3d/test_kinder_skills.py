@@ -36,9 +36,23 @@ def _env():
         env.close()
 
 
-def _act(*, env, skill, cube=0, height=0.005, speed=0.05):
-    env.take_action(action=np.array([float(SKILL_IDS[skill]), float(cube), height, speed]))
+def _act(*, env, skill, cube=0, offset=-0.06, speed=0.05):
+    env.take_action(action=np.array([float(SKILL_IDS[skill]), float(cube), offset, speed]))
     return env.get_current_state().abstract_atoms
+
+
+# Where `_only_cube_0_on_the_shelf` puts the other four cubes: inside the box.
+BOX_SPOTS = ((1.18, -0.18), (1.18, 0.18), (1.30, -0.18), (1.30, 0.18))
+
+
+def _only_cube_0_on_the_shelf(*, env):
+    """Right after a reset: cubes 1-4 dropped into the box, as if already swept, so one
+    stroke at cube_0 leaves the shelf bare -- the only way a single stroke at seed 0
+    leaves a strip of board to lay the wiper on (`reseat_y`)."""
+    for i, (x, y) in enumerate(BOX_SPOTS, start=1):
+        _teleport(env=env, name=f"cube_{i}", position=[x, y, 0.08])
+    env.backend().sim().forward()
+    env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
 
 
 def _arm_from_home(*, env):
@@ -290,10 +304,12 @@ def test_a_wiper_lost_from_the_hand_is_not_still_believed_held(*, env):
 def test_the_wiper_sweeps_the_shelf_and_goes_back(*, env):
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
-    # Whether every cube lands in the box is the sweep's competence; the wiper staying
-    # in hand through the retract that follows is not.
-    assert not any(name == "OnShelf" for name, _ in atoms), env.last_skill_error()
+    atoms = _act(env=env, skill="SweepShelf", cube=0, offset=-0.06, speed=0.05)
+    # One stroke at cube_0, at the oracle's setting: seed 0's cube_0 goes in. Whether a
+    # cube lands is the sweep's competence; the wiper staying in hand through the
+    # retract that follows is not.
+    assert ("InBox", ("cube_0", "box_0")) in atoms, env.last_skill_error()
+    assert ("OnShelf", ("cube_0",)) not in atoms
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms
     atoms = _act(env=env, skill="ReturnWiper")
     assert {("WiperHome", ("wiper_0",)), ("HandEmpty", ("robot",))} <= atoms, env.last_skill_error()
@@ -433,7 +449,7 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     monkeypatch.setattr(ShelfSkills, "pull", pull_then_drop)
-    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert "no base pose" not in error, error
@@ -460,19 +476,19 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     monkeypatch.setattr(ShelfSkills, "raise_hand", drop_then_raise)
-    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert ("HandEmpty", ("robot",)) in atoms
 
 
 def _force_one_reseat(*, monkeypatch):
-    """After the first of the sweep's pulls that leaves a bare strip to lay the wiper
-    on (`reseat_y`), report the wiper turned past RESEAT_TURN_DEG in the grasp: the only
-    trigger `stroke` has for `reseat_wiper`. In the 2026-10-21 harvest the counter got
-    there by real slip; seed 0's own strokes do not turn it that far, so no other test
-    reaches the reseat. The one-grasp wiper's first pull at seed 0 leaves four cubes
-    across the board, with no strip the 23 cm head clears."""
+    """After the first pull that leaves a bare strip to lay the wiper on (`reseat_y`),
+    report the wiper turned past RESEAT_TURN_DEG in the grasp: the only trigger `stroke`
+    has for `reseat_wiper`. In the 2026-10-21 harvest the counter got there by real
+    slip; seed 0's own strokes do not turn it that far, so no other test reaches the
+    reseat. A stroke at seed 0 with all five cubes on the shelf leaves no strip the
+    23 cm head clears, so the tests that need one start from `_only_cube_0_on_the_shelf`."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
         RESEAT_TURN_DEG,
         ShelfSkills,
@@ -500,15 +516,16 @@ def _reseats(*, skills):
     return [g for g in skills.grasps_taken if g["label"].endswith("_reseat")]
 
 
-def test_a_forced_reseat_lets_go_takes_the_wiper_again_and_the_sweep_goes_on(*, env, monkeypatch):
+def test_a_forced_reseat_lets_go_takes_the_wiper_again_and_the_stroke_goes_on(*, env, monkeypatch):
     """`reseat_wiper` opens the gripper on purpose while the sweep re-checks
     `HoldingWiper` every control step: before the fix the check raised "the wiper left
     the hand during ..._reseat_release" five steps later, and 13/13 reseats that reached
     their release in the 2026-10-21 SweepShelf harvest failed that way."""
     env.reset_to_seed(seed=0)
+    _only_cube_0_on_the_shelf(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _force_one_reseat(monkeypatch=monkeypatch)
-    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
     error = env.last_skill_error() or ""
     skills = env.controllers()._skills  # noqa: SLF001
     assert "left the hand" not in error, error
@@ -516,7 +533,7 @@ def test_a_forced_reseat_lets_go_takes_the_wiper_again_and_the_sweep_goes_on(*, 
     reseats = _reseats(skills=skills)
     assert len(reseats) == 1, skills.grasps_taken
     reseated = reseats[0]["label"].removesuffix("_reseat")
-    # The stroke that reseated ran to its end, and the sweep went on past it.
+    # The stroke that reseated ran to its end.
     assert any(
         n.startswith(f"{reseated}: ") and "in box after the stroke" in n for n in skills.notes
     )
@@ -536,10 +553,11 @@ def test_the_wiper_check_is_back_on_as_soon_as_a_reseat_has_taken_the_wiper(*, e
         _teleport(env=env, name="wiper_0", position=[1.235, 0.0, 0.05])  # into the box
 
     env.reset_to_seed(seed=0)
+    _only_cube_0_on_the_shelf(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _force_one_reseat(monkeypatch=monkeypatch)
     monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat_then_drop)
-    atoms = _act(env=env, skill="SweepShelf", height=0.005, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
     error = env.last_skill_error() or ""
     assert "wiper left the hand during" in error, error
     assert "_reseat" not in error, error
@@ -621,7 +639,7 @@ def test_a_sweep_right_after_a_fresh_pick_does_not_reseat(*, env):
     no regrasp before the first stroke, so only the fresh pick zeroes the counter."""
     _left_turned_by_an_earlier_grasp(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
+    _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.15)
     notes = env.controllers()._skills.notes  # noqa: SLF001
     assert not [n for n in notes if "set down after turning" in n], notes
     assert not [n for n in notes if f"{STALE_TURN_DEG:.1f} deg" in n], notes
@@ -649,7 +667,7 @@ def test_a_turn_in_this_grasp_still_reseats(*, env, monkeypatch):
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     monkeypatch.setattr(ShelfSkills, "pull", pull_and_turn)
     monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat)
-    _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
+    _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.15)
     assert len(reseats) == 1, env.last_skill_error()
     assert reseats[0][1] > RESEAT_TURN_DEG
 

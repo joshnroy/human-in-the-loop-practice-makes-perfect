@@ -6,8 +6,9 @@ the floor that is too heavy for it to lift. A human can pour the box back onto t
 nothing) and put the wiper back (`reset_wiper`, which always succeeds).
 
 One `take_action` runs one whole skill -- thousands of MuJoCo control steps -- through
-`controllers.py`. The action vector is ``[skill_id, cube_index, height, speed]``: the cube
-slot is read only by the five single-cube skills, the last two only by `SweepShelf`.
+`controllers.py`. The action vector is ``[skill_id, cube_index, offset, speed]``: the cube
+slot is read by the six single-cube skills (`SweepShelf` included, whose target it
+names), the last two only by `SweepShelf`.
 
 As in Tossing3D, `set_state` can only restore an episode-initial state: MuJoCo's full
 state does not fit in a flat feature vector, so a state with ``steps_taken > 0`` is
@@ -198,7 +199,7 @@ class SweepOffShelf3DEnvironment(Environment):
         if skill_id == SKILL_IDS["PickWiper"]:
             controllers.pick_wiper()
         elif skill_id == SKILL_IDS["SweepShelf"]:
-            controllers.sweep_shelf(height=float(values[2]), speed=float(values[3]))
+            controllers.sweep_shelf(cube=cube, offset=float(values[2]), speed=float(values[3]))
         elif skill_id == SKILL_IDS["ReturnWiper"]:
             controllers.return_wiper()
         elif skill_id == SKILL_IDS["PickCubeFromShelf"]:

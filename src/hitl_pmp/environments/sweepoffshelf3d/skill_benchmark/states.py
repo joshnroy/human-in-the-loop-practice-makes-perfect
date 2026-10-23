@@ -149,8 +149,8 @@ class StateCapture:
     def action(*, case: BenchmarkCase) -> np.ndarray:
         names = [cube.name for cube in O.cubes]
         cube = 0.0 if case.cube is None else float(names.index(case.cube))
-        height, speed = case.params if case.params else (0.0, 0.0)
-        return np.array([float(SKILL_IDS[case.skill]), cube, height, speed])
+        offset, speed = case.params if case.params else (0.0, 0.0)
+        return np.array([float(SKILL_IDS[case.skill]), cube, offset, speed])
 
     @staticmethod
     def applicable(*, case: BenchmarkCase, atoms: list[str]) -> bool:
@@ -604,6 +604,10 @@ class StateFamilies:
                 setup=Setups.chain(Setups.skill(action=pick)),
             )
         pick_wiper = np.array([float(SKILL_IDS["PickWiper"]), 0.0, 0.0, 0.0])
+        # One stroke at cube_0. The committed after-sweep states predate the one-cube
+        # sweep (2026-10-23): they were captured after the old whole-shelf SweepShelf
+        # at (height 0.005, speed 0.05), as their provenance says, and are kept as they
+        # are -- a stored state is never rewritten.
         sweep = np.array([float(SKILL_IDS["SweepShelf"]), 0.0, *ORACLE_SWEEP_PARAMS])
         for seed in StateFamilies.WIPER_IN_HAND_SEEDS:
             for layout in range(StateFamilies.WIPER_IN_HAND_LAYOUTS + 1):
@@ -614,8 +618,13 @@ class StateFamilies:
                     state_id=f"wiper-in-hand-s{seed}-l{layout}",
                     family="wiper_in_hand",
                     seed=seed,
+                    # Per target cube; `build` keeps those whose cube is on the shelf.
                     cases=[
-                        *(case(skill="SweepShelf", params=[h, v]) for h, v in SWEEP_GRID),
+                        *(
+                            case(skill="SweepShelf", cube=cube, params=[o, v])
+                            for cube in range(len(O.cubes))
+                            for o, v in SWEEP_GRID
+                        ),
                         case(skill="ReturnWiper"),
                     ],
                     provenance=(
@@ -633,7 +642,9 @@ class StateFamilies:
                 family="wiper_in_hand",
                 seed=seed,
                 cases=[case(skill="ReturnWiper")],
-                provenance=f"reset_to_seed({seed}); PickWiper; SweepShelf{ORACLE_SWEEP_PARAMS}",
+                provenance=(
+                    f"reset_to_seed({seed}); PickWiper; SweepShelf(cube_0){ORACLE_SWEEP_PARAMS}"
+                ),
                 setup=Setups.chain(Setups.skill(action=pick_wiper), Setups.skill(action=sweep)),
             )
 

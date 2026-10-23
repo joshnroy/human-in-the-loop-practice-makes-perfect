@@ -5,16 +5,17 @@ cube starts (`RETURN_CUBE_SKILLS`). With them the robot can restore its own prac
 scene cube by cube; only the human can recover a fallen wiper or pour back every cube
 at once.
 
-Only `SweepShelf` has continuous parameters: the wiper head's height above the board and
-the pull speed. The height range runs past a cube's full height on purpose -- a head
-riding above the cubes passes over them -- so the sampled range holds parameters that
-fail as well as ones that work, and there is something for practice to learn.
+Only `SweepShelf` has continuous parameters: `[offset, speed]`, the stroke lane's offset
+from its target cube's y and the pull speed. The head height is fixed at
+`SWEEP_HEIGHT`. A lane too close to the cube puts the wiper's handle on top of it, and
+one too far misses it, so the sampled range holds parameters that fail as well as ones
+that work, and there is something for practice to learn.
 
-`SweepShelf` takes all five cubes so one sweep can move however many are on the shelf:
-each cube that is `OnShelf` is promised `InBox` through a conditional effect, and the
-`CubeOrder` chain pins those five slots to a single grounding. Its precondition
-`AnyCubeOnShelf` makes a sweep of an empty shelf inapplicable, so a success always
-means "the n > 0 cubes that were on the shelf are now in the box".
+`SweepShelf(robot, wiper, box, cube)` is one front-to-back stroke aimed at one cube
+(Josh, 2026-10-23, a deliberate deviation from a whole-shelf sweep): it promises that
+cube in the box and says nothing about the others. Whatever else the stroke moves is a
+side effect the planner observes and replans from. Like `PickCubeFromShelf`, it cannot
+know whether it moved the last shelf cube, so `AnyCubeOnShelf` is left as it was.
 
 Every skill, robot and human, is all-or-nothing: an attempt either brings about all of
 its promised effects or it fails. The human skills are modelled at their nominal effect
@@ -44,6 +45,7 @@ from .predicates import (
     WIPER_HOME,
     WIPER_ON_FLOOR,
 )
+from .scripted_skills import SWEEP_HEIGHT, SWEEP_OFFSET_BOUNDS, SWEEP_SPEED_BOUNDS
 
 RESET_CUBES_NAME = "reset_cubes"
 RESET_WIPER_NAME = "reset_wiper"
@@ -78,11 +80,13 @@ class SweepOffShelf3DSkills:
         for a, b in zip(_SLOTS, _SLOTS[1:], strict=False)
     )
 
-    # (head height above the board [m], pull speed [m/s]).
+    # (lane offset from the target cube's y [m], > 0 on its +y side; pull speed [m/s]).
     SWEEP_BOUNDS: ClassVar[tuple[tuple[float, float], tuple[float, float]]] = (
-        (0.0, 0.04),
-        (0.05, 0.25),
+        SWEEP_OFFSET_BOUNDS,
+        SWEEP_SPEED_BOUNDS,
     )
+    # The head's height over the board (m): fixed, not sampled.
+    SWEEP_HEIGHT: ClassVar[float] = SWEEP_HEIGHT
 
     PICK_WIPER: ClassVar[Skill] = Skill(
         name="PickWiper",
@@ -96,20 +100,11 @@ class SweepOffShelf3DSkills:
 
     SWEEP_SHELF: ClassVar[Skill] = Skill(
         name="SweepShelf",
-        parameters=(_robot, _wiper, _box, *_slots),
-        preconditions=frozenset({_held_wiper, _ANY_ON, *_chain}),
-        add_effects=frozenset({_ANY_OFF}),
-        delete_effects=frozenset({
-            _ANY_ON,
-            *(LiftedAtom(predicate=ON_SHELF, variables=(c,)) for c in _slots),
-        }),
-        conditional_add_effects=frozenset(
-            ConditionalAddEffect(
-                conditions=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(c,))}),
-                add_effects=frozenset({LiftedAtom(predicate=IN_BOX, variables=(c, _BOX))}),
-            )
-            for c in _slots
-        ),
+        parameters=(_robot, _wiper, _box, _cube),
+        preconditions=frozenset({_held_wiper, LiftedAtom(predicate=ON_SHELF, variables=(_cube,))}),
+        # AnyCubeOnShelf is left as it was: see predicates.py.
+        add_effects=frozenset({LiftedAtom(predicate=IN_BOX, variables=(_cube, _box)), _ANY_OFF}),
+        delete_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,))}),
         param_dim=2,
         practice_cost=1.0,
     )
