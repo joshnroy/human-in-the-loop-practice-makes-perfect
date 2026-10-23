@@ -34,7 +34,10 @@ Where each controller comes from:
      it (`shelf_candidates`), none whose pads would sweep another cube on the way in
      or as they close (`PadSweep`) -- refused, not shoved -- carried out of the
      cupboard's front before the retract plan (`lifter`), and on a miss, looked at
-     again and replanned.
+     again and replanned;
+  8. the base planner leaves out of its obstacles every object the robot carries --
+     held, or resting on its chassis (`robot_borne`) -- where upstream leaves out only
+     the one object a controller places; and a pick that closes on two cubes is a miss.
 - `sweep_shelf`, `return_wiper`: KINDER has no controller for either (its
   `SweepOriController` sweeps a floor-standing target, 0/15 here), so they are this
   package's, built on `ShelfSkills`' routines, starting from the wiper as it is actually
@@ -207,6 +210,13 @@ HAND_ALLOWANCE = 0.001
 PRE_GRASP_RISE = 0.03
 # How far the hand backs out toward the base when the retract cannot plan from where it is.
 BACK_OUT = 0.15
+# An object this close (m) to any robot geom rests on or against the robot.
+ROBOT_TOUCH = 0.001
+# The upstream modules whose controllers plan the base with `run_base_motion_planning`.
+BASE_PLANNER_MODULES = (
+    "kinder_models.dynamic3d.shelf.parameterized_skills",
+    "kinder_models.dynamic3d.sweep3D.parameterized_skills",
+)
 
 
 class FollowPlans:
@@ -413,6 +423,9 @@ class KinderSkills:
         self.env = shelf.env
         self.core = shelf.core
         self.notes: list[SkillNote] = []
+        # Every cube between the pads; `shelf.held_cube` is one of them, the one a
+        # retract plan attaches.
+        self.held_cubes: frozenset[str] = frozenset()
 
     def note(self, *, stage: str, kind: str, reason: str, params: Any = None) -> None:
         """Record one candidate's fate for the skill trace (`skill_trace.py`)."""
@@ -445,11 +458,64 @@ class KinderSkills:
         else:
             shelf.in_hand, shelf.grasp_kind = None, None
         held_cubes = [c for c in (f"cube_{i}" for i in range(5)) if self.held(name=c)]
-        shelf.held_cube = held_cubes[0] if held_cubes else None
+        self.held_cubes = frozenset(held_cubes)
+        if shelf.held_cube not in self.held_cubes:
+            shelf.held_cube = held_cubes[0] if held_cubes else None
         if shelf.held_cube is not None:
             shelf.grip = 1.0
         if shelf.in_hand is None and shelf.held_cube is None:
             shelf.grip = 0.0
+
+    def other_held_cubes(self, *, cube: str) -> list[str]:
+        """The cubes other than `cube` that both pads touch now."""
+        return [c for c in (f"cube_{i}" for i in range(5)) if c != cube and self.held(name=c)]
+
+    def robot_borne(self) -> list[str]:
+        """The movable objects the robot carries: held by the pads, or resting on or
+        against any robot geom. KINDER's base planner puts the robot's overhead
+        footprint at its start pose among every object's footprint, so one of these
+        starts every base path in collision -- a cube dropped on the chassis refused
+        every pick, and a second held cube every placement, at 0 control steps."""
+        shelf = self.shelf
+        m, d = shelf.model, shelf.data
+        names = [*(f"cube_{i}" for i in range(5)), WIPER]
+        bodies = {int(m.body(n).id): n for n in names}
+        out = {n for n in names if self.held(name=n)}
+        for contact in d.contact[: d.ncon]:
+            pair = (int(contact.geom1), int(contact.geom2))
+            for mine, other in (pair, pair[::-1]):
+                name = bodies.get(int(m.geom_bodyid[other]))
+                if name is not None and mine in shelf.robot_geoms and contact.dist < ROBOT_TOUCH:
+                    out.add(name)
+        return sorted(out)
+
+    @contextlib.contextmanager
+    def base_planner_ignores_robot_borne(self) -> Generator[None, None, None]:
+        """Within this, every upstream controller's base planner leaves the objects
+        the robot carries (`robot_borne`) out of its obstacles, as upstream already
+        does for the one object a controller is placing."""
+        import importlib
+
+        borne = self.robot_borne()
+        if not borne:
+            yield
+            return
+        with contextlib.ExitStack() as stack:
+            for name in BASE_PLANNER_MODULES:
+                module = importlib.import_module(name)
+                planner = module.run_base_motion_planning
+
+                def ignoring(*args: Any, _planner: Any = planner, **kwargs: Any) -> Any:
+                    disabled = list(kwargs.get("disable_collision_objects") or [])
+                    kwargs["disable_collision_objects"] = disabled + [
+                        n for n in borne if n not in disabled
+                    ]
+                    return _planner(*args, **kwargs)
+
+                stack.enter_context(
+                    self.constant(module=module, name="run_base_motion_planning", value=ignoring)
+                )
+            yield
 
     def nearest_wiper_grasp(self) -> str | None:
         """The fixed wiper grasp ("shelf" or "sweep") the hand is at, if any."""
@@ -490,7 +556,8 @@ class KinderSkills:
         )
 
         try:
-            controller.reset(self.state(), params)
+            with self.base_planner_ignores_robot_borne():
+                controller.reset(self.state(), params)
         except (TrajectorySamplingFailure, AssertionError, ValueError, RuntimeError) as exc:
             self.note(stage=label, kind="no_plan", params=params, reason=repr(exc))
             return "planned-out"
@@ -847,7 +914,12 @@ class KinderSkills:
         return settle
 
     def lifter(
-        self, *, pre: np.ndarray, label: str, outside: np.ndarray | None = None
+        self,
+        *,
+        pre: np.ndarray,
+        label: str,
+        cube: str,
+        outside: np.ndarray | None = None,
     ) -> Callable[[], None]:
         """The way back out from the grasp to the pre-grasp `pre`, then on to `outside`
         just outside the cupboard's open front (`shelf_exit`) when there is one,
@@ -855,10 +927,21 @@ class KinderSkills:
         starts clear of the boards. Planned from the grasp itself, a cube at the back of
         the shelf left the wrist inside KINDER's lower board above, and no retract
         planned from any base; from the pre-grasp, a cube in the back corner still had
-        none, with either end clear."""
+        none, with either end clear.
+
+        Pads closed on `cube` and another cube too are opened where they are, before
+        anything is lifted, and the execution fails: the caller's pick counts it as a
+        miss and tries again. Carried out together, two cubes came home in the hand and
+        the pick reported success."""
 
         def lift() -> None:
             shelf = self.shelf
+            others = self.other_held_cubes(cube=cube)
+            if others:
+                self.release(label=f"{label}_open")
+                raise RuntimeError(
+                    f"the pads closed on two cubes, {cube} and {', '.join(others)}; opened"
+                )
             shelf.base_target = shelf.data.qpos[shelf.ba].copy()
             shelf.arm_reference = shelf.data.qpos[shelf.qa].copy()
             for pose in (pre,) if outside is None else (pre, outside):
@@ -1018,6 +1101,8 @@ class KinderSkills:
         FloorPicks(kinder=self).pick(cube=cube, label="pick_cube_from_floor")
         if not self.held(name=cube):
             raise SkillFailed(f"pick_cube_from_floor: {cube} did not come with the hand")
+        if self.other_held_cubes(cube=cube):
+            raise SkillFailed(f"pick_cube_from_floor: {cube} came with another cube")
 
     def pick_cube_from_shelf(self, *, cube: str) -> None:
         """Closed loop over grasp attempts: plan from the cube as it lies now, execute
@@ -1047,7 +1132,9 @@ class KinderSkills:
                     f"pick_cube_from_shelf: no grasp on {cube} planned{swept if refused else ''}"
                 )
             if self.held(name=cube):
-                return
+                if not self.double_grasp(cube=cube, missed=missed, label="pick_cube_from_shelf"):
+                    return
+                continue
             missed.append(f"{cube} did not come with the hand")
             self.note(
                 stage="pick_cube_from_shelf",
@@ -1060,6 +1147,29 @@ class KinderSkills:
                 self.env_step(action=FollowPlans._hold(grip=0.0), label="pick_cube_from_shelf_open")  # noqa: SLF001
             self.sync()
         raise SkillFailed(f"pick_cube_from_shelf: {cube} not picked ({'; '.join(missed)})"[:300])
+
+    def double_grasp(self, *, cube: str, missed: list[str], label: str) -> bool:
+        """Whether a pick holding `cube` holds another cube too; if so it is a miss:
+        recorded, the gripper opened and the arm retracted, ready for the next try."""
+        others = self.other_held_cubes(cube=cube)
+        if not others:
+            return False
+        missed.append(f"closed on two cubes, {cube} and {', '.join(others)}")
+        self.note(
+            stage=label,
+            kind="execution_failed",
+            reason=f"attempt {len(missed)} closed on two cubes, {cube} and "
+            f"{', '.join(others)}; opening",
+        )
+        self.release(label=f"{label}_open")
+        self.retract(label=f"{label}_regrasp")
+        return True
+
+    def release(self, *, label: str) -> None:
+        """Open the gripper where the hand is."""
+        for _ in range(GRIP_STEPS):
+            self.env_step(action=FollowPlans._hold(grip=0.0), label=label)  # noqa: SLF001
+        self.sync()
 
     def on_cube_shelf(self, *, cube: str) -> bool:
         """Whether the cube still rests on the cube shelf, inside the cupboard."""
@@ -1146,6 +1256,7 @@ class KinderSkills:
                     pre=pre,
                     outside=None if exit_conf is None else exit_pose,
                     label="pick_cube_from_shelf_lift",
+                    cube=cube,
                 )
                 pick.pre_conf = pre_conf.tolist()
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
@@ -1426,7 +1537,8 @@ class KinderSkills:
     def base_drivable(self, *, base: np.ndarray) -> bool:
         """Whether upstream's own base planner (`run_base_motion_planning`, over the
         scene's overhead footprints, as `PickShelfController.reset` calls it) reaches
-        `base`: it fails the same way for every grasp tried from that base."""
+        `base`: it fails the same way for every grasp tried from that base. What the
+        robot carries is not an obstacle (`robot_borne`), as in `drive`."""
         from kinder_models.dynamic3d.shelf.parameterized_skills import (
             WORLD_X_BOUNDS,
             WORLD_Y_BOUNDS,
@@ -1440,6 +1552,7 @@ class KinderSkills:
             x_bounds=WORLD_X_BOUNDS,
             y_bounds=WORLD_Y_BOUNDS,
             seed=0,
+            disable_collision_objects=self.robot_borne(),
         )
         return plan is not None
 
@@ -1666,8 +1779,7 @@ class KinderSkills:
         raise SkillFailed(f"{label}: no placement planned")
 
     def place_cube_in_box(self, *, cube: str) -> None:
-        shelf = self.shelf
-        if shelf.held_cube != cube:
+        if cube not in self.held_cubes:
             raise SkillFailed(f"place_cube_in_box: not holding {cube}")
         box = np.asarray(self.core.get_object(BOX).get_pose()[0], dtype=float)
         self.place(
