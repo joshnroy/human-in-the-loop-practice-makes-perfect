@@ -30,18 +30,18 @@ The plan (Josh, 2026-10-14 and 2026-10-20):
   predicators' default (`active_sampler_explorer_skip_perfect = True`) scores a skill
   whose measured success rate is 1.0 at -inf, and a skill can measure 1.0 after only a
   few samples, so it would be wrongly treated as mastered (Josh, 2026-10-21).
-  Step accounting: 1 per control step, each human reset takes 1 counted step of the
-  budget, lambda 3e-6. The lab2 scene is the environment's default; no arm passes
+  Step accounting: 0.01 per control step, each human reset takes 1 counted step of the
+  budget, lambda 3e-4. The lab2 scene is the environment's default; no arm passes
   `--no-scene-bg`.
 
-Prices (Josh, 2026-10-21), one rule in two units, because the two methods' costs are in
-different units:
+Prices (Josh, 2026-10-23): every arm is charged 5 per human reset.
 - The planner arms (determinized, expectimax, and their always-ask variants) are charged
-  each robot skill's real control steps and every human reset `PLANNER_HUMAN_RESET_COST`
-  = 500 control steps, Tossing3D's canonical price
-  (`configs/sweepoffshelf3d_practice_costs_planner*.json`). As on Tossing3D, the planner
-  is told neither: it estimates every skill's cost, robot and human, from the costs it
-  observes, starting from one shared prior of one robot step (Josh, 2026-10-23). The
+  0.01 per real control step and `PLANNER_HUMAN_RESET_COST` = 5 per human reset at
+  lambda 3e-4 (`configs/sweepoffshelf3d_practice_costs_planner*.json`): an exact rescale
+  of the earlier 1 per step, 500 per reset, lambda 3e-6, so lambda * cost is unchanged.
+  As on Tossing3D, the planner is told neither: it estimates every skill's cost, robot
+  and human, from the costs it observes, starting from one shared prior of one robot
+  step (Josh, 2026-10-23). The
   fixed per-skill table `configs/sweepoffshelf3d_skill_step_costs.json`
   (`--pomdp-skill-step-costs`) remains a method option, but no arm passes it.
 - The EES arms price every human reset at `EES_HUMAN_RESET_COST` = 5 in EES's own
@@ -83,7 +83,7 @@ local Docker coder container), never in `della` mode. One seed, 0. The planner a
 budgets and their 10 held-out tasks (seed 0's test stream, offset 10000), stop after 3
 perfect evaluations, p = 1, `--model-budget 20` by default, and the planner arms' cost file
 from PR #528, `configs/sweepoffshelf3d_practice_costs_planner.json` (each human reset
-costs 500 and takes 1 step). No `--effort`: the Claude CLI's default, as in every past
+costs 5 and takes 1 step). No `--effort`: the Claude CLI's default, as in every past
 RoboCode run. `--hours` has no default here and the arm refuses to build its command
 without one; the launch script `scripts/robocode_prepare.py` writes passes the hours Josh
 chose. `launch` starts the run as a systemd user service in `agents.slice` with
@@ -121,7 +121,7 @@ from pydantic import BaseModel, ConfigDict
 
 REPO = Path(__file__).resolve().parents[1]
 # Each method's human-reset price, in its own units (see the module docstring).
-PLANNER_HUMAN_RESET_COST = 500
+PLANNER_HUMAN_RESET_COST = 5
 EES_HUMAN_RESET_COST = 5
 PLANNER_COSTS = REPO / "configs" / "sweepoffshelf3d_practice_costs_planner.json"
 PLANNER_ALWAYS_ASK_COSTS = (
@@ -210,7 +210,7 @@ PLANNER = [
     "--pomdp-competence-evidence", "non_epsilon",
     "--pomdp-observation-probability-weight", "0.0",
     "--pomdp-max-search-iterations", "100",
-    "--pomdp-linear-cost-lambda", "3e-06",
+    "--pomdp-linear-cost-lambda", "3e-04",
     "--pomdp-competence-process-noise-std", "0.03",
     "--pomdp-learning-rate-decay", "0.9",
     "--pomdp-learning-rate-max", "0.15",

@@ -214,8 +214,8 @@ def test_the_cost_files_are_tracked_and_price_the_stage5_accounting() -> None:
     ]:
         plain = json.loads(canonical.read_text())
         asked = json.loads(sampled.read_text())
-        assert plain["objective_lambda"] == asked["objective_lambda"] == 3e-6
-        assert plain["robot_step"] == {"value": 1}
+        assert plain["objective_lambda"] == asked["objective_lambda"] == 3e-4
+        assert plain["robot_step"] == {"value": 0.01}
         assert set(plain["human_skills"]) == {"reset_cubes", "reset_wiper"}
         assert set(asked["human_skills"]) == {
             "reset_cubes",
@@ -224,9 +224,8 @@ def test_the_cost_files_are_tracked_and_price_the_stage5_accounting() -> None:
         }
 
 
-# Josh, 2026-10-21: one rule, two units. The planner arms price a human reset in
-# control steps (500, Tossing3D's canonical price); EES prices it in its own plan-cost
-# units, where a robot skill costs -log(competence) (5, the EXP-22c ees-lamcost5 price).
+# Josh, 2026-10-23: every arm is charged 5 per human reset, the planner arms through an
+# exact rescale of their objective (robot step 0.01, lambda 3e-4; was 1, 3e-6, 500).
 @pytest.mark.parametrize(
     ("name", "reset_cost"),
     [
@@ -258,7 +257,7 @@ def test_each_method_prices_every_human_reset_in_its_own_units(
 
 
 def test_the_two_reset_prices_are_the_decided_ones() -> None:
-    assert PLANNER_HUMAN_RESET_COST == 500
+    assert PLANNER_HUMAN_RESET_COST == 5
     assert EES_HUMAN_RESET_COST == 5
 
 
