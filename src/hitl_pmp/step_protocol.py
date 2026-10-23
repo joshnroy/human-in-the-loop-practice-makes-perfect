@@ -826,6 +826,9 @@ class StepPracticeRunner:
     # A session of skills each refused at planning executes no control step, so the
     # next session plans from the same state and refuses the same way.
     REPEATED_ZERO_STEP_LIMIT: ClassVar[int] = 5
+    # A run whose sessions are this many human resets in a row with no robot skill has
+    # stopped practising too: only the person acts, and the robot never does.
+    REPEATED_NO_ROBOT_ACTION_LIMIT: ClassVar[int] = 10
 
     @staticmethod
     def configure_accounting(
@@ -1002,6 +1005,7 @@ class StepPracticeRunner:
         early_stop = False
         stop_streak = 0
         zero_step_streak = 0
+        no_robot_action_streak = 0
         accounting: PracticeAccounting | None
         if saved is None:
             if not evaluate_only:
@@ -1030,6 +1034,7 @@ class StepPracticeRunner:
             # Absent from a checkpoint written before this streak existed: it then
             # starts again, which can only delay `repeated_zero_step`, never trip it.
             zero_step_streak = saved.get("zero_step_streak", 0)
+            no_robot_action_streak = saved.get("no_robot_action_streak", 0)
             started -= saved["elapsed_seconds"]
             StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
         recorder = recorder or RunRecordWriter.disabled()
@@ -1227,6 +1232,7 @@ class StepPracticeRunner:
                     ],
                     "stop_streak": stop_streak,
                     "zero_step_streak": zero_step_streak,
+                    "no_robot_action_streak": no_robot_action_streak,
                     "elapsed_seconds": time.monotonic() - started,
                     "clock": clock.model_dump(
                         include={
@@ -1276,6 +1282,9 @@ class StepPracticeRunner:
                     "stop_skill_steps": 1,
                     "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
                     "repeated_zero_step_limit": zero_step_limit,
+                    "repeated_no_robot_action_limit": (
+                        StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
+                    ),
                     "robot_duration_prior_steps": getattr(
                         method, "robot_duration_prior_steps", None
                     ),
@@ -1414,6 +1423,7 @@ class StepPracticeRunner:
                     "session_action_cap"
                 )
                 actions = 0
+                robot_skills = 0
                 stopped = False
                 session_robot_steps = clock.robot_steps
                 session_human_invocations = clock.human_invocations
@@ -1503,6 +1513,7 @@ class StepPracticeRunner:
                             complete=completed,
                         )
                     actions += 1
+                    robot_skills += 1
                     skill_error = environment.last_skill_error(problem=problem)
                     robot_cost = accounting.total_cost - before_cost if accounting else None
                     StepFiles.event(
@@ -1579,6 +1590,15 @@ class StepPracticeRunner:
                     break
                 if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
+                    break
+                # Human resets with no robot skill, STOP or not. A STOP-only session
+                # (no actions) is `repeated_stop`'s: it neither extends nor breaks this.
+                if robot_skills > 0:
+                    no_robot_action_streak = 0
+                elif actions > 0:
+                    no_robot_action_streak += 1
+                if no_robot_action_streak >= StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT:
+                    endpoint = "repeated_no_robot_action"
                     break
                 # A STOP's own charge is not a control step, and a STOP-only session
                 # (no actions) is `repeated_stop`'s: it neither extends nor breaks this.
