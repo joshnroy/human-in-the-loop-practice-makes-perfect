@@ -300,6 +300,13 @@ Notes on this table:
   them. By our premise, that is a controller gap.
 - **The docstring disagrees with this launch.** `EESMethod`'s docstring says shelf runs
   enable `score_human_skills`; every EES run here had it set to False.
+  > **Correction (2026-10-23): this finding is wrong; it is left as first written.** All
+  > 12/12 EES config snapshots record `ees_score_human_skills: True`, and all 12/12
+  > launch manifest lines pass `--ees-score-human-skills`, which the CLI parses
+  > (`BooleanOptionalAction`) into `EesMethod(score_human_skills=True)`. The docstring and
+  > the launch agree. With it on, a human reset is priced at its cost of 5 plus
+  > −log(competence) from the Beta(1,3) prior (mean 0.25, about +1.4), which fits EES's
+  > 0/6 voluntary resets. No number in this log changes.
 - **EES always-ask seed 0 duplicates EES seed 0.** Always-ask fires only after a
   continuous-parameter skill, and that seed never ran SweepShelf.
 
@@ -338,8 +345,9 @@ Notes on this table:
      or count a measure other than final solved.
   2. **The planner's deployment model.** Its free retries saturate J, and its Beta(1,3)
      reset prior sits far from the true value of 1.0. Also check λ.
-  3. **EES `score_human_skills`.** Make the docstring and the config agree, and decide
-     which value the next launch uses.
+  3. **EES `score_human_skills`.** *(Corrected 2026-10-23: the docstring and the config
+     already agree, both on.)* The question is whether the Beta(1,3) prior, which
+     prices human resets above their cost, is intended for human skills.
   4. **The zero-step refusals.** #556 fixes most of the shelf pick, and the box return
      remains.
 - **Re-gate the shelf pick before relaunching.** #556 has merged, so the 72/100
