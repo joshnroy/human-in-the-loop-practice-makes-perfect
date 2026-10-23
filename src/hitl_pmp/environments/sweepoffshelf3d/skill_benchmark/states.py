@@ -38,6 +38,12 @@ OUTSIDE_GAP = 0.02
 PANEL_GAP = 0.02
 SHELF_MARGIN = 0.006
 STATIC_PREDICATES = frozenset({"CubeOrder"})
+FLOOR_SKILLS = frozenset({"PickCubeFromFloor", "ReturnCubeToShelfFromFloor"})
+FLOOR_GEOM = "floor"
+# A contact counts as support when it touches the cube's lower quarter: a wall the cube
+# merely stands beside touches its side, not its bottom face.
+SUPPORT_BELOW = 0.5
+SUPPORT_DIST = 0.001
 
 
 class StateSet:
@@ -157,6 +163,48 @@ class StateCapture:
             if atom.predicate.name not in STATIC_PREDICATES
         }
         return required <= set(atoms)
+
+
+class FloorSupport:
+    """Whether a floor case's cube really rests on the floor.
+
+    `OnFloor` is any unheld cube neither in the box nor on the cube shelf (`backend.py`),
+    so it also holds for a cube that went over the box's far rim onto the cupboard's
+    bottom board -- the gap between rim and cupboard is narrower than a cube -- or one
+    resting on another cube. Neither is a floor case: every floor grasp there collides.
+    The predicate stays as it is; the benchmark checks what holds the cube up."""
+
+    @staticmethod
+    def supports(*, env: SweepOffShelf3DEnvironment, name: str) -> set[str]:
+        """The geoms (or, unnamed, their bodies) touching the cube's underside."""
+        backend = env.backend()
+        model, data = backend.model(), backend.data()
+        body = model.body(name).id
+        z = float(data.xpos[body][2])
+        below = z - SUPPORT_BELOW * O.cube_half_size
+        found = set()
+        for contact in data.contact[: data.ncon]:
+            bodies = (int(model.geom_bodyid[contact.geom1]), int(model.geom_bodyid[contact.geom2]))
+            if body not in bodies or bodies[0] == bodies[1] or contact.dist > SUPPORT_DIST:
+                continue
+            if float(contact.pos[2]) > below:
+                continue
+            other = int(contact.geom2 if bodies[0] == body else contact.geom1)
+            found.add(model.geom(other).name or model.body(model.geom_bodyid[other]).name)
+        return found
+
+    @staticmethod
+    def judge(*, name: str, supports: set[str]) -> str | None:
+        """None when the floor alone holds the cube up; otherwise why it is no floor case."""
+        if supports == {FLOOR_GEOM}:
+            return None
+        if not supports:
+            return f"{name} rests on nothing"
+        return f"{name} rests on {', '.join(sorted(supports))}, not the floor alone"
+
+    @staticmethod
+    def reason(*, env: SweepOffShelf3DEnvironment, name: str) -> str | None:
+        return FloorSupport.judge(name=name, supports=FloorSupport.supports(env=env, name=name))
 
 
 class Container:
@@ -605,7 +653,20 @@ class StateFamilies:
         atoms = StateCapture.atoms(env=env)
         cases = [c for c in spec.cases if StateCapture.applicable(case=c, atoms=atoms)]
         dropped = len(spec.cases) - len(cases)
+        # Rejected, not resampled: a state is its setup, so moving the cube elsewhere
+        # would be a different state under the same id; the denominator drops instead.
+        off_floor = {
+            c.cube: reason
+            for c in cases
+            if c.skill in FLOOR_SKILLS
+            and c.cube is not None
+            and (reason := FloorSupport.reason(env=env, name=c.cube)) is not None
+        }
+        cases = [c for c in cases if not (c.skill in FLOOR_SKILLS and c.cube in off_floor)]
+        rejected = "; ".join(f"floor case rejected: {r}" for _, r in sorted(off_floor.items()))
         if not cases:
+            if rejected:
+                return None, f"{spec.state_id}: {rejected}"
             return None, f"{spec.state_id}: no case applicable; atoms {atoms}"
         state = StateCapture.capture(
             env=env,
@@ -616,4 +677,6 @@ class StateFamilies:
             provenance=spec.provenance,
         )
         note = f"{spec.state_id}: ok" + (f" ({dropped} case(s) inapplicable)" if dropped else "")
+        if rejected:
+            note += f"; {rejected}"
         return state, note
