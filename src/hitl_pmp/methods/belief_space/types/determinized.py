@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .protocol import ActionT, BeliefStateT, EnvironmentStateT
 from .stop_action import StopAction
+from .value_resolution import ValueResolution
 
 
 class DeterminizedSearchBelief(
@@ -65,10 +66,12 @@ class DeterminizedSearchQueueEntry(
     path_recovery_info: DeterminizedPathRecoveryInfo[ActionT]
 
     def __lt__(self, other: object, /) -> bool:  # noqa: PLR0917
+        """Path cost on the shared grid, then insertion order: two paths of equal cost
+        in exact arithmetic go to the first one found (ValueResolution)."""
         if not isinstance(other, DeterminizedSearchQueueEntry):
             return NotImplemented
-        return (self.g, self.cache_info.queue_sequence) < (
-            other.g,
+        return (ValueResolution.rank(value=self.g), self.cache_info.queue_sequence) < (
+            ValueResolution.rank(value=other.g),
             other.cache_info.queue_sequence,
         )
 

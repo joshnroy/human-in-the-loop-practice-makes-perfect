@@ -27,6 +27,7 @@ from .types.determinized import (
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
+from .types.value_resolution import ValueResolution
 
 
 class DeterminizedAStarPlanner(
@@ -410,7 +411,11 @@ class DeterminizedAStarPlanner(
                     if key in closed:
                         closed.remove(key)
                         reopened_nodes += 1
-                    if next_path_cost < best_g:
+                    # On the shared grid, so a path cheaper only by roundoff does
+                    # not displace the first one found (ValueResolution).
+                    if ValueResolution.rank(value=next_path_cost) < ValueResolution.rank(
+                        value=best_g
+                    ):
                         best_g = next_path_cost
                         best_objective_value = value
                         best_action = first_action
