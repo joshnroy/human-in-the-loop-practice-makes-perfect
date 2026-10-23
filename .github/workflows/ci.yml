@@ -490,9 +490,18 @@ jobs:
       # and the crashed worker then stalls the run until the 6-hour limit. Those tests run
       # in `test / unit & core` instead.
       - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+        run: |
+          echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+      - name: Upload per-test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-tossing3d
+          path: ${{ runner.temp }}/junit-tossing3d.xml
+          retention-days: 14
 
   test-scripts:
     name: "test / scripts & reproducibility"
