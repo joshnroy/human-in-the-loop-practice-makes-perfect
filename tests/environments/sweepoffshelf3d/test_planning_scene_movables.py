@@ -5,7 +5,7 @@ wiper was the one movable it left out. At its edge home its handle overhangs the
 cupboard's front, so planned approaches ran into it and the MuJoCo re-check refused
 them: layout-31 (cube_1), layout-52 (cube_2) and layout-49 (cube_4) of the benchmark
 failed for that reason alone. The resting wiper is now a static collider, inflated
-`WIPER_OBSTACLE_MARGIN`, except for the skill that picks it up and while the robot
+`WIPER_OBSTACLE_MARGIN` (6 mm), except for the skill that picks it up and while the robot
 carries it (`KinderSkills.wiper_on_robot`)."""
 
 import importlib.util
@@ -70,7 +70,7 @@ def _aabb(*, sim, body):
     return np.array(low), np.array(high)
 
 
-def test_the_resting_wiper_is_a_collider_in_the_planning_scene_inflated_1_cm(*, env):
+def test_the_resting_wiper_is_a_collider_in_the_planning_scene_inflated_6_mm(*, env):
     env.reset_to_seed(seed=0)
     kinder = _kinder(env=env)
     shelf = kinder.shelf
@@ -82,7 +82,7 @@ def test_the_resting_wiper_is_a_collider_in_the_planning_scene_inflated_1_cm(*, 
     for g, body in zip(shelf.wiper_geoms, bodies.values(), strict=True):
         assert int(shelf.model.geom_type[g]) == int(shelf.mujoco.mjtGeom.mjGEOM_BOX)
         rotation = shelf.data.geom_xmat[g].reshape(3, 3)
-        half = np.abs(rotation) @ (shelf.model.geom_size[g] + 0.01)
+        half = np.abs(rotation) @ (shelf.model.geom_size[g] + 0.006)
         low, high = _aabb(sim=sim, body=body)
         centre = shelf.data.geom_xpos[g]
         # PyBullet pads every AABB by its own small collision margin.
@@ -258,3 +258,36 @@ def test_the_wiper_skills_still_pick_sweep_and_return(*, env, monkeypatch):
     atoms = act(skill="ReturnWiper")
     assert HOME in atoms, env.last_skill_error()
     assert not any(wiper for held, target, wiper in built if held or target == WIPER)
+
+
+def _return_from_box(*, env, states, state_id, cube):
+    StateCapture.restore(env=env, state=states[state_id])
+    _kinder(env=env)
+    index = float(cube.split("_")[1])
+    skill = float(SKILL_IDS["ReturnCubeToShelfFromBox"])
+    env.take_action(action=np.array([skill, index, 0.0, 0.0]))
+    return env.get_current_state().abstract_atoms
+
+
+def test_a_box_return_beside_a_neighbour_keeps_its_off_centre_grasp(*, env, states):
+    """cube_2 rests against cube_1's side in the box, and only a grasp shifted away from
+    cube_2 returns cube_1 alone; its approach passes under the wiper's handle, which
+    overhangs the cupboard's front above the box."""
+    atoms = _return_from_box(
+        env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
+    )
+    assert ("OnShelf", ("cube_1",)) in atoms, env.last_skill_error()
+    assert ("InBox", ("cube_2", "box_0")) in atoms
+
+
+def test_a_one_centimetre_margin_took_that_off_centre_grasp_away(*, env, states, monkeypatch):
+    """Why the margin is 6 mm, not 1 cm (Josh, 2026-10-22: "sure 6mm good"): at 1 cm the
+    grown handle refused the one grasp above, and the return planned none."""
+    import hitl_pmp.environments.sweepoffshelf3d.kinder_skills as kinder_skills
+
+    monkeypatch.setattr(kinder_skills, "WIPER_OBSTACLE_MARGIN", 0.01)
+    atoms = _return_from_box(
+        env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
+    )
+    assert ("InBox", ("cube_1", "box_0")) in atoms
+    assert "no grasp on cube_1 planned" in (env.last_skill_error() or "")
