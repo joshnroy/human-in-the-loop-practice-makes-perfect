@@ -467,13 +467,16 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
 
 
 def _force_one_reseat(*, monkeypatch):
-    """After the sweep's first pull, report the wiper turned past RESEAT_TURN_DEG in the
-    grasp: the only trigger `stroke` has for `reseat_wiper`. In the 2026-10-21 harvest
-    the counter got there by real slip; seed 0's own strokes do not turn it that far, so
-    no other test reaches the reseat."""
+    """After the first of the sweep's pulls that leaves a bare strip to lay the wiper
+    on (`reseat_y`), report the wiper turned past RESEAT_TURN_DEG in the grasp: the only
+    trigger `stroke` has for `reseat_wiper`. In the 2026-10-21 harvest the counter got
+    there by real slip; seed 0's own strokes do not turn it that far, so no other test
+    reaches the reseat. The one-grasp wiper's first pull at seed 0 leaves four cubes
+    across the board, with no strip the 23 cm head clears."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
         RESEAT_TURN_DEG,
         ShelfSkills,
+        SkillFailed,
     )
 
     pull = ShelfSkills.pull
@@ -481,9 +484,14 @@ def _force_one_reseat(*, monkeypatch):
 
     def pull_then_turn(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
         pull(self, **kwargs)
-        if not forced:
-            forced.append(True)
-            self.slip_deg = RESEAT_TURN_DEG + 4.0
+        if forced:
+            return
+        try:
+            self.reseat_y(near=float(self.data.geom_xpos[self.head_geom][1]))
+        except SkillFailed:
+            return
+        forced.append(True)
+        self.slip_deg = RESEAT_TURN_DEG + 4.0
 
     monkeypatch.setattr(ShelfSkills, "pull", pull_then_turn)
 
@@ -609,9 +617,8 @@ def test_the_slip_counter_keeps_counting_within_one_grasp(*, env):
 @pytest.mark.main_only
 def test_a_sweep_right_after_a_fresh_pick_does_not_reseat(*, env):
     """Bug B's consequence: with the counter inherited from an earlier grasp above
-    RESEAT_TURN_DEG, every stroke ended in a reseat. (On this branch's two-grasp wiper
-    the sweep's own regrasp zeroes the counter before any stroke, so the reseat half of
-    this is a guard for the one-grasp wiper; the regrasp's own note is not.)"""
+    RESEAT_TURN_DEG, every stroke ended in a reseat. With the one-grasp wiper there is
+    no regrasp before the first stroke, so only the fresh pick zeroes the counter."""
     _left_turned_by_an_earlier_grasp(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _act(env=env, skill="SweepShelf", height=0.015, speed=0.15)
