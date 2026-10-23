@@ -3,15 +3,15 @@
 Every shard collects the whole suite and keeps a deterministic share of it, so the shares
 partition the run exactly. The unit of assignment is a test, except that an
 `xdist_group` moves as one unit: its tests share an expensive module-scoped fixture, which
-every extra shard holding some of them builds again. The one exception is a group heavier
-than one worker's fair share, which would otherwise set the floor of whichever shard got
-it: it is cut into contiguous chunks on distinct shards (`split`). Units are weighted by
-`ci_shard_durations.json` (seconds per node id, measured on CI) and dealt out
-longest-first to the least-loaded shard. A test missing from that file, being new or
-renamed, weighs the median: a stale file costs balance, never coverage.
+every extra shard holding some of them builds again. The one exception is a group heavy
+enough to set the floor of whichever shard got it: it is cut into contiguous chunks on
+distinct shards (`split`). Units are weighted by `ci_shard_durations.json` (seconds per
+node id, measured on CI) and dealt out longest-first to the least-loaded shard. A test
+missing from that file, being new or renamed, weighs the median: a stale file costs
+balance, never coverage.
 
-Regenerate the file from a CI run's `junit-tossing3d-*` artifacts:
-`python -m tests.ci_shard junit-*.xml`.
+Regenerate the file from one CI run's `junit-*` artifacts (every sharded job's):
+`python -m tests.ci_shard junit-*/*.xml`.
 """
 
 import itertools
@@ -107,18 +107,24 @@ class CiShard:
         """Mean seconds per node id over junit reports (`--junitxml`) of earlier runs.
 
         A junit `classname` is the node id's path with `/` -> `.` and `.py` dropped, then
-        any class names, so the module is the longest dotted prefix that is a real file.
-        xdist's `@group` suffix on a name is stripped, since collection never carries it.
+        any class names, so the module is the longest dotted prefix that is a real file;
+        a test whose file is not in this checkout is dropped. xdist's `@group` suffix on a
+        name is stripped, since collection never carries it.
         """
         times: dict[str, list[float]] = {}
         for path in paths:
             for case in ElementTree.parse(path).iter("testcase"):
                 parts = case.attrib["classname"].split(".")
                 cut = next(
-                    cut
-                    for cut in range(len(parts), 0, -1)
-                    if (repo / Path(*parts[:cut])).with_suffix(".py").is_file()
+                    (
+                        cut
+                        for cut in range(len(parts), 0, -1)
+                        if (repo / Path(*parts[:cut])).with_suffix(".py").is_file()
+                    ),
+                    None,
                 )
+                if cut is None:
+                    continue
                 module = "/".join(parts[:cut]) + ".py"
                 name = case.attrib["name"].split("@")[0]
                 nodeid = "::".join([module, *parts[cut:], name])
@@ -136,13 +142,15 @@ class CiShard:
 
     @staticmethod
     def split(*, units: list[ShardUnit], count: int) -> list[ShardUnit]:
-        """Cut each group heavier than one worker's fair share into contiguous chunks.
+        """Cut each group heavier than half one worker's fair share into contiguous chunks.
 
-        The fair share is the whole run's weight over `count * WORKERS_PER_SHARD`. A group
-        becomes at most `count` chunks, so `select` can give each its own shard; each chunk
-        then costs one more build of the group's fixture, which is cheap beside the tests.
+        The fair share is the whole run's weight over `count * WORKERS_PER_SHARD`; half,
+        because a chunk of a whole share still sets its shard's floor once per-test times
+        vary run to run (on CI, two `test_pick_plannable` chunks were 14.4 and 3.6 min). A
+        group becomes at most `count` chunks, so `select` can give each its own shard; each
+        chunk costs one more build of the group's fixture, cheap beside the tests.
         """
-        share = sum(unit.weight for unit in units) / (count * CiShard.WORKERS_PER_SHARD)
+        share = sum(unit.weight for unit in units) / (count * CiShard.WORKERS_PER_SHARD) / 2
         out: list[ShardUnit] = []
         for unit in units:
             pieces = min(count, len(unit.nodeids), math.ceil(unit.weight / share) if share else 1)

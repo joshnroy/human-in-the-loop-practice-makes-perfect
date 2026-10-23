@@ -128,9 +128,11 @@ def test_an_out_of_range_shard_index_is_a_usage_error() -> None:
         Collected.nodeids("--shard-count", "2", "--shard-index", "2")
 
 
-def test_every_tossing3d_shard_the_matrix_runs_is_one_the_command_asks_for() -> None:
-    job = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["test-tossing3d"]
+@pytest.mark.parametrize("job_id", ["test-tossing3d", "test-unit"])
+def test_every_shard_the_matrix_runs_is_one_the_command_asks_for(*, job_id: str) -> None:
+    job = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"][job_id]
     shards = job["strategy"]["matrix"]["shard"]
+    assert len(shards) > 1
     assert job["strategy"]["fail-fast"] is False
     assert shards == list(range(len(shards)))
     (run,) = [step["run"] for step in job["steps"] if "pytest" in step.get("run", "")]
@@ -145,6 +147,9 @@ def test_junit_timings_map_back_to_node_ids_without_the_xdist_suffix(*, tmp_path
         '<testcase classname="tests.test_ci_shard" name="test_a[x, y]@grp" time="2.5"/>'
         '<testcase classname="tests.test_ci_shard.TestK" name="test_b" time="1.0"/>'
         '<testcase classname="tests.test_ci_shard" name="test_a[x, y]@grp" time="3.5"/>'
+        # A pull-request run tests the merge with `main`, so it can time files this
+        # checkout does not have yet; they are dropped rather than guessed at.
+        '<testcase classname="tests.test_not_here_yet" name="test_c" time="9.0"/>'
         "</testsuite></testsuites>",
         encoding="utf-8",
     )

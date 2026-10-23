@@ -225,6 +225,12 @@ jobs:
     name: "test / unit & core"
     runs-on: ubuntu-latest
     env: *kinder_env
+    # Sharded like `test / tossing3d`, which it became the long pole behind once that was:
+    # 39.3 min of junit time on 2 workers. Matrix length must equal `--shard-count`.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -263,13 +269,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-unit-${{ matrix.shard }}-${{ hashFiles('tests/**', 'src/**') }}
           restore-keys: |
-            pytest-${{ runner.os }}-
+            pytest-${{ runner.os }}-unit-${{ matrix.shard }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Unit & Core tests (MSS)
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --junitxml="$RUNNER_TEMP/junit-unit.xml" \
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 2 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-unit.xml" \
             tests/core \
             tests/planning \
             tests/recording \
@@ -283,12 +289,12 @@ jobs:
             tests/test_*.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
-      # Per-test CI durations, should this job ever need sharding like `test / tossing3d`.
+      # The input to `python -m tests.ci_shard junit-*/*.xml`, which rebalances the shards.
       - name: Upload per-test durations
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: junit-unit
+          name: junit-unit-${{ matrix.shard }}
           path: ${{ runner.temp }}/junit-unit.xml
           retention-days: 14
 
