@@ -36,7 +36,6 @@ from collections.abc import Generator
 from typing import Any
 
 import numpy as np
-from scipy.spatial.transform import Rotation
 
 from .kinder_skills import (
     BOX,
@@ -275,9 +274,9 @@ class FloorPicks:
         After every centred grasp, the off-centre ones: for a grasp with a neighbour
         on one side along the pads' width (`neighbour_side`), the same grasp shifted
         `FLOOR_PICK_OFFSETS` away from it. A cube with neighbours on both sides gets none."""
-        quaternion = self.shelf.core.get_object(cube).get_pose()[1]
-        axes = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]]).as_matrix()
-        normal = float(np.arctan2(axes[1, 0], axes[0, 0]))
+        normal = KinderSkills.side_face_yaw(
+            quaternion=self.shelf.core.get_object(cube).get_pose()[1]
+        )
         out = []
         shifted = []
         for lean in FLOOR_PICK_LEANS_DEG:
