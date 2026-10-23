@@ -119,7 +119,12 @@ class TestTossing3DUnchanged:
     def test_system_prompt_and_initial_files_match_the_pre_generic_runner(
         self, *, tmp_path: Path
     ) -> None:
-        assert FullAgenticRunner.system_prompt() == (TOSSING / "system_prompt.md").read_text()
+        # The one deliberate change since: the stated evaluation deadline, once a fixed
+        # "60 seconds", is the runner's own (245 s at the default 500 steps).
+        assert (
+            FullAgenticRunner.system_prompt(evaluation_control_steps=500)
+            == (TOSSING / "system_prompt.md").read_text()
+        )
 
         class Bridge:
             def observe(self) -> dict[str, list[object]]:

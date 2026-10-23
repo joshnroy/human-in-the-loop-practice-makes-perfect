@@ -86,10 +86,15 @@ class FullAgenticRunner:
     EVALUATION_SECONDS_PER_STEP: ClassVar[float] = 0.25
 
     @staticmethod
+    def evaluation_deadline_seconds(*, budget: int) -> float:
+        """One held-out task's sandbox deadline for `budget` control steps."""
+        seconds = FullAgenticRunner.EVALUATION_STARTUP_SECONDS
+        return seconds + FullAgenticRunner.EVALUATION_SECONDS_PER_STEP * budget
+
+    @staticmethod
     def evaluation_settings(*, settings: SandboxSettings, budget: int) -> SandboxSettings:
         """`settings` with a deadline long enough for `budget` control steps."""
-        seconds = FullAgenticRunner.EVALUATION_STARTUP_SECONDS
-        seconds += FullAgenticRunner.EVALUATION_SECONDS_PER_STEP * budget
+        seconds = FullAgenticRunner.evaluation_deadline_seconds(budget=budget)
         return settings.model_copy(update={"timeout_seconds": seconds})
 
     @staticmethod
@@ -248,8 +253,12 @@ class FullAgenticRunner:
         )
 
     @staticmethod
-    def system_prompt() -> str:
-        return (HERE / "system_prompt.md").read_text()
+    def system_prompt(*, evaluation_control_steps: int) -> str:
+        """RoboCode's system prompt, stating the per-instance deadline `evaluate` enforces
+        for a held-out task of `evaluation_control_steps` steps."""
+        seconds = FullAgenticRunner.evaluation_deadline_seconds(budget=evaluation_control_steps)
+        text = (HERE / "system_prompt.md").read_text()
+        return text.replace("{evaluation_seconds}", f"{seconds:g}")
 
     @staticmethod
     def initial_files(*, workspace: Any, bridge: Any, domain: type[FullAgenticDomain]) -> None:
@@ -438,7 +447,9 @@ class FullAgenticRunner:
                 budget=args.practice_step_budget,
                 interval=args.measurement_interval_steps,
             )
-            system = FullAgenticRunner.system_prompt()
+            system = FullAgenticRunner.system_prompt(
+                evaluation_control_steps=args.evaluation_control_steps
+            )
             (output / "task_prompt.md").write_text(prompt)
             (output / "system_prompt.md").write_text(system)
             coding_settings = settings.model_copy(update={"live_tools_dir": socket_dir})
