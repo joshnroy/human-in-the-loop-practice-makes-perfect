@@ -2,7 +2,9 @@
 
 Targets (Josh, 2026-10-15): a skill with no continuous parameters must succeed from
 every benchmark state; a skill with continuous parameters (only `SweepShelf`) must have,
-from every state, at least one setting on `SWEEP_GRID` that succeeds. A skill with no
+from every state, at least one setting on `SWEEP_GRID` that succeeds. Since SweepShelf
+aims one stroke at one cube (2026-10-23) that is per (state, target cube): every cube on
+the shelf of every wiper-in-hand state must be swept in by some setting. A skill with no
 valid benchmark case has not been shown to meet anything, so it does not pass.
 
 `THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for four skills with x/y of their
@@ -41,8 +43,11 @@ THRESHOLDS: dict[str, SkillThreshold] = {
         min_successes=5, out_of=8, families=frozenset({"harvested"})
     ),
 }
+# (lane offset [m], pull speed [m/s]) over SweepShelf's whole allowed range.
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(
-    (height, speed) for height in (0.0, 0.01, 0.02, 0.03, 0.04) for speed in (0.05, 0.15, 0.25)
+    (offset, speed)
+    for offset in (-0.10, -0.075, -0.05, -0.025, 0.0, 0.025, 0.05, 0.075, 0.10)
+    for speed in (0.05, 0.15, 0.25)
 )
 SCRIPTED_SKILLS = frozenset({S.SWEEP_SHELF.name, S.RETURN_WIPER.name})
 CANDIDATE_KINDS = frozenset({"no_plan", "plan_blocked", "executed", "execution_failed"})
@@ -122,14 +127,15 @@ class Verdicts:
             elif Verdicts.has_continuous_parameters(skill=skill):
                 per_state: dict[str, list[int]] = {}
                 for run in runs:
-                    tally = per_state.setdefault(run.state_id, [0, 0])
+                    key = run.state_id if run.cube is None else f"{run.state_id}/{run.cube}"
+                    tally = per_state.setdefault(key, [0, 0])
                     tally[0] += run.label == "success"
                     tally[1] += 1
                 passed = bool(per_state) and all(ok > 0 for ok, _ in per_state.values())
                 verdicts.append(
                     SkillVerdict(
                         skill=skill,
-                        target="some setting per state",
+                        target="some setting per state and target cube",
                         passed=passed,
                         successes=successes,
                         total=len(runs),

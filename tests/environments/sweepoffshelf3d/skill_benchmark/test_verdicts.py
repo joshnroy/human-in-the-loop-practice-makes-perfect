@@ -103,12 +103,20 @@ def test_missing_effects_and_budget_cut_offs_keep_their_own_labels() -> None:
     ] == ("budget")
 
 
-def _result(*, skill: str, state: str, label: str, params: list[float] | None = None) -> CaseResult:
+def _result(
+    *,
+    skill: str,
+    state: str,
+    label: str,
+    params: list[float] | None = None,
+    cube: str | None = None,
+) -> CaseResult:
     return CaseResult(
-        case_id=f"{state}-{skill}-{params}",
+        case_id=f"{state}-{skill}-{cube}-{params}",
         state_id=state,
         family="f",
         skill=skill,
+        cube=cube,
         params=params or [],
         label=label,
     )
@@ -134,23 +142,31 @@ def test_a_skill_without_continuous_parameters_must_succeed_from_every_state() -
     assert verdicts["PlaceCubeInBox"].passed
 
 
-def test_sweep_passes_when_every_state_has_some_succeeding_setting() -> None:
+def test_sweep_passes_when_every_state_and_target_cube_has_some_succeeding_setting() -> None:
     grid = list(SWEEP_GRID)
     results = [
         _result(
             skill="SweepShelf",
             state="a",
+            cube="cube_0",
             label="success" if i == 0 else "execution_failed",
             params=list(p),
         )
         for i, p in enumerate(grid)
-    ] + [_result(skill="SweepShelf", state="b", label="success", params=list(p)) for p in grid]
+    ] + [
+        _result(skill="SweepShelf", state="a", cube="cube_1", label="success", params=list(p))
+        for p in grid
+    ]
     (sweep,) = [v for v in Verdicts.judge(results=results) if v.skill == "SweepShelf"]
-    assert sweep.target == "some setting per state"
+    assert sweep.target == "some setting per state and target cube"
     assert sweep.passed
-    assert sweep.per_state == {"a": [1, len(grid)], "b": [len(grid), len(grid)]}
+    assert sweep.per_state == {"a/cube_0": [1, len(grid)], "a/cube_1": [len(grid), len(grid)]}
+    # One target cube with no succeeding setting fails the gate, even in a state
+    # where another cube's sweep works.
     results += [
-        _result(skill="SweepShelf", state="c", label="execution_failed", params=list(p))
+        _result(
+            skill="SweepShelf", state="a", cube="cube_2", label="execution_failed", params=list(p)
+        )
         for p in grid
     ]
     (sweep,) = [v for v in Verdicts.judge(results=results) if v.skill == "SweepShelf"]
@@ -174,10 +190,16 @@ def test_a_skill_with_no_benchmark_case_does_not_pass() -> None:
 
 
 def test_the_sweep_grid_spans_the_whole_allowed_range() -> None:
-    heights = sorted({h for h, _ in SWEEP_GRID})
-    speeds = sorted({s for _, s in SWEEP_GRID})
-    assert heights[0] == 0.0 and heights[-1] == 0.04
-    assert speeds[0] == 0.05 and speeds[-1] == 0.25
+    from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
+
+    offsets = sorted({o for o, _ in SWEEP_GRID})
+    speeds = sorted({v for _, v in SWEEP_GRID})
+    (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
+    assert (offsets[0], offsets[-1]) == (o_low, o_high)
+    assert (speeds[0], speeds[-1]) == (v_low, v_high)
+    # Both sides of the cube, and the lane straight over it.
+    assert 0.0 in offsets
+    assert [-o for o in offsets] == offsets[::-1]
 
 
 # Per-skill thresholds (Josh, 2026-10-20): each is x/y of a skill's gated cases, and the
@@ -294,13 +316,14 @@ def test_the_unthresholded_skills_still_must_succeed_from_every_state(*, skill: 
     assert not one_short.passed
 
 
-def test_the_sweep_keeps_its_some_setting_per_state_target() -> None:
+def test_the_sweep_keeps_its_some_setting_per_state_and_cube_target() -> None:
     assert "SweepShelf" not in THRESHOLDS
     results = [
-        _result(skill="SweepShelf", state="a", label="success", params=list(p)) for p in SWEEP_GRID
+        _result(skill="SweepShelf", state="a", cube="cube_0", label="success", params=list(p))
+        for p in SWEEP_GRID
     ]
     sweep = _verdict(skill="SweepShelf", results=results)
-    assert sweep.target == "some setting per state"
+    assert sweep.target == "some setting per state and target cube"
     assert sweep.passed
     assert (sweep.gated_successes, sweep.gated_total) == (len(SWEEP_GRID), len(SWEEP_GRID))
 

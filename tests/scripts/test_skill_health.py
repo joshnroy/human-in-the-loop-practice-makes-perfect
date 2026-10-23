@@ -38,7 +38,7 @@ def test_counts_split_by_who_chose_the_skill_and_how_it_failed(*, tmp_path: Path
                 label="PickWiper(robot, wiper_0)", start=743, end=900, error="did not come along"
             ),
             _robot(
-                label="SweepShelf(robot, wiper_0, box_0, cube_0), params=[0.01, 0.25]",
+                label="SweepShelf(robot, wiper_0, box_0, cube_0), params=[-0.06, 0.25]",
                 start=900,
                 end=3000,
                 error=None,
@@ -96,17 +96,24 @@ def test_skills_below_their_benchmark_target_are_flagged(*, tmp_path: Path) -> N
             _robot(label="PickCubeFromShelf(robot, cube_0)", start=10, end=10, error="no grasp"),
             _robot(label="PickCubeFromShelf(robot, cube_1)", start=10, end=20, error=None),
             _robot(
-                label="SweepShelf(robot, wiper_0), params=[0.03, 0.2]", start=20, end=30, error="x"
+                label="SweepShelf(robot, wiper_0, box_0, cube_1), params=[0.03, 0.2]",
+                start=20,
+                end=30,
+                error="x",
             ),
             _robot(
-                label="SweepShelf(robot, wiper_0), params=[0.0, 0.05]", start=30, end=40, error=None
+                label="SweepShelf(robot, wiper_0, box_0, cube_1), params=[0.0, 0.05]",
+                start=30,
+                end=40,
+                error=None,
             ),
         ],
     )
     report = SkillHealth.collect(paths=[tmp_path])
     flagged = SkillHealth.flagged(report=report)
     # Without continuous parameters the target is every attempt; SweepShelf's is that
-    # some setting works per state, which a run's random draws cannot judge -- it is
+    # some setting works per state and target cube, which a run's random draws cannot
+    # judge -- it is
     # flagged only when no attempt ever succeeded.
     assert flagged == ["PickCubeFromShelf"]
     text = SkillHealth.render(report=report)
@@ -121,7 +128,7 @@ def test_evaluation_actions_are_counted_on_their_own(*, tmp_path: Path) -> None:
             {"task": 0, "label": "PickWiper(robot, wiper_0)", "start_step": 0, "end_step": 700},
             {
                 "task": 0,
-                "label": "SweepShelf(robot, wiper_0), params=[0.005, 0.05]",
+                "label": "SweepShelf(robot, wiper_0, box_0, cube_0), params=[-0.06, 0.05]",
                 "start_step": 700,
                 "end_step": 700,
                 "skill_error": "sweep_shelf: no route",

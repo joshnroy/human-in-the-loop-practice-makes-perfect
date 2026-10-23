@@ -26,8 +26,9 @@ class, so the memo key can use a canonical renaming of the atoms, and each node 
 one ground action per stabiliser orbit. Static atoms (predicates no skill changes,
 such as SweepOffShelf3D's `CubeOrder` chain) are never renamed: they decide which
 groundings exist, and (1) is checked over the groundings they admit. That is what
-lets the chain-pinned `SweepShelf` and `reset_cubes`, whose effects are symmetric in
-their slots, count as symmetric even though the chain is not.
+lets the chain-pinned `reset_cubes`, whose effects are symmetric in its slots, count
+as symmetric even though the chain is not. A one-cube skill (`SweepShelf`, the picks)
+grounds once per cube, and the swap maps those groundings onto each other.
 
 Grouping actions into orbits by per-object atom profile is exact only when no dynamic
 atom mentions two class members; `detect` drops a class otherwise.

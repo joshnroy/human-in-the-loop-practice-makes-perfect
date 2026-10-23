@@ -2116,10 +2116,10 @@ class KinderSkills:
         start = (low + high) / 2 - count * step / 2
         return [float(start + i * step) for i in range(count + 1)]
 
-    def sweep_shelf(self, *, height: float, speed: float) -> None:
+    def sweep_shelf(self, *, cube: str, offset: float, speed: float) -> None:
         if self.shelf.in_hand is None:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
-        self.shelf.sweep_shelf(height=height, speed=speed)
+        self.shelf.sweep_shelf(cube=cube, offset=offset, speed=speed)
 
     def return_wiper(self) -> None:
         """`ShelfSkills.return_wiper`, except that once the wiper is back on its shelf

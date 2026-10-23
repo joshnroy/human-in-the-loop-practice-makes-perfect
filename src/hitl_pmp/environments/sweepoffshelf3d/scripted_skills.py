@@ -11,9 +11,10 @@ worth a keyframe; with no recorder the skills run headless. Each of the six plan
 skills is one call that runs to completion or raises `SkillFailed`:
 
 - `pick_wiper()`: take the wiper off its home on top of the cupboard.
-- `sweep_shelf(height=, speed=)`: pull every cube on shelf index 1 over the open front
-  edge into the box. `height` is the head's clearance over the board in metres,
-  [0, 0.04]; `speed` the pull speed in m/s, [0.05, 0.25].
+- `sweep_shelf(cube=, offset=, speed=)`: one front-to-back stroke aimed at one cube on
+  shelf index 1, pulling it over the open front edge into the box. The lane is the
+  cube's y plus `offset` (m, [-0.10, 0.10]), clipped to the stroke limit; `speed` is
+  the pull speed in m/s, [0.05, 0.25]; the head rides SWEEP_HEIGHT over the board.
 - `return_wiper()`: put the held wiper back where it started on top of the cupboard.
 - `pick_cube_from_shelf(cube=)`, `pick_cube_from_floor(cube=)`,
   `place_cube_in_box(cube=)`.
@@ -34,12 +35,12 @@ vertical gripper (the wrist hits the board above), so every grasp in the cupboar
 leans the gripper about its closing axis; a lean keeps the pads on the same two faces.
 The 2F-85's friction grasp resists rotation about its closing axis worst of all, so
 the wiper grasp sits beside its centre of mass. Lowered behind the cubes, the flat
-wiper's handle comes down on any cube in its line, so strokes are placed with no cube
-under the handle (`Strokes.plan`). And the box keeps the base at least BASE_X back
-from the cupboard while the leaned hand only reaches 0.6 m or more in front of the
-base, so the base carries each stroke and the arm trims. Near the cupboard the arm
-follows routes planned joint by joint on one IK branch, with the carried wiper in the
-collision check.
+wiper's handle comes down on any cube in its line: where a stroke runs relative to its
+target cube is the sweep's `offset`, and so what practice learns. And the box keeps
+the base at least BASE_X back from the cupboard while the leaned hand only reaches
+0.6 m or more in front of the base, so the base carries each stroke and the arm trims.
+Near the cupboard the arm follows routes planned joint by joint on one IK branch, with
+the carried wiper in the collision check.
 
 Nothing here imports KINDER: the environment is built by `backend.py` and handed in.
 """
@@ -100,14 +101,19 @@ CARRY_Z = 0.65
 HEAD_AHEADS = (0.80, 0.75, 0.85, 0.70, 0.90, 0.65)
 HEAD_AHEAD = 0.80
 # Stroke geometry: the head's centre starts behind the deepest cube and stops with the
-# head just past the shelf's front edge; reach is the head half-length less a margin,
-# limit keeps the head off the cupboard's side walls.
+# head just past the shelf's front edge; limit keeps the head off the cupboard's side
+# walls.
 STROKE_START_X = 1.60
 STROKE_END_X = 1.355
-STROKE_REACH = 0.08
 STROKE_LIMIT = 0.17
+# SweepShelf (Josh, 2026-10-23): one stroke aimed at one cube. The head height is fixed
+# (a cube is 2 cm tall, the head 1.5 cm); offset and speed are the sampled parameters.
+SWEEP_HEIGHT = 0.01
+SWEEP_OFFSET_BOUNDS = (-0.10, 0.10)
+SWEEP_SPEED_BOUNDS = (0.05, 0.25)
 # Half-width of the strip under the handle (and the fingers on it) that must be free of
-# cubes when the wiper is lowered: handle half-width + cube half-diagonal + margin.
+# cubes where the wiper is laid down to reseat it: handle half-width + cube
+# half-diagonal + margin.
 HANDLE_BAND = 0.03
 # Put the wiper down and take it again only once it has turned this far in the grasp.
 RESEAT_TURN_DEG = 6.0
@@ -127,7 +133,6 @@ PULL_CHUNK = 2
 # How far below the requested height the pull aims the head, pressing it into the
 # board so the cubes it pushes cannot wedge under its front edge and lift it.
 PULL_PRESS = 0.005
-SWEEP_PASSES = 5
 REGRASP_TRIES = 3
 CUBE_PICK_TRIES = 2
 GRASP_TEST_LIFT = 0.02
@@ -167,30 +172,21 @@ class Recorder(Protocol):
     def mark(self, *, skills: "ShelfSkills", label: str) -> None: ...
 
 
-class Strokes:
+class SweepParams(BaseModel):
+    """`sweep_shelf`'s two sampled parameters, validated against their bounds."""
+
+    model_config = ConfigDict(frozen=True)
+
+    offset: float = Field(ge=SWEEP_OFFSET_BOUNDS[0], le=SWEEP_OFFSET_BOUNDS[1])
+    speed: float = Field(ge=SWEEP_SPEED_BOUNDS[0], le=SWEEP_SPEED_BOUNDS[1])
+
+
+class SweepLane:
     @staticmethod
-    def plan(*, ys: list[float], reach: float, band: float, limit: float) -> list[float]:
-        """Fewest stroke centres covering every cube with the head (|dy| <= reach)
-        while no cube lies under the handle (|dy| > band): lowered behind the cubes,
-        the flat wiper's handle would otherwise come down on top of one. Greedy cover
-        over centres 5 mm apart within +/- limit."""
-        candidates = np.round(np.arange(-limit, limit + 1e-9, 0.005), 4)
-        remaining = set(range(len(ys)))
-        centres: list[float] = []
-        while remaining:
-            best: float | None = None
-            covered: set[int] = set()
-            for c in candidates:
-                if any(abs(y - c) <= band for y in ys):
-                    continue
-                hits = {i for i in remaining if abs(ys[i] - c) <= reach}
-                if len(hits) > len(covered):
-                    best, covered = float(c), hits
-            if best is None:
-                break
-            centres.append(best)
-            remaining -= covered
-        return sorted(centres)
+    def y(*, cube_y: float, offset: float) -> float:
+        """The stroke's head-centre y: the target cube's y plus `offset` (> 0 on the
+        cube's +y side), clipped so the head stays off the cupboard's side walls."""
+        return float(np.clip(cube_y + offset, -STROKE_LIMIT, STROKE_LIMIT))
 
 
 class Frames:
@@ -1277,33 +1273,27 @@ class ShelfSkills:
         self.hold(count=15, label="settle")
         self.notes.append(f"{name}: {self.counts()['in_box']}/5 in box after the stroke")
 
-    def sweep_shelf(self, *, height: float, speed: float) -> None:
-        """Pull every cube on shelf index 1 over the front edge with the wiper head:
-        strokes across the shelf's width, up to SWEEP_PASSES passes. Needs the wiper in
-        hand (from `pick_wiper`); raises if any cube is left on the shelf."""
-        settings = SweepSettings(height=height, speed=speed)
+    def sweep_shelf(self, *, cube: str, offset: float, speed: float) -> None:
+        """One front-to-back stroke (`stroke`) on the lane `offset` beside `cube`, at
+        SWEEP_HEIGHT and `speed`. Needs the wiper in hand (from `pick_wiper`) and `cube`
+        on the shelf; raises unless `cube` ends in the box. Other cubes the stroke moves
+        are not this skill's concern."""
+        params = SweepParams(offset=offset, speed=speed)
         if self.in_hand is None:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
+        if cube not in self.shelf_cubes():
+            raise SkillFailed(f"sweep_shelf: {cube} is not on the shelf")
+        lane = SweepLane.y(cube_y=float(self.cube_position(cube=cube)[1]), offset=params.offset)
+        settings = SweepSettings(height=SWEEP_HEIGHT, speed=params.speed)
         self.watch_wiper, self.wiper_unheld_steps = True, 0
         try:
-            for sweep_pass in range(SWEEP_PASSES):
-                ys = [float(self.cube_position(cube=c)[1]) for c in self.shelf_cubes()]
-                if not ys:
-                    return
-                centres = Strokes.plan(
-                    ys=ys, reach=STROKE_REACH, band=HANDLE_BAND, limit=STROKE_LIMIT
-                )
-                if not centres:
-                    break
-                for y in centres:
-                    self.stroke(y=y, settings=settings, name=f"pass{sweep_pass}_y{y:+.2f}")
+            self.stroke(y=lane, settings=settings, name=f"{cube}_y{lane:+.2f}")
         except WiperLost as exc:
             raise SkillFailed(f"sweep_shelf: {exc}") from exc
         finally:
             self.watch_wiper = False
-        left = self.shelf_cubes()
-        if left:
-            raise SkillFailed(f"sweep_shelf: {len(left)} cube(s) still on the shelf: {left}")
+        if not self.core.cube_in_box(cube):
+            raise SkillFailed(f"sweep_shelf: {cube} is not in the box after the stroke")
 
     def return_wiper(self) -> None:
         """Put the held wiper back where it started on top of the cupboard, at the

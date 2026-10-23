@@ -36,7 +36,8 @@ class BenchmarkReport(BaseModel):
 
 class SkillVerdict(BaseModel):
     skill: str
-    # "every state" | "some setting per state" | "at least x/y" (| " of <families>")
+    # "every state" | "some setting per state and target cube" | "at least x/y"
+    # (| " of <families>")
     target: str
     passed: bool
     # Every valid run of the skill, gated or not.
@@ -52,7 +53,8 @@ class SkillVerdict(BaseModel):
     reason: str = ""
     # Per simulator-attribution label, how many runs ended there.
     labels: dict[str, int] = Field(default_factory=dict)
-    # Continuous-parameter skills only: per state, settings that succeeded / tried.
+    # Continuous-parameter skills only: per "<state>/<target cube>", settings that
+    # succeeded / tried.
     per_state: dict[str, list[int]] = Field(default_factory=dict)
     # Runs whose skill planned in KINDER's PyBullet scene at every stage it reached
     # (None for a skill that does not plan there).
@@ -123,8 +125,9 @@ class BenchmarkCase(BaseModel):
 
     skill: str
     cube: str | None = None
-    # SweepShelf only: [height, speed]. A continuous-parameter skill's cases are its
-    # grid over the allowed range (`verdicts.SWEEP_GRID`), one case per setting.
+    # SweepShelf only: [offset, speed]. A continuous-parameter skill's cases are its
+    # grid over the allowed range (`verdicts.SWEEP_GRID`), one case per setting and
+    # target cube.
     params: list[float] = Field(default_factory=list)
 
     def case_id(self, *, state_id: str) -> str:
