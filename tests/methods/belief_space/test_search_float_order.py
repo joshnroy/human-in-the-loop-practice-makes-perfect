@@ -5,9 +5,12 @@ same multiset of actions sums to values that differ in the last bit by order: 7.
 7.209999999999997. Neither the merge key nor a tie between path costs may see that.
 """
 
+import math
+
 import pytest
 
 from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
@@ -19,7 +22,9 @@ from hitl_pmp.methods.belief_space.types.determinized import (
     DeterminizedSearchQueueEntry,
 )
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION
+from hitl_pmp.methods.belief_space.types.value_resolution import ValueResolution
 
+from . import test_expectimax as ex
 from .test_determinized import HIGH, LEFT, LOW, RIGHT, ROOT, BeliefState, Model
 
 ONE_ORDER = (0.1 + 0.2) + 0.3
@@ -95,3 +100,46 @@ def test_a_roundoff_cheaper_path_does_not_change_the_decision(*, ulp_heavier) ->
         num_samples=1,
     )
     assert action == LEFT
+
+
+@pytest.mark.parametrize("ulp_heavier", ["setup", "practice"])
+def test_expectimax_actions_tied_up_to_roundoff_go_to_the_first_action(*, ulp_heavier) -> None:
+    heavy, light = 0.1 + 0.2, 0.3
+    model = ex.Model(
+        transitions={
+            (ex.INITIAL, ex.SETUP): [(ex.SUCCESS, heavy if ulp_heavier == "setup" else light, 1.0)],
+            (ex.INITIAL, ex.PRACTICE): [
+                (ex.FAILURE, heavy if ulp_heavier == "practice" else light, 1.0)
+            ],
+        },
+        beliefs={ex.SUCCESS: ex.BeliefState(value=0.9), ex.FAILURE: ex.BeliefState(value=0.9)},
+    )
+    _, action = ExpectimaxPlanner().solve(
+        model=model,
+        environment_state=ex.INITIAL,
+        summed_cost=0.0,
+        belief_state=ex.BeliefState(value=0.2),
+        horizon=1,
+    )
+    assert action == ex.SETUP
+
+
+def test_expectimax_stop_wins_a_tie_with_an_action_up_to_roundoff() -> None:
+    model = ex.Model(
+        transitions={(ex.INITIAL, ex.SETUP): [(ex.SUCCESS, 0.0, 1.0)]},
+        beliefs={ex.SUCCESS: ex.BeliefState(value=0.1 + 0.2)},
+    )
+    value, action = ExpectimaxPlanner().solve(
+        model=model,
+        environment_state=ex.INITIAL,
+        summed_cost=0.0,
+        belief_state=ex.BeliefState(value=0.3),
+        horizon=1,
+    )
+    assert action == STOP_ACTION
+    assert value == 0.3
+
+
+def test_an_infeasible_value_ranks_below_every_finite_one() -> None:
+    assert ValueResolution.rank(value=-math.inf) < ValueResolution.rank(value=-1e9)
+    assert ValueResolution.rank(value=0.1 + 0.2) == ValueResolution.rank(value=0.3)
