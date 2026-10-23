@@ -571,11 +571,11 @@ def _picks(*, state: EnvironmentState) -> list[tuple[EnvironmentState, float, fl
     ]
 
 
-def _reroll_model() -> DrawKeyedModel:
+def _reroll_model(*, cls: type[DrawKeyedModel] = DrawKeyedModel) -> DrawKeyedModel:
     """Two cheap resets: one leaves the state as it was but for bookkeeping, one moves
     it to a different state. The pick's outcome reads the same belief from all three."""
     states = (ROOT, AFTER_RESET, MOVED)
-    return DrawKeyedModel(
+    return cls(
         transitions={
             (ROOT, RESET): [(AFTER_RESET, 0.01, 1.0)],
             (ROOT, MOVE): [(MOVED, 0.01, 1.0)],
@@ -663,3 +663,138 @@ def test_consistent_draws_map_one_uniform_through_the_cdf_like_choice() -> None:
     assert choice.sample_outcome(outcomes=outcomes, action=LEFT) == planner.sample_outcome(
         outcomes=outcomes, action=LEFT, uniform=uniform
     )
+
+
+class BeliefKeyedModel(DrawKeyedModel):
+    """Adds the cost-free node key Curtis et al.'s PO_DAStar uses (belief only)."""
+
+    def belief_cache_key(
+        self, *, environment_state: EnvironmentState, belief_state: BeliefState, horizon: int | None
+    ) -> object:
+        return environment_state, belief_state, horizon
+
+
+def _curtis(
+    *, weight: float, num_rollouts: int | None = None, seed: int = 0, iterations: int = 20
+) -> DeterminizedAStarPlanner:
+    return DeterminizedAStarPlanner(
+        max_iterations=iterations,
+        seed=seed,
+        observation_probability_weight=weight,
+        variant="curtis",
+        num_rollouts=num_rollouts,
+    )
+
+
+def _solve(
+    *, planner: DeterminizedAStarPlanner, model: Model, trace: SearchTrace | None = None
+) -> tuple[float, object]:
+    return planner.solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.5),
+        horizon=0,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+
+
+def _two_outcome_model() -> BeliefKeyedModel:
+    return BeliefKeyedModel(
+        transitions={(ROOT, LEFT): [(LOW, 0.0, 0.25), (HIGH, 0.0, 0.75)]},
+        beliefs={LOW: BeliefState(value=0.1), HIGH: BeliefState(value=0.8)},
+    )
+
+
+def test_curtis_enumerates_every_outcome_as_its_own_child() -> None:
+    trace = SearchTrace()
+    value, action = _solve(planner=_curtis(weight=0.0), model=_two_outcome_model(), trace=trace)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["generated_successors"] == 2
+    assert summary["determinized_variant"] == "curtis"
+    assert (value, action) == (pytest.approx(0.8), LEFT)
+
+
+def test_curtis_charges_each_enumerated_outcome_its_own_surprise() -> None:
+    # HIGH: g = -(0.8 - 0.5) - w ln 0.75 = -0.3 + 0.2877 w, which beats STOP (g = 0)
+    # only below w = 1.043.
+    assert _solve(planner=_curtis(weight=1.0), model=_two_outcome_model())[1] == LEFT
+    assert _solve(planner=_curtis(weight=1.1), model=_two_outcome_model())[1] == STOP_ACTION
+
+
+def test_curtis_never_resets_to_re_roll_a_pick() -> None:
+    model = _reroll_model(cls=BeliefKeyedModel)
+    for weight in (0.0, 0.01, 0.1):
+        assert _solve(planner=_curtis(weight=weight), model=model)[1] == PICK
+
+
+def _without_timing(*, events: list[dict]) -> list[dict]:
+    return [
+        {k: v for k, v in event.items() if k not in ("timestamp", "elapsed_seconds")}
+        for event in events
+        if event["event"] != "search_summary"
+    ]
+
+
+def test_curtis_rollouts_branch_on_empirical_frequencies_reproducibly() -> None:
+    traces = []
+    for _ in range(2):
+        trace = SearchTrace()
+        _solve(
+            planner=_curtis(weight=0.1, num_rollouts=10, seed=3, iterations=1),
+            model=_two_outcome_model(),
+            trace=trace,
+        )
+        traces.append(trace)
+    (root,) = [event for event in traces[0].events if event["event"] == "action_value"]
+    assert round(10 * root["sampled_observation_probability"]) == pytest.approx(
+        10 * root["sampled_observation_probability"]
+    )
+    assert _without_timing(events=traces[0].events) == _without_timing(events=traces[1].events)
+
+
+def test_one_rollout_from_a_known_state_is_charged_nothing() -> None:
+    # PO_DAStar's p is the empirical branch frequency, so one rollout gives p = 1.
+    trace = SearchTrace()
+    _solve(planner=_curtis(weight=1.0, num_rollouts=1), model=_two_outcome_model(), trace=trace)
+    (root,) = [event for event in trace.events if event["event"] == "action_value"]
+    assert root["sampled_observation_probability"] == 1.0
+    assert root["observation_surprise"] == 0.0
+
+
+MIDDLE = EnvironmentState(name="middle")
+CHEAP = Action(name="cheap")
+DEAR = Action(name="dear")
+
+
+def test_curtis_nodes_are_beliefs_so_routes_of_different_cost_merge() -> None:
+    """Two routes reach MIDDLE at costs 0.1 and 0.3. Keyed with the cost they are two
+    nodes; keyed by belief they are one, whose J at each route's cost is exact."""
+    model = BeliefKeyedModel(
+        transitions={
+            (ROOT, CHEAP): [(MIDDLE, 0.1, 1.0)],
+            (ROOT, DEAR): [(MIDDLE, 0.3, 1.0)],
+            (MIDDLE, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={MIDDLE: BeliefState(value=0.7), GOAL: BeliefState(value=0.9)},
+    )
+    as_is, curtis = SearchTrace(), SearchTrace()
+    _solve(planner=DeterminizedAStarPlanner(max_iterations=10, seed=0), model=model, trace=as_is)
+    value, action = _solve(planner=_curtis(weight=0.0, iterations=10), model=model, trace=curtis)
+
+    def unique(*, events: list[dict]) -> int:
+        return next(e for e in events if e["event"] == "search_summary")["unique_nodes"]
+
+    assert unique(events=curtis.events) == unique(events=as_is.events) - 2
+    assert action == CHEAP
+    assert value == pytest.approx(0.9 - 0.1)
+    dear = next(
+        e for e in curtis.events if e["event"] == "action_value" and e["action"]["name"] == "dear"
+    )
+    assert dear["value"] == pytest.approx(0.7 - 0.3)
+
+
+def test_curtis_refuses_shared_draws() -> None:
+    with pytest.raises(AssertionError):
+        DeterminizedAStarPlanner(max_iterations=1, seed=0, variant="curtis", draw_scope="skill")

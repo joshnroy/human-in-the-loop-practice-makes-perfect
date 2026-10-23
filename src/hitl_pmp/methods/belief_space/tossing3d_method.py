@@ -51,7 +51,7 @@ from .tossing3d_observation_model import (
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
-from .types.determinized import DrawScope
+from .types.determinized import DeterminizedVariant, DrawScope
 from .types.forced_start_reset import ForcedStartReset
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
@@ -76,12 +76,14 @@ def make_belief_space_planner(
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
     draw_scope: DrawScope = "node",
+    variant: DeterminizedVariant = "algorithm3",
+    num_rollouts: int | None = None,
 ) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
         return planner
-    if draw_scope != "node" and solver != "determinized_astar":
-        raise ValueError("shared draws are a determinized_astar option; expectimax samples none")
+    if (draw_scope != "node" or variant != "algorithm3") and solver != "determinized_astar":
+        raise ValueError("draw scopes and variants are determinized_astar options")
     if solver == "expectimax":
         return ExpectimaxPlanner(
             use_model_j=True,
@@ -93,6 +95,8 @@ def make_belief_space_planner(
         observation_probability_weight=observation_probability_weight,
         log_full_search_tree=log_full_search_tree,
         draw_scope=draw_scope,
+        variant=variant,
+        num_rollouts=num_rollouts,
     )
 
 
@@ -108,6 +112,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_draw_scope: DrawScope = "node"
+    pomdp_determinized_variant: DeterminizedVariant = "algorithm3"
+    # Curtis variant only; None: every outcome (the many-rollout limit).
+    pomdp_num_rollouts: int | None = Field(default=None, ge=1)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
@@ -374,6 +381,8 @@ class Tossing3DPomdpMethod(EesMethod):
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
             draw_scope=self.pomdp_draw_scope,
+            variant=self.pomdp_determinized_variant,
+            num_rollouts=self.pomdp_num_rollouts,
         )
         # Exact reductions of the expectimax tree only: determinized A* samples paths
         # over the action list, so dropping equivalent actions would change what it

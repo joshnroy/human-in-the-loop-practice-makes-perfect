@@ -30,6 +30,17 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
         horizon: int | None,
     ) -> object: ...
 
+    def belief_cache_key(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        belief_state: BeliefStateT,
+        horizon: int | None,
+    ) -> object:
+        """`search_cache_key` without the accumulated cost: a node of Curtis et al.'s
+        PO_DAStar is the belief alone, its cost-to-come living in g."""
+        ...
+
     def outcome_draw_key(
         self,
         *,
