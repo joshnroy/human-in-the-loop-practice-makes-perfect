@@ -6,6 +6,8 @@ import pytest
 
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.practice_costs import PracticeCosts, SkillStepCosts
+from hitl_pmp.launch_gate import ROOT_VARIABLE, LaunchIdentity
+from hitl_pmp.step_protocol import StepProtocolValidation
 from scripts.run_sweep import SweepRunner
 from scripts.sweepoffshelf3d_launch import (
     EES_ALWAYS_ASK_COSTS,
@@ -20,6 +22,7 @@ from scripts.sweepoffshelf3d_launch import (
     ShelfLaunch,
     main,
 )
+from tests.scripts.test_launch_headroom import PICK, SHELF_20261023B, write_evaluation
 
 CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6", "cccc-expectimax-d7"]
 DEFAULT_CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6"]
@@ -32,6 +35,26 @@ def _value(*, argv: list[str], flag: str) -> str:
 
 def _shared(*, command: list[str]) -> list[str]:
     return shlex.split(_value(argv=command, flag="--shared-args"))
+
+
+@pytest.fixture(autouse=True)
+def headroom_passed(
+    *, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """A passing headroom report for `SHA`, so `della` and `launch` get past the check."""
+    root = tmp_path_factory.mktemp("reports")
+    monkeypatch.setenv(ROOT_VARIABLE, str(root))
+    _headroom_report(root=root, sha=SHA, passed=True)
+    return root
+
+
+def _headroom_report(*, root: Path, sha: str, passed: bool, **overrides: object) -> Path:
+    path = ShelfLaunch.headroom_report_path(root=root, sha=sha)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"git_commit": sha, "git_dirty": False, "passed": passed, **overrides})
+    )
+    return path
 
 
 @pytest.fixture
@@ -512,3 +535,163 @@ def test_no_arm_asks_for_episode_traces_the_step_protocol_refuses() -> None:
     for arm in ShelfLaunch.arms(expectimax_depths=[6, 7]).values():
         argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/x"))
         assert "--record-episode-traces" not in argv
+
+
+CLEAN = LaunchIdentity(
+    git_commit=SHA, git_dirty=False, kindergarden_commit="k" * 40, kinder_models_commit="m" * 40
+)
+NEEDS_PRACTICE = [[(PICK, "success")]] * 10
+
+
+def test_headroom_runs_each_canonical_arms_exact_launch_argv_at_seed_zero(
+    *, tmp_path: Path
+) -> None:
+    args = ShelfLaunch.parse(argv=["headroom", "--results-root", str(tmp_path)])
+    assert (args.seed, args.max_solved) == (0, 7)
+    arms = ShelfLaunch.arms(expectimax_depths=[6])
+    runs = ShelfLaunch.headroom_runs(
+        arms=ShelfLaunch.headroom_arms(arms=arms, names=None),
+        size=FULL,
+        seed=0,
+        results_root=tmp_path,
+    )
+    # Always-ask only changes practice; deployment is the same policy.
+    assert [run.arm for run in runs] == DEFAULT_CANONICAL_ARMS
+    for run in runs:
+        arm = arms[run.arm]
+        assert run.output_dir == tmp_path / arm.name / arm.method / "0"
+        assert run.command[1:3] == ["-m", "hitl_pmp.cli"]
+        launched = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=run.output_dir)
+        # The skill benchmark gate guards practice; this run practises nothing.
+        assert run.command[3:] == [*launched, "--skip-skill-benchmark-gate"]
+        assert run.evaluation == run.output_dir / "evaluations" / "0000"
+
+
+def test_headroom_arms_can_be_chosen_explicitly() -> None:
+    arms = ShelfLaunch.arms(expectimax_depths=[6])
+    chosen = ShelfLaunch.headroom_arms(arms=arms, names=["ees-always-ask"])
+    assert [arm.name for arm in chosen] == ["ees-always-ask"]
+
+
+def test_headroom_places_a_stop_file_the_step_protocol_accepts(*, tmp_path: Path) -> None:
+    (run,) = ShelfLaunch.headroom_runs(
+        arms=[ShelfLaunch.arms(expectimax_depths=[6])["ees"]],
+        size=FULL,
+        seed=0,
+        results_root=tmp_path,
+    )
+    ShelfLaunch.prepare_headroom(run=run)
+    assert (run.output_dir / "STOP").exists()
+    StepProtocolValidation.check(args=Cli.parse_args(argv=run.command[3:]))
+
+
+def _fake_runs(*, episodes: list) -> object:
+    def run_commands(*, runs: list) -> list[int]:
+        for run in runs:
+            assert (run.output_dir / "STOP").exists()
+            write_evaluation(path=run.evaluation, episodes=episodes)
+        return [0] * len(runs)
+
+    return staticmethod(run_commands)
+
+
+def _headroom_main(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, episodes: list, extra: list[str] = ()
+) -> tuple[int, Path]:
+    root = tmp_path / "reports"
+    monkeypatch.setenv(ROOT_VARIABLE, str(root))
+    monkeypatch.setattr(LaunchIdentity, "current", staticmethod(lambda: CLEAN))
+    monkeypatch.setattr(ShelfLaunch, "run_commands", _fake_runs(episodes=episodes))
+    results = tmp_path / "results"
+    code = main(argv=["headroom", "--results-root", str(results), *extra])
+    return code, results
+
+
+def test_headroom_fails_the_preflight_on_shelf_20261023bs_step0_policy(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, results = _headroom_main(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, episodes=SHELF_20261023B
+    )
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "NO HEADROOM" in out and "8/10" in out
+    report = json.loads((results / "headroom.json").read_text())
+    assert report["passed"] is False and report["git_commit"] == SHA
+    assert sorted(report["arms"]) == sorted(DEFAULT_CANONICAL_ARMS)
+    assert report["arms"]["ees"]["solved"] == 8
+    assert len(report["arms"]["ees"]["problems"]) == 2
+    stored = ShelfLaunch.headroom_report_path(root=tmp_path / "reports", sha=SHA)
+    assert json.loads(stored.read_text()) == report
+
+
+def test_headroom_passes_a_policy_that_needs_practice(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, results = _headroom_main(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, episodes=NEEDS_PRACTICE
+    )
+    assert code == 0
+    assert json.loads((results / "headroom.json").read_text())["passed"] is True
+
+
+def test_the_headroom_threshold_is_a_flag(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, results = _headroom_main(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        episodes=SHELF_20261023B,
+        extra=["--max-solved", "9"],
+    )
+    report = json.loads((results / "headroom.json").read_text())
+    assert report["max_solved"] == 9
+    # The one-call criterion still fails it.
+    assert code == 1 and len(report["arms"]["ees"]["problems"]) == 1
+
+
+def test_a_crashed_headroom_run_fails_rather_than_passing(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ShelfLaunch, "run_commands", staticmethod(lambda *, runs: [1] * len(runs)))
+    monkeypatch.setattr(LaunchIdentity, "current", staticmethod(lambda: CLEAN))
+    with pytest.raises(SystemExit, match="exited 1"):
+        main(argv=["headroom", "--results-root", str(tmp_path), "--arms", "ees"])
+
+
+@pytest.mark.parametrize(
+    ("report", "match"),
+    [
+        (None, "no headroom report"),
+        ({"passed": False}, "did not pass"),
+        ({"passed": True, "git_dirty": True}, "dirty"),
+    ],
+)
+def test_della_refuses_without_a_passing_headroom_report_for_its_sha(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, report: dict | None, match: str
+) -> None:
+    root = tmp_path / "reports"
+    monkeypatch.setenv(ROOT_VARIABLE, str(root))
+    if report is not None:
+        _headroom_report(root=root, sha=SHA, **{"passed": True, **report})
+    argv = ["della", "--tag", "t", "--sha", SHA, "--out", str(tmp_path / "della")]
+    with pytest.raises(SystemExit, match=match) as refused:
+        main(argv=argv)
+    assert "--skip-headroom-check" in str(refused.value)
+    assert not (tmp_path / "della").exists()
+    assert main(argv=[*argv, "--skip-headroom-check"]) == 0
+
+
+def test_launch_refuses_without_a_passing_headroom_report(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(ROOT_VARIABLE, str(tmp_path / "reports"))
+    monkeypatch.setattr(ShelfLaunch, "head_commit", staticmethod(lambda: SHA))
+    with pytest.raises(SystemExit, match="no headroom report"):
+        main(argv=["launch", "--arms", "ees", "--results-root", str(tmp_path / "r"), "--go"])
+
+
+def test_headroom_refuses_the_robocode_arm_by_name(*, tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="headroom covers the step-protocol arms"):
+        main(argv=["headroom", "--arms", "robocode", "--results-root", str(tmp_path)])
+    assert list(tmp_path.iterdir()) == []
