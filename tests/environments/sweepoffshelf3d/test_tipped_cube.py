@@ -142,18 +142,30 @@ def test_kinder_drives_to_the_base_facing_params_was_given(*, quaternion, headin
 
 @pytest.mark.parametrize("quaternion", QUATERNIONS, ids=lambda q: np.round(q, 3).tolist().__str__())
 def test_floor_grasps_close_on_a_pair_of_the_cubes_side_faces(*, quaternion, monkeypatch):
-    """Every floor/box grasp's pads close along one of the cube's horizontal axes,
-    however the cube lies: on a tipped cube the x axis is vertical, so faces read off it
-    put the pads across the cube at an arbitrary angle."""
+    """Every floor/box grasp's pads close along one of the cube's horizontal axes (a
+    rolled grasp's tilted up out of the horizontal plane), however the cube lies: on a
+    tipped cube the x axis is vertical, so faces read off it put the pads across the
+    cube at an arbitrary angle."""
     centre = np.array([1.25, -0.07, 0.02])
     picks = FloorPicks(kinder=_kinder(centre=centre, quaternion=quaternion))
     monkeypatch.setattr(picks, "neighbour_side", lambda **_: 0.0)
     hands = picks.hands(cube="cube_0", centre=centre)
     assert hands
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        PICK_CUBE_GRASP_YAW_OFFSETS_DEGREES,
+    )
+
     horizontal = _horizontal_axes(quaternion=quaternion)
-    for _, hand in hands:
-        closing = hand[:3, 0]
-        assert max(abs(float(closing @ axis)) for axis in horizontal) > 0.999, closing
+    offsets = np.deg2rad(PICK_CUBE_GRASP_YAW_OFFSETS_DEGREES)
+    for option in hands:
+        closing = np.array([option.hand[0, 0], option.hand[1, 0], 0.0])
+        closing /= np.linalg.norm(closing)
+        # Upstream's grid turns the pads off square by its yaw offsets, on purpose: the
+        # closing axis is a face normal turned by one of them.
+        axis = horizontal[0][:2] / np.linalg.norm(horizontal[0][:2])
+        turn = np.arctan2(closing[1], closing[0]) - np.arctan2(axis[1], axis[0])
+        folded = abs((turn + np.pi / 4) % (np.pi / 2) - np.pi / 4)
+        assert min(abs(folded - abs(o)) for o in offsets) < 1e-3, closing
 
 
 @pytest.mark.parametrize("quaternion", QUATERNIONS, ids=lambda q: np.round(q, 3).tolist().__str__())
@@ -203,3 +215,51 @@ def test_a_recorded_zero_step_refusal_on_a_tipped_cube_now_succeeds(*, env, stat
     assert trace is not None
     assert trace.controller_steps > 0, env.last_skill_error()
     assert trace.outcome == "success", (trace.outcome, env.last_skill_error())
+
+
+def test_the_floor_grasps_include_upstreams_grid_36_least_tilt_first(*, monkeypatch):
+    """The floor and box picks try every grasp of upstream's near-wall list
+    (`PickCubeController.grasp_candidates`: opening, tilt and yaw offset), on both
+    wrist turns, least tilted first."""
+    from kinder_models.dynamic3d.tossing.parameterized_skills import PickCubeController
+
+    centre = np.array([1.25, -0.07, 0.01])
+    quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+    picks = FloorPicks(kinder=_kinder(centre=centre, quaternion=quaternion))
+    monkeypatch.setattr(picks, "neighbour_side", lambda **_: 0.0)
+    ours = picks.hands(cube="cube_0", centre=centre)
+
+    class _Cube:
+        name = "cube_0"
+
+    class _X:
+        values = {"qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0, "bb_x": 0.02, "bb_y": 0.02}
+
+        def get(self, _: Any, key: str) -> float:  # noqa: PLR0917, upstream calls it so
+            return self.values[key]
+
+    controller = object.__new__(PickCubeController)
+    controller.objects = [None, _Cube()]
+    upstream = controller.grasp_candidates(_X())
+    assert len(upstream) == 36
+
+    def described(*, opening: float, tilt_deg: float, hand: np.ndarray) -> tuple[float, ...]:
+        heading = np.rad2deg(np.arctan2(hand[1, 0], hand[0, 0]))
+        offset = (heading + 45.0) % 90.0 - 45.0
+        return (round(opening, 4), round(tilt_deg, 3), round(offset, 3))
+
+    mine = {described(opening=h.opening, tilt_deg=h.tilt_deg, hand=h.hand) for h in ours}
+    for theirs in upstream:
+        key = (
+            round(theirs.opening, 4),
+            round(abs(np.rad2deg(theirs.tilt)), 3),
+            round(np.rad2deg(theirs.yaw_offset), 3),
+        )
+        assert key in mine, theirs
+    from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FLOOR_PICK_LEANS_DEG
+
+    # The grid on both wrist turns, then the package's own leans on four faces: before
+    # any roll or extra opening, and least tilted first.
+    tilts = [h.tilt_deg for h in ours[: 2 * len(upstream) + 4 * len(FLOOR_PICK_LEANS_DEG)]]
+    assert tilts[0] == 0.0
+    assert tilts == sorted(tilts)

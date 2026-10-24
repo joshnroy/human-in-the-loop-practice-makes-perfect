@@ -36,6 +36,14 @@ SETTLE_STEPS = 30
 INSIDE_MARGIN = 0.004
 OUTSIDE_GAP = 0.02
 PANEL_GAP = 0.02
+# The pocket family: the container slid sideways until one side wall's outer face is
+# POCKET_WALL_Y off the scene's centre line (the 25 cm smallbox PoC box's), in front of
+# the cupboard's bottom board rather than its side panel; then a cube on the floor
+# POCKET_WALL_GAPS from that face and POCKET_BOARD_GAPS in front of the board. The PoC's
+# refused floor picks spanned 1.4-13 cm and 0.2-4 cm.
+POCKET_WALL_Y = 0.125
+POCKET_WALL_GAPS = (0.01, 0.02, 0.04, 0.08)
+POCKET_BOARD_GAPS = (0.005, 0.025)
 SHELF_MARGIN = 0.006
 STATIC_PREDICATES = frozenset({"CubeOrder"})
 FLOOR_SKILLS = frozenset({"PickCubeFromFloor", "ReturnCubeToShelfFromFloor"})
@@ -300,6 +308,30 @@ class Placements:
         ]
 
     @staticmethod
+    def pockets(
+        *,
+        bounds: tuple[float, float, float, float],
+        wall: float,
+        cupboard: CupboardGeometry,
+        half: float,
+    ) -> list[tuple[str, float, float, float]]:
+        """(label, x, y, container shift along y): on the floor between a side wall's
+        outer face, the container slid to put it at `POCKET_WALL_Y`, and the cupboard's
+        bottom board, where a sweep that misses a narrow box drops its cubes."""
+        _, y0, _, y1 = bounds
+        return [
+            (
+                f"pocket-{side}-w{round(wg * 1000)}-b{round(bg * 1000)}",
+                cupboard.front_x - bg - half,
+                sign * (POCKET_WALL_Y + wg + half),
+                sign * POCKET_WALL_Y - (y1 + wall if sign > 0 else y0 - wall),
+            )
+            for side, sign in (("left", 1.0), ("right", -1.0))
+            for wg in POCKET_WALL_GAPS
+            for bg in POCKET_BOARD_GAPS
+        ]
+
+    @staticmethod
     def beside_panels(*, cupboard: CupboardGeometry, half: float) -> list[tuple[str, float, float]]:
         y = cupboard.panel_outer_y + PANEL_GAP + half
         xs = {
@@ -365,6 +397,17 @@ class Setups:
     def place(*, name: str, position: Any, quat: Any) -> Callable[..., str | None]:
         def setup(*, env: SweepOffShelf3DEnvironment) -> str | None:
             Setups.teleport(env=env, name=name, position=position, quat=quat)
+            return None
+
+        return setup
+
+    @staticmethod
+    def shift_container(*, dy: float) -> Callable[..., str | None]:
+        def setup(*, env: SweepOffShelf3DEnvironment) -> str | None:
+            name = Container.name(env=env)
+            position, quat = env.backend().core().get_object(name).get_pose()
+            shifted = np.asarray(position, dtype=float) + np.array([0.0, dy, 0.0])
+            Setups.teleport(env=env, name=name, position=shifted, quat=quat)
             return None
 
         return setup
@@ -591,6 +634,26 @@ class StateFamilies:
                 ],
                 provenance=f"cube_{cube} on the floor at {label} ({x:.3f}, {y:.3f})",
                 setup=Setups.chain(Setups.cube_at(x=x, y=y, z=half + lift, cube=f"cube_{cube}")),
+            )
+        pockets = Placements.pockets(bounds=bounds, wall=wall, cupboard=cupboard, half=half)
+        for i, (label, x, y, shift) in enumerate(pockets):
+            cube = i % 5
+            yield StateSpec(
+                state_id=f"floor-{label}",
+                family="pocket",
+                seed=i,
+                cases=[
+                    case(skill="PickCubeFromFloor", cube=cube),
+                    case(skill="ReturnCubeToShelfFromFloor", cube=cube),
+                ],
+                provenance=(
+                    f"container slid {shift:+.3f} m along y; cube_{cube} on the floor in the "
+                    f"pocket at {label} ({x:.3f}, {y:.3f})"
+                ),
+                setup=Setups.chain(
+                    Setups.shift_container(dy=shift),
+                    Setups.cube_at(x=x, y=y, z=half + lift, cube=f"cube_{cube}"),
+                ),
             )
         for i, (label, x, y) in enumerate(Placements.shelf_edges(cupboard=cupboard, half=half)):
             cube = i % 5
