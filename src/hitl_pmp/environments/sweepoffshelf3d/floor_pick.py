@@ -13,17 +13,19 @@ So, as the shelf pick does (`KinderSkills.pick_cube_from_shelf`), the grasp and 
 are this package's and the planning is KINDER's:
 
 1. grasps on the cube as it lies, the pads on a pair of opposite side faces, the
-   approach vertical or leaning `FLOOR_PICK_LEANS_DEG` along the other face normal, the
-   pinch site as far back as keeps the closed pads' tips above the cube's support
-   (`FloorPicks.standoff`);
+   approach vertical, leaning `FLOOR_PICK_LEANS_DEG` along the other face normal or
+   tilted `FLOOR_PICK_ROLLS_DEG` along the closing axis, the pinch site as far back as
+   keeps the closed pads' tips above the cube's support (`FloorPicks.standoff`);
 2. bases on rings around the cube, sampled separately from the grasp, nearest the
    robot first;
 3. each (grasp, base) solved on MuJoCo's own kinematics at the grasp, the pre-grasp and
-   the end of the lift, and kept only if every robot geom stays upstream's
-   `PickCubeController.GRASP_OBSTACLE_CLEARANCE` from the box, the cupboard and the other
-   cubes there, with no other cube where the pads close (`KinderSkills.cube_between_pads`);
+   the end of the lift, the jaw already shaped to `FLOOR_PICK_APERTURE`, and kept only
+   if every robot geom stays `FLOOR_PICK_OBSTACLE_CLEARANCE` from the box, the cupboard
+   and the other cubes there, with no other cube where the pads close
+   (`KinderSkills.cube_between_pads`);
 4. KINDER's `shelf.PickShelfController` plans the base path, the arm to the pre-grasp
-   and the held-cube retract home, re-checked in MuJoCo (`KinderSkills.drive`); the
+   and the held-cube retract home with the fingers as the shaped jaw holds them (from
+   the drive to the grasp), re-checked in MuJoCo (`KinderSkills.drive`); the
    descent to the grasp and the straight lift run on MuJoCo's kinematics
    (`KinderSkills.settler`, `KinderSkills.lifter`), and the retract carries the cube at
    the shelf pick's reduced gain;
@@ -40,6 +42,7 @@ import numpy as np
 from .kinder_skills import (
     BOX,
     GRIP_STEPS,
+    GRIPPER_CLOSED,
     HOME_ARM,
     SHELF_PICK_CARRY_GAIN,
     SHELF_PICK_MAX_JUMP,
@@ -55,7 +58,25 @@ from .types import FloorGrasp
 
 # Leans of the approach from vertical (deg), about the closing axis, least first: a cube
 # with room around it keeps the vertical grasp, and a lean takes the wrist off a wall.
-FLOOR_PICK_LEANS_DEG = (0.0, 15.0, 30.0, 45.0)
+FLOOR_PICK_LEANS_DEG = (0.0, 15.0, 30.0, 45.0, 60.0)
+# Tilts of the approach (deg) toward the base along the closing axis, after every lean:
+# the pads closing toward a wall at the cube's far side, the wrist backed away from it.
+# A cube on the floor in front of the cupboard's bottom board has the cube shelf's front
+# edge 26 cm over it, and no lean about the closing axis took the wrist out from under it.
+FLOOR_PICK_ROLLS_DEG = (10.0, 20.0)
+# The gripper command (0 open, 1 closed) the jaw is shaped to before the approach, and
+# checked at: pads 22 mm either side of the site, 8 mm off a 2 cm cube's faces, against
+# 47 mm fully open. A cube 1.4 cm from the box's outer wall left no room for the open
+# pads or their linkage (2026-10-24 floor-pick-strip diagnosis).
+FLOOR_PICK_APERTURE = 0.6
+# How far (m) every arm and gripper geom stays from the box, the cupboard and the other
+# cubes at the grasp, the pre-grasp and the end of the lift: none, beyond not touching.
+# Ours, not upstream's -- a deviation pending Josh's approval. The tossing pick reserves
+# `PickCubeController.GRASP_OBSTACLE_CLEARANCE` (1 cm) against tracking error; in the
+# pocket between the box's outer wall and the cupboard's bottom board almost no grasp
+# keeps it. On the PoC's 25 refused poses, picks held: 1 cm 2/25, 5 mm 4/25, 2 mm 10/25
+# (2 executions missed), none 12/25.
+FLOOR_PICK_OBSTACLE_CLEARANCE = 0.0
 # Where the closed pads reach, in the pinch-site frame (m), measured on the live model
 # with the pads closed on the 2 cm cube: their tips ride 42 mm ahead of the site, and
 # each pad is 22 mm wide across the closing axis.
@@ -167,9 +188,16 @@ class FloorPicks:
 
         def plan(*args: Any, **kwargs: Any) -> Any:
             grasp = current[-1]
+            # The fingers as the shaped jaw holds them from the drive to the grasp (and
+            # no wider on the cube): planned open, the retract home from the end of a
+            # lift beside the box's wall started 13 mm into it, and never planned.
+            fingers = FloorPicks.shaped_fingers(robot=args[0])
+            start, goal = list(args[1]), list(args[2])
+            start[7:], goal[7:] = fingers, fingers
+            args = (args[0], start, goal, *args[3:])
             if kwargs.get("held_object") is not None:
                 # The retract home starts where the straight lift leaves the hand.
-                args = (args[0], [*grasp.lift_conf.tolist(), *list(args[1])[7:]], *args[2:])
+                args = (args[0], [*grasp.lift_conf.tolist(), *fingers], *args[2:])
             elif np.allclose(np.asarray(args[2])[:7], grasp.grasp_conf):
                 # Upstream's approach straight to the grasp: `PreGraspApproach` replaces
                 # it with its plan to the pre-grasp, so it is not planned.
@@ -205,6 +233,7 @@ class FloorPicks:
                 pick.lift = kinder.lifter(pre=grasp.lift, label=f"{label}_lift", cube=cube)
                 pick.pre_conf = grasp.pre_conf.tolist()
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
+                pick.approach_grip = FLOOR_PICK_APERTURE
                 params = kinder.facing_params(base=grasp.base, centre=centre, cube=cube)
                 outcome = kinder.drive(controller=pick, params=params, label=label)
             if outcome == "done":
@@ -244,7 +273,9 @@ class FloorPicks:
                 grasp_conf = self.clear_conf(pose=hand, base=base, cube=cube, seed=None)
                 if grasp_conf is None:
                     continue
-                if kinder.cube_between_pads(base=base, arm=grasp_conf, cube=cube):
+                if kinder.cube_between_pads(
+                    base=base, arm=grasp_conf, cube=cube, held=self.shaped_jaw()
+                ):
                     # A neighbour where the pads close: they would take both cubes (two
                     # cubes face to face in the box came out together and blocked the
                     # base), so the grasp is refused rather than tried last.
@@ -271,9 +302,10 @@ class FloorPicks:
         pads close on a pair of opposite side faces, the approach leans along the other
         faces' normal (`Frames.leaned`), the site `standoff` back from the centre.
 
-        After every centred grasp, the off-centre ones: for a grasp with a neighbour
-        on one side along the pads' width (`neighbour_side`), the same grasp shifted
-        `FLOOR_PICK_OFFSETS` away from it. A cube with neighbours on both sides gets none."""
+        Then the rolled ones (`FLOOR_PICK_ROLLS_DEG`), and after every centred grasp the
+        off-centre ones: for a grasp with a neighbour on one side along the pads' width
+        (`neighbour_side`), the same grasp shifted `FLOOR_PICK_OFFSETS` away from it. A
+        cube with neighbours on both sides gets none."""
         normal = KinderSkills.side_face_yaw(
             quaternion=self.shelf.core.get_object(cube).get_pose()[1]
         )
@@ -295,7 +327,38 @@ class FloorPicks:
                     moved = hand.copy()
                     moved[:3, 3] -= side * offset * toward
                     shifted.append((lean, moved))
+        for roll in FLOOR_PICK_ROLLS_DEG:
+            standoff = FloorPicks.rolled_standoff(roll_deg=roll)
+            for k in range(4):
+                face = normal + k * np.pi / 2
+                closing = np.array([np.cos(face), np.sin(face), 0.0])
+                rotation = FloorPicks.rolled(closing=closing, roll_deg=roll)
+                hand = Frames.pose(
+                    rotation=rotation, position=np.asarray(centre) - standoff * rotation[:, 2]
+                )
+                out.append((roll, hand))
         return out + shifted
+
+    @staticmethod
+    def rolled(*, closing: np.ndarray, roll_deg: float) -> np.ndarray:
+        """Gripper rotation: the approach tilted `roll_deg` from straight down toward the
+        horizontal `closing`, about the pads' width axis, the closing axis tilted with it
+        (local x the closing axis, local z the approach). The pad on the `closing` side
+        is the higher one."""
+        roll = np.deg2rad(roll_deg)
+        up = np.array([0.0, 0.0, 1.0])
+        approach = np.sin(roll) * closing - np.cos(roll) * up
+        tilted = np.cos(roll) * closing + np.sin(roll) * up
+        return np.column_stack([tilted, np.cross(approach, tilted), approach])
+
+    @staticmethod
+    def rolled_standoff(*, roll_deg: float) -> float:
+        """`standoff` for a rolled grasp: the lower closed pad's tip, `PAD_TIP_REACH`
+        along the approach and a cube half-size down the tilted closing axis, stays
+        `PAD_SUPPORT_MARGIN` above the cube's bottom face."""
+        roll = np.deg2rad(roll_deg)
+        drop = O.cube_half_size - PAD_SUPPORT_MARGIN - O.cube_half_size * np.sin(roll)
+        return float(max(CUBE_STANDOFF, PAD_TIP_REACH - drop / np.cos(roll)))
 
     def neighbour_side(
         self, *, cube: str, centre: np.ndarray, along: np.ndarray, across: np.ndarray
@@ -379,6 +442,7 @@ class FloorPicks:
                 base=base,
                 seed=HOME_ARM if seed is None else seed,
                 attempts=GRASP_IK_ATTEMPTS if seed is None else BRANCH_IK_ATTEMPTS,
+                held=self.shaped_jaw(),
             )
         except SkillFailed:
             return None
@@ -393,16 +457,15 @@ class FloorPicks:
         return self.kinder.wrapped(arm=conf)
 
     def keeps_clearance(self, *, base: np.ndarray, arm: np.ndarray, cube: str) -> bool:
-        """Every collision geom of the arm and gripper at least upstream's
-        `PickCubeController.GRASP_OBSTACLE_CLEARANCE` from the box, the cupboard and every
-        cube but `cube`, at this base and arm. Upstream reserves it, in its own planning
-        scene, from every non-target obstacle on the way down to the grasp."""
-        from kinder_models.dynamic3d.tossing.parameterized_skills import PickCubeController
-
+        """Every collision geom of the arm and gripper, the jaw shaped (`shaped_jaw`), at
+        least `FLOOR_PICK_OBSTACLE_CLEARANCE` from the box, the cupboard and every cube
+        but `cube`, at this base and arm."""
         shelf = self.shelf
         m, d = shelf.model, shelf.ik_data
-        clearance = PickCubeController.GRASP_OBSTACLE_CLEARANCE
+        clearance = FLOOR_PICK_OBSTACLE_CLEARANCE
         d.qpos[:] = shelf.data.qpos
+        for address, value in self.shaped_jaw().items():
+            d.qpos[address] = value
         d.qpos[shelf.ba] = base
         d.qpos[shelf.qa] = arm
         shelf.mujoco.mj_kinematics(m, d)
@@ -412,6 +475,25 @@ class FloorPicks:
                 if shelf.mujoco.mj_geomDistance(m, d, g, f, clearance, None) < clearance:
                     return False
         return True
+
+    def shaped_jaw(self) -> dict[int, float]:
+        """The gripper joints (qpos address: value) as `FLOOR_PICK_APERTURE` leaves them:
+        `GRIPPER_CLOSED` scaled, within 0.01 rad of where the jaw settles at that command."""
+        m = self.shelf.model
+        return {
+            int(m.jnt_qposadr[m.joint(f"robot_{side}_{joint}").id]): closed * FLOOR_PICK_APERTURE
+            for side in ("left", "right")
+            for joint, closed in GRIPPER_CLOSED.items()
+        }
+
+    @staticmethod
+    def shaped_fingers(*, robot: Any) -> list[float]:
+        """KINDER's PyBullet finger joints at `FLOOR_PICK_APERTURE` of the way from its
+        open finger state to its closed one."""
+        opened = np.asarray(robot.open_fingers_state, dtype=float)
+        closed = np.asarray(robot.closed_fingers_state, dtype=float)
+        state = opened + FLOOR_PICK_APERTURE * (closed - opened)
+        return list(robot.finger_state_to_joints(state.item() if state.ndim == 0 else list(state)))
 
     def arm_geoms(self) -> list[int]:
         """The robot's collision geoms but the mobile base's: the arm and the gripper,

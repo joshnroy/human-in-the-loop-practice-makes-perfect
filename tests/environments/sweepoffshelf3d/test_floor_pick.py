@@ -131,15 +131,16 @@ def test_a_cube_wedged_in_a_box_corner_is_refused_without_moving_it(*, env, stat
     ("state_id", "cube"),
     [("harvest-ReturnCubeToShelfFromBox-17", "cube_1"), ("floor-out-left-near", "cube_0")],
 )
-def test_every_candidate_keeps_upstreams_clearance_from_the_box_and_cupboard(
+def test_every_candidate_keeps_its_clearance_from_the_box_and_cupboard(
     *, env, states, state_id, cube
 ):
     """Measured independently of the search's own check: at the grasp, the pre-grasp and
-    the end of the lift, no arm or gripper geom comes within upstream's
-    `PickCubeController.GRASP_OBSTACLE_CLEARANCE` of the box, the cupboard or another cube."""
-    from kinder_models.dynamic3d.tossing.parameterized_skills import PickCubeController
-
-    from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FloorPicks
+    the end of the lift, the jaw shaped as it will be there, no arm or gripper geom comes
+    within `FLOOR_PICK_OBSTACLE_CLEARANCE` of the box, the cupboard or another cube."""
+    from hitl_pmp.environments.sweepoffshelf3d.floor_pick import (
+        FLOOR_PICK_OBSTACLE_CLEARANCE,
+        FloorPicks,
+    )
 
     _restore(env=env, states=states, state_id=state_id)
     kinder = env.controllers()._kinder  # noqa: SLF001
@@ -161,11 +162,14 @@ def test_every_candidate_keeps_upstreams_clearance_from_the_box_and_cupboard(
         for g in sorted(shelf.robot_geoms)
         if collides(g=g) and m.body(m.geom_bodyid[g]).name != "robot_base_link"
     ]
-    clearance = PickCubeController.GRASP_OBSTACLE_CLEARANCE
+    clearance = FLOOR_PICK_OBSTACLE_CLEARANCE
+    picks = FloorPicks(kinder=kinder)
     seen = 0
-    for grasp in FloorPicks(kinder=kinder).candidates(cube=cube):
+    for grasp in picks.candidates(cube=cube):
         for conf in (grasp.grasp_conf, grasp.pre_conf, grasp.lift_conf):
             d.qpos[:] = shelf.data.qpos
+            for address, value in picks.shaped_jaw().items():
+                d.qpos[address] = value
             d.qpos[shelf.ba] = grasp.base
             d.qpos[shelf.qa] = conf
             mujoco.mj_kinematics(m, d)

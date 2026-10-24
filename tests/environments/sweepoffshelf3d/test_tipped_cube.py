@@ -142,9 +142,10 @@ def test_kinder_drives_to_the_base_facing_params_was_given(*, quaternion, headin
 
 @pytest.mark.parametrize("quaternion", QUATERNIONS, ids=lambda q: np.round(q, 3).tolist().__str__())
 def test_floor_grasps_close_on_a_pair_of_the_cubes_side_faces(*, quaternion, monkeypatch):
-    """Every floor/box grasp's pads close along one of the cube's horizontal axes,
-    however the cube lies: on a tipped cube the x axis is vertical, so faces read off it
-    put the pads across the cube at an arbitrary angle."""
+    """Every floor/box grasp's pads close along one of the cube's horizontal axes (a
+    rolled grasp's tilted up out of the horizontal plane), however the cube lies: on a
+    tipped cube the x axis is vertical, so faces read off it put the pads across the
+    cube at an arbitrary angle."""
     centre = np.array([1.25, -0.07, 0.02])
     picks = FloorPicks(kinder=_kinder(centre=centre, quaternion=quaternion))
     monkeypatch.setattr(picks, "neighbour_side", lambda **_: 0.0)
@@ -152,7 +153,8 @@ def test_floor_grasps_close_on_a_pair_of_the_cubes_side_faces(*, quaternion, mon
     assert hands
     horizontal = _horizontal_axes(quaternion=quaternion)
     for _, hand in hands:
-        closing = hand[:3, 0]
+        closing = np.array([hand[0, 0], hand[1, 0], 0.0])
+        closing /= np.linalg.norm(closing)
         assert max(abs(float(closing @ axis)) for axis in horizontal) > 0.999, closing
 
 
