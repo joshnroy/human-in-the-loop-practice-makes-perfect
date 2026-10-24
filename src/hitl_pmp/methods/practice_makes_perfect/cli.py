@@ -1,7 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.practice_costs import SkillStepCosts
@@ -12,6 +12,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
+from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
@@ -291,6 +292,15 @@ class Tossing3DPomdpCli(EesCli):
     }
 
     @staticmethod
+    def num_rollouts(text: str, /) -> int | None:  # noqa: PLR0917 -- argparse's `type`
+        if text == "all":
+            return None
+        value = int(text)
+        if value < 1:
+            raise argparse.ArgumentTypeError("num rollouts must be 'all' or at least 1")
+        return value
+
+    @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         EesCli.add_arguments(parser=parser)
         parser.set_defaults(goal_pursuit_horizon=0)
@@ -329,6 +339,30 @@ class Tossing3DPomdpCli(EesCli):
                 "Weight on negative log observation probability: averaged over outcomes "
                 "in expectimax, or accumulated on the determinized sampled path."
             ),
+        )
+        parser.add_argument(
+            "--pomdp-draw-scope",
+            choices=get_args(DrawScope),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_draw_scope"].default,
+            help="Determinized A* only: which search nodes share one sampled outcome per "
+            "action. node: none (each node draws afresh, so a cheap reset re-rolls); "
+            "state: nodes with the same atoms and acting-skill belief; skill: nodes with "
+            "the same acting-skill belief, wherever it is attempted.",
+        )
+        parser.add_argument(
+            "--pomdp-determinized-variant",
+            choices=get_args(DeterminizedVariant),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_determinized_variant"].default,
+            help="Determinized A* only. algorithm3: one sampled outcome per (node, action), "
+            "nodes keyed with their cost. curtis: Curtis et al.'s PO_DAStar -- one child per "
+            "distinct outcome, each charged -w log p, nodes keyed by the belief alone.",
+        )
+        parser.add_argument(
+            "--pomdp-num-rollouts",
+            type=Tossing3DPomdpCli.num_rollouts,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_num_rollouts"].default,
+            help="Curtis variant only: outcome draws per (node, action), branching on their "
+            "empirical frequencies; 'all' (the default) enumerates every outcome.",
         )
         parser.add_argument(
             "--pomdp-log-full-search-tree",
@@ -480,6 +514,9 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
+                pomdp_draw_scope=args.pomdp_draw_scope,
+                pomdp_determinized_variant=args.pomdp_determinized_variant,
+                pomdp_num_rollouts=args.pomdp_num_rollouts,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_competence_model=args.pomdp_competence_model,

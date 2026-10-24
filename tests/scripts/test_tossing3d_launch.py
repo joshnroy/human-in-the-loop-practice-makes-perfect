@@ -12,10 +12,13 @@ ARMS = [
     "ees",
     "expectimax",
     "determinized",
+    "determinized-curtis",
     "ees-always-ask",
     "expectimax-always-ask",
     "determinized-always-ask",
+    "determinized-curtis-always-ask",
 ]
+CURTIS_ARMS = ["determinized-curtis", "determinized-curtis-always-ask"]
 
 
 def _parse(*, name: str, seed: int = 0) -> object:
@@ -25,7 +28,7 @@ def _parse(*, name: str, seed: int = 0) -> object:
     )
 
 
-def test_the_plan_is_six_arms_over_seeds_zero_to_five() -> None:
+def test_the_plan_is_eight_arms_over_seeds_zero_to_five() -> None:
     # Josh, 2026-10-22: six seeds per classical arm, so a paired sign test can reach 0.031.
     assert list(Tossing3DLaunch.arms()) == ARMS
     assert SEEDS == 6
@@ -48,9 +51,15 @@ def test_the_planner_arms_are_the_canonical_preset(*, name: str) -> None:
     args = _parse(name=name)
     assert args.method == "pomdp"
     assert args.preset == "tossing3d-canonical"
-    assert args.pomdp_observation_probability_weight == 0.0
     solver = "determinized_astar" if name.startswith("determinized") else "expectimax"
     assert args.pomdp_solver == solver
+    # Josh, 2026-10-23: determinized also as Curtis et al.'s PO_DAStar (#577), every
+    # outcome enumerated at lambda = 0.01, the value that passed the 3,200-step gate.
+    curtis = name in CURTIS_ARMS
+    assert args.pomdp_determinized_variant == ("curtis" if curtis else "algorithm3")
+    assert args.pomdp_num_rollouts is None
+    assert args.pomdp_observation_probability_weight == (0.01 if curtis else 0.0)
+    assert args.pomdp_draw_scope == "node"
 
 
 @pytest.mark.parametrize("name", ARMS)
@@ -85,7 +94,7 @@ def test_every_arm_stops_after_three_perfect_evaluations_in_a_row(*, name: str) 
 def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:
     arms = list(Tossing3DLaunch.arms().values())
     lines = Tossing3DLaunch.della_manifest(arms=arms, size=FULL, sha="abc123", tag="t3")
-    assert len(lines) == 36
+    assert len(lines) == 48
     seen = set()
     for line in lines:
         name, sha, arm, seed, out, argv = line.split("\t")
@@ -96,6 +105,26 @@ def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:
         assert parsed[parsed.index("--output-dir") + 1] == out
         seen.add((arm, int(seed)))
     assert seen == {(arm, seed) for arm in ARMS for seed in range(6)}
+
+
+def test_the_curtis_arms_share_the_determinized_della_group() -> None:
+    groups = {
+        name: Tossing3DLaunch.della_group(arm=arm) for name, arm in Tossing3DLaunch.arms().items()
+    }
+    assert [name for name, group in groups.items() if group == "determinized"] == [
+        "determinized",
+        "determinized-curtis",
+        "determinized-always-ask",
+        "determinized-curtis-always-ask",
+    ]
+
+
+def test_the_curtis_arms_alone_are_one_twelve_task_manifest() -> None:
+    arms = [Tossing3DLaunch.arms()[name] for name in CURTIS_ARMS]
+    lines = Tossing3DLaunch.della_manifest(arms=arms, size=FULL, sha="abc123", tag="t3c")
+    assert [(line.split("\t")[2], int(line.split("\t")[3])) for line in lines] == [
+        (arm, seed) for arm in CURTIS_ARMS for seed in range(6)
+    ]
 
 
 def test_the_della_time_limits_are_twice_the_dry_run_projection() -> None:
