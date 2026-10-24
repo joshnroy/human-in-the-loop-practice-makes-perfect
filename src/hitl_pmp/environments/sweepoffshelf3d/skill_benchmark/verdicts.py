@@ -53,12 +53,14 @@ REPORT_ONLY: dict[str, str] = {
     ),
 }
 # A pair-count target for a continuous-parameter skill (Josh, 2026-10-23), set from the
-# measured count (2026-10-24): the angled stroke's gate run at 01aae2153 found a
-# succeeding setting for 37/40 (state, target cube) pairs. The three without one are
-# wiper-in-hand-s1-l3/cube_0 (a corner cube at y -0.225), wiper-in-hand-s0-l3/cube_3 and
-# wiper-in-hand-s1-l0/cube_3.
+# measured count on the 30 cm box (2026-10-24): the gate run at 6cd7ac3d5 found a
+# succeeding setting for 30/40 (state, target cube) pairs (37/40 on the 50 cm box). The
+# 10 without one are cubes at |y| 0.17-0.24, beyond the box's +-0.14 interior and near
+# a side panel: a turned stroke's head must clear the cupboard's panels, which starts it
+# in front of such a cube, so no stroke engages it (0/400 landed at +-30 to +-60 deg).
+# Those cubes go by pick-and-place or a human reset.
 SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
-    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=37, out_of=40),
+    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=30, out_of=40),
 }
 # (line offset [m], stroke angle [deg]) (Josh, 2026-10-24): offsets either side of the
 # cube, none over it, out to the bound; angles within +/- 30 deg of the straight pull.
