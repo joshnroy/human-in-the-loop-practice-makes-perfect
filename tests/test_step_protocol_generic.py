@@ -349,3 +349,21 @@ def test_the_domain_is_told_each_actions_place_in_the_cycle_and_the_budget(
     assert all(c["budget"] == budget and c["max_actions"] == 20 for c in progress)
     first_cycle = [c["action"] for c in progress if c["cycle"] == 0]
     assert first_cycle == list(range(1, len(first_cycle) + 1))
+
+
+def test_a_stop_file_placed_before_the_run_measures_only_the_untrained_policy(
+    *, tmp_path: Path
+) -> None:
+    # `sweepoffshelf3d_launch headroom` relies on this to run a launch's exact argv for
+    # its step-0 evaluation alone.
+    output = tmp_path / "run"
+    output.mkdir()
+    (output / "STOP").touch()
+    _run(args=_args(output=output))
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    assert [e["practice_steps"] for e in events if e["event"] == "measurement"] == [0]
+    assert not [e for e in events if e["event"] in {"robot", "human", "session_start"}]
+    assert events[-1] == {**events[-1], "event": "practice_end", "reason": "external_stop"}
+    assert sorted(p.name for p in (output / "evaluations").iterdir()) == ["0000"]
+    (evaluation,) = json.loads((output / "step_evaluations.json").read_text())
+    assert evaluation["complete"] and evaluation["num_total"] == 2
