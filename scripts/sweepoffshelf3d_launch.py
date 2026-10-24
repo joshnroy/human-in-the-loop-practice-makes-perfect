@@ -16,20 +16,23 @@ into `<results-root>/<arm>/<method>/<seed>/`. Run it through `scripts/with_env.s
 the checkout under test, so `hitl_pmp` and KINDER both import from it.
 
 The plan (Josh, 2026-10-14 and 2026-10-20):
-- arms: EES, ours with determinized A*, ours with expectimax at depth 6, and an
-  always-ask variant of each: six arms. Depth 7 was dropped (Josh, 2026-10-20: "let's
-  drop d7") and stays selectable with `--expectimax-depths 6 7`. "Ours" is
-  `--method pomdp` with Model B (`local_trend`).
+- arms: EES, ours with determinized A* (as is, and as Curtis et al.'s PO_DAStar at
+  lambda 0.01, `cccc-determinized-curtis`, Josh 2026-10-23), ours with expectimax at
+  depth 6, and an always-ask variant of each: eight arms. Depth 7 was dropped (Josh,
+  2026-10-20: "let's drop d7") and stays selectable with `--expectimax-depths 6 7`.
+  "Ours" is `--method pomdp` with Model B (`local_trend`).
 - p = 1 (`--reset-cubes-success-probability 1`), seeds 0-5 (six, because a paired exact
   sign-flip test over five pairs cannot reach p < 0.05).
 - 85,000 counted practice steps, an evaluation every 15,000, 3,000 control steps per
   held-out task, 10 tasks, stop after 3 perfect evaluations, sessions of <= 20 actions.
 - `--pomdp-observation-probability-weight 0.0`: the method's default is 0.1, and at 0.1
-  the planner STOPs at the root. EES uses a Beta(1, 3) prior, a labelled deviation from
-  the paper's Beta(10, 1). EES also runs WITHOUT skip_perfect, a second labelled deviation:
-  predicators' default (`active_sampler_explorer_skip_perfect = True`) scores a skill
-  whose measured success rate is 1.0 at -inf, and a skill can measure 1.0 after only a
-  few samples, so it would be wrongly treated as mastered (Josh, 2026-10-21).
+  the planner STOPs at the root. The Curtis arms alone set 0.01: there the weight is the
+  lambda of each outcome's -lambda log p charge. EES uses a Beta(1, 3) prior, a
+  labelled deviation from the paper's Beta(10, 1). EES also runs WITHOUT skip_perfect, a
+  second labelled deviation: predicators' default
+  (`active_sampler_explorer_skip_perfect = True`) scores a skill whose measured success
+  rate is 1.0 at -inf, and a skill can measure 1.0 after only a few samples, so it would
+  be wrongly treated as mastered (Josh, 2026-10-21).
   Step accounting: 0.01 per control step, each human reset takes 1 counted step of the
   budget, lambda 3e-4. The lab2 scene is the environment's default; no arm passes
   `--no-scene-bg`.
@@ -94,7 +97,7 @@ On a cluster, `print` gives each arm's per-seed argv; run it with the job's own
 
 `della` writes one Slurm array per time group, since an array shares one `--time`:
 `<out>/manifest-<group>.tsv` (one line per arm x seed: name, sha, arm, seed, output dir,
-`hitl_pmp.cli` argv, tab-separated) and `<out>/array-<group>.sbatch`, 36 tasks in all for
+`hitl_pmp.cli` argv, tab-separated) and `<out>/array-<group>.sbatch`, 48 tasks in all for
 the plan, and submits nothing. The groups and their limits are `DELLA_GROUPS`: `ees`
 24 h, `determinized` 72 h (to be set from its Della dry run), `expectimax` 72 h;
 `--della-time GROUP=HH:MM:SS` and `--della-qos GROUP=QOS` override them. No QOS is set
@@ -221,6 +224,14 @@ PLANNER = [
     "--no-pomdp-log-full-search-tree",
     "--no-reproduce-predicators-explore-target-only",
 ]  # fmt: skip
+# Josh, 2026-10-23: determinized A* also as Curtis et al.'s PO_DAStar (#577), as on
+# Tossing3D (#579): every outcome its own child charged -lambda log p, at lambda 0.01,
+# the value that passed Tossing3D's 3,200-step gate (0.1 STOPs at the first decision).
+# Lambda is the observation-probability weight, so it replaces PLANNER's 0.0 in place.
+CURTIS_LAMBDA = "0.01"
+CURTIS = ["--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "all"]
+_WEIGHT = PLANNER.index("--pomdp-observation-probability-weight") + 1
+CURTIS_PLANNER = [*PLANNER[:_WEIGHT], CURTIS_LAMBDA, *PLANNER[_WEIGHT + 1 :]]
 
 
 class ShelfArm(BaseModel):
@@ -243,6 +254,12 @@ class ShelfLaunch:
                 name="cccc-determinized",
                 method="pomdp",
                 flags=["--pomdp-solver", "determinized_astar", *PLANNER],
+                always_ask=False,
+            ),
+            ShelfArm(
+                name="cccc-determinized-curtis",
+                method="pomdp",
+                flags=["--pomdp-solver", "determinized_astar", *CURTIS, *CURTIS_PLANNER],
                 always_ask=False,
             ),
             *(
