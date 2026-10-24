@@ -244,13 +244,15 @@ def test_the_sweep_grid_spans_the_whole_allowed_range() -> None:
     from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
 
     offsets = sorted({o for o, _ in SWEEP_GRID})
-    speeds = sorted({v for _, v in SWEEP_GRID})
-    (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
+    angles = sorted({a for _, a in SWEEP_GRID})
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
+    # Josh, 2026-10-24: offsets either side of the cube (none over it), the full
+    # offset range included, and angles within +/- 30 deg.
+    assert offsets == [-0.10, -0.05, -0.025, 0.025, 0.05, 0.10]
+    assert angles == [-30.0, -15.0, 0.0, 15.0, 30.0]
     assert (offsets[0], offsets[-1]) == (o_low, o_high)
-    assert (speeds[0], speeds[-1]) == (v_low, v_high)
-    # Both sides of the cube, and the lane straight over it.
-    assert 0.0 in offsets
-    assert [-o for o in offsets] == offsets[::-1]
+    assert a_low <= angles[0] and angles[-1] <= a_high
+    assert len(SWEEP_GRID) == len(offsets) * len(angles)
 
 
 # Per-skill thresholds (Josh, 2026-10-20): each is x/y of a skill's gated cases, and the

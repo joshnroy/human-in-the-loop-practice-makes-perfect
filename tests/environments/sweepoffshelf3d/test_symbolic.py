@@ -213,13 +213,13 @@ def test_only_the_sweep_has_continuous_parameters():
             assert skill.param_dim == 0
 
 
-def test_sweep_parameters_are_lane_offset_then_speed():
-    """[offset, speed]: the lane's offset from the target cube's y (m, > 0 on the
-    cube's +y side) and the pull speed (m/s). The head height is fixed, not sampled."""
-    (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
+def test_sweep_parameters_are_line_offset_then_angle():
+    """[offset, angle]: the line's offset from the target cube along the head (m) and
+    the stroke's turn from the straight pull (deg). Speed and height are fixed."""
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
     assert (o_low, o_high) == (-0.10, 0.10)
-    assert (v_low, v_high) == (0.05, 0.25)
-    assert S.SWEEP_HEIGHT == 0.01
+    assert (a_low, a_high) == (-45.0, 45.0)
+    assert not hasattr(S, "SWEEP_HEIGHT")
 
 
 def test_fast_downward_plans_to_the_goal_from_the_start():

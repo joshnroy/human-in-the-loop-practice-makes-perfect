@@ -11,10 +11,11 @@ worth a keyframe; with no recorder the skills run headless. Each of the six plan
 skills is one call that runs to completion or raises `SkillFailed`:
 
 - `pick_wiper()`: take the wiper off its home on top of the cupboard.
-- `sweep_shelf(cube=, offset=, speed=)`: one front-to-back stroke aimed at one cube on
-  shelf index 1, pulling it over the open front edge into the box. The lane is the
-  cube's y plus `offset` (m, [-0.10, 0.10]), clipped to the stroke limit; `speed` is
-  the pull speed in m/s, [0.05, 0.25]; the head rides SWEEP_HEIGHT over the board.
+- `sweep_shelf(cube=, offset=, angle=)`: one stroke aimed at one cube on shelf index
+  1, pulling it over the open front edge into the box. The stroke is turned `angle`
+  deg ([-45, 45]) from the straight pull, on the line through the cube offset by
+  `offset` m ([-0.10, 0.10]) along the head (`AngledLane`). The pull speed
+  (SWEEP_SPEED) and the head's height over the board (SWEEP_HEIGHT) are fixed.
 - `return_wiper()`: put the held wiper back where it started on top of the cupboard.
 - `pick_cube_from_shelf(cube=)`, `pick_cube_from_floor(cube=)`,
   `place_cube_in_box(cube=)`.
@@ -106,11 +107,27 @@ HEAD_AHEAD = 0.80
 STROKE_START_X = 1.60
 STROKE_END_X = 1.355
 STROKE_LIMIT = 0.17
-# SweepShelf (Josh, 2026-10-23): one stroke aimed at one cube. The head height is fixed
-# (a cube is 2 cm tall, the head 1.5 cm); offset and speed are the sampled parameters.
-SWEEP_HEIGHT = 0.01
+# SweepShelf (Josh, 2026-10-24): one angled stroke aimed at one cube; the sampled
+# parameters are [offset, angle]. `angle` (deg) turns the whole stroke -- path and head
+# -- about z from the straight-out -x pull; > 0 pulls toward +y. The pull direction is
+# d = (-cos a, sin a), the head lies along n = (sin a, cos a) (n = +y at a = 0), and the
+# line passes the target cube at `offset` along n. The pull speed (m/s) and the head's
+# height over the board (m; a cube is 2 cm tall, the head 1.5 cm) are fixed.
 SWEEP_OFFSET_BOUNDS = (-0.10, 0.10)
-SWEEP_SPEED_BOUNDS = (0.05, 0.25)
+SWEEP_ANGLE_BOUNDS = (-45.0, 45.0)
+SWEEP_SPEED = 0.05
+SWEEP_HEIGHT = 0.01
+# The cupboard's inner faces the angled stroke keeps the wiper inside, less a margin:
+# side panels at |y| 0.291, back panel at x 1.617 (the straight stroke's head reaches
+# x 1.615 and |y| 0.271).
+CUPBOARD_INNER_Y = 0.291
+CUPBOARD_INNER_X = 1.617
+ANGLED_Y_MARGIN = 0.02
+ANGLED_X_MARGIN = 0.002
+HEAD_HALF = (0.015, 0.1)
+HANDLE_CENTRE = 0.115
+HANDLE_HALF = (0.1, 0.0075)
+ANGLED_MIN_STROKE = 0.05
 # Half-width of the strip under the handle (and the fingers on it) that must be free of
 # cubes where the wiper is laid down to reseat it: handle half-width + cube
 # half-diagonal + margin.
@@ -137,9 +154,7 @@ REGRASP_TRIES = 3
 CUBE_PICK_TRIES = 2
 GRASP_TEST_LIFT = 0.02
 PLACE_ON_SHELF_XY = (1.45, 0.0)
-BOX_DROP_XY = (1.235, 0.0)
 BOX_RELEASE_Z = 0.24
-DROP_XY = (1.235, 0.0)
 
 
 class SkillFailed(RuntimeError):
@@ -157,19 +172,86 @@ class StepBudgetExhausted(SkillFailed):
     """The run's hard control-step cap was reached; nothing here loops open."""
 
 
-class SweepSettings(BaseModel):
-    """`sweep_shelf`'s two parameters, validated against the documented ranges."""
-
-    model_config = ConfigDict(frozen=True)
-
-    height: float = Field(ge=0.0, le=0.04)
-    speed: float = Field(ge=0.05, le=0.25)
-
-
 class Recorder(Protocol):
     def on_step(self, *, skills: "ShelfSkills", label: str) -> None: ...
 
     def mark(self, *, skills: "ShelfSkills", label: str) -> None: ...
+
+
+class AngledLane(BaseModel):
+    """The rotated stroke's plan: head-centre points (x, y) and the stroke's axes."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    angle: float
+    direction: np.ndarray
+    normal: np.ndarray
+    mouth: np.ndarray
+    start: np.ndarray
+    end: np.ndarray
+    shift: float
+
+    @staticmethod
+    def axes(*, angle: float) -> tuple[np.ndarray, np.ndarray]:
+        a = np.deg2rad(angle)
+        return np.array([-np.cos(a), np.sin(a)]), np.array([np.sin(a), np.cos(a)])
+
+    @staticmethod
+    def footprint_ok(*, head: np.ndarray, angle: float, front_x: float) -> bool:
+        """Head and handle, flat at head centre `head`, clear of the cupboard's side and
+        back panels wherever they are inside the cupboard (x past the front face)."""
+        d, n = AngledLane.axes(angle=angle)
+        y_lim = CUPBOARD_INNER_Y - ANGLED_Y_MARGIN
+        x_lim = CUPBOARD_INNER_X - ANGLED_X_MARGIN
+        for centre, (hd, hn) in ((head, HEAD_HALF), (head + HANDLE_CENTRE * d, HANDLE_HALF)):
+            for u in np.linspace(-1.0, 1.0, 9):
+                for v in np.linspace(-1.0, 1.0, 9):
+                    if abs(u) < 1 and abs(v) < 1:
+                        continue
+                    p = centre + u * hd * d + v * hn * n
+                    if p[0] > x_lim:
+                        return False
+                    if p[0] > front_x - 0.01 and abs(p[1]) > y_lim:
+                        return False
+        return True
+
+    @staticmethod
+    def plan(*, cube_xy: Any, offset: float, angle: float, front_x: float) -> "AngledLane":
+        """The stroke for `offset`, `angle`: on the line through cube + offset * n along
+        d, from the furthest-back head centre at most STROKE_START_X with the wiper
+        inside the cupboard, to where the head's point level with the cube reaches
+        STROKE_END_X. Reach-in runs from the mouth (head centre at front_x - 0.12)
+        back along the same line. Like the straight stroke's lane clip, if no stroke on
+        that line keeps the wiper inside, the line is shifted along n, nearest first."""
+        d, n = AngledLane.axes(angle=angle)
+        cos_a, sin_a = -d[0], d[1]
+        mouth_x = front_x - 0.12
+        for shift in sorted(np.round(np.arange(-0.30, 0.30001, 0.005), 3), key=abs):
+            lateral = float(np.clip(offset + shift, -HEAD_HALF[1], HEAD_HALF[1]))
+            base = np.asarray(cube_xy, dtype=float)[:2] + (offset + shift) * n
+            s_end = float((base[0] - (STROKE_END_X + lateral * sin_a)) / cos_a)
+            s_mouth = float((base[0] - mouth_x) / cos_a)
+            s_start = float((base[0] - STROKE_START_X) / cos_a)
+            while s_start < s_end - ANGLED_MIN_STROKE and not AngledLane.footprint_ok(
+                head=base + s_start * d, angle=angle, front_x=front_x
+            ):
+                s_start += 0.005
+            if s_start >= s_end - ANGLED_MIN_STROKE:
+                continue
+            if all(
+                AngledLane.footprint_ok(head=base + s * d, angle=angle, front_x=front_x)
+                for s in np.arange(s_start, s_mouth + 1e-9, 0.01)
+            ):
+                return AngledLane(
+                    angle=angle,
+                    direction=d,
+                    normal=n,
+                    mouth=base + s_mouth * d,
+                    start=base + s_start * d,
+                    end=base + s_end * d,
+                    shift=float(shift),
+                )
+        raise SkillFailed(f"angled stroke: no line at angle {angle:+.0f} keeps the wiper inside")
 
 
 class SweepParams(BaseModel):
@@ -178,15 +260,7 @@ class SweepParams(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     offset: float = Field(ge=SWEEP_OFFSET_BOUNDS[0], le=SWEEP_OFFSET_BOUNDS[1])
-    speed: float = Field(ge=SWEEP_SPEED_BOUNDS[0], le=SWEEP_SPEED_BOUNDS[1])
-
-
-class SweepLane:
-    @staticmethod
-    def y(*, cube_y: float, offset: float) -> float:
-        """The stroke's head-centre y: the target cube's y plus `offset` (> 0 on the
-        cube's +y side), clipped so the head stays off the cupboard's side walls."""
-        return float(np.clip(cube_y + offset, -STROKE_LIMIT, STROKE_LIMIT))
+    angle: float = Field(ge=SWEEP_ANGLE_BOUNDS[0], le=SWEEP_ANGLE_BOUNDS[1])
 
 
 class Frames:
@@ -1066,8 +1140,10 @@ class ShelfSkills:
     def base_for(self, *, target: np.ndarray, ahead_of: float) -> tuple[np.ndarray, np.ndarray]:
         """(base, arm) about HEAD_AHEAD behind the head that reaches `target`."""
         tried = []
-        for ahead in HEAD_AHEADS:
-            base = np.array([min(ahead_of - ahead, BASE_X), target[1, 3], 0.0])
+        # Heading 0 first, as before the angled stroke; the turned headings only where
+        # none of those reaches (an angled wiper, e.g. reseated at its angle).
+        for heading, ahead in [(h, a) for h in (0.0, 0.4, -0.4, 0.8, -0.8) for a in HEAD_AHEADS]:
+            base = np.array([min(ahead_of - ahead, BASE_X), target[1, 3], heading])
             try:
                 arm, collision = self.ik(
                     position=target[:3, 3], rotation=target[:3, :3], base=base, holding=True
@@ -1124,49 +1200,6 @@ class ShelfSkills:
         a little in the friction grasp under its own weight."""
         assert self.in_hand is not None
         self.in_hand = np.linalg.inv(self.site_pose()) @ self.wiper_pose()
-
-    def lower_head(self, *, height: float, label: str) -> None:
-        """Bring the head down to `height` over the board, flat, closed loop on the
-        measured wiper. (Lowering the hand by pure translation from wherever it is
-        compounds a small droop each step: measured 6 deg of tilt and 40 control steps
-        per 2 mm.)"""
-        x = float(self.data.geom_xpos[self.head_geom][0])
-        for _ in range(LOWER_STEPS):
-            if abs(self.head_bottom() - self.board[CUBE_SHELF] - height) < LOWER_TOLERANCE:
-                return
-            self.hand_to(
-                target=self.level_target(x=x, above_board=height),
-                label=label,
-                tolerance=0.003,
-                limit=15,
-            )
-
-    def pull(self, *, distance: float, settings: SweepSettings, label: str) -> None:
-        """Pull the head toward the robot at `settings.speed`, `settings.height` over the
-        board, closed loop on the measured wiper (`level_target`) every PULL_CHUNK
-        control steps. The base follows the head; it moves at most 0.15 m/s."""
-        y = float(self.data.qpos[self.ba][1])
-        x = float(self.data.geom_xpos[self.head_geom][0])
-        start, began = x, self.ticks
-        end = x - distance
-        advance = settings.speed * CONTROL_DT * PULL_CHUNK
-        while x > end + 1e-9:
-            x = max(end, x - advance)
-            target = self.level_target(x=x, above_board=settings.height - PULL_PRESS)
-            base = np.array([min(x - HEAD_AHEAD, BASE_X), y, 0.0])
-            try:
-                arm, _ = self.ik(
-                    position=target[:3, 3], rotation=target[:3, :3], base=base, holding=True
-                )
-            except SkillFailed:
-                self.contact_shortfalls += 1
-                continue
-            self.base_target = base
-            for _ in range(PULL_CHUNK):
-                self.step(arm=arm, base=base, label=label)
-        travelled = start - float(self.data.geom_xpos[self.head_geom][0])
-        self.pull_speeds.append(travelled / max(1, self.ticks - began) / CONTROL_DT)
-        self.hold(count=10, label=label)
 
     def reseat_wiper(self, *, label: str) -> None:
         """Lay the wiper flat on the swept strip of the cube shelf, let go and take it
@@ -1239,57 +1272,321 @@ class ShelfSkills:
         reach = float(np.abs(rotation[0]) @ self.model.geom_size[self.head_geom])
         return float(self.data.geom_xpos[self.head_geom][0]) + reach > self.front_x
 
-    def stroke(self, *, y: float, settings: SweepSettings, name: str) -> None:
+    def level_target_at(self, *, head: Any, above_board: float) -> np.ndarray:
+        """`level_target` with the head moved to (x, y): the measured wiper levelled
+        about its head, its yaw kept, head bottom `above_board` over the cube shelf."""
+        here = self.data.geom_xpos[self.head_geom].copy()
+        target = self.level_target(x=float(here[0]), above_board=above_board)
+        target[0, 3] += float(head[0]) - float(here[0])
+        target[1, 3] += float(head[1]) - float(here[1])
+        return target
+
+    @staticmethod
+    def angled_base_options(*, hand: np.ndarray, lane: "AngledLane") -> list[np.ndarray]:
+        """Base poses tried for the lowered stroke start. First the straight stroke's
+        own base turned with the path -- HEAD_AHEAD behind the head along the pull,
+        heading turned by the stroke angle, so the arm holds the wiper as it does for
+        a straight stroke -- with x capped at BASE_X by sliding further along the
+        pull. Then the linear-plough probe's search: x at most BASE_X and 0.55 m
+        behind the hand, y beside it, heading turned up to 0.8 rad."""
+        d = lane.direction
+        heading = float(np.arctan2(-d[1], -d[0]))
+        turned = []
+        for ahead in HEAD_AHEADS:
+            xy = lane.start + ahead * d
+            if xy[0] > BASE_X:
+                xy = lane.start + (lane.start[0] - BASE_X) / -d[0] * d
+            turned.append(np.array([xy[0], xy[1], heading]))
+        return turned + [
+            np.array([min(bx, hand[0] - 0.55), hand[1] + dy, th])
+            for bx in (BASE_X, 0.72, 0.64)
+            for dy in (0.0, -0.1, 0.1, -0.2, 0.2)
+            for th in (0.0, -0.4, 0.4, -0.8, 0.8)
+        ]
+
+    def arm_clear(self, *, target: np.ndarray, base: np.ndarray, seed: Any = None) -> Any:
+        """Arm joints reaching `target` from `base` with the arm clear, or None."""
+        try:
+            q, collision = self.ik(
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                base=base,
+                holding=True,
+                attempts=6,
+                seed=seed,
+            )
+        except SkillFailed:
+            return None
+        if collision > CONTACT_PENETRATION or self.arm_touches(d=self.ik_data):
+            return None
+        # `ik` accepts a centimetre of residual; at full stretch near the board that
+        # centimetre is the difference between the head on the board and over a cube.
+        reached = self.site_at(base=np.asarray(base, dtype=float), arm=q)
+        if float(np.linalg.norm(reached[:3, 3] - target[:3, 3])) > 0.004:
+            return None
+        return q
+
+    @staticmethod
+    def follow_base(*, base0: np.ndarray, head0: np.ndarray, head: Any) -> np.ndarray:
+        """The base moved with the head (heading fixed), x capped at BASE_X."""
+        b = np.asarray(base0, dtype=float).copy()
+        b[0] = min(base0[0] + head[0] - head0[0], BASE_X)
+        b[1] = base0[1] + head[1] - head0[1]
+        return b
+
+    @staticmethod
+    def segment(*, a: np.ndarray, b: np.ndarray, step: float) -> list[np.ndarray]:
+        """Points from a to b at most `step` apart, a excluded, b included."""
+        count = max(1, int(np.ceil(float(np.linalg.norm(b - a)) / step)))
+        return [a + t * (b - a) for t in np.linspace(0.0, 1.0, count + 1)[1:]]
+
+    def angled_base(self, *, lane: AngledLane, low: float, hover: float) -> np.ndarray:
+        """First base pose (`angled_base_options`) from which the hand, the base
+        following the head, reaches every point of the hover reach-in and the lowered
+        stroke on one IK branch; raises if none does."""
+        assert self.in_hand is not None
+        in_hand = self.in_hand
+        stem = np.array([*lane.direction, 0.0])
+
+        def hand(*, xy: np.ndarray, z: float) -> np.ndarray:
+            return self.wiper_target(head=[xy[0], xy[1], z], stem=stem) @ np.linalg.inv(in_hand)
+
+        start = hand(xy=lane.start, z=low)
+        checks = [(lane.mouth, hover)]
+        checks += [(p, hover) for p in self.segment(a=lane.mouth, b=lane.start, step=0.05)]
+        checks += [(p, low) for p in self.segment(a=lane.start, b=lane.end, step=0.03)]
+        reached = 0
+        for base0 in self.angled_base_options(hand=start[:3, 3], lane=lane):
+            if self.arm_clear(target=start, base=base0) is None:
+                continue
+            reached += 1
+            q = None
+            for xy, z in checks:
+                b = self.follow_base(base0=base0, head0=lane.start, head=xy)
+                q = self.arm_clear(target=hand(xy=xy, z=z), base=b, seed=q)
+                if q is None:
+                    break
+            else:
+                return base0
+            if reached >= 6:
+                break
+        raise SkillFailed(
+            f"angled stroke: no base reaches the whole stroke at angle {lane.angle:+.0f} "
+            f"({reached} bases reached its start)"
+        )
+
+    def wiper_along(self, *, head: Any, stem: Any, base: np.ndarray, label: str) -> None:
+        """Base to `base` (if it moved), then the head to `head`, handle along `stem`."""
+        if np.max(np.abs(base - self.data.qpos[self.ba])) > 0.002:
+            self.move_base(target=base, label=label)
+        self.move_wiper(head=head, stem=stem, label=label)
+
+    def angled_stroke(self, *, cube_xy: Any, offset: float, angle: float, name: str) -> AngledLane:
+        """The straight `stroke` turned by `angle`: raise, base to the mouth, head over
+        the box then to the mouth at hover, reach in along the line to the start,
+        lower, pull along the line at SWEEP_SPEED and SWEEP_HEIGHT (closed loop on the
+        measured wiper, the base following the head), lift, withdraw along the line to
+        the mouth, turn the wiper back straight there, reseat if it turned in the
+        grasp, and out."""
+        lane = AngledLane.plan(cube_xy=cube_xy, offset=offset, angle=angle, front_x=self.front_x)
+        if lane.shift:
+            self.notes.append(f"{name}: line shifted {lane.shift:+.3f} m to stay inside")
+        stem = np.array([*lane.direction, 0.0])
         flat = self.board[CUBE_SHELF] + float(self.model.geom_size[self.head_geom][2])
         hover = flat + HOVER
-        mouth = self.front_x - 0.12
+        low = flat + SWEEP_HEIGHT - PULL_PRESS
+        self.phase = "raise"
         self.raise_hand(z=CARRY_Z, label=f"{name}_raise", holding=True)
-        self.move_base(target=[mouth - HEAD_AHEAD, y, 0.0], label=f"{name}_base")
+        self.phase = "plan_base"
+        base0 = self.angled_base(lane=lane, low=low, hover=hover)
+        mouth_base = self.follow_base(base0=base0, head0=lane.start, head=lane.mouth)
+        self.phase = "approach"
+        self.move_base(target=mouth_base, label=f"{name}_base")
         if self.head_over_cupboard():
-            # The base move can leave the head over the top board; going straight down
-            # from there pressed it onto the board and turned the wiper ~20 deg in the
-            # grasp, after which no base pose cleared the shelf above the cubes.
             head_z = float(self.data.geom_xpos[self.head_geom][2])
-            self.wiper_to(head=[mouth, y, head_z], label=f"{name}_to_mouth")
-        self.wiper_to(head=[mouth, y, hover + 0.12], label=f"{name}_above_box")
-        self.wiper_to(head=[mouth, y, hover], label=f"{name}_mouth")
+            self.move_wiper(head=[*lane.mouth, head_z], stem=stem, label=f"{name}_to_mouth")
+        self.move_wiper(head=[*lane.mouth, hover + 0.12], stem=stem, label=f"{name}_above_box")
+        self.move_wiper(head=[*lane.mouth, hover], stem=stem, label=f"{name}_mouth")
         self.recalibrate_grasp()
-        for x in np.arange(mouth + 0.05, STROKE_START_X + 1e-9, 0.05):
-            self.wiper_to(head=[x, y, hover], label=f"{name}_reach_in")
-        self.wiper_to(head=[STROKE_START_X, y, hover], label=f"{name}_reach_in")
+        for xy in self.segment(a=lane.mouth, b=lane.start, step=0.05):
+            b = self.follow_base(base0=base0, head0=lane.start, head=xy)
+            self.wiper_along(head=[*xy, hover], stem=stem, base=b, label=f"{name}_reach_in")
         self.recalibrate_grasp()
-        self.lower_head(height=settings.height, label=f"{name}_lower")
+        self.phase = "lower"
+        for _ in range(LOWER_STEPS):
+            if abs(self.head_bottom() - self.board[CUBE_SHELF] - SWEEP_HEIGHT) < LOWER_TOLERANCE:
+                break
+            self.arm_to(
+                target=self.level_target_at(head=lane.start, above_board=SWEEP_HEIGHT),
+                label=f"{name}_lower",
+                tolerance=0.003,
+                limit=15,
+            )
         self.mark(label=f"{name}: head behind cubes")
-        self.pull(distance=STROKE_START_X - STROKE_END_X, settings=settings, label=f"{name}_pull")
+        self.phase = "pull"
+        self.angled_pull(lane=lane, base0=base0, label=f"{name}_pull")
         self.mark(label=f"{name}: stroke end")
+        self.phase = "lift"
+        here = self.data.geom_xpos[self.head_geom][:2].copy()
+        for _ in range(3):
+            self.arm_to(
+                target=self.level_target_at(head=here, above_board=HOVER),
+                label=f"{name}_lift",
+                tolerance=0.006,
+                limit=CONTACT_STEP_LIMIT,
+            )
+        # Withdraw along the wiper's measured stem to the mouth (outside the cupboard),
+        # then turn the whole robot -- base and arm rigidly, the arm's joints held --
+        # about the head until the stem points at the robot again: the hand never moves
+        # relative to the base, so nothing loads the friction grasp (turning the hand
+        # instead dropped the wiper in 213/1960 grid strokes). From there it is the
+        # straight stroke's pose at the mouth; the base slides (still rigidly) to a lane
+        # the straight stroke uses and, if the wiper turned in the grasp, forward to the
+        # straight stroke's end to reseat from there.
+        self.recalibrate_grasp()
+        self.phase = "withdraw"
+        here = self.data.geom_xpos[self.head_geom][:2].copy()
+        base_here = self.data.qpos[self.ba].copy()
+        now = self.stem_direction()
+        flat_stem = np.array([now[0], now[1], 0.0]) / max(1e-9, float(np.hypot(now[0], now[1])))
+        mouth_x = self.front_x - 0.12
+        mouth = np.array([
+            mouth_x,
+            float(here[1] + (mouth_x - here[0]) * flat_stem[1] / min(-1e-6, flat_stem[0])),
+        ])
+        for xy in self.segment(a=here, b=mouth, step=0.05):
+            b = self.follow_base(base0=base_here, head0=here, head=xy)
+            self.wiper_along(head=[*xy, hover], stem=flat_stem, base=b, label=f"{name}_withdraw")
+        self.phase = "unturn"
+        self.unturn_rigidly(label=f"{name}_unturn")
+        head = self.data.geom_xpos[self.head_geom][:2].copy()
+        lane_y = float(np.clip(head[1], -STROKE_LIMIT, STROKE_LIMIT))
+        self.slide_base(dx=0.0, dy=lane_y - float(head[1]), label=f"{name}_to_lane")
         if self.slip_deg > RESEAT_TURN_DEG:
+            self.phase = "reseat"
+            head = self.data.geom_xpos[self.head_geom][:2].copy()
+            self.slide_base(dx=STROKE_END_X - float(head[0]), dy=0.0, label=f"{name}_reseat_from")
             self.reseat_wiper(label=f"{name}_reseat")
         else:
-            x = float(self.data.geom_xpos[self.head_geom][0])
-            for _ in range(3):
-                self.hand_to(target=self.level_target(x=x, above_board=HOVER), label=f"{name}_lift")
             self.recalibrate_grasp()
-        self.wiper_to(head=[mouth, y, hover + 0.12], label=f"{name}_out")
+        self.phase = "out"
+        head = self.data.geom_xpos[self.head_geom]
+        self.wiper_to(head=[mouth_x, float(head[1]), hover + 0.12], label=f"{name}_out")
         self.hold(count=15, label="settle")
         self.notes.append(f"{name}: {self.counts()['in_box']}/5 in box after the stroke")
+        return lane
 
-    def sweep_shelf(self, *, cube: str, offset: float, speed: float) -> None:
-        """One front-to-back stroke (`stroke`) on the lane `offset` beside `cube`, at
-        SWEEP_HEIGHT and `speed`. Needs the wiper in hand (from `pick_wiper`) and `cube`
-        on the shelf; raises unless `cube` ends in the box. Other cubes the stroke moves
-        are not this skill's concern."""
-        params = SweepParams(offset=offset, speed=speed)
+    def angled_pull(self, *, lane: AngledLane, base0: np.ndarray, label: str) -> None:
+        """Pull the lowered head from `lane.start` to `lane.end` at SWEEP_SPEED,
+        SWEEP_HEIGHT over the board, closed loop on the measured wiper every PULL_CHUNK
+        control steps, the base following the head."""
+        began = self.ticks
+        q = None
+        advance = SWEEP_SPEED * CONTROL_DT * PULL_CHUNK
+        for xy in self.segment(a=lane.start, b=lane.end, step=advance):
+            target = self.level_target_at(head=xy, above_board=SWEEP_HEIGHT - PULL_PRESS)
+            b = self.follow_base(base0=base0, head0=lane.start, head=xy)
+            try:
+                q, _ = self.ik(
+                    position=target[:3, 3],
+                    rotation=target[:3, :3],
+                    base=b,
+                    holding=True,
+                    attempts=6,
+                    seed=q,
+                )
+            except SkillFailed:
+                self.contact_shortfalls += 1
+                continue
+            self.base_target = b
+            for _ in range(PULL_CHUNK):
+                self.step(arm=q, base=b, label=label)
+        here = self.data.geom_xpos[self.head_geom][:2].copy()
+        travelled = float(np.linalg.norm(here - lane.start))
+        self.pull_speeds.append(travelled / max(1, self.ticks - began) / CONTROL_DT)
+        self.hold(count=10, label=label)
+
+    @staticmethod
+    def rotated_base(*, base: np.ndarray, pivot: Any, angle: float) -> np.ndarray:
+        """The base pose turned by `angle` (rad) about the vertical through `pivot`."""
+        c, s = np.cos(angle), np.sin(angle)
+        rel = np.asarray(base[:2], dtype=float) - np.asarray(pivot[:2], dtype=float)
+        xy = np.asarray(pivot[:2], dtype=float) + np.array([
+            c * rel[0] - s * rel[1],
+            s * rel[0] + c * rel[1],
+        ])
+        return np.array([xy[0], xy[1], float(base[2]) + angle])
+
+    @staticmethod
+    def stem_yaw(*, stem: Any) -> float:
+        """The stem's turn from pointing at the robot (-x), > 0 toward +y; turning the
+        robot by this much about the head brings it back to -x."""
+        return float(np.arctan2(stem[1], -stem[0]))
+
+    def unturn_rigidly(self, *, label: str, step: float = 0.05) -> None:
+        """Turn base and arm together (arm joints held) about the head until the stem
+        points at -x, `step` rad at a time."""
+        for _ in range(40):
+            left = self.stem_yaw(stem=self.stem_direction())
+            if abs(left) < np.deg2rad(1.5):
+                return
+            pivot = self.data.geom_xpos[self.head_geom][:2].copy()
+            base = self.rotated_base(
+                base=self.data.qpos[self.ba].copy(),
+                pivot=pivot,
+                angle=float(np.clip(left, -step, step)),
+            )
+            self.move_base(target=base, label=label)
+        raise SkillFailed(f"{label}: the stem did not come back to -x")
+
+    def slide_base(self, *, dx: float, dy: float, label: str) -> None:
+        """Translate the base (arm joints held), so the hand and wiper move rigidly,
+        x capped at BASE_X."""
+        if abs(dx) < 1e-4 and abs(dy) < 1e-4:
+            return
+        base = self.data.qpos[self.ba].copy()
+        base[0] = min(base[0] + dx, BASE_X)
+        base[1] += dy
+        self.move_base(target=base, label=label)
+
+    def arm_to(self, *, target: np.ndarray, label: str, tolerance: float, limit: int) -> None:
+        """`hand_to` with the base held where it is (the angled stroke's base is chosen
+        for the whole stroke): a shortfall is counted, not a failure."""
+        try:
+            self.move(
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                label=label,
+                limit=limit,
+                holding=True,
+                position_tolerance=tolerance,
+                orientation_tolerance=0.1,
+            )
+        except SkillFailed:
+            self.contact_shortfalls += 1
+
+    def sweep_shelf(self, *, cube: str, offset: float, angle: float) -> None:
+        """One stroke (`angled_stroke`) on the line `offset` beside `cube`, turned by
+        `angle` deg, at SWEEP_HEIGHT and SWEEP_SPEED. Needs the wiper in hand (from
+        `pick_wiper`) and `cube` on the shelf; raises unless `cube` ends in the box.
+        Other cubes the stroke moves are not this skill's concern."""
+        params = SweepParams(offset=offset, angle=angle)
         if self.in_hand is None:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
         if cube not in self.shelf_cubes():
             raise SkillFailed(f"sweep_shelf: {cube} is not on the shelf")
-        lane = SweepLane.y(cube_y=float(self.cube_position(cube=cube)[1]), offset=params.offset)
-        settings = SweepSettings(height=SWEEP_HEIGHT, speed=params.speed)
         self.watch_wiper, self.wiper_unheld_steps = True, 0
         try:
-            self.stroke(y=lane, settings=settings, name=f"{cube}_y{lane:+.2f}")
+            self.angled_stroke(
+                cube_xy=self.cube_position(cube=cube)[:2],
+                offset=params.offset,
+                angle=params.angle,
+                name=f"{cube}_o{params.offset:+.3f}_a{params.angle:+.0f}",
+            )
         except WiperLost as exc:
-            raise SkillFailed(f"sweep_shelf: {exc}") from exc
+            raise SkillFailed(f"sweep_shelf [{self.phase}]: {exc}") from exc
+        except SkillFailed as exc:
+            raise SkillFailed(f"[{self.phase}] {exc}") from exc
         finally:
             self.watch_wiper = False
         if not self.core.cube_in_box(cube):
@@ -1348,10 +1645,15 @@ class ShelfSkills:
 
     # --- cubes -------------------------------------------------------------------
 
+    def box_drop_xy(self) -> tuple[float, float]:
+        """The box's inner centre in the live scene: where a cube is let go over it."""
+        (x0, y0, x1, y1), _ = self.core.box_interior()
+        return (float((x0 + x1) / 2), float((y0 + y1) / 2))
+
     def drop_cube_into_box(self, *, cube: str = "cube_0") -> None:
         """Documented scene setup, not a skill: teleport one cube above the box."""
         state = self.core.get_object(cube)
-        state.set_pose([*DROP_XY, 0.10], [1.0, 0.0, 0.0, 0.0])
+        state.set_pose([*self.box_drop_xy(), 0.10], [1.0, 0.0, 0.0, 0.0])
         state.set_velocity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         self.hold(count=30, label="cube_settles_in_box")
         if not self.core.cube_in_box(cube):
@@ -1641,7 +1943,7 @@ class ShelfSkills:
         offset = here[:3, 3] - self.cube_position(cube=cube)
         low = here.copy()
         # Let go just above the rim: lower, the leaned wrist meets the box's near wall.
-        low[:3, 3] = np.array([*BOX_DROP_XY, BOX_RELEASE_Z]) + offset
+        low[:3, 3] = np.array([*self.box_drop_xy(), BOX_RELEASE_Z]) + offset
         high = low.copy()
         high[2, 3] += 0.12
         self.raise_hand(z=0.45, label="cube_raise", holding=True)

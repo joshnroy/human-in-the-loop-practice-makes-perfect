@@ -71,8 +71,8 @@ def _place(*, env, position, yaw_deg=180.0, tilt_deg=0.0, settle=0):
         backend.sim().step()
 
 
-def _act(*, env, skill, offset=-0.06, speed=0.05):
-    env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, offset, speed]))
+def _act(*, env, skill, offset=-0.06, angle=0.0):
+    env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, offset, angle]))
     return env.get_current_state().abstract_atoms
 
 

@@ -36,8 +36,8 @@ def _env():
         env.close()
 
 
-def _act(*, env, skill, cube=0, offset=-0.06, speed=0.05):
-    env.take_action(action=np.array([float(SKILL_IDS[skill]), float(cube), offset, speed]))
+def _act(*, env, skill, cube=0, offset=-0.06, angle=0.0):
+    env.take_action(action=np.array([float(SKILL_IDS[skill]), float(cube), offset, angle]))
     return env.get_current_state().abstract_atoms
 
 
@@ -304,7 +304,7 @@ def test_a_wiper_lost_from_the_hand_is_not_still_believed_held(*, env):
 def test_the_wiper_sweeps_the_shelf_and_goes_back(*, env):
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    atoms = _act(env=env, skill="SweepShelf", cube=0, offset=-0.06, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", cube=0, offset=-0.06, angle=0.0)
     # One stroke at cube_0, at the oracle's setting: seed 0's cube_0 goes in. Whether a
     # cube lands is the sweep's competence; the wiper staying in hand through the
     # retract that follows is not.
@@ -440,7 +440,7 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
     and stranded the hand inside the cupboard front."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills
 
-    pull = ShelfSkills.pull
+    pull = ShelfSkills.angled_pull
 
     def pull_then_drop(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
         pull(self, **kwargs)
@@ -448,8 +448,8 @@ def test_a_sweep_that_loses_the_wiper_stops_at_once_and_says_so(*, env, monkeypa
 
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    monkeypatch.setattr(ShelfSkills, "pull", pull_then_drop)
-    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
+    monkeypatch.setattr(ShelfSkills, "angled_pull", pull_then_drop)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert "no base pose" not in error, error
@@ -476,7 +476,7 @@ def test_a_wiper_lost_inside_a_tolerant_motion_still_fails_the_sweep_cleanly(*, 
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     monkeypatch.setattr(ShelfSkills, "raise_hand", drop_then_raise)
-    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     error = env.last_skill_error() or ""
     assert "wiper left the hand" in error, error
     assert ("HandEmpty", ("robot",)) in atoms
@@ -495,7 +495,7 @@ def _force_one_reseat(*, monkeypatch):
         SkillFailed,
     )
 
-    pull = ShelfSkills.pull
+    pull = ShelfSkills.angled_pull
     forced = []
 
     def pull_then_turn(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
@@ -509,7 +509,7 @@ def _force_one_reseat(*, monkeypatch):
         forced.append(True)
         self.slip_deg = RESEAT_TURN_DEG + 4.0
 
-    monkeypatch.setattr(ShelfSkills, "pull", pull_then_turn)
+    monkeypatch.setattr(ShelfSkills, "angled_pull", pull_then_turn)
 
 
 def _reseats(*, skills):
@@ -525,7 +525,7 @@ def test_a_forced_reseat_lets_go_takes_the_wiper_again_and_the_stroke_goes_on(*,
     _only_cube_0_on_the_shelf(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _force_one_reseat(monkeypatch=monkeypatch)
-    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     error = env.last_skill_error() or ""
     skills = env.controllers()._skills  # noqa: SLF001
     assert "left the hand" not in error, error
@@ -557,7 +557,7 @@ def test_the_wiper_check_is_back_on_as_soon_as_a_reseat_has_taken_the_wiper(*, e
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
     _force_one_reseat(monkeypatch=monkeypatch)
     monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat_then_drop)
-    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.05)
+    atoms = _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     error = env.last_skill_error() or ""
     assert "wiper left the hand during" in error, error
     assert "_reseat" not in error, error
@@ -639,7 +639,7 @@ def test_a_sweep_right_after_a_fresh_pick_does_not_reseat(*, env):
     no regrasp before the first stroke, so only the fresh pick zeroes the counter."""
     _left_turned_by_an_earlier_grasp(env=env)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.15)
+    _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     notes = env.controllers()._skills.notes  # noqa: SLF001
     assert not [n for n in notes if "set down after turning" in n], notes
     assert not [n for n in notes if f"{STALE_TURN_DEG:.1f} deg" in n], notes
@@ -651,7 +651,7 @@ def test_a_turn_in_this_grasp_still_reseats(*, env, monkeypatch):
     with is still set down and taken again after the stroke."""
     from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import ShelfSkills, SkillFailed
 
-    pull = ShelfSkills.pull
+    pull = ShelfSkills.angled_pull
     reseats = []
 
     def pull_and_turn(self, **kwargs):  # noqa: PLR0917 -- stands in for a method
@@ -665,9 +665,9 @@ def test_a_turn_in_this_grasp_still_reseats(*, env, monkeypatch):
 
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    monkeypatch.setattr(ShelfSkills, "pull", pull_and_turn)
+    monkeypatch.setattr(ShelfSkills, "angled_pull", pull_and_turn)
     monkeypatch.setattr(ShelfSkills, "reseat_wiper", reseat)
-    _act(env=env, skill="SweepShelf", offset=-0.06, speed=0.15)
+    _act(env=env, skill="SweepShelf", offset=-0.06, angle=0.0)
     assert len(reseats) == 1, env.last_skill_error()
     assert reseats[0][1] > RESEAT_TURN_DEG
 

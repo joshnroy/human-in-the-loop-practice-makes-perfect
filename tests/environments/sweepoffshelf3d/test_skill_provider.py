@@ -51,11 +51,11 @@ def _sweep(*, cube):
     return GroundSkill(skill=S.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, O.cubes[cube]))
 
 
-def test_a_sweep_encodes_its_target_cube_then_offset_and_speed():
+def test_a_sweep_encodes_its_target_cube_then_offset_and_angle():
     action = SweepOffShelf3DActions.encode(
-        ground_skill=_sweep(cube=4), params=np.array([-0.06, 0.1])
+        ground_skill=_sweep(cube=4), params=np.array([-0.06, 30.0])
     )
-    assert action.tolist() == [float(SKILL_IDS["SweepShelf"]), 4.0, -0.06, 0.1]
+    assert action.tolist() == [float(SKILL_IDS["SweepShelf"]), 4.0, -0.06, 30.0]
 
 
 def test_a_sweep_runs_the_sweep_controller_on_its_cube(*, monkeypatch):
@@ -63,31 +63,33 @@ def test_a_sweep_runs_the_sweep_controller_on_its_cube(*, monkeypatch):
     monkeypatch.setattr(
         SweepOffShelf3DControllers,
         "sweep_shelf",
-        lambda self, *, cube, offset, speed: calls.append((cube, offset, speed)),
+        lambda self, *, cube, offset, angle: calls.append((cube, offset, angle)),
     )
     action = SweepOffShelf3DActions.encode(
-        ground_skill=_sweep(cube=2), params=np.array([0.07, 0.2])
+        ground_skill=_sweep(cube=2), params=np.array([0.07, -15.0])
     )
     env = SweepOffShelf3DEnvironment()
     env._dispatch(skill_id=int(action[0]), values=action)  # noqa: SLF001
-    assert calls == [("cube_2", 0.07, 0.2)]
+    assert calls == [("cube_2", 0.07, -15.0)]
 
 
-def test_sampled_sweep_parameters_stay_inside_offset_and_speed_bounds():
+def test_sampled_sweep_parameters_stay_inside_offset_and_angle_bounds():
     provider = SweepOffShelf3DSkillProvider(env=SweepOffShelf3DEnvironment())
     rng = np.random.default_rng(0)
     draws = np.array([
         provider.sample_params(ground_skill=_sweep(cube=0), rng=rng) for _ in range(500)
     ])
     assert draws.shape == (500, 2)
-    (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
+    assert (a_low, a_high) == (-45.0, 45.0)
     assert draws[:, 0].min() >= o_low and draws[:, 0].max() <= o_high
-    assert draws[:, 1].min() >= v_low and draws[:, 1].max() <= v_high
-    # Both signs of offset are drawn: the lane goes on either side of the cube.
-    assert (draws[:, 0] < 0).any() and (draws[:, 0] > 0).any()
+    assert draws[:, 1].min() >= a_low and draws[:, 1].max() <= a_high
+    # Both signs of each are drawn: either side of the cube, turned either way.
+    for column in (0, 1):
+        assert (draws[:, column] < 0).any() and (draws[:, column] > 0).any()
 
 
 def test_the_oracle_sweeps_one_shelf_cube_inside_the_bounds():
-    (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
-    offset, speed = ORACLE_SWEEP_PARAMS
-    assert o_low <= offset <= o_high and v_low <= speed <= v_high
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
+    offset, angle = ORACLE_SWEEP_PARAMS
+    assert o_low <= offset <= o_high and a_low <= angle <= a_high

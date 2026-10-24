@@ -76,8 +76,8 @@ class SweepOffShelf3DControllers(BaseModel):
     def pick_wiper(self) -> None:
         self._run(skill="pick_wiper")
 
-    def sweep_shelf(self, *, cube: str, offset: float, speed: float) -> None:
-        self._run(skill="sweep_shelf", cube=cube, offset=offset, speed=speed)
+    def sweep_shelf(self, *, cube: str, offset: float, angle: float) -> None:
+        self._run(skill="sweep_shelf", cube=cube, offset=offset, angle=angle)
 
     def return_wiper(self) -> None:
         self._run(skill="return_wiper")

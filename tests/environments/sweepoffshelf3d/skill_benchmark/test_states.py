@@ -63,8 +63,8 @@ def test_case_ids_name_the_state_skill_cube_and_setting() -> None:
         == "layout-7-PickCubeFromShelf-cube_3"
     )
     assert (
-        BenchmarkCase(skill="SweepShelf", cube="cube_1", params=[-0.05, 0.25]).case_id(state_id="w")
-        == "w-SweepShelf-cube_1-p-0.05_0.25"
+        BenchmarkCase(skill="SweepShelf", cube="cube_1", params=[-0.05, 30.0]).case_id(state_id="w")
+        == "w-SweepShelf-cube_1-p-0.05_30"
     )
 
 
@@ -80,11 +80,11 @@ def test_a_case_is_run_only_where_its_operator_preconditions_hold() -> None:
     holding = [a for a in START_ATOMS if a not in {"HandEmpty(robot)", "WiperHome(wiper_0)"}]
     holding += ["HoldingWiper(robot,wiper_0)", "WiperAway(wiper_0)"]
     assert StateCapture.applicable(
-        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.0, 0.05]), atoms=holding
+        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.025, 15.0]), atoms=holding
     )
     swept = [a for a in holding if a != "OnShelf(cube_3)"]
     assert not StateCapture.applicable(
-        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.0, 0.05]), atoms=swept
+        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.025, 15.0]), atoms=swept
     )
 
 

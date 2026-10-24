@@ -199,7 +199,7 @@ class SweepOffShelf3DEnvironment(Environment):
         if skill_id == SKILL_IDS["PickWiper"]:
             controllers.pick_wiper()
         elif skill_id == SKILL_IDS["SweepShelf"]:
-            controllers.sweep_shelf(cube=cube, offset=float(values[2]), speed=float(values[3]))
+            controllers.sweep_shelf(cube=cube, offset=float(values[2]), angle=float(values[3]))
         elif skill_id == SKILL_IDS["ReturnWiper"]:
             controllers.return_wiper()
         elif skill_id == SKILL_IDS["PickCubeFromShelf"]:

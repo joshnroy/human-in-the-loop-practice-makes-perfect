@@ -13,9 +13,9 @@ from .objects import SweepOffShelf3DObjects as O
 from .predicates import SweepOffShelf3DAtoms, SweepOffShelf3DPredicates
 from .skills import SweepOffShelf3DSkills as S
 
-# The oracle's sweep: the lane 6 cm to the cube's -y side at the slowest pull, the best
-# cell of the one-stroke probe (20/26 at 0.05 m/s).
-ORACLE_SWEEP_PARAMS = (-0.06, 0.05)
+# The oracle's sweep: the straight stroke (angle 0) on the line 6 cm to the cube's -y
+# side, the best offset of the one-stroke probe (20/26 at the 0.05 m/s now fixed).
+ORACLE_SWEEP_PARAMS = (-0.06, 0.0)
 
 
 class SweepOffShelf3DSkillProvider(SkillProvider):

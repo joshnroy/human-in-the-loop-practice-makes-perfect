@@ -49,11 +49,12 @@ THRESHOLDS: dict[str, SkillThreshold] = {
 SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
     S.SWEEP_SHELF.name: SettingThreshold(min_pairs=38, out_of=40),
 }
-# (lane offset [m], pull speed [m/s]) over SweepShelf's whole allowed range.
+# (line offset [m], stroke angle [deg]) (Josh, 2026-10-24): offsets either side of the
+# cube, none over it, out to the bound; angles within +/- 30 deg of the straight pull.
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(
-    (offset, speed)
-    for offset in (-0.10, -0.075, -0.05, -0.025, 0.0, 0.025, 0.05, 0.075, 0.10)
-    for speed in (0.05, 0.15, 0.25)
+    (offset, angle)
+    for offset in (-0.10, -0.05, -0.025, 0.025, 0.05, 0.10)
+    for angle in (-30.0, -15.0, 0.0, 15.0, 30.0)
 )
 SCRIPTED_SKILLS = frozenset({S.SWEEP_SHELF.name, S.RETURN_WIPER.name})
 CANDIDATE_KINDS = frozenset({"no_plan", "plan_blocked", "executed", "execution_failed"})

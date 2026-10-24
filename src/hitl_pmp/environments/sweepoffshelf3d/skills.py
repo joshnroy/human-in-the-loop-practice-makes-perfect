@@ -5,14 +5,16 @@ cube starts (`RETURN_CUBE_SKILLS`). With them the robot can restore its own prac
 scene cube by cube; only the human can recover a fallen wiper or pour back every cube
 at once.
 
-Only `SweepShelf` has continuous parameters: `[offset, speed]`, the stroke lane's offset
-from its target cube's y and the pull speed. The head height is fixed at
-`SWEEP_HEIGHT`. A lane too close to the cube puts the wiper's handle on top of it, and
-one too far misses it, so the sampled range holds parameters that fail as well as ones
-that work, and there is something for practice to learn.
+Only `SweepShelf` has continuous parameters: `[offset, angle]`, the stroke line's
+offset from its target cube along the head and the stroke's turn from the straight
+pull. Pull speed and head height are fixed in the controller. A line too close to the
+cube puts the wiper's handle on top of it, one too far misses it, and a turned stroke
+can push the cube along the shelf instead of off it, so the sampled range holds
+parameters that fail as well as ones that work, and there is something for practice to
+learn.
 
-`SweepShelf(robot, wiper, box, cube)` is one front-to-back stroke aimed at one cube
-(Josh, 2026-10-23, a deliberate deviation from a whole-shelf sweep): it promises that
+`SweepShelf(robot, wiper, box, cube)` is one angled stroke aimed at one cube (Josh,
+2026-10-23/24, a deliberate deviation from a whole-shelf sweep): it promises that
 cube in the box and says nothing about the others. Whatever else the stroke moves is a
 side effect the planner observes and replans from. Like `PickCubeFromShelf`, it cannot
 know whether it moved the last shelf cube, so `AnyCubeOnShelf` is left as it was.
@@ -45,7 +47,7 @@ from .predicates import (
     WIPER_HOME,
     WIPER_ON_FLOOR,
 )
-from .scripted_skills import SWEEP_HEIGHT, SWEEP_OFFSET_BOUNDS, SWEEP_SPEED_BOUNDS
+from .scripted_skills import SWEEP_ANGLE_BOUNDS, SWEEP_OFFSET_BOUNDS
 
 RESET_CUBES_NAME = "reset_cubes"
 RESET_WIPER_NAME = "reset_wiper"
@@ -80,13 +82,11 @@ class SweepOffShelf3DSkills:
         for a, b in zip(_SLOTS, _SLOTS[1:], strict=False)
     )
 
-    # (lane offset from the target cube's y [m], > 0 on its +y side; pull speed [m/s]).
+    # (line offset from the target cube [m], > 0 on its +n side; stroke angle [deg]).
     SWEEP_BOUNDS: ClassVar[tuple[tuple[float, float], tuple[float, float]]] = (
         SWEEP_OFFSET_BOUNDS,
-        SWEEP_SPEED_BOUNDS,
+        SWEEP_ANGLE_BOUNDS,
     )
-    # The head's height over the board (m): fixed, not sampled.
-    SWEEP_HEIGHT: ClassVar[float] = SWEEP_HEIGHT
 
     PICK_WIPER: ClassVar[Skill] = Skill(
         name="PickWiper",
