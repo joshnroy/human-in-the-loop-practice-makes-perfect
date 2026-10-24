@@ -10,7 +10,8 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, get_args
 
 import numpy as np
 
@@ -23,6 +24,8 @@ from .types.determinized import (
     DeterminizedSearchDiagnostics,
     DeterminizedSearchNode,
     DeterminizedSearchQueueEntry,
+    DeterminizedVariant,
+    DrawScope,
 )
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
@@ -44,14 +47,33 @@ class DeterminizedAStarPlanner(
         seed: int,
         observation_probability_weight: float = 0.1,
         log_full_search_tree: bool = False,
+        draw_scope: DrawScope = "node",
+        variant: DeterminizedVariant = "algorithm3",
+        num_rollouts: int | None = None,
     ) -> None:
         assert math.isfinite(observation_probability_weight)
         assert observation_probability_weight >= 0.0
+        assert draw_scope in get_args(DrawScope), f"unknown draw scope {draw_scope!r}"
+        assert variant in get_args(DeterminizedVariant), f"unknown variant {variant!r}"
+        assert variant == "algorithm3" or draw_scope == "node", "curtis draws no shared outcome"
+        assert num_rollouts is None or num_rollouts >= 1
+        # "algorithm3": one sampled outcome per (node, action), nodes keyed with the
+        # accumulated cost. "curtis": Curtis et al.'s PO_DAStar.plan_next_action -- one
+        # child per distinct outcome of `num_rollouts` draws (None: every outcome, the
+        # many-rollout limit), each charged -w log of its own branch probability, and
+        # nodes keyed by the belief alone, the cost living only in g.
+        self.variant = variant
+        self.num_rollouts = num_rollouts
         self.max_iterations = max_iterations
         self.rng = np.random.default_rng(seed)
         # Algorithm 3's lambda: weight on the sampled observation log probability.
         self.observation_probability_weight = observation_probability_weight
         self.log_full_search_tree = log_full_search_tree
+        # "node": one independent draw per (search node, action) edge, so a node that a
+        # cheap reset makes new re-rolls the same skill's outcome. Otherwise one uniform
+        # per `model.outcome_draw_key(scope=...)` -- what the outcome distribution reads,
+        # with ("state") or without ("skill") the atoms -- shared by every node with it.
+        self.draw_scope = draw_scope
 
     def solve(
         self,
@@ -113,7 +135,8 @@ class DeterminizedAStarPlanner(
         ] = []
         # Algorithm 3's initial belief b_0 comprises the environment state, latent
         # belief state, and cumulative practice cost in our factored representation.
-        root_key = model.search_cache_key(
+        root_key = self.node_key(
+            model=model,
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
@@ -121,8 +144,9 @@ class DeterminizedAStarPlanner(
             # continuations. None preserves unrestricted graph-search merging.
             horizon=remaining_actions,
         )
-        # Our sampled stopping objective J(C, b), cached per belief-space node.
-        values_by_key = {root_key: root_value}
+        # Our sampled stopping objective J(C, b), cached per belief-space node with
+        # the cost it was evaluated at (a curtis node is reached at several costs).
+        values_by_key = {root_key: (root_value, summed_cost)}
         # Algorithm 3, line 3: Closed <- empty; Cost <- {b0: 0}. Here zero is
         # b0's cumulative search cost g (cost-to-come), not its objective value J.
         closed: set[object] = set()
@@ -134,6 +158,9 @@ class DeterminizedAStarPlanner(
             object,
             list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
         ] = {}
+        # The shared uniforms of the "state" and "skill" draw scopes, and how many
+        # draws reused one (under the key `reused`).
+        outcome_uniforms: dict[object, float] = {}
         reopened_nodes = 0
         cached_successor_relaxations = 0
         stale_queue_entries = 0
@@ -220,53 +247,27 @@ class DeterminizedAStarPlanner(
             if edges is None:
                 edges = []
                 sampled_edges[current_node.cache_info.key] = edges
-                actions = model.get_valid_actions(
-                    environment_state=current_node.belief.environment_state
+                children = self.generate_children(
+                    model=model,
+                    node=current_node.belief,
+                    edges=edges,
+                    diagnostics=diagnostics,
+                    outcome_uniforms=outcome_uniforms,
                 )
             else:
-                actions = [edge[0] for edge in edges]
+                children = iter(list(edges))
                 cached_successor_relaxations += len(edges)
 
-            # Keep the first expansion's original sample/evaluate order even if
-            # the model shares random state between transitions and J.
-            for edge_index, action in enumerate(actions):
-                if sample_new_edges:
-                    diagnostics.action_transitions_evaluated += 1
-                    # Algorithm 3, lines 14-15: jointly sample one state/cost/
-                    # observation outcome, once per unique state/action edge.
-                    joint_transition_outcomes = model.transition_outcomes(
-                        environment_state=current_node.belief.environment_state,
-                        practice_action=action,
-                        belief_state=current_node.belief.belief_state,
-                    )
-                    diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
-                    (
-                        next_environment_state,
-                        sampled_cost,
-                        estimated_observation_probability,
-                    ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
-                    next_belief = model.compute_next_belief_state(
-                        belief_state=current_node.belief.belief_state,
-                        environment_state=current_node.belief.environment_state,
-                        potential_next_environment_state=next_environment_state,
-                        practice_action=action,
-                    )
-                    edges.append((
-                        action,
-                        next_environment_state,
-                        next_belief,
-                        sampled_cost,
-                        estimated_observation_probability,
-                    ))
-                    diagnostics.generated_successors += 1
-                else:
-                    (
-                        _,
-                        next_environment_state,
-                        next_belief,
-                        sampled_cost,
-                        estimated_observation_probability,
-                    ) = edges[edge_index]
+            # Lazily generated, so the first expansion keeps its original sample/
+            # evaluate order even if the model shares random state between
+            # transitions and J.
+            for (
+                action,
+                next_environment_state,
+                next_belief,
+                sampled_cost,
+                estimated_observation_probability,
+            ) in children:
                 next_cost = current_node.belief.summed_cost + sampled_cost
                 next_depth = current_node.diagnostic_info.depth + 1
                 # Only a root edge establishes the first action. Descendants inherit
@@ -473,6 +474,16 @@ class DeterminizedAStarPlanner(
                 selected_path_depth=best_path_depth,
                 reason="minimum_g_sampled_path_stop_wins_ties",
             )
+            draw_fields: dict[str, object] = {}
+            if self.draw_scope != "node":
+                draw_fields.update(
+                    draw_scope=self.draw_scope,
+                    reused_outcome_draws=diagnostics.reused_outcome_draws,
+                )
+            if self.variant != "algorithm3":
+                draw_fields.update(
+                    determinized_variant=self.variant, num_rollouts=self.num_rollouts
+                )
             trace.record(
                 event="search_summary",
                 node=0,
@@ -499,6 +510,7 @@ class DeterminizedAStarPlanner(
                 stop_value_evaluations=len(values_by_key),
                 search_elapsed_seconds=time.perf_counter() - started_at,
                 termination_reason=diagnostics.termination_reason,
+                **draw_fields,
             )
         return best_objective_value, best_action
 
@@ -519,10 +531,106 @@ class DeterminizedAStarPlanner(
         del node
         return 0.0
 
+    def node_key(
+        self,
+        *,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int | None,
+    ) -> object:
+        """A search node's identity: with the accumulated cost (ours) or, as in
+        PO_DAStar, the belief alone, the cost being carried by g."""
+        if self.variant == "curtis":
+            return model.belief_cache_key(
+                environment_state=environment_state, belief_state=belief_state, horizon=horizon
+            )
+        return model.search_cache_key(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+
+    def generate_children(
+        self,
+        *,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        node: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT],
+        edges: list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
+        diagnostics: DeterminizedSearchDiagnostics,
+        outcome_uniforms: dict[object, float],
+    ) -> Iterator[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]]:
+        """Each valid action's children, appended to ``edges`` as they are yielded.
+
+        Ours: one sampled outcome per action (Algorithm 3, lines 14-15). Curtis: one
+        child per distinct outcome, with its branch probability -- the model's, or its
+        frequency among ``num_rollouts`` draws."""
+        for action in model.get_valid_actions(environment_state=node.environment_state):
+            diagnostics.action_transitions_evaluated += 1
+            outcomes = model.transition_outcomes(
+                environment_state=node.environment_state,
+                practice_action=action,
+                belief_state=node.belief_state,
+            )
+            diagnostics.chance_outcomes_enumerated += len(outcomes)
+            if self.variant == "curtis":
+                branches = self.branch_outcomes(outcomes=outcomes, action=action)
+            else:
+                uniform = None
+                if self.draw_scope != "node":
+                    draw_key = model.outcome_draw_key(
+                        environment_state=node.environment_state,
+                        belief_state=node.belief_state,
+                        action=action,
+                        scope=self.draw_scope,
+                    )
+                    uniform = outcome_uniforms.get(draw_key)
+                    if uniform is None:
+                        uniform = float(self.rng.random())
+                        outcome_uniforms[draw_key] = uniform
+                    else:
+                        diagnostics.reused_outcome_draws += 1
+                branches = [self.sample_outcome(outcomes=outcomes, action=action, uniform=uniform)]
+            for next_environment_state, sampled_cost, probability in branches:
+                next_belief = model.compute_next_belief_state(
+                    belief_state=node.belief_state,
+                    environment_state=node.environment_state,
+                    potential_next_environment_state=next_environment_state,
+                    practice_action=action,
+                )
+                edge = (action, next_environment_state, next_belief, sampled_cost, probability)
+                edges.append(edge)
+                diagnostics.generated_successors += 1
+                yield edge
+
+    def branch_outcomes(
+        self,
+        *,
+        outcomes: list[tuple[EnvironmentStateT, float, float]],
+        action: ActionT,
+    ) -> list[tuple[EnvironmentStateT, float, float]]:
+        """PO_DAStar's branches: every outcome at its own probability, or the distinct
+        outcomes of ``num_rollouts`` draws at their empirical frequency."""
+        assert outcomes, f"action {action!r} has no chance outcomes"
+        if self.num_rollouts is None:
+            return list(outcomes)
+        probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
+        draws = self.rng.choice(
+            len(outcomes), size=self.num_rollouts, p=probabilities / probabilities.sum()
+        )
+        counts = np.bincount(draws, minlength=len(outcomes))
+        return [
+            (outcome[0], outcome[1], count / self.num_rollouts)
+            for outcome, count in zip(outcomes, counts, strict=True)
+            if count
+        ]
+
     def compute_and_cache_stop_value(
         self,
         *,
-        values_by_key: dict[object, float],
+        values_by_key: dict[object, tuple[float, float]],
         diagnostics: DeterminizedSearchDiagnostics,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         environment_state: EnvironmentStateT,
@@ -531,17 +639,33 @@ class DeterminizedAStarPlanner(
         num_samples: int,
         remaining_actions: int | None = None,
     ) -> tuple[object, float]:
-        """Return the belief key and cached J(C, b), computing J on a cache miss."""
-        key = model.search_cache_key(
+        """Return the node key and J(C, b), computing J on a cache miss.
+
+        A curtis node is one belief reached at several costs. G separates into a
+        policy-value term and a cost term, so J(C, b) = J(C', b) + G(0, C) - G(0, C'):
+        the cost difference between two routes is exactly what their edge rewards
+        already charged. A cached -inf (over a hard budget) carries no value to shift
+        from, so it is recomputed."""
+        key = self.node_key(
+            model=model,
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=remaining_actions,
         )
-        cached_value = values_by_key.get(key)
-        if cached_value is not None:
+        cached = values_by_key.get(key)
+        if cached is not None:
             diagnostics.merged_nodes += 1
-            return key, cached_value
+            cached_value, cached_cost = cached
+            # Ours keys the cost itself, so a hit is the same cost up to `cost_key`.
+            if self.variant != "curtis" or cached_cost == summed_cost:
+                return key, cached_value
+            if cached_value != -math.inf:
+                shift = model.G(policy_value=0.0, summed_cost=summed_cost) - model.G(
+                    policy_value=0.0, summed_cost=cached_cost
+                )
+                if not math.isnan(shift):
+                    return key, cached_value + shift
         value = model.J(
             belief_state=belief_state,
             summed_cost=summed_cost,
@@ -550,7 +674,8 @@ class DeterminizedAStarPlanner(
         assert not math.isnan(value) and value != math.inf, (
             "J(C, b) must be finite or negative infinity"
         )
-        values_by_key[key] = value
+        if cached is None or value != -math.inf:
+            values_by_key[key] = (value, summed_cost)
         return key, value
 
     def sample_outcome(
@@ -558,8 +683,12 @@ class DeterminizedAStarPlanner(
         *,
         outcomes: list[tuple[EnvironmentStateT, float, float]],
         action: ActionT,
+        uniform: float | None = None,
     ) -> tuple[EnvironmentStateT, float, float]:
-        """Validate a chance distribution and sample one determinized successor."""
+        """Validate a chance distribution and sample one determinized successor.
+
+        A given ``uniform`` goes through the CDF exactly as ``Generator.choice`` maps
+        its own draw, so equal distributions given equal uniforms agree."""
         assert outcomes, f"action {action!r} has no chance outcomes"
         probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
         assert np.all(np.isfinite(probabilities)) and np.all(probabilities > 0.0), (
@@ -569,7 +698,13 @@ class DeterminizedAStarPlanner(
         assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
             f"chance probabilities sum to {total_probability}, not 1"
         )
-        outcome_index = int(self.rng.choice(len(outcomes), p=probabilities / total_probability))
+        if uniform is None:
+            outcome_index = int(self.rng.choice(len(outcomes), p=probabilities / total_probability))
+        else:
+            assert 0.0 <= uniform < 1.0
+            cdf = np.cumsum(probabilities / total_probability)
+            cdf /= cdf[-1]
+            outcome_index = min(int(cdf.searchsorted(uniform, side="right")), len(outcomes) - 1)
         outcome = outcomes[outcome_index]
         assert math.isfinite(outcome[1]) and outcome[1] >= 0, (
             "sampled_cost must be finite and non-negative"

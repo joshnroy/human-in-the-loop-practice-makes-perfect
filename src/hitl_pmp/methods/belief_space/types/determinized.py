@@ -1,12 +1,20 @@
 """Types used by determinized belief-space search."""
 
-from typing import Generic
+from typing import Generic, Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from .protocol import ActionT, BeliefStateT, EnvironmentStateT
 from .stop_action import StopAction
 from .value_resolution import ValueResolution
+
+# Which search nodes share one sampled outcome for an action: none ("node"), those
+# whose atoms and read beliefs agree ("state"), or those whose read beliefs agree
+# ("skill"). See DeterminizedAStarPlanner.draw_scope.
+DrawScope = Literal["node", "state", "skill"]
+# The search itself: ours ("algorithm3") or Curtis et al.'s PO_DAStar ("curtis"). See
+# DeterminizedAStarPlanner.variant.
+DeterminizedVariant = Literal["algorithm3", "curtis"]
 
 
 class DeterminizedSearchBelief(
@@ -100,6 +108,7 @@ class DeterminizedSearchDiagnostics(BaseModel):
     max_frontier_size: int = 0
     max_depth_reached: int = 0
     action_horizon_terminal_nodes: int = 0
+    reused_outcome_draws: int = 0
     termination_reason: str = "frontier_exhausted"
 
     def observe_frontier(self, *, size: int) -> None:

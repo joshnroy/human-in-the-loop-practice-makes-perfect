@@ -535,3 +535,140 @@ def test_the_pomdp_decision_log_is_compressed_by_default(
     )
     (method,) = built
     assert method.decision_log == tmp_path / expected  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], "node"),
+        (["--pomdp-solver", "determinized_astar", "--pomdp-draw-scope", "skill"], "skill"),
+        (["--pomdp-solver", "determinized_astar", "--pomdp-draw-scope", "state"], "state"),
+    ],
+)
+def test_the_draw_scope_flag_reaches_the_determinized_planner(
+    *, argv: list[str], expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+    from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+
+    built: list[object] = []
+
+    def _run_method(*, method_factory: object, **_kwargs: object) -> None:
+        env = Tossing3DEnvironment(scene_bg=False)
+        built.append(
+            method_factory(  # type: ignore[operator]
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(
+        argv=[
+            *("--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp")),
+            *argv,
+        ]
+    )
+    (method,) = built
+    assert method.pomdp_draw_scope == expected  # type: ignore[attr-defined]
+    planner = method.pomdp_planner  # type: ignore[attr-defined]
+    if expected != "node":
+        assert isinstance(planner, DeterminizedAStarPlanner)
+        assert planner.draw_scope == expected
+
+
+def test_shared_draws_are_refused_for_expectimax() -> None:
+    from hitl_pmp.methods.belief_space.tossing3d_method import make_belief_space_planner
+
+    with pytest.raises(ValueError, match="determinized"):
+        make_belief_space_planner(
+            planner=None,
+            solver="expectimax",
+            max_iterations=1,
+            seed=0,
+            observation_probability_weight=0.0,
+            draw_scope="skill",
+        )
+
+
+def _tossing3d_pomdp(*, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> object:
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+
+    built: list[object] = []
+
+    def _run_method(*, method_factory: object, **_kwargs: object) -> None:
+        env = Tossing3DEnvironment(scene_bg=False)
+        built.append(
+            method_factory(  # type: ignore[operator]
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp"), *argv])
+    (method,) = built
+    return method
+
+
+@pytest.mark.parametrize(
+    ("argv", "variant", "rollouts"),
+    [
+        ([], "algorithm3", None),
+        (["--pomdp-determinized-variant", "curtis"], "curtis", None),
+        (["--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "all"], "curtis", None),
+        (["--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "10"], "curtis", 10),
+    ],
+)
+def test_the_curtis_variant_flags_reach_the_determinized_planner(
+    *, argv: list[str], variant: str, rollouts: int | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+
+    method = _tossing3d_pomdp(
+        argv=["--pomdp-solver", "determinized_astar", *argv], monkeypatch=monkeypatch
+    )
+    assert method.pomdp_determinized_variant == variant  # type: ignore[attr-defined]
+    assert method.pomdp_num_rollouts == rollouts  # type: ignore[attr-defined]
+    planner = method.pomdp_planner  # type: ignore[attr-defined]
+    assert isinstance(planner, DeterminizedAStarPlanner)
+    assert (planner.variant, planner.num_rollouts) == (variant, rollouts)
+
+
+def test_the_curtis_variant_is_refused_for_expectimax() -> None:
+    from hitl_pmp.methods.belief_space.tossing3d_method import make_belief_space_planner
+
+    with pytest.raises(ValueError, match="determinized"):
+        make_belief_space_planner(
+            planner=None,
+            solver="expectimax",
+            max_iterations=1,
+            seed=0,
+            observation_probability_weight=0.0,
+            variant="curtis",
+        )
+
+
+def test_num_rollouts_must_be_all_or_positive() -> None:
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "tossing3d", "--method", "pomdp", "--pomdp-num-rollouts", "0"]
+        )

@@ -372,6 +372,63 @@ class Tossing3DPracticeModel(BaseModel):
             horizon,
         )
 
+    def belief_cache_key(
+        self,
+        *,
+        environment_state: Tossing3DSearchState,
+        belief_state: Tossing3DBeliefState,
+        horizon: int | None,
+    ) -> object:
+        """`search_cache_key` less the accumulated cost, which J reads only through G's
+        separate cost term. Every other field moves J itself and stays: the training
+        clocks and sampler state feed the refit J forecasts from, and the horizon bounds
+        the continuation."""
+        key = self.search_cache_key(
+            environment_state=environment_state,
+            summed_cost=belief_state.accumulated_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        assert isinstance(key, tuple)
+        return (*key[:-2], key[-1])
+
+    def outcome_draw_key(
+        self,
+        *,
+        environment_state: Tossing3DSearchState,
+        belief_state: Tossing3DBeliefState,
+        action: GroundSkill,
+        scope: str,
+    ) -> object:
+        """What `transition_outcomes`' probabilities read, and nothing else.
+
+        The success probability reads only the acting skill's own belief and, for the
+        sampler skill, its training state (whether epsilon applies); the failure branches
+        also read the atoms (failure records match on them); failure records, costs and
+        epsilon are fixed within a search. The accumulated cost, every training clock
+        (`pending_examples`), the horizon and the other skills' beliefs are left out:
+        they move J but not this outcome, and they are what a reset changes, so keying
+        on them is what let a reset re-roll a pick.
+
+        "state" keeps the atoms and the ground action, so a reset that changes the atoms
+        still buys a fresh draw. "skill" drops them: the same belief is the same trial
+        wherever it is attempted, so success and failure agree across states (a shared
+        uniform falls on the same side of the same success probability) while the
+        failure branch's own effects follow the state."""
+        name = action.skill.name
+        belief_name = self.domain.belief_name(skill_name=name) or name
+        belief = belief_state.skill_beliefs.get(belief_name)
+        read = (
+            belief_name,
+            None if belief is None else self._belief_signature(belief=belief),
+            belief_state.sampler_training.get(name) if name == self.domain.sampler_skill else None,
+        )
+        if scope == "skill":
+            return read
+        assert scope == "state", f"unknown draw scope {scope!r}"
+        # The whole state, not `_atoms_mask`: failure records match on every atom.
+        return (environment_state.true_atoms, action, *read)
+
     def outcomes(
         self,
         *,
