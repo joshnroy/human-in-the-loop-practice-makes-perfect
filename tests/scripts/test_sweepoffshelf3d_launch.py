@@ -20,8 +20,9 @@ from scripts.sweepoffshelf3d_launch import (
     main,
 )
 
-CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6", "cccc-expectimax-d7"]
-DEFAULT_CANONICAL_ARMS = ["ees", "cccc-determinized", "cccc-expectimax-d6"]
+CURTIS = "cccc-determinized-curtis"
+CANONICAL_ARMS = ["ees", "cccc-determinized", CURTIS, "cccc-expectimax-d6", "cccc-expectimax-d7"]
+DEFAULT_CANONICAL_ARMS = ["ees", "cccc-determinized", CURTIS, "cccc-expectimax-d6"]
 ALWAYS_ASK_ARMS = [f"{arm}-always-ask" for arm in CANONICAL_ARMS]
 
 
@@ -39,7 +40,7 @@ def always_ask_missing(*, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ShelfLaunch, "always_ask_supported", lambda *, method: False)
 
 
-def test_depths_six_and_seven_give_eight_arms() -> None:
+def test_depths_six_and_seven_give_ten_arms() -> None:
     arms = ShelfLaunch.arms(expectimax_depths=[6, 7])
     assert list(arms) == [*CANONICAL_ARMS, *ALWAYS_ASK_ARMS]
     assert {arm.method for arm in arms.values()} == {"ees", "pomdp"}
@@ -51,7 +52,7 @@ def test_the_default_depth_is_six_only() -> None:
     assert ShelfLaunch.parse(argv=["print"]).expectimax_depths == [6]
 
 
-def test_the_default_plan_is_six_arms() -> None:
+def test_the_default_plan_is_eight_arms() -> None:
     depths = ShelfLaunch.parse(argv=["print"]).expectimax_depths
     assert list(ShelfLaunch.arms(expectimax_depths=depths)) == [
         *DEFAULT_CANONICAL_ARMS,
@@ -97,7 +98,8 @@ def test_every_arm_parses_to_the_decided_settings(*, name: str) -> None:
     assert args.scene_bg is True  # the lab2 scene
     assert args.skip_skill_benchmark_gate is False
     if arm.method == "pomdp":
-        assert args.pomdp_observation_probability_weight == 0.0
+        weight = 0.01 if arm.name.startswith(CURTIS) else 0.0
+        assert args.pomdp_observation_probability_weight == weight
         assert args.pomdp_competence_model == "local_trend"
     else:
         assert (args.ees_prior_alpha, args.ees_prior_beta) == (1.0, 3.0)
@@ -105,6 +107,50 @@ def test_every_arm_parses_to_the_decided_settings(*, name: str) -> None:
         # after a few samples, and skip_perfect would then treat it as mastered.
         assert args.reproduce_predicators_skip_perfect is False
         assert "--reproduce-predicators-skip-perfect" not in argv
+
+
+# Josh, 2026-10-23: the Curtis arms mirror Tossing3D's (#579): PO_DAStar, every outcome
+# its own child at -lambda log p, lambda = 0.01.
+@pytest.mark.parametrize("name", [CURTIS, f"{CURTIS}-always-ask"])
+def test_the_curtis_arms_are_po_dastar_at_lambda_one_hundredth(*, name: str) -> None:
+    arm = ShelfLaunch.arms(expectimax_depths=[6])[name]
+    argv = ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/x"))
+    args = Cli.parse_args(argv=argv)
+    assert args.method == "pomdp"
+    assert args.pomdp_solver == "determinized_astar"
+    assert args.pomdp_determinized_variant == "curtis"
+    assert args.pomdp_num_rollouts is None  # "all": every outcome
+    assert args.pomdp_observation_probability_weight == 0.01
+    # Set once, not overridden by a later duplicate.
+    assert argv.count("--pomdp-observation-probability-weight") == 1
+    assert _value(argv=argv, flag="--pomdp-num-rollouts") == "all"
+    assert args.always_ask_reset is name.endswith("-always-ask")
+
+
+def test_a_curtis_arm_differs_from_the_determinized_arm_only_by_the_curtis_flags() -> None:
+    arms = ShelfLaunch.arms(expectimax_depths=[6])
+    for suffix in ["", "-always-ask"]:
+        plain = ShelfLaunch.cli_argv(
+            arm=arms[f"cccc-determinized{suffix}"], size=FULL, seed=0, output_dir=Path("/x")
+        )
+        curtis = ShelfLaunch.cli_argv(
+            arm=arms[f"{CURTIS}{suffix}"], size=FULL, seed=0, output_dir=Path("/x")
+        )
+        weight = plain.index("--pomdp-observation-probability-weight") + 1
+        assert plain[weight] == "0.0"
+        expected = [*plain[:weight], "0.01", *plain[weight + 1 :]]
+        solver = expected.index("determinized_astar") + 1
+        extra = ["--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "all"]
+        assert curtis == [*expected[:solver], *extra, *expected[solver:]]
+
+
+def test_the_plain_determinized_arm_keeps_algorithm3() -> None:
+    arm = ShelfLaunch.arms(expectimax_depths=[6])["cccc-determinized"]
+    args = Cli.parse_args(
+        argv=ShelfLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=Path("/x"))
+    )
+    assert args.pomdp_determinized_variant == "algorithm3"
+    assert args.pomdp_observation_probability_weight == 0.0
 
 
 def test_p_is_one_and_the_plain_scene_is_never_requested() -> None:
@@ -233,6 +279,8 @@ def test_the_cost_files_are_tracked_and_price_the_stage5_accounting() -> None:
         ("ees-always-ask", EES_HUMAN_RESET_COST),
         ("cccc-determinized", PLANNER_HUMAN_RESET_COST),
         ("cccc-determinized-always-ask", PLANNER_HUMAN_RESET_COST),
+        (CURTIS, PLANNER_HUMAN_RESET_COST),
+        (f"{CURTIS}-always-ask", PLANNER_HUMAN_RESET_COST),
         ("cccc-expectimax-d6", PLANNER_HUMAN_RESET_COST),
         ("cccc-expectimax-d6-always-ask", PLANNER_HUMAN_RESET_COST),
     ],
@@ -309,20 +357,25 @@ def _directives(*, sbatch: str) -> list[str]:
     return [line for line in sbatch.splitlines() if line.startswith("#SBATCH")]
 
 
-def test_della_writes_36_tasks_in_three_time_groups(*, tmp_path: Path) -> None:
+def test_della_writes_48_tasks_in_three_time_groups(*, tmp_path: Path) -> None:
     groups = _della(tmp_path=tmp_path)
     assert sorted(groups) == sorted(GROUPS)
     rows = _all_rows(groups=groups)
-    assert len(rows) == 36
+    assert len(rows) == 48
     arms = ShelfLaunch.arms(expectimax_depths=[6])
     assert sorted((row[2], row[3]) for row in rows) == sorted(
         (name, str(seed)) for name in arms for seed in range(6)
     )
     assert {row[1] for row in rows} == {SHA}
-    assert len({row[0] for row in rows}) == 36
+    assert len({row[0] for row in rows}) == 48
     assert {group: sorted({row[2] for row in groups[group][0]}) for group in groups} == {
         "ees": ["ees", "ees-always-ask"],
-        "determinized": ["cccc-determinized", "cccc-determinized-always-ask"],
+        "determinized": [
+            "cccc-determinized",
+            "cccc-determinized-always-ask",
+            CURTIS,
+            f"{CURTIS}-always-ask",
+        ],
         "expectimax": ["cccc-expectimax-d6", "cccc-expectimax-d6-always-ask"],
     }
 
@@ -331,7 +384,7 @@ def test_della_d7_is_absent_by_default_and_present_on_request(*, tmp_path: Path)
     default = _all_rows(groups=_della(tmp_path=tmp_path / "default"))
     assert not any("d7" in row[2] for row in default)
     both = _della(tmp_path=tmp_path / "both", extra=["--expectimax-depths", "6", "7"])
-    assert len(_all_rows(groups=both)) == 48
+    assert len(_all_rows(groups=both)) == 60
     rows, sbatch = both["expectimax"]
     assert len(rows) == 24
     assert {row[2] for row in rows} >= {"cccc-expectimax-d7", "cccc-expectimax-d7-always-ask"}
@@ -345,14 +398,15 @@ def test_della_each_group_gets_its_own_time_limit(*, tmp_path: Path) -> None:
         "#SBATCH --partition=cpu",
         "#SBATCH --cpus-per-task=2",
         "#SBATCH --mem=12G",
-        "#SBATCH --array=1-12",
     ]
+    tasks = {"ees": 12, "determinized": 24, "expectimax": 12}
     times = {"ees": "24:00:00", "determinized": "72:00:00", "expectimax": "72:00:00"}
     for group, (_, sbatch) in groups.items():
         directives = _directives(sbatch=sbatch)
         for directive in shared:
             assert directive in directives
         assert f"#SBATCH --time={times[group]}" in directives
+        assert f"#SBATCH --array=1-{tasks[group]}" in directives
         assert f"#SBATCH --job-name=shelf-20261020-{group}" in directives
         # Della's cpu partition picks the QOS from --time unless one is set.
         assert not any(line.startswith("#SBATCH --qos") for line in directives)
@@ -469,7 +523,7 @@ def test_every_della_run_records_evaluation_motion_and_seed_zero_records_practic
         (arm, int(seed)): Cli.parse_args(argv=shlex.split(joined)).record_motion
         for _name, _sha, arm, seed, _out, joined in rows
     }
-    assert len(scopes) == 36
+    assert len(scopes) == 48
     for (_, seed), scope in scopes.items():
         assert scope == ("all" if seed == 0 else "evaluation")
     assert {arm for arm, seed in scopes if seed == 0} == set(
