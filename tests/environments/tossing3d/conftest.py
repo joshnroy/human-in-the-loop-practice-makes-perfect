@@ -38,6 +38,19 @@ keep passing for the right reason as more of this package becomes simulator-back
 
 import pytest
 
+from .time_limit import WallClockLimit
+
+
+@pytest.fixture(autouse=True)
+def _time_limit(*, request: pytest.FixtureRequest):
+    """Arm `@pytest.mark.time_limit(seconds=N)` around the test, when it is marked."""
+    marker = request.node.get_closest_marker("time_limit")
+    if marker is None:
+        yield
+        return
+    with WallClockLimit.armed(seconds=marker.kwargs["seconds"]):
+        yield
+
 
 @pytest.fixture
 def no_kinder_import(*, monkeypatch: pytest.MonkeyPatch):
