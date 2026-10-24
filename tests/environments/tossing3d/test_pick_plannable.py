@@ -64,27 +64,32 @@ _NEEDS_KINDER = pytest.mark.skipif(
 _STUCK_STATES = {
     # EXP-22b: a toss overshot the robot-side bin and the cube rests between the bin
     # and the room's south wall. Every base standing spot 0.55 m from the cube collides
-    # with the bin or the wall, or lies outside the base planner's sampling box.
+    # with the bin or the wall, or lies outside the base planner's sampling box, on all
+    # four of the cube's sides.
     "exp22b gpoff local_trend 3e-6 seed 0": "pick_plannable/exp22b_s0.json",
     "exp22b gpoff local_trend 3e-6 seed 1": "pick_plannable/exp22b_s1.json",
     "exp22b gpoff local_trend 3e-6 seed 2": "pick_plannable/exp22b_s2.json",
     "exp22b gpon local_trend 3e-6 seed 0": "pick_plannable/exp22b_gp0.json",
-    "exp22b ees gpon cost 5 seed 0": "pick_plannable/exp22b_ees0.json",
-    # EXP-22: the cube rests inside the upright bin 0.035-0.043 m from an inner wall.
-    "exp22 gpoff local_trend 3e-6": "pick_plannable/exp22_A.json",
+    # EXP-22: the cube rests inside the upright bin in a corner, 0.05 m or less from two
+    # inner walls. The near-wall pick's 1,612 grasps planned it; grid 36's do not.
+    "exp22 gpon global_curve 0": "pick_plannable/exp22_F.json",
     # EXP-21: the bin tipped onto its side, or came to rest on top of the cube.
     "exp21 seed 0, bin on its side": "exp21_tipped_bin_state.json",
     "exp21 seed 1, bin resting on the cube": "pick_plannable/exp21_bin_on_cube_s1.json",
     "exp21 seed 2, bin level on the cube": "pick_plannable/exp21_bin_on_cube_s2.json",
 }
 
-# Stuck states the near-wall pick (kinder-baselines #187: the real TidyBot's tilted,
-# yawed and narrower grasps) now plans: the pick these runs stuck on refused them.
+# Stuck states the pick now plans: the pick these runs stuck on refused them. Rescued by
+# the near-wall grasps (kinder-baselines #187: tilted, yawed and narrower; grid 36 keeps
+# enough of them) or by standing on the cube's two far sides (kinder-baselines #189).
 _RESCUED_STATES = {
     # EXP-22: the cube inside the upright bin near an inner wall.
     "exp22 gpon global_curve 3e-6": "pick_plannable/exp22_C.json",
     "exp22 gpon local_trend 3e-6": "pick_plannable/exp22_D.json",
-    "exp22 gpon global_curve 0": "pick_plannable/exp22_F.json",
+    "exp22 gpoff local_trend 3e-6": "pick_plannable/exp22_A.json",
+    # EXP-22b: the cube between the robot-side bin and the room's south wall; one of
+    # its far sides has a clear stand.
+    "exp22b ees gpon cost 5 seed 0": "pick_plannable/exp22b_ees0.json",
     # EXP-21: evaluation cubes 0.024 and 0.030 m from the barrier's face.
     "exp21 seed 0 evaluation, checkpoint 11": "pick_plannable/exp21_barrier_eval11.json",
     "exp21 seed 0 evaluation, checkpoint 40": "pick_plannable/exp21_barrier_eval40.json",
@@ -451,6 +456,7 @@ def _applicable(*, env: Tossing3DEnvironment, atoms: frozenset[GroundAtom]) -> l
     ]
 
 
+@pytest.mark.time_limit(seconds=120)
 @_NEEDS_KINDER
 @pytest.mark.parametrize("label", list(_STUCK_STATES))
 def test_a_known_stuck_state_is_unplannable_and_leaves_only_the_resets(
@@ -481,9 +487,10 @@ def test_a_known_stuck_state_is_unplannable_and_leaves_only_the_resets(
     assert "No collision-free cube grasp" in run.error
 
 
+@pytest.mark.time_limit(seconds=120)
 @_NEEDS_KINDER
 @pytest.mark.parametrize("label", list(_RESCUED_STATES))
-def test_a_stuck_state_the_near_wall_pick_rescued_is_plannable_and_dispatched(
+def test_a_rescued_stuck_state_is_plannable_and_dispatched(
     *, live_env: Tossing3DEnvironment, label: str
 ) -> None:
     env = live_env
