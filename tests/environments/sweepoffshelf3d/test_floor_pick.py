@@ -168,7 +168,7 @@ def test_every_candidate_keeps_its_clearance_from_the_box_and_cupboard(
     for grasp in picks.candidates(cube=cube):
         for conf in (grasp.grasp_conf, grasp.pre_conf, grasp.lift_conf):
             d.qpos[:] = shelf.data.qpos
-            for address, value in picks.shaped_jaw().items():
+            for address, value in picks.shaped_jaw(opening=grasp.opening).items():
                 d.qpos[address] = value
             d.qpos[shelf.ba] = grasp.base
             d.qpos[shelf.qa] = conf

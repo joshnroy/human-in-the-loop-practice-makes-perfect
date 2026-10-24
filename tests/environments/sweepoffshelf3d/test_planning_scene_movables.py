@@ -304,9 +304,15 @@ def test_a_one_centimetre_margin_took_that_off_centre_grasp_away(*, env, states,
     import hitl_pmp.environments.sweepoffshelf3d.kinder_skills as kinder_skills
 
     monkeypatch.setattr(kinder_skills, "WIPER_OBSTACLE_MARGIN", 0.01)
-    monkeypatch.setattr(floor_pick, "FLOOR_PICK_LEANS_DEG", (0.0, 15.0, 30.0, 45.0))
+    import kinder_models.dynamic3d.tossing.parameterized_skills as tossing
+
+    # Then: four faces at leans 0/15/30/45 deg, fully open, a 1 cm reserve -- no grid.
+    monkeypatch.setattr(tossing, "PICK_CUBE_GRASP_YAW_OFFSETS_DEGREES", (0,))
+    monkeypatch.setattr(tossing, "PICK_CUBE_GRASP_TILTS_DEGREES", (0.0,))
+    monkeypatch.setattr(tossing, "PICK_CUBE_NARROW_OPENING", 0.0)
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_LEANS_DEG", (15.0, 30.0, 45.0))
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_EXTRA_OPENINGS", ())
     monkeypatch.setattr(floor_pick, "FLOOR_PICK_ROLLS_DEG", ())
-    monkeypatch.setattr(floor_pick, "FLOOR_PICK_APERTURE", 0.0)
     monkeypatch.setattr(floor_pick, "FLOOR_PICK_OBSTACLE_CLEARANCE", 0.01)
     atoms = _return_from_box(
         env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
