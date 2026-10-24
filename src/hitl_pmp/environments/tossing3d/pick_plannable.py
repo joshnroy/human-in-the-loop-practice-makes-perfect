@@ -68,8 +68,8 @@ class PickPlannableGate:
     ) -> bool:
         """Whether the barrier's centre plane separates the cube from the robot's base.
 
-        Deliberately the bare plane, without `CubeAtSide`'s footprint or grasp-band
-        margins: a cube touching the barrier from the robot's side is a state the dry
-        run is made in, so its verdict is the planner's and not this gate's.
+        Deliberately the bare plane, without `CubeAtSide`'s footprint margin: a cube
+        touching the barrier from the robot's side is a state the dry run is made in,
+        so its verdict is the planner's and not this gate's.
         """
         return (cube["x"] - barrier["x"]) * (robot_x - barrier["x"]) <= 0.0
