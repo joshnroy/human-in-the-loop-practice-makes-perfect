@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from .ci_shard import CiShard
 from .mimiclabs_assets import MimicLabsAssets
 
 
@@ -36,3 +37,16 @@ def _mimiclabs_assets_downloaded_once() -> None:
     MimicLabsAssets.ensure(
         assets_dir=package_root / "envs" / "dynamic3d" / "models" / "assets", download=download
     )
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:  # noqa: PLR0917 - pluggy passes hook args positionally
+    CiShard.add_options(parser=parser)
+
+
+# Last, so a shard splits only what `-m` and `--ignore` left: an even split of the tests
+# that will actually run, not of ones about to be deselected anyway.
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(  # noqa: PLR0917 - pluggy passes hook args positionally
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    CiShard.apply(config=config, items=items)

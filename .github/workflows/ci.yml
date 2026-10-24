@@ -65,6 +65,8 @@ jobs:
               - 'tests/__init__.py'
               - 'tests/environments/__init__.py'
               - 'tests/mimiclabs_assets.py'
+              - 'tests/ci_shard.py'
+              - 'tests/ci_shard_durations.json'
               - 'tests/environments/tossing3d/**'
               - 'tests/environments/sweepoffshelf3d/**'
               - 'configs/**'
@@ -223,6 +225,12 @@ jobs:
     name: "test / unit & core"
     runs-on: ubuntu-latest
     env: *kinder_env
+    # Sharded like `test / tossing3d`, which it became the long pole behind once that was:
+    # 39.3 min of junit time on 2 workers. Matrix length must equal `--shard-count`.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -261,13 +269,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-unit-${{ matrix.shard }}-${{ hashFiles('tests/**', 'src/**') }}
           restore-keys: |
-            pytest-${{ runner.os }}-
+            pytest-${{ runner.os }}-unit-${{ matrix.shard }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Unit & Core tests (MSS)
         run: |
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" \
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 2 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-unit.xml" \
             tests/core \
             tests/planning \
             tests/recording \
@@ -281,6 +289,14 @@ jobs:
             tests/test_*.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+      # The input to `python -m tests.ci_shard junit-*/*.xml`, which rebalances the shards.
+      - name: Upload per-test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-unit-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit-unit.xml
+          retention-days: 14
 
   test-analysis:
     name: "test / historical analysis (main only)"
@@ -396,14 +412,39 @@ jobs:
     # Skipped only on a pull request whose diff the `changes` filter says cannot affect it.
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.tossing3d == 'true') }}
     runs-on: ubuntu-latest
+    # Sharded: as one job its four xdist workers stayed saturated for ~40 min, so only
+    # more runners could shorten it. Every shard collects the same tests and keeps a
+    # disjoint, duration-balanced share; an `xdist_group` never straddles two shards
+    # (tests/ci_shard.py, tests/test_ci_shard.py). The matrix length must equal
+    # `--shard-count` below. `fail-fast: false` so one failing shard still lets the others
+    # report every failure, as the single job did. The aggregate `test` check sees one
+    # `needs.test-tossing3d.result`, which is `success` only if every shard passed.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     env: *kinder_env
     steps:
+      # The mirror sometimes serves these ~17 MB at ~46 kB/s (9/49 installs took 5.7-8.8
+      # min, tests/test_ci_caches.py), so the downloaded .debs are cached per runner image.
+      # Still resolved against a fresh index: apt reuses a cached archive only when it is
+      # exactly the version it resolved, so a stale cache costs a download, never a skew.
+      - name: Resolve the runner image
+        id: runner-image
+        run: echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache apt archives
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-osmesa-${{ runner.os }}-${{ steps.runner-image.outputs.image }}
+          restore-keys: |
+            apt-osmesa-${{ runner.os }}-
       - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          # Resolve against this runner image; cached .deb files can require
-          # exact library versions that have changed on ubuntu-latest.
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo chown -R "$USER" ~/apt-archives
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -450,9 +491,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          key: pytest-${{ runner.os }}-tossing3d-${{ matrix.shard }}-${{ hashFiles('tests/**', 'src/**') }}
           restore-keys: |
-            pytest-${{ runner.os }}-
+            pytest-${{ runner.os }}-tossing3d-${{ matrix.shard }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
       # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
@@ -475,7 +516,7 @@ jobs:
               assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
               print(f"{mod.__name__}: {path}")
           PY
-      # `-n auto` (pytest-xdist, one worker per vCPU) does not reopen the LLVM collision
+      # `-n auto` (pytest-xdist, one worker per *physical* core: 2 here) does not reopen the LLVM collision
       # this job exists to avoid: workers only ever draw tests from this job's own path, so
       # no worker process mixes OSMesa with torch's triton any more than the serial run
       # did. `--dist loadgroup` keeps each `xdist_group`-marked module on one worker, so a
@@ -490,21 +531,45 @@ jobs:
       # and the crashed worker then stalls the run until the 6-hour limit. Those tests run
       # in `test / unit & core` instead.
       - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+        run: |
+          echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+      # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.
+      - name: Upload per-test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-tossing3d-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit-tossing3d.xml
+          retention-days: 14
 
   test-scripts:
     name: "test / scripts & reproducibility"
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
+      # The mirror sometimes serves these ~17 MB at ~46 kB/s (9/49 installs took 5.7-8.8
+      # min, tests/test_ci_caches.py), so the downloaded .debs are cached per runner image.
+      # Still resolved against a fresh index: apt reuses a cached archive only when it is
+      # exactly the version it resolved, so a stale cache costs a download, never a skew.
+      - name: Resolve the runner image
+        id: runner-image
+        run: echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache apt archives
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-osmesa-${{ runner.os }}-${{ steps.runner-image.outputs.image }}
+          restore-keys: |
+            apt-osmesa-${{ runner.os }}-
       - name: Install LAPACK, BLAS, and OSMesa
         run: |
-          # Resolve against this runner image; cached .deb files can require
-          # exact library versions that have changed on ubuntu-latest.
+          mkdir -p ~/apt-archives/partial
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-archives" liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+          sudo chown -R "$USER" ~/apt-archives
       - uses: actions/checkout@v4
         with:
           submodules: recursive
