@@ -11,9 +11,10 @@ launcher's format) and submits nothing.
 The plan (Josh, 2026-10-19 to 2026-10-22):
 - Tossing3D-o1, barrier layout for practice and evaluation, the step protocol with
   160,000 counted practice steps and an evaluation every 3,200, 10 held-out tasks.
-- Six arms: EES, ours with expectimax, ours with determinized A*, and an always-ask
-  variant of each (`--always-ask-reset`). Seeds 0-5: six, so a paired exact sign test
-  can reach p = 0.031.
+- Eight arms: EES, ours with expectimax, ours with determinized A* (as is, and as
+  Curtis et al.'s PO_DAStar at lambda 0.01), and an always-ask variant of each
+  (`--always-ask-reset`). Seeds 0-5: six, so a paired exact sign test can reach
+  p = 0.031.
 - The planner arms are `--preset tossing3d-canonical` (Model B, expectimax depth 6,
   observation weight 0, lambda 3e-4, 0.01 per control tick, human reset 5), with
   `--pomdp-solver determinized_astar` for A*.
@@ -121,6 +122,25 @@ class Tossing3DLaunch:
                 name="determinized",
                 method="pomdp",
                 flags=[*PLANNER, "--pomdp-solver", "determinized_astar"],
+                always_ask=False,
+            ),
+            # Josh, 2026-10-23: determinized also as Curtis et al.'s PO_DAStar (#577):
+            # every outcome its own child at -lambda log p, lambda = 0.01, the value that
+            # passed the 3,200-step gate (0.1 STOPs at the first decision).
+            Tossing3DArm(
+                name="determinized-curtis",
+                method="pomdp",
+                flags=[
+                    *PLANNER,
+                    "--pomdp-solver",
+                    "determinized_astar",
+                    "--pomdp-determinized-variant",
+                    "curtis",
+                    "--pomdp-num-rollouts",
+                    "all",
+                    "--pomdp-observation-probability-weight",
+                    "0.01",
+                ],  # fmt: skip
                 always_ask=False,
             ),
         ]
