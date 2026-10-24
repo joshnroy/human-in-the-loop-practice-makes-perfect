@@ -378,14 +378,21 @@ def test_both_pick_refusals_that_move_nothing_are_matched() -> None:
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
-def test_a_pick_refused_because_it_starts_in_contact_blocks_the_pick_like_any_refusal() -> None:
+def test_a_pick_refused_because_it_starts_in_contact_blocks_the_pick_like_any_refusal(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """t3-final determinized s4 before seq 808: posed as the planner poses them (open), a
-    finger pad is inside the cube, so the pick refuses before it moves ("Robot starts in
-    collision with cube_0"). That must mark the pick blocked, exactly as a "No
-    collision-free" refusal does, so the next decision moves on to a reset or STOP rather
-    than dispatching the same pick until the zero-step limit ends the run."""
+    finger pad is inside the cube. With upstream's escape off (as when no escaping motion
+    exists) the pick refuses before it moves ("Robot starts in collision with cube_0").
+    That must mark the pick blocked, exactly as a "No collision-free" refusal does, so
+    the next decision moves on to a reset or STOP rather than dispatching the same pick
+    until the zero-step limit ends the run."""
     import json as jsonlib
     from pathlib import Path
+
+    from kinder_models.dynamic3d.tossing import parameterized_skills
+
+    monkeypatch.setattr(parameterized_skills, "PICK_CUBE_ESCAPE_RETRACT", False)
 
     from hitl_pmp.environments.tossing3d.predicates import PICKUP_UNBLOCKED
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
