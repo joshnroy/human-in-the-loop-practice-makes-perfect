@@ -1,8 +1,8 @@
 {
   "source": {
-    "benchmark_commit": "7a700cfdff23099343379926dba971f041c67dcf",
-    "report_sha256": "581779622d9da5736ee30f249829a610d9092204d68cd65caa5d4b32401f28da",
-    "report_dir": "/home/josh/Documents/repos/research/hitl-pmp-results/sweepshelf-one-cube/benchmark-reports/sweepoffshelf3d/7a700cfdff23099343379926dba971f041c67dcf",
+    "benchmark_commit": "01d4ba00140ebdb6f75a701060d2f4d4cf1b8fb0",
+    "report_sha256": "42d3a9f04f4c2d2232baa0b4567df63d25f763f76910fd1f370068d54c3b4bea",
+    "report_dir": "/home/josh/Documents/repos/research/hitl-pmp-results/sweepshelf-one-cube/benchmark-reports/sweepoffshelf3d/01d4ba00140ebdb6f75a701060d2f4d4cf1b8fb0",
     "statistic": "mean controller_steps per skill over every benchmark case that executed, successful and failed; cases refused at planning (0 control steps) are excluded",
     "cases": {
       "PickCubeFromFloor": 11,
@@ -12,7 +12,7 @@
       "ReturnCubeToShelfFromBox": 7,
       "ReturnCubeToShelfFromFloor": 11,
       "ReturnWiper": 10,
-      "SweepShelf": 1080
+      "SweepShelf": 1200
     },
     "planning_refusals_excluded": {
       "PickCubeFromFloor": 0,
@@ -24,7 +24,7 @@
       "ReturnWiper": 0,
       "SweepShelf": 0
     },
-    "command": "python -m scripts.skill_step_costs /home/josh/Documents/repos/research/hitl-pmp-results/sweepshelf-one-cube/benchmark-reports/sweepoffshelf3d/7a700cfdff23099343379926dba971f041c67dcf"
+    "command": "python -m scripts.skill_step_costs /home/josh/Documents/repos/research/hitl-pmp-results/sweepshelf-one-cube/benchmark-reports/sweepoffshelf3d/01d4ba00140ebdb6f75a701060d2f4d4cf1b8fb0"
   },
   "skill_steps": {
     "PickCubeFromFloor": 466.7,
@@ -34,6 +34,6 @@
     "ReturnCubeToShelfFromBox": 628.7,
     "ReturnCubeToShelfFromFloor": 751.4,
     "ReturnWiper": 292.7,
-    "SweepShelf": 379.7
+    "SweepShelf": 495.4
   }
 }
