@@ -518,3 +518,174 @@ def test_the_laziness_guard_itself_trips_on_a_real_import(*, no_kinder_import) -
 
     with pytest.raises(AssertionError, match="supposed to stay lazy"):
         KinderBackend().api()
+
+
+# --- the step limit, and a controller that aborts -------------------------------------
+
+
+class _StubStepController:
+    """Never terminates on its own; aborting (`on_step_limit`, or reaching `abort_at`)
+    records a failure and starts a retrace of `retrace` steps, as upstream's
+    PickCubeController does."""
+
+    def __init__(self, *, retrace: int, abort_at: int | None = None) -> None:
+        self.retrace = retrace
+        self.abort_at = abort_at
+        self.steps = 0
+        self.limit_calls = 0
+        self.failure: str | None = None
+        self._left: int | None = None
+
+    def reset(self, x, params) -> None:  # noqa: PLR0917  (upstream's positional signature)
+        del x, params
+
+    def step(self) -> int:
+        self.steps += 1
+        if self._left is not None:
+            self._left -= 1
+        return self.steps
+
+    def observe(self, x) -> None:  # noqa: PLR0917
+        del x
+        if self.abort_at is not None and self.steps == self.abort_at and self._left is None:
+            self.failure = "PickCube aborted: unexpected contact with cuboid_barrier"
+            self._left = self.retrace
+
+    def terminated(self) -> bool:
+        return self._left is not None and self._left <= 0
+
+    def on_step_limit(self) -> None:
+        self.limit_calls += 1
+        if self._left is None:
+            self.failure = "PickCube aborted: step limit reached"
+            self._left = self.retrace
+
+
+class _StubStepEnv:
+    def __init__(self) -> None:
+        from types import SimpleNamespace
+
+        self.action_space = None
+        self.observation_space = SimpleNamespace(devectorize=lambda obs: obs)
+
+    def step(self, action):  # noqa: PLR0917
+        return action, 0.0, False, False, {}
+
+
+def _backend_driving(*, monkeypatch: pytest.MonkeyPatch, controller) -> KinderBackend:
+    from types import ModuleType
+
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderApi
+
+    lifted = {"move_to_toss_location_and_toss": _StubLifted(controller=controller)}
+
+    def factory(  # noqa: PLR0917
+        action_space, *, init_constant_state=None, pybullet_sim=None
+    ) -> dict:
+        del action_space, init_constant_state, pybullet_sim
+        return lifted
+
+    api = KinderApi(
+        kinder=ModuleType("stub_kinder"),
+        robot_type=object,
+        tossing_controllers=factory,
+        shelf_controllers=factory,
+        state_collection=object,
+        render_collection=object,
+    )
+    monkeypatch.setattr(KinderBackend, "api", lambda self: api)  # noqa: PLR0917
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+    backend._state = _StubKinderState()  # noqa: SLF001
+    backend._env = _StubStepEnv()  # noqa: SLF001
+    return backend
+
+
+def _toss(*, backend: KinderBackend) -> ControllerRun:
+    return backend.run_move_to_toss_location_and_toss(
+        distance=1.35, rotation=0.0, release_speed_deg_s=140.0, gripper_release_ms=792.0
+    )
+
+
+def test_at_the_step_limit_the_controller_is_told_and_its_retrace_is_driven(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A controller that runs out of steps is told so once (`on_step_limit`), and the
+    retrace it then starts is stepped to its end, within `abort_retrace_step_limit`. The
+    run reports the controller's failure, and every step it took."""
+    controller = _StubStepController(retrace=37)
+    backend = _backend_driving(monkeypatch=monkeypatch, controller=controller)
+
+    run = _toss(backend=backend)
+
+    assert controller.limit_calls == 1
+    assert run.steps == backend.toss_step_limit + 37
+    assert run.terminated is False
+    assert run.error == "PickCube aborted: step limit reached"
+
+
+def test_a_controller_that_aborts_mid_skill_reports_its_failure_not_a_success(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An abort on contact ends in `terminated()`, but the skill did not do its job: the
+    run is reported failed, with the controller's reason, and not timed out."""
+    controller = _StubStepController(retrace=12, abort_at=79)
+    backend = _backend_driving(monkeypatch=monkeypatch, controller=controller)
+
+    run = _toss(backend=backend)
+
+    assert controller.limit_calls == 0
+    assert run.steps == 79 + 12
+    assert run.terminated is False
+    assert run.error == "PickCube aborted: unexpected contact with cuboid_barrier"
+
+
+def test_a_retrace_that_overruns_its_own_budget_stops_there(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    controller = _StubStepController(retrace=10**6)
+    backend = _backend_driving(monkeypatch=monkeypatch, controller=controller)
+
+    run = _toss(backend=backend)
+
+    assert run.steps == backend.toss_step_limit + backend.abort_retrace_step_limit
+    assert run.error is not None
+    assert "step limit reached" in run.error
+
+
+def test_a_step_limit_hook_that_declines_is_a_plain_timeout(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Upstream's `PICK_CUBE_RETRACT_ON_TIMEOUT` off: the hook records no failure, so no
+    retrace is driven and the run ends at the limit, as before."""
+
+    class _Declining(_StubStepController):
+        def on_step_limit(self) -> None:
+            self.limit_calls += 1
+
+    controller = _Declining(retrace=5)
+    backend = _backend_driving(monkeypatch=monkeypatch, controller=controller)
+
+    run = _toss(backend=backend)
+
+    assert controller.limit_calls == 1
+    assert run.steps == backend.toss_step_limit
+    assert run.error is None
+
+
+def test_a_controller_with_no_step_limit_hook_times_out_as_before(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every controller but the pick: no hook, so the limit ends the run, no error."""
+
+    class _Plain(_StubStepController):
+        on_step_limit = None  # type: ignore[assignment]
+
+    controller = _Plain(retrace=5)
+    backend = _backend_driving(monkeypatch=monkeypatch, controller=controller)
+
+    run = _toss(backend=backend)
+
+    assert run.steps == backend.toss_step_limit
+    assert run.terminated is False
+    assert run.error is None

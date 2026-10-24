@@ -290,6 +290,10 @@ class KinderBackend(BaseModel):
     # A single joint-motor actuation, not a multi-phase trajectory -- generous headroom
     # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
     open_gripper_step_limit: ClassVar[int] = 100
+    # What a controller that ran out of steps may spend backing out (upstream's pick
+    # retraces its executed path, loop-erased; the t3-relaunch-20261023 barrier stall's
+    # took 62). On top of the skill's own limit, and charged like any other step.
+    abort_retrace_step_limit: ClassVar[int] = 200
     # Verdicts kept by `pick_cube_plan_failure`. A run visits a few thousand states.
     pick_plan_cache_size: ClassVar[int] = 4096
 
@@ -1251,7 +1255,11 @@ class KinderBackend(BaseModel):
 
         A controller that does not terminate within `limit` is reported as
         `terminated=False` rather than raised, and a controller that *raises* is reported
-        through `error`. Both are ordinary outcomes of a skill whose continuous parameters
+        through `error`. One that offers `on_step_limit` (upstream's pick) is told when
+        `limit` runs out and stepped through the retrace it then starts, for up to
+        `abort_retrace_step_limit` more steps; one that aborts (its `failure`, on
+        unexpected contact or that retrace) is reported through `error` too, with
+        `terminated=False`. Both are ordinary outcomes of a skill whose continuous parameters
         do not work out, and the caller has to be able to keep going -- `take_action` must
         be total.
 
@@ -1294,7 +1302,51 @@ class KinderBackend(BaseModel):
             )
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
-        for step in range(limit):
+        run = self._drive(controller=controller, module=module, key=key, limit=limit, start=0)
+        if run is not None:
+            return run
+        logger.debug(
+            "run_controller: %s/%s hit limit=%d without terminating",
+            module,
+            key,
+            limit,
+        )
+        on_step_limit = getattr(controller, "on_step_limit", None)
+        if on_step_limit is None:
+            return ControllerRun(steps=limit, terminated=False)
+        # Out of steps: the controller backs out the way it came (upstream's
+        # `PICK_CUBE_RETRACT_ON_TIMEOUT`), within a budget of its own.
+        on_step_limit()
+        if getattr(controller, "failure", None) is None:
+            # The hook declined (upstream's switch is off): a plain timeout, as before.
+            return ControllerRun(steps=limit, terminated=False)
+        run = self._drive(
+            controller=controller,
+            module=module,
+            key=key,
+            limit=self.abort_retrace_step_limit,
+            start=limit,
+        )
+        if run is not None:
+            return run
+        return ControllerRun(
+            steps=limit + self.abort_retrace_step_limit,
+            terminated=False,
+            error=getattr(controller, "failure", None),
+        )
+
+    def _drive(
+        self, *, controller: Any, module: str, key: str, limit: int, start: int
+    ) -> ControllerRun | None:
+        """Step `controller` up to `limit` more times, `start` already taken; a
+        `ControllerRun` once it terminates or raises, `None` if it is still going.
+
+        A controller that terminates having aborted (upstream's `failure`) is reported
+        failed with that reason, not as a success and not as a timeout.
+        """
+        timing = self._timing
+        for offset in range(limit):
+            step = start + offset
             # Exclusive of `mujoco_step` and the wrapper's phases inside `env.step`: what
             # is left is the controller's own per-tick work and the devectorize.
             with SkillTiming.phase_of(timing=timing, name="controller_tick"):
@@ -1325,20 +1377,16 @@ class KinderBackend(BaseModel):
                 controller.observe(self._state)
                 terminated = controller.terminated()
             if terminated:
+                failure = getattr(controller, "failure", None)
                 logger.debug(
-                    "run_controller: %s/%s terminated normally at step=%d",
+                    "run_controller: %s/%s terminated at step=%d, failure=%r",
                     module,
                     key,
                     step + 1,
+                    failure,
                 )
-                return ControllerRun(steps=step + 1, terminated=True)
-        logger.debug(
-            "run_controller: %s/%s hit limit=%d without terminating",
-            module,
-            key,
-            limit,
-        )
-        return ControllerRun(steps=limit, terminated=False)
+                return ControllerRun(steps=step + 1, terminated=failure is None, error=failure)
+        return None
 
     def _ground_controller(
         self,

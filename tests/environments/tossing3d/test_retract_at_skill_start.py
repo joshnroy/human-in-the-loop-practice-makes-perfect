@@ -14,8 +14,9 @@ states are frozen here from those runs' recordings (the last tick before the act
 
 The retract configuration is upstream's own, `PickCubeController.home_joints`
 (= `MoveToTossLocationAndTossController._return_home_arm_config`). A pick whose start
-configuration is already in contact refuses, loudly: what it should do instead is not
-decided, and the planner does not read the real finger joints yet.
+configuration is already in contact used to refuse, loudly; since t3-relaunch-20261023
+upstream escapes it first (`PICK_CUBE_ESCAPE_RETRACT`) and refuses only when no escape
+exists. See `test_barrier_stall_recovery.py`.
 """
 
 import importlib.util
@@ -151,12 +152,32 @@ def test_the_stuck_pick_succeeds_through_a_real_retract(
     assert HOLDING.holds(held, (env.robot, env.cube))
 
 
-def test_a_pick_that_starts_in_contact_refuses_loudly(*, live_env: Tossing3DEnvironment) -> None:
+def test_a_pick_that_starts_in_contact_escapes_then_picks(
+    *, live_env: Tossing3DEnvironment
+) -> None:
     """s4 before seq 808: the planner poses the fingers open, and open, a pad is inside
-    the cube. The pick refuses with the reason, rather than plan from a configuration
-    already in collision."""
+    the cube. Upstream's pick no longer refuses: it escapes along a path whose clearance
+    never decreases, retracts, and here goes on to hold the cube."""
     env = live_env
     _restore(env=env, fixture=_STRETCHED_FINGER_IN_CUBE)
+    assert env.backend().pick_cube_plan_failure() is None
+    held = env.take_action(action=np.array([float(env.pick_cube_id), 0.0, 0.0, 0.0, 0.0]))
+    assert env.last_skill_error() is None
+    assert HOLDING.holds(held, (env.robot, env.cube))
+
+
+def test_with_the_escape_off_a_pick_that_starts_in_contact_refuses_loudly(
+    *, live_env: Tossing3DEnvironment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Upstream's `PICK_CUBE_ESCAPE_RETRACT` off (or no escaping motion found): the pick
+    refuses with the reason, rather than plan from a configuration in collision."""
+    from kinder_models.dynamic3d.tossing import parameterized_skills
+
+    monkeypatch.setattr(parameterized_skills, "PICK_CUBE_ESCAPE_RETRACT", False)
+    env = live_env
+    _restore(env=env, fixture=_STRETCHED_FINGER_IN_CUBE)
+    # The dry run's verdict is cached on the state alone, so it predates the switch.
+    env.backend()._pick_plan_failures.clear()  # noqa: SLF001
     failure = env.backend().pick_cube_plan_failure()
     assert failure is not None
     assert "starts in collision with cube_0" in failure
