@@ -1,4 +1,4 @@
-"""`SweepOffShelf3DEnvironment` -- KINDER's `SweepOffShelf3D-o5` behind `core.Environment`.
+"""`SweepOffShelf3DEnvironment` -- KINDER's `SweepOffShelf3D-o5-narrow_box` behind `core.Environment`.
 
 A TidyBot sweeps five cubes off a cupboard shelf, over its open front edge, into a box on
 the floor that is too heavy for it to lift. A human can pour the box back onto the shelf

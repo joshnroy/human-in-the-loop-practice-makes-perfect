@@ -45,6 +45,18 @@ def test_the_start_state_is_every_cube_on_the_shelf_and_the_wiper_home(*, backen
     assert backend.abstract_atoms() == _START
 
 
+def test_the_box_is_the_narrow_30_cm_box_centred_under_the_shelf_edge(*, backend):
+    """KINDER's `SweepOffShelf3D-o5-narrow_box`: 30 cm along the shelf, 25 cm deep,
+    20 cm tall, centred at y = 0, its far wall under the shelf's open front."""
+    backend.reset(seed=0)
+    core = backend.core()
+    box = core.get_object("box_0")
+    assert (box.length, box.width, box.height) == pytest.approx((0.25, 0.30, 0.20))
+    (x0, y0, x1, y1), _ = core.box_interior()
+    assert (x0, y0, x1, y1) == pytest.approx((1.12, -0.14, 1.35, 0.14), abs=1e-3)
+    assert x0 < core.shelf_front_x() <= x1 + 0.03
+
+
 def test_cubes_in_the_box_and_on_the_floor_classify(*, backend):
     backend.reset(seed=0)
     (x0, y0, x1, y1), _ = backend.core().box_interior()

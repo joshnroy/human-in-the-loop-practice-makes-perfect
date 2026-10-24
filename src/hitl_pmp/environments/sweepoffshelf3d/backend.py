@@ -1,4 +1,4 @@
-"""The live KINDER `SweepOffShelf3D-o5` scene: build, observe, classify, human resets.
+"""The live KINDER `SweepOffShelf3D-o5-narrow_box` scene: build, observe, classify, human resets.
 
 It and `kinder_skills.py` (KINDER's controllers) are the only modules in this package
 that import KINDER or MuJoCo, both only lazily, so the symbolic layer and its tests
@@ -48,7 +48,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from .objects import SweepOffShelf3DObjects as O
 from .predicates import SweepOffShelf3DAtoms
 
-TASK_ID = "kinder/SweepOffShelf3D-o5-v0"
+TASK_ID = "kinder/SweepOffShelf3D-o5-narrow_box-v0"
 CUPBOARD = "cupboard_1"
 CUBE_SHELF = 1
 # The wiper's home: the cupboard's top board, above the third shelf.

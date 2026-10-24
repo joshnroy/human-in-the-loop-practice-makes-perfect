@@ -1,6 +1,6 @@
 """SweepOffShelf3D's types and its fixed cast of objects.
 
-The cast is fixed by the KINDER task JSON (`SweepOffShelf3D-o5`): one TidyBot, five
+The cast is fixed by the KINDER task JSON (`SweepOffShelf3D-o5-narrow_box`): one TidyBot, five
 cubes, one wiper and one box. Features are the few the symbolic layer and the samplers
 read; every predicate is decided once per state at the simulator boundary (see
 `predicates.py`), so no classifier reads these vectors directly.
