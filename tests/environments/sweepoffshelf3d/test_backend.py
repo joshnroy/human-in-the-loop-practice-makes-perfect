@@ -5,7 +5,13 @@ import importlib.util
 import numpy as np
 import pytest
 
-from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
+from hitl_pmp.environments.sweepoffshelf3d.backend import (
+    TASK_ID,
+    WIDE_BOX_TASK_ID,
+    SweepOffShelf3DBackend,
+)
+from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
+from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -57,6 +63,29 @@ def test_the_box_is_the_narrow_30_cm_box_centred_under_the_shelf_edge(*, backend
     assert x0 < core.shelf_front_x() <= x1 + 0.03
 
 
+def test_the_task_defaults_to_the_narrow_box_and_both_layers_carry_it():
+    assert TASK_ID == "kinder/SweepOffShelf3D-o5-narrow_box-v0"
+    assert WIDE_BOX_TASK_ID == "kinder/SweepOffShelf3D-o5-v0"
+    assert SweepOffShelf3DBackend().task_id == TASK_ID
+    assert SweepOffShelf3DEnvironment().backend().task_id == TASK_ID
+    env = SweepOffShelf3DEnvironment(task_id=WIDE_BOX_TASK_ID)
+    assert env.backend().task_id == WIDE_BOX_TASK_ID
+
+
+def test_the_wide_box_task_builds_the_50_cm_box_and_fingerprints_as_itself():
+    """States captured on the 50 cm box restore only into an env built with its id."""
+    env = SweepOffShelf3DEnvironment(scene_bg=False, task_id=WIDE_BOX_TASK_ID)
+    try:
+        env.reset_to_seed(seed=0)
+        core = env.backend().core()
+        assert core.get_object("box_0").width == pytest.approx(0.5)
+        (_, y0, _, y1), _ = core.box_interior()
+        assert (y0, y1) == pytest.approx((-0.24, 0.24), abs=1e-3)
+        assert StateCapture.fingerprint(env=env).startswith(f"{WIDE_BOX_TASK_ID}|")
+    finally:
+        env.close()
+
+
 def test_cubes_in_the_box_and_on_the_floor_classify(*, backend):
     backend.reset(seed=0)
     (x0, y0, x1, y1), _ = backend.core().box_interior()
@@ -84,11 +113,13 @@ def test_a_wiper_on_the_floor_is_not_home(*, backend):
 
 def _cubes_in_the_box(*, backend):
     (x0, y0, x1, y1), _ = backend.core().box_interior()
+    # 8 cm apart where the box allows it; closer in a box too narrow for that.
+    step = min(0.08, (y1 - y0 - 0.12) / 4)
     for i in range(5):
         _place(
             backend=backend,
             name=f"cube_{i}",
-            position=[(x0 + x1) / 2, y0 + 0.06 + 0.08 * i, 0.3],
+            position=[(x0 + x1) / 2, y0 + 0.06 + step * i, 0.3],
         )
     _settle(backend=backend)
 
@@ -227,8 +258,14 @@ _CUBE_EDGE = 0.02
 _TRAPS = {
     "over_the_far_rim": ([1.355, 0.10, 0.235], [0.10, 0.0, 0.0]),
     "on_the_far_rim": ([1.3551, 0.0, 0.2105], [0.0, 0.0, 0.0]),
-    "on_a_side_rim": ([1.235, 0.245, 0.2105], [0.0, 0.0, 0.0]),
+    # y is filled in from the live box: the middle of its +y side wall's top.
+    "on_a_side_rim": ([1.235, None, 0.2105], [0.0, 0.0, 0.0]),
 }
+
+
+def _side_rim_y(*, backend):
+    box = backend.core()._objects_dict["box_0"]  # noqa: SLF001
+    return float(box.get_pose()[0][1]) + box.width / 2 - box.wall_thickness / 2
 
 
 def _far_wall_outer_x(*, backend):
@@ -272,6 +309,8 @@ def test_a_trapped_cube_is_on_the_floor_to_the_planner_and_the_human_recovers_it
     classifies `OnFloor`, and `reset_cubes` (p = 1 here) puts it back on the shelf."""
     backend.reset(seed=0)
     position, velocity = _TRAPS[trap]
+    if position[1] is None:
+        position = [position[0], _side_rim_y(backend=backend), position[2]]
     x, _, z = _release(backend=backend, position=position, velocity=velocity)
     if trap == "over_the_far_rim":
         assert x > backend.core().shelf_front_x()

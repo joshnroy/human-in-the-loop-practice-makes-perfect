@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.sweepoffshelf3d.backend import WIDE_BOX_TASK_ID
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import (
     JAW_HALF_WIDTH,
@@ -23,7 +24,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import CUBE_STANDOFF,
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture, StateSet
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.types import BenchmarkCase
 
-STATES = Path(__file__).resolve().parents[3] / "benchmarks/sweepoffshelf3d/states.jsonl"
+STATES = Path(__file__).resolve().parent / "data/wide_box_benchmark_states.jsonl"
 SIDE_PANELS = ("cupboard_1_left_panel", "cupboard_1_right_panel")
 # (state, cube) of the benchmark's three execution failures.
 BESIDE_PANEL = [("shelf-shelf-left-front", "cube_0"), ("shelf-shelf-right-front", "cube_2")]
@@ -47,7 +48,7 @@ pytestmark = [
 
 @pytest.fixture(name="env", scope="module")
 def _env():
-    env = SweepOffShelf3DEnvironment(scene_bg=True)
+    env = SweepOffShelf3DEnvironment(scene_bg=True, task_id=WIDE_BOX_TASK_ID)
     try:
         yield env
     finally:

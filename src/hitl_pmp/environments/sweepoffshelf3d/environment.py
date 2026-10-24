@@ -1,4 +1,4 @@
-"""`SweepOffShelf3DEnvironment` -- KINDER's `SweepOffShelf3D-o5-narrow_box` behind `core.Environment`.
+"""`SweepOffShelf3DEnvironment` -- KINDER's `SweepOffShelf3D-o5-narrow_box` as an `Environment`.
 
 A TidyBot sweeps five cubes off a cupboard shelf, over its open front edge, into a box on
 the floor that is too heavy for it to lift. A human can pour the box back onto the shelf
@@ -27,7 +27,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.recording.run_record.sink import SkillTickSink
 
-from .backend import SweepOffShelf3DBackend
+from .backend import TASK_ID, SweepOffShelf3DBackend
 from .controllers import ControllerFailure, SweepOffShelf3DControllers
 from .objects import SweepOffShelf3DObjects as O
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
@@ -69,6 +69,8 @@ class SweepOffShelf3DEnvironment(Environment):
     action_space: ClassVar[Box] = Box(-np.inf, np.inf, (4,))
 
     scene_bg: bool = True
+    # The KINDER task the backend builds (`backend.TASK_ID`, the 30 cm box, by default).
+    task_id: str = TASK_ID
     canonical_seed: int = 0
     # p: the human's true competence at `reset_cubes`.
     reset_cubes_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -94,6 +96,7 @@ class SweepOffShelf3DEnvironment(Environment):
         if self._backend is None:
             self._backend = SweepOffShelf3DBackend(
                 scene_bg=self.scene_bg,
+                task_id=self.task_id,
                 reset_cubes_success_probability=self.reset_cubes_success_probability,
                 human_seed=self.human_seed,
             )

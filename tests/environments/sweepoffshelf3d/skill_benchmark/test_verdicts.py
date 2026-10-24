@@ -10,6 +10,7 @@ from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.types import (
     SkillVerdict,
 )
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.verdicts import (
+    REPORT_ONLY,
     SETTING_THRESHOLDS,
     SWEEP_GRID,
     THRESHOLDS,
@@ -282,7 +283,7 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
 @pytest.mark.parametrize(
     ("skill", "needed", "out_of"),
     [
-        ("PickCubeFromShelf", 72, 100),
+        ("PickCubeFromShelf", 66, 92),
         ("PickCubeFromFloor", 11, 11),
         ("ReturnCubeToShelfFromFloor", 11, 11),
     ],
@@ -306,31 +307,39 @@ def test_a_thresholded_skill_passes_at_exactly_its_threshold_and_fails_one_below
     assert (below.gated_successes, below.gated_total) == (needed - 1, out_of)
 
 
-def test_the_box_return_gates_on_harvested_states_and_only_reports_synthetic_ones() -> None:
+def test_the_shelf_pick_keeps_its_rate_on_the_narrow_box_state_set() -> None:
+    """72/100 on the 50 cm box's set; the narrow box's set has 92 shelf picks, and
+    72/100 of 92 is 66.2: at least 66."""
+    threshold = THRESHOLDS["PickCubeFromShelf"]
+    assert (threshold.min_successes, threshold.out_of) == (66, 92)
+    assert threshold.min_successes == int(72 / 100 * 92)
+
+
+def test_the_box_return_is_reported_only_until_narrow_box_runs_are_harvested() -> None:
     skill = "ReturnCubeToShelfFromBox"
-    assert THRESHOLDS[skill] == SkillThreshold(
-        min_successes=5, out_of=8, families=frozenset({"harvested"})
-    )
-    at = _verdict(
-        skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=5, total=8, prefix="h")
-        + _runs(skill=skill, family="near_walls", successes=0, total=13, prefix="c"),
-    )
-    assert at.passed
-    assert (at.gated_successes, at.gated_total) == (5, 8)
-    assert (at.reported_successes, at.reported_total) == (0, 13)
-    assert (at.successes, at.total) == (5, 21)
-    assert at.target == "at least 5/8 of harvested"
-    below = _verdict(
-        skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=4, total=8, prefix="h")
-        + _runs(skill=skill, family="near_walls", successes=13, total=13, prefix="c"),
-    )
-    assert not below.passed
-    assert (below.reported_successes, below.reported_total) == (13, 13)
+    assert skill not in THRESHOLDS
+    assert "harvested" in REPORT_ONLY[skill]
+    for successes in (0, 2, 12):
+        verdict = _verdict(
+            skill=skill,
+            results=_runs(skill=skill, family="near_walls", successes=successes, total=12),
+        )
+        assert verdict.passed
+        assert verdict.target == "report only"
+        assert (verdict.gated_successes, verdict.gated_total) == (0, 0)
+        assert (verdict.reported_successes, verdict.reported_total) == (successes, 12)
+        assert verdict.reason == REPORT_ONLY[skill]
 
 
-@pytest.mark.parametrize("total", [99, 101])
+def test_report_only_skills_are_robot_skills_without_another_target() -> None:
+    robot = {s.name for s in verdicts_module.S.robot_skills()}
+    for skill in REPORT_ONLY:
+        assert skill in robot
+        assert skill not in THRESHOLDS
+        assert skill not in SETTING_THRESHOLDS
+
+
+@pytest.mark.parametrize("total", [91, 93])
 def test_a_changed_case_count_is_refused_rather_than_judged(*, total: int) -> None:
     verdict = _verdict(
         skill="PickCubeFromShelf",
@@ -338,7 +347,7 @@ def test_a_changed_case_count_is_refused_rather_than_judged(*, total: int) -> No
     )
     assert not verdict.passed
     assert f"{total} gated case(s)" in verdict.reason
-    assert "out of 100" in verdict.reason
+    assert "out of 92" in verdict.reason
 
 
 def test_an_invalid_gated_case_changes_the_denominator_and_is_refused() -> None:
@@ -350,7 +359,7 @@ def test_an_invalid_gated_case_changes_the_denominator_and_is_refused() -> None:
 
 
 def test_a_thresholded_skill_with_no_valid_case_does_not_pass() -> None:
-    verdict = _verdict(skill="ReturnCubeToShelfFromBox", results=[])
+    verdict = _verdict(skill="PickCubeFromFloor", results=[])
     assert not verdict.passed
     assert (verdict.gated_total, verdict.reported_total) == (0, 0)
 
@@ -414,8 +423,14 @@ def test_the_thresholds_name_only_robot_skills_and_families_the_state_set_has() 
         assert gated == threshold.out_of, skill
 
 
-def test_a_verdict_summarises_gated_and_reported_only_counts() -> None:
+def test_a_verdict_summarises_gated_and_reported_only_counts(*, monkeypatch) -> None:
     skill = "ReturnCubeToShelfFromBox"
+    monkeypatch.setattr(verdicts_module, "REPORT_ONLY", {})
+    monkeypatch.setitem(
+        verdicts_module.THRESHOLDS,
+        skill,
+        SkillThreshold(min_successes=5, out_of=8, families=frozenset({"harvested"})),
+    )
     results = _runs(skill=skill, family="harvested", successes=2, total=8, prefix="h") + _runs(
         skill=skill, family="near_walls", successes=5, total=13, prefix="c"
     )

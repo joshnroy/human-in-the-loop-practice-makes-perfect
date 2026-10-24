@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.sweepoffshelf3d.backend import WIDE_BOX_TASK_ID
 from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
@@ -22,7 +23,7 @@ from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.runner import CaseRun
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture, StateSet
 from hitl_pmp.environments.sweepoffshelf3d.skill_trace import SkillTraces
 
-STATES = Path(__file__).resolve().parents[3] / "benchmarks/sweepoffshelf3d/states.jsonl"
+STATES = Path(__file__).resolve().parent / "data/wide_box_benchmark_states.jsonl"
 WIPER = "wiper_0"
 HELD = ("HoldingWiper", ("robot", WIPER))
 HOME = ("WiperHome", (WIPER,))
@@ -40,8 +41,8 @@ pytestmark = [
 
 @pytest.fixture(name="env", scope="module")
 def _env():
-    # The benchmark's states were captured in the lab2 scene; a state restores only there.
-    env = SweepOffShelf3DEnvironment(scene_bg=True)
+    # The states were captured in the lab2 scene with the 50 cm box; a state restores only there.
+    env = SweepOffShelf3DEnvironment(scene_bg=True, task_id=WIDE_BOX_TASK_ID)
     try:
         yield env
     finally:

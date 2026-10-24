@@ -41,15 +41,22 @@ def _act(*, env, skill, cube=0, offset=-0.06, angle=0.0):
     return env.get_current_state().abstract_atoms
 
 
-# Where `_only_cube_0_on_the_shelf` puts the other four cubes: inside the box.
-BOX_SPOTS = ((1.18, -0.18), (1.18, 0.18), (1.30, -0.18), (1.30, 0.18))
+# Where `_only_cube_0_on_the_shelf` puts the other four cubes: the corners of the live
+# box's interior, this far in from its walls (m).
+BOX_SPOT_INSET = 0.05
+
+
+def _box_spots(*, env):
+    (x0, y0, x1, y1), _ = env.backend().core().box_interior()
+    i = BOX_SPOT_INSET
+    return ((x0 + i, y0 + i), (x0 + i, y1 - i), (x1 - i, y0 + i), (x1 - i, y1 - i))
 
 
 def _only_cube_0_on_the_shelf(*, env):
     """Right after a reset: cubes 1-4 dropped into the box, as if already swept, so one
     stroke at cube_0 leaves the shelf bare -- the only way a single stroke at seed 0
     leaves a strip of board to lay the wiper on (`reseat_y`)."""
-    for i, (x, y) in enumerate(BOX_SPOTS, start=1):
+    for i, (x, y) in enumerate(_box_spots(env=env), start=1):
         _teleport(env=env, name=f"cube_{i}", position=[x, y, 0.08])
     env.backend().sim().forward()
     env.current_state = env._observed_state(seed=0, steps_taken=0)  # noqa: SLF001
@@ -304,12 +311,13 @@ def test_a_wiper_lost_from_the_hand_is_not_still_believed_held(*, env):
 def test_the_wiper_sweeps_the_shelf_and_goes_back(*, env):
     env.reset_to_seed(seed=0)
     assert ("HoldingWiper", ("robot", "wiper_0")) in _act(env=env, skill="PickWiper")
-    atoms = _act(env=env, skill="SweepShelf", cube=0, offset=-0.06, angle=0.0)
-    # One stroke at cube_0, at the oracle's setting: seed 0's cube_0 goes in. Whether a
-    # cube lands is the sweep's competence; the wiper staying in hand through the
-    # retract that follows is not.
-    assert ("InBox", ("cube_0", "box_0")) in atoms, env.last_skill_error()
-    assert ("OnShelf", ("cube_0",)) not in atoms
+    atoms = _act(env=env, skill="SweepShelf", cube=1, offset=-0.06, angle=0.0)
+    # One stroke at cube_1, at the oracle's setting: seed 0's cube_1 (y -0.056) goes into
+    # the 30 cm box. Its cube_0 (y -0.224, outside the box's +-0.14 interior) went into
+    # the 50 cm one but not this. Whether a cube lands is the sweep's competence; the
+    # wiper staying in hand through the retract that follows is not.
+    assert ("InBox", ("cube_1", "box_0")) in atoms, env.last_skill_error()
+    assert ("OnShelf", ("cube_1",)) not in atoms
     assert ("HoldingWiper", ("robot", "wiper_0")) in atoms
     atoms = _act(env=env, skill="ReturnWiper")
     assert {("WiperHome", ("wiper_0",)), ("HandEmpty", ("robot",))} <= atoms, env.last_skill_error()

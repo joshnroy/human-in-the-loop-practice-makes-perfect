@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.sweepoffshelf3d.backend import WIDE_BOX_TASK_ID
 from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SKILL_IDS,
     SweepOffShelf3DEnvironment,
@@ -36,8 +37,8 @@ AFTER_SWEEP = "returnwiper-edge-s0-after-sweep"
 
 @pytest.fixture(name="env", scope="module")
 def _env():
-    # The states were captured in the lab2 scene; a state restores only there.
-    env = SweepOffShelf3DEnvironment(scene_bg=True)
+    # The states were captured in the lab2 scene with the 50 cm box; a state restores only there.
+    env = SweepOffShelf3DEnvironment(scene_bg=True, task_id=WIDE_BOX_TASK_ID)
     try:
         yield env
     finally:

@@ -49,6 +49,8 @@ from .objects import SweepOffShelf3DObjects as O
 from .predicates import SweepOffShelf3DAtoms
 
 TASK_ID = "kinder/SweepOffShelf3D-o5-narrow_box-v0"
+# The 50 cm box the task used before: the scene the regression fixtures were captured in.
+WIDE_BOX_TASK_ID = "kinder/SweepOffShelf3D-o5-v0"
 CUPBOARD = "cupboard_1"
 CUBE_SHELF = 1
 # The wiper's home: the cupboard's top board, above the third shelf.
@@ -71,6 +73,8 @@ class SweepOffShelf3DBackend(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     scene_bg: bool = True
+    # The KINDER task to build; `TASK_ID` unless a caller needs another box.
+    task_id: str = TASK_ID
     # p: the probability one `reset_cubes` succeeds (all five cubes) rather than
     # fails (nothing moves).
     reset_cubes_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -119,7 +123,7 @@ class SweepOffShelf3DBackend(BaseModel):
             kinder.register_all_environments()
             os.environ.update(rendering)
             self._env = kinder.make(
-                TASK_ID,
+                self.task_id,
                 render_mode="rgb_array",
                 allow_state_access=True,
                 scene_bg=self.scene_bg,

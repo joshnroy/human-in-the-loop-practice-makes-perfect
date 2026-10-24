@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
+from hitl_pmp.environments.sweepoffshelf3d.backend import WIDE_BOX_TASK_ID
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FloorPicks
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import KinderSkills
@@ -172,8 +173,8 @@ def test_shelf_grasps_close_on_a_pair_of_the_cubes_side_faces(*, quaternion):
 
 @pytest.fixture(name="env", scope="module")
 def _env():
-    # The states were captured in the lab2 scene; a state restores only there.
-    env = SweepOffShelf3DEnvironment(scene_bg=True)
+    # The states were captured in the lab2 scene with the 50 cm box; a state restores only there.
+    env = SweepOffShelf3DEnvironment(scene_bg=True, task_id=WIDE_BOX_TASK_ID)
     try:
         yield env
     finally:
