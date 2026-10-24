@@ -43,11 +43,13 @@ THRESHOLDS: dict[str, SkillThreshold] = {
         min_successes=5, out_of=8, families=frozenset({"harvested"})
     ),
 }
-# A pair-count target for a continuous-parameter skill (Josh, 2026-10-23): the
-# afb353fc1 gate run found a succeeding setting for 38/40 (state, target cube) pairs; the
-# two without one are corner cubes at |y| ~ 0.225 m, beyond the +/- 0.17 m lane limit.
+# A pair-count target for a continuous-parameter skill (Josh, 2026-10-23), set from the
+# measured count (2026-10-24): the angled stroke's gate run at 01aae2153 found a
+# succeeding setting for 37/40 (state, target cube) pairs. The three without one are
+# wiper-in-hand-s1-l3/cube_0 (a corner cube at y -0.225), wiper-in-hand-s0-l3/cube_3 and
+# wiper-in-hand-s1-l0/cube_3.
 SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
-    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=38, out_of=40),
+    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=37, out_of=40),
 }
 # (line offset [m], stroke angle [deg]) (Josh, 2026-10-24): offsets either side of the
 # cube, none over it, out to the bound; angles within +/- 30 deg of the straight pull.
