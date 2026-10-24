@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.environments.sweepoffshelf3d.backend import CUBE_SHELF, CUPBOARD, TASK_ID
+from hitl_pmp.environments.sweepoffshelf3d.backend import CUBE_SHELF, CUPBOARD
 from hitl_pmp.environments.sweepoffshelf3d.environment import SKILL_IDS, SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
 from hitl_pmp.environments.sweepoffshelf3d.skill_provider import ORACLE_SWEEP_PARAMS
@@ -87,7 +87,7 @@ class StateCapture:
         model = backend.model()
         geoms = ",".join(model.geom(g).name or "" for g in range(model.ngeom))
         digest = hashlib.sha256(geoms.encode()).hexdigest()[:12]
-        return f"{TASK_ID}|nq={model.nq}|nv={model.nv}|nu={model.nu}|geoms={digest}"
+        return f"{backend.task_id}|nq={model.nq}|nv={model.nv}|nu={model.nu}|geoms={digest}"
 
     @staticmethod
     def atoms(*, env: SweepOffShelf3DEnvironment) -> list[str]:
@@ -394,6 +394,33 @@ class Setups:
         return setup
 
     @staticmethod
+    def central_cube(*, shelf: dict[str, tuple[float, float]], box_y: float) -> int:
+        """The index of the shelf cube (name -> (x, y)) nearest the box's centre in y."""
+        name = min(sorted(shelf), key=lambda c: abs(shelf[c][1] - box_y))
+        return int(name.removeprefix("cube_"))
+
+    @staticmethod
+    def sweep_central_cube() -> Callable[..., str | None]:
+        """One oracle stroke (`ORACLE_SWEEP_PARAMS`) at the shelf cube nearest the box's
+        centre in y: a cube beyond the box's sides is not swept in at that setting."""
+
+        def setup(*, env: SweepOffShelf3DEnvironment) -> str | None:
+            core = env.backend().core()
+            shelf = {
+                c.name: tuple(float(v) for v in core.get_object(c.name).get_pose()[0][:2])
+                for c in O.cubes
+                if f"OnShelf({c.name})" in StateCapture.atoms(env=env)
+            }
+            if not shelf:
+                return "no cube on the shelf to sweep"
+            box_y = float(core.get_object(O.box.name).get_pose()[0][1])
+            cube = Setups.central_cube(shelf=shelf, box_y=box_y)  # type: ignore[arg-type]
+            action = np.array([float(SKILL_IDS["SweepShelf"]), float(cube), *ORACLE_SWEEP_PARAMS])
+            return Setups.skill(action=action)(env=env)
+
+        return setup
+
+    @staticmethod
     def reset_cubes(*, rng_seed: int) -> Callable[..., str | None]:
         def setup(*, env: SweepOffShelf3DEnvironment) -> str | None:
             backend = env.backend()
@@ -631,11 +658,9 @@ class StateFamilies:
                 setup=Setups.chain(Setups.skill(action=pick)),
             )
         pick_wiper = np.array([float(SKILL_IDS["PickWiper"]), 0.0, 0.0, 0.0])
-        # One stroke at cube_0. The committed after-sweep states predate the one-cube
-        # sweep (2026-10-23): they were captured after the old whole-shelf SweepShelf
-        # at (height 0.005, speed 0.05), as their provenance says, and are kept as they
-        # are -- a stored state is never rewritten.
-        sweep = np.array([float(SKILL_IDS["SweepShelf"]), 0.0, *ORACLE_SWEEP_PARAMS])
+        # One oracle stroke at the shelf cube nearest the box's centre in y
+        # (`Setups.sweep_central_cube`). A stored state is never rewritten: each keeps
+        # the provenance of the stroke it was captured after.
         for seed in StateFamilies.WIPER_IN_HAND_SEEDS:
             for layout in range(StateFamilies.WIPER_IN_HAND_LAYOUTS + 1):
                 steps = [Setups.skill(action=pick_wiper)]
@@ -670,9 +695,10 @@ class StateFamilies:
                 seed=seed,
                 cases=[case(skill="ReturnWiper")],
                 provenance=(
-                    f"reset_to_seed({seed}); PickWiper; SweepShelf(cube_0){ORACLE_SWEEP_PARAMS}"
+                    f"reset_to_seed({seed}); PickWiper; SweepShelf(the shelf cube nearest "
+                    f"the box centre in y){ORACLE_SWEEP_PARAMS}"
                 ),
-                setup=Setups.chain(Setups.skill(action=pick_wiper), Setups.skill(action=sweep)),
+                setup=Setups.chain(Setups.skill(action=pick_wiper), Setups.sweep_central_cube()),
             )
 
     @staticmethod

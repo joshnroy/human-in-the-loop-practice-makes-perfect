@@ -54,7 +54,6 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from scipy.spatial.transform import Rotation, Slerp
 
-ENV_ID = "kinder/SweepOffShelf3D-o5-v0"
 CUBES = tuple(f"cube_{i}" for i in range(5))
 SKILLS = (
     "pick_wiper",

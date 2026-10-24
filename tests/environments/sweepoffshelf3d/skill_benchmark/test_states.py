@@ -9,6 +9,7 @@ from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import (
     CupboardGeometry,
     FloorSupport,
     Placements,
+    Setups,
     StateCapture,
     StateSet,
 )
@@ -160,3 +161,18 @@ def test_the_committed_sweep_cases_are_every_shelf_cube_on_the_whole_grid() -> N
         ]
         cases = sorted((c.cube, tuple(c.params)) for c in state.cases if c.skill == "SweepShelf")
         assert cases == sorted((cube, tuple(p)) for cube in on_shelf for p in SWEEP_GRID)
+
+
+def test_the_after_sweep_stroke_aims_at_the_shelf_cube_nearest_the_box_centre() -> None:
+    """Seed 0 on the 30 cm box: cube_0 sits at y -0.224, outside the box's +-0.14
+    interior, and the oracle stroke at it misses; cube_1 at y -0.056 is the nearest."""
+    shelf = {
+        "cube_0": (1.550, -0.224),
+        "cube_1": (1.516, -0.056),
+        "cube_2": (1.526, 0.072),
+        "cube_3": (1.449, 0.106),
+        "cube_4": (1.498, 0.187),
+    }
+    assert Setups.central_cube(shelf=shelf, box_y=0.0) == 1
+    assert Setups.central_cube(shelf=shelf, box_y=0.1) == 3
+    assert Setups.central_cube(shelf={"cube_4": (1.5, 0.3)}, box_y=0.0) == 4

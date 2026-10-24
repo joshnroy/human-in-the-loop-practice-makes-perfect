@@ -94,7 +94,7 @@ RETRACT_TOLERANCE = 0.05
 # The box's collision model in the planner: KINDER's own Bin primitive, its dimensions
 # (these keys) read from the live box, so a box resized in the task JSON is planned
 # around as it is. The values are today's task's, for reference only.
-BOX_DIMENSIONS = {"length": 0.25, "width": 0.5, "height": 0.2, "wall_thickness": 0.01}
+BOX_DIMENSIONS = {"length": 0.25, "width": 0.3, "height": 0.2, "wall_thickness": 0.01}
 # Where the held cube is let go over the shelf, above the board: a short drop, not a
 # set-down, since the leaned wrist cannot reach lower without meeting the board above.
 SHELF_DROP_RISES = (0.06, 0.09, 0.12)

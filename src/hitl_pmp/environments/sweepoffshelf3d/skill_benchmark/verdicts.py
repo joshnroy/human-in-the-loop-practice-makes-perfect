@@ -7,9 +7,8 @@ aims one stroke at one cube (2026-10-23) that is per (state, target cube), and
 `SETTING_THRESHOLDS` relaxes "every pair" to a pair count. A skill with no
 valid benchmark case has not been shown to meet anything, so it does not pass.
 
-`THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for four skills with x/y of their
-gated runs. `ReturnCubeToShelfFromBox` gates on the states harvested from practice only;
-its synthetic container states still run and are reported, but do not gate.
+`THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for three skills with x/y of their
+gated runs. `REPORT_ONLY` skills run and are reported but do not gate.
 
 ## Which simulator a failure belongs to
 
@@ -36,20 +35,32 @@ from .types import CaseResult, SettingThreshold, SkillThreshold, SkillVerdict
 # scene with a 6 mm wiper margin; the gate is that minus 3. A fix to the shelf pick's
 # grasp and base generation is in progress; raise this back when it lands.
 THRESHOLDS: dict[str, SkillThreshold] = {
-    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=72, out_of=100),
+    # 72/100 on the 50 cm box's state set, the same rate of the 30 cm box's 92 shelf picks
+    # (Josh, 2026-10-24).
+    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=66, out_of=92),
     S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
-    S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
-        min_successes=5, out_of=8, families=frozenset({"harvested"})
+}
+# Skills that run and are reported but do not gate, and why (Josh, 2026-10-24). The box
+# return gated on states harvested from practice (5/8); those runs were all on the 50 cm
+# box, and a harvested state rebuilds only into a box of the recorded size, so the 30 cm
+# box has none. Its synthetic container states are reported until narrow-box runs give
+# harvested states, when it becomes a gate again.
+REPORT_ONLY: dict[str, str] = {
+    S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: (
+        "report only: no harvested states on the 30 cm box yet; a gate again once "
+        "narrow-box runs provide them"
     ),
 }
 # A pair-count target for a continuous-parameter skill (Josh, 2026-10-23), set from the
-# measured count (2026-10-24): the angled stroke's gate run at 01aae2153 found a
-# succeeding setting for 37/40 (state, target cube) pairs. The three without one are
-# wiper-in-hand-s1-l3/cube_0 (a corner cube at y -0.225), wiper-in-hand-s0-l3/cube_3 and
-# wiper-in-hand-s1-l0/cube_3.
+# measured count on the 30 cm box (2026-10-24): the gate run at 6cd7ac3d5 found a
+# succeeding setting for 30/40 (state, target cube) pairs (37/40 on the 50 cm box). The
+# 10 without one are cubes at |y| 0.17-0.24, beyond the box's +-0.14 interior and near
+# a side panel: a turned stroke's head must clear the cupboard's panels, which starts it
+# in front of such a cube, so no stroke engages it (0/400 landed at +-30 to +-60 deg).
+# Those cubes go by pick-and-place or a human reset.
 SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
-    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=37, out_of=40),
+    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=30, out_of=40),
 }
 # (line offset [m], stroke angle [deg]) (Josh, 2026-10-24): offsets either side of the
 # cube, none over it, out to the bound; angles within +/- 30 deg of the straight pull.
@@ -123,7 +134,22 @@ class Verdicts:
                 None if skill in SCRIPTED_SKILLS else sum(r.pybullet == "planned" for r in runs)
             )
             threshold = THRESHOLDS.get(skill)
-            if threshold is not None:
+            if skill in REPORT_ONLY:
+                verdicts.append(
+                    SkillVerdict(
+                        skill=skill,
+                        target="report only",
+                        passed=bool(runs),
+                        reason=REPORT_ONLY[skill],
+                        successes=successes,
+                        total=len(runs),
+                        reported_successes=successes,
+                        reported_total=len(runs),
+                        labels=labels,
+                        pybullet_planned=pybullet,
+                    )
+                )
+            elif threshold is not None:
                 verdicts.append(
                     Verdicts.against_threshold(
                         skill=skill,
