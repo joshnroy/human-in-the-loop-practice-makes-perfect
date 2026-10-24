@@ -21,8 +21,8 @@ START = frozenset({
 })
 
 
-def _action(*, skill: str, cube: int = 0, height: float = 0.0, speed: float = 0.0) -> np.ndarray:
-    return np.array([float(SKILL_IDS[skill]), float(cube), height, speed])
+def _action(*, skill: str, cube: int = 0, offset: float = 0.0, angle: float = 0.0) -> np.ndarray:
+    return np.array([float(SKILL_IDS[skill]), float(cube), offset, angle])
 
 
 def _picked_wiper() -> frozenset:
@@ -88,18 +88,21 @@ def test_no_error_but_a_promised_effect_missing_is_not_a_success() -> None:
     after = START - {("OnShelf", ("cube_0",))} | {("InBox", ("cube_0", "box_0"))}
     holding = _picked_wiper()
     trace = SkillTraces.build(
-        action=_action(skill="SweepShelf", height=0.005, speed=0.05),
+        action=_action(skill="SweepShelf", cube=1, offset=-0.06, angle=15.0),
         atoms_before=holding,
         atoms_after=after | {("HoldingWiper", ("robot", "wiper_0"))},
         error=None,
         controller_steps=2852,
         notes=[],
     )
-    # Every cube on the shelf before the sweep is promised InBox (a conditional effect).
+    # The sweep aimed at cube_1 promised cube_1 in the box; cube_0 landing there
+    # instead is a side effect, not a success.
     assert trace.outcome == "effects_missing"
+    assert trace.objects == ["robot", "wiper_0", "box_0", "cube_1"]
     assert "InBox(cube_1,box_0)" in trace.missing_effects
+    assert "not OnShelf(cube_1)" in trace.missing_effects
     assert "InBox(cube_0,box_0)" not in trace.missing_effects
-    assert trace.params == [0.005, 0.05]
+    assert trace.params == [-0.06, 15.0]
 
 
 def test_an_interrupted_skill_is_its_own_outcome() -> None:

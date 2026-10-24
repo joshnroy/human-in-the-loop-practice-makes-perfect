@@ -247,7 +247,7 @@ def test_the_wiper_skills_still_pick_sweep_and_return(*, env, monkeypatch):
     monkeypatch.setattr(kinder, "planning_sim", recording)
 
     def act(*, skill):
-        env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, 0.005, 0.05]))
+        env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, -0.06, 0.0]))
         return env.get_current_state().abstract_atoms
 
     atoms = act(skill="PickWiper")

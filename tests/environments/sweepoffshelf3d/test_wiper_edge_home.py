@@ -11,7 +11,7 @@ from hitl_pmp.environments.sweepoffshelf3d.environment import (
     SweepOffShelf3DEnvironment,
 )
 
-from .test_kinder_skills import _force_one_reseat
+from .test_kinder_skills import _force_one_reseat, _only_cube_0_on_the_shelf
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -71,8 +71,8 @@ def _place(*, env, position, yaw_deg=180.0, tilt_deg=0.0, settle=0):
         backend.sim().step()
 
 
-def _act(*, env, skill, height=0.005, speed=0.05):
-    env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, height, speed]))
+def _act(*, env, skill, offset=-0.06, angle=0.0):
+    env.take_action(action=np.array([float(SKILL_IDS[skill]), 0.0, offset, angle]))
     return env.get_current_state().abstract_atoms
 
 
@@ -137,6 +137,7 @@ def test_one_grasp_picks_sweeps_and_returns_the_wiper(*, env, monkeypatch):
     _force_one_reseat(monkeypatch=monkeypatch)
     env.reset_to_seed(seed=0)
     shelf = env.controllers()._skills  # noqa: SLF001
+    _only_cube_0_on_the_shelf(env=env)
     atoms = _act(env=env, skill="PickWiper")
     assert HELD in atoms, env.last_skill_error()
     atoms = _act(env=env, skill="SweepShelf")

@@ -176,8 +176,9 @@ class SweepOffShelfDeployment:
 
     State: (cubes still on the shelf, what the hand holds, whether the wiper is home);
     a held cube is counted neither on the shelf nor in the box. Both routes are open --
-    pick the wiper and sweep, or carry the cubes one at a time -- and the policy takes
-    whichever the competences favour.
+    pick the wiper and sweep the cubes one stroke at a time, or carry them one at a
+    time -- and the policy takes whichever the competences favour. A successful sweep
+    moves its one target cube; side effects on the others are not modelled.
     """
 
     NUM_CUBES = 5
@@ -196,7 +197,7 @@ class SweepOffShelfDeployment:
                     if hand == "empty" and home:
                         options.append(("PickWiper", (shelf, "wiper", False)))
                     if hand == "wiper" and shelf:
-                        options.append(("SweepShelf", (0, "wiper", False)))
+                        options.append(("SweepShelf", (shelf - 1, "wiper", False)))
                     if hand == "wiper":
                         options.append(("ReturnWiper", (shelf, "empty", True)))
                     if hand == "empty" and shelf:
@@ -261,9 +262,10 @@ class SweepOffShelfPracticeDomain(PracticeDomain):
     # The evaluation episode's horizon (SweepOffShelf3D's EPISODE_HORIZON).
     deployment_horizon: int = 12
     # Beta(1, 3): an untrained skill works one time in four. Under the default
-    # Beta(2, 1) the 12-skill deployment value starts at 0.97, so practice looks
-    # worthless before any evidence; Beta(1, 3) starts it at 0.555 (Tossing3D's own
-    # prior value is 0.518).
+    # Beta(2, 1) the 12-skill deployment value started at 0.97, so practice looked
+    # worthless before any evidence; Beta(1, 3) started it at 0.555 (Tossing3D's own
+    # prior value is 0.518). Chosen when one sweep cleared the shelf: with one stroke
+    # per cube (2026-10-23) the same prior starts it at 0.116.
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
     # Five interchangeable cubes: exact symmetry plus count-keyed beliefs take the

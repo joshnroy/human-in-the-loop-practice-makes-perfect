@@ -63,8 +63,8 @@ def test_case_ids_name_the_state_skill_cube_and_setting() -> None:
         == "layout-7-PickCubeFromShelf-cube_3"
     )
     assert (
-        BenchmarkCase(skill="SweepShelf", params=[0.01, 0.25]).case_id(state_id="w")
-        == "w-SweepShelf-p0.01_0.25"
+        BenchmarkCase(skill="SweepShelf", cube="cube_1", params=[-0.05, 30.0]).case_id(state_id="w")
+        == "w-SweepShelf-cube_1-p-0.05_30"
     )
 
 
@@ -76,11 +76,15 @@ def test_a_case_is_run_only_where_its_operator_preconditions_hold() -> None:
     assert not StateCapture.applicable(
         case=BenchmarkCase(skill="PlaceCubeInBox", cube="cube_2"), atoms=START_ATOMS
     )
-    # SweepShelf's static CubeOrder chain is not a classified atom; it never blocks.
+    # A sweep is aimed at one cube, and applies only while that cube is on the shelf.
     holding = [a for a in START_ATOMS if a not in {"HandEmpty(robot)", "WiperHome(wiper_0)"}]
     holding += ["HoldingWiper(robot,wiper_0)", "WiperAway(wiper_0)"]
     assert StateCapture.applicable(
-        case=BenchmarkCase(skill="SweepShelf", params=[0.0, 0.05]), atoms=holding
+        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.025, 15.0]), atoms=holding
+    )
+    swept = [a for a in holding if a != "OnShelf(cube_3)"]
+    assert not StateCapture.applicable(
+        case=BenchmarkCase(skill="SweepShelf", cube="cube_3", params=[0.025, 15.0]), atoms=swept
     )
 
 
@@ -138,3 +142,21 @@ def test_a_floor_case_needs_its_cube_resting_on_the_floor_alone(*, supports, val
     assert (reason is None) is valid
     if reason is not None:
         assert "cube_2" in reason
+
+
+def test_the_committed_sweep_cases_are_every_shelf_cube_on_the_whole_grid() -> None:
+    """Per (state, target cube): each wiper-in-hand state sweeps every cube it has on
+    the shelf at every setting of `SWEEP_GRID`, and nothing else."""
+    from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.verdicts import SWEEP_GRID
+
+    states = StateSet.load(
+        path=Path(__file__).resolve().parents[4] / "benchmarks/sweepoffshelf3d/states.jsonl"
+    )
+    swept = [s for s in states if any(c.skill == "SweepShelf" for c in s.cases)]
+    assert len(swept) == 8
+    for state in swept:
+        on_shelf = [
+            a.removeprefix("OnShelf(")[:-1] for a in state.atoms if a.startswith("OnShelf(")
+        ]
+        cases = sorted((c.cube, tuple(c.params)) for c in state.cases if c.skill == "SweepShelf")
+        assert cases == sorted((cube, tuple(p)) for cube in on_shelf for p in SWEEP_GRID)
