@@ -124,3 +124,73 @@ class OptimisticSkillCompetenceModel(BaseModel):
         alpha_n = self.alpha + num_successes
         beta_n = (num_total - num_successes) + self.beta
         return float(alpha_n / (alpha_n + beta_n))
+
+
+class LinearSkillCompetenceModel(BaseModel):
+    """One skill's competence under the Deliberate Practice baseline's linear
+    learning-rate model (Vats & Konidaris, *Deliberate Practice: Learning Robot Skills
+    under a Budget*): b more practice attempts are predicted to bring competence to
+
+        min(1, p + Delta * b)
+
+    clipped below at 0 as well, since the online Delta can go negative.
+
+    p is the Beta-Bernoulli posterior mean (alpha + s) / (alpha + beta + n) pooled over
+    every outcome so far, open cycle included. The prior defaults to EES's Beta(10, 1),
+    so DP and EES start from the same belief about a never-practised skill.
+
+    Delta is the paper's running average of observed improvement,
+
+        Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1}) / n_t
+
+    updated once per closed cycle in which the skill was attempted, where p_t is the
+    posterior mean at that cycle's end and n_t its number of attempts. Dividing by n_t
+    is what keeps Delta in the same unit as b, one attempt; the paper's t indexes single
+    practice episodes, so there n_t is 1 and the two forms coincide. A cycle with no
+    attempt carries no evidence about the learning rate and leaves Delta alone, rather
+    than decaying it toward zero.
+
+    The paper gives no experimental values for the Delta prior or eps. 0.1 is the
+    per-episode improvement in its own illustrative example, and eps = 0.5 is ours."""
+
+    alpha: float = Field(default=10.0, gt=0.0)
+    beta: float = Field(default=1.0, gt=0.0)
+    initial_delta: float = 0.1
+    smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
+    # The same layout as OptimisticSkillCompetenceModel's, so one can be built from the
+    # other's history.
+    cycle_observations: list[list[bool]] = Field(default_factory=lambda: [list[bool]()])
+
+    def observe(self, *, success: bool) -> None:
+        self.cycle_observations[-1].append(success)
+
+    def advance_cycle(self) -> None:
+        self.cycle_observations.append([])
+
+    def get_current_competence(self) -> float:
+        outcomes = [outcome for cycle in self.cycle_observations for outcome in cycle]
+        return self._posterior_mean(successes=sum(outcomes), total=len(outcomes))
+
+    def learning_rate(self) -> float:
+        delta = self.initial_delta
+        successes = 0
+        total = 0
+        previous = self._posterior_mean(successes=0, total=0)
+        for cycle in self.cycle_observations[:-1]:
+            if not cycle:
+                continue
+            successes += sum(cycle)
+            total += len(cycle)
+            current = self._posterior_mean(successes=successes, total=total)
+            delta = self.smoothing * delta + (1.0 - self.smoothing) * (current - previous) / len(
+                cycle
+            )
+            previous = current
+        return delta
+
+    def predict_competence(self, *, num_attempts: int) -> float:
+        predicted = self.get_current_competence() + self.learning_rate() * num_attempts
+        return float(min(1.0, max(0.0, predicted)))
+
+    def _posterior_mean(self, *, successes: int, total: int) -> float:
+        return float((self.alpha + successes) / (self.alpha + self.beta + total))
