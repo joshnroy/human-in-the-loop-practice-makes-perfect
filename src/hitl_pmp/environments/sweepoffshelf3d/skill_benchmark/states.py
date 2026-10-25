@@ -45,7 +45,10 @@ POCKET_WALL_Y = 0.125
 POCKET_WALL_GAPS = (0.01, 0.02, 0.04, 0.08)
 POCKET_BOARD_GAPS = (0.005, 0.025)
 SHELF_MARGIN = 0.006
-STATIC_PREDICATES = frozenset({"CubeOrder"})
+# Preconditions the benchmark does not require of a state: the static cube chain, and
+# `PickPlannable`, the dry run of the very pick the benchmark measures -- its
+# denominators keep the states the planners' copy of that check would rule out.
+STATIC_PREDICATES = frozenset({"CubeOrder", "PickPlannable"})
 FLOOR_SKILLS = frozenset({"PickCubeFromFloor", "ReturnCubeToShelfFromFloor"})
 FLOOR_GEOM = "floor"
 # A contact counts as support when it touches the cube's lower quarter: a wall the cube

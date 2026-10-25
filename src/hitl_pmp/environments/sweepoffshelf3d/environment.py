@@ -29,6 +29,7 @@ from hitl_pmp.recording.run_record.sink import SkillTickSink
 from .backend import SweepOffShelf3DBackend
 from .controllers import ControllerFailure, SweepOffShelf3DControllers
 from .objects import SweepOffShelf3DObjects as O
+from .pick_plannable import PickPlannableAtoms
 from .skills import RESET_CUBES_NAME, RESET_WIPER_NAME
 from .types import AbstractAtom, HumanEvent, SkillNote, SweepOffShelf3DState
 
@@ -154,7 +155,14 @@ class SweepOffShelf3DEnvironment(Environment):
         features = backend.features()
         data = {obj: features[obj.name] for obj in (O.robot, *O.cubes, O.wiper, O.box)}
         data[O.scene] = np.array([float(seed), float(steps_taken)])
-        return SweepOffShelf3DState(data=data, abstract_atoms=backend.abstract_atoms())
+        # PickPlannable is decided here rather than in the backend: its dry run drives
+        # the skills' own planning, which reads the backend's classification.
+        controllers = self.controllers()
+        atoms = PickPlannableAtoms.with_verdicts(
+            atoms=backend.abstract_atoms(),
+            plannable=lambda cube: controllers.pick_plannable(cube=cube),
+        )
+        return SweepOffShelf3DState(data=data, abstract_atoms=atoms)
 
     def _bookkeeping(self) -> tuple[int, int]:
         state = self.get_current_state()

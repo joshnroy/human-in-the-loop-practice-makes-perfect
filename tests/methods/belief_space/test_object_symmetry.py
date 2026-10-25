@@ -19,6 +19,7 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
+from hitl_pmp.environments.sweepoffshelf3d.pick_plannable import PickPlannableAtoms
 from hitl_pmp.environments.sweepoffshelf3d.predicates import (
     SweepOffShelf3DAtoms,
     SweepOffShelf3DPredicates,
@@ -71,7 +72,8 @@ def _atoms(
     held_cube=None,
     wiper="home",
 ) -> frozenset[GroundAtom]:
-    """A symbolic shelf state with its summary atoms, as the backend classifies it."""
+    """A symbolic shelf state with its summary atoms, as the environment observes it
+    when every off-shelf cube's pick plans."""
     named: set[tuple[str, tuple[str, ...]]] = set()
     named |= {("OnShelf", (CUBES[i].name,)) for i in shelf}
     named |= {("InBox", (CUBES[i].name, O.box.name)) for i in box}
@@ -87,7 +89,12 @@ def _atoms(
             "floor": ("WiperOnFloor", (O.wiper.name,)),
         }[wiper]
     )
-    named = set(SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named)))
+    named = set(
+        PickPlannableAtoms.with_verdicts(
+            atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named)),
+            plannable=lambda cube: True,
+        )
+    )
     predicates = {p.name: p for p in SweepOffShelf3DPredicates.all()}
     objects = {o.name: o for o in O.all_objects()}
     return (

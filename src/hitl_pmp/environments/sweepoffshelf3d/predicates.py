@@ -36,6 +36,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 
 from .objects import NUM_CUBES
 from .objects import SweepOffShelf3DObjects as O
+from .pick_plannable import KB_PICK_PLANNABLE
 from .types import AbstractAtom
 
 
@@ -106,6 +107,16 @@ WIPER_ON_FLOOR = SweepOffShelf3DAtoms.predicate(name="WiperOnFloor", types=(O.wi
 ANY_CUBE_ON_SHELF = SweepOffShelf3DAtoms.predicate(name="AnyCubeOnShelf", types=())
 ANY_CUBE_OFF_SHELF = SweepOffShelf3DAtoms.predicate(name="AnyCubeOffShelf", types=())
 WIPER_AWAY = SweepOffShelf3DAtoms.predicate(name="WiperAway", types=(O.wiper_type,))
+# The floor and box pick's own planning finds a grasp on this cube: a dry run made by the
+# environment, not the backend, when it observes a state. See `pick_plannable.py` for
+# when it is made and what the atom is when it is not.
+PICK_PLANNABLE = SweepOffShelf3DAtoms.predicate(
+    name=KB_PICK_PLANNABLE,
+    types=(
+        O.robot_type,
+        O.cube_type,
+    ),
+)
 
 _CUBE_CHAIN = frozenset((first.name, second.name) for first, second in itertools.pairwise(O.cubes))
 CUBE_ORDER = Predicate(
@@ -127,6 +138,7 @@ DYNAMIC_PREDICATES = (
     ANY_CUBE_ON_SHELF,
     ANY_CUBE_OFF_SHELF,
     WIPER_AWAY,
+    PICK_PLANNABLE,
 )
 
 

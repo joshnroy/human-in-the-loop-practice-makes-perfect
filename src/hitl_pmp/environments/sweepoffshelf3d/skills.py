@@ -40,6 +40,7 @@ from .predicates import (
     IN_BOX,
     ON_FLOOR,
     ON_SHELF,
+    PICK_PLANNABLE,
     WIPER_AWAY,
     WIPER_HOME,
     WIPER_ON_FLOOR,
@@ -55,13 +56,17 @@ _SLOTS = tuple(Variable(name=f"cube{i}", type=O.cube_type) for i in range(NUM_CU
 _EMPTY = LiftedAtom(predicate=HAND_EMPTY, variables=(_ROBOT,))
 _ANY_ON = LiftedAtom(predicate=ANY_CUBE_ON_SHELF, variables=())
 _ANY_OFF = LiftedAtom(predicate=ANY_CUBE_OFF_SHELF, variables=())
+_CUBE = Variable(name="cube", type=O.cube_type)
+# The floor and box pick finds a grasp on the cube (`pick_plannable.py`): required by the
+# three skills that start with that pick, never by `PickCubeFromShelf`.
+_PLANNABLE = LiftedAtom(predicate=PICK_PLANNABLE, variables=(_ROBOT, _CUBE))
 
 
 class SweepOffShelf3DSkills:
     """A static-method container, never instantiated."""
 
     _robot: ClassVar[Variable] = _ROBOT
-    _cube: ClassVar[Variable] = Variable(name="cube", type=O.cube_type)
+    _cube: ClassVar[Variable] = _CUBE
     _wiper: ClassVar[Variable] = Variable(name="wiper", type=O.wiper_type)
     _box: ClassVar[Variable] = _BOX
     _slots: ClassVar[tuple[Variable, ...]] = _SLOTS
@@ -138,7 +143,11 @@ class SweepOffShelf3DSkills:
     PICK_CUBE_FROM_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
         parameters=(_robot, _cube),
-        preconditions=frozenset({_empty, LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
+        preconditions=frozenset({
+            _empty,
+            _PLANNABLE,
+            LiftedAtom(predicate=ON_FLOOR, variables=(_cube,)),
+        }),
         add_effects=frozenset({_held_cube}),
         delete_effects=frozenset({_empty, LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
         param_dim=0,
@@ -163,7 +172,11 @@ class SweepOffShelf3DSkills:
     RETURN_CUBE_TO_SHELF_FROM_BOX: ClassVar[Skill] = Skill(
         name="ReturnCubeToShelfFromBox",
         parameters=(_robot, _cube, _box),
-        preconditions=frozenset({_empty, LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
+        preconditions=frozenset({
+            _empty,
+            _PLANNABLE,
+            LiftedAtom(predicate=IN_BOX, variables=(_cube, _box)),
+        }),
         add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
         delete_effects=frozenset({LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
         param_dim=0,
@@ -173,7 +186,11 @@ class SweepOffShelf3DSkills:
     RETURN_CUBE_TO_SHELF_FROM_FLOOR: ClassVar[Skill] = Skill(
         name="ReturnCubeToShelfFromFloor",
         parameters=(_robot, _cube),
-        preconditions=frozenset({_empty, LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
+        preconditions=frozenset({
+            _empty,
+            _PLANNABLE,
+            LiftedAtom(predicate=ON_FLOOR, variables=(_cube,)),
+        }),
         add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
         delete_effects=frozenset({LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
         param_dim=0,

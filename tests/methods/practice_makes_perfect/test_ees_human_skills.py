@@ -12,6 +12,7 @@ from hitl_pmp.core.method.method import HumanCubeBinResetRequested
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
+from hitl_pmp.environments.sweepoffshelf3d.pick_plannable import PickPlannableAtoms
 from hitl_pmp.environments.sweepoffshelf3d.predicates import (
     SweepOffShelf3DAtoms,
     SweepOffShelf3DPredicates,
@@ -37,7 +38,11 @@ def _state(*, on_shelf, in_box) -> SweepOffShelf3DState:
     named |= {("OnShelf", (cube.name,)) for cube in on_shelf}
     named |= {("InBox", (cube.name, O.box.name)) for cube in in_box}
     return SweepOffShelf3DState(
-        data={}, abstract_atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named))
+        data={},
+        abstract_atoms=PickPlannableAtoms.with_verdicts(
+            atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named)),
+            plannable=lambda cube: True,
+        ),
     )
 
 
