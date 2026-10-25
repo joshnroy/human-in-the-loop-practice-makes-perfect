@@ -189,11 +189,15 @@ class EesCli:
         parser.add_argument(
             "--ees-score-human-skills",
             action=argparse.BooleanOptionalAction,
-            default=EesMethod.model_fields["score_human_skills"].default,
+            # None, not the method's default, so --method pomdp can tell a flag it
+            # would ignore from no flag at all.
+            default=None,
             help="Score each human skill's outcome against its effects, track its "
             "competence and price it at its human cost plus -log(competence), like a "
-            "robot skill (default off: the paper's EES, whose human rescue always "
-            "succeeds). A deviation from the paper; SweepOffShelf3D runs turn it on.",
+            "robot skill (default on: human skills are first-class, a deviation from "
+            "the paper). --no-ees-score-human-skills restores the paper's EES, whose "
+            "human rescue always succeeds, as every EES run before 2026-10-25 used "
+            "unless it passed this flag.",
         )
         parser.add_argument(
             "--always-ask-reset",
@@ -237,6 +241,9 @@ class EesCli:
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        # Resolved in place, so the config snapshot records the value the run used.
+        if args.ees_score_human_skills is None:
+            args.ees_score_human_skills = EesMethod.model_fields["score_human_skills"].default
         # Built here rather than inside the factory lambda so a missing --output-dir is
         # rejected before the environment is constructed, and so it is built exactly
         # once even if a caller ever invokes the factory more than once (two recorders
@@ -445,7 +452,7 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        if args.ees_score_human_skills:
+        if args.ees_score_human_skills is not None:
             raise ValueError(
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
                 "every human skill its practice domain does not treat as deterministic"
