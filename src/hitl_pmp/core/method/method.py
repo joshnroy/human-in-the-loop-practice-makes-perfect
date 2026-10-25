@@ -152,6 +152,15 @@ class Method(BaseModel, abc.ABC):
         Methods that do not need the limit inherit this no-op.
         """
 
+    def practice_complete(self) -> bool:
+        """Whether this Method has finished practising for the whole run, for a Method
+        with a budget of its own. The step protocol asks before every practice action
+        and every session; once True, practice ends with nothing more dispatched -- no
+        robot action, STOP or human reset -- and the final measurement still runs. The
+        attempt already in flight is the only overshoot. Never, by default.
+        """
+        return False
+
     def observe_environment_reset(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *before* it resets the
         environment part-way through an interaction period

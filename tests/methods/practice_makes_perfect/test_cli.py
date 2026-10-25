@@ -672,3 +672,85 @@ def test_num_rollouts_must_be_all_or_positive() -> None:
         Cli.parse_args(
             argv=["--env", "tossing3d", "--method", "pomdp", "--pomdp-num-rollouts", "0"]
         )
+
+
+def _build_dp_parser() -> argparse.ArgumentParser:
+    from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+    from hitl_pmp.methods.practice_makes_perfect.cli import DpCli
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num-test-tasks", type=int, default=20)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    LightSwitchCli.add_arguments(parser=parser)
+    DpCli.add_arguments(parser=parser)
+    return parser
+
+
+def test_dp_needs_a_budget() -> None:
+    with pytest.raises(SystemExit):
+        _build_dp_parser().parse_args([])
+
+
+def test_dp_flags_parse_with_their_defaults() -> None:
+    args = _build_dp_parser().parse_args(["--dp-budget", "50"])
+    assert args.dp_budget == pytest.approx(50.0)
+    assert args.dp_initial_learning_rate == pytest.approx(0.1)
+    assert args.dp_smoothing == pytest.approx(0.5)
+    assert args.dp_max_skills == 8
+    assert args.dp_max_allocations == 200_000
+    # EES's own flags, inherited.
+    assert args.exploration_epsilon == 0.5
+
+
+def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.cli import DpCli
+    from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+
+    args = _build_dp_parser().parse_args([
+        "--dp-budget",
+        "12.5",
+        "--dp-initial-learning-rate",
+        "0.2",
+        "--dp-smoothing",
+        "0.25",
+        "--dp-max-skills",
+        "5",
+        "--dp-max-allocations",
+        "999",
+        "--ees-prior-alpha",
+        "2",
+        "--exploration-epsilon",
+        "0.3",
+    ])
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    DpCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, DpMethod)
+    assert method.dp_budget == pytest.approx(12.5)
+    assert method.dp_initial_learning_rate == pytest.approx(0.2)
+    assert method.dp_smoothing == pytest.approx(0.25)
+    assert method.dp_max_skills == 5
+    assert method.dp_max_allocations == 999
+    assert method.prior_alpha == pytest.approx(2.0)
+    assert method.exploration_epsilon == pytest.approx(0.3)
+    assert method.score_human_skills is True
+
+
+@pytest.mark.parametrize("flag", ["--dp-smoothing", "--dp-budget"])
+def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
+    value = "1.5" if flag == "--dp-smoothing" else "0"
+    argv = ["--dp-budget", "1", flag, value]
+    with pytest.raises(SystemExit):
+        _build_dp_parser().parse_args(argv)

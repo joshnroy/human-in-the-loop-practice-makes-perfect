@@ -1394,3 +1394,92 @@ def test_a_simulated_step_zero_measurement_takes_no_checkpoint_and_no_restore(*,
     assert "practice_scene_restored" not in kinds
     assert _measured(output=output)[0] == 0
     assert not (output / CHECKPOINT_FILENAME).exists()
+
+
+class _CompletingMethod(ScriptedMethod):
+    """Declares its own practice complete once it has dispatched `limit` actions."""
+
+    def model_post_init(self, context, /) -> None:  # noqa: PLR0917
+        super().model_post_init(context)
+        self._limit = 0
+        self._dispatched = 0
+
+    def get_practice_policy(self, *, task):
+        inner = super().get_practice_policy(task=task)
+
+        def policy(state):  # noqa: PLR0917 -- Policy is a positional callable
+            self._dispatched += 1
+            return inner(state)
+
+        return policy
+
+    def practice_complete(self) -> bool:
+        return self._dispatched >= self._limit
+
+
+@pytest.mark.parametrize("wrapped", [True, False], ids=["always-ask", "plain"])
+def test_a_method_that_declares_practice_complete_ends_the_run_and_spends_nothing_more(
+    *, tmp_path, wrapped
+):
+    """No further robot action, no STOP-only session and no forced reset once the
+    method says practice is complete; the attempt already in flight is the only
+    overshoot, and the final measurement still runs."""
+    from hitl_pmp.core.method.method import InteractionComplete
+    from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import AlwaysAskReset
+
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _CompletingMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        always_ask_reset=AlwaysAskReset(cost=1.0) if wrapped else None,
+    )
+    # Without the hook: a STOP closes session 1, then STOP-only sessions follow, each
+    # with a forced reset under always-ask.
+    method._script = [1, 1, 1] + [InteractionComplete(planner_stop=True)] * 12
+    method._limit = 3
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=method,
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "method_practice_complete"
+    assert len([e for e in _events(output=output) if e["event"] == "robot"]) == 3
+    assert _stop_events(output=output) == []
+    assert _human_events(output=output) == []
+    assert _measured(output=output)[-1] == 3
+
+
+def test_a_method_complete_before_practice_runs_no_session(*, tmp_path):
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _CompletingMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=0)
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=method,
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "method_practice_complete"
+    assert _session_starts(output=output) == []
+
+
+def test_practice_is_never_complete_by_default():
+    assert _scripted_method(script=[]).practice_complete() is False
+
+
+@pytest.mark.parametrize(("method", "accepted"), [("dp", True), ("random-skills", False)])
+def test_the_step_protocol_runs_dp(*, tmp_path, method, accepted):
+    """DP's budget is in PracticeAccounting units, which only the step protocol keeps."""
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    args = _step_args(output_dir=tmp_path / "run", budget=10, interval=5, method=method)
+    if accepted:
+        StepProtocolValidation.check(args=args)
+        return
+    with pytest.raises(ValueError, match="supports"):
+        StepProtocolValidation.check(args=args)
