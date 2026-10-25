@@ -755,7 +755,8 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
         assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
         assert rim in reset.delete_effects
-        method = EesMethod(env=env, skill_provider=provider, seed=0)
+        # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
+        method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
         plan = method.plan_to(
             init_atoms=method.abstract_state(state=observed),
             goal=frozenset({GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin))}),
