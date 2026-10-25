@@ -708,8 +708,8 @@ class StepProtocolValidation:
 
     @staticmethod
     def check(*, args: argparse.Namespace) -> None:
-        if args.method not in {"ees", "pomdp"}:
-            raise ValueError("Step protocol currently supports the EES and PDDL methods")
+        if args.method not in {"ees", "dp", "pomdp"}:
+            raise ValueError("Step protocol currently supports the EES, DP and PDDL methods")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
             raise ValueError(
                 "Step protocol requires persistent practice (--practice-reset-policy never)"
@@ -1412,6 +1412,9 @@ class StepPracticeRunner:
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
                     break
+                if method.practice_complete():
+                    endpoint = "method_practice_complete"
+                    break
                 task = PracticeLoop._sample_practice_task(
                     problem=problem, practice_reset_policy=PracticeResetPolicy.NEVER
                 )
@@ -1431,7 +1434,7 @@ class StepPracticeRunner:
                 recorder.begin_cycle(cycle=cycle, task=task, start_step=clock.steps)
                 for action_index in range(args.max_steps_per_interaction):
                     status()
-                    if clock.steps >= clock.budget or early_stop:
+                    if clock.steps >= clock.budget or early_stop or method.practice_complete():
                         break
                     environment.practice_progress(
                         problem=problem,
@@ -1558,6 +1561,12 @@ class StepPracticeRunner:
                     endpoint = "practice_step_budget"
                     # The cycle the budget ended is learned from before the final
                     # measurement; otherwise a run of one cycle measures its prior.
+                    if actions > 0:
+                        learn(actions=actions, reason=endpoint)
+                    break
+                if method.practice_complete():
+                    # Before the session-end bookkeeping, which can force a reset.
+                    endpoint = "method_practice_complete"
                     if actions > 0:
                         learn(actions=actions, reason=endpoint)
                     break

@@ -16,6 +16,7 @@ from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
+from .dp_method import DpMethod
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
 
@@ -252,38 +253,48 @@ class EesCli:
         env_cli.run_method(
             args=args,
             method_factory=lambda ctx: EesMethod(
-                env=ctx.env,
-                skill_provider=ctx.skill_provider,
-                seed=args.seed,
-                draw_recorder=draw_recorder,
-                exploration_epsilon=args.exploration_epsilon,
-                sampler_max_train_iters=args.sampler_max_train_iters,
-                goal_pursuit_horizon=args.goal_pursuit_horizon,
-                goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
-                goal_pursuit_interval=args.goal_pursuit_interval,
-                planning_timeout=args.planning_timeout,
-                competence_window_size=args.competence_window_size,
-                competence_recency_size=args.competence_recency_size,
-                reset_cost_gate=args.ees_reset_gate,
-                always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
-                score_human_skills=args.ees_score_human_skills,
-                prior_alpha=args.ees_prior_alpha,
-                prior_beta=args.ees_prior_beta,
-                reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
-                reproduce_predicators_practice_target_history=(
-                    args.reproduce_predicators_practice_target_history
-                ),
-                reproduce_predicators_explore_target_only=(
-                    args.reproduce_predicators_explore_target_only
-                ),
-                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
-                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
-                reproduce_predicators_random_when_stranded=(
-                    args.reproduce_predicators_random_when_stranded
-                ),
+                **EesCli.method_kwargs(args=args, ctx=ctx, draw_recorder=draw_recorder)
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
+        )
+
+    @staticmethod
+    def method_kwargs(
+        *, args: argparse.Namespace, ctx: Any, draw_recorder: SamplerDrawRecorder | None
+    ) -> dict[str, Any]:
+        """EesMethod's constructor arguments from EES's flags, shared by every method
+        that is EES with a different practice-target choice (`DpCli`)."""
+        return dict(
+            env=ctx.env,
+            skill_provider=ctx.skill_provider,
+            seed=args.seed,
+            draw_recorder=draw_recorder,
+            exploration_epsilon=args.exploration_epsilon,
+            sampler_max_train_iters=args.sampler_max_train_iters,
+            goal_pursuit_horizon=args.goal_pursuit_horizon,
+            goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
+            goal_pursuit_interval=args.goal_pursuit_interval,
+            planning_timeout=args.planning_timeout,
+            competence_window_size=args.competence_window_size,
+            competence_recency_size=args.competence_recency_size,
+            reset_cost_gate=args.ees_reset_gate,
+            always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
+            score_human_skills=args.ees_score_human_skills,
+            prior_alpha=args.ees_prior_alpha,
+            prior_beta=args.ees_prior_beta,
+            reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
+            reproduce_predicators_practice_target_history=(
+                args.reproduce_predicators_practice_target_history
+            ),
+            reproduce_predicators_explore_target_only=(
+                args.reproduce_predicators_explore_target_only
+            ),
+            reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+            reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+            reproduce_predicators_random_when_stranded=(
+                args.reproduce_predicators_random_when_stranded
+            ),
         )
 
 
@@ -549,6 +560,89 @@ class Tossing3DPomdpCli(EesCli):
                     if args.output_dir is not None
                     else None
                 ),
+            ),
+            num_cycles=args.num_cycles,
+            max_steps_per_interaction=args.max_steps_per_interaction,
+        )
+
+
+class DpCli(EesCli):
+    """Plugs DpMethod, the Deliberate Practice baseline, into the global CLI under
+    --method dp. It is EES with a different practice-target choice, so it takes every
+    EES flag (its priors seed DP's competence models too) plus its own. Human skills
+    are always scored: DpMethod requires it, whatever --ees-score-human-skills says."""
+
+    @staticmethod
+    def unit_interval(*, value: str) -> float:
+        parsed = float(value)
+        if not 0.0 <= parsed <= 1.0:
+            raise argparse.ArgumentTypeError(f"must be in [0, 1], got {value}")
+        return parsed
+
+    @staticmethod
+    def positive_int(*, value: str) -> int:
+        parsed = int(value)
+        if parsed < 1:
+            raise argparse.ArgumentTypeError(f"must be >= 1, got {value}")
+        return parsed
+
+    @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        EesCli.add_arguments(parser=parser)
+        fields = DpMethod.model_fields
+        parser.add_argument(
+            "--dp-budget",
+            type=lambda value: EesCli.positive_float(value=value),
+            required=True,
+            help="DP's practice budget B, in PracticeAccounting.total_cost units (the "
+            "--practice-cost-config prices: robot steps plus human resets). Practice "
+            "ends once the run's total cost reaches it.",
+        )
+        parser.add_argument(
+            "--dp-initial-learning-rate",
+            type=float,
+            default=fields["dp_initial_learning_rate"].default,
+            help="Every skill's prior Delta, its predicted competence gain per practice "
+            "attempt (default 0.1, the paper's illustrative value; it gives no "
+            "experimental one).",
+        )
+        parser.add_argument(
+            "--dp-smoothing",
+            type=lambda value: DpCli.unit_interval(value=value),
+            default=fields["dp_smoothing"].default,
+            help="The smoothing factor eps of DP's running-average Delta update, in "
+            "[0, 1] (default 0.5; the paper gives no experimental value).",
+        )
+        parser.add_argument(
+            "--dp-max-skills",
+            type=lambda value: DpCli.positive_int(value=value),
+            default=fields["dp_max_skills"].default,
+            help="Raise, rather than approximate, when more skills than this would be "
+            "enumerated by the exact allocator.",
+        )
+        parser.add_argument(
+            "--dp-max-allocations",
+            type=lambda value: DpCli.positive_int(value=value),
+            default=fields["dp_max_allocations"].default,
+            help="Raise, rather than approximate, when the exact allocator could "
+            "enumerate more allocations than this.",
+        )
+
+    @staticmethod
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
+        env_cli.run_method(
+            args=args,
+            method_factory=lambda ctx: DpMethod(
+                **{
+                    **EesCli.method_kwargs(args=args, ctx=ctx, draw_recorder=draw_recorder),
+                    "score_human_skills": True,
+                },
+                dp_budget=args.dp_budget,
+                dp_initial_learning_rate=args.dp_initial_learning_rate,
+                dp_smoothing=args.dp_smoothing,
+                dp_max_skills=args.dp_max_skills,
+                dp_max_allocations=args.dp_max_allocations,
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,

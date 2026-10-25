@@ -103,6 +103,21 @@ def test_methods_registry_contains_skill_oracle() -> None:
     assert METHODS["skill-oracle"] is SkillOracleCli
 
 
+def test_methods_registry_contains_dp() -> None:
+    from hitl_pmp.methods.practice_makes_perfect.cli import DpCli
+
+    assert METHODS["dp"] is DpCli
+
+
+def test_method_dp_is_accepted_with_its_flags() -> None:
+    args = Cli.parse_args(
+        argv=["--env", "tossing3d", "--method", "dp", "--dp-budget", "40", "--always-ask-reset"]
+    )
+    assert args.method == "dp"
+    assert args.dp_budget == 40.0
+    assert args.always_ask_reset is True
+
+
 def test_methods_registry_contains_tossing3d_pomdp() -> None:
     assert METHODS["pomdp"] is Tossing3DPomdpCli
 
