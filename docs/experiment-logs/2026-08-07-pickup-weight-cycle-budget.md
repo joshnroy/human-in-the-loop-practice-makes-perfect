@@ -1,5 +1,13 @@
 # Ten times the practice budget: is the reset-free arm starved, or stranded?
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. Every EES number in this log was produced with it off, or before the
+> flag existed: a human reset was treated as an always-successful rescue, priced at
+> its fixed cost and never scored. Where this log's domain offers human reset skills,
+> an EES run with today's defaults is a different configuration, and these numbers are
+> not evidence about it; `--no-ees-score-human-skills` reproduces the old one. Where
+> the domain offers none, the flag changes nothing. The numbers below are unchanged.
+
 Domain `tossingroom` (split throws, weight drawn at pickup), method `ees`, 10 fixed seeds
 (0-9), 30 test tasks (14 TRASH / 14 RECYCLING / 2 EMPTY). A cube of **cycle budget**
 (`1x` = 10 cycles, `10x` = 100) x **ledge** (one-way / two-way) x **reset policy**

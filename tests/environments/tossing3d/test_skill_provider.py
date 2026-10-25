@@ -283,7 +283,8 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
-    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
+    method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
     atoms = {
         GroundAtom(
             predicate=CLOSED_EMPTY if closed else HAND_EMPTY,
@@ -366,7 +367,8 @@ def test_ees_plans_a_reset_to_either_side_only_while_practicing(*, destination: 
 
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
-    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
+    method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
     side = Tossing3DSides.parse(name=destination)
     other = Tossing3DSides.opposite if side == Tossing3DSides.robot else Tossing3DSides.robot
     init_atoms = frozenset({

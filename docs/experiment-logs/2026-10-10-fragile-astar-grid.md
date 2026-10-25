@@ -1,5 +1,13 @@
 # Fragile Tossing3D — POMDP Planner / determinized A*, five grid seeds
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. Every EES number in this log was produced with it off, or before the
+> flag existed: a human reset was treated as an always-successful rescue, priced at
+> its fixed cost and never scored. Where this log's domain offers human reset skills,
+> an EES run with today's defaults is a different configuration, and these numbers are
+> not evidence about it; `--no-ees-score-human-skills` reproduces the old one. Where
+> the domain offers none, the flag changes nothing. The numbers below are unchanged.
+
 > **STALENESS NOTE (added 2026-10-21, when this log was committed).** Every Tossing3D
 > number on this page was measured before kindergarden `0dac89e` (2026-10-19), which
 > fixes the bin to the floor once it is placed; before it, a free 0.1 kg bin could be

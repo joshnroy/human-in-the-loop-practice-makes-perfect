@@ -73,8 +73,8 @@ def _offered_costs(*, method: EesMethod, monkeypatch: pytest.MonkeyPatch) -> dic
     return captured
 
 
-def test_scoring_human_skills_is_off_by_default():
-    assert EesMethod.model_fields["score_human_skills"].default is False
+def test_scoring_human_skills_is_on_by_default():
+    assert EesMethod.model_fields["score_human_skills"].default is True
 
 
 def test_off_a_human_skill_is_never_scored_and_costs_its_price(*, monkeypatch):

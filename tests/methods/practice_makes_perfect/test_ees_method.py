@@ -1412,6 +1412,10 @@ def _cube_bin_reset_build(
     seed: int = 0,
     reset_cost_gate: bool = True,
 ) -> tuple[EesMethod, LightSwitchEnvironment]:
+    """`score_human_skills=False`: these tests pin the affordability gate against the
+    reset's bare price. Scored, the reset also pays `-log(competence)` (~0.095 from
+    the prior), which moves every threshold below; test_ees_human_skills.py covers
+    that pricing."""
     env = LightSwitchEnvironment(grid_size=grid_size)
     method = EesMethod(
         env=env,
@@ -1420,6 +1424,7 @@ def _cube_bin_reset_build(
         ),
         seed=seed,
         reset_cost_gate=reset_cost_gate,
+        score_human_skills=False,
     )
     return method, env
 

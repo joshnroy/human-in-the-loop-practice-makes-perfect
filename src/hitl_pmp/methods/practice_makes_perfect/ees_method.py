@@ -124,15 +124,16 @@ class EesMethod(Method):
     configuration belong to that domain. Providers that return `None` do not offer
     `ask_for_reset_cube_bin_only`.
 
-    5. **Not the paper's EES, and off by default:** `score_human_skills`. The paper's
-       EES treats asking the human as a rescue that always works: it is offered at a
-       fixed price and its outcome is never observed. With the flag on, a human skill
-       is judged like a robot skill -- did its promised effects hold afterwards -- and
-       its competence is tracked by the same optimistic model, from the same prior,
-       and priced the same way, `-log(competence)`, on top of the human price. It is
-       never a practice target: the robot cannot practise the human. SweepOffShelf3D
-       runs enable it, because there the human is not always competent; Tossing3D's
-       published EES runs had it off, and still do by default."""
+    5. **Not the paper's EES, and on by default since 2026-10-25:**
+       `score_human_skills`. The paper's EES treats asking the human as a rescue that
+       always works: it is offered at a fixed price and its outcome is never observed.
+       With the flag on, a human skill is first-class, judged like a robot skill -- did
+       its promised effects hold afterwards -- and its competence is tracked by the
+       same optimistic model, from the same prior, and priced the same way,
+       `-log(competence)`, on top of the human price. It is never a practice target:
+       the robot cannot practise the human. Off (`--no-ees-score-human-skills`)
+       reproduces the paper, and is what every EES run before the default flipped
+       used, Tossing3D's published runs included, unless it passed the flag."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -243,8 +244,9 @@ class EesMethod(Method):
     # which a subclass can decline.
     reproduce_predicators_random_when_stranded: bool = False
     # Deviation 5 in the class docstring: score, track and price the human's skills like
-    # robot skills, rather than assuming they always succeed. Off reproduces the paper.
-    score_human_skills: bool = False
+    # robot skills, rather than assuming they always succeed. On by default because human
+    # skills are first-class; off reproduces the paper and every earlier default run.
+    score_human_skills: bool = True
     # The always-ask reset wrapper (`--always-ask-reset`): when set, a human full reset
     # to a freshly sampled start state is forced after every skill with continuous
     # parameters, and whenever the goal is unreachable without a human. The planner --

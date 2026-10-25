@@ -1,5 +1,10 @@
 # SweepOffShelf3D launch shelf-20261023b-1f209df65 (2026-10-22/23)
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. This log's EES runs are unaffected: as recorded below, all 12/12
+> launch lines passed `--ees-score-human-skills` explicitly, so they ran with it on,
+> which is the new default. The numbers below are unchanged.
+
 > **CAVEATS (written 2026-10-23, when this log was committed).**
 >
 > - **The PickCubeFromShelf gate was lowered on purpose, to 72/100.** The launch commit
