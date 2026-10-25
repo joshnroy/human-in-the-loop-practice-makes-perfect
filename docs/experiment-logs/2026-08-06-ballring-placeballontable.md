@@ -1,5 +1,13 @@
 # Ball-Ring's `PlaceBallOnTable` succeeds 0/3280 — and EES practises it more, not less
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. Every EES number in this log was produced with it off, or before the
+> flag existed: a human reset was treated as an always-successful rescue, priced at
+> its fixed cost and never scored. Where this log's domain offers human reset skills,
+> an EES run with today's defaults is a different configuration, and these numbers are
+> not evidence about it; `--no-ees-score-human-skills` reproduces the old one. Where
+> the domain offers none, the flag changes nothing. The numbers below are unchanged.
+
 **Investigation, 2026-08-06.** PR #126's practice-target audit found `PlaceBallOnTable`
 at **0 successes in 3280 practice executions, 0 in every one of 10 seeds**, while EES
 selected it as a practice target in 10/10 seeds — and explicitly left it uninvestigated.

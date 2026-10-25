@@ -1,5 +1,13 @@
 # Where a Tossing Room / EES run spends its time — and 4.2× of it removed
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. Every EES number in this log was produced with it off, or before the
+> flag existed: a human reset was treated as an always-successful rescue, priced at
+> its fixed cost and never scored. Where this log's domain offers human reset skills,
+> an EES run with today's defaults is a different configuration, and these numbers are
+> not evidence about it; `--no-ees-score-human-skills` reproduces the old one. Where
+> the domain offers none, the flag changes nothing. The numbers below are unchanged.
+
 **2026-08-04.** Profile first, optimise second. Three changes, each proven
 bit-identical. Covers PRs #46, #47, #48.
 

@@ -1,5 +1,13 @@
 # EES (Practice Makes Perfect) reproduction on Light Switch
 
+> **Staleness note (2026-10-25, PR #588).** `EesMethod.score_human_skills` now
+> defaults to on. Every EES number in this log was produced with it off, or before the
+> flag existed: a human reset was treated as an always-successful rescue, priced at
+> its fixed cost and never scored. Where this log's domain offers human reset skills,
+> an EES run with today's defaults is a different configuration, and these numbers are
+> not evidence about it; `--no-ees-score-human-skills` reproduces the old one. Where
+> the domain offers none, the flag changes nothing. The numbers below are unchanged.
+
 Porting the paper's own method — EES, Estimate/Extrapolate/Situate — from the
 reference `predicators` implementation and reproducing its Light Switch result.
 Companion to [the Random Skills baseline log](./2026-07-21-random-skills-baseline.md),
