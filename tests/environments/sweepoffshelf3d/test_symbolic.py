@@ -16,6 +16,7 @@ from hitl_pmp.environments.sweepoffshelf3d.predicates import (
     IN_BOX,
     ON_FLOOR,
     ON_SHELF,
+    PICK_PLANNABLE,
     WIPER_AWAY,
     WIPER_HOME,
     WIPER_ON_FLOOR,
@@ -48,8 +49,14 @@ def _summarized(*, atoms):
     )
 
 
-def _start(*, on_shelf=O.cubes, on_floor=(), in_box=(), wiper_home=True):
+def _start(*, on_shelf=O.cubes, on_floor=(), in_box=(), wiper_home=True, unplannable=()):
+    """An observed state; every cube's pick plans unless it is in `unplannable`."""
     atoms = {_atom(predicate=HAND_EMPTY, objects=(O.robot,))}
+    atoms |= {
+        _atom(predicate=PICK_PLANNABLE, objects=(O.robot, cube))
+        for cube in O.cubes
+        if cube not in unplannable
+    }
     if wiper_home:
         atoms.add(_atom(predicate=WIPER_HOME, objects=(O.wiper,)))
     else:

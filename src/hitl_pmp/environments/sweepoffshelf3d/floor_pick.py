@@ -171,6 +171,13 @@ class FloorPicks:
             kinder.sync()
         raise SkillFailed(f"{label}: {cube} not picked ({'; '.join(missed)})"[:300])
 
+    def plannable(self, *, cube: str) -> bool:
+        """`PickPlannable`'s dry run (`pick_plannable.py`): whether the first execution of
+        `pick` would find a grasp whose plans KINDER finds and MuJoCo clears -- the same
+        candidates and the same planning, stopped before the first control step. False
+        exactly where `pick` would refuse with "no grasp planned" and nothing moved."""
+        return self.attempt(cube=cube, tried=[], label="pick_plannable", dry_run=True)
+
     def support(self, *, cube: str) -> str | None:
         """What the cube rests on, as the planner's predicates say: "floor", "box" or
         None (held, on the shelf, or lodged somewhere else)."""
@@ -181,10 +188,13 @@ class FloorPicks:
             return "floor"
         return None
 
-    def attempt(self, *, cube: str, tried: list[np.ndarray], label: str) -> bool:
+    def attempt(
+        self, *, cube: str, tried: list[np.ndarray], label: str, dry_run: bool = False
+    ) -> bool:
         """One grasp execution, from the first candidate whose plans KINDER finds and
         MuJoCo clears; False when none does (nothing moved). Approaches in `tried`
-        already missed this cube; the one executed is added."""
+        already missed this cube; the one executed is added. A `dry_run` returns True at
+        that candidate without executing it (`plannable`)."""
         import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
         from kinder_models.dynamic3d.tossing.parameterized_skills import (
             gripper_command_for_opening,
@@ -248,7 +258,9 @@ class FloorPicks:
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
                 pick.approach_grip = gripper_command_for_opening(grasp.opening)
                 params = kinder.facing_params(base=grasp.base, centre=centre, cube=cube)
-                outcome = kinder.drive(controller=pick, params=params, label=label)
+                outcome = kinder.drive(controller=pick, params=params, label=label, dry_run=dry_run)
+            if outcome == "planned":
+                return True
             if outcome == "done":
                 tried.append(grasp.hand[:3, 2].copy())
                 return True

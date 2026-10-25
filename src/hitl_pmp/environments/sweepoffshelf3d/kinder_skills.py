@@ -567,10 +567,12 @@ class KinderSkills:
         if shelf.recorder is not None:
             shelf.recorder.on_step(skills=shelf, label=label)
 
-    def drive(self, *, controller: Any, params: Any, label: str) -> str:
+    def drive(self, *, controller: Any, params: Any, label: str, dry_run: bool = False) -> str:
         """Plan with `controller.reset`, then execute it to termination. Returns
         "planned-out" if planning found nothing for these parameters (nothing moved);
-        raises `SkillFailed` if execution failed after moving."""
+        raises `SkillFailed` if execution failed after moving. A `dry_run` stops once
+        the plans are found and cleared, before the first control step, and returns
+        "planned" (`FloorPicks.plannable`)."""
         from bilevel_planning.trajectory_samplers.trajectory_sampler import (
             TrajectorySamplingFailure,
         )
@@ -590,6 +592,8 @@ class KinderSkills:
         if blocked:
             self.note(stage=label, kind="plan_blocked", params=params, reason=blocked)
             return "planned-out"
+        if dry_run:
+            return "planned"
         start = self.shelf.ticks
         try:
             while not controller.terminated():

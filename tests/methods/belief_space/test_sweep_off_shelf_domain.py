@@ -91,6 +91,7 @@ def test_an_untrained_shelf_skill_is_believed_to_work_one_time_in_four():
 
 def _shelf_atoms(*, on_shelf, in_box, wiper_home=True):
     from hitl_pmp.core.problem.tasks.types import GroundAtom
+    from hitl_pmp.environments.sweepoffshelf3d.pick_plannable import PickPlannableAtoms
     from hitl_pmp.environments.sweepoffshelf3d.predicates import (
         SweepOffShelf3DAtoms,
         SweepOffShelf3DPredicates,
@@ -100,7 +101,10 @@ def _shelf_atoms(*, on_shelf, in_box, wiper_home=True):
     named = {("HandEmpty", ("robot",)), (wiper, ("wiper_0",))}
     named |= {("OnShelf", (cube.name,)) for cube in on_shelf}
     named |= {("InBox", (cube.name, O.box.name)) for cube in in_box}
-    named = SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named))
+    named = PickPlannableAtoms.with_verdicts(
+        atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named)),
+        plannable=lambda cube: True,
+    )
     by_name = {p.name: p for p in SweepOffShelf3DPredicates.all()}
     objects = {obj.name: obj for obj in O.all_objects()}
     return (

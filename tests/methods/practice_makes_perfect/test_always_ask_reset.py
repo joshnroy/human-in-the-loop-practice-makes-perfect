@@ -29,6 +29,7 @@ from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_DESTINATION
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.objects import SweepOffShelf3DObjects as O
+from hitl_pmp.environments.sweepoffshelf3d.pick_plannable import PickPlannableAtoms
 from hitl_pmp.environments.sweepoffshelf3d.predicates import (
     SweepOffShelf3DAtoms,
     SweepOffShelf3DPredicates,
@@ -566,7 +567,11 @@ def _shelf_start() -> frozenset[GroundAtom]:
     named = {("HandEmpty", ("robot",)), ("WiperHome", (O.wiper.name,))}
     named |= {("OnShelf", (cube.name,)) for cube in O.cubes}
     state = SweepOffShelf3DState(
-        data={}, abstract_atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named))
+        data={},
+        abstract_atoms=PickPlannableAtoms.with_verdicts(
+            atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named)),
+            plannable=lambda cube: True,
+        ),
     )
     return _shelf().method.abstract_state(state=state)
 

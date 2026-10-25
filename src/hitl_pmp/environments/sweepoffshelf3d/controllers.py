@@ -73,6 +73,21 @@ class SweepOffShelf3DControllers(BaseModel):
             self.steps = skills.ticks
             self.backend.grip = skills.grip
 
+    def pick_plannable(self, *, cube: str) -> bool:
+        """`PickPlannable`'s dry run (`FloorPicks.plannable`) on the scene as it is. It
+        moves nothing and leaves no note: the skill trace describes the skill alone."""
+        from .floor_pick import FloorPicks  # it imports kinder_skills
+
+        kinder = self._kinder
+        if kinder is None:
+            raise ControllerFailure("no scene: reset the environment before observing")
+        notes = kinder.notes
+        kinder.notes = []
+        try:
+            return FloorPicks(kinder=kinder).plannable(cube=cube)
+        finally:
+            kinder.notes = notes
+
     def pick_wiper(self) -> None:
         self._run(skill="pick_wiper")
 
