@@ -7,6 +7,7 @@ per-cycle means -- never copied back out of the implementation."""
 import pytest
 
 from hitl_pmp.methods.practice_makes_perfect.competence_models import (
+    LinearSkillCompetenceModel,
     OptimisticSkillCompetenceModel,
 )
 
@@ -217,3 +218,67 @@ def test_returns_are_plain_floats():
     _observe_all(model=model, outcomes=[True, True])
     assert type(model.get_current_competence()) is float
     assert type(model.predict_competence(num_additional_data=1)) is float
+
+
+# --------------------------------------------------- LinearSkillCompetenceModel
+#
+# Expected numbers are worked by hand from the Beta posterior mean
+# (alpha + s) / (alpha + beta + n), pooled over every outcome so far, and from the
+# running average Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1}) / n_t,
+# where n_t is the number of attempts in the cycle that just closed.
+
+
+def test_linear_fresh_model_reports_its_priors():
+    model = LinearSkillCompetenceModel()
+    assert model.get_current_competence() == pytest.approx(10.0 / 11.0)
+    assert model.learning_rate() == pytest.approx(0.1)
+
+
+def test_linear_learning_rate_is_the_papers_running_average_per_attempt():
+    model = LinearSkillCompetenceModel()
+    _observe_all(model=model, outcomes=[False, False])
+    model.advance_cycle()
+    p0, p1 = 10.0 / 11.0, 10.0 / 13.0
+    delta1 = 0.5 * 0.1 + 0.5 * (p1 - p0) / 2
+    assert model.learning_rate() == pytest.approx(delta1)
+
+    _observe_all(model=model, outcomes=[True, True, True])
+    model.advance_cycle()
+    p2 = 13.0 / 16.0
+    delta2 = 0.5 * delta1 + 0.5 * (p2 - p1) / 3
+    assert model.learning_rate() == pytest.approx(delta2)
+    assert model.get_current_competence() == pytest.approx(p2)
+
+
+def test_linear_open_cycle_moves_competence_but_not_the_learning_rate():
+    model = LinearSkillCompetenceModel()
+    _observe_all(model=model, outcomes=[False])
+    assert model.get_current_competence() == pytest.approx(10.0 / 12.0)
+    assert model.learning_rate() == pytest.approx(0.1)
+
+
+def test_linear_idle_cycle_leaves_the_learning_rate_alone():
+    # A cycle in which the skill was never practised carries no evidence about how
+    # fast practice improves it, so it must not decay Delta toward zero.
+    model = LinearSkillCompetenceModel()
+    model.advance_cycle()
+    model.advance_cycle()
+    assert model.learning_rate() == pytest.approx(0.1)
+
+
+def test_linear_smoothing_and_priors_are_configurable():
+    model = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=0.2, smoothing=0.0)
+    assert model.get_current_competence() == pytest.approx(0.5)
+    _observe_all(model=model, outcomes=[True])
+    model.advance_cycle()
+    # eps = 0: Delta is exactly the last per-attempt change, (2/3 - 1/2) / 1.
+    assert model.learning_rate() == pytest.approx(2.0 / 3.0 - 0.5)
+
+
+def test_linear_prediction_is_clipped_to_the_unit_interval():
+    model = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=0.1)
+    assert model.predict_competence(num_attempts=0) == pytest.approx(0.5)
+    assert model.predict_competence(num_attempts=3) == pytest.approx(0.8)
+    assert model.predict_competence(num_attempts=50) == 1.0
+    falling = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=-0.1)
+    assert falling.predict_competence(num_attempts=50) == 0.0
