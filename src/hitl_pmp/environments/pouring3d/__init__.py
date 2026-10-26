@@ -1,1 +1,1 @@
-"""Five-cube pouring prototype; contact physics with idealized manipulation."""
+"""Native KinDER floor pouring task and physical skill adapter."""
