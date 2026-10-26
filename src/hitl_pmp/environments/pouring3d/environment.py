@@ -35,6 +35,8 @@ class PouringEnvironment(Environment):
         "Wait",
     )
     requested_count: int = Field(default=5, ge=1, le=5, strict=True)
+    cube_material: str | None = None
+    task_config_path: str | None = None
     seed: int = 0
     scene_bg: bool = True
     sim: Any = None
@@ -47,7 +49,11 @@ class PouringEnvironment(Environment):
         if self.sim is not None:
             self.sim.close()
         self.sim = PouringSimulation.create(
-            seed=self.seed, scene_bg=self.scene_bg, requested_count=self.requested_count
+            seed=self.seed,
+            scene_bg=self.scene_bg,
+            requested_count=self.requested_count,
+            cube_material=self.cube_material,
+            task_config_path=self.task_config_path,
         )
         arrays = self.state_arrays()
         features = tuple(

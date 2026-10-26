@@ -32,6 +32,8 @@ class NativePouringDemo:
         parameters: PourParameters | None = None,
         detail_video: bool = False,
         continue_after_pour_failure: bool = False,
+        cube_material: str | None = None,
+        pitcher_reference: str = "accupour",
         human_reset_practice_cost: float = UnconditionalHumanOracle.intervention_cost,
     ) -> dict[str, Any]:
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
@@ -39,7 +41,23 @@ class NativePouringDemo:
         if not math.isfinite(human_reset_practice_cost) or human_reset_practice_cost < 0:
             raise ValueError("Human practice cost must be finite and nonnegative")
         directory.mkdir(parents=True, exist_ok=True)
-        adapter = PouringEnvironment(seed=seed, scene_bg=scene_bg, requested_count=requested_count)
+        if pitcher_reference not in {"accupour", "winco"}:
+            raise ValueError("Unknown pitcher reference")
+        task_name = (
+            "PitcherPour3D-o5-winco.json"
+            if pitcher_reference == "winco"
+            else "PitcherPour3D-o5.json"
+        )
+        task_path = (
+            Path(inspect.getfile(PitcherPour3DEnv)).parent / "tasks/PitcherPour3D" / task_name
+        )
+        adapter = PouringEnvironment(
+            seed=seed,
+            scene_bg=scene_bg,
+            requested_count=requested_count,
+            cube_material=cube_material,
+            task_config_path=str(task_path),
+        )
         adapter.hard_reset()
         env, controller = adapter.sim.env, adapter.sim.controller
         writer = None
@@ -84,6 +102,18 @@ class NativePouringDemo:
                     "locations": c.scene.cube_locations(),
                     "qpos_sha256": hashlib.sha256(c.data.qpos.tobytes()).hexdigest(),
                 }
+                if cube_material is not None:
+                    cube_bodies = {c.model.body(name).id for name in c.scene.cube_names}
+                    payload_contacts = [
+                        contact
+                        for contact in c.data.contact
+                        if c.model.geom_bodyid[contact.geom1] in cube_bodies
+                        or c.model.geom_bodyid[contact.geom2] in cube_bodies
+                    ]
+                    entry["maximum_cube_contact_penetration_m"] = max(
+                        [max(0.0, -float(contact.dist)) for contact in payload_contacts],
+                        default=0.0,
+                    )
                 if writer is not None:
                     if detail_writer is not None:
                         images = c.scene.render_all_cameras()
@@ -168,6 +198,13 @@ class NativePouringDemo:
                 "seed": seed,
                 "requested_count": requested_count,
                 "pour_parameters": (parameters or PourParameters()).model_dump(),
+                "cube_material": cube_material or "legacy",
+                "material_parameters": (
+                    controller.scene.cube_materials[cube_material]
+                    if cube_material is not None
+                    else None
+                ),
+                "pitcher_reference": pitcher_reference,
                 "detail_video": detail_video,
                 "continue_after_pour_failure": continue_after_pour_failure,
                 "scene_bg": scene_bg,
@@ -175,12 +212,7 @@ class NativePouringDemo:
                 "native_source_sha256": hashlib.sha256(
                     Path(inspect.getfile(PitcherPour3DEnv)).read_bytes()
                 ).hexdigest(),
-                "task_config_sha256": hashlib.sha256(
-                    (
-                        Path(inspect.getfile(PitcherPour3DEnv)).parent
-                        / "tasks/PitcherPour3D/PitcherPour3D-o5.json"
-                    ).read_bytes()
-                ).hexdigest(),
+                "task_config_sha256": hashlib.sha256(task_path.read_bytes()).hexdigest(),
                 "controller_source_sha256": hashlib.sha256(
                     Path(inspect.getfile(NativePouringController)).read_bytes()
                 ).hexdigest(),
@@ -249,6 +281,10 @@ class NativePouringDemo:
         parser.add_argument("--hold-seconds", type=float, default=4)
         parser.add_argument("--detail-video", action="store_true")
         parser.add_argument("--continue-after-pour-failure", action="store_true")
+        parser.add_argument("--cube-material", choices=["wood", "foam"])
+        parser.add_argument(
+            "--pitcher-reference", choices=["accupour", "winco"], default="accupour"
+        )
         parser.add_argument("--reset", choices=["none", "human", "robot", "both"], default="both")
         parser.add_argument("--no-video", action="store_true")
         parser.add_argument("--simple-scene", action="store_true")
@@ -264,6 +300,8 @@ class NativePouringDemo:
             requested_count=args.requested_count,
             detail_video=args.detail_video,
             continue_after_pour_failure=args.continue_after_pour_failure,
+            cube_material=args.cube_material,
+            pitcher_reference=args.pitcher_reference,
             parameters=PourParameters(
                 angle=args.angle, tilt_seconds=args.tilt_seconds, hold_seconds=args.hold_seconds
             ),
