@@ -46,6 +46,14 @@ The scripts and output files cited in those notes remain the available evidence.
 
 ## Required fields for subsequent log entries
 
+The experiment separates the environment, pre-programmed skills (including
+predicates), and algorithm. The standard comparison fixes the first two and
+varies the algorithm. RoboCode is not given the pre-programmed skill layer either;
+record that exception explicitly. The upright-bin validity contract and empty-hand
+OpenGripper semantics are accepted parts of the fixed setup. Suppression after a
+finite parameter search fails is accepted algorithm behavior, rather than a skill
+precondition or a proof of physical infeasibility.
+
 Every experiment entry must name its run ID, full launch commit, dependency
 commits and dirty status, exact argv/command, resolved defaults, seed/arm matrix,
 budget/evaluation/reset settings, cost-file contents or immutable hash, output
