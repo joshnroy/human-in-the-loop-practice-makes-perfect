@@ -70,6 +70,7 @@ jobs:
               - 'tests/ci_shard_durations.json'
               - 'tests/environments/tossing3d/**'
               - 'tests/environments/sweepoffshelf3d/**'
+              - 'tests/environments/pouring3d/**'
               - 'configs/**'
               - 'benchmarks/**'
               - 'docs/**/*.json'
@@ -533,10 +534,10 @@ jobs:
       # triton: in a worker an earlier simulator test loaded OSMesa into, that segfaults,
       # and the crashed worker then stalls the run until the 6-hour limit. Those tests run
       # in `test / unit & core` instead.
-      - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
+      - name: Pytest — Tossing3D, SweepOffShelf3D, and Pouring3D (MuJoCo/OSMesa)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/pouring3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
       # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.
