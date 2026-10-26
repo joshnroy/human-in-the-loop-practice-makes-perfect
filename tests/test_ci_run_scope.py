@@ -1,6 +1,6 @@
 """Pull requests cancel their superseded runs and skip an unaffected Tossing3D job.
 
-Two savings, each with a way to go wrong that no job failure would ever show:
+Three savings, each with a way to go wrong that no job failure would ever show:
 
 - **Concurrency.** A burst of force-pushes queued ~15 full runs at once, all but the
   newest of them wasted. The workflow-level `concurrency` block cancels an in-progress run
@@ -13,6 +13,9 @@ Two savings, each with a way to go wrong that no job failure would ever show:
   hand-written list, so it is checked here against the tests' real import closure: a new
   import from a Tossing3D test into a path the filter omits fails this file instead of
   silently letting a breaking PR skip the job. A push to `main` always runs it.
+- **Native stacks.** Only the top layer runs the physics jobs. It bypasses the individual
+  PR path filter so a docs-only top still tests code changes in lower layers. Other jobs
+  run on every layer, and missing stack metadata falls back to ordinary PR coverage.
 
 The required status check is the aggregate `test` job, which therefore has to tell an
 intended skip from a failure. A job whose dependency fails is *skipped*, and GitHub counts
@@ -177,11 +180,16 @@ class Aggregate:
     JOBS = ("changes", "test-unit", "test-tossingroom", TOSSING3D_JOB, "test-scripts")
 
     @staticmethod
-    def passes(*, event: str, results: dict[str, str], tossing3d_flag: str) -> bool:
+    def passes(
+        *, event: str, results: dict[str, str], tossing3d_flag: str, stack_middle: str = "false"
+    ) -> bool:
         needs = {
             job: {"result": results.get(job, "success"), "outputs": {}} for job in Aggregate.JOBS
         }
-        needs["changes"]["outputs"] = {FILTER_NAME: tossing3d_flag}
+        needs["changes"]["outputs"] = {
+            FILTER_NAME: tossing3d_flag,
+            "stack_middle": stack_middle,
+        }
         completed = subprocess.run(  # noqa: S603
             [sys.executable, "-c", Workflow.aggregate_script()],
             env={**os.environ, "NEEDS": json.dumps(needs), "EVENT": event},
@@ -223,13 +231,15 @@ def test_no_job_declares_a_concurrency_of_its_own() -> None:
 def test_a_push_to_main_always_runs_the_tossing3d_job() -> None:
     jobs = Workflow.load()["jobs"]
     condition = jobs[TOSSING3D_JOB]["if"]
-    assert condition.startswith("${{ !cancelled() && (github.event_name != 'pull_request' || ")
+    assert "github.event_name != 'pull_request' || " in condition
     assert f"needs.changes.outputs.{FILTER_NAME} == 'true'" in condition
     assert jobs["changes"].get("if") is None, "the changes job must run on every event"
     assert Workflow.filter_step()["if"] == "github.event_name == 'pull_request'"
     output = jobs["changes"]["outputs"][FILTER_NAME]
     assert output == (
-        f"${{{{ github.event_name != 'pull_request' || steps.filter.outputs.{FILTER_NAME} }}}}"
+        "${{ github.event_name != 'pull_request'"
+        " || github.event.pull_request.stack != null"
+        f" || steps.filter.outputs.{FILTER_NAME} }}}}"
     )
 
 
@@ -312,3 +322,77 @@ def test_the_aggregate_check_allows_only_the_intended_skip(
     *, event: str, results: dict[str, str], flag: str, passes: bool
 ) -> None:
     assert Aggregate.passes(event=event, results=results, tossing3d_flag=flag) is passes
+
+
+# --- Native stacks: physics runs at the top, fast checks on every layer ----------------
+
+
+def test_only_physics_jobs_are_gated_by_stack_position() -> None:
+    jobs = Workflow.load()["jobs"]
+    assert jobs["changes"]["outputs"]["stack_middle"] == (
+        "${{ github.event_name == 'pull_request'"
+        " && github.event.pull_request.stack != null"
+        " && github.event.pull_request.stack.position > 0"
+        " && github.event.pull_request.stack.position < github.event.pull_request.stack.size }}"
+    )
+    assert jobs["test-tossingroom"]["needs"] == "changes"
+    for name in ("test-tossingroom", TOSSING3D_JOB):
+        assert "needs.changes.outputs.stack_middle == 'false'" in jobs[name]["if"]
+    for name in ("lint", "typecheck", "test-unit", "test-scripts"):
+        assert jobs[name].get("if") is None, name
+
+
+def test_the_stack_top_bypasses_the_individual_pr_path_filter() -> None:
+    # A docs-only top PR still has to test robot changes in the layers below it.
+    output = Workflow.load()["jobs"]["changes"]["outputs"][FILTER_NAME]
+    assert output == (
+        "${{ "
+        "github.event_name != 'pull_request'"
+        " || github.event.pull_request.stack != null"
+        " || steps.filter.outputs.tossing3d }}"
+    )
+
+
+@pytest.mark.parametrize("flag", ["true", "false"])
+def test_an_intermediate_layer_can_skip_both_physics_jobs(*, flag: str) -> None:
+    assert Aggregate.passes(
+        event="pull_request",
+        results={"test-tossingroom": "skipped", TOSSING3D_JOB: "skipped"},
+        tossing3d_flag=flag,
+        stack_middle="true",
+    )
+
+
+@pytest.mark.parametrize("job", Aggregate.JOBS)
+@pytest.mark.parametrize("result", ["failure", "cancelled"])
+def test_a_stack_skip_cannot_hide_a_failed_or_cancelled_dependency(
+    *, job: str, result: str
+) -> None:
+    results = {"test-tossingroom": "skipped", TOSSING3D_JOB: "skipped", job: result}
+    assert not Aggregate.passes(
+        event="pull_request", results=results, tossing3d_flag="true", stack_middle="true"
+    )
+
+
+@pytest.mark.parametrize("job", ["test-unit", "test-scripts"])
+def test_an_intermediate_layer_must_still_run_non_physics_tests(*, job: str) -> None:
+    assert not Aggregate.passes(
+        event="pull_request",
+        results={"test-tossingroom": "skipped", TOSSING3D_JOB: "skipped", job: "skipped"},
+        tossing3d_flag="false",
+        stack_middle="true",
+    )
+
+
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+def test_ordinary_runs_cannot_skip_tossingroom(*, event: str) -> None:
+    assert not Aggregate.passes(
+        event=event, results={"test-tossingroom": "skipped"}, tossing3d_flag="false"
+    )
+
+
+@pytest.mark.parametrize("flag", ["", "invalid"])
+def test_a_missing_or_invalid_stack_scope_fails_the_required_check(*, flag: str) -> None:
+    assert not Aggregate.passes(
+        event="pull_request", results={}, tossing3d_flag="true", stack_middle=flag
+    )
