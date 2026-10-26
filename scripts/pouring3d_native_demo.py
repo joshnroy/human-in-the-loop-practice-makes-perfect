@@ -28,6 +28,8 @@ class NativePouringDemo:
         video: bool,
         scene_bg: bool,
         reset: str = "both",
+        requested_count: int = 5,
+        parameters: PourParameters | None = None,
         human_reset_practice_cost: float = UnconditionalHumanOracle.intervention_cost,
     ) -> dict[str, Any]:
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
@@ -35,7 +37,7 @@ class NativePouringDemo:
         if not math.isfinite(human_reset_practice_cost) or human_reset_practice_cost < 0:
             raise ValueError("Human practice cost must be finite and nonnegative")
         directory.mkdir(parents=True, exist_ok=True)
-        adapter = PouringEnvironment(seed=seed, scene_bg=scene_bg)
+        adapter = PouringEnvironment(seed=seed, scene_bg=scene_bg, requested_count=requested_count)
         adapter.hard_reset()
         env, controller = adapter.sim.env, adapter.sim.controller
         writer = None
@@ -88,7 +90,7 @@ class NativePouringDemo:
             if reset in {"robot", "both"}:
                 sequence.extend(
                     (skill, -1)
-                    for cube in range(5)
+                    for cube in range(requested_count)
                     for skill in ["PickCubeFromTray", "DropCubeIntoPitcher"]
                 )
             selected_cube = 0
@@ -118,7 +120,9 @@ class NativePouringDemo:
                     event = adapter.sim.execute(
                         skill=skill,
                         cube=cube,
-                        parameters=PourParameters().model_dump() if skill == "Pour" else None,
+                        parameters=(parameters or PourParameters()).model_dump()
+                        if skill == "Pour"
+                        else None,
                     )
                 events.append(event)
                 if skill_writer is not None:
@@ -129,11 +133,17 @@ class NativePouringDemo:
             final = controller.scene.physical_snapshot()
             if writer is not None:
                 imageio.imwrite(directory / "native-final.png", env.render())
+                images = controller.scene.render_all_cameras()
+                imageio.imwrite(
+                    directory / "native-final-pitcher-detail.png", images["pitcher_detail_image"]
+                )
                 writer.close()
                 writer = None
             manifest = {
                 "environment": "kinder/PitcherPour3D-o5-v0",
                 "seed": seed,
+                "requested_count": requested_count,
+                "pour_parameters": (parameters or PourParameters()).model_dump(),
                 "scene_bg": scene_bg,
                 "native_module": inspect.getfile(PitcherPour3DEnv),
                 "native_source_sha256": hashlib.sha256(
@@ -204,6 +214,10 @@ class NativePouringDemo:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--output-dir", type=Path, required=True)
         parser.add_argument("--seed", type=int, default=0)
+        parser.add_argument("--requested-count", type=int, default=5)
+        parser.add_argument("--angle", type=float, default=145)
+        parser.add_argument("--tilt-seconds", type=float, default=10)
+        parser.add_argument("--hold-seconds", type=float, default=4)
         parser.add_argument("--reset", choices=["none", "human", "robot", "both"], default="both")
         parser.add_argument("--no-video", action="store_true")
         parser.add_argument("--simple-scene", action="store_true")
@@ -216,6 +230,10 @@ class NativePouringDemo:
         NativePouringDemo.run(
             directory=args.output_dir,
             seed=args.seed,
+            requested_count=args.requested_count,
+            parameters=PourParameters(
+                angle=args.angle, tilt_seconds=args.tilt_seconds, hold_seconds=args.hold_seconds
+            ),
             video=not args.no_video,
             reset=args.reset,
             scene_bg=not args.simple_scene,

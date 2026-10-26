@@ -114,3 +114,45 @@ def test_adapter_has_native_physics_relations_and_no_free_reset():
             env.take_action(action=np.array([1.5, 0, 145, 0.055, 0, 10, 4]))
     finally:
         env.sim.close()
+
+
+def test_requested_count_is_observed_and_human_reset_preserves_request():
+    from hitl_pmp.environments.pouring3d.environment import PouringEnvironment
+
+    env = PouringEnvironment(seed=0, scene_bg=False, requested_count=3)
+    env.hard_reset()
+    try:
+        assert env.world is not None
+        index = env.world.type.feature_names.index("requested_count_0")
+        assert env.get_current_state()[env.world][index] == 3
+        scene = env.sim.controller.scene
+        scene.get_object("cube_0").set_pose([0.65, 0.2, 0.02], [1, 0, 0, 0])
+        import mujoco
+
+        mujoco.mj_forward(env.sim.model, env.sim.data)
+        env.reset_movables()
+        assert env.get_current_state()[env.world][index] == 3
+        assert env.sim.snapshot()["requested_count"] == 3
+        assert not env.sim.snapshot()["goal"]
+    finally:
+        env.sim.close()
+
+
+def test_physical_requested_two_pour_retains_three():
+    from hitl_pmp.environments.pouring3d.simulation import PouringSimulation
+
+    sim = PouringSimulation.create(seed=0, scene_bg=False, requested_count=2)
+    try:
+        assert sim.execute(skill="PickPitcher")["success"]
+        event = sim.execute(skill="Pour", parameters={"angle": 130, "hold_seconds": 0.2})
+        assert event["success"], event["after"]
+        assert sim.locations().count("tray") == 2
+        assert sim.locations().count("pitcher") == 3
+        assert sim.settled()
+        assert ("RequestedCountInTray", ()) in sim.abstract_atoms()
+        assert ("RequestedRemainderInPitcher", ()) in sim.abstract_atoms()
+        assert ("Goal", ()) in sim.abstract_atoms()
+        assert sim.execute(skill="PlacePitcherAtHome")["success"]
+        assert sim.snapshot()["goal"]
+    finally:
+        sim.close()

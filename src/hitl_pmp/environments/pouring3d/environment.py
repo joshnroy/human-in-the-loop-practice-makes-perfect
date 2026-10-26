@@ -34,6 +34,7 @@ class PouringEnvironment(Environment):
         "PickCubeFromFloor",
         "Wait",
     )
+    requested_count: int = Field(default=5, ge=1, le=5, strict=True)
     seed: int = 0
     scene_bg: bool = True
     sim: Any = None
@@ -45,7 +46,9 @@ class PouringEnvironment(Environment):
 
         if self.sim is not None:
             self.sim.close()
-        self.sim = PouringSimulation.create(seed=self.seed, scene_bg=self.scene_bg)
+        self.sim = PouringSimulation.create(
+            seed=self.seed, scene_bg=self.scene_bg, requested_count=self.requested_count
+        )
         arrays = self.state_arrays()
         features = tuple(
             f"{name}_{i}" for name, values in arrays.items() for i in range(len(values))
@@ -56,6 +59,7 @@ class PouringEnvironment(Environment):
 
     def state_arrays(self) -> dict[str, np.ndarray]:
         return {
+            "requested_count": np.array([self.sim.controller.scene.requested_count]),
             "qpos": self.sim.data.qpos.copy(),
             "qvel": self.sim.data.qvel.copy(),
             "actuator_state": self.sim.data.act.copy(),

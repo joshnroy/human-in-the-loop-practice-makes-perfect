@@ -42,5 +42,7 @@ class PouringPredicates:
             PouringPredicates.predicate(name="AnyInTray", types=(O.vessel_type,)),
             PouringPredicates.predicate(name="NoSpills", types=()),
             PouringPredicates.predicate(name="ReadyToPour", types=()),
+            PouringPredicates.predicate(name="RequestedCountInTray", types=()),
+            PouringPredicates.predicate(name="RequestedRemainderInPitcher", types=()),
             PouringPredicates.predicate(name="Goal", types=()),
         )
