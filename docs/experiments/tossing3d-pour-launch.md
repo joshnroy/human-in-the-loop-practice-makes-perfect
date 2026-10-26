@@ -18,7 +18,13 @@ and no scheduled resets. Pouring remains available when the cube can also be
 picked; feasibility preconditions must not prescribe which action the method
 chooses. The action-availability audit in
 [the pouring documentation](../tossing3d-bin-pouring.md#action-availability-audit)
-records remaining restrictions that need review before interpreting full runs.
+records the accepted environment, skill and algorithm contracts.
+The standard comparison holds the environment and pre-programmed skill layer
+(including predicates) fixed while varying the algorithm. RoboCode also supplies
+its own skill layer; that difference must be explicit in its experiment log.
+The upright-bin validity gate and empty-hand OpenGripper semantics are accepted.
+Suppression after a finite parameter search fails belongs to the algorithm and
+prevents getting stuck on a single failing skill. These are not open audit issues.
 Post-toss settling is charged as part of the robot
 skill. Evaluations run initially and every 3,200 practice ticks on ten fixed
 held-out tasks with a 500-control-tick cap. Full runs stop after three consecutive
