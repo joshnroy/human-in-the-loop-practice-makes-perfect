@@ -82,3 +82,8 @@ those archived results cannot isolate the effect of pouring alone.
 
 `--no-bin-pouring` supports a separate ablation while retaining the same movable
 bin and masses. No ablation jobs are included in the default matrix.
+
+Every log entry must include full run-code/dependency commits and exact launch
+flags. See the [historical provenance backfill](../experiment-logs/2026-10-26-tossing3d-launch-provenance.md).
+Workers preserve exact commands and manifest hashes in `launch.json`, and resolved
+defaults, verified identity, and cost-file contents/hash in `physics.json`.

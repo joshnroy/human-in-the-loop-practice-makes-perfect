@@ -35,6 +35,7 @@ Della: code in `/scratch/gpfs/TSILVER/jr2860/code/<sha>`, results in
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -442,6 +443,16 @@ def preflight(*, argv: list[str], output: Path, frozen_sha: str | None = None) -
         (output / "physics.json").write_text(
             json.dumps(
                 {
+                    "argv": argv,
+                    "command": shlex.join([sys.executable, "-m", "hitl_pmp.cli", *argv]),
+                    "working_directory": str(REPO),
+                    "practice_cost_config": {
+                        "path": str(args.practice_cost_config),
+                        "sha256": hashlib.sha256(
+                            Path(args.practice_cost_config).read_bytes()
+                        ).hexdigest(),
+                        "content": json.loads(Path(args.practice_cost_config).read_text()),
+                    },
                     "masses_kg": masses,
                     "movable_bin": True,
                     "bin_pouring": offered,
@@ -469,6 +480,31 @@ def run_worker(*, manifest: Path | None, index: int | None, expected_sha: str | 
     argv = shlex.split(command)
     output = Path(directory)
     preflight(argv=argv, output=output, frozen_sha=sha)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "launch.json").write_text(
+        json.dumps(
+            {
+                "name": name,
+                "arm": arm,
+                "seed": int(seed),
+                "source_commit": sha,
+                "manifest": str(manifest.resolve()),
+                "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                "manifest_row": lines[index - 1],
+                "task": index,
+                "argv": argv,
+                "command": shlex.join([sys.executable, "-m", "hitl_pmp.cli", *argv]),
+                "working_directory": str(REPO),
+                "physics_record": "physics.json",
+                "slurm": {
+                    key: os.environ.get(key)
+                    for key in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID")
+                },
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     print(f"starting {name}: arm={arm} seed={seed} sha={sha}", flush=True)
     return subprocess.run(
         [

@@ -310,3 +310,13 @@ def test_worker_preserves_quoted_manifest_arguments_without_a_shell(*, monkeypat
     assert checked[0]["argv"] == argv
     assert commands[0][0][-len(argv) :] == argv
     assert commands[0][1].get("shell", False) is False
+    import hashlib
+    import json
+
+    record = json.loads((output / "launch.json").read_text())
+    assert record["source_commit"] == sha
+    assert record["argv"] == argv
+    assert shlex.split(record["command"])[-len(argv) :] == argv
+    assert record["manifest_sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    assert record["manifest_row"] == manifest.read_text().strip()
+    assert record["physics_record"] == "physics.json"
