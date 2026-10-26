@@ -1,22 +1,16 @@
-"""The budget allocation step of the Deliberate Practice baseline (Vats & Konidaris,
-*Deliberate Practice: Learning Robot Skills under a Budget*), adapted to this project.
+"""Exact integer DP allocation, jointly optimizing the deployment task policy.
 
-The paper splits a practice budget B across skills before practice, maximising
-predicted task success under the linear competence model min(1, p_u + Delta_u * b_u),
-and solves that globally as a bilinear program in Gurobi. Here the same optimum is found
-by exact enumeration over integer allocations, which is tractable because only skills on
-a seen task's plan with room to improve are enumerated, each only up to the attempt
-count that saturates it. Above a cap the allocator raises: it never falls back to a
-heuristic, because a silently approximate optimum would no longer be this baseline.
-
-Two departures from the paper, both ours: the budget constraint is sum_u b_u * c_u <= B
-with a per-attempt cost c_u, where the paper counts every practice episode alike
-(sum_u b_u <= B); and the objective is the mean, over the seen tasks' plans, of each
-plan's product of predicted competences, where the paper values its abstract MDP."""
+Every allocation is evaluated by solving the full success/failure task MDP, not
+by holding today's deployment plans fixed. The cost-weighted budget is our
+adaptation; the paper counts practice episodes equally. Explicit enumeration
+caps raise rather than silently substitute a heuristic.
+"""
 
 import math
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Hashable, Mapping
 from typing import TypeVar
+
+from .dp_mdp import DpMdp
 
 SkillKey = TypeVar("SkillKey", bound=Hashable)
 
@@ -30,28 +24,23 @@ class DpAllocator:
     @staticmethod
     def predicted_success(
         *,
-        plans: Sequence[Sequence[SkillKey]],
+        mdp: DpMdp[SkillKey],
         competences: Mapping[SkillKey, float],
         learning_rates: Mapping[SkillKey, float],
         allocation: Mapping[SkillKey, int],
     ) -> float:
-        """The mean over `plans` of the product of each step's predicted competence after
-        `allocation[step]` more attempts (0 for a step it does not name)."""
-        if not plans:
-            return 0.0
-        total = 0.0
-        for plan in plans:
-            product = 1.0
-            for step in plan:
-                predicted = competences[step] + learning_rates[step] * allocation.get(step, 0)
-                product *= min(1.0, max(0.0, predicted))
-            total += product
-        return total / len(plans)
+        """Optimal task value after training, including policies not optimal today."""
+        predicted = {
+            skill: min(1.0, max(0.0, competence + learning_rates[skill] * allocation.get(skill, 0)))
+            for skill, competence in competences.items()
+        }
+        value, _policy = mdp.solve(competences=predicted)
+        return value
 
     @staticmethod
     def allocate(
         *,
-        plans: Sequence[Sequence[SkillKey]],
+        mdp: DpMdp[SkillKey],
         competences: Mapping[SkillKey, float],
         learning_rates: Mapping[SkillKey, float],
         costs: Mapping[SkillKey, float],
@@ -61,20 +50,26 @@ class DpAllocator:
     ) -> dict[SkillKey, int]:
         """The integer attempt counts, one per key of `costs`, that maximise
         `predicted_success` subject to sum(b_u * c_u) <= `budget`; among equally good
-        allocations, the cheapest. A plan step outside `costs` keeps its competence.
+        allocations, the cheapest. A transition skill outside `costs` keeps its competence.
 
         Raises `ValueError` when more than `max_skills` skills would be enumerated, or
         when the enumeration could exceed `max_allocations` allocations."""
         for skill, cost in costs.items():
             if not cost > 0.0 or not math.isfinite(cost):
                 raise ValueError(f"cost of {skill!r} must be finite and positive, got {cost}")
-        steps = {step for plan in plans for step in plan}
+        steps = {transition.skill for transition in mdp.transitions}
         missing = [step for step in steps if step not in competences or step not in learning_rates]
         if missing:
-            raise ValueError(f"no competence or learning rate for plan steps {missing!r}")
+            raise ValueError(f"no competence or learning rate for MDP skills {missing!r}")
+        if not math.isfinite(budget):
+            raise ValueError("DP budget must be finite")
+        for skill in steps:
+            if not 0 <= competences[skill] <= 1 or not math.isfinite(learning_rates[skill]):
+                raise ValueError(f"invalid competence or learning rate for {skill!r}")
         allocation = dict.fromkeys(costs, 0)
-        if budget <= 0.0 or not plans:
+        if budget <= 0.0 or not mdp.initial_probabilities:
             return allocation
+        relevant = mdp.relevant_skills()
 
         limits: dict[SkillKey, int] = {}
         for skill, cost in costs.items():
@@ -83,7 +78,7 @@ class DpAllocator:
                 learning_rate=learning_rates.get(skill, 0.0),
                 affordable=math.floor(budget / cost + 1e-9),
             )
-            if skill in steps and limit > 0:
+            if skill in relevant and limit > 0:
                 limits[skill] = limit
         if len(limits) > max_skills:
             raise ValueError(
@@ -107,7 +102,7 @@ class DpAllocator:
             nonlocal best_value, best_spent, best
             if index == len(active):
                 value = DpAllocator.predicted_success(
-                    plans=plans,
+                    mdp=mdp,
                     competences=competences,
                     learning_rates=learning_rates,
                     allocation=counts,

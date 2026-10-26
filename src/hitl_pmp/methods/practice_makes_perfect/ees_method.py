@@ -933,6 +933,9 @@ class EesMethod(Method):
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [candidate for _score, _tiebreak, candidate in scored]
 
+    def begin_practice_attempt(self, *, ground_skill: GroundSkill) -> None:
+        """Optional notification before executing a selected target's setup prefix."""
+
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         """Return practice candidates in preference order, optionally including STOP.
 
@@ -1822,6 +1825,7 @@ class _EesEpisode:
                 continue
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
+                method.begin_practice_attempt(ground_skill=candidate)
                 return [candidate]
             try:
                 prefix = method.plan_to(
@@ -1842,6 +1846,7 @@ class _EesEpisode:
                 method.record_practice_target(name=candidate.skill.name, field="unreachable")
                 continue
             method.record_practice_target(name=candidate.skill.name, field="selected")
+            method.begin_practice_attempt(ground_skill=candidate)
             return [*prefix, candidate]
 
         if method.reproduce_predicators_random_when_stranded:

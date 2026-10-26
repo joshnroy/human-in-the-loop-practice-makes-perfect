@@ -27,6 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dp = ["gurobipy==13.0.0"]
 dev = [
     "pytest",
     "pytest-cov",

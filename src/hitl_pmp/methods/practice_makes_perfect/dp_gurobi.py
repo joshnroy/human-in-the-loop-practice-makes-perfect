@@ -1,0 +1,220 @@
+"""Joint integer training allocation and task-policy optimization using Gurobi.
+
+The bilinear terms couple predicted skill success with task-policy occupancy.
+An acyclic deterministic policy suffices for nonnegative terminal rewards and
+success-or-absorbing-failure dynamics. Policy ranks exclude circulation, giving
+valid unit occupancy bounds even for the undiscounted success objective.
+"""
+
+import math
+import time
+from collections.abc import Hashable, Mapping
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel
+
+from .dp_allocator import DpAllocator
+from .dp_mdp import DpMdp
+
+SkillKey = TypeVar("SkillKey", bound=Hashable)
+
+
+class DpAllocationResult(BaseModel, Generic[SkillKey]):
+    allocation: dict[SkillKey, int]
+    solver: str
+    status: str
+    objective: float
+    objective_bound: float
+    relative_gap: float
+    absolute_gap: float = 0.0
+    runtime_seconds: float
+
+
+class DpOptimizationError(RuntimeError):
+    def __init__(self, *, diagnostics: dict[str, object]) -> None:
+        self.diagnostics = diagnostics
+        super().__init__(f"DP requires certified optimization; no fallback: {diagnostics}")
+
+
+class DpGurobiAllocator:
+    @staticmethod
+    def allocate(
+        *,
+        mdp: DpMdp[SkillKey],
+        competences: Mapping[SkillKey, float],
+        learning_rates: Mapping[SkillKey, float],
+        costs: Mapping[SkillKey, float],
+        budget: float,
+        time_limit: float = 60.0,
+    ) -> DpAllocationResult[SkillKey]:
+        try:
+            import gurobipy as gp
+        except ImportError as error:
+            raise RuntimeError("DP's Gurobi backend needs the optional 'dp' dependency") from error
+
+        if not math.isfinite(budget) or not math.isfinite(time_limit) or time_limit <= 0:
+            raise ValueError("DP budget must be finite and solver time limit finite and positive")
+        for skill, cost in costs.items():
+            if not math.isfinite(cost) or cost <= 0:
+                raise ValueError(f"invalid DP cost for {skill!r}")
+        skills = list(dict.fromkeys([*(edge.skill for edge in mdp.transitions), *costs]))
+        for skill in skills:
+            if skill not in competences or skill not in learning_rates:
+                raise ValueError(f"no competence or learning rate for {skill!r}")
+            if not 0 <= competences[skill] <= 1 or not math.isfinite(learning_rates[skill]):
+                raise ValueError(f"invalid competence or learning rate for {skill!r}")
+        started = time.monotonic()
+        relevant = mdp.relevant_skills()
+        with gp.Env(empty=True) as environment:
+            environment.setParam("OutputFlag", 0)
+            environment.start()
+            with gp.Model("deliberate-practice", env=environment) as model:
+                model.Params.NonConvex = 2
+                model.Params.Threads = 1
+                model.Params.TimeLimit = time_limit
+                model.Params.MIPGap = 1e-9
+                model.Params.MIPGapAbs = 1e-9
+                model.Params.FeasibilityTol = 1e-9
+                model.Params.IntFeasTol = 1e-9
+                counts = {}
+                probabilities = {}
+                for index, skill in enumerate(skills):
+                    competence = competences[skill]
+                    rate = learning_rates[skill]
+                    limit = 0
+                    if skill in costs and skill in relevant:
+                        limit = DpAllocator._useful_attempts(
+                            competence=competence,
+                            learning_rate=rate,
+                            affordable=max(0, math.floor(budget / costs[skill] + 1e-9)),
+                        )
+                    count = model.addVar(lb=0, ub=limit, vtype=gp.GRB.INTEGER, name=f"b_{index}")
+                    counts[skill] = count
+                    probability = model.addVar(lb=0, ub=1, name=f"p_{index}")
+                    if limit:
+                        raw = model.addVar(lb=competence, ub=competence + rate * limit)
+                        model.addConstr(raw == competence + rate * count)
+                        model.addGenConstrMin(probability, [raw], constant=1.0)
+                    else:
+                        model.addConstr(probability == competence)
+                    probabilities[skill] = probability
+                spend = gp.quicksum(cost * counts[skill] for skill, cost in costs.items())
+                model.addConstr(spend <= max(0, budget), name="practice_budget")
+                states = set(mdp.initial_probabilities) | set(mdp.terminal_rewards)
+                for edge in mdp.transitions:
+                    states.update([edge.state, edge.successor])
+                ranks = {
+                    state: model.addVar(lb=0, ub=len(states), name=f"rank_{state}")
+                    for state in states
+                    if state not in mdp.terminal_rewards
+                }
+                outgoing: dict[int, list[Any]] = {state: [] for state in ranks}
+                incoming: dict[int, list[Any]] = {state: [] for state in states}
+                selections: dict[int, list[Any]] = {state: [] for state in ranks}
+                for index, edge in enumerate(mdp.transitions):
+                    if edge.state in mdp.terminal_rewards:
+                        continue
+                    selected = model.addVar(vtype=gp.GRB.BINARY, name=f"policy_{index}")
+                    occupancy = model.addVar(lb=0, ub=1, name=f"mu_{index}")
+                    model.addConstr(occupancy <= selected)
+                    model.addConstr(
+                        ranks[edge.state]
+                        >= ranks.get(edge.successor, 0) + 1 - (len(states) + 1) * (1 - selected)
+                    )
+                    outgoing[edge.state].append(occupancy)
+                    selections[edge.state].append(selected)
+                    incoming[edge.successor].append(
+                        mdp.discount * probabilities[edge.skill] * occupancy
+                    )
+                for state in ranks:
+                    discard = model.addVar(lb=0, ub=1, name=f"discard_{state}")
+                    model.addConstr(gp.quicksum(selections[state]) <= 1)
+                    model.addQConstr(
+                        gp.quicksum(outgoing[state]) + discard
+                        == mdp.initial_probabilities.get(state, 0) + gp.quicksum(incoming[state])
+                    )
+                reward = model.addVar(lb=0, ub=max(mdp.terminal_rewards.values(), default=0))
+                model.addQConstr(
+                    reward
+                    == gp.quicksum(
+                        value
+                        * (mdp.initial_probabilities.get(state, 0) + gp.quicksum(incoming[state]))
+                        for state, value in mdp.terminal_rewards.items()
+                    )
+                )
+                model.setObjective(reward, gp.GRB.MAXIMIZE)
+                model.optimize()
+                DpGurobiAllocator._require_optimal(model=model, phase="task_value")
+                primary_allocation = {skill: int(round(counts[skill].X)) for skill in costs}
+                value = DpAllocator.predicted_success(
+                    mdp=mdp,
+                    competences=competences,
+                    learning_rates=learning_rates,
+                    allocation=primary_allocation,
+                )
+                theoretical_bound, _ = mdp.solve(competences=dict.fromkeys(skills, 1.0))
+                bound = min(model.ObjBound, theoretical_bound)
+                primary_spent = sum(
+                    costs[skill] * count for skill, count in primary_allocation.items()
+                )
+                if primary_spent > max(0, budget) + 1e-7 or bound - value > 1e-7:
+                    raise DpOptimizationError(
+                        diagnostics={
+                            "phase": "primary_independent_verification",
+                            "objective": value,
+                            "solver_objective": model.ObjVal,
+                            "objective_bound": bound,
+                            "spent": primary_spent,
+                            "budget": budget,
+                        }
+                    )
+                model.addConstr(reward >= value - 1e-8, name="preserve_optimal_task_value")
+                model.setObjective(spend, gp.GRB.MINIMIZE)
+                model.Params.TimeLimit = max(0.001, time_limit - (time.monotonic() - started))
+                model.optimize()
+                DpGurobiAllocator._require_optimal(model=model, phase="least_cost_tie_break")
+                allocation = {skill: int(round(counts[skill].X)) for skill in costs}
+                actual = DpAllocator.predicted_success(
+                    mdp=mdp,
+                    competences=competences,
+                    learning_rates=learning_rates,
+                    allocation=allocation,
+                )
+                spent = sum(costs[skill] * count for skill, count in allocation.items())
+                if spent > max(0, budget) + 1e-7 or bound - actual > 1e-7:
+                    raise DpOptimizationError(
+                        diagnostics={
+                            "phase": "independent_verification",
+                            "objective": actual,
+                            "solver_objective": value,
+                            "objective_bound": bound,
+                            "spent": spent,
+                            "budget": budget,
+                        }
+                    )
+                return DpAllocationResult(
+                    allocation=allocation,
+                    solver="gurobi",
+                    status="OPTIMAL",
+                    objective=actual,
+                    objective_bound=bound,
+                    relative_gap=max(0, bound - actual) / max(abs(actual), 1e-12),
+                    absolute_gap=max(0, bound - actual),
+                    runtime_seconds=time.monotonic() - started,
+                )
+
+    @staticmethod
+    def _require_optimal(*, model: Any, phase: str) -> None:
+        import gurobipy as gp
+
+        if model.Status != gp.GRB.OPTIMAL:
+            raise DpOptimizationError(
+                diagnostics={
+                    "phase": phase,
+                    "status": model.Status,
+                    "objective": model.ObjVal if model.SolCount else None,
+                    "objective_bound": model.ObjBound,
+                    "relative_gap": model.MIPGap if model.SolCount else None,
+                    "runtime_seconds": model.Runtime,
+                }
+            )

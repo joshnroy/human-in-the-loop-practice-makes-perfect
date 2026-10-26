@@ -702,6 +702,10 @@ def test_dp_flags_parse_with_their_defaults() -> None:
     assert args.dp_smoothing == pytest.approx(0.5)
     assert args.dp_max_skills == 8
     assert args.dp_max_allocations == 200_000
+    assert args.dp_max_states == 4096
+    assert args.dp_solver == "gurobi"
+    assert args.dp_budget_unit == "cost"
+    assert args.dp_allocation_schedule == "period"
     # EES's own flags, inherited.
     assert args.exploration_epsilon == 0.5
 
@@ -716,6 +720,14 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
     args = _build_dp_parser().parse_args([
         "--dp-budget",
         "12.5",
+        "--dp-solver",
+        "enumeration",
+        "--dp-budget-unit",
+        "cost",
+        "--dp-allocation-schedule",
+        "once",
+        "--dp-solver-time-limit",
+        "30",
         "--dp-initial-learning-rate",
         "0.2",
         "--dp-smoothing",
@@ -724,6 +736,8 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
         "5",
         "--dp-max-allocations",
         "999",
+        "--dp-max-states",
+        "123",
         "--ees-prior-alpha",
         "2",
         "--exploration-epsilon",
@@ -742,10 +756,14 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
     )
     assert isinstance(method, DpMethod)
     assert method.dp_budget == pytest.approx(12.5)
+    assert method.dp_solver == "enumeration"
+    assert method.dp_allocation_schedule == "once"
+    assert method.dp_solver_time_limit == 30
     assert method.dp_initial_learning_rate == pytest.approx(0.2)
     assert method.dp_smoothing == pytest.approx(0.25)
     assert method.dp_max_skills == 5
     assert method.dp_max_allocations == 999
+    assert method.dp_max_states == 123
     assert method.prior_alpha == pytest.approx(2.0)
     assert method.exploration_epsilon == pytest.approx(0.3)
     assert method.score_human_skills is True
