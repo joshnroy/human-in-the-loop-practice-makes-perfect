@@ -676,8 +676,7 @@ def test_practice_without_the_human_reset_offers_and_models_no_reset() -> None:
 
 
 def test_removing_the_human_reset_leaves_every_other_prior_unchanged() -> None:
-    """Priors are seeded by position; the reset is appended last, so dropping it must
-    not reseed the robot skills' beliefs."""
+    """Dropping the reset must preserve every robot skill's prior seed slot."""
     env = Tossing3DEnvironment(scene_bg=False)
     without = Tossing3DPomdpMethod(
         env=env,

@@ -66,9 +66,9 @@ def _render(*, atom: GroundAtom) -> str:
 
 
 def _method(
-    *, solver: str, wrapped: bool, price: float = PRICE, seed: int = 0
+    *, solver: str, wrapped: bool, price: float = PRICE, seed: int = 0, pouring: bool = True
 ) -> Tossing3DPomdpMethod:
-    env = Tossing3DEnvironment(scene_bg=False)
+    env = Tossing3DEnvironment(scene_bg=False, enable_bin_pouring=pouring)
     return Tossing3DPomdpMethod(
         env=env,
         skill_provider=Tossing3DSkillProvider(env=env),
@@ -77,6 +77,19 @@ def _method(
         always_ask_reset=AlwaysAskReset(cost=price) if wrapped else None,
         **EXP22C,  # type: ignore[arg-type]
     )
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_pouring_ablation_changes_the_action_library_without_changing_priors(*, wrapped):
+    enabled = _method(solver="determinized_astar", wrapped=wrapped, pouring=True)
+    disabled = _method(solver="determinized_astar", wrapped=wrapped, pouring=False)
+    assert "PourCubeOutOfBin" not in disabled.pomdp_state.skill_beliefs
+    for name, belief in disabled.pomdp_state.skill_beliefs.items():
+        assert enabled.pomdp_state.skill_beliefs[name] == belief
+    enabled_names = {skill.name for skill in enabled.skill_provider.skills()}
+    disabled_names = {skill.name for skill in disabled.skill_provider.skills()}
+    assert enabled_names - disabled_names == {"PourCubeOutOfBin"}
+    assert not disabled_names - enabled_names
 
 
 def _atoms(*, method: Tossing3DPomdpMethod, names: frozenset[str]) -> frozenset[GroundAtom]:
@@ -270,8 +283,11 @@ def test_the_unwrapped_planner_is_unchanged(
     *, solver: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Values pinned from the code before the reset-aware model existed: the canonical
-    arm's decision and root values on a fixed belief are exactly what they were."""
-    method = _method(solver=solver, wrapped=False)
+    arm's decision and root values on a fixed belief are exactly what they were.
+    Disable pouring to retain the action library these pre-pouring values describe;
+    the pouring-enabled applicability and practice tests cover the expanded domain.
+    """
+    method = _method(solver=solver, wrapped=False, pouring=False)
     _start_session(method=method, monkeypatch=monkeypatch)
     method._pomdp_state = _with_toss_competence(state=method.pomdp_state, rate=0.5)  # noqa: SLF001
     action = method.select_skill_to_practice(true_atoms=_holding(method=method))

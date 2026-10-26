@@ -34,6 +34,13 @@ pouring. This changes default bin contact dynamics for other skills too: picks a
 tosses can now move the bin. The real-robot backend does not offer this simulator
 controller.
 
+The pouring-disabled ablation also works with the always-ask wrapper: unavailable
+optional skills carry no practice belief. Prior seed slots are retained when a
+skill is disabled, and pouring is appended after the existing skills so it does
+not reseed their priors. Historical planner-value tests explicitly disable pouring
+to retain the action library their pinned values describe. Pouring-enabled tests
+continue to offer both pick and pour.
+
 The skill uses action ID 4 with four unused zero parameter slots. Its symbolic
 success moves the cube out of the bin, puts it on the floor on the robot's side,
 and restores pick plannability and an empty hand. The same-side operator also adds
