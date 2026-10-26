@@ -176,9 +176,13 @@ class FastDownwardPlanner:
         """Keep cost-optimal search when LM-cut cannot accept conditional effects.
 
         Hmax is admissible with conditional effects; LM-cut rejects these domains.
+        Universally quantified deletes (ignore effects) can also become conditional
+        SAS effects when the translator groups mutually exclusive facts.
         Explicit non-default aliases retain their requested configuration.
         """
-        if alias == "seq-opt-lmcut" and any(skill.conditional_add_effects for skill in skills):
+        if alias == "seq-opt-lmcut" and any(
+            skill.conditional_add_effects or skill.ignore_effects for skill in skills
+        ):
             return [], ["--search", "astar(hmax())"]
         return ["--alias", alias], []
 

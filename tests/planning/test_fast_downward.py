@@ -33,6 +33,18 @@ _SKILLS = (
 )
 
 
+@pytest.mark.parametrize("alias", ["seq-opt-lmcut", "lama-first"])
+def test_ignore_effects_select_a_search_that_accepts_conditional_sas_effects(*, alias):
+    skill = _SKILLS[0].model_copy(update={"ignore_effects": frozenset({ROBOT_IN_CELL})})
+    driver, search = FastDownwardPlanner._search_arguments(skills=(skill,), alias=alias)
+    if alias == "seq-opt-lmcut":
+        assert driver == []
+        assert search == ["--search", "astar(hmax())"]
+    else:
+        assert driver == ["--alias", alias]
+        assert search == []
+
+
 def _setup(*, grid_size: int = 5, light_level: float = 0.0, light_target: float = 0.8) -> dict:
     env = LightSwitchEnvironment(grid_size=grid_size)
     state = env.build_initial_state(light_level=light_level, light_target=light_target)
