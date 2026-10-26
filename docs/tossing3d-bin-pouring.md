@@ -76,20 +76,27 @@ It is removed from both STRIPS and dispatch, together with its otherwise unused
 simultaneously; a policy test must not require one particular choice when both
 are feasible. The older pick-only retrieval test explicitly disables pouring.
 
-Other existing restrictions need to be distinguished from that fix:
+The experiment has three parts: the environment, the pre-programmed skills
+(including predicates), and the algorithm. The standard comparison holds the first
+two fixed and varies the algorithm. RoboCode is the exception: it is not supplied
+with the pre-programmed skill layer either. Preconditions describe skill semantics,
+execution feasibility and the valid environment contract; they must not prescribe
+which of two feasible skills the algorithm should choose.
+
+The following are accepted parts of that setup, not unresolved audit findings:
 
 | Rule | Assessment |
 | --- | --- |
 | `PickPlannable` on the pick itself | Execution feasibility: asks the same deterministic motion planner used at dispatch. It does not predict grasp success or disable retries after an execution failure. |
-| `BinOnGround` on every robot skill | Broader than demonstrated feasibility. Pouring needs an upright bin, but opening an empty gripper does not; a floor pick away from a tipped bin should depend on its actual motion plan. The global requirement currently forces human recovery. |
-| `ClosedEmpty` on `OpenGripper` | Restricts the skill to empty-hand recovery. Releasing a held cube is physically possible but omitted from this action model. Supporting it needs drop effects and outcome handling, not just deleting the precondition. |
+| `BinOnGround` on every robot skill | Environment-validity contract: the bin should remain upright during ordinary operation. A tipped bin is an invalid/problem state that can require human recovery. Keep the global gate, including on picks and empty-hand opening. |
+| `ClosedEmpty` on `OpenGripper` | Skill semantics: this is the empty-hand gripper-opening skill, not a drop-cube skill. Keep its empty-hand precondition and current effects. |
 | `OnGround` on picks | Retained benchmark restriction, including the explicit user requirement that a cube supported by the robot base must not be picked. Bin and rim retrieval have their own supported pick operators. |
-| Starved parameter pool cache | Algorithm-side restriction, not an environment predicate: after a finite pool yields no accepted parameters, EES and belief-space search suppress that state/action pair for the practice session. That is not proof that no feasible parameter exists, and the cache key is symbolic rather than the full geometry. |
+| Starved parameter pool cache | Algorithm behavior: after a finite pool yields no accepted parameters, EES and belief-space search suppress that state/action pair for the practice session to avoid getting stuck on a failing skill. Keep this mechanism as part of the algorithm; it is not an environment or skill predicate. |
 
 This audit covers the Tossing3D skill models, provider, pouring dispatch guards,
 and the practice planners' action enumeration. It does not establish that every
-feasible physical manipulation is represented. The remaining restrictions above
-are unchanged by the pouring correction and must be explicit when interpreting
-the experiments. The reset remains available alongside robot skills; it is not
+feasible physical manipulation is represented. The accepted rules above remain
+unchanged by the pouring correction; no further fixes to them are required by
+this audit. The reset remains available alongside robot skills; it is not
 reserved for cases where all robot alternatives fail. Always-ask arms are explicit
 baseline policies, rather than environment preconditions.
