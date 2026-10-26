@@ -1,5 +1,8 @@
 # Requested counts 1–5 with the centered two-parameter controller
 
+Representative [native success and closest-miss videos](2026-10-26-pouring-count-videos.md)
+replay this study's recorded attempts, with separate Pour and placement labels.
+
 This follow-up explicitly retries requested counts 1–5 for both approved wood
 and foam profiles. The earlier [wiggle comparison](2026-10-26-pouring-tilt-wiggle.md)
 only requested two; its six wiggle cases and stationary controls remain a
