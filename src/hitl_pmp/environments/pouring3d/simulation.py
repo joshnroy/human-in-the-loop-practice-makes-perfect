@@ -126,14 +126,6 @@ class PouringSimulation(BaseModel):
             )
         elif skill == "DropCubeIntoPitcher":
             valid = self.held == f"cube_{cube}" and self.controller.vessel_home(name="pitcher")
-        elif skill == "HumanPourBack":
-            valid = (
-                self.held is None
-                and "tray" in self.locations()
-                and all(loc in {"pitcher", "tray"} for loc in self.locations())
-                and self.controller.vessel_home(name="pitcher")
-                and self.controller.vessel_home(name="tray")
-            )
         elif skill == "Wait":
             valid = True
         if not valid:
@@ -143,16 +135,45 @@ class PouringSimulation(BaseModel):
         self, *, skill: str, cube: int | None = None, parameters: dict[str, float] | None = None
     ) -> dict[str, Any]:
         self.check_preconditions(skill=skill, cube=cube, parameters=parameters)
-        if skill == "HumanPourBack":
-            self.human_interventions += 1
         event = self.controller.run_skill(
             skill=skill,
             cube=0 if cube is None else cube,
             parameters=PourParameters(**(parameters or {})) if skill == "Pour" else None,
         )
         event["cost_seconds"] = event["seconds"]
-        event["human_interventions"] = int(skill == "HumanPourBack")
+        event["human_interventions"] = 0
         self.elapsed_seconds += event["seconds"]
+        self.events.append(event)
+        return event
+
+    def reset_payload(self) -> dict[str, Any]:
+        """Privileged human reset; preserve robot/vessels, time, and motor history.
+
+        The caller owns intervention pricing, as for other reset_movables domains.
+        """
+        if (
+            self.held is not None
+            or self.locations() == ["pitcher"] * 5
+            or not self.controller.vessel_home(name="pitcher")
+            or not self.controller.vessel_home(name="tray")
+        ):
+            raise ValueError("Human reset requires cubes outside pitcher, home vessels, empty hand")
+        before = self.controller.scene.physical_snapshot()
+        self.controller.scene.respawn_payload_in_pitcher()
+        self.human_interventions += 1
+        event = {
+            "skill": "reset_cubes",
+            "cube": None,
+            "success": self.ready(),
+            "error": None,
+            "parameters": None,
+            "seconds": 0.0,
+            "cost_seconds": 0.0,
+            "human_interventions": 1,
+            "simulated_human_reset": True,
+            "before": before,
+            "after": self.controller.scene.physical_snapshot(),
+        }
         self.events.append(event)
         return event
 

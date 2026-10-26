@@ -11,16 +11,31 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_physical_pour_and_both_resets():
-    from hitl_pmp.environments.pouring3d.simulation import PouringSimulation
+    from hitl_pmp.environments.pouring3d.environment import PouringEnvironment
+    from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 
-    sim = PouringSimulation.create(seed=0, scene_bg=False)
+    env = PouringEnvironment(seed=0, scene_bg=False)
+    env.hard_reset()
+    sim = env.sim
     try:
         assert sim.locations() == ["pitcher"] * 5
         assert sim.execute(skill="PickPitcher")["success"]
+        assert sim.controller.finger_contacts(name="pitcher", handle_only=True) == {"left", "right"}
+        assert sim.locations() == ["pitcher"] * 5
         assert sim.execute(skill="Pour")["success"]
         assert sim.execute(skill="PlacePitcherAtHome")["success"]
         assert sim.locations() == ["tray"] * 5
-        assert sim.execute(skill="HumanPourBack")["success"]
+        tray_before = sim.controller.body_pose(name="tray")[0]
+        robot_before = sim.data.qpos[sim.controller.arm_q].copy()
+        time_before, cost_before = float(sim.data.time), sim.elapsed_seconds
+        UnconditionalHumanOracle.execute_movables_reset(env=env, destination="reset_cubes")
+        human_reset = env.last_info
+        assert human_reset["success"]
+        assert human_reset["simulated_human_reset"]
+        np.testing.assert_allclose(sim.controller.body_pose(name="tray")[0], tray_before, atol=1e-5)
+        np.testing.assert_array_equal(sim.data.qpos[sim.controller.arm_q], robot_before)
+        assert sim.data.time == time_before
+        assert sim.elapsed_seconds == cost_before
         assert sim.ready()
         assert sim.execute(skill="PickPitcher")["success"]
         assert sim.execute(skill="Pour")["success"]
@@ -52,16 +67,20 @@ def test_small_tilt_does_not_magically_transfer_cubes():
 
 
 def test_invalid_reset_does_not_change_world_or_charge_cost():
-    from hitl_pmp.environments.pouring3d.simulation import PouringSimulation
+    from hitl_pmp.environments.pouring3d.environment import PouringEnvironment
 
-    sim = PouringSimulation.create(seed=0, scene_bg=False)
+    env = PouringEnvironment(seed=0, scene_bg=False)
+    env.hard_reset()
+    sim = env.sim
     try:
         before = sim.data.qpos.copy()
-        with pytest.raises(ValueError, match="Preconditions unmet"):
-            sim.execute(skill="HumanPourBack")
+        with pytest.raises(ValueError, match="Human reset requires"):
+            env.reset_movables()
         np.testing.assert_array_equal(before, sim.data.qpos)
         assert sim.elapsed_seconds == 0
         assert sim.human_interventions == 0
+        with pytest.raises(ValueError, match="Human reset uses HumanOracle"):
+            env.take_action(action=np.array([5, 0, 145, 0, 0, 10, 4]))
     finally:
         sim.close()
 
