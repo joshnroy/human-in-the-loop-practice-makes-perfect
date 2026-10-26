@@ -1461,6 +1461,9 @@ class StepPracticeRunner:
                         actions += 1
                         continue
                     except InteractionComplete as completion:
+                        if method.practice_complete():
+                            stopped = True
+                            break
                         reason = (
                             "planner_stop" if completion.planner_stop else "interaction_complete"
                         )

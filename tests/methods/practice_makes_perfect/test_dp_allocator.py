@@ -9,6 +9,30 @@ import numpy as np
 import pytest
 
 from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
+from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTransition
+
+
+def _mdp(*, plans):
+    transitions = []
+    initial = {}
+    rewards = {}
+    state = 0
+    for plan in plans:
+        initial[state] = 1 / len(plans)
+        for skill in plan:
+            transitions.append(DpTransition(state=state, skill=skill, successor=state + 1))
+            state += 1
+        rewards[state] = 1
+        state += 1
+    return DpMdp(initial_probabilities=initial, terminal_rewards=rewards, transitions=transitions)
+
+
+def _allocate(*, plans, **kwargs):
+    return DpAllocator.allocate(mdp=_mdp(plans=plans), **kwargs)
+
+
+def _predicted(*, plans, **kwargs):
+    return DpAllocator.predicted_success(mdp=_mdp(plans=plans), **kwargs)
 
 
 def _brute_force(*, plans, competences, learning_rates, costs, budget):
@@ -22,19 +46,20 @@ def _brute_force(*, plans, competences, learning_rates, costs, budget):
         if spent > budget + 1e-9:
             continue
         allocation = dict(zip(skills, counts, strict=True))
-        value = DpAllocator.predicted_success(
-            plans=plans,
-            competences=competences,
-            learning_rates=learning_rates,
-            allocation=allocation,
-        )
+        value = sum(
+            math.prod(
+                min(1.0, max(0.0, competences[skill] + learning_rates[skill] * allocation[skill]))
+                for skill in plan
+            )
+            for plan in plans
+        ) / len(plans)
         if value > best[0] + 1e-12 or (abs(value - best[0]) <= 1e-12 and spent < best[1]):
             best = (value, spent)
     return best
 
 
 def test_predicted_success_is_the_mean_over_plans_of_each_plans_product():
-    value = DpAllocator.predicted_success(
+    value = _predicted(
         plans=[["a", "b"], ["b"]],
         competences={"a": 0.5, "b": 0.4},
         learning_rates={"a": 0.1, "b": 0.3},
@@ -45,14 +70,14 @@ def test_predicted_success_is_the_mean_over_plans_of_each_plans_product():
 
 
 def test_predicted_success_caps_each_competence_at_one():
-    value = DpAllocator.predicted_success(
+    value = _predicted(
         plans=[["a"]], competences={"a": 0.9}, learning_rates={"a": 0.5}, allocation={"a": 3}
     )
     assert value == pytest.approx(1.0)
 
 
 def test_a_saturated_skill_gets_nothing():
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["done", "learning"]],
         competences={"done": 1.0, "learning": 0.5},
         learning_rates={"done": 0.1, "learning": 0.1},
@@ -65,7 +90,7 @@ def test_a_saturated_skill_gets_nothing():
 
 
 def test_a_skill_that_is_not_improving_gets_nothing():
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["flat", "learning"]],
         competences={"flat": 0.3, "learning": 0.5},
         learning_rates={"flat": 0.0, "learning": 0.1},
@@ -76,7 +101,7 @@ def test_a_skill_that_is_not_improving_gets_nothing():
 
 
 def test_a_skill_on_no_plan_gets_nothing():
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["a"]],
         competences={"a": 0.5, "elsewhere": 0.1},
         learning_rates={"a": 0.1, "elsewhere": 0.5},
@@ -88,7 +113,7 @@ def test_a_skill_on_no_plan_gets_nothing():
 
 def test_diminishing_returns_split_the_budget():
     # (0.5 + 0.1 x)(0.5 + 0.1 y) with x + y = 4: 2/2 gives 0.49, 4/0 gives 0.45.
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["a", "b"]],
         competences={"a": 0.5, "b": 0.5},
         learning_rates={"a": 0.1, "b": 0.1},
@@ -101,7 +126,7 @@ def test_diminishing_returns_split_the_budget():
 def test_costs_are_per_attempt_and_the_budget_binds_on_their_sum():
     # A toss whose attempt carries a bundled forced reset (1 + 5) against a pick at 1:
     # one toss (0.6 * 0.6 = 0.36) loses to four picks (1.0 * 0.5 = 0.5).
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["pick", "toss"]],
         competences={"pick": 0.6, "toss": 0.5},
         learning_rates={"pick": 0.1, "toss": 0.1},
@@ -115,14 +140,14 @@ def test_a_human_skill_is_allocated_by_the_same_rule_as_a_robot_skill():
     # The allocator has no notion of who performs a skill: relabelling the two keys
     # relabels the answer. Three attempts on the weaker skill (0.9 * 0.8 = 0.72) beat
     # saturating the stronger one and two on the weaker (1.0 * 0.7 = 0.70).
-    robot_first = DpAllocator.allocate(
+    robot_first = _allocate(
         plans=[["pick", "reset_cube_far"]],
         competences={"pick": 0.9, "reset_cube_far": 0.5},
         learning_rates={"pick": 0.1, "reset_cube_far": 0.1},
         costs={"pick": 1.0, "reset_cube_far": 1.0},
         budget=3.0,
     )
-    swapped = DpAllocator.allocate(
+    swapped = _allocate(
         plans=[["reset_cube_far", "pick"]],
         competences={"reset_cube_far": 0.9, "pick": 0.5},
         learning_rates={"reset_cube_far": 0.1, "pick": 0.1},
@@ -134,7 +159,7 @@ def test_a_human_skill_is_allocated_by_the_same_rule_as_a_robot_skill():
 
 
 def test_no_budget_allocates_nothing():
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=[["a"]],
         competences={"a": 0.5},
         learning_rates={"a": 0.1},
@@ -156,7 +181,7 @@ def test_matches_brute_force_on_small_cases(*, seed):
     learning_rates = {skill: float(rng.uniform(-0.05, 0.3)) for skill in skills}
     costs = {skill: float(rng.choice([0.5, 1.0, 1.5, 2.0])) for skill in skills}
     budget = float(rng.uniform(0.0, 6.0))
-    allocation = DpAllocator.allocate(
+    allocation = _allocate(
         plans=plans,
         competences=competences,
         learning_rates=learning_rates,
@@ -165,7 +190,7 @@ def test_matches_brute_force_on_small_cases(*, seed):
     )
     spent = sum(allocation[skill] * costs[skill] for skill in skills)
     assert spent <= budget + 1e-9
-    value = DpAllocator.predicted_success(
+    value = _predicted(
         plans=plans, competences=competences, learning_rates=learning_rates, allocation=allocation
     )
     best_value, best_spent = _brute_force(
@@ -182,7 +207,7 @@ def test_matches_brute_force_on_small_cases(*, seed):
 def test_raises_above_the_skill_cap():
     skills = [f"s{index}" for index in range(4)]
     with pytest.raises(ValueError, match="skills"):
-        DpAllocator.allocate(
+        _allocate(
             plans=[skills],
             competences=dict.fromkeys(skills, 0.5),
             learning_rates=dict.fromkeys(skills, 0.1),
@@ -194,7 +219,7 @@ def test_raises_above_the_skill_cap():
 
 def test_raises_above_the_enumeration_cap():
     with pytest.raises(ValueError, match="enumerat"):
-        DpAllocator.allocate(
+        _allocate(
             plans=[["a", "b"]],
             competences={"a": 0.0, "b": 0.0},
             learning_rates={"a": 0.001, "b": 0.001},
@@ -206,7 +231,7 @@ def test_raises_above_the_enumeration_cap():
 
 def test_rejects_a_plan_step_with_no_competence():
     with pytest.raises(ValueError, match="competence"):
-        DpAllocator.allocate(
+        _allocate(
             plans=[["a", "unknown"]],
             competences={"a": 0.5},
             learning_rates={"a": 0.1},
@@ -217,7 +242,7 @@ def test_rejects_a_plan_step_with_no_competence():
 
 def test_rejects_a_nonpositive_cost():
     with pytest.raises(ValueError, match="cost"):
-        DpAllocator.allocate(
+        _allocate(
             plans=[["a"]],
             competences={"a": 0.5},
             learning_rates={"a": 0.1},

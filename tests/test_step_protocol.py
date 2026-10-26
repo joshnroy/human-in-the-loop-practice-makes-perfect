@@ -1468,6 +1468,34 @@ def test_a_method_complete_before_practice_runs_no_session(*, tmp_path):
     assert _session_starts(output=output) == []
 
 
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_completion_discovered_during_selection_does_not_charge_stop_or_reset(*, tmp_path, wrapped):
+    from hitl_pmp.core.method.method import InteractionComplete
+    from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import AlwaysAskReset
+
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _CompletingMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        always_ask_reset=AlwaysAskReset(cost=1.0) if wrapped else None,
+    )
+    method._limit = 1
+    method._script = [InteractionComplete(planner_stop=True)]
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100),
+        method=method,
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "method_practice_complete"
+    assert _stop_events(output=output) == []
+    assert _human_events(output=output) == []
+    assert _measured(output=output)[-1] == 0
+
+
 def test_practice_is_never_complete_by_default():
     assert _scripted_method(script=[]).practice_complete() is False
 

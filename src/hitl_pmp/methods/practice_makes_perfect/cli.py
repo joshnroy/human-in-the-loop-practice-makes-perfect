@@ -17,6 +17,7 @@ from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
 from .dp_method import DpMethod
+from .dp_priors import DpPriorCalibration
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
 
@@ -594,9 +595,41 @@ class DpCli(EesCli):
             "--dp-budget",
             type=lambda value: EesCli.positive_float(value=value),
             required=True,
-            help="DP's practice budget B, in PracticeAccounting.total_cost units (the "
-            "--practice-cost-config prices: robot steps plus human resets). Practice "
-            "ends once the run's total cost reaches it.",
+            help="DP budget B in the explicit --dp-budget-unit: cost or target-skill episodes.",
+        )
+        parser.add_argument(
+            "--dp-budget-unit",
+            choices=["cost", "episodes"],
+            default=fields["dp_budget_unit"].default,
+            help="Cost includes robot steps and human resets; episodes count completed target "
+            "rollouts, successful or failed, excluding setup executions and human resets.",
+        )
+        parser.add_argument(
+            "--dp-allocation-schedule",
+            choices=["once", "period"],
+            default=fields["dp_allocation_schedule"].default,
+            help="Allocate once before the curriculum, or reallocate every practice period.",
+        )
+        parser.add_argument(
+            "--dp-solver",
+            choices=["gurobi", "enumeration"],
+            default=fields["dp_solver"].default,
+            help="Gurobi globally solves the bilinear joint allocation/policy model. "
+            "Enumeration is an explicit small-problem reference, never an automatic fallback.",
+        )
+        parser.add_argument(
+            "--dp-solver-time-limit",
+            type=lambda value: EesCli.positive_float(value=value),
+            default=fields["dp_solver_time_limit"].default,
+            help="Total Gurobi seconds per allocation, including least-cost tie breaking; "
+            "failure to certify optimality raises instead of silently proceeding.",
+        )
+        parser.add_argument(
+            "--dp-prior-calibration",
+            type=Path,
+            default=None,
+            help="Validated held-out per-skill DP priors. Overrides robot competence and "
+            "learning-rate priors without changing EES or human scoring. Source drift raises.",
         )
         parser.add_argument(
             "--dp-initial-learning-rate",
@@ -627,9 +660,24 @@ class DpCli(EesCli):
             help="Raise, rather than approximate, when the exact allocator could "
             "enumerate more allocations than this.",
         )
+        parser.add_argument(
+            "--dp-max-states",
+            type=lambda value: DpCli.positive_int(value=value),
+            default=fields["dp_max_states"].default,
+            help="Raise rather than approximate when the reachable deployment MDP "
+            "exceeds this many symbolic states.",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if args.dp_prior_calibration is not None:
+            calibration = DpPriorCalibration.load(path=args.dp_prior_calibration)
+            if (calibration.environment, calibration.layout, calibration.variant) != (
+                args.env,
+                getattr(args, "layout", None),
+                getattr(args, "variant", None),
+            ):
+                raise ValueError("DP prior calibration does not match this environment")
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -639,10 +687,19 @@ class DpCli(EesCli):
                     "score_human_skills": True,
                 },
                 dp_budget=args.dp_budget,
+                dp_budget_unit=args.dp_budget_unit,
+                dp_allocation_schedule=args.dp_allocation_schedule,
+                dp_solver=args.dp_solver,
+                dp_solver_time_limit=args.dp_solver_time_limit,
+                dp_prior_calibration=args.dp_prior_calibration,
+                dp_solver_log=(
+                    args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
+                ),
                 dp_initial_learning_rate=args.dp_initial_learning_rate,
                 dp_smoothing=args.dp_smoothing,
                 dp_max_skills=args.dp_max_skills,
                 dp_max_allocations=args.dp_max_allocations,
+                dp_max_states=args.dp_max_states,
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
