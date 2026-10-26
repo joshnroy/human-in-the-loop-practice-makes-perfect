@@ -108,7 +108,7 @@ class WiggleDemo:
                     detail = "pour_detail" if active_skill == "Pour" else "pitcher_detail"
                     speed = "1x" if active_skill == "Pour" else "4x"
                     status = (
-                        ("SUCCESS" if pour_success else "FAIL")
+                        ("POUR PASS" if pour_success else "POUR MISS")
                         if active_skill == "PlacePitcherAtHome"
                         else "RUNNING"
                     )
@@ -174,6 +174,39 @@ class WiggleDemo:
                 "source_frames": len(trace),
                 "video": video,
             }
+            if writer is not None:
+                cameras = c.scene.render_all_cameras()
+                placed = next(
+                    (
+                        event["success"]
+                        for event in events
+                        if event["skill"] == "PlacePitcherAtHome"
+                    ),
+                    None,
+                )
+                placement = "not run" if placed is None else "PASS" if placed else "FAIL"
+                status = (
+                    "SUCCESS" if result["full_success"] else "POUR ONLY" if pour_success else "FAIL"
+                )
+                frame = RequestedCountDemo.frame(
+                    overview=cameras["task_view_image"],
+                    detail=cameras["pitcher_detail_image"],
+                    title=f"{material.upper()} | target {requested_count} | final result",
+                    subtitle=(
+                        f"Pour {'PASS' if pour_success else 'FAIL'} "
+                        f"({after_pour['locations'].count('tray')}/{requested_count}) | "
+                        f"Placement {placement} | Final tray {final['locations'].count('tray')}, "
+                        f"retained {final['locations'].count('pitcher')}"
+                    ),
+                    status=status,
+                )
+                for _ in range(120):
+                    writer.append_data(frame)
+                result["video_fps"] = 40
+                result["video_result_hold_seconds"] = 3
+                result["video_output_frames"] = (
+                    sum(4 if row["skill"] == "Pour" else 1 for row in trace) + 120
+                )
             (directory / "result.json").write_text(json.dumps(result, indent=2))
             (directory / "trace.json").write_text(json.dumps(trace, indent=2))
             print(
