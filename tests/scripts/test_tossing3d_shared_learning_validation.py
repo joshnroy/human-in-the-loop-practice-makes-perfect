@@ -149,6 +149,17 @@ def test_subset_is_paired_across_all_three_algorithms():
     assert {record["algorithm"] for record in records} == set(ALGORITHMS)
 
 
+def test_graphics_runtime_is_node_local_while_python_temporary_files_use_gpfs(
+    *, tmp_path, evidence
+):
+    Tossing3DSharedLearningValidation.prepare(directory=tmp_path, tag="test", sha=SHA, **evidence)
+    worker = (tmp_path / "array-shared-learning.sbatch").read_text()
+    assert 'export HITL_PMP_TMPDIR="$S/tmp/shared-learning-' in worker
+    assert 'export XDG_RUNTIME_DIR="/tmp/shared-learning-' in worker
+    assert 'chmod 700 "$XDG_RUNTIME_DIR"' in worker
+    assert 'XDG_RUNTIME_DIR="${TMPDIR:-/tmp}' not in worker
+
+
 @pytest.mark.parametrize(
     "variant,sharing", [("shared_flexible", "parent"), ("shared_rate", "rate")]
 )

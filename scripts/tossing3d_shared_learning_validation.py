@@ -206,6 +206,21 @@ class Tossing3DSharedLearningValidation:
             f'[ "$SHA" = "{sha}" ] || {{ echo "unexpected manifest SHA" >&2; exit 2; }}\nCODE="',
             1,
         )
+        runtime = 'export XDG_RUNTIME_DIR="${TMPDIR:-/tmp}/xdg-$SLURM_JOB_ID-$SLURM_ARRAY_TASK_ID"'
+        if runtime not in sbatch:
+            raise RuntimeError("ShelfLaunch graphics runtime changed; review temporary storage")
+        sbatch = sbatch.replace(
+            runtime,
+            'export HITL_PMP_TMPDIR="$S/tmp/shared-learning-$SLURM_JOB_ID-$SLURM_ARRAY_TASK_ID"\n'
+            'mkdir -p "$HITL_PMP_TMPDIR"\n'
+            'export XDG_RUNTIME_DIR="/tmp/shared-learning-$SLURM_JOB_ID-$SLURM_ARRAY_TASK_ID"',
+            1,
+        )
+        sbatch = sbatch.replace(
+            'mkdir -p "$XDG_RUNTIME_DIR"\n',
+            'mkdir -p "$XDG_RUNTIME_DIR"\nchmod 700 "$XDG_RUNTIME_DIR"\nulimit -c 0\n',
+            1,
+        )
         marker = 'eval "ARGS=($ARGV)"\n'
         if marker not in sbatch:
             raise RuntimeError("ShelfLaunch runtime template changed; review the worker handoff")

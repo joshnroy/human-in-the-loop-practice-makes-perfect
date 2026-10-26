@@ -116,6 +116,9 @@ Outputs are `manifest-shared-learning.tsv`, `array-shared-learning.sbatch`,
 Evidence copies preserve the input bytes, including when inputs are already in
 the output directory. Rows use the existing six-field manifest format;
 each row contains the full immutable source SHA and shell-quoted exact argv.
+Workers keep Python/planner temporary storage on GPFS, but graphics runtime
+storage in a private node-local `/tmp` directory: Mesa's anonymous graphics
+allocations must not inherit a GPFS runtime path.
 `Tossing3DSharedLearningValidation.records()` builds and parses the matrix without
 writing files; `.prepare()` validates both evidence roles and writes the artifacts.
 Its returned receipt records `current_prior_calibration_sha256` separately from
