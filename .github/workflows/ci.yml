@@ -22,19 +22,20 @@ env:
   PYTEST_MARK_EXPR: ${{ github.event_name == 'pull_request' && 'not main_only' || '' }}
 
 jobs:
-  # Whether `test / tossing3d` must run. Always `true` outside a pull request, so a push to
-  # main runs it unconditionally. On a pull request it is `true` iff the diff touches
-  # something the Tossing3D/SweepOffShelf3D tests import or read: the list below is checked
-  # against those tests' real import closure by tests/test_ci_run_scope.py, so it is
-  # deliberately broad -- cli.py registers every environment and method, which pulls nearly
-  # all of src/ in. Uses the PR files API, so no checkout.
+  # Physics runs only at the top of a native stack. Other checks run on every layer.
+  # A stack top must bypass the per-PR path filter: its own diff can be docs-only while
+  # lower layers change robot code. Ordinary PRs retain the Tossing3D path filter below,
+  # checked against the tests' import closure by tests/test_ci_run_scope.py. Pushes to
+  # main always run physics. Uses event metadata and the PR files API, so no checkout.
   changes:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      tossing3d: ${{ github.event_name != 'pull_request' || steps.filter.outputs.tossing3d }}
+      tossing3d: ${{ github.event_name != 'pull_request' || github.event.pull_request.stack != null || steps.filter.outputs.tossing3d }}
+      # Missing/incomplete metadata cannot prove a layer is below the top, so it runs.
+      stack_middle: ${{ github.event_name == 'pull_request' && github.event.pull_request.stack != null && github.event.pull_request.stack.position > 0 && github.event.pull_request.stack.position < github.event.pull_request.stack.size }}
     steps:
       - id: filter
         if: github.event_name == 'pull_request'
@@ -352,6 +353,8 @@ jobs:
 
   test-tossingroom:
     name: "test / tossingroom (2D physics)"
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.stack_middle == 'false' }}
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
@@ -409,8 +412,8 @@ jobs:
   test-tossing3d:
     name: "test / tossing3d (MuJoCo/OSMesa)"
     needs: changes
-    # Skipped only on a pull request whose diff the `changes` filter says cannot affect it.
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.tossing3d == 'true') }}
+    # Lower stack layers defer physics to the top; ordinary PRs use the path filter.
+    if: ${{ !cancelled() && needs.changes.outputs.stack_middle == 'false' && (github.event_name != 'pull_request' || needs.changes.outputs.tossing3d == 'true') }}
     runs-on: ubuntu-latest
     # Sharded: as one job its four xdist workers stayed saturated for ~40 min, so only
     # more runners could shorten it. Every shard collects the same tests and keeps a
@@ -651,8 +654,8 @@ jobs:
     needs: [changes, test-unit, test-tossingroom, test-tossing3d, test-scripts]
     # The required status check. It decides from its dependencies' results itself rather
     # than by default `needs` semantics: a job whose dependency fails is *skipped*, and
-    # GitHub counts a skipped required check as passing. The one skip it accepts is
-    # `test / tossing3d` on a pull request the `changes` filter cleared.
+    # GitHub counts a skipped required check as passing. Accept physics skips below a
+    # stack top and the ordinary PR Tossing3D path-filter skip, never failures/cancellation.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -664,20 +667,30 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
+          scope = needs["changes"]["outputs"].get("stack_middle")
+          if scope not in ("true", "false"):
+              sys.exit(f"invalid stack scope: {scope!r}")
+          middle = os.environ["EVENT"] == "pull_request" and scope == "true"
           cleared = (
               os.environ["EVENT"] == "pull_request"
               and needs["changes"]["result"] == "success"
               and needs["changes"]["outputs"].get("tossing3d") == "false"
           )
+          allowed_skips = {"test-tossingroom", "test-tossing3d"} if middle else set()
+          if cleared:
+              allowed_skips.add("test-tossing3d")
           bad = {
               job: need["result"]
               for job, need in needs.items()
               if need["result"] != "success"
-              and not (job == "test-tossing3d" and need["result"] == "skipped" and cleared)
+              and not (job in allowed_skips and need["result"] == "skipped")
           }
           for job, need in needs.items():
               print(f"{job}: {need['result']}")
           if bad:
               sys.exit(f"not passed: {bad}")
-          print("tossing3d skipped: no affected paths" if cleared else "all test jobs passed")
+          if middle:
+              print("physics skipped: tested at the top of the stack")
+          else:
+              print("tossing3d skipped: no affected paths" if cleared else "all test jobs passed")
           PY
