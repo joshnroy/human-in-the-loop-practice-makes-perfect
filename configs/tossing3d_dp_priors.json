@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "environment": "tossing3d",
+  "layout": "barrier",
+  "variant": "o1",
+  "skills": {
+    "PickCube": {
+      "alpha": 1.9795918367346939,
+      "beta": 0.020408163265306145,
+      "initial_learning_rate": 0.0
+    },
+    "MoveToTossLocationAndToss": {
+      "alpha": 0.2653061224489796,
+      "beta": 1.7346938775510203,
+      "initial_learning_rate": 0.0053677721088435364
+    },
+    "OpenGripper": {
+      "alpha": 1.9795918367346939,
+      "beta": 0.020408163265306145,
+      "initial_learning_rate": 0.0
+    }
+  },
+  "diagnostics": {
+    "PickCube": {
+      "initial_competence": 0.9897959183673469,
+      "initial_probe_successes": 48,
+      "initial_probe_trials": 48,
+      "predicted_saturation_rollouts": null,
+      "validation_brier": 0.0001041232819658478,
+      "old_defaults_validation_brier": 0.0027548209366391203,
+      "checkpoints": {
+        "fit": [
+          {
+            "training_episodes": 0,
+            "successes": 48,
+            "trials": 48
+          },
+          {
+            "training_episodes": 20,
+            "successes": 48,
+            "trials": 48
+          },
+          {
+            "training_episodes": 60,
+            "successes": 48,
+            "trials": 48
+          }
+        ],
+        "validation": [
+          {
+            "training_episodes": 0,
+            "successes": 48,
+            "trials": 48
+          },
+          {
+            "training_episodes": 20,
+            "successes": 48,
+            "trials": 48
+          },
+          {
+            "training_episodes": 60,
+            "successes": 48,
+            "trials": 48
+          }
+        ]
+      }
+    },
+    "MoveToTossLocationAndToss": {
+      "initial_competence": 0.1326530612244898,
+      "initial_probe_successes": 6,
+      "initial_probe_trials": 48,
+      "predicted_saturation_rollouts": 162,
+      "validation_brier": 0.16623074080822806,
+      "old_defaults_validation_brier": 0.6713154269972451,
+      "checkpoints": {
+        "fit": [
+          {
+            "training_episodes": 0,
+            "successes": 6,
+            "trials": 48
+          },
+          {
+            "training_episodes": 20,
+            "successes": 8,
+            "trials": 48
+          },
+          {
+            "training_episodes": 60,
+            "successes": 23,
+            "trials": 48
+          }
+        ],
+        "validation": [
+          {
+            "training_episodes": 0,
+            "successes": 0,
+            "trials": 48
+          },
+          {
+            "training_episodes": 20,
+            "successes": 16,
+            "trials": 48
+          },
+          {
+            "training_episodes": 60,
+            "successes": 23,
+            "trials": 48
+          }
+        ]
+      }
+    },
+    "OpenGripper": {
+      "initial_competence": 0.9897959183673469,
+      "initial_probe_successes": 48,
+      "initial_probe_trials": 48,
+      "predicted_saturation_rollouts": null,
+      "validation_probe_successes": 48,
+      "validation_probe_trials": 48,
+      "validation_brier": 0.00010412328196584778,
+      "old_defaults_validation_brier": 0.00826446280991736
+    }
+  },
+  "validation_passed": true,
+  "fit_seeds": [
+    2000,
+    2001,
+    2002
+  ],
+  "validation_seeds": [
+    2010,
+    2011,
+    2012
+  ],
+  "protocol": {
+    "environment": "tossing3d",
+    "layout": "barrier",
+    "variant": "o1",
+    "checkpoints": [
+      0,
+      20,
+      60
+    ],
+    "probes_per_checkpoint": 16,
+    "refit_interval_target_rollouts": 10,
+    "sampler_max_train_iters": 10000,
+    "exploration_epsilon": 0.5,
+    "num_candidates": 100,
+    "prior_strength": 2.0,
+    "scene_reset": "fresh independent scene before each pick/toss pair",
+    "probe_policy": "greedy deployment clone; no training or training-RNG mutation",
+    "fit_rule": "Jeffreys-smoothed initial probe rate; nonnegative anchored linear slope",
+    "uses_experiment_evaluations": false
+  },
+  "source_sha256": {
+    "scripts/tossing3d_dp_priors.py": "1aaf39731e861a8a4fbd999044a8ef56f9c75c7e933b51820748bd7e4c6a271b",
+    "src/hitl_pmp/core/method/types.py": "ba6484281689d8b4a34397f2974a128cadb516d968c8d6683c17b0d59b4135bd",
+    "src/hitl_pmp/environments/tossing3d/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/hitl_pmp/environments/tossing3d/agentic_bridge.py": "905dff6a58e8d6e12c8ea0883c24877dc66fe87853c3b3f2108d7ef1969c4dd3",
+    "src/hitl_pmp/environments/tossing3d/bin_on_ground.py": "5b70464a00354248273f9cfd814a2c7ec8e6990620cd93b76e9154e249a29ad8",
+    "src/hitl_pmp/environments/tossing3d/bin_placement.py": "dd324b4f4a1008d2c3d9f665793a15e1fd677703807c91c665812fc9b64fceb8",
+    "src/hitl_pmp/environments/tossing3d/cli.py": "ba4989c31a97b1b7a989702df1005adab8e67b17bfae9e34178afc0c7cf480eb",
+    "src/hitl_pmp/environments/tossing3d/environment.py": "be691ff0e6eee131373c4d33e0187fb12e2e5040f2d54970ed549e8369454328",
+    "src/hitl_pmp/environments/tossing3d/kinder_backend.py": "f7f4c104281068ced262410f41f19b38bea15e3d782cd0a4bb61e81d797004d1",
+    "src/hitl_pmp/environments/tossing3d/layout.py": "0aa008ed398b247b64777dbe423b978566b8e77c7a12cb9961a986b671013f44",
+    "src/hitl_pmp/environments/tossing3d/parameter_feasibility.py": "1d6e28cbaf8f987ab6ec78d3dde1525472ac23140f06738a478b6cdcdff5ee9c",
+    "src/hitl_pmp/environments/tossing3d/pick_plannable.py": "69d72009b6089a95b504fe0bd3b73ba4160b7c5896c1b5f4ca796839c4b1b61a",
+    "src/hitl_pmp/environments/tossing3d/predicates.py": "9f2679c919322574ea6d52b8a02c406c8ce5523105ca1085656ff771eabbef94",
+    "src/hitl_pmp/environments/tossing3d/problem.py": "c53ede591c36795e84a3dae7993ae65a839aae584256765086171e872b96d8ab",
+    "src/hitl_pmp/environments/tossing3d/recording.py": "ef82ecfc5e13743a02774adbaa3b00e19f3fde0be6ed3cefc68ae603a7b21aa2",
+    "src/hitl_pmp/environments/tossing3d/recovery_skills.py": "4e54a78083e43357a006a9b85e8e002be0550265cfaf18c13e67e18c9a0f0a56",
+    "src/hitl_pmp/environments/tossing3d/renderer.py": "bbf48f32da2f7ea678a0f859a96b3c388d0571e487990b31957d12f54b02801f",
+    "src/hitl_pmp/environments/tossing3d/rim_geometry.py": "0b84396e25618f84b50a9480c232f3c62fd055412ac9e76e719cd9880b6bda16",
+    "src/hitl_pmp/environments/tossing3d/sides.py": "3ac315d1dafd13c1ec307ff87357d8f93e7100e23e999befcbf09be0a7fd3c64",
+    "src/hitl_pmp/environments/tossing3d/skill_oracle_policy.py": "8073d5468bae223fa2bcd97241bc16557450c38d4d7bac50230c7dd9ba78e778",
+    "src/hitl_pmp/environments/tossing3d/skill_provider.py": "1f78d5b25bf20d8003a40fe979a529847cfe269f9889952da24e4496e9d704e9",
+    "src/hitl_pmp/environments/tossing3d/skill_timing.py": "837324c862b7f54604e05e521d82d1029f23b4dc7d630cc63586a1eb95631dd8",
+    "src/hitl_pmp/environments/tossing3d/skills.py": "65f5564d0fdfe60aea205bd0bb47e1e7b726b5e7aef9954c90e1ff6b96010fc1",
+    "src/hitl_pmp/environments/tossing3d/state_log.py": "5dcbe2e7b521eb9cf4265c1be38c1c6c0094f4026c34a5b2a51553b6e6ef150a",
+    "src/hitl_pmp/environments/tossing3d/step_protocol.py": "3fec3c687ee8dc6afbc0ae2995956253df0f354418ec928e6099dea4bd57f11a",
+    "src/hitl_pmp/environments/tossing3d/tasks.py": "097226f529cc8d4e1b54377705adf2bbbe064227ca51c596e3c4353cce8716ec",
+    "src/hitl_pmp/environments/tossing3d/toss.py": "8d50718c63978ea8495a056c36063b71275e2a719dd0a87b38881f599627f611",
+    "src/hitl_pmp/environments/tossing3d/toss_direction.py": "2d7c33754924fc170f135a9598f3753cd789e401a4d604b5b02919f957948773",
+    "src/hitl_pmp/environments/tossing3d/types.py": "1b1433013f86f747b9f9e91325c99e27bebce143c1281ae89d4dc3d24ecab2c6",
+    "src/hitl_pmp/environments/tossing3d/wide_long_range_proposal.py": "35a7cee219d3611cef7d5a47f5980ede6b82b85202e7c68ba76f965e6ee5c1cc",
+    "src/hitl_pmp/methods/practice_makes_perfect/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/hitl_pmp/methods/practice_makes_perfect/always_ask_reset.py": "48d2be2e3f042c263fc2adafc6254a0329a05ef07f0610ab2b2d7ac998875997",
+    "src/hitl_pmp/methods/practice_makes_perfect/competence_models.py": "8cdb500f2d5b4999169aeb9121a39bb03afc360f5881e1f028fda6d1692cd4d2",
+    "src/hitl_pmp/methods/practice_makes_perfect/ees_method.py": "94887b3e02926eae149470219b8829d73366128ca711060fdd6e41fe5e1540ea",
+    "src/hitl_pmp/methods/practice_makes_perfect/random_skills_method.py": "d3a7c05d89c217b5e4a7b0e8ad13b77d3df0763c5cb78c7eee469f8326c44caa",
+    "src/hitl_pmp/methods/practice_makes_perfect/wrapped_sampler.py": "046efc9852ccbbf238d1f90326067bb96aa71bddff4115f9cab17bf2bf151b84",
+    "src/hitl_pmp/step_protocol.py": "096c19a85f893553ca3dc94ab70716bb933bf24ade9e4e8197394c3597ddef7f"
+  },
+  "collection_driver_sha256": [
+    "f0d429c73d28f97773ba48a4ffbf2456b7b22c2a9c455804280ef2f2dafc4aa9"
+  ],
+  "open_gripper_collection_driver_sha256": [
+    "1aaf39731e861a8a4fbd999044a8ef56f9c75c7e933b51820748bd7e4c6a271b"
+  ],
+  "open_gripper_protocol": {
+    "environment": "tossing3d",
+    "layout": "barrier",
+    "variant": "o1",
+    "probes_per_seed": 16,
+    "scene_rng_stream": 900003,
+    "setup": "shared PickCube controller then reset_movables; verify ClosedEmpty",
+    "controller": "shared parameterless OpenGripper via EesMethod.execute_ground_skill",
+    "fit_rule": "Jeffreys-smoothed fit success rate; strength two; zero learning rate",
+    "uses_experiment_evaluations": false
+  },
+  "simulator_pins": {
+    "kinder": "490831fa54a40c4b2b4570d45bb08e3dd63c24ef",
+    "kinder_models": "032b42634a015c7f710667b3a791836fa839f6ff"
+  },
+  "numerical_stack": {
+    "python_version": "3.10.21",
+    "torch_version": "2.13.0+cpu",
+    "numpy_version": "1.26.4"
+  },
+  "uses_experiment_evaluations": false,
+  "limitations": [
+    "Fresh calibration scenes differ from reset-free experiment states.",
+    "Refits occur every ten training tosses, not at experiment period boundaries.",
+    "Only 0--60 rollouts are probed; predicted saturation is not validated mastery.",
+    "PickCube has no learned parameters; its learning-rate prior is zero.",
+    "OpenGripper is probed after pick and movable reset, not every failed-grasp state.",
+    "OpenGripper has no learned parameters; its learning-rate prior is zero."
+  ]
+}
