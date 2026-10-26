@@ -1,8 +1,9 @@
 """Tossing3D's upstream pick/toss skills and robot recovery operators.
 
-`PourCubeOutOfBin` is a local, parameterless recovery for an in-bin cube whose
-pick planner refuses. It adds rim grasping and sideways emptying to the upstream
-pick/toss pair described below; `OpenGripper` handles an empty closed hand.
+`PourCubeOutOfBin` is a local, parameterless skill for emptying an in-bin cube.
+It is available whether or not picking the cube is also feasible. It adds rim grasping
+and sideways emptying to the upstream pick/toss pair described below; `OpenGripper`
+handles an empty closed hand.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
@@ -117,7 +118,6 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -231,7 +231,7 @@ class Tossing3DSkills:
         # modelling that would make every imagined post-toss plan require a reset, so
         # the planners assume the bin stays upright and replan from the observed state
         # when it does not.
-        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE, PICK_NOT_PLANNABLE}),
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE}),
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
         practice_cost=1.0,
@@ -264,7 +264,6 @@ class Tossing3DSkills:
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
-            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(_robot, _cube)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
             LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
@@ -280,7 +279,6 @@ class Tossing3DSkills:
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
-            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(_robot, _cube)),
         }),
         ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
         param_dim=0,

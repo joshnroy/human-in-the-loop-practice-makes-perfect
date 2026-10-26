@@ -1,4 +1,4 @@
-"""Bin pouring is available for an in-bin planning refusal, and performs real dynamics."""
+"""Bin pouring is available independently of picking and performs real dynamics."""
 
 import importlib.util
 
@@ -35,12 +35,12 @@ def _scene(*, in_bin: bool = True, plannable: bool = False, same_side: bool = Tr
     ("in_bin", "plannable", "same_side", "expected"),
     [
         (True, False, True, True),
-        (True, True, True, False),
+        (True, True, True, True),
         (False, False, True, False),
         (True, False, False, False),
     ],
 )
-def test_pouring_requires_in_bin_and_no_pick_plan(
+def test_pouring_requires_bin_access_independently_of_pick_plannability(
     *, layout, in_bin, plannable, same_side, expected
 ):
     env = Tossing3DEnvironment(layout=layout)
@@ -55,6 +55,31 @@ def test_pouring_requires_in_bin_and_no_pick_plan(
         skills=skills, objects=provider.objects(), true_atoms=atoms
     )
     assert any(s.skill.name == "PourCubeOutOfBin" for s in applicable) is expected
+    if in_bin and plannable and same_side:
+        pick = "PickCubeFromBin" if layout == Tossing3DLayout.SAME_SIDE else "PickCube"
+        assert pick in {s.skill.name for s in applicable}
+
+
+@pytest.mark.parametrize("layout", list(Tossing3DLayout))
+def test_belief_space_search_offers_pick_pour_and_paid_reset_together(*, layout):
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+        make_tossing3d_search_state,
+    )
+
+    env = Tossing3DEnvironment(layout=layout)
+    provider = Tossing3DSkillProvider(env=env)
+    method = Tossing3DPomdpMethod(env=env, skill_provider=provider, seed=0, pomdp_num_particles=32)
+    atoms = SkillGrounder.abstract_state(
+        state=_scene(plannable=True), objects=provider.objects(), predicates=provider.predicates()
+    )
+    actions = method._pomdp_model.get_valid_actions(  # noqa: SLF001
+        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
+    )
+    pick = "PickCubeFromBin" if layout == Tossing3DLayout.SAME_SIDE else "PickCube"
+    assert {pick, "PourCubeOutOfBin", "ask_for_reset_cube_bin_only"} <= {
+        action.skill.name for action in actions
+    }
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
@@ -94,36 +119,10 @@ def test_a_refused_in_bin_pick_can_be_planned_without_a_human(*, layout):
 
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="KINDER is not installed")
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("fixture", ["exp22_A.json", "exp22_C.json", "exp22_D.json"])
-def test_newly_plannable_historical_picks_do_not_allow_pouring(*, layout, fixture):
-    import json
-    from pathlib import Path
-
-    env = Tossing3DEnvironment(layout=layout, scene_bg=False)
-    try:
-        env.hard_reset()
-        backend = env.kinder_backend()
-        plain = json.loads(
-            (Path(__file__).parent / "fixtures/pick_plannable" / fixture).read_text()
-        )
-        plain["cuboid_barrier"] = backend.snapshot_to_plain(snapshot=backend.live_state())[
-            "cuboid_barrier"
-        ]
-        state = env.restore_plain_snapshot(plain=plain)
-        assert PICK_PLANNABLE.holds(state, (env.robot, env.cube))
-        before = backend.snapshot_to_plain(snapshot=backend.live_state())
-        env.take_action(action=np.array([env.pour_bin_id, 0, 0, 0, 0]))
-        assert "unplannable in-bin pick" in env.last_skill_error()
-        assert sum(env.last_controller_steps()) == 0
-        assert backend.snapshot_to_plain(snapshot=backend.live_state()) == before
-    finally:
-        env.close()
-
-
-@pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="KINDER is not installed")
-@pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("fixture", ["exp22_F.json"])
-def test_physical_pour_recovers_a_saved_refusal(*, layout, fixture):
+@pytest.mark.parametrize(
+    "fixture", ["exp22_A.json", "exp22_C.json", "exp22_D.json", "exp22_F.json"]
+)
+def test_physical_pour_works_with_or_without_a_pick_plan(*, layout, fixture):
     import json
     from pathlib import Path
 
@@ -146,7 +145,7 @@ def test_physical_pour_recovers_a_saved_refusal(*, layout, fixture):
         ]
         before = env.restore_plain_snapshot(plain=plain)
         assert IN_BIN.holds(before, (env.cube, env.bin))
-        assert not PICK_PLANNABLE.holds(before, (env.robot, env.cube))
+        assert PICK_PLANNABLE.holds(before, (env.robot, env.cube)) is (fixture != "exp22_F.json")
         original = backend.snapshot_to_plain(snapshot=backend.live_state())["bin_0"][:7]
 
         def capture():
@@ -212,7 +211,7 @@ def test_pour_refuses_an_inapplicable_raw_action_without_moving_the_world(*, lay
         before = backend.snapshot_to_plain(snapshot=backend.live_state())
         env.take_action(action=np.array([env.pour_bin_id, 0, 0, 0, 0]))
         assert env.last_controller_steps() == (0,)
-        assert "unplannable in-bin pick" in env.last_skill_error()
+        assert "a cube in the bin" in env.last_skill_error()
         assert backend.snapshot_to_plain(snapshot=backend.live_state()) == before
     finally:
         env.close()

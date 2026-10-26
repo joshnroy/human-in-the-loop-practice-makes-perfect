@@ -223,14 +223,6 @@ PICK_PLANNABLE = Predicate(
     ),
 )
 
-# Explicit complement for STRIPS, whose preconditions are positive atoms.
-# It uses the same cached planning verdict; no second planner call is made.
-PICK_NOT_PLANNABLE = Predicate(
-    name="PickNotPlannable",
-    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
-    holds=lambda state, objects: not PICK_PLANNABLE.holds(state, objects),
-)
-
 
 def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
     """Whether ``x_object`` is on the named robot-relative halfspace.

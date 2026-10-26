@@ -25,7 +25,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -88,7 +87,6 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
         BIN_ON_GROUND,
-        PICK_NOT_PLANNABLE,
         PICK_PLANNABLE,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())

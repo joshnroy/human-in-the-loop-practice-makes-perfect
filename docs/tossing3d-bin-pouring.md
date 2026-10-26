@@ -1,10 +1,14 @@
 # PourCubeOutOfBin
 
 Tossing3D now offers a parameterless robot recovery skill in both layouts. It is
-applicable when the hand is empty, the cube is in an upright bin on the robot's side
-of the barrier, and `PickPlannable(robot, cube)` is false. `PickNotPlannable` is the
-explicit complement used by the STRIPS planner; it reads the same cached dry-run
-verdict as `PickPlannable`.
+applicable when the hand is empty and the cube is in an upright bin on the robot's
+side of the barrier. Picking may also be plannable: both actions are offered, along
+with paid resets when enabled, and the method selects between them. The controller
+also permits pouring a pickable cube. `PickNotPlannable` has been removed.
+
+Preconditions encode the execution requirements of a skill, never which action is
+preferred over another feasible action. These runs evaluate the algorithm's choice;
+a rule such as "pour only if picking is impossible" would prescribe that choice.
 
 The controller chooses a reachable rim and a clear direction for the base's
 quarter-turn, approaches the rim with an open gripper, closes on the wall, and lifts.
@@ -42,11 +46,12 @@ Validation covers four retained in-bin planning refusals (`exp22_A`, `exp22_C`,
 `exp22_D`, `exp22_F`) in both layouts. Each case checks physical lifting and inversion,
 return placement, and an actual successful cube pick after pouring. Offline tests
 check applicability and a no-human plan from the refusal to holding the cube.
-This describes the original pilot dependency revisions. On current main's newer
-pick controller, A, C and D have a pick plan: tests now require pouring to refuse
-those states without moving the world. F remains an unplannable pick and exercises
-the full pouring recovery in both layouts, plus automatic EES, expectimax and
-Curtis selection with outcome learning and charged execution ticks.
+On current main's newer pick controller, A, C and D also have a pick plan. The
+same physical tests now exercise pouring despite those feasible picks; F still has
+no pick plan. Offline tests require both pick and pour to remain available in both
+layouts, including the belief-space search's action enumeration alongside paid
+resets. Automatic EES, expectimax and Curtis recovery checks use F, with outcome
+learning and charged execution ticks.
 The earlier 3.8 kg trial failed during lifting. The current 1 kg configuration
 adds payload gravity compensation and velocity tracking, and aligns the measured
 bin pose above its original spot before lowering. See
@@ -62,3 +67,29 @@ scripts/with_env.sh python scripts/tossing3d_pour_bin_demo.py \
 
 The video is a controller rollout at 2× playback. The earlier preview scripts under
 `artifacts/tossing3d-pour-bin*-preview` are kinematic illustrations, not validation.
+
+## Action availability audit
+
+The pouring-only-if-picking-fails rule was a preference encoded as feasibility.
+It is removed from both STRIPS and dispatch, together with its otherwise unused
+`PickNotPlannable` predicate. Applicability tests now require picking and pouring
+simultaneously; a policy test must not require one particular choice when both
+are feasible. The older pick-only retrieval test explicitly disables pouring.
+
+Other existing restrictions need to be distinguished from that fix:
+
+| Rule | Assessment |
+| --- | --- |
+| `PickPlannable` on the pick itself | Execution feasibility: asks the same deterministic motion planner used at dispatch. It does not predict grasp success or disable retries after an execution failure. |
+| `BinOnGround` on every robot skill | Broader than demonstrated feasibility. Pouring needs an upright bin, but opening an empty gripper does not; a floor pick away from a tipped bin should depend on its actual motion plan. The global requirement currently forces human recovery. |
+| `ClosedEmpty` on `OpenGripper` | Restricts the skill to empty-hand recovery. Releasing a held cube is physically possible but omitted from this action model. Supporting it needs drop effects and outcome handling, not just deleting the precondition. |
+| `OnGround` on picks | Retained benchmark restriction, including the explicit user requirement that a cube supported by the robot base must not be picked. Bin and rim retrieval have their own supported pick operators. |
+| Starved parameter pool cache | Algorithm-side restriction, not an environment predicate: after a finite pool yields no accepted parameters, EES and belief-space search suppress that state/action pair for the practice session. That is not proof that no feasible parameter exists, and the cache key is symbolic rather than the full geometry. |
+
+This audit covers the Tossing3D skill models, provider, pouring dispatch guards,
+and the practice planners' action enumeration. It does not establish that every
+feasible physical manipulation is represented. The remaining restrictions above
+are unchanged by the pouring correction and must be explicit when interpreting
+the experiments. The reset remains available alongside robot skills; it is not
+reserved for cases where all robot alternatives fail. Always-ask arms are explicit
+baseline policies, rather than environment preconditions.

@@ -32,7 +32,6 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -108,7 +107,6 @@ class Tossing3DSkillProvider(SkillProvider):
                 BIN_AT_SIDE,
                 PICKUP_UNBLOCKED,
                 BIN_ON_GROUND,
-                PICK_NOT_PLANNABLE,
                 PICK_PLANNABLE,
                 # Declared here for the same reason the side atoms are: the shared
                 # toss operator forgets GraspClear (ignore_effects), and a forgetting
@@ -132,7 +130,6 @@ class Tossing3DSkillProvider(SkillProvider):
             GRASP_CLEAR,
             PICKUP_UNBLOCKED,
             BIN_ON_GROUND,
-            PICK_NOT_PLANNABLE,
             PICK_PLANNABLE,
         )
 
@@ -258,7 +255,6 @@ class Tossing3DSkillProvider(SkillProvider):
         holding = LiftedAtom(predicate=HOLDING, variables=(robot, cube))
         removed = {
             LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)),
-            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(robot, cube)),
             holding,
         }
         if env.layout == Tossing3DLayout.SAME_SIDE:

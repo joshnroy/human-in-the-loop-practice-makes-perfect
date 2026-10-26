@@ -36,7 +36,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -276,7 +275,6 @@ def test_only_toss_replaces_a_functional_side_fact() -> None:
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({
         CUBE_AT_SIDE,
         GRASP_CLEAR,
-        PICK_NOT_PLANNABLE,
         PICK_PLANNABLE,
     })
 
@@ -322,7 +320,6 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
         BIN_ON_GROUND,
-        PICK_NOT_PLANNABLE,
         PICK_PLANNABLE,
     )
     init_atoms = SkillGrounder.abstract_state(
@@ -562,7 +559,9 @@ def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
 
     from .observations import HOLDING_ATOMS
 
-    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    # This tests the pick retrieval path in the pour-disabled ablation. With
+    # pouring enabled, EES may legitimately select either feasible action.
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE, enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
     method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
     same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}

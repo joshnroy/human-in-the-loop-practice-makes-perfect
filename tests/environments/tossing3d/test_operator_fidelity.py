@@ -160,17 +160,18 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
         assert not CLOSED_EMPTY.holds(after, (env.robot, env.cube))
         exercised.add(recovery.skill.name)
 
-        # The oracle solve does not visit in-bin refusals. Exercise the local
-        # recovery from the retained blocked-pick scene as well.
+        # The oracle solve does not visit this in-bin scene. Exercise pouring
+        # even when the current pick controller also has a feasible plan.
         fixture = Path(__file__).parent / "fixtures/pick_plannable/exp22_A.json"
         before = env.restore_plain_snapshot(plain=json.loads(fixture.read_text()))
         atoms = SkillGrounder.abstract_state(
             state=before, objects=provider.objects(), predicates=provider.predicates()
         )
-        (pour,) = SkillGrounder.applicable_ground_skills(
+        candidates = SkillGrounder.applicable_ground_skills(
             skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
         )
-        assert pour.skill.name == "PourCubeOutOfBin"
+        assert {"PickCube", "PourCubeOutOfBin"} <= {s.skill.name for s in candidates}
+        pour = next(s for s in candidates if s.skill.name == "PourCubeOutOfBin")
         after = env.take_action(
             action=provider.compute_action(
                 ground_skill=pour,

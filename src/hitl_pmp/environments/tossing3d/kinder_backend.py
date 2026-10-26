@@ -1781,10 +1781,9 @@ class BinPourController:
             ("MovableInGoalRegion", (b.cube_name,)),
             ("BinOnGround", (b.bin_name,)),
         }
-        if not required <= atoms or ("PickPlannable", (b.robot_atom_name, b.cube_name)) in atoms:
+        if not required <= atoms:
             raise ValueError(
-                "PourCubeOutOfBin requires an empty hand, an upright bin, "
-                "and an unplannable in-bin pick"
+                "PourCubeOutOfBin requires an empty hand, an upright bin, and a cube in the bin"
             )
         robot = state.get_object_from_name(b.robot_name)
         barrier = state.get_object_from_name(b.barrier_name)
