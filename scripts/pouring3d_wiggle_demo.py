@@ -46,6 +46,8 @@ class WiggleDemo:
         seed: int = 0,
         mode: str = "wiggle",
         video: bool = False,
+        requested_count: int = 2,
+        place: bool = True,
     ) -> dict[str, Any]:
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
 
@@ -64,7 +66,7 @@ class WiggleDemo:
         env = env_class(
             seed=seed,
             cube_material=material,
-            requested_count=2,
+            requested_count=requested_count,
             scene_bg=True,
             task_config_path=str(task),
         )
@@ -115,7 +117,7 @@ class WiggleDemo:
                         detail=cameras[f"{detail}_image"],
                         title=f"{material.upper()} | tilt {angle:g} deg, wiggle {duration:g} s",
                         subtitle=(
-                            f"Target 2 | tray {locations.count('tray')}, "
+                            f"Target {requested_count} | tray {locations.count('tray')}, "
                             f"pitcher {locations.count('pitcher')} | "
                             f"{controller.phase} | {speed}"
                         ),
@@ -128,6 +130,8 @@ class WiggleDemo:
             record(controller=c)
             events = []
             for skill_id, name in ((0, "PickPitcher"), (1, "Pour"), (2, "PlacePitcherAtHome")):
+                if name == "PlacePitcherAtHome" and not place:
+                    break
                 active_skill = name
                 env.take_action(action=np.array([skill_id, 0, angle, duration]))
                 event = env.last_info
@@ -151,7 +155,7 @@ class WiggleDemo:
             result = {
                 "material": material,
                 "seed": seed,
-                "requested_count": 2,
+                "requested_count": requested_count,
                 "mode": mode,
                 "parameters": {"tilt_angle": angle, "wiggle_seconds": duration},
                 "fixed_settings": c.fixed_settings(),
