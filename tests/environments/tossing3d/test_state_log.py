@@ -202,7 +202,13 @@ def test_an_ordinary_cli_run_writes_a_state_log_with_no_manual_wiring(*, tmp_pat
     assert log_path.exists(), "an ordinary run must write the state log with no extra flag"
     reader = StateLogReader(path=log_path)
     assert reader.header == StateLogHeader(
-        variant="o1", scene_bg=True, canonical_seed=125, seed=31, test_env_seed_offset=10000
+        variant="o1",
+        scene_bg=True,
+        canonical_seed=125,
+        seed=31,
+        test_env_seed_offset=10000,
+        bin_mass_kg=1.0,
+        cube_mass_kg=0.1,
     )
     skill_events = [e for e in reader.events if isinstance(e, SkillEvent)]
     tick_events = [e for e in reader.events if isinstance(e, TickEvent)]
