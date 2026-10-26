@@ -43,6 +43,16 @@ while [ -L "$script_source" ]; do
 done
 REPO_ROOT="$(cd -P "$(dirname "$script_source")/.." && pwd)"
 
+# --- temporary storage -----------------------------------------------------
+# /tmp is shared tmpfs on the research hosts and can exhaust its quota. Keep
+# simulator, planner, and Python temporary files on the checkout's disk instead.
+# HITL_PMP_TMPDIR permits an explicit destination for a particular run.
+task_tmp_dir="${HITL_PMP_TMPDIR:-$REPO_ROOT/artifacts/tmp}"
+mkdir -p -- "$task_tmp_dir"
+export TMPDIR="$task_tmp_dir"
+export TMP="$task_tmp_dir"
+export TEMP="$task_tmp_dir"
+
 # --- conda -----------------------------------------------------------------
 # CONDA_SH may be preset to point at a non-default install; otherwise probe the
 # usual locations. Failing loudly beats falling back to `base`, which is the
@@ -128,6 +138,7 @@ if [ "$#" -eq 0 ]; then
     echo "PYTHONPATH    $PYTHONPATH"
     echo "FD_EXEC_PATH  ${FD_EXEC_PATH:-<unset>}"
     echo "MUJOCO_GL     $MUJOCO_GL"
+    echo "TMPDIR        $TMPDIR"
     python -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
     python -c 'import kinder; print("kinder        " + kinder.__file__)' 2>/dev/null || echo "kinder        <not installed -- tossing3d tests will skip>"
     python -c 'import kinder_models; print("kinder_models " + kinder_models.__file__)' 2>/dev/null || echo "kinder_models <not installed -- tossing3d tests will skip>"
