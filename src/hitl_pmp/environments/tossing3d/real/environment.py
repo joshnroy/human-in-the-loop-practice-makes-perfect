@@ -1,12 +1,13 @@
 """`RealTossing3DEnvironment`: the sim's Tossing3D domain, on the real robot.
 
-A subclass of `Tossing3DEnvironment` with the same objects, predicates, skills and
-operator model. It overrides only where the world comes from (`build_backend`), the
+A subclass of `Tossing3DEnvironment` with the shared objects, predicates, and
+pick/toss operators. Simulator-only bin pouring is not offered here. It overrides
+only where the world comes from (`build_backend`), the
 toss's parameter set (the real swing's), and what a human reset hands the backend (a
 named spot instead of a sampled region).
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import ConfigDict
 
@@ -31,6 +32,9 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
     placing things. The barrier layout is the only one: the room has a tape."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # The rim-grasp controller currently exists only in simulation.
+    supports_bin_pouring: ClassVar[bool] = False
 
     tossing_robot: TossingRobot
     person: Any

@@ -70,6 +70,15 @@ class Tossing3DCli:
             help="Scene layout: original barrier benchmark or same-side retrieval scene.",
         )
         fields = Tossing3DEnvironment.model_fields
+        parser.add_argument("--bin-mass-kg", type=float, default=1.0)
+        parser.add_argument("--cube-mass-kg", type=float, default=0.1)
+        parser.add_argument(
+            "--bin-pouring",
+            dest="enable_bin_pouring",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Offer bin pouring; disabling it leaves the same movable-bin physics.",
+        )
         parser.add_argument(
             "--evaluation-layout",
             choices=[layout.value for layout in Tossing3DLayout],
@@ -195,6 +204,9 @@ class Tossing3DCli:
                     canonical_seed=args.canonical_seed,
                     seed=args.seed,
                     test_env_seed_offset=args.test_env_seed_offset,
+                    bin_mass_kg=getattr(args, "bin_mass_kg", None),
+                    cube_mass_kg=getattr(args, "cube_mass_kg", None),
+                    enable_bin_pouring=getattr(args, "enable_bin_pouring", True),
                 ),
             )
             practice_problem.env.attach_state_log_writer(writer=state_log_writer)
@@ -293,6 +305,9 @@ class Tossing3DCli:
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,
             skill_timing=getattr(args, "skill_timing", True),
+            bin_mass_kg=getattr(args, "bin_mass_kg", None),
+            cube_mass_kg=getattr(args, "cube_mass_kg", None),
+            enable_bin_pouring=getattr(args, "enable_bin_pouring", True),
         )
         tasks = Tossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset

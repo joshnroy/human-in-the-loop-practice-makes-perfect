@@ -27,6 +27,7 @@ from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
+    POUR_BIN_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
 )
@@ -106,6 +107,7 @@ class Tossing3DPracticeDomain(PracticeDomain):
         (PICK_SKILL, PracticeExampleSource.OUTCOME),
         (TOSS_SKILL, PracticeExampleSource.SAMPLER),
         (OPEN_GRIPPER_SKILL, PracticeExampleSource.OUTCOME),
+        (POUR_BIN_SKILL, PracticeExampleSource.OUTCOME),
         # The human reset is a skill like any other: its promised effects are checked
         # and its competence inferred, so a human whose resets fail is learned.
         (RESET_SKILL, PracticeExampleSource.OUTCOME),
@@ -119,6 +121,7 @@ class Tossing3DPracticeDomain(PracticeDomain):
         *PICK_SKILLS,
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
+        POUR_BIN_SKILL,
         RESET_SKILL,
     })
 

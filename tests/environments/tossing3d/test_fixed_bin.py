@@ -1,13 +1,9 @@
-"""The bin is static once placed: placement positions it, nothing the robot does moves it.
+"""Regression checks for the legacy fixed-bin opt-out and upstream scene sources.
 
-Josh's decision (2026-10-16): "just make it a static object once it's placed, so the robot
-can't move it." Upstream's `Tossing3D-o1.json` marks `bin_0` `"fixed": true`, which builds
-it as a MuJoCo mocap body with no joint: the initial layout, the human resets and the
-sampled-start reset write its pose; no contact can tip or slide it. Before this, a free
-0.1 kg bin was tipped by 102/4366 practice tosses and dragged up to 25 cm by picks.
-
-`scenes/same_side.json` is this package's own copy of the task, so it must carry the
-same option or the two layouts would measure different bins.
+The default backend now makes the bin movable for PourCubeOutOfBin. Explicit
+movable_bin=False retains the earlier static-bin dynamics, including placement and
+reset behavior. These tests keep that opt-out working; test_pour_bin exercises the
+new default under actual contact dynamics.
 """
 
 import importlib.util
@@ -60,11 +56,15 @@ def test_the_compiled_bin_has_no_joint(*, layout: Tossing3DLayout) -> None:
 
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
-    backend = KinderBackend(task_config_path=layout.task_config_path(), scene_bg=False)
+    backend = KinderBackend(
+        movable_bin=False, task_config_path=layout.task_config_path(), scene_bg=False
+    )
     try:
         backend.reset(seed=125)
         model = backend._object_centric()._robot_env.sim.model.mj_model  # noqa: SLF001
         body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "bin_0")
+        assert model.body_subtreemass[body] == pytest.approx(1.0)
+        assert model.body_subtreemass[model.body("cube_0").id] == pytest.approx(0.1)
         assert model.body_jntnum[body] == 0
         assert model.body_mocapid[body] >= 0
     finally:
@@ -77,7 +77,7 @@ def test_a_pick_from_inside_the_bin_does_not_move_it() -> None:
     dragged the free 0.1 kg bin 17 cm. Replayed, the fixed bin must not move at all."""
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
-    backend = KinderBackend(scene_bg=False)
+    backend = KinderBackend(movable_bin=False, scene_bg=False)
     try:
         backend.reset(seed=125)
         plain = json.loads(_DRAGGED_FIXTURE.read_text())
@@ -115,7 +115,7 @@ def test_a_sampled_start_places_the_fixed_bin_per_seed() -> None:
     """The full reset to a freshly sampled start re-places the bin from the seed."""
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
-    backend = KinderBackend(scene_bg=False)
+    backend = KinderBackend(movable_bin=False, scene_bg=False)
     try:
         poses = []
         for seed in (0, 1, 2):

@@ -45,7 +45,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from gymnasium.spaces import Box
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
@@ -166,6 +166,8 @@ class Tossing3DEnvironment(Environment):
     move_to_toss_location_and_toss_id: ClassVar[int] = 1
     open_gripper_id: ClassVar[int] = 2
     pick_cube_from_bin_id: ClassVar[int] = 3
+    pour_bin_id: ClassVar[int] = 4
+    supports_bin_pouring: ClassVar[bool] = True
     # Not a skill: the id `noop_action` carries, chosen outside the real ids so
     # `_execute` falls through every branch. Negative rather than 2 so that adding a
     # third controller can never silently turn every no-op into it.
@@ -183,6 +185,9 @@ class Tossing3DEnvironment(Environment):
     # Upstream's own `test_pick_ground_toss` seed, and the one every number in this
     # domain's docs was measured at. `hard_reset` uses it; `Tasks` supplies its own.
     canonical_seed: int = 125
+    bin_mass_kg: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    cube_mass_kg: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    enable_bin_pouring: bool = True
     # The toss's parameter box. `None` is the simulator's own
     # (`wide_long_range_proposal.SIM_TOSS_PARAMETERS`, resolved by
     # `Tossing3DToss.parameters_of`, since that module cannot be imported from here);
@@ -286,6 +291,8 @@ class Tossing3DEnvironment(Environment):
             env_id=f"kinder/Tossing3D-{self.variant}-v0",
             scene_bg=self.scene_bg,
             task_config_path=self.layout.task_config_path(),
+            bin_mass_kg=self.bin_mass_kg,
+            cube_mass_kg=self.cube_mass_kg,
         )
 
     def cost_observation(self) -> dict[str, Any]:
@@ -458,8 +465,8 @@ class Tossing3DEnvironment(Environment):
                 and any(m in self._last_skill_error for m in self.PICK_REFUSAL_MARKERS)
             ):
                 self._pickup_blocked = True
-        elif skill_id == self.move_to_toss_location_and_toss_id and executed:
-            # The toss relocated the cube, so the old observation no longer applies.
+        elif skill_id in (self.move_to_toss_location_and_toss_id, self.pour_bin_id) and executed:
+            # Tossing or pouring can relocate the cube, clearing the old refusal.
             self._pickup_blocked = False
 
         next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
@@ -562,6 +569,8 @@ class Tossing3DEnvironment(Environment):
                 self.bin.name,
                 self.barrier.name,
             )
+        if skill_id == self.pour_bin_id:
+            return "PourCubeOutOfBin", (self.robot.name, self.cube.name, self.bin.name)
         return f"unknown skill id {skill_id}", ()
 
     def get_valid_actions(self) -> list[Action]:
@@ -788,6 +797,14 @@ class Tossing3DEnvironment(Environment):
             return [backend.run_open_gripper()]
         if skill_id == self.pick_cube_from_bin_id and self.layout is Tossing3DLayout.SAME_SIDE:
             return [backend.run_pick_cube()]
+        if skill_id == self.pour_bin_id and self.supports_bin_pouring and self.enable_bin_pouring:
+            if isinstance(backend, KinderBackend):
+                return [backend.run_pour_bin()]
+            return [
+                ControllerRun(
+                    steps=0, terminated=False, error="Bin pouring is unavailable on this backend"
+                )
+            ]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 

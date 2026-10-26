@@ -91,6 +91,9 @@ def test_recordings_carry_the_old_state_log_scene_header(*, tmp_path: Path) -> N
         canonical_seed=args.canonical_seed,
         seed=args.seed,
         test_env_seed_offset=args.test_env_seed_offset,
+        bin_mass_kg=args.bin_mass_kg,
+        cube_mass_kg=args.cube_mass_kg,
+        enable_bin_pouring=args.enable_bin_pouring,
     ).model_dump(mode="json")
     for path in paths:
         header = json.loads(path.read_text().splitlines()[0])

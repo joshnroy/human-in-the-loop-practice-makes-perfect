@@ -32,6 +32,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -71,7 +72,12 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
-            return SameSideSkills.skills()
+            return tuple(
+                skill
+                for skill in SameSideSkills.skills()
+                if (self.env.supports_bin_pouring and self.env.enable_bin_pouring)
+                or skill != SameSideSkills.POUR_BIN
+            )
         return (
             Tossing3DSkills.PICK_CUBE,
             Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -80,6 +86,10 @@ class Tossing3DSkillProvider(SkillProvider):
             # it is a free real action rather than a costed human intervention. See its
             # docstring in skills.py for why it exists.
             Tossing3DSkills.OPEN_GRIPPER,
+        ) + (
+            (Tossing3DSkills.POUR_BIN,)
+            if self.env.supports_bin_pouring and self.env.enable_bin_pouring
+            else ()
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
@@ -98,6 +108,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 BIN_AT_SIDE,
                 PICKUP_UNBLOCKED,
                 BIN_ON_GROUND,
+                PICK_NOT_PLANNABLE,
                 PICK_PLANNABLE,
                 # Declared here for the same reason the side atoms are: the shared
                 # toss operator forgets GraspClear (ignore_effects), and a forgetting
@@ -121,6 +132,7 @@ class Tossing3DSkillProvider(SkillProvider):
             GRASP_CLEAR,
             PICKUP_UNBLOCKED,
             BIN_ON_GROUND,
+            PICK_NOT_PLANNABLE,
             PICK_PLANNABLE,
         )
 
@@ -244,7 +256,11 @@ class Tossing3DSkillProvider(SkillProvider):
             else LiftedAtom(predicate=ON_GROUND, variables=(cube,))
         )
         holding = LiftedAtom(predicate=HOLDING, variables=(robot, cube))
-        removed = {LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)), holding}
+        removed = {
+            LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)),
+            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(robot, cube)),
+            holding,
+        }
         if env.layout == Tossing3DLayout.SAME_SIDE:
             removed.add(LiftedAtom(predicate=ON_BIN_RIM, variables=(cube, bin_)))
         skill = Skill(

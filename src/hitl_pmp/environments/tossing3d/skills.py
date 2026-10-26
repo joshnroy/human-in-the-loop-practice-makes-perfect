@@ -1,4 +1,8 @@
-"""Tossing3D's two lifted skills: `PickCube` and `MoveToTossLocationAndToss`.
+"""Tossing3D's upstream pick/toss skills and robot recovery operators.
+
+`PourCubeOutOfBin` is a local, parameterless recovery for an in-bin cube whose
+pick planner refuses. It adds rim grasping and sideways emptying to the upstream
+pick/toss pair described below; `OpenGripper` handles an empty closed hand.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
@@ -113,6 +117,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -226,7 +231,7 @@ class Tossing3DSkills:
         # modelling that would make every imagined post-toss plan require a reset, so
         # the planners assume the bin stays upright and replan from the observed state
         # when it does not.
-        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE}),
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE, PICK_NOT_PLANNABLE}),
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
         practice_cost=1.0,
@@ -253,6 +258,35 @@ class Tossing3DSkills:
         practice_cost=1.0,
     )
 
+    POUR_BIN: ClassVar[Skill] = Skill(
+        name="PourCubeOutOfBin",
+        parameters=(_robot, _cube, _bin, _barrier, _side),
+        preconditions=frozenset({
+            LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
+            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(_robot, _cube)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+            LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
+            LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
+        }),
+        add_effects=frozenset({
+            LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+            LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
+            LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
+            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+        }),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
+            LiftedAtom(predicate=PICK_NOT_PLANNABLE, variables=(_robot, _cube)),
+        }),
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
+        param_dim=0,
+        practice_cost=1.0,
+    )
+
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         """A state-independent draw of this skill's continuous parameters.
@@ -266,7 +300,7 @@ class Tossing3DSkills:
         skill = ground_skill.skill
         if skill == Tossing3DSkills.PICK_CUBE:
             return np.zeros(0)
-        if skill == Tossing3DSkills.OPEN_GRIPPER:
+        if skill in (Tossing3DSkills.OPEN_GRIPPER, Tossing3DSkills.POUR_BIN):
             return np.zeros(0)
         raise ValueError(f"Unknown skill: {skill.name}")
 
@@ -284,4 +318,6 @@ class Tossing3DSkills:
             return np.array([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
         if skill == Tossing3DSkills.OPEN_GRIPPER:
             return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
+        if skill == Tossing3DSkills.POUR_BIN:
+            return np.array([Tossing3DEnvironment.pour_bin_id, 0, 0, 0, 0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

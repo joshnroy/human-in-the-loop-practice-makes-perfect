@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
+    POUR_BIN_SKILL,
     RESET_SKILL,
     RESET_SKILLS,
     TOSS_SKILL,
@@ -590,6 +591,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "PickCube (belief mean)",
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
+        "PourCubeOutOfBin (belief mean)",
         "ask_for_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
@@ -943,3 +945,18 @@ def test_an_undelivered_human_reset_teaches_the_failure_effect_model(
     (record,) = method._pomdp_model.failure_effect_counts  # noqa: SLF001
     assert record.ground_skill.skill.name == RESET_SKILL
     assert record.add_effects == delivered
+
+
+def test_bin_pouring_observations_update_only_its_own_competence() -> None:
+    method = _build(pomdp_num_particles=32)
+    pour = _grounding(method=method, name=POUR_BIN_SKILL)
+    before = method.pomdp_state
+    method.record_action_cost(ground_skill=pour)
+    method.observe_outcome(ground_skill=pour, success=True)
+    after = method.pomdp_state
+    assert after.skill_beliefs[PICK_SKILL] == before.skill_beliefs[PICK_SKILL]
+    assert after.skill_beliefs[TOSS_SKILL] == before.skill_beliefs[TOSS_SKILL]
+    assert mean_competence(belief=after.skill_beliefs[POUR_BIN_SKILL]) > mean_competence(
+        belief=before.skill_beliefs[POUR_BIN_SKILL]
+    )
+    assert after.pending_examples.get(POUR_BIN_SKILL, 0) == 1

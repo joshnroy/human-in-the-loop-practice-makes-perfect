@@ -36,6 +36,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_NOT_PLANNABLE,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
@@ -275,6 +276,7 @@ def test_only_toss_replaces_a_functional_side_fact() -> None:
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({
         CUBE_AT_SIDE,
         GRASP_CLEAR,
+        PICK_NOT_PLANNABLE,
         PICK_PLANNABLE,
     })
 
@@ -320,6 +322,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
         BIN_ON_GROUND,
+        PICK_NOT_PLANNABLE,
         PICK_PLANNABLE,
     )
     init_atoms = SkillGrounder.abstract_state(

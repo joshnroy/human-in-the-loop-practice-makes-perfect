@@ -182,9 +182,10 @@ def test_pick_plannable_replaces_grasp_clear_in_the_pick() -> None:
     assert pick.parameters[-1] == Tossing3DSkills._bin
 
 
-def test_no_skill_promises_or_retracts_pick_plannable_but_the_reset() -> None:
+def test_only_cube_relocation_recovery_promises_pick_plannable() -> None:
     for skill in (*_barrier_skills(), *SameSideSkills.skills()):
-        assert not any(atom.predicate == PICK_PLANNABLE for atom in skill.add_effects), skill.name
+        promises = any(atom.predicate == PICK_PLANNABLE for atom in skill.add_effects)
+        assert promises == (skill.name == "PourCubeOutOfBin"), skill.name
         assert not any(atom.predicate == PICK_PLANNABLE for atom in skill.delete_effects), (
             skill.name
         )
@@ -195,6 +196,7 @@ def _barrier_skills() -> tuple:
         Tossing3DSkills.PICK_CUBE,
         Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
         Tossing3DSkills.OPEN_GRIPPER,
+        Tossing3DSkills.POUR_BIN,
     )
 
 
@@ -459,7 +461,7 @@ def _applicable(*, env: Tossing3DEnvironment, atoms: frozenset[GroundAtom]) -> l
 @pytest.mark.time_limit(seconds=120)
 @_NEEDS_KINDER
 @pytest.mark.parametrize("label", list(_STUCK_STATES))
-def test_a_known_stuck_state_is_unplannable_and_leaves_only_the_resets(
+def test_a_known_stuck_state_offers_pouring_for_an_in_bin_refusal(
     *, live_env: Tossing3DEnvironment, label: str
 ) -> None:
     env = live_env
@@ -467,18 +469,28 @@ def test_a_known_stuck_state_is_unplannable_and_leaves_only_the_resets(
 
     assert not PICK_PLANNABLE.holds(observed, (env.robot, env.cube))
     atoms = _atoms(env=env, observed=observed)
-    assert _applicable(env=env, atoms=atoms) == []
+    pourable = _STUCK_STATES[label] in {
+        "pick_plannable/exp22_A.json",
+        "pick_plannable/exp22_C.json",
+        "pick_plannable/exp22_D.json",
+        "pick_plannable/exp22_F.json",
+    }
+    assert _applicable(env=env, atoms=atoms) == (["PourCubeOutOfBin"] if pourable else [])
     provider = Tossing3DSkillProvider(env=env, offer_non_human_reset=True)
     for reset in provider.movables_reset_skills():
         assert reset.preconditions <= atoms
 
     root = _root_actions(method=_pomdp_method(env=env), atoms=atoms)
     assert root
-    assert {ground.skill.name for ground in root} <= _RESET_NAMES
+    allowed = _RESET_NAMES | ({"PourCubeOutOfBin"} if pourable else set())
+    assert {ground.skill.name for ground in root} <= allowed
+    if pourable:
+        assert "PourCubeOutOfBin" in {ground.skill.name for ground in root}
 
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = _ees_method(env=env).plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
-    assert [ground.skill.name for ground in plan] == ["ask_for_reset_cube_bin_only", "PickCube"]
+    recovery = "PourCubeOutOfBin" if pourable else "ask_for_reset_cube_bin_only"
+    assert [ground.skill.name for ground in plan] == [recovery, "PickCube"]
 
     # What the predicate predicts: the dispatched pick is refused before it moves.
     run = env.backend().run_pick_cube()

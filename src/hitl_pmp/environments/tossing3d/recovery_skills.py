@@ -130,6 +130,13 @@ class SameSideSkills:
         practice_cost=1.0,
     )
 
+    POUR_BIN: ClassVar[Skill] = Tossing3DSkills.POUR_BIN.model_copy(
+        update={
+            "add_effects": Tossing3DSkills.POUR_BIN.add_effects | {_floor},
+            "delete_effects": Tossing3DSkills.POUR_BIN.delete_effects | {_rim},
+        }
+    )
+
     @staticmethod
     def skills() -> tuple[Skill, ...]:
         return (
@@ -138,6 +145,7 @@ class SameSideSkills:
             SameSideSkills.PICK_RIM,
             Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
             SameSideSkills.OPEN,
+            SameSideSkills.POUR_BIN,
         )
 
     @staticmethod
@@ -157,6 +165,7 @@ class SameSideSkills:
             SameSideSkills.PICK_BIN: Tossing3DEnvironment.pick_cube_from_bin_id,
             SameSideSkills.PICK_RIM: Tossing3DEnvironment.pick_cube_from_bin_id,
             SameSideSkills.OPEN: Tossing3DEnvironment.open_gripper_id,
+            SameSideSkills.POUR_BIN: Tossing3DEnvironment.pour_bin_id,
         }
         if ground_skill.skill not in ids:
             raise ValueError(f"Unknown skill: {ground_skill.skill.name}")

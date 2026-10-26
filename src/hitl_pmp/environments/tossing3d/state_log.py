@@ -75,6 +75,9 @@ class StateLogHeader(BaseModel):
     canonical_seed: int
     seed: int
     test_env_seed_offset: int
+    bin_mass_kg: float | None = None
+    cube_mass_kg: float | None = None
+    enable_bin_pouring: bool = True
 
 
 class StateLogWriter(SkillTickSink):
