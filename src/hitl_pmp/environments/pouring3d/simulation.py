@@ -19,10 +19,14 @@ class PouringSimulation(BaseModel):
     events: list[dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def create(cls, *, seed: int = 0, scene_bg: bool = True) -> "PouringSimulation":
+    def create(
+        cls, *, seed: int = 0, scene_bg: bool = True, requested_count: int = 5
+    ) -> "PouringSimulation":
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
 
-        env = PitcherPour3DEnv(scene_bg=scene_bg, render_mode="rgb_array")
+        env = PitcherPour3DEnv(
+            scene_bg=scene_bg, render_mode="rgb_array", requested_count=requested_count
+        )
         env.reset(seed=seed)
         return cls(env=env, controller=NativePouringController.create(env=env))
 
@@ -90,6 +94,11 @@ class PouringSimulation(BaseModel):
             atoms.add(("AnyInTray", ("tray",)))
         if all(location in {"pitcher", "tray"} for location in locations):
             atoms.add(("NoSpills", ()))
+        requested = self.controller.scene.requested_count
+        if locations.count("tray") == requested:
+            atoms.add(("RequestedCountInTray", ()))
+        if locations.count("pitcher") == 5 - requested:
+            atoms.add(("RequestedRemainderInPitcher", ()))
         if self.ready():
             atoms.add(("ReadyToPour", ()))
         if self.controller.scene._check_goals():

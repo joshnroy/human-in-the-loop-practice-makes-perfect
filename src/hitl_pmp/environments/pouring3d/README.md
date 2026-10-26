@@ -3,7 +3,8 @@
 `kinder/PitcherPour3D-o5-v0` is a native Dynamic3D TidyBot task, with the normal
 lab2 room, robot model, collision geometry, torque controllers, and renderer.
 Five free 2 cm cubes start inside a handled pitcher on the ground in front of the
-robot. The task is to pour all five into the neighboring floor tray.
+robot. The task is to pour exactly a requested count into the neighboring floor tray,
+retaining the remaining cubes in the pitcher. The default request is all five.
 
 The native task lives in `reference/kindergarden/src/kinder/envs/dynamic3d/`;
 this package supplies motor-driven macro controllers and the project adapter.
@@ -39,8 +40,15 @@ vessels and all cubes have free joints and real collisions.
 
 ## Task and reset contract
 
-The goal requires all eight corners of each of the five cubes inside the tray's
-interior, with linear speed below 0.025 m/s and angular speed below 0.25 rad/s.
+Set `requested_count=k` (integer 1–5) on `PitcherPour3DEnv`,
+`PouringSimulation.create`, or `PouringEnvironment`. The goal requires exactly k
+cubes in the tray and exactly 5−k inside the pitcher, with all eight corners
+contained, linear speed below 0.025 m/s and angular speed below 0.25 rad/s.
+Undershoot, overshoot, any spill, or an unsettled cube fails. The native goal
+classifier overrides the JSON's all-five default; its metadata describes the
+requested split. The parent observation includes `requested_count_0` as a task
+feature. The native flat physics vector is unchanged; the request is a fixed
+environment constructor input, exposed by the scene and diagnostic snapshots.
 Containment follows the vessel's actual orientation and uses 2 mm contact tolerance.
 
 `ReadyToPour` requires all five cubes settled in the pitcher, empty robot hand, and
@@ -77,7 +85,7 @@ No cube pick from inside the pitcher is offered, so it cannot bypass Pour.
 | Skill | Initiation | Observed successful outcome |
 | --- | --- | --- |
 | PickPitcher | ReadyToPour | Both fingers contact handle; vessel lifted ≥20 cm |
-| Pour | HoldingPitcher | All five cubes settled entirely inside tray |
+| Pour | HoldingPitcher | Exactly requested count settled in tray; remainder settled in pitcher |
 | PlacePitcherAtHome | HoldingPitcher | Pitcher upright at home; hand empty |
 | PickCubeFromTray(c) | HandEmpty, InTray(c) | Both fingers contact c; cube lifted ≥20 cm |
 | PickCubeFromFloor(c) | HandEmpty, OnFloor(c) | Same physical grasp and lift |
@@ -93,7 +101,7 @@ from native geometry and contacts at observation time:
 - `Upright(vessel)` (vertical within 5°), `AtHome(vessel)` (position and full orientation),
   `Empty(vessel)` (none of the named cubes fully contained).
 - `AllInPitcher(pitcher)`, `AllInTray(tray)`, `AnyInTray(tray)`, `NoSpills()`,
-  `ReadyToPour()`, `Goal()`.
+  `ReadyToPour()`, `RequestedCountInTray()`, `RequestedRemainderInPitcher()`, `Goal()`.
 
 These summarize observed outcomes; they do not assert that every geometrically valid
 pick has a collision-free solution. Low-level execution checks report failures.
@@ -117,8 +125,8 @@ infeasible motions and failed transfers. Success is never used to filter paramet
 These controls are an existing diagnostic interface, not five established learning
 requirements. Centered aiming is the default. The prior rectangular-pitcher results
 do not establish performance for this new geometry. Empty-all time optimization
-and requested-count pouring remain separate benchmark-design candidates; only the
-all-five goal is implemented here.
+remains a separate benchmark-design candidate. Requested-count pouring is implemented
+as an exact split goal; parameter sensitivity alone does not establish learnability.
 
 ## Running and evidence
 
@@ -128,6 +136,20 @@ run-heavy scripts/with_env.sh python -m scripts.pouring3d_native_demo \
 run-heavy scripts/with_env.sh pytest -q tests/environments/pouring3d
 scripts/with_env.sh pytest -q reference/kindergarden/tests/envs/dynamic3d/test_pitcher_pour3d.py
 ```
+
+For the partial-pour proof of concept:
+
+```bash
+run-heavy scripts/with_env.sh python -m scripts.pouring3d_native_demo \
+  --output-dir artifacts/pouring3d-requested-two --seed 0 --reset none \
+  --requested-count 2 --angle 130 --tilt-seconds 10 --hold-seconds 0.2
+```
+
+This is a selected manually tuned example, not a learned or general count controller.
+Exact-three metering remains unresolved: cubes can leave as a cluster. Requests 1–5
+are valid goal specifications, not a guarantee that the controller can achieve each.
+`--reset none` records pickup, pour, and placement. Reset variants return k
+delivered cubes individually or invoke the existing human reset. Both aiming offsets stay centered in this diagnostic.
 
 The default records one persistent sequence: pour → place → human pour-back → pour
 → place → five robot pick/drop pairs. `--reset none|human|robot` records shorter
