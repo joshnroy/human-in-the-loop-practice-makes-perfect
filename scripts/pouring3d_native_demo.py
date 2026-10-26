@@ -30,6 +30,8 @@ class NativePouringDemo:
         reset: str = "both",
         requested_count: int = 5,
         parameters: PourParameters | None = None,
+        detail_video: bool = False,
+        continue_after_pour_failure: bool = False,
         human_reset_practice_cost: float = UnconditionalHumanOracle.intervention_cost,
     ) -> dict[str, Any]:
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
@@ -41,7 +43,9 @@ class NativePouringDemo:
         adapter.hard_reset()
         env, controller = adapter.sim.env, adapter.sim.controller
         writer = None
+        detail_writer = None
         skill_writer = None
+        active_skill = "initial"
         frames: list[dict[str, Any]] = []
         try:
             before = controller.scene.physical_snapshot()
@@ -54,12 +58,20 @@ class NativePouringDemo:
                     quality=8,
                 )
                 imageio.imwrite(directory / "native-setup.png", env.render())
+                if detail_video:
+                    detail_writer = imageio.get_writer(
+                        directory / "native-detail.mp4",
+                        fps=controller.frequency,
+                        codec="libx264",
+                        quality=8,
+                    )
 
             def record(**kwargs: Any) -> None:
                 c = kwargs["controller"]
                 entry = {
                     "frame": len(frames),
                     "phase": c.phase,
+                    "skill": active_skill,
                     "hand": c.hand_pose()[0].tolist(),
                     "pitcher": c.body_pose(name="pitcher")[0].tolist(),
                     "tray": c.body_pose(name="tray")[0].tolist(),
@@ -73,7 +85,13 @@ class NativePouringDemo:
                     "qpos_sha256": hashlib.sha256(c.data.qpos.tobytes()).hexdigest(),
                 }
                 if writer is not None:
-                    frame = env.render()
+                    if detail_writer is not None:
+                        images = c.scene.render_all_cameras()
+                        frame = images["task_view_image"]
+                        camera = "pour_detail" if active_skill == "Pour" else "pitcher_detail"
+                        detail_writer.append_data(images[f"{camera}_image"])
+                    else:
+                        frame = env.render()
                     writer.append_data(frame)
                     if skill_writer is not None:
                         skill_writer.append_data(frame)
@@ -96,6 +114,7 @@ class NativePouringDemo:
             selected_cube = 0
             events = []
             for index, (skill, cube) in enumerate(sequence):
+                active_skill = skill
                 if skill == "PickCubeFromTray" and cube == -1:
                     selected_cube = controller.select_reset_cube()
                 if cube == -1:
@@ -128,7 +147,9 @@ class NativePouringDemo:
                 if skill_writer is not None:
                     skill_writer.close()
                     skill_writer = None
-                if not event["success"]:
+                if not event["success"] and not (
+                    continue_after_pour_failure and skill == "Pour" and event["error"] is None
+                ):
                     break
             final = controller.scene.physical_snapshot()
             if writer is not None:
@@ -139,11 +160,16 @@ class NativePouringDemo:
                 )
                 writer.close()
                 writer = None
+            if detail_writer is not None:
+                detail_writer.close()
+                detail_writer = None
             manifest = {
                 "environment": "kinder/PitcherPour3D-o5-v0",
                 "seed": seed,
                 "requested_count": requested_count,
                 "pour_parameters": (parameters or PourParameters()).model_dump(),
+                "detail_video": detail_video,
+                "continue_after_pour_failure": continue_after_pour_failure,
                 "scene_bg": scene_bg,
                 "native_module": inspect.getfile(PitcherPour3DEnv),
                 "native_source_sha256": hashlib.sha256(
@@ -174,7 +200,8 @@ class NativePouringDemo:
                     and all(e["success"] for e in events)
                 ),
                 "render_path": (
-                    "env.render() after native steps; 1 s display hold after human reset"
+                    ("native render_all_cameras()" if detail_video else "env.render()")
+                    + " after native steps; 1 s display hold after human reset"
                 ),
                 "human_reset_interface": (
                     "UnconditionalHumanOracle.execute_movables_reset -> Environment.reset_movables"
@@ -203,6 +230,8 @@ class NativePouringDemo:
             )
             return manifest
         finally:
+            if detail_writer is not None:
+                detail_writer.close()
             if skill_writer is not None:
                 skill_writer.close()
             if writer is not None:
@@ -218,6 +247,8 @@ class NativePouringDemo:
         parser.add_argument("--angle", type=float, default=145)
         parser.add_argument("--tilt-seconds", type=float, default=10)
         parser.add_argument("--hold-seconds", type=float, default=4)
+        parser.add_argument("--detail-video", action="store_true")
+        parser.add_argument("--continue-after-pour-failure", action="store_true")
         parser.add_argument("--reset", choices=["none", "human", "robot", "both"], default="both")
         parser.add_argument("--no-video", action="store_true")
         parser.add_argument("--simple-scene", action="store_true")
@@ -231,6 +262,8 @@ class NativePouringDemo:
             directory=args.output_dir,
             seed=args.seed,
             requested_count=args.requested_count,
+            detail_video=args.detail_video,
+            continue_after_pour_failure=args.continue_after_pour_failure,
             parameters=PourParameters(
                 angle=args.angle, tilt_seconds=args.tilt_seconds, hold_seconds=args.hold_seconds
             ),

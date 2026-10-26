@@ -36,7 +36,9 @@ Containment follows the tapered polygon and spout instead of a bounding rectangl
 Five cubes start in a small pentagon, with ±0.5 mm seeded position jitter. The robot
 pinches the upper handle across its width. Both finger pads must contact handle
 geometry before and after lifting; rim contacts cannot satisfy that check. Both
-vessels and all cubes have free joints and real collisions.
+vessels and all cubes have free joints and real collisions. The pitcher now renders
+with alpha 0.2 so its payload is visible; this changes its appearance only. A native
+`pour_detail` camera complements the room overview and floor-level pitcher view.
 
 ## Task and reset contract
 
@@ -178,3 +180,30 @@ This is an executable native task and proof of concept. Learned-policy evaluatio
 held-out reliability, hardware transfer, and a complete planner-facing lifted skill
 provider remain separate work. Macro availability
 alone is not a complete practice-planner benchmark or evidence of learnability.
+
+
+## Requested-count comparison video
+
+```bash
+run-heavy scripts/with_env.sh python -m scripts.pouring3d_target_demo \
+  --output-dir artifacts/pouring3d-targets
+```
+
+This records independent seed-0 attempts for requests 1 through 5, each starting
+with all five cubes in the pitcher. It uses the closest-count settings found in
+prior metering diagnostics, not learned policies: 130° for targets 1–3 and 135°
+for targets 4–5, both with a 10 s outward/return and 0.2 s hold. These settings
+are selected attempts, not a guarantee of achieving each requested count.
+
+The recorder preserves a count failure, then physically places the pitcher and
+invokes the standard human reset before the next independent setup. The video
+shows that explicitly marked instantaneous reset. It pairs native overview and
+close-up footage, labels measured counts and outcomes, keeps Pour at 1×, and
+speeds other robot motion to 4×. It preserves original 10 Hz videos and physical
+traces, and validates all five starts and resets before compiling. The ending
+scorecard reports each selected attempt; it is not a reliability estimate.
+
+For individual recordings, `pouring3d_native_demo` accepts `--detail-video` and
+`--continue-after-pour-failure`. The latter continues to placement/reset only
+when Pour has no controller error and the count goal failed. The default still
+stops after a failed skill.
