@@ -32,11 +32,37 @@ A time limit or failed solve raises; it never silently switches to enumeration.
 The cheapest-allocation stage preserves an independently evaluated integer
 incumbent with an absolute task-value allowance of `1e-8`, rather than fixing
 the reward to a floating-point solver objective. The primary bound is tightened
-by the task MDP's all-skills-perfect upper bound. Both stages independently
+by solving the task MDP at each skill's independently maximum reachable
+competence: `min(1, p + Delta * limit)`, where `limit` is the same useful,
+individually affordable integer attempt cap used by the optimizer. Skills with
+nonpositive learning rates, no training price or no relevant deployment route
+keep their current competence. Each skill independently receives up to the full
+budget for this bound only; those caps need not be jointly affordable. Relaxing
+the shared budget this way gives a valid upper bound because task value is
+monotone in skill success probabilities. It does not add reset lookahead or
+change the optimizer's shared-budget constraint. Both stages independently
 check physical spend, and returned task value must be within `1e-7` of that
 bound; the actual absolute/relative gaps are recorded, not overwritten with zero.
 This avoids the reproduced saturation failure where a primary solver objective
 of `1.0000009725762244` was pinned despite the reward's upper bound of one.
+The reachable-competence bound also addresses a reconstructed cost/period
+failure: when toss competence cannot improve, assuming perfect toss competence
+leaves the independent bound too loose to correct an inflated Gurobi bound.
+Independent enumeration proves the small Pick-to-Toss reconstruction's optimum;
+the regression is not an exact replay of the original run's task graph.
+The `1e-7` acceptance threshold, `1e-8` tie allowance and requirement that both
+Gurobi stages return OPTIMAL are unchanged.
+The tie stage also independently checks the preserved primary value floor.
+If numerical violations admit an over-budget or below-floor integer allocation,
+an exact no-good cut excludes only that independently invalid allocation before
+re-solving the same Gurobi cost objective. These cuts do not remove any truly
+feasible tie solution. Every re-solve still requires OPTIMAL and shares the
+original solver deadline; `tie_break_retries` records the number of exclusions.
+A repeated excluded allocation, exhausted deadline, or bound-gap failure for an
+allocation that meets the budget and preserved floor raises instead of silently
+returning the primary allocation or switching solvers. This covers a second
+reconstruction where the numerical tie solution undertrained Pick despite an
+independently optimal primary allocation.
 See Gurobi's [numerical-tolerance guidance](https://docs.gurobi.com/projects/optimizer/en/current/concepts/numericguide/tolerances_scaling.html).
 
 The selected policy supplies the curriculum order: practice predecessors before
