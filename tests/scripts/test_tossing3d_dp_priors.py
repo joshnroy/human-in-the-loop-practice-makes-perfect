@@ -1,10 +1,17 @@
 import json
+import sys
 
 import pytest
 
+from hitl_pmp.config_snapshot import ConfigSnapshot
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpPriorCalibration
+from scripts import tossing3d_dp_priors
 from scripts.tossing3d_dp_priors import (
     CHECKPOINTS,
     FIT_SEEDS,
+    OPEN,
     PICK,
     PROBES,
     SIMULATOR_PINS,
@@ -23,7 +30,7 @@ def curves(*, tmp_path):
             "complete": True,
             "seed": seed,
             "source_sha256": Tossing3DDpPriors.source_hashes(),
-            "protocol": Tossing3DDpPriors.protocol(),
+            "protocol": Tossing3DDpPriors.protocol(enable_bin_pouring=False),
             "config_snapshot": {
                 "kindergarden_commit": SIMULATOR_PINS["kinder"],
                 "kinder_models_commit": SIMULATOR_PINS["kinder_models"],
@@ -60,7 +67,7 @@ def curves(*, tmp_path):
 def test_fit_uses_initial_rate_and_per_rollout_improvement_without_old_beta_prior(
     *, curves, open_probes
 ):
-    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
     toss = report["skills"][TOSS]
     probability = (6 + 0.5) / (48 + 1)
     assert toss["alpha"] / (toss["alpha"] + toss["beta"]) == pytest.approx(probability)
@@ -72,14 +79,21 @@ def test_fit_uses_initial_rate_and_per_rollout_improvement_without_old_beta_prio
 
 
 def test_validation_outcomes_do_not_change_the_fitted_prior(*, curves, open_probes):
-    before = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)["skills"]
+    before = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)[
+        "skills"
+    ]
     for seed in VALIDATION_SEEDS:
         path = curves / str(seed) / "rollouts.jsonl"
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         for row in rows:
             row["success"] = not row["success"]
         path.write_text("\n".join(json.dumps(row) for row in rows))
-    assert Tossing3DDpPriors.fit(root=curves, open_root=open_probes)["skills"] == before
+    assert (
+        Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)[
+            "skills"
+        ]
+        == before
+    )
 
 
 def test_no_observed_improvement_does_not_invent_a_positive_rate(*, curves, open_probes):
@@ -90,7 +104,7 @@ def test_no_observed_improvement_does_not_invent_a_positive_rate(*, curves, open
             if row["skill"] == TOSS and row["checkpoint"]:
                 row["success"] = False
         path.write_text("\n".join(json.dumps(row) for row in rows))
-    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
     assert report["skills"][TOSS]["initial_learning_rate"] == 0
     assert report["diagnostics"][TOSS]["predicted_saturation_rollouts"] is None
 
@@ -110,7 +124,7 @@ def test_bad_collection_is_rejected(*, curves, open_probes, problem):
     if problem != "missing_probes":
         path.write_text(json.dumps(metadata))
     with pytest.raises(ValueError):
-        Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+        Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
 
 
 @pytest.fixture
@@ -120,7 +134,7 @@ def open_probes(*, curves):
         directory = root / str(seed)
         directory.mkdir(parents=True)
         metadata = json.loads((curves / str(seed) / "metadata.json").read_text())
-        metadata["protocol"] = Tossing3DDpPriors.open_protocol()
+        metadata["protocol"] = Tossing3DDpPriors.open_protocol(enable_bin_pouring=False)
         (directory / "metadata.json").write_text(json.dumps(metadata))
         rows = [
             {
@@ -145,7 +159,7 @@ def test_fit_requires_independent_open_gripper_probes(*, curves):
 
 
 def test_open_gripper_prior_uses_actual_probes_and_zero_learning_rate(*, curves, open_probes):
-    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
     prior = report["skills"]["OpenGripper"]
     assert prior["alpha"] / (prior["alpha"] + prior["beta"]) == pytest.approx(45.5 / 49)
     assert prior["initial_learning_rate"] == 0
@@ -154,14 +168,21 @@ def test_open_gripper_prior_uses_actual_probes_and_zero_learning_rate(*, curves,
 
 
 def test_open_validation_outcomes_do_not_change_any_fitted_prior(*, curves, open_probes):
-    before = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)["skills"]
+    before = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)[
+        "skills"
+    ]
     for seed in VALIDATION_SEEDS:
         path = open_probes / str(seed) / "rollouts.jsonl"
         rows = [json.loads(line) for line in path.read_text().splitlines()]
         for row in rows:
             row["success"] = not row["success"]
         path.write_text("\n".join(json.dumps(row) for row in rows))
-    assert Tossing3DDpPriors.fit(root=curves, open_root=open_probes)["skills"] == before
+    assert (
+        Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)[
+            "skills"
+        ]
+        == before
+    )
 
 
 def test_refit_preserves_old_collection_driver_provenance(*, curves, open_probes):
@@ -172,7 +193,7 @@ def test_refit_preserves_old_collection_driver_provenance(*, curves, open_probes
         metadata = json.loads(path.read_text())
         metadata["source_sha256"][driver] = old_hash
         path.write_text(json.dumps(metadata))
-    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
     assert report["collection_driver_sha256"] == [old_hash]
     assert report["source_sha256"][driver] == Tossing3DDpPriors.source_hashes()[driver]
 
@@ -188,8 +209,6 @@ def test_open_collection_refuses_experiment_and_unreserved_seeds(*, tmp_path, se
 def test_open_collection_checks_simulator_pins_before_creating_probe_artifacts(
     *, tmp_path, monkeypatch
 ):
-    from hitl_pmp.config_snapshot import ConfigSnapshot
-
     monkeypatch.setattr(
         ConfigSnapshot, "_repo_state", staticmethod(lambda **kwargs: ("newer", False))
     )
@@ -221,4 +240,120 @@ def test_invalid_open_gripper_probes_are_rejected(*, curves, open_probes, proble
             rows[0]["consultation"] = "learned"
         path.write_text("\n".join(json.dumps(row) for row in rows))
     with pytest.raises(ValueError):
+        Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
+
+
+def test_no_pouring_fit_is_source_bound_and_covers_exactly_the_configured_robot_skills(
+    *, curves, open_probes
+):
+    report = Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
+    assert report["enable_bin_pouring"] is False
+    assert report["protocol"]["enable_bin_pouring"] is False
+    assert report["open_gripper_protocol"]["enable_bin_pouring"] is False
+    assert set(report["skills"]) == {PICK, TOSS, OPEN}
+    path = curves / "fresh-priors.json"
+    path.write_text(json.dumps(report))
+    calibration = DpPriorCalibration.load(path=path)
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(enable_bin_pouring=False))
+    calibration.verify_robot_skills(skills=provider.skills())
+    with pytest.raises(ValueError, match="PourCubeOutOfBin"):
+        calibration.verify_robot_skills(
+            skills=Tossing3DSkillProvider(env=Tossing3DEnvironment()).skills()
+        )
+
+
+@pytest.mark.parametrize("collection", ["curves", "open"])
+@pytest.mark.parametrize("recorded_flag", [True, None])
+def test_no_pouring_fit_rejects_mixed_or_unspecified_protocol_flags(
+    *, curves, open_probes, collection, recorded_flag
+):
+    directory = curves if collection == "curves" else open_probes
+    path = directory / str(FIT_SEEDS[0]) / "metadata.json"
+    metadata = json.loads(path.read_text())
+    if recorded_flag is None:
+        metadata["protocol"].pop("enable_bin_pouring")
+    else:
+        metadata["protocol"]["enable_bin_pouring"] = recorded_flag
+    path.write_text(json.dumps(metadata))
+    with pytest.raises(ValueError, match="protocol"):
+        Tossing3DDpPriors.fit(root=curves, open_root=open_probes, enable_bin_pouring=False)
+
+
+def test_default_fit_still_requires_a_pouring_prior(*, curves, open_probes):
+    for root in (curves, open_probes):
+        for seed in (*FIT_SEEDS, *VALIDATION_SEEDS):
+            path = root / str(seed) / "metadata.json"
+            metadata = json.loads(path.read_text())
+            metadata["protocol"]["enable_bin_pouring"] = True
+            path.write_text(json.dumps(metadata))
+    with pytest.raises(
+        ValueError, match="robot skills lack calibrated DP priors.*PourCubeOutOfBin"
+    ):
         Tossing3DDpPriors.fit(root=curves, open_root=open_probes)
+
+
+@pytest.mark.parametrize("collector", ["collect", "collect_open"])
+@pytest.mark.parametrize("enable_bin_pouring", [True, False])
+def test_collectors_preserve_the_default_and_accept_explicit_no_pouring(
+    *, monkeypatch, tmp_path, collector, enable_bin_pouring
+):
+    captured = []
+
+    def build(**kwargs):
+        captured.append(kwargs)
+        raise RuntimeError("stop before simulator probe")
+
+    monkeypatch.setattr(tossing3d_dp_priors, "EesMethod", build)
+    monkeypatch.setattr(
+        ConfigSnapshot,
+        "_repo_state",
+        staticmethod(lambda **kwargs: (SIMULATOR_PINS[kwargs["package"]], False)),
+    )
+    arguments = {"seed": FIT_SEEDS[0], "output": tmp_path / collector}
+    if not enable_bin_pouring:
+        arguments["enable_bin_pouring"] = False
+    with pytest.raises(RuntimeError, match="stop before simulator probe"):
+        getattr(Tossing3DDpPriors, collector)(**arguments)
+    assert captured[0]["env"].enable_bin_pouring is enable_bin_pouring
+    names = {skill.name for skill in captured[0]["skill_provider"].skills()}
+    assert names == (
+        {PICK, TOSS, OPEN, "PourCubeOutOfBin"} if enable_bin_pouring else {PICK, TOSS, OPEN}
+    )
+
+
+@pytest.mark.parametrize("command", ["collect", "collect-open", "fit"])
+@pytest.mark.parametrize("enable_bin_pouring", [True, False])
+def test_cli_forwards_the_pouring_flag_for_each_command(
+    *, monkeypatch, tmp_path, capsys, command, enable_bin_pouring
+):
+    captured = []
+
+    def run(**kwargs):
+        captured.append(kwargs)
+        return {"validation_passed": True}
+
+    monkeypatch.setattr(Tossing3DDpPriors, command.replace("-", "_"), staticmethod(run))
+    arguments = ["tossing3d_dp_priors", command, "--output", str(tmp_path / "output.json")]
+    if command == "fit":
+        arguments.extend(["--root", str(tmp_path), "--open-root", str(tmp_path / "open")])
+    else:
+        arguments.extend(["--seed", str(FIT_SEEDS[0])])
+    if not enable_bin_pouring:
+        arguments.append("--no-bin-pouring")
+    monkeypatch.setattr(sys, "argv", arguments)
+    tossing3d_dp_priors.main()
+    assert captured[0]["enable_bin_pouring"] is enable_bin_pouring
+    capsys.readouterr()
+
+
+def test_protocol_toggle_keeps_the_reserved_seed_and_probe_schedule():
+    assert FIT_SEEDS == (2000, 2001, 2002)
+    assert VALIDATION_SEEDS == (2010, 2011, 2012)
+    for protocol in (Tossing3DDpPriors.protocol, Tossing3DDpPriors.open_protocol):
+        default = protocol()
+        disabled = protocol(enable_bin_pouring=False)
+        assert default["enable_bin_pouring"] is True
+        assert disabled == {**default, "enable_bin_pouring": False}
+    assert Tossing3DDpPriors.protocol()["checkpoints"] == [0, 20, 60]
+    assert Tossing3DDpPriors.protocol()["probes_per_checkpoint"] == 16
+    assert Tossing3DDpPriors.open_protocol()["probes_per_seed"] == 16

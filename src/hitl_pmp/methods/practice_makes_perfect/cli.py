@@ -71,6 +71,25 @@ class EesCli:
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--competence-sharing",
+            choices=("grounded", "parent", "rate"),
+            default="grounded",
+            help="EES/DP ablation: separate grounded forecasts, pooled parent-skill forecasts, "
+            "or pooled improvement with separate current competences. Does not change the learner.",
+        )
+        parser.add_argument(
+            "--record-learning-forecasts",
+            action="store_true",
+            help="Write grounded and pooled learning evidence each period; requires output-dir.",
+        )
+        parser.add_argument(
+            "--practice-groundings",
+            choices=("observed", "all"),
+            default="observed",
+            help="EES/DP ablation: offer observed or all typed robot groundings. With shared "
+            "sharing, any grounding may fulfill its shared target using immediate setup costs.",
+        )
         # 10 cycles = predicators' num_online_learning_cycles default; 150 steps =
         # the paper's stated Light Switch free-period length.
         PracticeCycleCli.add_arguments(parser=parser, default_num_cycles=10, default_max_steps=150)
@@ -266,10 +285,19 @@ class EesCli:
     ) -> dict[str, Any]:
         """EesMethod's constructor arguments from EES's flags, shared by every method
         that is EES with a different practice-target choice (`DpCli`)."""
+        if args.record_learning_forecasts and args.output_dir is None:
+            raise ValueError("--record-learning-forecasts requires --output-dir")
         return dict(
             env=ctx.env,
             skill_provider=ctx.skill_provider,
             seed=args.seed,
+            competence_sharing=args.competence_sharing,
+            practice_groundings=args.practice_groundings,
+            learning_forecast_log=(
+                Path(args.output_dir) / "learning_forecasts.jsonl"
+                if args.record_learning_forecasts
+                else None
+            ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
@@ -469,6 +497,12 @@ class Tossing3DPomdpCli(EesCli):
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
                 "every human skill its practice domain does not treat as deterministic"
             )
+        if (
+            args.competence_sharing != "grounded"
+            or args.practice_groundings != "observed"
+            or args.record_learning_forecasts
+        ):
+            raise ValueError("shared-learning ablation flags apply only to --method ees or dp")
         defaults = (
             EesMethod.model_fields["prior_alpha"].default,
             EesMethod.model_fields["prior_beta"].default,
