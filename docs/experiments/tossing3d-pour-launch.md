@@ -14,7 +14,12 @@ match that commit's gitlinks. The stack retains current main's kindergarden
 
 Every arm uses a movable 1 kg bin, a 100 g cube, Tossing3D-o1, barrier practice
 and evaluation layouts, pouring enabled, 20 action slots per practice period,
-and no scheduled resets. Post-toss settling is charged as part of the robot
+and no scheduled resets. Pouring remains available when the cube can also be
+picked; feasibility preconditions must not prescribe which action the method
+chooses. The action-availability audit in
+[the pouring documentation](../tossing3d-bin-pouring.md#action-availability-audit)
+records remaining restrictions that need review before interpreting full runs.
+Post-toss settling is charged as part of the robot
 skill. Evaluations run initially and every 3,200 practice ticks on ten fixed
 held-out tasks with a 500-control-tick cap. Full runs stop after three consecutive
 perfect evaluations; pilots do not stop early. Epsilon is 0.5 and sampler refits
