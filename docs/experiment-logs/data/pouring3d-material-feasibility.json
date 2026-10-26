@@ -1,0 +1,542 @@
+{
+  "wood": {
+    "search_trials": 36,
+    "found_counts": [
+      2,
+      3,
+      5
+    ],
+    "found_pour_counts": [
+      1,
+      2,
+      3,
+      5
+    ],
+    "validation": {
+      "material": "wood",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "results": [
+        {
+          "target": 1,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 98.4375,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": false,
+              "pour_success": true,
+              "tray_after_pour": 1,
+              "tray": 1,
+              "pitcher": 4,
+              "settled": true,
+              "completed": false
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": true,
+              "tray_after_pour": 1,
+              "tray": 1,
+              "pitcher": 4,
+              "settled": true,
+              "completed": false
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "target": 2,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 98.75,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 2,
+              "tray": 2,
+              "pitcher": 3,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 1,
+              "tray": 1,
+              "pitcher": 4,
+              "settled": true,
+              "completed": false
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "target": 3,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 102.5,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 3,
+              "tray": 3,
+              "pitcher": 2,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 3,
+              "tray": 3,
+              "pitcher": 2,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 4,
+              "tray": 4,
+              "pitcher": 1,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 4,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 105.0,
+            "tilt_seconds": 5.0,
+            "hold_seconds": 1.0
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 4,
+              "tray": 4,
+              "pitcher": 1,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 2,
+              "tray": 2,
+              "pitcher": 3,
+              "settled": true,
+              "completed": false
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 4,
+              "tray": 4,
+              "pitcher": 1,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 5,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 130.0,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        }
+      ],
+      "interpretation": "Seed 0 replays development; seeds 1 and 2 are new initial jitter. These checks do not measure robustness to general reset arrangements."
+    },
+    "settling_supplement": [
+      {
+        "seed": 0,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": true,
+        "full_completion_success": true,
+        "tray_after_wait": 4,
+        "pitcher_after_wait": 1
+      },
+      {
+        "seed": 1,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": false,
+        "full_completion_success": false,
+        "tray_after_wait": 2,
+        "pitcher_after_wait": 3
+      },
+      {
+        "seed": 2,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": true,
+        "full_completion_success": true,
+        "tray_after_wait": 4,
+        "pitcher_after_wait": 1
+      }
+    ],
+    "four_cube_confirmation": {
+      "seed": 2,
+      "parameters": {
+        "offset_x": 0.0,
+        "offset_y": 0.0,
+        "angle": 102.5,
+        "tilt_seconds": 10.0,
+        "hold_seconds": 0.2
+      },
+      "native_pour_success": true,
+      "full_completion_success": true,
+      "extra_wait_seconds": 0
+    }
+  },
+  "foam": {
+    "search_trials": 71,
+    "found_counts": [
+      1,
+      3,
+      5
+    ],
+    "found_pour_counts": [
+      1,
+      3,
+      5
+    ],
+    "validation": {
+      "material": "foam",
+      "seeds": [
+        0,
+        1,
+        2
+      ],
+      "results": [
+        {
+          "target": 1,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 110.0,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 1,
+              "tray": 1,
+              "pitcher": 4,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 2,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 110.0,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 1,
+              "tray": 1,
+              "pitcher": 4,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 3,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 110.0,
+            "tilt_seconds": 15.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 3,
+              "tray": 3,
+              "pitcher": 2,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 4,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 115.0,
+            "tilt_seconds": 5.0,
+            "hold_seconds": 1.0
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 4,
+              "tray": 4,
+              "pitcher": 1,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 0,
+              "tray": 0,
+              "pitcher": 5,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": false,
+              "pour_success": false,
+              "tray_after_pour": 3,
+              "tray": 3,
+              "pitcher": 2,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "target": 5,
+          "parameters": {
+            "offset_x": 0.0,
+            "offset_y": 0.0,
+            "angle": 130.0,
+            "tilt_seconds": 10.0,
+            "hold_seconds": 0.2
+          },
+          "outcomes": [
+            {
+              "seed": 0,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 1,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            },
+            {
+              "seed": 2,
+              "success": true,
+              "pour_success": true,
+              "tray_after_pour": 5,
+              "tray": 5,
+              "pitcher": 0,
+              "settled": true,
+              "completed": true
+            }
+          ]
+        }
+      ],
+      "interpretation": "Seed 0 replays development; seeds 1 and 2 are new initial jitter. These checks do not measure robustness to general reset arrangements."
+    },
+    "settling_supplement": [
+      {
+        "seed": 0,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": true,
+        "full_completion_success": true,
+        "tray_after_wait": 4,
+        "pitcher_after_wait": 1
+      },
+      {
+        "seed": 1,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": false,
+        "full_completion_success": false,
+        "tray_after_wait": 0,
+        "pitcher_after_wait": 5
+      },
+      {
+        "seed": 2,
+        "wait_seconds": 1.0000000000047748,
+        "pour_success": false,
+        "pour_plus_wait_success": false,
+        "full_completion_success": false,
+        "tray_after_wait": 3,
+        "pitcher_after_wait": 2
+      }
+    ]
+  }
+}
