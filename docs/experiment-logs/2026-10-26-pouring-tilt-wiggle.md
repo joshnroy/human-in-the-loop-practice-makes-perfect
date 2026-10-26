@@ -1,5 +1,9 @@
 # Centered tilt-then-wiggle prototype
 
+Follow-up: the [explicit requested-count 1–5 recheck](2026-10-26-pouring-wiggle-counts.md)
+adds a new parameter search, frozen recipes, and three-start checks for both
+materials. The original target-2 comparison below remains unchanged.
+
 The opt-in `TiltWigglePouringEnvironment` exposes two continuous Pour controls:
 `tilt_angle` (degrees, 0–146) and `wiggle_seconds` (seconds, 0–4). The requested
 cube count remains a discrete task input. The macro action is
