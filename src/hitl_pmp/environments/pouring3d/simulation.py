@@ -20,12 +20,23 @@ class PouringSimulation(BaseModel):
 
     @classmethod
     def create(
-        cls, *, seed: int = 0, scene_bg: bool = True, requested_count: int = 5
+        cls,
+        *,
+        seed: int = 0,
+        scene_bg: bool = True,
+        requested_count: int = 5,
+        cube_material: str | None = None,
+        task_config_path: str | None = None,
     ) -> "PouringSimulation":
         from kinder.envs.dynamic3d.pitcher_pour3d import PitcherPour3DEnv
 
+        kwargs = {} if task_config_path is None else {"task_config_path": task_config_path}
         env = PitcherPour3DEnv(
-            scene_bg=scene_bg, render_mode="rgb_array", requested_count=requested_count
+            scene_bg=scene_bg,
+            render_mode="rgb_array",
+            requested_count=requested_count,
+            cube_material=cube_material,
+            **kwargs,
         )
         env.reset(seed=seed)
         return cls(env=env, controller=NativePouringController.create(env=env))

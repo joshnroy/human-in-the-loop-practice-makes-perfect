@@ -207,3 +207,43 @@ For individual recordings, `pouring3d_native_demo` accepts `--detail-video` and
 `--continue-after-pour-failure`. The latter continues to placement/reset only
 when Pour has no controller error and the count goal failed. The default still
 stops after a failed skill.
+
+
+## Clear pitcher and wood/foam comparison
+
+The comparison variant uses an approximate clear Winco PMCP-100 one-quart pitcher
+(Amazon ASIN B00C0N8098), with the product linked in the native object docstring.
+Its listing gives 5.5 × 4.5 × 5.5 inches and 0.17 kg. The model rounds this to
+140 × 114 × 140 mm overall; taper, 3 mm wall, handle, spout and inertia remain
+estimates. The earlier ACCUPOUR task remains available for historical diagnostics.
+
+Select `--pitcher-reference winco --cube-material wood|foam` on the native demo.
+The cube profiles use explicit MuJoCo contact pairs for the pitcher, tray, floor,
+and cube self-contact, so geom priority/default mixing cannot silently replace
+the intended coefficients. Gripper contact settings remain native.
+
+| Provisional model | Density | Mass per 20 mm cube | Pitcher/tray sliding friction | Cube self-friction | Contact time constant / damping ratio |
+| --- | --- | --- | --- | --- | --- |
+| Wood | 600 kg/m³ | 4.8 g | 0.3 | 0.4 | 4 ms / 1.0 |
+| EVA-like foam | 80 kg/m³ | 0.64 g | 0.6 | 0.8 | 8 ms / 1.2 |
+
+These coefficients and solver settings are hypotheses, not measured properties.
+Foam is rigid geometry with compliant contacts, not a deformable body. Neither
+model has separate measured static/kinetic friction or calibrated restitution.
+SweepOffShelf's 0.4 is a wood-on-wood shelf assumption; it does not calibrate foam
+or wood against polycarbonate. Its inherited cube mass is not copied here.
+
+```bash
+run-heavy scripts/with_env.sh python -m scripts.pouring3d_material_demo \
+  --output-dir artifacts/pouring3d-materials
+```
+
+This records both materials under identical 130° and 145° commands, with centered
+aiming, 10 s outward/return ramps, a 0.2 s hold, and seed 0. Full native pickup,
+pour, placement and human reset recordings are preserved. The comparison edits
+start after pickup, synchronize at outward-tilt start, and show the pouring at 1×.
+Each trial starts with five cubes in the pitcher. Material changes affect mass,
+friction and contact softness together, so this is not a friction-only ablation.
+The new pitcher differs from the old ACCUPOUR shape, so old metering results do
+not transfer to it. Actual material/shape measurements and incline/drop tests
+are needed before treating either profile as calibrated physics.
