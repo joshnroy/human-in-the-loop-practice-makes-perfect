@@ -1,9 +1,7 @@
-"""Project Environment adapter for the pouring prototype's macro actions.
+"""Macro-action adapter around the native KinDER pouring task.
 
-The observation retains full qpos/qvel, mocap poses and equality activation.
-This is a diagnostic state vector, not a claim of a validated Markov abstraction.
-Human action 5 is explicit and costed; it must be routed through HumanOracle
-before integration with the project's practice planners.
+The diagnostic observation includes physical state and controller history.
+Human actions are explicit and costed; practice-planner integration is separate.
 """
 
 from typing import Any, ClassVar
@@ -15,13 +13,16 @@ from pydantic import ConfigDict, Field
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
+from .objects import PouringObjects as O
+from .types import PouringState
+
 
 class PouringEnvironment(Environment):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     action_space: ClassVar[Box] = Box(
-        low=np.array([0, 0, 0, -0.4, -0.4, 0.5, 0.2], dtype=np.float32),
-        high=np.array([7, 4, 150, 0.4, 0.4, 4, 4], dtype=np.float32),
+        low=np.array([0, 0, 0, -0.4, -0.4, 2, 0.2], dtype=np.float32),
+        high=np.array([7, 4, 150, 0.4, 0.4, 15, 8], dtype=np.float32),
     )
     skill_names: ClassVar[tuple[str, ...]] = (
         "PickPitcher",
@@ -56,9 +57,25 @@ class PouringEnvironment(Environment):
         return {
             "qpos": self.sim.data.qpos.copy(),
             "qvel": self.sim.data.qvel.copy(),
-            "mocap_pos": self.sim.data.mocap_pos.ravel().copy(),
-            "mocap_quat": self.sim.data.mocap_quat.ravel().copy(),
-            "equality": self.sim.data.eq_active.astype(float).copy(),
+            "actuator_state": self.sim.data.act.copy(),
+            "control": self.sim.data.ctrl.copy(),
+            "controller_arm": self.sim.controller.last_q.copy(),
+            "controller_base": self.sim.controller.base_target.copy(),
+            "grasp_position": (
+                self.sim.controller.hand_offset.copy()
+                if self.sim.controller.hand_offset is not None
+                else np.zeros(3)
+            ),
+            "grasp_rotation": (
+                self.sim.controller.rotation_offset.as_quat()
+                if self.sim.controller.rotation_offset is not None
+                else np.array([0, 0, 0, 1])
+            ),
+            "controller_history": np.array([
+                self.sim.controller.posture,
+                self.sim.controller.posture_goal,
+                self.sim.controller.lost_contacts,
+            ]),
             "handling": np.array([
                 0
                 if self.sim.held is None
@@ -71,7 +88,12 @@ class PouringEnvironment(Environment):
 
     def observe(self) -> State:
         assert self.world is not None
-        return State(data={self.world: np.concatenate(list(self.state_arrays().values()))})
+        data = {self.world: np.concatenate(list(self.state_arrays().values()))}
+        for obj in (*O.cubes, O.pitcher, O.tray):
+            body = self.sim.model.body(obj.name).id
+            data[obj] = np.r_[self.sim.data.xpos[body], self.sim.data.xquat[body]]
+        data[O.robot] = self.sim.data.qpos[self.sim.controller.base_q].copy()
+        return PouringState(data=data, abstract_atoms=self.sim.abstract_atoms())
 
     def take_action(self, *, action: Action) -> State:
         values = np.asarray(action, dtype=float)
@@ -82,28 +104,19 @@ class PouringEnvironment(Environment):
         if values[0] != int(values[0]) or values[1] != int(values[1]):
             raise ValueError("Skill and cube IDs must be integers")
         skill = self.skill_names[int(values[0])]
-        if skill == "Wait":
-            self.sim.elapsed_seconds += 1.0
-            self.last_info = {
-                "skill": "Wait",
-                "success": True,
-                "cost_seconds": 1.0,
-                "human_interventions": 0,
-            }
-        else:
-            self.last_info = self.sim.execute(
-                skill=skill,
-                cube=int(values[1]),
-                parameters=dict(
-                    zip(
-                        ["angle", "offset_x", "offset_y", "tilt_seconds", "hold_seconds"],
-                        values[2:],
-                        strict=True,
-                    )
+        self.last_info = self.sim.execute(
+            skill=skill,
+            cube=int(values[1]),
+            parameters=dict(
+                zip(
+                    ["angle", "offset_x", "offset_y", "tilt_seconds", "hold_seconds"],
+                    values[2:],
+                    strict=True,
                 )
-                if skill == "Pour"
-                else None,
             )
+            if skill == "Pour"
+            else None,
+        )
         self.current_state = self.observe()
         return self.current_state
 
@@ -115,11 +128,11 @@ class PouringEnvironment(Environment):
                     self.sim.check_preconditions(skill=skill, cube=cube, parameters={})
                 except ValueError:
                     continue
-                candidates.append(np.array([skill_id, cube, 130, 0, -0.055, 2, 2], dtype=float))
+                candidates.append(np.array([skill_id, cube, 145, 0.055, 0, 10, 4], dtype=float))
         return candidates
 
     def noop_action(self) -> Action:
-        return np.array([7, 0, 130, 0, -0.055, 2, 2], dtype=float)
+        return np.array([7, 0, 145, 0.055, 0, 10, 4], dtype=float)
 
     def set_state(self, *, state: State) -> None:
         del state
