@@ -1,5 +1,9 @@
 # Tossing3D: 1 kg bin, 100 g cube
 
+> Provenance backfill (2026-10-26): exact source commit/tree and original launch
+> argv were not retained for this local probe. Both are unknown; the dependency
+> revisions below and saved scripts/outputs are the remaining evidence.
+
 > Historical validation record: these measurements used kindergarden `0dac89e`
 > and kinder-baselines `427ad6c`. The PR port keeps current main's `490831f` /
 > `032b426` pins and reports new validation separately. Launch preparation and

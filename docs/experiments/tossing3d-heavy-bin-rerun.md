@@ -1,5 +1,9 @@
 # Tossing3D: 3.8 kg bin rerun proposal
 
+> Provenance backfill (2026-10-26): exact source commit/tree and original launch
+> argv were not retained for this local probe. Both are unknown; the dependency
+> revisions below and saved scripts/outputs are the remaining evidence.
+
 **Superseded mass:** the default is now 1 kg. See
 [`tossing3d-1kg-bin-validation.md`](tossing3d-1kg-bin-validation.md) for current
 physics checks. The 3.8 kg validation below is retained as historical evidence;
