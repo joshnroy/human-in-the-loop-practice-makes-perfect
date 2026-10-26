@@ -1419,7 +1419,10 @@ class KinderBackend(BaseModel):
         if key not in lifted:
             raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
         objects = tuple(state.get_object_from_name(name) for name in object_names)
-        return lifted[key].ground(objects)
+        controller = lifted[key].ground(objects)
+        if module == "tossing" and key == "move_to_toss_location_and_toss":
+            return TossSettlingController(backend=self, controller=controller)
+        return controller
 
     def _pick_collision_sim(self, *, state: Any) -> Any:
         """The pick's planning scene: a PyBullet client built fresh from `state`, with
@@ -1598,3 +1601,77 @@ class KinderBackend(BaseModel):
         if self._state is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no state.")
         return self._state
+
+
+class TossSettlingController:
+    """Hold position after a toss until the cube rests, for at most two seconds.
+
+    These are ordinary controller steps: the existing execution loop records and
+    charges them, and practice/evaluation budgets can interrupt them.
+    """
+
+    max_seconds: ClassVar[float] = 2.0
+    quiet_ticks: ClassVar[int] = 3
+    linear_speed_limit: ClassVar[float] = 0.01
+    angular_speed_limit: ClassVar[float] = 0.1
+
+    def __init__(self, *, backend: KinderBackend, controller: Any) -> None:
+        self.backend = backend
+        self.controller = controller
+
+    def __getattr__(self, name: str) -> Any:  # noqa: PLR0917 (Python attribute protocol)
+        # Keep upstream failure and timeout/retrace hooks visible to run_controller.
+        return getattr(self.controller, name)
+
+    def reset(self, state: Any, params: Any) -> None:  # noqa: PLR0917 (KINDER signature)
+        self.controller.reset(state, params)
+        self.state = state
+        self.target: np.ndarray | None = None
+        self.settle_ticks = self.stable_ticks = 0
+        self.limit = 0
+
+    def step(self) -> np.ndarray:
+        if not self.controller.terminated():
+            return np.asarray(self.controller.step())
+        robot = self.state.get_object_from_name(self.backend.robot_name)
+        position = np.array([
+            self.state.get(robot, name)
+            for name in (
+                "pos_base_x",
+                "pos_base_y",
+                "pos_base_rot",
+                *(f"pos_arm_joint{i}" for i in range(1, 8)),
+            )
+        ])
+        if self.target is None:
+            self.target = position.copy()
+            self.gripper = self.state.get(robot, "pos_gripper")
+            robot_env = self.backend._object_centric()._robot_env
+            self.delta = robot_env.act_delta
+            self.limit = max(1, int(np.ceil(self.max_seconds * robot_env.control_frequency)))
+        action = np.r_[self.target - position if self.delta else self.target, self.gripper]
+        if self.backend._env.action_space.shape == (18,):
+            action = np.r_[action, np.zeros(7)]
+        return action
+
+    def observe(self, state: Any) -> None:  # noqa: PLR0917 (KINDER signature)
+        self.state = state
+        if self.target is None:
+            self.controller.observe(state)
+            return
+        self.settle_ticks += 1
+        cube = state.get_object_from_name(self.backend.cube_name)
+        linear = np.array([state.get(cube, f"v{axis}") for axis in "xyz"])
+        angular = np.array([state.get(cube, f"w{axis}") for axis in "xyz"])
+        quiet = (
+            np.linalg.norm(linear) <= self.linear_speed_limit
+            and np.linalg.norm(angular) <= self.angular_speed_limit
+        )
+        self.stable_ticks = self.stable_ticks + 1 if quiet else 0
+
+    def terminated(self) -> bool:
+        if getattr(self.controller, "failure", None) is not None:
+            return bool(self.controller.terminated())
+        return self.target is not None and (
+            self.stable_ticks >= self.quiet_ticks or self.settle_ticks >= self.limit
+        )
