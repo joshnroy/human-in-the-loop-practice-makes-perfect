@@ -49,11 +49,15 @@ def test_calibrated_prior_is_source_bound_and_accepts_fractional_beta_parameters
     assert prior.initial_learning_rate == 0.005
 
 
-def test_packaged_tossing3d_priors_cover_every_robot_skill_without_changing_toss_fit():
+def test_packaged_tossing3d_priors_cover_pre_pouring_skills_and_reject_unmeasured_pouring():
     path = Path(__file__).resolve().parents[3] / "configs/tossing3d_dp_priors.json"
     calibration = DpPriorCalibration.model_validate_json(path.read_text())
-    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(enable_bin_pouring=False))
     calibration.verify_robot_skills(skills=provider.skills())
+    with pytest.raises(ValueError, match="PourCubeOutOfBin"):
+        calibration.verify_robot_skills(
+            skills=Tossing3DSkillProvider(env=Tossing3DEnvironment()).skills()
+        )
     assert calibration.skills["OpenGripper"].initial_learning_rate == 0
     toss = calibration.skills["MoveToTossLocationAndToss"]
     assert toss.alpha / (toss.alpha + toss.beta) == pytest.approx(0.1326530612244898)

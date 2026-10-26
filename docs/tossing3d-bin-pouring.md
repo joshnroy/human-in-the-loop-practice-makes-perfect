@@ -40,6 +40,10 @@ skill is disabled, and pouring is appended after the existing skills so it does
 not reseed their priors. Historical planner-value tests explicitly disable pouring
 to retain the action library their pinned values describe. Pouring-enabled tests
 continue to offer both pick and pour.
+Existing packaged DP priors predate pouring and do not calibrate it. Their
+coverage guard continues to reject a pouring-enabled DP launch until an independent
+pouring prior is supplied; no measured prior is fabricated by this change. The
+six-arm EES/expectimax/Curtis launch does not use those DP priors.
 
 The skill uses action ID 4 with four unused zero parameter slots. Its symbolic
 success moves the cube out of the bin, puts it on the floor on the robot's side,
