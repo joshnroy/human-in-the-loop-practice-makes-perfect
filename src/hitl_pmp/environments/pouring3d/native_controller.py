@@ -1,7 +1,7 @@
-"""Bounded Cartesian skills executed exclusively through native KinDER motors.
+"""Bounded Cartesian robot skills through native KinDER motors.
 
-IK writes only a separate MjData. Live robot, vessel, and cube poses are read-only
-to this controller; retained grasps and successful transfer are physical outcomes.
+IK writes only a separate MjData. Robot skills use motor actions and contacts.
+Human intervention is handled separately by Environment.reset_movables().
 """
 
 from collections.abc import Callable
@@ -14,7 +14,7 @@ from scipy.spatial.transform import Rotation
 
 
 class PourParameters(BaseModel):
-    offset_x: float = Field(default=0.055, ge=-0.4, le=0.4, allow_inf_nan=False)
+    offset_x: float = Field(default=0.0, ge=-0.4, le=0.4, allow_inf_nan=False)
     offset_y: float = Field(default=0.0, ge=-0.4, le=0.4, allow_inf_nan=False)
     angle: float = Field(default=145.0, ge=0, le=150, allow_inf_nan=False)
     tilt_seconds: float = Field(default=10.0, ge=2, le=15, allow_inf_nan=False)
@@ -202,7 +202,9 @@ class NativePouringController(BaseModel):
             self.callback(controller=self)
         if self.held == "pitcher":
             self.lost_contacts = (
-                self.lost_contacts + 1 if len(self.finger_contacts(name="pitcher")) < 2 else 0
+                self.lost_contacts + 1
+                if len(self.finger_contacts(name="pitcher", handle_only=True)) < 2
+                else 0
             )
             position, _ = self.body_pose(name="pitcher")
             hand, _ = self.hand_pose()
@@ -264,8 +266,17 @@ class NativePouringController(BaseModel):
         if grip is not None:
             self.grip = grip
 
-    def finger_contacts(self, *, name: str) -> set[str]:
+    def finger_contacts(self, *, name: str, handle_only: bool = False) -> set[str]:
         contacts = self.scene.get_gripper_object_contacts(name)
+        if handle_only:
+            contacts = [
+                contact
+                for contact in contacts
+                if any(
+                    str(contact.get(key, "")).startswith(f"{name}_handle_")
+                    for key in ("geom1", "geom2")
+                )
+            ]
         return {
             side
             for side in ("left", "right")
@@ -280,32 +291,44 @@ class NativePouringController(BaseModel):
             raise ValueError("Pitcher pick requires a ready five-cube scene")
         self.move_base(target=self.base_home, phase="approach pitcher base", seconds=4)
         origin, rotation = self.body_pose(name="pitcher")
-        # A top-down rim pinch leaves the closed handle loop outside the hand.
-        # Both pads must contact the physical wall before lifting.
-        down = Rotation.from_euler("y", np.pi)
+        # Pinch the open handle across its width. The 40 mm site offset puts
+        # the physical finger pads around the upper grip, not around the rim.
+        upright = Rotation.from_euler("y", np.pi)
+        down = Rotation.from_euler("z", -np.pi / 2) * upright
         geometry = self.scene.get_object("pitcher")
-        handle = origin + rotation.apply([
-            -geometry.length / 2 + geometry.wall_thickness / 2,
-            0,
-            geometry.height - 0.03,
-        ])
+        handle = origin + rotation.apply(geometry.handle_grasp_position) + [0, 0, 0.04]
         self.move(
             phase="approach pitcher",
+            position=handle + [0, 0, 0.25],
+            rotation=upright,
+            seconds=8,
+            grip=0,
+        )
+        self.move(
+            phase="align fingers across handle",
             position=handle + [0, 0, 0.25],
             rotation=down,
             seconds=8,
             grip=0,
         )
-        self.move(phase="descend to pitcher rim", position=handle, rotation=down, seconds=3, grip=0)
-        self.pause(phase="close fingers on pitcher rim", seconds=2, grip=1)
-        if len(self.finger_contacts(name="pitcher")) != 2:
-            raise ValueError("Pitcher rim grasp lacks contact on both fingers")
         self.move(
-            phase="lift pitcher", position=handle + [0, 0, 0.28], rotation=down, seconds=4, grip=1
+            phase="descend to pitcher handle", position=handle, rotation=down, seconds=4, grip=0
+        )
+        self.pause(phase="close fingers on pitcher handle", seconds=3, grip=1)
+        if len(self.finger_contacts(name="pitcher", handle_only=True)) != 2:
+            raise ValueError("Pitcher handle grasp lacks handle contact on both fingers")
+        self.move(
+            phase="lift pitcher by handle",
+            position=handle + [0, 0, 0.28],
+            rotation=down,
+            seconds=6,
+            grip=1,
         )
         position, actual_rotation = self.body_pose(name="pitcher")
         if position[2] < origin[2] + 0.20:
             raise ValueError("Pitcher grasp did not lift the physical vessel")
+        if len(self.finger_contacts(name="pitcher", handle_only=True)) != 2:
+            raise ValueError("Handle grasp was not retained through the lift")
         self.held = "pitcher"
         hand, orientation = self.hand_pose()
         self.hand_offset = actual_rotation.inv().apply(hand - position)
@@ -338,10 +361,13 @@ class NativePouringController(BaseModel):
             seconds=5,
         )
         self.posture_goal = 1.0
+        # Face the physical +x spout along world +y while upright. This keeps
+        # the full handle-held tilt inside the arm's reachable orientation range.
+        upright = Rotation.from_euler("z", np.pi / 2)
         self.move(
             phase="transport pour pivot above tray",
             position=target,
-            rotation=self.rotation_offset,
+            rotation=upright * self.rotation_offset,
             seconds=5,
             grip=1,
         )
@@ -350,8 +376,8 @@ class NativePouringController(BaseModel):
         for angle in np.linspace(
             0, parameters.angle, round(parameters.tilt_seconds * self.frequency) + 1
         )[1:]:
-            orientation = Rotation.from_rotvec(
-                np.array([-1.0, 0.45, 0.0]) / np.sqrt(1.2025) * np.deg2rad(angle)
+            orientation = (
+                Rotation.from_rotvec(np.array([-1.0, 0.0, 0.0]) * np.deg2rad(angle)) * upright
             )
             self.phase = "tilt pitcher"
             q = self.inverse_kinematics(
@@ -362,8 +388,8 @@ class NativePouringController(BaseModel):
         for angle in np.linspace(
             parameters.angle, 0, round(parameters.tilt_seconds * self.frequency) + 1
         )[1:]:
-            orientation = Rotation.from_rotvec(
-                np.array([-1.0, 0.45, 0.0]) / np.sqrt(1.2025) * np.deg2rad(angle)
+            orientation = (
+                Rotation.from_rotvec(np.array([-1.0, 0.0, 0.0]) * np.deg2rad(angle)) * upright
             )
             self.phase = "return upright"
             q = self.inverse_kinematics(
@@ -469,6 +495,9 @@ class NativePouringController(BaseModel):
 
             yaw = max(candidates, key=grasp_score)
         down = Rotation.from_euler("z", yaw) * Rotation.from_euler("y", np.pi)
+        # A fully open 85 mm gripper sweeps neighbouring 20 mm cubes aside.
+        # Preclose above the pile, leaving clearance around the selected cube.
+        pregrip = 0.7
         self.move_base(
             target=np.array([position[0] - 0.65, position[1], 0]),
             phase="position base for cube pick",
@@ -479,17 +508,18 @@ class NativePouringController(BaseModel):
             position=position + [0, 0, 0.25],
             rotation=down,
             seconds=5,
-            grip=0,
+            grip=pregrip,
         )
         self.move(
             phase="descend to cube",
             position=position + [0, 0, 0.04],
             rotation=down,
             seconds=4,
-            grip=0,
+            grip=pregrip,
         )
+        self.pause(phase="settle cube grasp approach", seconds=1, grip=pregrip)
         self.phase = "grasp cube"
-        for command in np.linspace(0, 1, round(3 * self.frequency) + 1)[1:]:
+        for command in np.linspace(pregrip, 1, round(3 * self.frequency) + 1)[1:]:
             self.motor_step(target_q=self.last_q, grip=float(command))
         self.pause(phase="retain cube grasp", seconds=1, grip=1)
         if len(self.finger_contacts(name=name)) != 2:
@@ -529,111 +559,6 @@ class NativePouringController(BaseModel):
         if not self.scene.cube_in_vessel(name, "pitcher"):
             raise ValueError("Released cube did not land in pitcher")
 
-    def human_pour_back(self) -> None:
-        locations = self.scene.cube_locations()
-        if (
-            self.held is not None
-            or "tray" not in locations
-            or any(loc not in {"pitcher", "tray"} for loc in locations)
-            or not self.vessel_home(name="pitcher")
-            or not self.vessel_home(name="tray")
-        ):
-            raise ValueError(
-                "Human pour-back needs tray contents, no spills, vessels home, empty hand"
-            )
-        # An external human applies a bounded wrench to the free tray. No pose,
-        # velocity, contact mask, robot actuator, or cube state is assigned.
-        body = self.model.body("tray").id
-        start, start_rotation = self.body_pose(name="tray")
-        pivot = self.home + [0, 0, 0.35]
-        corner = np.array([0.20, 0.17, 0.075])
-        up = pivot - corner
-        self.phase = "human tray lift"
-
-        import mujoco
-
-        previous_callback = mujoco.get_mjcb_control()
-        target_position = start.copy()
-        target_rotation = start_rotation
-
-        def apply_human_wrench(model: Any, data: Any) -> None:  # noqa: PLR0917
-            if previous_callback is not None:
-                previous_callback(model, data)
-            actual = data.xpos[body]
-            orient = Rotation.from_matrix(data.xmat[body].reshape(3, 3))
-            velocity = np.zeros(6)
-            mujoco.mj_objectVelocity(model, data, mujoco.mjtObj.mjOBJ_BODY, body, velocity, 0)
-            force = (
-                100 * (target_position - actual)
-                - 12 * velocity[3:]
-                - model.body_mass[body] * model.opt.gravity
-            )
-            torque = 4 * (target_rotation * orient.inv()).as_rotvec() - 0.3 * velocity[:3]
-            data.xfrc_applied[body, :3] = np.clip(force, -30, 30)
-            data.xfrc_applied[body, 3:] = np.clip(torque, -2, 2)
-
-        def follow(*, position: np.ndarray, rotation: Rotation) -> None:
-            nonlocal target_position, target_rotation
-            target_position = position
-            target_rotation = rotation
-            self.motor_step(target_q=self.last_q, grip=0)
-
-        def segment(
-            *, position: np.ndarray, rotation: Rotation, seconds: float, phase: str
-        ) -> None:
-            self.phase = phase
-            origin, orient = self.body_pose(name="tray")
-            relative = (rotation * orient.inv()).as_rotvec()
-            count = round(seconds * self.frequency)
-            for index in range(1, count + 1):
-                u = index / count
-                u = u * u * (3 - 2 * u)
-                follow(
-                    position=origin + u * (position - origin),
-                    rotation=Rotation.from_rotvec(u * relative) * orient,
-                )
-
-        mujoco.set_mjcb_control(apply_human_wrench)
-        try:
-            segment(
-                position=start + [0, 0, 0.4],
-                rotation=start_rotation,
-                seconds=8,
-                phase="human lift tray",
-            )
-            segment(
-                position=up,
-                rotation=Rotation.identity(),
-                seconds=10,
-                phase="human position tray corner above pitcher",
-            )
-            axis = np.array([-1.0, 1.0, 0.0]) / np.sqrt(2)
-            for angles, phase in [
-                (np.linspace(0, 160, 201)[1:], "human pour tray"),
-                (np.full(60, 160.0), "human hold tray pour"),
-                (np.linspace(160, 0, 201)[1:], "human return tray upright"),
-            ]:
-                self.phase = phase
-                for angle in angles:
-                    rotation = Rotation.from_rotvec(axis * np.deg2rad(angle))
-                    follow(position=pivot - rotation.apply(corner), rotation=rotation)
-            segment(
-                position=start + [0, 0, 0.4],
-                rotation=start_rotation,
-                seconds=10,
-                phase="human return tray above home",
-            )
-            segment(
-                position=start + [0, 0, 0.005],
-                rotation=start_rotation,
-                seconds=8,
-                phase="human lower tray",
-            )
-        finally:
-            mujoco.set_mjcb_control(previous_callback)
-            self.data.xfrc_applied[body] = 0
-        self.pause(phase="settle after human reset", seconds=3, grip=0)
-
     def run_skill(
         self, *, skill: str, parameters: PourParameters | None = None, cube: int = 0
     ) -> dict[str, Any]:
@@ -661,9 +586,6 @@ class NativePouringController(BaseModel):
             elif skill == "DropCubeIntoPitcher":
                 self.drop_cube(cube=cube)
                 success = self.scene.cube_in_vessel(f"cube_{cube}", "pitcher")
-            elif skill == "HumanPourBack":
-                self.human_pour_back()
-                success = self.ready()
             elif skill == "Wait":
                 self.pause(phase="wait", seconds=1)
                 success = True

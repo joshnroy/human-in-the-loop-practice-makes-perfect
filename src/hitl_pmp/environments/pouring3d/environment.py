@@ -35,6 +35,7 @@ class PouringEnvironment(Environment):
         "Wait",
     )
     seed: int = 0
+    scene_bg: bool = True
     sim: Any = None
     world: Object | None = None
     last_info: dict[str, Any] = Field(default_factory=dict)
@@ -44,7 +45,7 @@ class PouringEnvironment(Environment):
 
         if self.sim is not None:
             self.sim.close()
-        self.sim = PouringSimulation.create(seed=self.seed)
+        self.sim = PouringSimulation.create(seed=self.seed, scene_bg=self.scene_bg)
         arrays = self.state_arrays()
         features = tuple(
             f"{name}_{i}" for name, values in arrays.items() for i in range(len(values))
@@ -104,6 +105,10 @@ class PouringEnvironment(Environment):
         if values[0] != int(values[0]) or values[1] != int(values[1]):
             raise ValueError("Skill and cube IDs must be integers")
         skill = self.skill_names[int(values[0])]
+        if skill == "HumanPourBack":
+            raise ValueError(
+                "Human reset uses HumanOracle.execute_movables_reset, not a robot action"
+            )
         self.last_info = self.sim.execute(
             skill=skill,
             cube=int(values[1]),
@@ -123,20 +128,34 @@ class PouringEnvironment(Environment):
     def get_valid_actions(self) -> list[Action]:
         candidates = [self.noop_action()]
         for skill_id, skill in enumerate(self.skill_names[:-1]):
+            if skill == "HumanPourBack":
+                continue
             for cube in range(5) if skill_id in {3, 4, 6} else [0]:
                 try:
                     self.sim.check_preconditions(skill=skill, cube=cube, parameters={})
                 except ValueError:
                     continue
-                candidates.append(np.array([skill_id, cube, 145, 0.055, 0, 10, 4], dtype=float))
+                candidates.append(np.array([skill_id, cube, 145, 0, 0, 10, 4], dtype=float))
         return candidates
 
     def noop_action(self) -> Action:
-        return np.array([7, 0, 145, 0.055, 0, 10, 4], dtype=float)
+        return np.array([7, 0, 145, 0, 0, 10, 4], dtype=float)
 
     def set_state(self, *, state: State) -> None:
         del state
         raise NotImplementedError("Arbitrary state restoration is not a physical pouring reset")
+
+    def reset_movables(self, *, destination: str | None = None) -> bool:
+        """Human-only cube respawn, through the shared HumanOracle interface.
+
+        As in SweepOffShelf3D, preserve the robot, vessels, simulation time, and
+        accumulated robot costs. The harness/provider prices this intervention.
+        """
+        if destination not in {None, "reset_cubes"}:
+            raise ValueError(f"Unknown human reset destination {destination!r}")
+        self.last_info = self.sim.reset_payload()
+        self.current_state = self.observe()
+        return True
 
     def cost_observation(self) -> Any:
         return {
