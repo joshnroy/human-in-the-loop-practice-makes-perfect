@@ -10,6 +10,7 @@ the skill instructs people to trust it.
 """
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -19,6 +20,33 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = REPO_ROOT / "scripts" / "with_env.sh"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_python_temporaries_use_disk_storage_from_any_working_directory(*, tmp_path, explicit):
+    conda_sh = tmp_path / "conda.sh"
+    conda_sh.write_text("conda() { return 0; }\n")
+    environment = {**os.environ, "CONDA_SH": str(conda_sh)}
+    environment.pop("HITL_PMP_TMPDIR", None)
+    expected = REPO_ROOT / "artifacts/tmp"
+    if explicit:
+        expected = tmp_path / "gpfs scratch"
+        environment["HITL_PMP_TMPDIR"] = str(expected)
+    code = (
+        "import json,os,tempfile; "
+        "print(json.dumps([os.environ[k] for k in ('TMP','TMPDIR','TEMP')]"
+        "+[tempfile.gettempdir()]))"
+    )
+    result = subprocess.run(
+        [str(WRAPPER), sys.executable, "-c", code],
+        cwd="/",
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == [str(expected)] * 4
+
 
 # The same locations the wrapper itself probes. CI installs with plain pip and has
 # no conda at all, so the tests that actually execute the wrapper skip there --

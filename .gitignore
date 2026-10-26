@@ -250,3 +250,5 @@ scratch/
 
 # Skill benchmark reports (hitl_pmp/launch_gate.py): a report names its own commit.
 benchmark-reports/
+# Disk-backed temporary files created by scripts/with_env.sh.
+/artifacts/tmp/
