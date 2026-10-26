@@ -47,6 +47,7 @@ class DpGurobiAllocator:
         costs: Mapping[SkillKey, float],
         budget: float,
         time_limit: float = 60.0,
+        groups: Mapping[SkillKey, SkillKey] | None = None,
     ) -> DpAllocationResult[SkillKey]:
         try:
             import gurobipy as gp
@@ -58,14 +59,27 @@ class DpGurobiAllocator:
         for skill, cost in costs.items():
             if not math.isfinite(cost) or cost <= 0:
                 raise ValueError(f"invalid DP cost for {skill!r}")
-        skills = list(dict.fromkeys([*(edge.skill for edge in mdp.transitions), *costs]))
+        identities = groups if groups is not None else {}
+        skills = list(
+            dict.fromkeys([
+                *(edge.skill for edge in mdp.transitions),
+                *(costs if groups is None else competences),
+            ])
+        )
         for skill in skills:
             if skill not in competences or skill not in learning_rates:
                 raise ValueError(f"no competence or learning rate for {skill!r}")
             if not 0 <= competences[skill] <= 1 or not math.isfinite(learning_rates[skill]):
                 raise ValueError(f"invalid competence or learning rate for {skill!r}")
         started = time.monotonic()
-        relevant = mdp.relevant_skills()
+        limits = DpAllocator._allocation_limits(
+            mdp=mdp,
+            competences=competences,
+            learning_rates=learning_rates,
+            costs=costs,
+            budget=budget,
+            groups=groups,
+        )
         with gp.Env(empty=True) as environment:
             environment.setParam("OutputFlag", 0)
             environment.start()
@@ -77,27 +91,32 @@ class DpGurobiAllocator:
                 model.Params.MIPGapAbs = 1e-9
                 model.Params.FeasibilityTol = 1e-9
                 model.Params.IntFeasTol = 1e-9
-                counts = {}
+                counts = {
+                    group: model.addVar(
+                        lb=0, ub=limits[group], vtype=gp.GRB.INTEGER, name=f"b_{index}"
+                    )
+                    for index, group in enumerate(costs)
+                }
                 probabilities = {}
                 maximum_competences = {}
                 for index, skill in enumerate(skills):
                     competence = competences[skill]
                     rate = learning_rates[skill]
-                    limit = 0
-                    if skill in costs and skill in relevant:
-                        limit = DpAllocator._useful_attempts(
-                            competence=competence,
-                            learning_rate=rate,
-                            affordable=max(0, math.floor(budget / costs[skill] + 1e-9)),
-                        )
-                    maximum_competences[skill] = min(1.0, competence + rate * limit)
-                    count = model.addVar(lb=0, ub=limit, vtype=gp.GRB.INTEGER, name=f"b_{index}")
-                    counts[skill] = count
+                    group = identities.get(skill, skill)
+                    limit = limits.get(group, 0)
+                    maximum_competences[skill] = min(1.0, competence + max(0.0, rate) * limit)
                     probability = model.addVar(lb=0, ub=1, name=f"p_{index}")
                     if limit:
-                        raw = model.addVar(lb=competence, ub=competence + rate * limit)
-                        model.addConstr(raw == competence + rate * count)
-                        model.addGenConstrMin(probability, [raw], constant=1.0)
+                        lower = min(competence, competence + rate * limit)
+                        upper = max(competence, competence + rate * limit)
+                        raw = model.addVar(lb=lower, ub=upper)
+                        model.addConstr(raw == competence + rate * counts[group])
+                        if lower < 0:
+                            capped = model.addVar(lb=lower, ub=min(1.0, upper))
+                            model.addGenConstrMin(capped, [raw], constant=1.0)
+                            model.addGenConstrMax(probability, [capped], constant=0.0)
+                        else:
+                            model.addGenConstrMin(probability, [raw], constant=1.0)
                     else:
                         model.addConstr(probability == competence)
                     probabilities[skill] = probability
@@ -154,6 +173,7 @@ class DpGurobiAllocator:
                     competences=competences,
                     learning_rates=learning_rates,
                     allocation=primary_allocation,
+                    groups=groups,
                 )
                 theoretical_bound, _ = mdp.solve(competences=maximum_competences)
                 bound = min(model.ObjBound, theoretical_bound)
@@ -194,6 +214,7 @@ class DpGurobiAllocator:
                         competences=competences,
                         learning_rates=learning_rates,
                         allocation=allocation,
+                        groups=groups,
                     )
                     spent = sum(costs[skill] * count for skill, count in allocation.items())
                     over_budget = spent > max(0, budget) + 1e-7

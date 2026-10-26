@@ -36,11 +36,12 @@ SIMULATOR_PINS = {
 
 class Tossing3DDpPriors:
     @staticmethod
-    def open_protocol() -> dict:
+    def open_protocol(*, enable_bin_pouring: bool = True) -> dict:
         return {
             "environment": "tossing3d",
             "layout": "barrier",
             "variant": "o1",
+            "enable_bin_pouring": enable_bin_pouring,
             "probes_per_seed": PROBES,
             "scene_rng_stream": 900003,
             "setup": "shared PickCube controller then reset_movables; verify ClosedEmpty",
@@ -50,7 +51,7 @@ class Tossing3DDpPriors:
         }
 
     @staticmethod
-    def collect_open(*, seed: int, output: Path) -> dict:
+    def collect_open(*, seed: int, output: Path, enable_bin_pouring: bool = True) -> dict:
         if seed not in (*FIT_SEEDS, *VALIDATION_SEEDS):
             raise ValueError("prior calibration requires a reserved fit or validation seed")
         for package, expected in SIMULATOR_PINS.items():
@@ -58,7 +59,7 @@ class Tossing3DDpPriors:
             if dirty or actual != expected:
                 raise ValueError(f"OpenGripper probe simulator mismatch: {package}")
         output.mkdir(parents=True, exist_ok=False)
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(enable_bin_pouring=enable_bin_pouring)
         provider = Tossing3DSkillProvider(env=env)
         method = EesMethod(env=env, skill_provider=provider, seed=seed)
         pick = GroundSkill(
@@ -71,10 +72,11 @@ class Tossing3DDpPriors:
         metadata = {
             "seed": seed,
             "split": "fit" if seed in FIT_SEEDS else "validation",
-            "protocol": Tossing3DDpPriors.open_protocol(),
+            "protocol": Tossing3DDpPriors.open_protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "config_snapshot": ConfigSnapshot.collect(
-                args=argparse.Namespace(seed=seed), fd_exec_path=None
+                args=argparse.Namespace(seed=seed, enable_bin_pouring=enable_bin_pouring),
+                fd_exec_path=None,
             ).model_dump(),
             "complete": False,
         }
@@ -180,11 +182,12 @@ class Tossing3DDpPriors:
         }
 
     @staticmethod
-    def protocol() -> dict:
+    def protocol(*, enable_bin_pouring: bool = True) -> dict:
         return {
             "environment": "tossing3d",
             "layout": "barrier",
             "variant": "o1",
+            "enable_bin_pouring": enable_bin_pouring,
             "checkpoints": list(CHECKPOINTS),
             "probes_per_checkpoint": PROBES,
             "refit_interval_target_rollouts": REFIT_INTERVAL,
@@ -199,11 +202,11 @@ class Tossing3DDpPriors:
         }
 
     @staticmethod
-    def collect(*, seed: int, output: Path) -> dict:
+    def collect(*, seed: int, output: Path, enable_bin_pouring: bool = True) -> dict:
         if seed not in (*FIT_SEEDS, *VALIDATION_SEEDS):
             raise ValueError("prior calibration requires a reserved fit or validation seed")
         output.mkdir(parents=True, exist_ok=False)
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(enable_bin_pouring=enable_bin_pouring)
         provider = Tossing3DSkillProvider(env=env)
         learner = EesMethod(
             env=env,
@@ -226,10 +229,11 @@ class Tossing3DDpPriors:
         metadata = {
             "seed": seed,
             "split": "fit" if seed in FIT_SEEDS else "validation",
-            "protocol": Tossing3DDpPriors.protocol(),
+            "protocol": Tossing3DDpPriors.protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "config_snapshot": ConfigSnapshot.collect(
-                args=argparse.Namespace(seed=seed), fd_exec_path=None
+                args=argparse.Namespace(seed=seed, enable_bin_pouring=enable_bin_pouring),
+                fd_exec_path=None,
             ).model_dump(),
             "complete": False,
         }
@@ -343,7 +347,7 @@ class Tossing3DDpPriors:
         return True
 
     @staticmethod
-    def fit(*, root: Path, open_root: Path | None = None) -> dict:
+    def fit(*, root: Path, open_root: Path | None = None, enable_bin_pouring: bool = True) -> dict:
         if open_root is None:
             raise ValueError("OpenGripper requires independent ClosedEmpty competence probes")
         runs: list[dict] = []
@@ -361,7 +365,9 @@ class Tossing3DDpPriors:
             current.pop(driver)
             if recorded != current:
                 raise ValueError("stale shared-learner or simulator source")
-            if metadata["protocol"] != Tossing3DDpPriors.protocol():
+            if metadata["protocol"] != Tossing3DDpPriors.protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ):
                 raise ValueError("mismatched prior calibration protocol")
             snapshot = metadata["config_snapshot"]
             if (
@@ -472,10 +478,20 @@ class Tossing3DDpPriors:
                 },
             }
         open_prior, open_diagnostics, open_hashes = Tossing3DDpPriors.fit_open(
-            root=open_root, numerical_stack=next(iter(stacks))
+            root=open_root,
+            numerical_stack=next(iter(stacks)),
+            enable_bin_pouring=enable_bin_pouring,
         )
         skills[OPEN] = open_prior
         diagnostics[OPEN] = open_diagnostics
+        provider = Tossing3DSkillProvider(
+            env=Tossing3DEnvironment(enable_bin_pouring=enable_bin_pouring)
+        )
+        names = {skill.name for skill in provider.skills()}
+        if missing := names - set(skills):
+            raise ValueError(f"robot skills lack calibrated DP priors: {sorted(missing)}")
+        if unknown := set(skills) - names:
+            raise ValueError(f"calibrated skills absent from this domain: {sorted(unknown)}")
         passed = all(
             item["validation_brier"] <= item["old_defaults_validation_brier"]
             for item in diagnostics.values()
@@ -485,16 +501,19 @@ class Tossing3DDpPriors:
             "environment": "tossing3d",
             "layout": "barrier",
             "variant": "o1",
+            "enable_bin_pouring": enable_bin_pouring,
             "skills": skills,
             "diagnostics": diagnostics,
             "validation_passed": passed,
             "fit_seeds": list(FIT_SEEDS),
             "validation_seeds": list(VALIDATION_SEEDS),
-            "protocol": Tossing3DDpPriors.protocol(),
+            "protocol": Tossing3DDpPriors.protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "collection_driver_sha256": sorted(collector_hashes),
             "open_gripper_collection_driver_sha256": open_hashes,
-            "open_gripper_protocol": Tossing3DDpPriors.open_protocol(),
+            "open_gripper_protocol": Tossing3DDpPriors.open_protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ),
             "simulator_pins": SIMULATOR_PINS,
             "numerical_stack": dict(
                 zip(
@@ -516,7 +535,7 @@ class Tossing3DDpPriors:
 
     @staticmethod
     def fit_open(
-        *, root: Path, numerical_stack: tuple[str, str, str]
+        *, root: Path, numerical_stack: tuple[str, str, str], enable_bin_pouring: bool = True
     ) -> tuple[dict, dict, list[str]]:
         rows_by_seed = {}
         hashes = set()
@@ -526,7 +545,9 @@ class Tossing3DDpPriors:
             metadata = json.loads((directory / "metadata.json").read_text())
             if not metadata["complete"] or metadata["seed"] != seed:
                 raise ValueError("incomplete or mismatched OpenGripper probe run")
-            if metadata["protocol"] != Tossing3DDpPriors.open_protocol():
+            if metadata["protocol"] != Tossing3DDpPriors.open_protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ):
                 raise ValueError("mismatched OpenGripper probe protocol")
             recorded = dict(metadata["source_sha256"])
             current = Tossing3DDpPriors.source_hashes()
@@ -605,13 +626,29 @@ def main() -> None:
     fit.add_argument("--root", type=Path, required=True)
     fit.add_argument("--output", type=Path, required=True)
     fit.add_argument("--open-root", type=Path, required=True)
+    for command in (collect, collect_open, fit):
+        command.add_argument(
+            "--no-bin-pouring",
+            dest="enable_bin_pouring",
+            action="store_false",
+            default=True,
+            help="Explicitly calibrate the original three robot skills without bin pouring.",
+        )
     args = parser.parse_args()
     if args.command == "collect":
-        Tossing3DDpPriors.collect(seed=args.seed, output=args.output)
+        Tossing3DDpPriors.collect(
+            seed=args.seed, output=args.output, enable_bin_pouring=args.enable_bin_pouring
+        )
     elif args.command == "collect-open":
-        Tossing3DDpPriors.collect_open(seed=args.seed, output=args.output)
+        Tossing3DDpPriors.collect_open(
+            seed=args.seed, output=args.output, enable_bin_pouring=args.enable_bin_pouring
+        )
     else:
-        report = Tossing3DDpPriors.fit(root=args.root, open_root=args.open_root)
+        report = Tossing3DDpPriors.fit(
+            root=args.root,
+            open_root=args.open_root,
+            enable_bin_pouring=args.enable_bin_pouring,
+        )
         args.output.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
         if not report["validation_passed"]:

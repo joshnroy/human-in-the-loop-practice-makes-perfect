@@ -1,6 +1,9 @@
+import itertools
+import json
 import logging
 import math
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -33,6 +36,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import PARAMETERIZED_SKILL, STOP_ONLY_SESSION, STRANDED, AlwaysAskReset
@@ -138,6 +142,10 @@ class EesMethod(Method):
     env: Environment
     skill_provider: SkillProvider
     seed: int = 0
+    competence_sharing: Literal["grounded", "parent", "rate"] = "grounded"
+    practice_groundings: Literal["observed", "all"] = "observed"
+    max_practice_groundings: int = Field(default=10000, ge=1)
+    learning_forecast_log: Path | None = None
 
     # --- EES hyperparameters, defaulted to predicators'/the paper's own values ---
     # CFG.skill_competence_model_lookahead
@@ -325,6 +333,8 @@ class EesMethod(Method):
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
+    _pooled_competence_models: dict[str, OptimisticSkillCompetenceModel] = PrivateAttr()
+    _possible_practice_groundings: tuple[GroundSkill, ...] | None = PrivateAttr(default=None)
     # Per ground skill, one bool per execution regardless of the epsilon-greedy
     # random branch -- predicators' `_ground_op_hist`. Only consulted when
     # `reproduce_predicators_practice_target_history` is on; competence always reads
@@ -382,6 +392,7 @@ class EesMethod(Method):
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
         self._competence_models = {}
+        self._pooled_competence_models = {}
         self._all_attempt_outcomes = {}
         self._samplers = {}
         self._seen_tasks = []
@@ -469,6 +480,65 @@ class EesMethod(Method):
             self._competence_models[ground_skill] = self._new_competence_model()
         return self._competence_models[ground_skill]
 
+    def pooled_competence_model(
+        self, *, ground_skill: GroundSkill
+    ) -> OptimisticSkillCompetenceModel:
+        name = ground_skill.skill.name
+        if name not in self._pooled_competence_models:
+            self._pooled_competence_models[name] = self.competence_model(
+                ground_skill=ground_skill
+            ).model_copy(deep=True, update={"cycle_observations": [[]]})
+        return self._pooled_competence_models[name]
+
+    def forecast_competence_model(
+        self, *, ground_skill: GroundSkill
+    ) -> OptimisticSkillCompetenceModel:
+        if self.competence_sharing == "parent":
+            return self.pooled_competence_model(ground_skill=ground_skill)
+        return self.competence_model(ground_skill=ground_skill)
+
+    def forecast_competence_gain(self, *, ground_skill: GroundSkill) -> float:
+        model = (
+            self.pooled_competence_model(ground_skill=ground_skill)
+            if self.competence_sharing == "rate"
+            else self.forecast_competence_model(ground_skill=ground_skill)
+        )
+        return (
+            model.predict_competence(num_additional_data=self.competence_lookahead)
+            - model.get_current_competence()
+        )
+
+    def all_practice_groundings(self) -> tuple[GroundSkill, ...]:
+        if self._possible_practice_groundings is None:
+            grounds: list[GroundSkill] = []
+            for skill in self.skills():
+                slots = [
+                    [obj for obj in self.objects() if obj.type == variable.type]
+                    for variable in skill.parameters
+                ]
+                for objects in itertools.product(*slots):
+                    if len(grounds) >= self.max_practice_groundings:
+                        raise ValueError("practice grounding enumeration exceeds configured limit")
+                    grounds.append(GroundSkill(skill=skill, objects=tuple(objects)))
+            self._possible_practice_groundings = tuple(grounds)
+        return self._possible_practice_groundings
+
+    def practice_candidates(self) -> list[GroundSkill]:
+        if self.practice_groundings == "all":
+            return list(self.all_practice_groundings())
+        if self.competence_sharing != "grounded":
+            return list(self._all_attempt_outcomes)
+        return list(self._competence_models)
+
+    def practice_alternatives(self, *, ground_skill: GroundSkill) -> list[GroundSkill]:
+        if self.competence_sharing != "grounded" and self.practice_groundings == "all":
+            return [
+                candidate
+                for candidate in self.practice_candidates()
+                if candidate.skill.name == ground_skill.skill.name
+            ]
+        return [ground_skill]
+
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
@@ -493,14 +563,18 @@ class EesMethod(Method):
         """
         self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
         model = self.competence_model(ground_skill=ground_skill)
+        models = [model]
+        if self.competence_sharing != "grounded":
+            models.append(self.pooled_competence_model(ground_skill=ground_skill))
         if self.reproduce_predicators_double_observe:
-            # A deviation from predicators, not a reproduction: see the field.
-            model.observe(success=success)
-            if not was_random_exploration:
-                model.observe(success=success)
+            for history in models:
+                history.observe(success=success)
+                if not was_random_exploration:
+                    history.observe(success=success)
             return
         if not was_random_exploration:
-            model.observe(success=success)
+            for history in models:
+                history.observe(success=success)
 
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
@@ -544,7 +618,10 @@ class EesMethod(Method):
         return {
             ground_skill: model.get_current_competence()
             for ground_skill, model in (
-                *self._competence_models.items(),
+                *(
+                    (ground, self.forecast_competence_model(ground_skill=ground))
+                    for ground in self._competence_models
+                ),
                 *self._human_competence_models.items(),
             )
         }
@@ -555,7 +632,15 @@ class EesMethod(Method):
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
         if self.reproduce_predicators_practice_target_history:
+            if self.competence_sharing != "grounded":
+                return sum(
+                    len(outcomes)
+                    for ground, outcomes in self._all_attempt_outcomes.items()
+                    if ground.skill.name == ground_skill.skill.name
+                )
             return len(self._all_attempt_outcomes.get(ground_skill, []))
+        if self.competence_sharing != "grounded":
+            return self.pooled_competence_model(ground_skill=ground_skill).num_observations
         return self.competence_model(ground_skill=ground_skill).num_observations
 
     def practice_target_total_tries(self) -> int:
@@ -575,9 +660,18 @@ class EesMethod(Method):
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
         if self.reproduce_predicators_practice_target_history:
-            outcomes: list[bool] = self._all_attempt_outcomes.get(ground_skill, [])
+            outcomes: list[bool] = [
+                outcome
+                for ground, history in self._all_attempt_outcomes.items()
+                if ground == ground_skill
+                or (
+                    self.competence_sharing == "parent"
+                    and ground.skill.name == ground_skill.skill.name
+                )
+                for outcome in history
+            ]
         else:
-            model = self.competence_model(ground_skill=ground_skill)
+            model = self.forecast_competence_model(ground_skill=ground_skill)
             outcomes = [outcome for cycle in model.cycle_observations for outcome in cycle]
         if not outcomes:
             return 0.0
@@ -594,9 +688,19 @@ class EesMethod(Method):
     def skill_costs(self) -> dict[GroundSkill, float]:
         """`-log(competence)` per ground skill: summing these over a plan and
         minimizing is exactly maximizing the product of competences."""
+        grounds = (
+            self.all_practice_groundings()
+            if self.competence_sharing != "grounded" or self.practice_groundings == "all"
+            else tuple(self._competence_models)
+        )
         return {
-            ground_skill: -math.log(max(model.get_current_competence(), 1e-12))
-            for ground_skill, model in self._competence_models.items()
+            ground: -math.log(
+                max(
+                    self.forecast_competence_model(ground_skill=ground).get_current_competence(),
+                    1e-12,
+                )
+            )
+            for ground in grounds
         }
 
     # ---------------------------------------------------------------- planning
@@ -665,7 +769,12 @@ class EesMethod(Method):
         # appears; `used[0]` is representative (a second reset back-to-back
         # would itself be pure waste, so at most one is ever load-bearing).
         reset_cost = self.human_skill_cost(ground_skill=used[0])
-        ceiling = max(costs.values(), default=self.default_cost())
+        ceiling_costs = (
+            [costs[ground] for ground in self._all_attempt_outcomes if ground in costs]
+            if self.competence_sharing != "grounded" and self.practice_groundings == "observed"
+            else list(costs.values())
+        )
+        ceiling = max(ceiling_costs, default=self.default_cost())
         if reset_cost <= ceiling:
             return plan
         # DECLINE: re-request with no reset skill offered at all, so a real (possibly
@@ -887,10 +996,16 @@ class EesMethod(Method):
             and self.measured_success_rate(ground_skill=ground_skill) == 1.0
         ):
             return -math.inf
-        model = self.competence_model(ground_skill=ground_skill)
-        extrapolated = model.predict_competence(num_additional_data=self.competence_lookahead)
+        gain = self.forecast_competence_gain(ground_skill=ground_skill)
         costs = self.skill_costs()
-        costs[ground_skill] = -math.log(max(extrapolated, 1e-12))
+        equivalents = (
+            [ground for ground in costs if ground.skill.name == ground_skill.skill.name]
+            if self.competence_sharing != "grounded"
+            else [ground_skill]
+        )
+        for ground in equivalents:
+            current = self.forecast_competence_model(ground_skill=ground).get_current_competence()
+            costs[ground] = -math.log(max(min(1.0, current + gain), 1e-12))
 
         plans = self.planning_progress_plans()
         if not plans:
@@ -922,7 +1037,7 @@ class EesMethod(Method):
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
-        for candidate in list(self._competence_models):
+        for candidate in self.practice_candidates():
             score = self.score_ground_skill(ground_skill=candidate)
             self.record_practice_target(
                 name=candidate.skill.name,
@@ -1080,7 +1195,11 @@ class EesMethod(Method):
     # ---------------------------------------------------------------- lifecycle
 
     def advance_competence_cycle(self) -> None:
-        for model in (*self._competence_models.values(), *self._human_competence_models.values()):
+        for model in (
+            *self._competence_models.values(),
+            *self._human_competence_models.values(),
+            *self._pooled_competence_models.values(),
+        ):
             model.advance_cycle()
 
     def fit_samplers(self) -> None:
@@ -1096,6 +1215,34 @@ class EesMethod(Method):
         self.advance_competence_cycle()
         # Competence has changed, so every cached plan's price is stale.
         self.refresh_planning_progress_plans()
+        if self.learning_forecast_log is not None:
+            JsonlLog.append(
+                path=self.learning_forecast_log,
+                line=json.dumps({
+                    "period": self._practice_periods,
+                    "competence_sharing": self.competence_sharing,
+                    "practice_groundings": self.practice_groundings,
+                    "forecasts": [
+                        {
+                            "skill": ground.skill.name,
+                            "objects": [obj.name for obj in ground.objects],
+                            "ground_observations": model.num_observations,
+                            "pooled_observations": (
+                                self.pooled_competence_model(ground_skill=ground).num_observations
+                                if self.competence_sharing != "grounded"
+                                else None
+                            ),
+                            "competence": self.forecast_competence_model(
+                                ground_skill=ground
+                            ).get_current_competence(),
+                            "optimistic_gain": self.forecast_competence_gain(ground_skill=ground),
+                            "all_attempts": len(self._all_attempt_outcomes.get(ground, [])),
+                        }
+                        for ground, model in self._competence_models.items()
+                    ],
+                })
+                + "\n",
+            )
         # Last, and purely a stamp: every draw recorded from here on belongs to the
         # next cycle. Nothing above depends on it -- see the field's own comment.
         if self.draw_recorder is not None:
@@ -1816,6 +1963,18 @@ class _EesEpisode:
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
                 raise InteractionComplete(planner_stop=True)
+            alternatives = method.practice_alternatives(ground_skill=candidate)
+            if len(alternatives) > 1:
+                flexible_plan = self._flexible_practice_plan(
+                    alternatives=alternatives, true_atoms=true_atoms, starved=starved
+                )
+                if flexible_plan is not None:
+                    target = flexible_plan[-1]
+                    method.record_practice_target(name=target.skill.name, field="selected")
+                    method.begin_practice_attempt(ground_skill=target)
+                    return flexible_plan
+                method.record_practice_target(name=candidate.skill.name, field="unreachable")
+                continue
             if candidate in starved:
                 # Its parameter pool starved at this symbolic state earlier in the
                 # session (see record_starved_parameter_pool); selecting it again
@@ -1853,6 +2012,40 @@ class _EesEpisode:
             logger.debug("_EesEpisode: no reachable practice goal -- random mode")
             self._random_mode = True
         return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
+
+    def _flexible_practice_plan(
+        self,
+        *,
+        alternatives: list[GroundSkill],
+        true_atoms: frozenset[GroundAtom],
+        starved: frozenset[GroundSkill],
+    ) -> list[GroundSkill] | None:
+        method = self._method
+        available = [ground for ground in alternatives if ground not in starved]
+        for ground in available:
+            if ground.preconditions <= true_atoms:
+                return [ground]
+        costs = method.skill_costs()
+        humans = set(method.offered_partial_resets())
+        best: list[GroundSkill] | None = None
+        best_cost = math.inf
+        for ground in available:
+            try:
+                prefix = method.plan_to(
+                    init_atoms=true_atoms, goal=ground.preconditions, costs=costs, practicing=True
+                )
+            except PlanningFailure:
+                continue
+            price = sum(
+                method.human_skill_cost(ground_skill=step)
+                if step in humans
+                else costs.get(step, method.default_cost())
+                for step in prefix
+            )
+            if price < best_cost:
+                best = [*prefix, ground]
+                best_cost = price
+        return best
 
     def _random_initiable_plan(
         self, *, true_atoms: frozenset[GroundAtom], starved: frozenset[GroundSkill]
