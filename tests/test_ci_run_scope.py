@@ -40,7 +40,11 @@ CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 TOSSING3D_JOB = "test-tossing3d"
 FILTER_NAME = "tossing3d"
 # The test directories `test / tossing3d` collects, minus the real-robot one it ignores.
-TOSSING3D_TEST_DIRS = ("tests/environments/tossing3d", "tests/environments/sweepoffshelf3d")
+TOSSING3D_TEST_DIRS = (
+    "tests/environments/tossing3d",
+    "tests/environments/sweepoffshelf3d",
+    "tests/environments/pouring3d",
+)
 IGNORED_TEST_DIR = "tests/environments/tossing3d/real"
 
 
