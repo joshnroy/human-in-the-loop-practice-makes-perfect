@@ -5,6 +5,12 @@ Wood demonstrated all requested counts 1–5 in native KinDER. Foam demonstrated
 Wait. A settled two-cube foam outcome was not found in this bounded search.
 The selected partial-pour recipes vary substantially across starting seeds.
 
+Follow-up on 2026-10-26: the subsequent [centered wiggle diagnostic](2026-10-26-pouring-tilt-wiggle.md)
+found a settled foam two-cube result with its stationary control: 107 degrees,
+10 s outward/return, and a 2 s hold at seed 0, followed by successful placement.
+That follow-up permits 2–10 s settling and is separate from the earlier bounded
+search and frozen checks below. Their published counts remain unchanged.
+
 ![Search outcomes and frozen-recipe checks](../figures/pouring3d-material-feasibility.png)
 
 ## Setup and success criteria
