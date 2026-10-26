@@ -35,6 +35,8 @@ symbolic model describes.
 """
 
 import importlib.util
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -158,8 +160,34 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
         assert not CLOSED_EMPTY.holds(after, (env.robot, env.cube))
         exercised.add(recovery.skill.name)
 
+        # The oracle solve does not visit this in-bin scene. Exercise pouring
+        # even when the current pick controller also has a feasible plan.
+        fixture = Path(__file__).parent / "fixtures/pick_plannable/exp22_A.json"
+        before = env.restore_plain_snapshot(plain=json.loads(fixture.read_text()))
+        atoms = SkillGrounder.abstract_state(
+            state=before, objects=provider.objects(), predicates=provider.predicates()
+        )
+        candidates = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+        assert {"PickCube", "PourCubeOutOfBin"} <= {s.skill.name for s in candidates}
+        pour = next(s for s in candidates if s.skill.name == "PourCubeOutOfBin")
+        after = env.take_action(
+            action=provider.compute_action(
+                ground_skill=pour,
+                params=np.zeros(0),
+                state=before,
+            )
+        )
+        assert env.last_skill_error() is None, env.last_skill_error()
+        assert _changed(before=before, after=after)
+        assert pour.add_effects <= SkillGrounder.abstract_state(
+            state=after, objects=provider.objects(), predicates=provider.predicates()
+        )
+        exercised.add(pour.skill.name)
+
         assert not violations, "\n".join(f"  - {v}" for v in sorted(set(violations)))
-        # The oracle trajectory and closed-empty recovery together cover every skill.
+        # The solve trajectory and the two recovery scenes cover every skill.
         assert exercised == {skill.name for skill in provider.skills()}, (
             f"the walk never reached a state where "
             f"{sorted({s.name for s in provider.skills()} - exercised)} was applicable, so "

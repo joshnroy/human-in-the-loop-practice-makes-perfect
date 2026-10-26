@@ -161,7 +161,11 @@ def make_default_tossing3d_belief(
             }
         )
     beliefs: dict[str, ConcreteSkillBelief] = {}
-    for index, name in enumerate(dict.fromkeys(names)):
+    seed_offsets = {
+        name: index for index, name in enumerate(dict.fromkeys((*domain.prior_seed_order, *names)))
+    }
+    for name in dict.fromkeys(names):
+        index = seed_offsets[name]
         beliefs[name] = (
             create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
             if model is None

@@ -559,7 +559,9 @@ def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
 
     from .observations import HOLDING_ATOMS
 
-    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    # This tests the pick retrieval path in the pour-disabled ablation. With
+    # pouring enabled, EES may legitimately select either feasible action.
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE, enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
     method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
     same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}

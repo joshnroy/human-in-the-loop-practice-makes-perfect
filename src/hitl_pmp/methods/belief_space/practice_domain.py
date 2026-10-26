@@ -27,6 +27,7 @@ from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PICK_SKILLS,
+    POUR_BIN_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
 )
@@ -49,6 +50,10 @@ class PracticeDomain(BaseModel, abc.ABC):
     sampler_skill: str
     # Belief names in prior-seeding order, each with what advances its clock.
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...]
+    # Keep seed slots when an ablation removes a skill from belief_sources.
+    prior_seed_order: tuple[str, ...] = ()
+    # Robot skills that may be disabled by the provider, unlike required skills.
+    optional_skill_names: frozenset[str] = frozenset()
     # Skill name -> the belief it shares.
     shared_beliefs: tuple[tuple[str, str], ...] = ()
     deterministic_skills: frozenset[str] = frozenset()
@@ -109,7 +114,10 @@ class Tossing3DPracticeDomain(PracticeDomain):
         # The human reset is a skill like any other: its promised effects are checked
         # and its competence inferred, so a human whose resets fail is learned.
         (RESET_SKILL, PracticeExampleSource.OUTCOME),
+        # Append new skills so existing skill priors keep their historical seeds.
+        (POUR_BIN_SKILL, PracticeExampleSource.OUTCOME),
     )
+    optional_skill_names: frozenset[str] = frozenset({POUR_BIN_SKILL})
     shared_beliefs: tuple[tuple[str, str], ...] = tuple(
         (name, PICK_SKILL) for name in sorted(PICK_SKILLS - {PICK_SKILL})
     )
@@ -119,6 +127,7 @@ class Tossing3DPracticeDomain(PracticeDomain):
         *PICK_SKILLS,
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
+        POUR_BIN_SKILL,
         RESET_SKILL,
     })
 
@@ -334,9 +343,10 @@ class PracticeDomainWithoutSkills:
 
     @staticmethod
     def keep_offered(*, domain: PracticeDomain, offered: frozenset[str]) -> PracticeDomain:
-        """Drop every human skill the domain models that the method does not offer."""
+        """Drop unavailable human/optional skills; retain required skills for validation."""
         return PracticeDomainWithoutSkills.drop(
-            domain=domain, skill_names=domain.human_skill_names - offered
+            domain=domain,
+            skill_names=(domain.human_skill_names | domain.optional_skill_names) - offered,
         )
 
     @staticmethod
@@ -345,6 +355,8 @@ class PracticeDomainWithoutSkills:
             return domain
         return domain.model_copy(
             update={
+                "prior_seed_order": domain.prior_seed_order
+                or tuple(name for name, _ in domain.belief_sources),
                 "belief_sources": tuple(
                     (name, source)
                     for name, source in domain.belief_sources

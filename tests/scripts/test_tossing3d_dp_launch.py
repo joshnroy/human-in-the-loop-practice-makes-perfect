@@ -26,6 +26,8 @@ def priors(*, tmp_path):
                     "initial_learning_rate": 0.005,
                 },
                 "OpenGripper": {"alpha": 1.9, "beta": 0.1, "initial_learning_rate": 0},
+                # Synthetic launch-fixture coverage, not a measured pouring prior.
+                "PourCubeOutOfBin": {"alpha": 1.9, "beta": 0.1, "initial_learning_rate": 0},
             },
             "fit_seeds": [2000, 2001, 2002],
             "validation_seeds": [2010, 2011, 2012],

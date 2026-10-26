@@ -55,6 +55,9 @@ class Tossing3DRecording:
             canonical_seed=args.canonical_seed,
             seed=args.seed,
             test_env_seed_offset=args.test_env_seed_offset,
+            bin_mass_kg=env.bin_mass_kg,
+            cube_mass_kg=env.cube_mass_kg,
+            enable_bin_pouring=env.enable_bin_pouring,
         )
         return RunRecordWriter(
             output_path=output_path,

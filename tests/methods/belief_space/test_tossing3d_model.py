@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
+    POUR_BIN_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
 )
@@ -948,3 +949,18 @@ def test_search_cost_lookup_renders_each_ground_skill_once(
     assert estimated_action_cost(state=state, action=pick) == 7.25
     assert estimated_action_cost(state=state, action=twin) == 7.25
     assert estimated_action_cost(state=state, action=toss) == unpriced
+
+
+def test_bin_pouring_has_its_own_uncertain_transition_belief() -> None:
+    model = _domain_model()
+    state = make_default_tossing3d_belief(num_particles=32, seed=21)
+    action = _ground_skill(model=model, name=POUR_BIN_SKILL)
+    outcomes = _outcomes(model=model, state=state, name=POUR_BIN_SKILL)
+    assert len(outcomes) == 2
+    assert sum(probability for probability, _, _ in outcomes) == pytest.approx(1.0)
+    assert all(0 < probability < 1 for probability, _, _ in outcomes)
+    assert any(action.add_effects <= atoms for _, _, atoms in outcomes)
+    assert all(
+        next_state.skill_beliefs[TOSS_SKILL] == state.skill_beliefs[TOSS_SKILL]
+        for _, next_state, _ in outcomes
+    )

@@ -72,6 +72,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         Tossing3DSkills.PICK_CUBE,
         Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
         Tossing3DSkills.OPEN_GRIPPER,
+        Tossing3DSkills.POUR_BIN,
     )
     assert set(provider.predicates()) == {
         IN_BIN,

@@ -6,8 +6,10 @@ Everything above it (`environment.py`, `predicates.py`, `skills.py`, `tasks.py`,
 package imports, typechecks and tests on a machine with no MuJoCo -- which CI is, since
 it never installs the optional `tossing3d` extra.
 
-**Nothing here reimplements KINDER.** The simulator, the physics, all four controllers
-and the success criterion are upstream's, driven exactly as upstream's own
+The simulator, physics, standard pick/toss controllers, and scoring criterion are
+upstream's. `BinPourController` adds the local rim-grasp recovery through ordinary
+motor commands; its inverse kinematics uses separate scratch data. The standard
+controllers are driven as upstream's own
 `kinder-models/tests/dynamic3d/tossing/test_tossing_parameterized_skills.py::test_pick_ground_toss`
 drives them. What this module supplies is the translation: a KINDER `ObjectCentricState`
 becomes a `Tossing3DObservation` of plain floats, and a whole *skill* becomes one call.
@@ -90,8 +92,10 @@ renderer for.
 """
 
 import copy
+import json
 import logging
 import os
+import tempfile
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from pathlib import Path
@@ -99,7 +103,7 @@ from types import ModuleType
 from typing import Any, ClassVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
@@ -298,6 +302,10 @@ class KinderBackend(BaseModel):
     pick_plan_cache_size: ClassVar[int] = 4096
 
     task_config_path: Path | None = None
+    # Explicit bin manipulation requires a free joint. False retains the legacy static scene.
+    movable_bin: bool = True
+    bin_mass_kg: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    cube_mass_kg: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
@@ -433,29 +441,7 @@ class KinderBackend(BaseModel):
     def _reset(self, *, seed: int) -> Tossing3DObservation:
         api = self.api()
         if self._raw_env is None:
-            # Registered Tossing3D variants now select their own task JSON by object
-            # count. Custom layouts use the configurable robot environment beneath
-            # that family, retaining its velocity controls and Gymnasium wrappers.
-            env_spec: Any = self.env_id
-            if self.task_config_path is not None:
-                from gymnasium.envs.registration import EnvSpec
-                from kinder.envs.dynamic3d.envs import TidyBot3DConfig
-
-                env_spec = EnvSpec(
-                    id=self.env_id,
-                    entry_point="kinder.envs.dynamic3d.envs:TidyBot3DEnv",
-                    kwargs={
-                        "task_config_path": str(self.task_config_path.resolve()),
-                        "scene_render_camera": "task_view",
-                        "config": TidyBot3DConfig(use_arm_velocities=True),
-                    },
-                )
-            self._raw_env = api.kinder.make(
-                env_spec,
-                render_mode=self.render_mode,
-                scene_bg=self.scene_bg,
-                allow_state_access=self.allow_state_access,
-            )
+            self._raw_env = self._make_scene(api=api)
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))
             if available and self.camera not in available:
@@ -484,6 +470,68 @@ class KinderBackend(BaseModel):
             float(self._state.get(robot, "pos_base_rot")),
         )
         return self.observe()
+
+    def _make_scene(self, *, api: KinderApi) -> Any:
+        """Load the chosen scene with benchmark masses and a movable bin for pouring.
+
+        Keep the upstream task as the source of geometry and placement regions. A
+        temporary JSON is consumed synchronously by make; no reference checkout is edited.
+        """
+        from gymnasium.envs.registration import EnvSpec
+        from kinder.envs.dynamic3d.envs import TidyBot3DConfig
+
+        def make(*, path: Path | None) -> Any:
+            spec: Any = self.env_id
+            if path is not None:
+                spec = EnvSpec(
+                    id=self.env_id,
+                    entry_point="kinder.envs.dynamic3d.envs:TidyBot3DEnv",
+                    kwargs={
+                        "task_config_path": str(path.absolute()),
+                        "scene_render_camera": "task_view",
+                        "config": TidyBot3DConfig(use_arm_velocities=True),
+                    },
+                )
+            return api.kinder.make(
+                spec,
+                render_mode=self.render_mode,
+                scene_bg=self.scene_bg,
+                allow_state_access=self.allow_state_access,
+            )
+
+        package_file = api.kinder.__file__
+        assert package_file is not None
+        path = self.task_config_path or (
+            Path(package_file).parent
+            / "envs"
+            / "dynamic3d"
+            / "tasks"
+            / "Tossing3D"
+            / "Tossing3D-o1.json"
+        )
+        config = json.loads(path.read_text())
+        bin_options = config["objects"]["bin"][self.bin_name]
+        if self.bin_mass_kg is not None:
+            bin_options["mass"] = self.bin_mass_kg
+        bin_options.setdefault("mass", 1.0)
+        if self.movable_bin:
+            bin_options["fixed"] = False
+        for cube_options in config["objects"]["cube"].values():
+            if self.cube_mass_kg is not None:
+                cube_options["mass"] = self.cube_mass_kg
+            cube_options.setdefault("mass", 0.1)
+        # Anonymous memory files avoid consuming shared /tmp quota for every
+        # environment. KINDER consumes the JSON synchronously in this process.
+        if hasattr(os, "memfd_create"):
+            descriptor = os.memfd_create("tossing3d-pour-scene", os.MFD_CLOEXEC)
+            with os.fdopen(descriptor, "w+", encoding="utf-8") as stream:
+                json.dump(config, stream)
+                stream.flush()
+                return make(path=Path(f"/proc/self/fd/{stream.fileno()}"))
+        with tempfile.TemporaryDirectory(prefix="tossing3d-pour-") as directory:
+            generated = Path(directory) / "scene.json"
+            generated.write_text(json.dumps(config))
+            return make(path=generated)
 
     def close(self) -> None:
         """Release the gym env, if one was ever built. Idempotent."""
@@ -1388,6 +1436,16 @@ class KinderBackend(BaseModel):
                 return ControllerRun(steps=step + 1, terminated=failure is None, error=failure)
         return None
 
+    def run_pour_bin(self) -> ControllerRun:
+        """Physically grasp, lift, yaw 90 degrees, roll sideways, and replace the bin."""
+        return self.run_controller(
+            module="tossing",
+            key="pour_bin",
+            object_names=(self.robot_name, self.cube_name, self.bin_name, self.barrier_name),
+            params=np.zeros(0),
+            limit=1200,
+        )
+
     def _ground_controller(
         self,
         *,
@@ -1403,6 +1461,8 @@ class KinderBackend(BaseModel):
         `pick_cube_plan_failure`'s dry run cannot come to differ in their collision
         model: `pick_cube` plans in `_pick_collision_sim(state)` either way.
         """
+        if module == "tossing" and key == "pour_bin":
+            return BinPourController(backend=self)
         api = self.api()
         factory = {
             "tossing": api.tossing_controllers,
@@ -1675,3 +1735,367 @@ class TossSettlingController:
         return self.target is not None and (
             self.stable_ticks >= self.quiet_ticks or self.settle_ticks >= self.limit
         )
+
+
+class BinPourController:
+    """Contact-driven rim grasp and sideways emptying, using only motor actions.
+
+    IK runs in a separate MjData. The live bin and cube are never repositioned or
+    attached to the hand. Loss of the physical grasp or a bad return is a failure.
+    """
+
+    def __init__(self, *, backend: KinderBackend) -> None:
+        self.backend = backend
+        self.phase = "base"
+        self._done = False
+        self._stage = 0
+        self._tick = 0
+        self._settle = 0
+
+    def reset(self, state: Any, params: Any) -> None:  # noqa: PLR0917
+        del params
+        import mujoco
+        from scipy.spatial.transform import Rotation
+
+        self.mujoco = mujoco
+        self.rotation = Rotation
+        b = self.backend
+        self.scene = b._object_centric()
+        sim = self.scene._robot_env.sim
+        self.model, self.data = sim.model.mj_model, sim.data.mj_data
+        self.scratch = mujoco.MjData(self.model)
+        self.site = self.model.site(f"{b.robot_name}_pinch_site").id
+        self.arm_ids = [self.model.joint(f"{b.robot_name}_joint_{i}").id for i in range(1, 8)]
+        self.arm_q = np.array([self.model.jnt_qposadr[j] for j in self.arm_ids])
+        self.arm_v = np.array([self.model.jnt_dofadr[j] for j in self.arm_ids])
+        self.base_q = np.array([
+            self.model.joint(f"{b.robot_name}_joint_{axis}").qposadr[0] for axis in ("x", "y", "th")
+        ])
+        self.bin_body = self.model.body(b.bin_name).id
+        if self.model.body_jntnum[self.bin_body] == 0:
+            raise ValueError("PourCubeOutOfBin requires a movable bin")
+        self.bin_object = state.get_object_from_name(b.bin_name)
+        atoms = b.abstract_atoms(state=state)
+        required = {
+            ("HandEmpty", (b.robot_atom_name,)),
+            ("MovableInGoalRegion", (b.cube_name,)),
+            ("BinOnGround", (b.bin_name,)),
+        }
+        if not required <= atoms:
+            raise ValueError(
+                "PourCubeOutOfBin requires an empty hand, an upright bin, and a cube in the bin"
+            )
+        robot = state.get_object_from_name(b.robot_name)
+        barrier = state.get_object_from_name(b.barrier_name)
+        if (state.get(robot, "pos_base_x") - state.get(barrier, "x")) * (
+            state.get(self.bin_object, "x") - state.get(barrier, "x")
+        ) <= 0:
+            raise ValueError("The bin is across the barrier")
+        self.original_position = self.data.xpos[self.bin_body].copy()
+        self.original_rotation = Rotation.from_quat(self.data.xquat[self.bin_body][[1, 2, 3, 0]])
+        self.bin_yaw = float(self.original_rotation.as_euler("xyz")[2])
+        self.geometry = self.scene.get_object(b.bin_name)
+        self.frequency = self.scene._robot_env.control_frequency
+        self.lower = np.array([
+            self.model.jnt_range[j, 0] if self.model.jnt_limited[j] else -12.0 for j in self.arm_ids
+        ])
+        self.upper = np.array([
+            self.model.jnt_range[j, 1] if self.model.jnt_limited[j] else 12.0 for j in self.arm_ids
+        ])
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        # Choose a reachable approach and a clear quarter-turn before moving.
+        candidates = []
+        for face in range(4):
+            heading = self.bin_yaw + face * np.pi / 2
+            stand = self.original_position[:2] - 0.76 * np.array([np.cos(heading), np.sin(heading)])
+            for turn in (-np.pi / 2, np.pi / 2):
+                clearance = self._sweep_clearance(state=state, stand=stand, turn=turn)
+                if clearance > 0.02:
+                    travel = float(np.linalg.norm(stand - self.data.qpos[self.base_q][:2]))
+                    candidates.append((travel, -clearance, face, heading, turn))
+        failures = []
+        for _, _, face, heading, turn in sorted(candidates):
+            controller = b._ground_controller(
+                module="tossing",
+                key="move_to_target",
+                object_names=(b.robot_name, b.bin_name),
+                state=state,
+            )
+            try:
+                controller.reset(state, np.array([0.76, heading - self.bin_yaw]))
+            except (AssertionError, ValueError) as exc:
+                failures.append(str(exc))
+                continue
+            self.heading, self.turn, self.face = heading, turn, face
+            self.base_controller = controller
+            return
+        raise ValueError(f"No clear bin pouring approach: {failures}")
+
+    def _sweep_clearance(self, *, state: Any, stand: np.ndarray, turn: float) -> float:
+        geometry = self.backend.toss_feasibility_geometry(snapshot=state)
+        if geometry is None:
+            return -np.inf
+        clearance = np.inf
+        radius = float(
+            np.linalg.norm([
+                self.geometry.length / 2,
+                self.geometry.width / 2,
+                self.geometry.height,
+            ])
+        )
+        for angle in np.linspace(0, turn, 17):
+            xy = (
+                stand
+                + self.rotation.from_euler("z", angle).apply(
+                    np.r_[self.original_position[:2] - stand, 0.0]
+                )[:2]
+            )
+            for obstacle in geometry.obstacles:
+                if obstacle.name == self.backend.bin_name:
+                    continue
+                delta = self.rotation.from_euler("z", -obstacle.yaw).apply(
+                    np.r_[xy - np.asarray(obstacle.center), 0.0]
+                )[:2]
+                q = np.abs(delta) - np.array([obstacle.width, obstacle.height]) / 2
+                distance = np.linalg.norm(np.maximum(q, 0)) + min(float(np.max(q)), 0.0)
+                clearance = min(clearance, float(distance - radius))
+        return float(clearance)
+
+    def _start_arm_motion(self) -> None:
+        self.stand = self.data.qpos[self.base_q].copy()
+        span = self.geometry.length if self.face % 2 == 0 else self.geometry.width
+        self.grasp0 = self.original_position + self.rotation.from_euler("z", self.heading).apply([
+            -span / 2 + self.geometry.wall_thickness / 2,
+            0.0,
+            self.geometry.height - 0.03,
+        ])
+        down = self.rotation.from_euler("z", self.heading) * self.rotation.from_euler("y", np.pi)
+        current = (
+            self.data.site_xpos[self.site].copy(),
+            self.rotation.from_matrix(self.data.site_xmat[self.site].reshape(3, 3)),
+            self.stand.copy(),
+        )
+        hover = (self.grasp0 + [0, 0, 0.25], down, self.stand.copy())
+        rim = (self.grasp0, down, self.stand.copy())
+        lifted = self._pose(lift=0.48, yaw=0, roll=0)
+        turned = self._pose(lift=0.48, yaw=self.turn, roll=0)
+        inverted = self._pose(lift=0.48, yaw=self.turn, roll=-np.pi)
+        self.stages = [
+            ("hover", current, hover, 4.0, 0.0),
+            ("descend", hover, rim, 3.0, 0.0),
+            ("close", rim, rim, 2.0, 1.0),
+            ("lift", rim, lifted, 5.0, 1.0),
+            ("turn", lifted, turned, 4.0, 1.0),
+            ("roll", turned, inverted, 6.0, 1.0),
+            ("empty", inverted, inverted, 2.0, 1.0),
+            ("upright", inverted, turned, 6.0, 1.0),
+            ("unturn", turned, lifted, 4.0, 1.0),
+            ("align", lifted, lifted, 4.0, 1.0),
+            ("lower", lifted, rim, 8.0, 1.0),
+            ("open", rim, rim, 1.5, 0.0),
+            ("withdraw", rim, hover, 3.0, 0.0),
+        ]
+        self.phase = "hover"
+        self._stage = self._tick = self._settle = 0
+        self.last_q = self.data.qpos[self.arm_q].copy()
+
+    def _pose(self, *, lift: float, yaw: float, roll: float) -> tuple:
+        rz = self.rotation.from_euler("z", yaw)
+        position = (
+            np.r_[self.stand[:2], 0.0]
+            + rz.apply(self.grasp0 - np.r_[self.stand[:2], 0.0])
+            + [0, 0, lift]
+        )
+        orientation = (
+            rz
+            * self.rotation.from_euler("z", self.heading)
+            * self.rotation.from_euler("x", roll)
+            * self.rotation.from_euler("y", np.pi)
+        )
+        return position, orientation, self.stand + [0, 0, yaw]
+
+    def _ik(self, *, position: np.ndarray, rotation: Any, base: np.ndarray) -> np.ndarray:
+        from scipy.optimize import least_squares
+
+        self.scratch.qpos[:] = self.data.qpos
+        self.scratch.qpos[self.base_q] = base
+
+        def residual(q: np.ndarray) -> np.ndarray:  # noqa: PLR0917 - scipy callback
+            self.scratch.qpos[self.arm_q] = q
+            self.mujoco.mj_forward(self.model, self.scratch)
+            current = self.rotation.from_matrix(self.scratch.site_xmat[self.site].reshape(3, 3))
+            return np.r_[
+                self.scratch.site_xpos[self.site] - position,
+                0.22 * (rotation * current.inv()).as_rotvec(),
+                0.0001 * (q - self.last_q),
+            ]
+
+        fit = least_squares(
+            residual,
+            np.clip(self.last_q, self.lower + 1e-6, self.upper - 1e-6),
+            bounds=(self.lower, self.upper),
+            max_nfev=100,
+        )
+        if np.linalg.norm(residual(fit.x)[:6]) > 0.003:
+            raise ValueError(f"Bin pouring IK failed during {self.phase}")
+        if np.max(np.abs(fit.x - self.last_q)) > 0.5:
+            raise ValueError(f"Bin pouring IK changed branches during {self.phase}")
+        self.last_q = fit.x.copy()
+        return fit.x
+
+    def step(self) -> np.ndarray:
+        if self.phase == "base":
+            if not self.base_controller.terminated():
+                return np.asarray(self.base_controller.step())
+            self._start_arm_motion()
+        name, start, end, seconds, grip = self.stages[self._stage]
+        self.phase = name
+        duration = max(1, round(seconds * self.frequency))
+        self._tick += 1
+        u = min(1.0, self._tick / duration)
+        u = u * u * (3 - 2 * u)
+        # Base rotation carries the arm/bin on a circular arc, rather than a chord.
+        if name in ("turn", "unturn"):
+            angle = self.turn * (u if name == "turn" else 1 - u)
+            position, orientation, base = self._pose(lift=0.48, yaw=angle, roll=0)
+        else:
+            position = (1 - u) * start[0] + u * end[0]
+            relative = (end[1] * start[1].inv()).as_rotvec()
+            orientation = self.rotation.from_rotvec(u * relative) * start[1]
+            base = (1 - u) * start[2] + u * end[2]
+        if name in ("align", "lower"):
+            # A rim contact grasp can shift while rolling. Track the bin's saved
+            # pose using its measured relation to the hand for the return path.
+            bin_start = self.return_start_bin if name == "align" else self.lower_start_bin
+            bin_goal = self.original_position + [0, 0, 0.48 if name == "align" else 0.0]
+            bin_position = (1 - u) * bin_start[0] + u * bin_goal
+            delta = (self.original_rotation * bin_start[1].inv()).as_rotvec()
+            bin_rotation = self.rotation.from_rotvec(u * delta) * bin_start[1]
+            live_bin_rotation = self.rotation.from_quat(
+                self.data.xquat[self.bin_body][[1, 2, 3, 0]]
+            )
+            correction = bin_rotation * live_bin_rotation.inv()
+            position = bin_position + correction.apply(
+                self.data.site_xpos[self.site] - self.data.xpos[self.bin_body]
+            )
+            orientation = correction * self.rotation.from_matrix(
+                self.data.site_xmat[self.site].reshape(3, 3)
+            )
+        previous_q = self.last_q.copy()
+        q = self._ik(position=position, rotation=orientation, base=base)
+        velocity = np.clip((q - previous_q) * self.frequency, -1.0, 1.0)
+        if grip and name != "close":
+            # Upstream compensates the arm's own gravity, but a contact-held bin
+            # is a separate body. Supply its weight and rim-offset moment through
+            # the existing PD position targets, retaining upstream torque limits.
+            jacp = np.zeros((3, self.model.nv))
+            jacr = np.zeros((3, self.model.nv))
+            self.mujoco.mj_jacSite(self.model, self.data, jacp, jacr, self.site)
+            force = -self.model.body_subtreemass[self.bin_body] * self.model.opt.gravity
+            moment = np.cross(
+                self.data.subtree_com[self.bin_body] - self.data.site_xpos[self.site], force
+            )
+            torques = jacp[:, self.arm_v].T @ force + jacr[:, self.arm_v].T @ moment
+            ramp = min(1.0, 4 * u) if name == "lift" else 1.0
+            if name == "lower":
+                ramp *= np.clip(
+                    (self.data.xpos[self.bin_body, 2] - self.original_position[2]) / 0.08,
+                    0.0,
+                    1.0,
+                )
+            q = np.clip(q + ramp * torques / self.scene._robot_env.arm_kp, self.lower, self.upper)
+        current = np.r_[self.data.qpos[self.base_q], self.data.qpos[self.arm_q]]
+        action = np.r_[np.clip(np.r_[base, q] - current, -0.08, 0.08), grip]
+        if self.backend._env.action_space.shape == (18,):
+            action = np.r_[action, velocity]
+        if self._tick >= duration:
+            self._settle += 1
+            # Allow motor tracking to catch up before advancing to the next phase.
+            position_error = np.linalg.norm(self.data.site_xpos[self.site] - end[0])
+            if name in ("align", "lower"):
+                position_error = np.linalg.norm(self.data.xpos[self.bin_body] - bin_goal)
+            tolerance = 0.025 if name == "lower" else 0.018
+            if self._settle >= 10 and (
+                position_error < tolerance or name in ("close", "open", "empty")
+            ):
+                self._finish_stage(name=name)
+            elif self._settle > round(6.0 * self.frequency):
+                raise ValueError(f"Bin pouring failed to reach {name} pose")
+        return action
+
+    def _finish_stage(self, *, name: str) -> None:
+        if name == "unturn":
+            self.last_q = self.data.qpos[self.arm_q].copy()
+            self.return_start_bin = (
+                self.data.xpos[self.bin_body].copy(),
+                self.rotation.from_quat(self.data.xquat[self.bin_body][[1, 2, 3, 0]]),
+            )
+        if name == "align":
+            self.lower_start_bin = (
+                self.data.xpos[self.bin_body].copy(),
+                self.rotation.from_quat(self.data.xquat[self.bin_body][[1, 2, 3, 0]]),
+            )
+        if name == "close":
+            contacts = self.scene.get_gripper_object_contacts(self.backend.bin_name)
+            fingers = {
+                side
+                for side in ("left", "right")
+                if any(
+                    f"_{side}_pad" in str(c.get("geom1")) or f"_{side}_pad" in str(c.get("geom2"))
+                    for c in contacts
+                )
+            }
+            if len(fingers) != 2:
+                raise ValueError("Bin rim grasp did not establish contact on both fingers")
+        if name == "lift" and self.data.xpos[self.bin_body, 2] < self.original_position[2] + 0.35:
+            raise ValueError("Bin rim grasp failed to lift the bin")
+        if name == "empty":
+            local_z = self.rotation.from_quat(self.data.xquat[self.bin_body][[1, 2, 3, 0]]).apply([
+                0,
+                0,
+                1,
+            ])
+            if local_z[2] > -0.9:
+                raise ValueError("Bin did not turn upside down")
+        if (
+            name == "lower"
+            and np.linalg.norm(self.data.xpos[self.bin_body] - self.original_position) > 0.025
+        ):
+            raise ValueError("Bin did not return to its original spot")
+        if name == "lower":
+            placed = (
+                self.data.site_xpos[self.site].copy(),
+                self.rotation.from_matrix(self.data.site_xmat[self.site].reshape(3, 3)),
+                self.stand.copy(),
+            )
+            withdrawn = (placed[0] + [0, 0, 0.25], placed[1], placed[2])
+            self.stages[self._stage + 1] = ("open", placed, placed, 1.5, 0.0)
+            self.stages[self._stage + 2] = ("withdraw", placed, withdrawn, 3.0, 0.0)
+        self._stage += 1
+        self._tick = self._settle = 0
+        if self._stage == len(self.stages):
+            atoms = self.backend.abstract_atoms(state=self.backend.live_state())
+            if ("MovableInGoalRegion", (self.backend.cube_name,)) in atoms:
+                raise ValueError("Cube remains in the bin after pouring")
+            if ("BinOnGround", (self.backend.bin_name,)) not in atoms:
+                raise ValueError("Bin is not upright on the floor after pouring")
+            if (
+                "PickPlannable",
+                (self.backend.robot_atom_name, self.backend.cube_name),
+            ) not in atoms:
+                raise ValueError("Poured cube still has no pick plan")
+            if ("OnGround", (self.backend.cube_name,)) not in atoms:
+                raise ValueError("Poured cube is not resting on the floor")
+            final_rotation = self.rotation.from_quat(self.data.xquat[self.bin_body][[1, 2, 3, 0]])
+            if np.linalg.norm(self.data.xpos[self.bin_body] - self.original_position) > 0.025 or (
+                self.original_rotation * final_rotation.inv()
+            ).magnitude() > np.deg2rad(5):
+                raise ValueError("Released bin is outside its original placement tolerance")
+            self._done = True
+
+    def observe(self, state: Any) -> None:  # noqa: PLR0917
+        if self.phase == "base":
+            self.base_controller.observe(state)
+
+    def terminated(self) -> bool:
+        return self._done

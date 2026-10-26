@@ -9,6 +9,7 @@ PICK_SKILLS = frozenset({
 })
 TOSS_SKILL = "MoveToTossLocationAndToss"
 OPEN_GRIPPER_SKILL = "OpenGripper"
+POUR_BIN_SKILL = "PourCubeOutOfBin"
 RESET_SKILL = "ask_for_reset_cube_bin_only"
 NON_HUMAN_RESET_SKILL = "non_human_reset_cube_bin_only"
 RESET_SKILLS = frozenset({RESET_SKILL, NON_HUMAN_RESET_SKILL})

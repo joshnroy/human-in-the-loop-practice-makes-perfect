@@ -337,13 +337,12 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
-        # A human skill this method does not offer (the always-ask wrapper offers none;
-        # `--no-human-reset` leaves the provider none) is an action the planner can never
-        # take, so a belief over it is dropped rather than the completeness check below
-        # weakened.
+        # Unavailable human and optional robot skills carry no practice belief.
+        # Required skills remain declared so the completeness check can catch a
+        # misconfigured provider. Preserve seed slots across these ablations.
         self.pomdp_domain = PracticeDomainWithoutSkills.keep_offered(
             domain=self.pomdp_domain,
-            offered=frozenset(skill.name for skill in self.human_skills()),
+            offered=frozenset(skill.name for skill in (*self.skills(), *self.human_skills())),
         )
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,

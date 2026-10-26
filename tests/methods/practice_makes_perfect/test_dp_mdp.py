@@ -212,8 +212,9 @@ def test_invalid_probabilities_are_rejected(*, value):
 
 
 @pytest.mark.parametrize("bin_side", Tossing3DSides.objects())
-def test_tossing3d_recovery_route_keeps_every_shared_robot_skill(*, bin_side):
-    env = Tossing3DEnvironment()
+@pytest.mark.parametrize("pouring", [False, True])
+def test_tossing3d_empty_gripper_recovery_route_is_preserved(*, bin_side, pouring):
+    env = Tossing3DEnvironment(enable_bin_pouring=pouring)
     provider = Tossing3DSkillProvider(env=env)
     objects = {
         "robot": env.robot,
@@ -230,9 +231,14 @@ def test_tossing3d_recovery_route_keeps_every_shared_robot_skill(*, bin_side):
         grounds[skill.name] = GroundSkill(
             skill=skill, objects=tuple(bindings[parameter.name] for parameter in skill.parameters)
         )
+    recovery = {"OpenGripper", "PickCube", "MoveToTossLocationAndToss"}
+    # This scene starts with a closed empty hand and the cube outside the bin.
+    # Union only this route's preconditions: including pouring's InBin would
+    # accidentally make the initial scene satisfy the task's goal already.
     initial = frozenset(
         atom
-        for ground in grounds.values()
+        for name, ground in grounds.items()
+        if name in recovery
         for atom in ground.preconditions
         if atom.predicate not in {HAND_EMPTY, HOLDING}
     )
@@ -243,7 +249,7 @@ def test_tossing3d_recovery_route_keeps_every_shared_robot_skill(*, bin_side):
         objects=provider.objects(),
         max_states=20,
     )
-    assert {edge.skill.skill for edge in mdp.transitions} == set(provider.skills())
+    assert {edge.skill.skill.name for edge in mdp.transitions} == recovery
     assert not set(provider.human_cube_bin_reset_skills()) & {
         edge.skill for edge in mdp.transitions
     }
@@ -254,3 +260,27 @@ def test_tossing3d_recovery_route_keeps_every_shared_robot_skill(*, bin_side):
         "PickCube",
         "MoveToTossLocationAndToss",
     ]
+
+
+def test_tossing3d_task_mdp_can_recover_an_unpickable_in_bin_cube_by_pouring():
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env, offer_human_reset=False)
+    pour = next(skill for skill in provider.skills() if skill.name == "PourCubeOutOfBin")
+    grounded = GroundSkill(
+        skill=pour,
+        objects=(env.robot, env.cube, env.bin, env.barrier, Tossing3DSides.robot),
+    )
+    goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
+    mdp = DpTaskModel.build(
+        tasks=[(grounded.preconditions, goal)],
+        skills=provider.skills(),
+        objects=provider.objects(),
+        max_states=20,
+    )
+    assert mdp.solve(competences={edge.skill: 0.5 for edge in mdp.transitions})[0] == pytest.approx(
+        0.25
+    )
+    assert [
+        skill.skill.name
+        for skill in mdp.curriculum(competences={edge.skill: 0.5 for edge in mdp.transitions})
+    ] == ["PourCubeOutOfBin", "PickCube"]
