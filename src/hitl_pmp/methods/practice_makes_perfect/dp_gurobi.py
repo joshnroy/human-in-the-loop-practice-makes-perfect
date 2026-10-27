@@ -4,6 +4,15 @@ The bilinear terms couple predicted skill success with task-policy occupancy.
 An acyclic deterministic policy suffices for nonnegative terminal rewards and
 success-or-absorbing-failure dynamics. Policy ranks exclude circulation, giving
 valid unit occupancy bounds even for the undiscounted success objective.
+
+Task value is nondecreasing in every success probability. When an affine forecast
+stays nonnegative, p <= raw and p <= 1 preserve the maximum task value and the
+least-cost allocations meeting a task-value floor. The probabilities themselves
+need not equal the clipped forecasts: increasing them to those forecasts cannot
+reduce task value or change spend. Forecasts crossing zero still need the lower
+clip, including declining siblings of an improving shared group. This avoids
+numerically fragile MIN equalities near upper saturation without changing either
+optimization objective or the independent certification checks.
 """
 
 import math
@@ -116,7 +125,7 @@ class DpGurobiAllocator:
                             model.addGenConstrMin(capped, [raw], constant=1.0)
                             model.addGenConstrMax(probability, [capped], constant=0.0)
                         else:
-                            model.addGenConstrMin(probability, [raw], constant=1.0)
+                            model.addConstr(probability <= raw)
                     else:
                         model.addConstr(probability == competence)
                     probabilities[skill] = probability

@@ -1,6 +1,8 @@
 """Licensed Gurobi tests; enumeration independently checks the joint optimum."""
 
 import itertools
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -12,6 +14,100 @@ from hitl_pmp.methods.practice_makes_perfect.dp_gurobi import DpGurobiAllocator,
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTransition
 
 gp = pytest.importorskip("gurobipy")
+
+
+@pytest.mark.parametrize("seed", [2, 3])
+def test_shared_cost_period_near_saturation_matches_recorded_problem_enumeration(
+    *, seed, monkeypatch
+):
+    """Reproduce reported diagnostics, without claiming an archived-input replay."""
+    path = Path(__file__).parent / "fixtures" / "tossing3d_shared_cost_period.json"
+    case = next(case for case in json.loads(path.read_text()) if case["seed"] == seed)
+    failure = case["original_failure"]
+    assert failure["phase"] == "primary_independent_verification"
+    assert failure["objective_bound"] - failure["objective"] > 1e-7
+    assert failure["solver_objective"] - failure["objective"] > 1e-7
+    arguments = {**case["arguments"], "mdp": DpMdp[str].model_validate(case["arguments"]["mdp"])}
+    expected = DpAllocator.allocate(**arguments)
+    assert expected == case["expected_allocation"]
+    expected_value = DpAllocator.predicted_success(
+        **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
+        allocation=expected,
+    )
+    expected_spent = sum(arguments["costs"][skill] * count for skill, count in expected.items())
+    require_optimal = DpGurobiAllocator._require_optimal
+    phases = []
+
+    def check_stage(*, model, phase):
+        require_optimal(model=model, phase=phase)
+        phases.append(phase)
+        allocation = {
+            skill: int(round(model.getVarByName(f"b_{index}").X))
+            for index, skill in enumerate(arguments["costs"])
+        }
+        actual = DpAllocator.predicted_success(
+            **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
+            allocation=allocation,
+        )
+        assert actual == pytest.approx(expected_value, abs=1e-8, rel=0)
+        assert (
+            sum(arguments["costs"][skill] * count for skill, count in allocation.items())
+            <= arguments["budget"]
+        )
+        if phase == "task_value":
+            assert model.ModelSense == gp.GRB.MAXIMIZE
+            assert model.ObjVal == pytest.approx(expected_value, abs=1e-7, rel=0)
+            assert model.ObjBound == pytest.approx(expected_value, abs=1e-7, rel=0)
+        else:
+            assert phase == "least_cost_tie_break"
+            assert model.ModelSense == gp.GRB.MINIMIZE
+            assert model.ObjVal == pytest.approx(expected_spent, abs=1e-9, rel=0)
+
+    monkeypatch.setattr(DpGurobiAllocator, "_require_optimal", staticmethod(check_stage))
+    result = DpGurobiAllocator.allocate(**arguments)
+    assert phases == ["task_value", "least_cost_tie_break"]
+    assert result.status == "OPTIMAL"
+    assert result.allocation == expected
+    assert result.objective == pytest.approx(expected_value, abs=1e-12, rel=0)
+    assert result.objective_bound == pytest.approx(expected_value, abs=1e-9, rel=0)
+    assert result.absolute_gap <= 1e-7
+    assert (
+        sum(arguments["costs"][skill] * count for skill, count in result.allocation.items())
+        <= arguments["budget"]
+    )
+
+
+@pytest.mark.parametrize("declining_rate", [-0.05, -0.2, -0.25])
+@pytest.mark.parametrize("budget", [0, 0.45, 0.6, 1.2])
+def test_shared_declining_and_saturated_siblings_match_enumeration(*, declining_rate, budget):
+    arguments = dict(
+        mdp=DpMdp(
+            initial_probabilities={0: 0.7, 1: 0.2, 2: 0.1},
+            terminal_rewards={3: 1},
+            transitions=[
+                DpTransition(state=0, skill="improving", successor=3),
+                DpTransition(state=1, skill="declining", successor=3),
+                DpTransition(state=2, skill="saturated", successor=3),
+            ],
+        ),
+        competences={"improving": 0.2, "declining": 0.8, "saturated": 1.0},
+        learning_rates={"improving": 0.2, "declining": declining_rate, "saturated": 0.1},
+        groups=dict.fromkeys(["improving", "declining", "saturated"], "shared"),
+        costs={"shared": 0.15},
+        budget=budget,
+    )
+    expected = DpAllocator.allocate(**arguments)
+    expected_value = DpAllocator.predicted_success(
+        **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
+        allocation=expected,
+    )
+    result = DpGurobiAllocator.allocate(**arguments)
+    assert result.status == "OPTIMAL"
+    assert result.allocation == expected
+    assert result.objective == pytest.approx(expected_value, abs=1e-9, rel=0)
+    assert result.objective_bound == pytest.approx(expected_value, abs=1e-9, rel=0)
+    assert result.absolute_gap <= 1e-7
+    assert result.allocation["shared"] * arguments["costs"]["shared"] <= budget
 
 
 @pytest.mark.parametrize("seed", range(8))
