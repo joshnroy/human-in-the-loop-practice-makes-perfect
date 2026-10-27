@@ -67,9 +67,7 @@ def test_worker_preserves_both_pinned_simulator_import_paths(*, execution, monke
     original_is_dir = Path.is_dir
     monkeypatch.setattr(Path, "is_dir", lambda self: self in sources or original_is_dir(self))
     with pytest.raises(RuntimeError, match="exec requested"):
-        worker.run_worker(
-            manifest_path=path, sha=manifest["source"]["head"], task=1, size="pilot"
-        )
+        worker.run_worker(manifest_path=path, sha=manifest["source"]["head"], task=1, size="pilot")
     environment = execute.call_args.args[2]
     assert {str(source) for source in sources} <= set(environment["PYTHONPATH"].split(":"))
 
