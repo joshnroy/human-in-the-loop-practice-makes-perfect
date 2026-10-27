@@ -34,6 +34,7 @@ atom mentions two class members; `detect` drops a class otherwise.
 """
 
 from collections.abc import Callable, Iterable
+from typing import cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -45,6 +46,7 @@ from .types.failure_effects import FailureEffectCount
 
 Signature = tuple[object, ...]
 Mapping = dict[Object, Object]
+ConditionalIgnoreSignature = frozenset[tuple[frozenset[GroundAtom], frozenset[str]]]
 
 
 class InterchangeableObjects(BaseModel):
@@ -89,6 +91,11 @@ class InterchangeableObjects(BaseModel):
             atom.predicate.name not in dynamic_predicates
             for skill in applicable
             for effect in skill.conditional_add_effects
+            for atom in effect.conditions
+        ) or any(
+            atom.predicate.name not in dynamic_predicates
+            for skill in applicable
+            for effect in skill.conditional_ignore_effects
             for atom in effect.conditions
         ):
             return none
@@ -254,10 +261,17 @@ class _Renamer(BaseModel):
                 for effect in skill.conditional_add_effects
             ),
             frozenset(p.name for p in skill.ignore_effects),
+            frozenset(
+                (
+                    effect.conditions,
+                    frozenset(predicate.name for predicate in effect.ignore_effects),
+                )
+                for effect in skill.conditional_ignore_effects
+            ),
         )
 
     def rename_signature(self, *, signature: Signature, mapping: Mapping) -> Signature:
-        name, cost, pre, add, delete, conditional, ignore = signature
+        name, cost, pre, add, delete, conditional, ignore, conditional_ignore = signature
         return (
             name,
             cost,
@@ -272,17 +286,23 @@ class _Renamer(BaseModel):
                 for conditions, adds in conditional  # type: ignore[attr-defined]
             ),
             ignore,
+            frozenset(
+                (self.rename_atoms(atoms=conditions, mapping=mapping), predicates)
+                for conditions, predicates in cast(ConditionalIgnoreSignature, conditional_ignore)
+            ),
         )
 
     @staticmethod
     def signature_atoms(*, signature: Signature) -> Iterable[GroundAtom]:
-        _, _, pre, add, delete, conditional, _ = signature
+        _, _, pre, add, delete, conditional, _, conditional_ignore = signature
         yield from pre  # type: ignore[misc]
         yield from add  # type: ignore[misc]
         yield from delete  # type: ignore[misc]
         for conditions, adds in conditional:  # type: ignore[attr-defined]
             yield from conditions
             yield from adds
+        for conditions, _ in cast(ConditionalIgnoreSignature, conditional_ignore):
+            yield from conditions
 
     def record(self, *, record: FailureEffectCount, mapping: Mapping) -> Signature:
         return self.rename_record(

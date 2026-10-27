@@ -104,6 +104,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from typing_extensions import override
 
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
@@ -1482,6 +1483,8 @@ class KinderBackend(BaseModel):
         controller = lifted[key].ground(objects)
         if module == "tossing" and key == "move_to_toss_location_and_toss":
             return TossSettlingController(backend=self, controller=controller)
+        if module == "tossing" and key == "open_gripper":
+            return OpenGripperSettlingController(backend=self, controller=controller)
         return controller
 
     def _pick_collision_sim(self, *, state: Any) -> Any:
@@ -1595,15 +1598,7 @@ class KinderBackend(BaseModel):
         )
 
     def run_open_gripper(self) -> ControllerRun:
-        """`open_gripper` -- upstream's parameterless gripper-open primitive.
-
-        Exists so the robot itself can recover from a near-miss grasp: the gripper can
-        end up commanded closed on nothing (`HandEmpty` False, `Holding` False, since the
-        close never actually caught the cube), and no other operator in this domain's
-        model ever re-opens it -- `MoveToTossLocationAndToss` is the only one that adds
-        `HandEmpty` back, and it requires `Holding`, which is exactly what is missing.
-        `params` is `None` for the same reason as `run_pick_cube`: nothing to sample.
-        """
+        """Open the fingers and wait for any released cube to settle physically."""
         return self.run_controller(
             module="tossing",
             key="open_gripper",
@@ -1735,6 +1730,55 @@ class TossSettlingController:
         return self.target is not None and (
             self.stable_ticks >= self.quiet_ticks or self.settle_ticks >= self.limit
         )
+
+
+class OpenGripperSettlingController(TossSettlingController):
+    """Keep the robot still while opening, then observe a bounded release settle.
+
+    Upstream terminates on the gripper command, not the fingers or cube. The minimum
+    wait lets the fingers move before quiet cube velocities can count as completion.
+    Rest is not a promise of floor placement, a clear grasp, or successful pickup.
+    """
+
+    min_seconds: ClassVar[float] = 0.5
+
+    @override
+    def reset(self, state: Any, params: Any) -> None:
+        super().reset(state, params)
+        robot = state.get_object_from_name(self.backend.robot_name)
+        self.pose_features = (
+            "pos_base_x",
+            "pos_base_y",
+            "pos_base_rot",
+            *(f"pos_arm_joint{index}" for index in range(1, 8)),
+        )
+        self.hold_target = np.array([state.get(robot, name) for name in self.pose_features])
+        robot_env = self.backend._object_centric()._robot_env
+        self.hold_delta = robot_env.act_delta
+        self.minimum_ticks = max(1, int(np.ceil(self.min_seconds * robot_env.control_frequency)))
+
+    def step(self) -> np.ndarray:
+        super().step()
+        robot = self.state.get_object_from_name(self.backend.robot_name)
+        position = np.array([self.state.get(robot, name) for name in self.pose_features])
+        action = np.r_[self.hold_target - position if self.hold_delta else self.hold_target, 0.0]
+        if self.backend._env.action_space.shape == (18,):
+            action = np.r_[action, np.zeros(7)]
+        return action
+
+    @property
+    def failure(self) -> str | None:
+        failure = getattr(self.controller, "failure", None)
+        if failure is not None:
+            return str(failure)
+        if self.limit and self.settle_ticks >= self.limit and self.stable_ticks < self.quiet_ticks:
+            return "open_gripper_settle_timeout"
+        return None
+
+    def terminated(self) -> bool:
+        if getattr(self.controller, "failure", None) is not None:
+            return bool(self.controller.terminated())
+        return self.settle_ticks >= self.minimum_ticks and super().terminated()
 
 
 class BinPourController:

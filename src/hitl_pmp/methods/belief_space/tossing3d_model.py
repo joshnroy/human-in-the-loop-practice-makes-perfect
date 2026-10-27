@@ -103,21 +103,39 @@ class Tossing3DPracticeModel(BaseModel):
                         for effect in skill.conditional_add_effects
                         for atom in (*effect.conditions, *effect.add_effects)
                     ),
+                    *(
+                        atom
+                        for effect in skill.conditional_ignore_effects
+                        for atom in effect.conditions
+                    ),
                 )
             },
             key=str,
         )
         self._atom_indexes = {atom: index for index, atom in enumerate(relevant_atoms)}
-        self._dynamic_predicates = frozenset(
-            atom.predicate.name
-            for skill in self.ground_skills
-            for atom in (
-                *skill.add_effects,
-                *skill.delete_effects,
-                *(atom for effect in skill.conditional_add_effects for atom in effect.add_effects),
+        self._dynamic_predicates = (
+            frozenset(
+                atom.predicate.name
+                for skill in self.ground_skills
+                for atom in (
+                    *skill.add_effects,
+                    *skill.delete_effects,
+                    *(
+                        atom
+                        for effect in skill.conditional_add_effects
+                        for atom in effect.add_effects
+                    ),
+                )
             )
-        ) | frozenset(
-            predicate.name for skill in self.ground_skills for predicate in skill.ignore_effects
+            | frozenset(
+                predicate.name for skill in self.ground_skills for predicate in skill.ignore_effects
+            )
+            | frozenset(
+                predicate.name
+                for skill in self.ground_skills
+                for effect in skill.conditional_ignore_effects
+                for predicate in effect.ignore_effects
+            )
         )
         self._precondition_masks = tuple(
             self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills

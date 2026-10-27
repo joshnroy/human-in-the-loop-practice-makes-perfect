@@ -1,6 +1,6 @@
-"""Same-side operators: EES plans retrieval from the observed landing state.
+"""Shared same-side operators for retrieval from the observed landing state.
 
-This model is opt-in with the same-side scene. It does not change EES's target
+This model is opt-in with the same-side scene. It does not change a method's target
 selection, invoke a human reset, or prescribe a pick/throw loop.
 """
 
@@ -16,6 +16,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -26,7 +27,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     Tossing3DAtoms,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
-from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills, preserve_nonholding_geometry
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
 ON_BIN_RIM = Predicate(
@@ -66,9 +67,9 @@ class SameSideSkills:
         LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
         LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
     })
-    # Every robot skill needs the bin upright on the floor (see `predicates.BIN_ON_GROUND`).
     _bin_on_ground: ClassVar[LiftedAtom] = LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,))
-    _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+    _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,))
+    _not_held: ClassVar[LiftedAtom] = LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube))
     # All three picks dispatch through the barrier layout's one pick controller, so
     # each requires that its planner finds a plan (see `predicates.PICK_PLANNABLE`).
     _plannable: ClassVar[LiftedAtom] = LiftedAtom(
@@ -80,11 +81,13 @@ class SameSideSkills:
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _rim, _bin_on_ground, _plannable}) | _same_robot_side,
-        add_effects=frozenset({_held}),
+        preconditions=frozenset({_empty, _not_held, _rim, _bin_on_ground, _plannable})
+        | _same_robot_side,
+        add_effects=frozenset({_held, _closed}),
         delete_effects=frozenset({
             _empty,
             _rim,
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
@@ -94,11 +97,13 @@ class SameSideSkills:
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _floor, _bin_on_ground, _plannable}) | _same_robot_side,
-        add_effects=frozenset({_held}),
+        preconditions=frozenset({_empty, _not_held, _floor, _bin_on_ground, _plannable})
+        | _same_robot_side,
+        add_effects=frozenset({_held, _closed}),
         delete_effects=frozenset({
             _empty,
             _floor,
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
@@ -107,27 +112,27 @@ class SameSideSkills:
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _inside, _bin_on_ground, _plannable}) | _same_robot_side,
-        add_effects=frozenset({_held}),
+        preconditions=frozenset({_empty, _not_held, _inside, _bin_on_ground, _plannable})
+        | _same_robot_side,
+        add_effects=frozenset({_held, _closed}),
         delete_effects=frozenset({
             _empty,
             _inside,
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
         practice_cost=1.0,
     )
-    OPEN: ClassVar[Skill] = Skill(
-        name="OpenGripper",
-        parameters=(_robot, _cube, _bin),
-        preconditions=frozenset({_closed, _bin_on_ground}),
-        add_effects=frozenset({
-            _empty,
-            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
-        }),
-        delete_effects=frozenset({_closed}),
-        param_dim=0,
-        practice_cost=1.0,
+    OPEN: ClassVar[Skill] = Tossing3DSkills.OPEN_GRIPPER.model_copy(
+        update={
+            "ignore_effects": Tossing3DSkills.OPEN_GRIPPER.ignore_effects
+            | frozenset({ON_FLOOR, ON_BIN_RIM}),
+            "conditional_add_effects": Tossing3DSkills.OPEN_GRIPPER.conditional_add_effects
+            | preserve_nonholding_geometry(
+                geometry=frozenset({_floor, _rim}), robot=_robot, cube=_cube
+            ),
+        }
     )
 
     POUR_BIN: ClassVar[Skill] = Tossing3DSkills.POUR_BIN.model_copy(

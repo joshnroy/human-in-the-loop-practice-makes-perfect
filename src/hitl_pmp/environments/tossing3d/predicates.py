@@ -164,11 +164,17 @@ HOLDING = Predicate(
     ),
 )
 
+GRIPPER_CLOSED = Predicate(
+    name="GripperClosed",
+    types=(Tossing3DEnvironment.robot_type,),
+    holds=lambda state, objects: not HAND_EMPTY.holds(state, objects),
+)
+
 CLOSED_EMPTY = Predicate(
     name="ClosedEmpty",
     types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
     holds=lambda state, objects: (
-        not HAND_EMPTY.holds(state, (objects[0],)) and not HOLDING.holds(state, objects)
+        GRIPPER_CLOSED.holds(state, (objects[0],)) and not HOLDING.holds(state, objects)
     ),
 )
 NOT_HOLDING = Predicate(
@@ -199,8 +205,7 @@ REACHABLE = Predicate(
 # Upright and resting on the floor. Local, like `GraspClear`, but evaluated at the
 # boundary (`KinderBackend.abstract_atoms`) because it reads the bin's orientation, which
 # the flat state does not carry; see `bin_on_ground.py` for the classifier and for why
-# upstream's `OnGround` cannot back it. Every robot skill requires it, so a tipped bin
-# leaves only the resets, which re-place the bin upright.
+# upstream's `OnGround` cannot back it.
 BIN_ON_GROUND = Predicate(
     name="BinOnGround",
     types=(Tossing3DEnvironment.bin_type,),

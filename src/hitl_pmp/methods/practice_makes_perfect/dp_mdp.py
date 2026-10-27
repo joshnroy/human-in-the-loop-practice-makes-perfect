@@ -184,9 +184,8 @@ class DpTaskModel:
             for ground in applicable:
                 if not ground.preconditions <= atoms:
                     continue
-                kept = frozenset(
-                    atom for atom in atoms if atom.predicate not in ground.ignore_effects
-                )
+                ignored = ground.expected_ignore_effects(before_atoms=atoms)
+                kept = frozenset(atom for atom in atoms if atom.predicate not in ignored)
                 after = (kept - ground.delete_effects) | ground.expected_add_effects(
                     before_atoms=atoms
                 )
