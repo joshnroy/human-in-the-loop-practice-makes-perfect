@@ -1,5 +1,10 @@
 # Sideways wiggle motion preview
 
+**Follow-up:** the approved motion is now wired into the actual Pour macro.
+See the [full skill diagnostic and videos](2026-10-26-pouring-sideways-skill.md)
+for the subsequent target-two trials. Results below describe the earlier
+motion-only preview.
+
 The requested strategy holds the pitcher at a modest release tilt and translates
 it sideways, perpendicular to the pour direction and parallel to the ground.
 This replaces the earlier pitch oscillation in the new controller prototype.

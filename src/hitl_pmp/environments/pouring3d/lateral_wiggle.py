@@ -23,6 +23,28 @@ class LateralPouringController(NativePouringController):
 
     active_lateral: LateralPourParameters | None = None
     lateral_trace: list[dict[str, Any]] = Field(default_factory=list)
+    lateral_before: dict[str, Any] | None = None
+    lateral_after: dict[str, Any] | None = None
+
+    @property
+    def wiggle_trace(self) -> list[dict[str, Any]]:
+        return self.lateral_trace
+
+    @classmethod
+    def fixed_settings(cls) -> dict[str, Any]:
+        return {
+            "aim_offset_m": [0, 0],
+            "amplitude_m": cls.AMPLITUDE_M,
+            "frequency_hz": cls.FREQUENCY_HZ,
+            "pour_direction_world": [0, 1, 0],
+            "wiggle_axis_world": [1, 0, 0],
+            "orientation": "held constant throughout the sideways stage",
+            "outward_seconds": 10,
+            "return_seconds": 10,
+            "stabilize_tilt_seconds": 1,
+            "settle_seconds_min": 2,
+            "settle_seconds_max": 10,
+        }
 
     @classmethod
     def command_position(cls, *, center: np.ndarray, elapsed: float, duration: float) -> np.ndarray:
@@ -44,6 +66,7 @@ class LateralPouringController(NativePouringController):
         if not steps:
             return
         super().pause(phase="stabilize fixed tilt", seconds=1)
+        self.lateral_before = self.scene.physical_snapshot()
         duration = steps / self.frequency
         tray, _ = self.body_pose(name="tray")
         center = tray + [0, 0, 0.45]
@@ -69,6 +92,7 @@ class LateralPouringController(NativePouringController):
                 "pitcher_position": pitcher.tolist(),
                 "locations": self.scene.cube_locations(),
             })
+        self.lateral_after = self.scene.physical_snapshot()
 
     def run_lateral_pour(self, *, parameters: LateralPourParameters) -> dict[str, Any]:
         if self.held != "pitcher":
@@ -76,6 +100,7 @@ class LateralPouringController(NativePouringController):
         before = self.scene.physical_snapshot()
         self.active_lateral = parameters
         self.lateral_trace = []
+        self.lateral_before = self.lateral_after = None
         error = None
         try:
             # The placeholder dwell is replaced by pause() above. The longer
@@ -108,16 +133,9 @@ class LateralPouringController(NativePouringController):
             "after": after,
             "seconds": after["time"] - before["time"],
             "wiggle_trace": list(self.lateral_trace),
-            "fixed_settings": {
-                "aim_offset_m": [0, 0],
-                "amplitude_m": self.AMPLITUDE_M,
-                "frequency_hz": self.FREQUENCY_HZ,
-                "pour_direction_world": [0, 1, 0],
-                "wiggle_axis_world": [1, 0, 0],
-                "orientation": "held constant throughout the sideways stage",
-                "outward_seconds": 10,
-                "return_seconds": 10,
-            },
+            "fixed_settings": self.fixed_settings(),
+            "wiggle_before": self.lateral_before,
+            "wiggle_after": self.lateral_after,
         }
         self.events.append(event)
         return event
