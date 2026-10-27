@@ -2,6 +2,7 @@ import itertools
 import json
 import logging
 import math
+from collections import deque
 from pathlib import Path
 from typing import Any, Literal
 
@@ -92,35 +93,28 @@ class EesMethod(Method):
     Downward, see `planning/fast_downward.py`), and why predicators' own built-in
     A* planner is not a substitute: it ignores per-operator costs entirely.
 
-    Deviations from predicators, all deliberate:
-    1. The UCB `num_tries` is computed from competence observations, which
-       exclude epsilon-greedy random attempts. predicators reads
-       `_ground_op_hist`, appended on *every* execution including random ones
-       (`active_sampler_explorer.py:400`). `reproduce_predicators_practice_
-       target_history` restores predicators' all-attempts bookkeeping for this
-       quantity (competence stays random-excluding either way); see that field
-       for why the flag exists. predicators' own `skip_perfect` (default True
-       there) scores a ground op whose `_ground_op_hist` success rate is exactly
-       1.0 as `-inf`, ranking it behind every finite candidate; it stays a
-       candidate, tried only once all others are unreachable. Off by default here,
-       so a mastered skill is deprioritized by the UCB bonus alone;
-       `reproduce_predicators_skip_perfect` restores predicators' gate.
-    2. The outcome of the *last* skill in an interaction period is never observed
-       (there is no subsequent state to check `add_effects` against). predicators
-       observes at option termination instead. This loses at most one datapoint
-       per period.
-    3. Not a deviation by default. At reference/predicators 5bd3f5bd,
-       `ActiveSamplerExplorer._update_ground_op_hist` calls `observe(success)`
-       exactly once per attempt, and only when the epsilon-greedy random branch
-       did not fire -- which is what `observe_outcome` does. An earlier reading of
-       predicators claimed it double-observes; it does not.
-       `reproduce_predicators_double_observe` (default off) adds an extra observe
-       of every attempt, and so *creates* a deviation when turned on; see that
-       field.
-    4. Candidate practice targets are scored against cached plans that are
-       refreshed only every `replan_frequency` scoring calls -- predicators'
-       own optimization (`active_sampler_explorer_replan_frequency`), and the
-       reason scoring is cheap enough to do per candidate per step.
+    Reference audit (vendor 5bd3f5bd and release 5c5307e):
+    1. UCB reads all attempts by default, matching `_ground_op_hist`.
+       `reproduce_predicators_practice_target_history=False` instead reads
+       competence observations. `reproduce_predicators_skip_perfect` restores
+       the reference's perfect-history gate; it remains off by default here.
+    2. Outcomes are observed on the next policy call or when the harness flushes
+       the pending outcome before a reset. A final outcome without either
+       notification cannot be observed by this method.
+    3. The references disagree on competence observations. Vendor 5bd3f5bd
+       observes non-exploration attempts once, random attempts never. The
+       audited release observes every attempt once PLUS non-exploration attempts
+       once again. `reproduce_predicators_double_observe=False` matches the
+       vendor; True matches that release. Neither is universally "predicators".
+    4. Both cache plans per task ID, refreshing with the scoring candidate's
+       hypothetical costs, not baseline costs. Cache hits merely reprice the
+       old plan. Both include up to five recent actual replanning tasks, keyed
+       by deque position even after eviction. Scores are negative summed costs;
+       only UCB mode divides by ALL distinct seen training tasks, not successful
+       plans or the capped subset. The port uses retained Task object identity
+       in lieu of dataset indices and clears explorer caches at end_cycle.
+       The legacy recent-training subset remains the default; reference order
+       requires `reproduce_predicators_seen_task_order=True`.
 
     **Asking for help is a real ground skill this Method's planner can select, not
     a harness-side wrapper.** The domain's own `SkillProvider` builds this mid-plan
@@ -128,16 +122,16 @@ class EesMethod(Method):
     configuration belong to that domain. Providers that return `None` do not offer
     `ask_for_reset_cube_bin_only`.
 
-    5. **Not the paper's EES, and on by default since 2026-10-25:**
-       `score_human_skills`. The paper's EES treats asking the human as a rescue that
-       always works: it is offered at a fixed price and its outcome is never observed.
+    5. **Local extension, on by default since 2026-10-25:**
+       `score_human_skills`. Neither audited explorer defines human-reset skills
+       or their price/outcome semantics. Both modes here are local extensions.
        With the flag on, a human skill is first-class, judged like a robot skill -- did
        its promised effects hold afterwards -- and its competence is tracked by the
        same optimistic model, from the same prior, and priced the same way,
        `-log(competence)`, on top of the human price. It is never a practice target:
        the robot cannot practise the human. Off (`--no-ees-score-human-skills`)
-       reproduces the paper, and is what every EES run before the default flipped
-       used, Tossing3D's published runs included, unless it passed the flag."""
+       retains this port's earlier fixed-price, unobserved reset behavior; it
+       does not establish fidelity to a reference human-reset model."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -146,6 +140,7 @@ class EesMethod(Method):
     practice_groundings: Literal["observed", "all"] = "observed"
     max_practice_groundings: int = Field(default=10000, ge=1)
     learning_forecast_log: Path | None = None
+    ees_decision_log: Path | None = None
 
     # --- EES hyperparameters, defaulted to predicators'/the paper's own values ---
     # CFG.skill_competence_model_lookahead
@@ -187,15 +182,10 @@ class EesMethod(Method):
     competence_window_size: int = 5
     competence_recency_size: int = 5
 
-    # Default FALSE, and FALSE is what matches predicators. The flag was added on the
-    # belief that predicators double-observes; it does not. At reference/predicators
-    # 5bd3f5bd, `ActiveSamplerExplorer._update_ground_op_hist` calls
-    # `observe(success)` once, and only for a non-exploration attempt -- exactly this
-    # port's default (deviation 3). Turning this ON therefore CREATES a deviation: it
-    # observes every attempt an extra time, counting each random attempt once toward
-    # competence, which corrupts a mastered skill's estimate down to ~0.67 and
-    # mis-prices the planner's edge costs. Kept so earlier ON runs stay reproducible;
-    # it was measured null on the success curve.
+    # False matches vendor 5bd3f5bd: one observation per non-exploration attempt.
+    # True matches the audited release: every attempt once, non-exploration twice.
+    # The references disagree; preserve the flag rather than silently choosing a
+    # different observation algorithm based on a claim of universal fidelity.
     reproduce_predicators_double_observe: bool = False
 
     # A second, independent ablation switch (see deviation 1 above). predicators
@@ -253,7 +243,7 @@ class EesMethod(Method):
     reproduce_predicators_random_when_stranded: bool = False
     # Deviation 5 in the class docstring: score, track and price the human's skills like
     # robot skills, rather than assuming they always succeed. On by default because human
-    # skills are first-class; off reproduces the paper and every earlier default run.
+    # skills are first-class; off restores this port's earlier fixed-price resets.
     score_human_skills: bool = True
     # The always-ask reset wrapper (`--always-ask-reset`): when set, a human full reset
     # to a freshly sampled start state is forced after every skill with continuous
@@ -280,7 +270,7 @@ class EesMethod(Method):
     # grid_row_num_cells + 2`, defaulting to 100). So None keeps this port's original
     # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
     # the paper's own config for that domain.
-    goal_pursuit_horizon: int | None = None
+    goal_pursuit_horizon: int | None = Field(default=None, ge=0)
     # WHICH practice periods run that goal phase at all -- predicators'
     # `ActiveSamplerLearningApproach._create_explorer`:
     #
@@ -343,6 +333,15 @@ class EesMethod(Method):
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
+    _seen_training_tasks: dict[int, Task] = PrivateAttr(default_factory=dict)
+    _replanning_tasks: deque[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr(
+        default_factory=lambda: deque(maxlen=5)
+    )
+    _task_plan_cache: dict[tuple[str, int], list[GroundSkill] | None] = PrivateAttr(
+        default_factory=dict
+    )
+    _task_plan_calls_since_replan: dict[tuple[str, int], int] = PrivateAttr(default_factory=dict)
+    _last_cache_refreshes: int = PrivateAttr(default=0)
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
     _score_calls: int = PrivateAttr()
     # Cumulative over the run. The failure counter is incremented in plan_to's own
@@ -531,6 +530,8 @@ class EesMethod(Method):
         return list(self._competence_models)
 
     def practice_alternatives(self, *, ground_skill: GroundSkill) -> list[GroundSkill]:
+        if self._uses_ees_selector():
+            return [ground_skill]
         if self.competence_sharing != "grounded" and self.practice_groundings == "all":
             return [
                 candidate
@@ -538,6 +539,15 @@ class EesMethod(Method):
                 if candidate.skill.name == ground_skill.skill.name
             ]
         return [ground_skill]
+
+    def _uses_ees_selector(self) -> bool:
+        """Scope EES-only behavior to the existing EES selection implementation.
+
+        DP overrides select_skill_to_practice and retains its parent-grounding
+        substitution, training-task bookkeeping, and end-cycle refresh. This
+        boundary avoids changing DP or adding a shared configuration switch.
+        """
+        return type(self).select_skill_to_practice is EesMethod.select_skill_to_practice
 
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
@@ -552,9 +562,8 @@ class EesMethod(Method):
         deliberately random parameter that failed is exactly the negative example
         the classifier needs.
 
-        That is predicators' own control flow (`_update_ground_op_hist`, one
-        observe per non-exploration attempt). `reproduce_predicators_double_observe`
-        adds an extra observe and so departs from it; see that field.
+        That is vendor 5bd3f5bd's control flow. The audited release additionally
+        observes every attempt once, reproduced by `reproduce_predicators_double_observe`.
 
         Independently of competence, every execution is recorded (greedy *and*
         random) into `_all_attempt_outcomes` -- predicators' `_ground_op_hist`.
@@ -949,17 +958,87 @@ class EesMethod(Method):
         assumed prior."""
         self._seen_tasks.append((init_atoms, goal))
 
-    def planning_progress_plans(self) -> list[list[GroundSkill]]:
-        """Cached plans for the most recent seen tasks, refreshed only every
-        `replan_frequency` calls (predicators' own optimization). Without the
-        cache, scoring every candidate against every seen task would mean a fresh
-        Fast Downward invocation per candidate per task per step."""
-        if self._score_calls % self.replan_frequency == 0:
-            self.refresh_planning_progress_plans()
+    def _record_training_task(self, *, task: Task) -> None:
+        """Retain identity, not abstract-state equality, as the local train index.
+
+        The task API supplies no reference-style dataset index. Keeping the Task
+        alive prevents object-id reuse and counts repeated policies for that same
+        Task only once, without merging distinct geometries or equal task draws.
+        """
+        if id(task) not in self._seen_training_tasks:
+            self._seen_training_tasks[id(task)] = task
+            self.record_seen_task(
+                init_atoms=self.abstract_state(state=task.initial_state), goal=task.goal.atoms
+            )
+
+    def _record_replanning_task(
+        self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
+    ) -> None:
+        """Record actual nonempty setup/goal planning, including failed attempts.
+
+        Both audited references append before planning, even when a nonempty
+        goal already holds, but skip empty goals. Cache keys are deque positions:
+        deliberately do not invalidate them when an old task is evicted.
+        """
+        if goal and self._uses_ees_selector():
+            self._replanning_tasks.append((init_atoms, goal))
+            self._write_ees_decision(
+                record={
+                    "event": "setup_task",
+                    "goal": sorted(
+                        (atom.predicate.name, tuple(obj.name for obj in atom.objects))
+                        for atom in goal
+                    ),
+                    "replanning_tasks": len(self._replanning_tasks),
+                }
+            )
+
+    def planning_progress_plans(
+        self, *, costs: dict[GroundSkill, float] | None = None
+    ) -> list[list[GroundSkill]]:
+        """Reprice shared cached plans; refresh each task with THIS hypothesis.
+
+        Matches _get_task_plan_for_task in vendor 5bd3f5bd and the audited release,
+        including caching failed plans and position-based replanning-task IDs.
+        Candidate order therefore matters: this is not per-candidate replanning.
+        """
+        if costs is None:
+            costs = self.skill_costs()
+        train_indices = list(range(len(self._seen_tasks)))
+        if self.reproduce_predicators_seen_task_order:
+            train_indices = train_indices[: self.planning_progress_max_tasks]
+        else:
+            train_indices = train_indices[-self.planning_progress_max_tasks :]
+        tasks = [(("train", index), self._seen_tasks[index]) for index in train_indices]
+        tasks.extend((("replan", index), task) for index, task in enumerate(self._replanning_tasks))
+        plans = []
+        self._last_cache_refreshes = 0
+        for task_id, (init_atoms, goal) in tasks:
+            if (
+                task_id not in self._task_plan_calls_since_replan
+                or self._task_plan_calls_since_replan[task_id] >= self.replan_frequency
+            ):
+                self._task_plan_calls_since_replan[task_id] = 0
+                self._last_cache_refreshes += 1
+                try:
+                    self._task_plan_cache[task_id] = self.plan_to(
+                        init_atoms=init_atoms, goal=goal, costs=costs
+                    )
+                except PlanningFailure:
+                    self._task_plan_cache[task_id] = None
+            self._task_plan_calls_since_replan[task_id] += 1
+            plan = self._task_plan_cache[task_id]
+            if plan is not None:
+                plans.append(plan)
         self._score_calls += 1
-        return self._cached_plans
+        return plans
 
     def refresh_planning_progress_plans(self) -> None:
+        """Legacy explicit baseline refresh, retained for non-EES subclasses.
+
+        EES scoring never calls this: its per-task refresh needs the candidate's
+        hypothetical costs, not baseline costs from skill_costs().
+        """
         costs = self.skill_costs()
         plans: list[list[GroundSkill]] = []
         for init_atoms, goal in self.planning_progress_tasks():
@@ -1007,17 +1086,13 @@ class EesMethod(Method):
             current = self.forecast_competence_model(ground_skill=ground).get_current_competence()
             costs[ground] = -math.log(max(min(1.0, current + gain), 1e-12))
 
-        plans = self.planning_progress_plans()
-        if not plans:
-            # Nothing seen yet to situate against: fall back to pure exploration
-            # value, so the UCB bonus alone breaks ties.
-            score = 0.0
-        else:
-            total = sum(
-                sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
-            )
-            score = -total / len(plans)
-
+        plans = self.planning_progress_plans(costs=costs)
+        base_score = -sum(
+            sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
+        )
+        denominator = max(len(self._seen_tasks), 1) if self.use_ucb_bonus else 1
+        score = base_score / denominator
+        bonus = 0.0
         if self.use_ucb_bonus:
             # predicators' exact form: c * sqrt(log(total_trials) / num_tries). The
             # max(..., 1) guards only divide-by-zero / log(0) for a skill or a run
@@ -1025,7 +1100,23 @@ class EesMethod(Method):
             # which is predicators' behavior too.
             num_tries = max(self.practice_target_num_tries(ground_skill=ground_skill), 1)
             total_trials = max(self.practice_target_total_tries(), 1)
-            score += self.explore_bonus * math.sqrt(math.log(total_trials) / num_tries)
+            bonus = self.explore_bonus * math.sqrt(math.log(total_trials) / num_tries)
+            score += bonus
+        self._write_ees_decision(
+            record={
+                "event": "score",
+                "target": self._ees_target_description(ground_skill=ground_skill),
+                "base_score": base_score,
+                "normalization_denominator": denominator,
+                "ucb_bonus": bonus,
+                "score": score,
+                "seen_training_tasks": len(self._seen_tasks),
+                "replanning_tasks": len(self._replanning_tasks),
+                "successful_plans": len(plans),
+                "cache_refreshes": self._last_cache_refreshes,
+                "forecast_gain": gain,
+            }
+        )
         return score
 
     def choose_practice_target(self) -> list[GroundSkill]:
@@ -1046,10 +1137,48 @@ class EesMethod(Method):
             # Ties broken randomly, matching predicators' own rng.uniform tiebreak.
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        if self.ees_decision_log is not None:
+            self._write_ees_decision(
+                record={
+                    "event": "ranking",
+                    "candidates": [
+                        {
+                            "target": self._ees_target_description(ground_skill=candidate),
+                            "score": score if math.isfinite(score) else None,
+                            "declined_perfect": score == -math.inf,
+                            "tiebreak": tiebreak,
+                        }
+                        for score, tiebreak, candidate in scored
+                    ],
+                }
+            )
         return [candidate for _score, _tiebreak, candidate in scored]
 
     def begin_practice_attempt(self, *, ground_skill: GroundSkill) -> None:
         """Optional notification before executing a selected target's setup prefix."""
+        self._write_ees_decision(
+            record={
+                "event": "selected",
+                "target": self._ees_target_description(ground_skill=ground_skill),
+            }
+        )
+
+    @staticmethod
+    def _ees_target_description(*, ground_skill: GroundSkill) -> dict[str, Any]:
+        return {
+            "skill": ground_skill.skill.name,
+            "objects": [obj.name for obj in ground_skill.objects],
+        }
+
+    def _write_ees_decision(self, *, record: dict[str, Any]) -> None:
+        """Write only values already computed by selection, never rescore or draw."""
+        if self.ees_decision_log is not None and self._uses_ees_selector():
+            self.ees_decision_log.parent.mkdir(parents=True, exist_ok=True)
+            JsonlLog.append(
+                path=self.ees_decision_log,
+                line=json.dumps({"period": self._practice_periods, **record}, allow_nan=False)
+                + "\n",
+            )
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         """Return practice candidates in preference order, optionally including STOP.
@@ -1213,8 +1342,12 @@ class EesMethod(Method):
         that measures this cycle."""
         self.fit_samplers()
         self.advance_competence_cycle()
-        # Competence has changed, so every cached plan's price is stale.
-        self.refresh_planning_progress_plans()
+        if self._uses_ees_selector():
+            self._task_plan_cache.clear()
+            self._task_plan_calls_since_replan.clear()
+            self._replanning_tasks.clear()
+        else:
+            self.refresh_planning_progress_plans()
         if self.learning_forecast_log is not None:
             JsonlLog.append(
                 path=self.learning_forecast_log,
@@ -1326,8 +1459,9 @@ class EesMethod(Method):
         own policy completely unwrapped, structurally identical to `get_task_policy`
         above -- `practicing=True` is the only difference, and it is what both of
         those checks key on."""
-        init_atoms = self.abstract_state(state=task.initial_state)
-        self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
+        if not self._uses_ees_selector():
+            init_atoms = self.abstract_state(state=task.initial_state)
+            self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
         # Starvation is per session: a new period re-randomizes movable geometry,
         # so last session's infeasible pools are no longer evidence.
         self.clear_starved_parameter_pools()
@@ -1339,7 +1473,13 @@ class EesMethod(Method):
         )
         self._practice_periods += 1
         self._practice_episode = episode
-        return lambda state: episode.step(state=state)
+
+        def policy(*, state: State) -> LabeledAction:
+            if self._uses_ees_selector():
+                self._record_training_task(task=task)
+            return episode.step(state=state)
+
+        return lambda state: policy(state=state)
 
     def pursues_goal_in_period(self, *, period: int) -> bool:
         """Whether practice period `period` (0-based) opens with the goal phase; see
@@ -1790,6 +1930,7 @@ class _EesEpisode:
                 method.record_action_cost(ground_skill=ground_skill)
                 if method.always_ask_reset is not None:
                     method.always_ask_reset.observe_dispatch(ground_skill=ground_skill)
+                self._record_dispatch(ground_skill=ground_skill, true_atoms=true_atoms, human=False)
             self._pending = ground_skill
             self._pending_before_atoms = true_atoms
             self._pending_sampler_record = record
@@ -1803,6 +1944,7 @@ class _EesEpisode:
         if self._practicing:
             method.record_action_cost(ground_skill=ground_skill)
             method.record_human_skill_dispatch(ground_skill=ground_skill, before_atoms=true_atoms)
+            self._record_dispatch(ground_skill=ground_skill, true_atoms=true_atoms, human=True)
         # Dispatch to the human, not execute_ground_skill -- the robot has no
         # controller for it. self._pending stays untouched: the human's outcome, if
         # scored at all (score_human_skills), is scored by observe_help_granted once
@@ -1810,6 +1952,44 @@ class _EesEpisode:
         raise HumanCubeBinResetRequested(
             cost=method.practice_action_cost(ground_skill=ground_skill),
             destination=method.skill_provider.movables_reset_destination(ground_skill=ground_skill),
+        )
+
+    def _record_dispatch(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom], human: bool
+    ) -> None:
+        """Practice-only observation after action construction, before dispatch.
+
+        Captures the actual grounding and setup state without rescoring targets,
+        consulting a sampler, or recording held-out evaluation states.
+        """
+        method = self._method
+        if not self._practicing or method.ees_decision_log is None:
+            return
+        phase = "practice_setup"
+        if not self._goal_phase_done:
+            phase = "goal"
+        elif self._random_mode:
+            phase = "random"
+        elif ground_skill is self._practice_target:
+            phase = "practice_target"
+        method._write_ees_decision(
+            record={
+                "event": "dispatch",
+                "step": self._debug_step_count,
+                "phase": phase,
+                "goal_pursuit_remaining": self._goal_pursuit_remaining,
+                "ground_skill": method._ees_target_description(ground_skill=ground_skill),
+                "target": (
+                    method._ees_target_description(ground_skill=self._practice_target)
+                    if self._practice_target is not None
+                    else None
+                ),
+                "human": human,
+                "true_atoms": sorted(
+                    (atom.predicate.name, tuple(obj.name for obj in atom.objects))
+                    for atom in true_atoms
+                ),
+            }
         )
 
     def _force_always_ask_reset(self, *, true_atoms: frozenset[GroundAtom]) -> None:
@@ -1929,6 +2109,8 @@ class _EesEpisode:
             if self._goal <= true_atoms:
                 self._goal_phase_done = True
             else:
+                if self._practicing:
+                    method._record_replanning_task(init_atoms=true_atoms, goal=self._goal)
                 try:
                     plan = method.plan_to(
                         init_atoms=true_atoms,
@@ -1982,6 +2164,7 @@ class _EesEpisode:
                 # contract is pure observation of decisions already made, and this
                 # skip *is* the decision.
                 continue
+            method._record_replanning_task(init_atoms=true_atoms, goal=candidate.preconditions)
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 method.begin_practice_attempt(ground_skill=candidate)

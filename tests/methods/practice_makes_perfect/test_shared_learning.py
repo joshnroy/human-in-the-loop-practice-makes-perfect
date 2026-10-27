@@ -88,7 +88,7 @@ def test_near_practice_reprices_far_toss_in_ees_task_plan(*, sharing, monkeypatc
     near, far = tosses(method=method)
     observe(method=method, ground=near, outcomes=[False] * 8)
     method.competence_model(ground_skill=far)
-    monkeypatch.setattr(EesMethod, "planning_progress_plans", lambda self: [[far]])
+    monkeypatch.setattr(EesMethod, "planning_progress_plans", lambda self, **kwargs: [[far]])
     current = method.skill_costs()[far]
     score = method.score_ground_skill(ground_skill=near)
     assert score > -current
@@ -110,17 +110,33 @@ def test_all_groundings_exposes_unseen_targets_without_changing_skills():
 
 
 @pytest.mark.parametrize("sharing", ["parent", "rate"])
-def test_shared_flexible_target_uses_applicable_near_toss_without_a_reset(*, sharing, monkeypatch):
+def test_shared_ees_target_keeps_its_scored_grounding(*, sharing, monkeypatch):
     method = build(competence_sharing=sharing, practice_groundings="all")
     near, far = tosses(method=method)
     monkeypatch.setattr(
         EesMethod, "select_skill_to_practice", lambda self, **kwargs: [far, STOP_SKILL]
     )
-    monkeypatch.setattr(
-        EesMethod, "plan_to", lambda self, **kwargs: pytest.fail("No setup is needed")
-    )
+    planned_goals = []
+
+    def plan(**kwargs):
+        planned_goals.append(kwargs["goal"])
+        return []
+
+    monkeypatch.setattr(EesMethod, "plan_to", lambda self, **kwargs: plan(**kwargs))
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
-    assert episode._practice_plan(true_atoms=near.preconditions) == [near]
+    assert method.practice_alternatives(ground_skill=far) == [far]
+    assert episode._practice_plan(true_atoms=near.preconditions) == [far]
+    assert planned_goals == [far.preconditions]
+
+
+@pytest.mark.parametrize("sharing", ["grounded", "parent", "rate"])
+def test_all_ees_groundings_keep_paramless_open_gripper(*, sharing):
+    method = build(competence_sharing=sharing, practice_groundings="all")
+    candidates = method.practice_candidates()
+    grippers = [ground for ground in candidates if ground.skill.name == "OpenGripper"]
+    assert grippers
+    assert all(ground.skill.param_dim == 0 for ground in grippers)
+    assert set(candidates) == set(method.choose_practice_target())
 
 
 def test_no_transfer_mode_does_not_substitute_an_unallocated_grounding():
