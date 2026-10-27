@@ -26,6 +26,30 @@ class LateralPouringController(NativePouringController):
     lateral_before: dict[str, Any] | None = None
     lateral_after: dict[str, Any] | None = None
 
+    def move_pitcher(
+        self, *, phase: str, position: np.ndarray, rotation: Rotation, seconds: float
+    ) -> None:
+        super().move_pitcher(phase=phase, position=position, rotation=rotation, seconds=seconds)
+        if phase != "lower pitcher to floor":
+            return
+        # Contact compliance changes the grasp during transport. Measure it
+        # again while correcting the vessel pose, then release close to the floor.
+        self.phase = "align pitcher before release"
+        start, _ = self.body_pose(name="pitcher")
+        count = round(4 * self.frequency)
+        for index in range(1, count + 1):
+            actual, actual_rotation = self.body_pose(name="pitcher")
+            hand, hand_rotation = self.hand_pose()
+            self.hand_offset = actual_rotation.inv().apply(hand - actual)
+            self.rotation_offset = actual_rotation.inv() * hand_rotation
+            u = min(1.0, index / (2 * self.frequency))
+            height = (1 - u) * start[2] + u * (self.home[2] + 0.001)
+            target = np.array([self.home[0], self.home[1], height])
+            q = self.inverse_kinematics(
+                position=target + self.hand_offset, rotation=self.rotation_offset
+            )
+            self.motor_step(target_q=q, grip=1)
+
     @property
     def wiggle_trace(self) -> list[dict[str, Any]]:
         return self.lateral_trace
