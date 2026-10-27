@@ -87,6 +87,9 @@ def run_worker(*, manifest_path: Path, sha: str, task: int, size: str) -> None:
     kinder_source = REPO / "reference" / "kindergarden" / "src"
     if kinder_source.is_dir():
         python_paths.append(str(kinder_source))
+    models_source = REPO / "reference" / "kinder-baselines" / "kinder-models" / "src"
+    if models_source.is_dir():
+        python_paths.append(str(models_source))
     environment["PYTHONPATH"] = os.pathsep.join(python_paths)
     receipt = {
         "schema_version": 1,

@@ -58,6 +58,22 @@ def test_executes_exact_one_based_row_and_records_receipt(*, execution, task, se
     assert sum(Path(item["output_dir"]).exists() for item in manifest["runs"]) == 1
 
 
+def test_worker_preserves_both_pinned_simulator_import_paths(*, execution, monkeypatch):
+    path, manifest, _, execute = execution
+    sources = {
+        worker.REPO / "reference" / "kindergarden" / "src",
+        worker.REPO / "reference" / "kinder-baselines" / "kinder-models" / "src",
+    }
+    original_is_dir = Path.is_dir
+    monkeypatch.setattr(Path, "is_dir", lambda self: self in sources or original_is_dir(self))
+    with pytest.raises(RuntimeError, match="exec requested"):
+        worker.run_worker(
+            manifest_path=path, sha=manifest["source"]["head"], task=1, size="pilot"
+        )
+    environment = execute.call_args.args[2]
+    assert {str(source) for source in sources} <= set(environment["PYTHONPATH"].split(":"))
+
+
 def test_full_last_row_and_receipt_are_accepted_by_real_cli_validation(*, execution):
     from hitl_pmp.cli import Cli
     from hitl_pmp.step_protocol import StepProtocolValidation
