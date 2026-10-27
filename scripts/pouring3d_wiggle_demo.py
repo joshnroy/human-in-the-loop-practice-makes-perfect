@@ -16,6 +16,8 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from hitl_pmp.environments.pouring3d.lateral_environment import LateralPouringEnvironment
+from hitl_pmp.environments.pouring3d.lateral_wiggle import LateralPouringController
 from hitl_pmp.environments.pouring3d.native_controller import NativePouringController
 from hitl_pmp.environments.pouring3d.wiggle import (
     TiltWiggleController,
@@ -61,8 +63,19 @@ class WiggleDemo:
             Path(inspect.getfile(TiltWiggleController)),
             Path(__file__).resolve(),
         ]
+        if mode == "lateral":
+            sources.extend([
+                Path(inspect.getfile(LateralPouringController)),
+                Path(inspect.getfile(LateralPouringEnvironment)),
+            ])
         hashes = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources}
-        env_class = StationaryHoldEnvironment if mode == "static" else TiltWigglePouringEnvironment
+        env_class: type[TiltWigglePouringEnvironment] | type[LateralPouringEnvironment]
+        if mode == "lateral":
+            env_class = LateralPouringEnvironment
+        elif mode == "static":
+            env_class = StationaryHoldEnvironment
+        else:
+            env_class = TiltWigglePouringEnvironment
         env = env_class(
             seed=seed,
             cube_material=material,
@@ -72,6 +85,7 @@ class WiggleDemo:
         )
         env.hard_reset()
         c = env.sim.controller
+        motion = "sideways" if mode == "lateral" else "pitch"
         trace = []
         active_skill = "initial"
         pour_success = False
@@ -115,7 +129,10 @@ class WiggleDemo:
                     frame = RequestedCountDemo.frame(
                         overview=cameras["task_view_image"],
                         detail=cameras[f"{detail}_image"],
-                        title=f"{material.upper()} | tilt {angle:g} deg, wiggle {duration:g} s",
+                        title=(
+                            f"{material.upper()} | {motion} wiggle | "
+                            f"tilt {angle:g} deg, {duration:g} s"
+                        ),
                         subtitle=(
                             f"Target {requested_count} | tray {locations.count('tray')}, "
                             f"pitcher {locations.count('pitcher')} | "
