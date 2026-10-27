@@ -9,7 +9,7 @@ from pydantic import Field, PrivateAttr, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, Policy
 from hitl_pmp.core.practice_costs import PracticeAccounting
-from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .always_ask_reset import AlwaysAskReset
@@ -38,11 +38,19 @@ class DpMethod(EesMethod):
     The curriculum follows the optimized policy's predecessor order, executing
     positive allocations only. Gurobi must certify both optimization stages;
     enumeration is an explicitly selected reference, never a silent fallback.
+
+    Practice preserves the selected grounding by default, independently of
+    pooled allocation counts and forecasts. Grounding substitution is an opt-in
+    legacy adaptation, not a requirement of the paper's skill curriculum.
     """
 
     dp_budget: float = Field(gt=0.0, allow_inf_nan=False)
     dp_budget_unit: Literal["cost", "episodes"] = "cost"
     dp_allocation_schedule: Literal["once", "period"] = "period"
+    dp_allow_grounding_substitution: bool = Field(
+        default=False,
+        description="Legacy shared/all grounding-substitution adaptation, not paper DP.",
+    )
     dp_solver: Literal["gurobi", "enumeration"] = "gurobi"
     dp_solver_time_limit: float = Field(default=60.0, gt=0.0, allow_inf_nan=False)
     dp_solver_log: Path | None = None
@@ -223,6 +231,20 @@ class DpMethod(EesMethod):
             prior += self.start_reset_cost()
         return max(1e-12, prior + pending)
 
+    def practice_alternatives(self, *, ground_skill: GroundSkill) -> list[GroundSkill]:
+        """Keep target identity unless the legacy substitution adaptation is enabled."""
+        if (
+            not self.dp_allow_grounding_substitution
+            or ground_skill in self.offered_partial_resets()
+        ):
+            return [ground_skill]
+        return super().practice_alternatives(ground_skill=ground_skill)
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        """Use DP's curriculum without activating EES-only selector behavior."""
+        del true_atoms
+        return self.choose_practice_target()
+
     def choose_practice_target(self) -> list[GroundSkill]:
         remaining = self._remaining_budget()
         if self.practice_complete():
@@ -372,7 +394,7 @@ class DpMethod(EesMethod):
                     }
                     for ground in candidates
                 ],
-                "group_price_rule": "representative_or_minimum_shared_all_alternative",
+                "group_price_rule": "minimum_admitted_practice_alternative",
             }
         )
         predicted = DpAllocator.predicted_competences(
@@ -411,20 +433,15 @@ class DpMethod(EesMethod):
     def _group_attempt_price(self, *, ground_skill: GroundSkill) -> float:
         """Certainty-equivalent price of the representative's directed attempt.
 
-        Shared/all permits the cheapest estimated alternative. Other modes use
-        the representative's own estimate, never a pooled mean across contexts.
+        The default uses the representative's own estimate. Only the explicit
+        substitution adaptation admits cheaper shared/all alternatives. Neither
+        mode pools empirical costs across contexts.
         The estimate is frozen for this solve; realized setup, target and reset
         costs remain attributed to the actual grounding and physical accounting.
         This does not predict state-dependent future resets or guarantee that
         another curriculum grounding will realize the representative's price.
         """
-        alternatives = (
-            self.practice_alternatives(ground_skill=ground_skill)
-            if self.competence_sharing != "grounded"
-            and self.practice_groundings == "all"
-            and ground_skill not in self.offered_partial_resets()
-            else [ground_skill]
-        )
+        alternatives = self.practice_alternatives(ground_skill=ground_skill)
         return min(
             self.dp_expected_attempt_cost(ground_skill=alternative) for alternative in alternatives
         )
@@ -454,6 +471,12 @@ class DpMethod(EesMethod):
                     "prior_calibration_sha256": self._dp_prior_sha256,
                     "competence_sharing": self.competence_sharing,
                     "practice_groundings": self.practice_groundings,
+                    "dp_allow_grounding_substitution": self.dp_allow_grounding_substitution,
+                    "grounding_substitution_mode": (
+                        "legacy_adaptation"
+                        if self.dp_allow_grounding_substitution
+                        else "exact_target"
+                    ),
                     "executed_since_solve": [
                         {
                             "skill": ground.skill.name,

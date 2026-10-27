@@ -442,7 +442,9 @@ def test_once_with_optimistic_priors_can_leave_most_of_budget_unused(*, monkeypa
     assert method.dp_episodes() == 2
 
 
-def _shared_toss_setup(*, monkeypatch, sharing: str, groundings: str):
+def _shared_toss_setup(
+    *, monkeypatch, sharing: str, groundings: str, dp_allow_grounding_substitution: bool = False
+):
     env = Tossing3DEnvironment(enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
     method = DpMethod(
@@ -453,6 +455,7 @@ def _shared_toss_setup(*, monkeypatch, sharing: str, groundings: str):
         dp_solver="enumeration",
         competence_sharing=sharing,
         practice_groundings=groundings,
+        dp_allow_grounding_substitution=dp_allow_grounding_substitution,
     )
     method.configure_practice_accounting(
         accounting=PracticeAccounting(costs=PracticeCosts(robot_step=ChargeFunction(value=1)))
@@ -487,11 +490,14 @@ def _shared_toss_setup(*, monkeypatch, sharing: str, groundings: str):
 
 @pytest.mark.parametrize("sharing", ["grounded", "parent", "rate"])
 @pytest.mark.parametrize("groundings", ["observed", "all"])
-def test_same_side_fulfills_opposite_target_only_with_shared_all(
+def test_legacy_same_side_fulfills_opposite_target_only_with_shared_all(
     *, monkeypatch, sharing, groundings
 ):
     method, same, opposite = _shared_toss_setup(
-        monkeypatch=monkeypatch, sharing=sharing, groundings=groundings
+        monkeypatch=monkeypatch,
+        sharing=sharing,
+        groundings=groundings,
+        dp_allow_grounding_substitution=True,
     )
     assert method.choose_practice_target() == [opposite, STOP_SKILL]
     before = method.dp_remaining_allocation()[opposite]
@@ -573,11 +579,14 @@ def test_grouped_method_forecasts_use_pooled_rates_and_one_budget_count(*, monke
         ("rate", "observed", 8),
     ],
 )
-def test_group_price_uses_allowed_contexts_without_pooling_actual_costs(
+def test_legacy_group_price_uses_allowed_contexts_without_pooling_actual_costs(
     *, monkeypatch, sharing, groundings, price
 ):
     method, same, opposite = _shared_toss_setup(
-        monkeypatch=monkeypatch, sharing=sharing, groundings=groundings
+        monkeypatch=monkeypatch,
+        sharing=sharing,
+        groundings=groundings,
+        dp_allow_grounding_substitution=True,
     )
     _execute(method=method, ground=same, cost=2)
     _execute(method=method, ground=opposite, cost=8)
@@ -663,7 +672,10 @@ def test_observed_allocation_candidates_do_not_expand_when_forecast_models_are_c
 
 def test_rate_all_real_attempt_updates_only_its_grounded_current_competence(*, monkeypatch):
     method, same, opposite = _shared_toss_setup(
-        monkeypatch=monkeypatch, sharing="rate", groundings="all"
+        monkeypatch=monkeypatch,
+        sharing="rate",
+        groundings="all",
+        dp_allow_grounding_substitution=True,
     )
     method.choose_practice_target()
     current = method.forecast_competence_model(ground_skill=opposite).get_current_competence()
