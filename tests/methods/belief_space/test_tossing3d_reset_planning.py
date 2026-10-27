@@ -255,6 +255,8 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
             "BinOnGround",
         )
     )
+    if gripper == "ClosedEmpty":
+        ready |= {_atom(method=method, name="GripperClosed")}
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
     self_loop = next(
         reset
