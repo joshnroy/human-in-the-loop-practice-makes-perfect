@@ -1,0 +1,5480 @@
+{
+  "protocol": {
+    "material": "wood",
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "targets": [
+      1,
+      2
+    ],
+    "angles": [
+      94,
+      94.75,
+      95.5,
+      96.25,
+      97
+    ],
+    "durations": [
+      0.5,
+      2.5,
+      6,
+      12
+    ],
+    "coarse_trials": 60,
+    "maximum_refinement_trials": 54,
+    "maximum_verification_trials": 6,
+    "placement_trials": 9,
+    "patch_delta_degrees": 0.25,
+    "patch_delta_seconds": 0.5,
+    "map_requested_count": 2,
+    "map_scoring": "Physical count scores both targets; explicit verification follows",
+    "count_feedback_during_pour": false,
+    "previous_study": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-sideways-counts-20261026",
+    "source_sha256": {
+      "scripts/pouring3d_wood_regions.py": "8c8f242ca30b8af0fa977103f8d6d9bbe4b6f2a4902631d64457277caa518fcf",
+      "scripts/pouring3d_wiggle_demo.py": "beb9dac625f4c3a9f2f583937b9bfb267867e11c20cf891c8c8873e86594b4ca",
+      "src/hitl_pmp/environments/pouring3d/lateral_wiggle.py": "c446304c01be3095e436a5b58cb5e95867cfd22fcec0fdcdb0cf74abdc7c8e53",
+      "src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+      "src/hitl_pmp/environments/pouring3d/lateral_environment.py": "f51a8bd7d37668285ef9ea9864d0e5ffd76daffe05f912d35e0e763250ee1cf6",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232"
+    }
+  },
+  "shared_protocol": {
+    "material": "wood",
+    "target": 1,
+    "center": [
+      94,
+      6
+    ],
+    "selection": "Shared one-cube setting; shortest duration then lower angle",
+    "new_mapping_trials": 16,
+    "new_explicit_verification_trials": 2,
+    "seed_two_patch_reused_from_primary_map": true,
+    "source_sha256": {
+      "scripts/pouring3d_wood_regions.py": "994521b3c66c0fa0a5e563045cdb5050f8dcbb77654a417903216f735c4769c5",
+      "scripts/pouring3d_wiggle_demo.py": "beb9dac625f4c3a9f2f583937b9bfb267867e11c20cf891c8c8873e86594b4ca",
+      "src/hitl_pmp/environments/pouring3d/lateral_wiggle.py": "c446304c01be3095e436a5b58cb5e95867cfd22fcec0fdcdb0cf74abdc7c8e53",
+      "src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+      "src/hitl_pmp/environments/pouring3d/lateral_environment.py": "f51a8bd7d37668285ef9ea9864d0e5ffd76daffe05f912d35e0e763250ee1cf6",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+      "scripts/pouring3d_shared_one_region.py": "4193d7b97461ed00a74e26c0eb95b26ac3efdf16323533e9df56a7acbe72f113"
+    }
+  },
+  "continuation_protocol": {
+    "reason": "Resume saved cells; preserve completed and interrupted attempts",
+    "source_sha256": {
+      "scripts/pouring3d_wood_regions.py": "994521b3c66c0fa0a5e563045cdb5050f8dcbb77654a417903216f735c4769c5",
+      "scripts/pouring3d_wiggle_demo.py": "beb9dac625f4c3a9f2f583937b9bfb267867e11c20cf891c8c8873e86594b4ca",
+      "src/hitl_pmp/environments/pouring3d/lateral_wiggle.py": "c446304c01be3095e436a5b58cb5e95867cfd22fcec0fdcdb0cf74abdc7c8e53",
+      "src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+      "src/hitl_pmp/environments/pouring3d/lateral_environment.py": "f51a8bd7d37668285ef9ea9864d0e5ffd76daffe05f912d35e0e763250ee1cf6",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+      "reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232"
+    },
+    "native_sources_unchanged": true
+  },
+  "primary_maps": [
+    {
+      "seed": 0,
+      "target": 1,
+      "center": [
+        94.75,
+        2.5
+      ],
+      "coarse_successes": 4,
+      "coarse_trials": 20,
+      "patch_successes": 3,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          94.5,
+          2.0
+        ],
+        [
+          94.5,
+          2.5
+        ],
+        [
+          94.5,
+          3.0
+        ],
+        [
+          94.75,
+          2.0
+        ],
+        [
+          94.75,
+          2.5
+        ],
+        [
+          94.75,
+          3.0
+        ],
+        [
+          95.0,
+          2.0
+        ],
+        [
+          95.0,
+          2.5
+        ],
+        [
+          95.0,
+          3.0
+        ]
+      ],
+      "patch_scores": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false
+      ],
+      "successful_sampled_2x2_blocks": []
+    },
+    {
+      "seed": 0,
+      "target": 2,
+      "center": [
+        94.75,
+        6
+      ],
+      "coarse_successes": 5,
+      "coarse_trials": 20,
+      "patch_successes": 6,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          94.5,
+          5.5
+        ],
+        [
+          94.5,
+          6.0
+        ],
+        [
+          94.5,
+          6.5
+        ],
+        [
+          94.75,
+          5.5
+        ],
+        [
+          94.75,
+          6.0
+        ],
+        [
+          94.75,
+          6.5
+        ],
+        [
+          95.0,
+          5.5
+        ],
+        [
+          95.0,
+          6.0
+        ],
+        [
+          95.0,
+          6.5
+        ]
+      ],
+      "patch_scores": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false
+      ],
+      "successful_sampled_2x2_blocks": [
+        [
+          94.5,
+          94.75,
+          5.5,
+          6.0
+        ],
+        [
+          94.5,
+          94.75,
+          6.0,
+          6.5
+        ]
+      ]
+    },
+    {
+      "seed": 1,
+      "target": 1,
+      "center": [
+        95.5,
+        0.5
+      ],
+      "coarse_successes": 5,
+      "coarse_trials": 20,
+      "patch_successes": 2,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          95.25,
+          0.1
+        ],
+        [
+          95.25,
+          0.5
+        ],
+        [
+          95.25,
+          1.0
+        ],
+        [
+          95.5,
+          0.1
+        ],
+        [
+          95.5,
+          0.5
+        ],
+        [
+          95.5,
+          1.0
+        ],
+        [
+          95.75,
+          0.1
+        ],
+        [
+          95.75,
+          0.5
+        ],
+        [
+          95.75,
+          1.0
+        ]
+      ],
+      "patch_scores": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false
+      ],
+      "successful_sampled_2x2_blocks": []
+    },
+    {
+      "seed": 1,
+      "target": 2,
+      "center": [
+        94.75,
+        2.5
+      ],
+      "coarse_successes": 3,
+      "coarse_trials": 20,
+      "patch_successes": 6,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          94.5,
+          2.0
+        ],
+        [
+          94.5,
+          2.5
+        ],
+        [
+          94.5,
+          3.0
+        ],
+        [
+          94.75,
+          2.0
+        ],
+        [
+          94.75,
+          2.5
+        ],
+        [
+          94.75,
+          3.0
+        ],
+        [
+          95.0,
+          2.0
+        ],
+        [
+          95.0,
+          2.5
+        ],
+        [
+          95.0,
+          3.0
+        ]
+      ],
+      "patch_scores": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "successful_sampled_2x2_blocks": [
+        [
+          94.75,
+          95.0,
+          2.0,
+          2.5
+        ],
+        [
+          94.75,
+          95.0,
+          2.5,
+          3.0
+        ]
+      ]
+    },
+    {
+      "seed": 2,
+      "target": 1,
+      "center": [
+        94,
+        6
+      ],
+      "coarse_successes": 6,
+      "coarse_trials": 20,
+      "patch_successes": 6,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          93.75,
+          5.5
+        ],
+        [
+          93.75,
+          6.0
+        ],
+        [
+          93.75,
+          6.5
+        ],
+        [
+          94.0,
+          5.5
+        ],
+        [
+          94.0,
+          6.0
+        ],
+        [
+          94.0,
+          6.5
+        ],
+        [
+          94.25,
+          5.5
+        ],
+        [
+          94.25,
+          6.0
+        ],
+        [
+          94.25,
+          6.5
+        ]
+      ],
+      "patch_scores": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false
+      ],
+      "successful_sampled_2x2_blocks": [
+        [
+          93.75,
+          94.0,
+          5.5,
+          6.0
+        ],
+        [
+          93.75,
+          94.0,
+          6.0,
+          6.5
+        ]
+      ]
+    },
+    {
+      "seed": 2,
+      "target": 2,
+      "center": [
+        97,
+        0.5
+      ],
+      "coarse_successes": 1,
+      "coarse_trials": 20,
+      "patch_successes": 5,
+      "patch_trials": 9,
+      "patch_points": [
+        [
+          96.75,
+          0.1
+        ],
+        [
+          96.75,
+          0.5
+        ],
+        [
+          96.75,
+          1.0
+        ],
+        [
+          97.0,
+          0.1
+        ],
+        [
+          97.0,
+          0.5
+        ],
+        [
+          97.0,
+          1.0
+        ],
+        [
+          97.25,
+          0.1
+        ],
+        [
+          97.25,
+          0.5
+        ],
+        [
+          97.25,
+          1.0
+        ]
+      ],
+      "patch_scores": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+        false
+      ],
+      "successful_sampled_2x2_blocks": []
+    }
+  ],
+  "shared_one_maps": [
+    {
+      "seed": 0,
+      "center": [
+        94,
+        6
+      ],
+      "points": [
+        [
+          93.75,
+          5.5
+        ],
+        [
+          93.75,
+          6
+        ],
+        [
+          93.75,
+          6.5
+        ],
+        [
+          94,
+          5.5
+        ],
+        [
+          94,
+          6
+        ],
+        [
+          94,
+          6.5
+        ],
+        [
+          94.25,
+          5.5
+        ],
+        [
+          94.25,
+          6
+        ],
+        [
+          94.25,
+          6.5
+        ]
+      ],
+      "counts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2
+      ],
+      "successful_settings": 6,
+      "sampled_2x2_blocks": [
+        [
+          93.75,
+          94.0,
+          5.5,
+          6.0
+        ],
+        [
+          93.75,
+          94.0,
+          6,
+          6.5
+        ]
+      ]
+    },
+    {
+      "seed": 1,
+      "center": [
+        94,
+        6
+      ],
+      "points": [
+        [
+          93.75,
+          5.5
+        ],
+        [
+          93.75,
+          6
+        ],
+        [
+          93.75,
+          6.5
+        ],
+        [
+          94,
+          5.5
+        ],
+        [
+          94,
+          6
+        ],
+        [
+          94,
+          6.5
+        ],
+        [
+          94.25,
+          5.5
+        ],
+        [
+          94.25,
+          6
+        ],
+        [
+          94.25,
+          6.5
+        ]
+      ],
+      "counts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "successful_settings": 9,
+      "sampled_2x2_blocks": [
+        [
+          93.75,
+          94.0,
+          5.5,
+          6.0
+        ],
+        [
+          93.75,
+          94.0,
+          6,
+          6.5
+        ],
+        [
+          94,
+          94.25,
+          5.5,
+          6.0
+        ],
+        [
+          94,
+          94.25,
+          6,
+          6.5
+        ]
+      ]
+    },
+    {
+      "seed": 2,
+      "center": [
+        94,
+        6
+      ],
+      "points": [
+        [
+          93.75,
+          5.5
+        ],
+        [
+          93.75,
+          6
+        ],
+        [
+          93.75,
+          6.5
+        ],
+        [
+          94,
+          5.5
+        ],
+        [
+          94,
+          6
+        ],
+        [
+          94,
+          6.5
+        ],
+        [
+          94.25,
+          5.5
+        ],
+        [
+          94.25,
+          6
+        ],
+        [
+          94.25,
+          6.5
+        ]
+      ],
+      "counts": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2
+      ],
+      "successful_settings": 6,
+      "sampled_2x2_blocks": [
+        [
+          93.75,
+          94.0,
+          5.5,
+          6.0
+        ],
+        [
+          93.75,
+          94.0,
+          6,
+          6.5
+        ]
+      ]
+    }
+  ],
+  "shared_successful_settings_across_three_starts": {
+    "1": [
+      [
+        93.75,
+        5.5
+      ],
+      [
+        93.75,
+        6.0
+      ],
+      [
+        93.75,
+        6.5
+      ],
+      [
+        94.0,
+        5.5
+      ],
+      [
+        94,
+        6
+      ],
+      [
+        94.0,
+        6.5
+      ],
+      [
+        94,
+        12
+      ]
+    ],
+    "2": []
+  },
+  "shared_tested_settings_across_three_starts": [
+    [
+      93.75,
+      5.5
+    ],
+    [
+      93.75,
+      6.0
+    ],
+    [
+      93.75,
+      6.5
+    ],
+    [
+      94,
+      0.5
+    ],
+    [
+      94,
+      2.5
+    ],
+    [
+      94.0,
+      5.5
+    ],
+    [
+      94,
+      6
+    ],
+    [
+      94.0,
+      6.5
+    ],
+    [
+      94,
+      12
+    ],
+    [
+      94.25,
+      5.5
+    ],
+    [
+      94.25,
+      6.0
+    ],
+    [
+      94.25,
+      6.5
+    ],
+    [
+      94.75,
+      0.5
+    ],
+    [
+      94.75,
+      2.5
+    ],
+    [
+      94.75,
+      6
+    ],
+    [
+      94.75,
+      12
+    ],
+    [
+      95.5,
+      0.5
+    ],
+    [
+      95.5,
+      2.5
+    ],
+    [
+      95.5,
+      6
+    ],
+    [
+      95.5,
+      12
+    ],
+    [
+      96.25,
+      0.5
+    ],
+    [
+      96.25,
+      2.5
+    ],
+    [
+      96.25,
+      6
+    ],
+    [
+      96.25,
+      12
+    ],
+    [
+      97,
+      0.5
+    ],
+    [
+      97,
+      2.5
+    ],
+    [
+      97,
+      6
+    ],
+    [
+      97,
+      12
+    ]
+  ],
+  "completed_native_episodes": 141,
+  "goal_snapshots_audited": 1303,
+  "preserved_pre_interruption_files": 158,
+  "interrupted_attempts": [],
+  "native_source_sha256": {
+    "reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+    "reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+    "src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+    "src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+    "scripts/pouring3d_wiggle_demo.py": "beb9dac625f4c3a9f2f583937b9bfb267867e11c20cf891c8c8873e86594b4ca",
+    "src/hitl_pmp/environments/pouring3d/lateral_wiggle.py": "c446304c01be3095e436a5b58cb5e95867cfd22fcec0fdcdb0cf74abdc7c8e53",
+    "src/hitl_pmp/environments/pouring3d/lateral_environment.py": "f51a8bd7d37668285ef9ea9864d0e5ffd76daffe05f912d35e0e763250ee1cf6"
+  },
+  "outcomes": [
+    {
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s0-g0/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s0-g3/0/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s0-g6/0/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "placement-s1-g1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s1-g2/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s1-g4/1/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s1-g7/1/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s2-g5/2/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "placement-s2-g8/2/cell-0/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g0/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g0/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g0/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g0/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g1/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g1/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s0-g1/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s0-g1/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g2/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g2/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s0-g2/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s0-g2/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s0-g3/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g3/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g3/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g3/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g4/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g4/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g4/0/cell-2/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s0-g4/0/cell-3/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g0/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g0/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g0/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g0/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s1-g1/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s1-g1/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g1/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g2/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g2/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g2/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g2/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g3/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g3/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g3/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g3/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s1-g4/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g4/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g4/1/cell-2/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s1-g4/1/cell-3/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g0/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g0/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g0/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g0/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g1/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g1/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g1/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g1/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g2/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g2/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g2/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g2/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g3/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g3/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g3/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g3/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "coarse-s2-g4/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g4/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 4,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g4/2/cell-2/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 12
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "coarse-s2-g4/2/cell-3/result.json",
+      "locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g1/0/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s0-g2/0/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.25,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.25,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.25,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.75,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.75,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.75,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g1/1/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.5,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 2.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 95.0,
+        "wiggle_seconds": 3.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s1-g2/1/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g1/2/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.75,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.75,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 96.75,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97.0,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97.0,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97.25,
+        "wiggle_seconds": 0.1
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97.25,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97.25,
+        "wiggle_seconds": 1.0
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "refine-s2-g2/2/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s0-g1/0/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-1/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 93.75,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-2/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-3/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.0,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-4/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 5.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-5/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.0
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-6/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.25,
+        "wiggle_seconds": 6.5
+      },
+      "eligible_count": 1,
+      "pour_success": false,
+      "full_success": false,
+      "source_path": "shared-one-followup/refine-s1-g1/1/cell-7/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s0-g1/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s0-g2/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s1-g1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 94.75,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s1-g2/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s2-g1/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "verify-s2-g2/2/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "shared-one-followup/verify-shared-s1/1/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 94,
+        "wiggle_seconds": 6
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_path": "shared-one-followup/verify-shared-s0/0/cell-0/result.json",
+      "locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    }
+  ]
+}

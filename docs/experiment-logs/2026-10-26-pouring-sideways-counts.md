@@ -1,5 +1,9 @@
 # Requested counts 1–5 with horizontal sideways Pour
 
+**Follow-up:** [wood region mapping and fixed placement repair](2026-10-27-pouring-wood-regions.md)
+repairs the supporting pitcher return and tests new settings and local margins
+for counts one and two. The frozen-recipe numbers below remain unchanged.
+
 Wood produces every requested count in seed-zero discovery. Foam discovery
 produces one, two, three, and five; four remains unresolved by the frozen
 recipes. The three-start checks also expose low-count overshoots on new
