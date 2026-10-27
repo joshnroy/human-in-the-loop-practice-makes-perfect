@@ -4,6 +4,13 @@
 [Vats et al., Deliberate Practice, §§5.1–5.3](https://arxiv.org/html/2608.13415v1).
 It is not an unmodified reproduction of the paper's controller-learning experiments.
 
+The [current fidelity plan](experiments/tossing3d-dp-fidelity-plan.md) separates
+paper requirements from local protocol choices. Parent sharing is a transfer
+ablation, not a requirement of the paper. DP's deployment graph already admits
+untried relevant skills even with `--practice-groundings observed`.
+Statistical sharing does not authorize executing another grounding: that legacy
+adaptation now requires `--dp-allow-grounding-substitution` explicitly.
+
 ## Objective and curriculum
 
 The default Gurobi backend jointly optimizes integer training allocations and
@@ -138,8 +145,8 @@ requires regenerating it before full-launch preparation.
 
 | Arm | Budget unit | Allocation schedule |
 | --- | --- | --- |
-| DP episode-budget / paper-style | Completed target-skill rollouts | Once before the curriculum |
-| DP cost-budget / modified | Robot plus human cost, B=2000 | Every practice period |
+| DP episode-budget / allocate-once | Completed target-skill rollouts | Once before the curriculum |
+| DP cost-budget / reallocate | Robot plus human cost, B=2000 | Every practice period |
 
 A completed target rollout counts whether it succeeds or fails. Setup robot
 executions and human resets do not consume an additional episode allocation;
@@ -147,8 +154,8 @@ their physical costs are always reported. An interrupted target retains its
 spending but does not count as a completed episode. Allocate-once preserves its
 remaining allocation across harness periods and stops when it is consumed.
 The paper does not unambiguously prescribe reallocation frequency or its
-CMA-ES-generation/budget bookkeeping; "paper-style" identifies our operational
-interpretation, not an exact reproduction. Both modes can be selected independently
+CMA-ES-generation/budget bookkeeping; both schedules are operational
+interpretations, not exact reproductions. Both modes can be selected independently
 through `--dp-budget-unit` and `--dp-allocation-schedule`.
 
 Allocation counts are integers, matching executed trials. The published equations

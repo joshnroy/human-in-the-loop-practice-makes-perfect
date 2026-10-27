@@ -16,6 +16,8 @@ from scripts.tossing3d_ees_fidelity_launch import (
     validate_manifest,
 )
 
+pytestmark = pytest.mark.xdist_group("test_tossing3d_ees_fidelity_launch")
+
 TEST_HORIZON = 5
 
 

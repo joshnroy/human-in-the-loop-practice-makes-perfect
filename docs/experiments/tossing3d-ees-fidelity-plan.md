@@ -22,6 +22,22 @@ and explicitly pending provenance. A successful check is **not launch approval**
 
 ## Required freeze
 
+### Shared OpenGripper release behavior (2026-10-27)
+
+The user requested that OpenGripper move the hand forward clear of the robot base
+before opening, then wait for the released cube to settle. This is a shared
+environment/controller change for EES, expectimax, Curtis and DP, not an experimental
+axis or a seed-specific correction. A hand already clear of the base need not move
+farther. Keep the base fixed and the fingers closed during the clearance motion;
+an unsafe or unreachable release pose must fail rather than open over the robot.
+All actual motion and settling ticks count toward the existing budgets and costs.
+Keep the existing settling thresholds and bounded wait. Clearing the base is not
+a symbolic guarantee that the cube lands on the floor or becomes pickable.
+
+Implementation and physical validation of this new release motion must complete
+before the common-environment freeze. Calibration collected against the earlier
+stationary-opening controller is not valid for the new DP comparison.
+
 The user approved goal pursuit **on = 5 skill executions, off = 0**. Keep the setting
 explicit with `--goal-horizon 5`; omission, zero, negative values, and nonintegers are
 rejected rather than falling back to a preset. The API accepts other positive integer

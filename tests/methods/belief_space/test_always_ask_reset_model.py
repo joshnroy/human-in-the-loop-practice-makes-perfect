@@ -9,11 +9,12 @@ the reset's destination is a single state, not a distribution."""
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import IN_BIN
+from hitl_pmp.environments.tossing3d.predicates import BIN_ON_GROUND, CLOSED_EMPTY, IN_BIN
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, TOSS_SKILL
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -104,6 +105,25 @@ def _atoms(*, method: Tossing3DPomdpMethod, names: frozenset[str]) -> frozenset[
     return found
 
 
+@pytest.fixture
+def legacy_open_applicability(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate the original pilot regressions from deliberate held-cube opening."""
+    opening = Tossing3DSkills.OPEN_GRIPPER
+    robot, cube, bin_object = opening.parameters
+    monkeypatch.setattr(
+        Tossing3DSkills,
+        "OPEN_GRIPPER",
+        opening.model_copy(
+            update={
+                "preconditions": frozenset({
+                    LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube)),
+                    LiftedAtom(predicate=BIN_ON_GROUND, variables=(bin_object,)),
+                })
+            }
+        ),
+    )
+
+
 def _ground(
     *, method: Tossing3DPomdpMethod, name: str, atoms: frozenset[GroundAtom]
 ) -> GroundSkill:
@@ -157,10 +177,11 @@ def _with_toss_competence(*, state: Tossing3DBeliefState, rate: float) -> Tossin
 
 
 @pytest.mark.parametrize("rate", [0.2, 0.5, 0.7])
+@pytest.mark.usefixtures("legacy_open_applicability")
 def test_wrapped_astar_no_longer_stops_while_holding_the_cube(
     *, rate: float, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The pilot's failure: a toss looked like a dead end, so determinized sampling
+    """In the pilot's action library, a toss looked like a dead end, so sampling
     noise flipped a margin of about +0.01 to STOP. Knowing the reset follows, a toss is
     worth "learn, then practise again", and A* tosses every time."""
     method = _method(solver="determinized_astar", wrapped=True)
@@ -208,10 +229,11 @@ def test_a_wrapped_toss_ends_in_the_start_state_and_pays_for_the_reset(
 
 
 @pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+@pytest.mark.usefixtures("legacy_open_applicability")
 def test_the_reset_price_decides_whether_practice_is_worth_it(
     *, solver: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The same belief, the same planner: at the domain's price the robot tosses; at a
+    """In the pilot's action library, at the domain's price the robot tosses; at a
     price that outweighs everything a toss could teach, it stops. The price is in the
     plan cost, not only in the bookkeeping."""
     choices = {}
@@ -279,13 +301,15 @@ def test_a_skill_without_continuous_parameters_is_not_followed_by_a_reset(
 
 
 @pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
-def test_the_unwrapped_planner_is_unchanged(
+@pytest.mark.usefixtures("legacy_open_applicability")
+def test_the_unwrapped_planner_is_unchanged_with_legacy_open_applicability(
     *, solver: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Values pinned from the code before the reset-aware model existed: the canonical
     arm's decision and root values on a fixed belief are exactly what they were.
-    Disable pouring to retain the action library these pre-pouring values describe;
-    the pouring-enabled applicability and practice tests cover the expanded domain.
+    Disable pouring and restore OpenGripper's old closed-empty/bin-on-ground
+    preconditions: the snapshots predate deliberate held-cube opening. Retain the
+    original values rather than freeze a different domain's sampled A* decision.
     """
     method = _method(solver=solver, wrapped=False, pouring=False)
     _start_session(method=method, monkeypatch=monkeypatch)
@@ -295,6 +319,69 @@ def test_the_unwrapped_planner_is_unchanged(
     pinned_action, pinned_values = UNWRAPPED_PINNED[solver]
     assert action[0].skill.name == pinned_action
     assert values == pytest.approx(pinned_values, rel=1e-12)
+
+
+@pytest.mark.parametrize("solver", ["expectimax", "determinized_astar"])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_held_cube_opening_is_available_without_inventing_a_reset_or_retrieval(
+    *, solver: str, wrapped: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The expanded domain offers opening, but a drop is not a free reset/pick.
+
+    Both solvers must score it using its own success/failure evidence and cost,
+    without changing the toss belief or applying the always-ask reset.
+    """
+    method = _method(solver=solver, wrapped=wrapped, pouring=False)
+    _start_session(method=method, monkeypatch=monkeypatch)
+    method._pomdp_state = _with_toss_competence(state=method.pomdp_state, rate=0.5)  # noqa: SLF001
+    holding = _holding(method=method)
+    state = method.pomdp_state
+    model = method._pomdp_model  # noqa: SLF001
+    search_state = make_tossing3d_search_state(state=state, true_atoms=holding)
+    opening = _ground(method=method, name="OpenGripper", atoms=holding)
+    assert opening in model.get_valid_actions(environment_state=search_state)
+    outcomes = model.outcomes(environment_state=search_state, state=state, action=opening)
+    assert outcomes == transition_outcomes(
+        environment_state=search_state,
+        state=state,
+        action=opening,
+        ground_skills=model.ground_skills,
+        effects=model._effects,  # noqa: SLF001
+        exploration_epsilon=model.exploration_epsilon,
+        random_toss_competence=model.random_toss_competence,
+        competence_evidence=model.competence_evidence,
+    )
+    success, failure = outcomes
+    assert success[0] == pytest.approx(mean_competence(belief=state.skill_beliefs["OpenGripper"]))
+    assert failure[0] == pytest.approx(1.0 - success[0])
+    assert failure[2] == holding
+    released = success[2]
+    assert opening.add_effects <= released
+    assert not opening.delete_effects & released
+    assert not any(
+        atom.predicate in opening.expected_ignore_effects(before_atoms=holding) for atom in released
+    )
+    assert released != _atoms(method=method, names=START)
+    assert not any(
+        action.skill.name.startswith("Pick")
+        for action in model.get_valid_actions(
+            environment_state=make_tossing3d_search_state(state=success[1], true_atoms=released)
+        )
+    )
+    for _, belief, _ in outcomes:
+        assert belief.accumulated_cost == pytest.approx(
+            state.accumulated_cost + state.skill_beliefs["OpenGripper"].mean_cost()
+        )
+        assert belief.skill_beliefs[TOSS_SKILL] == state.skill_beliefs[TOSS_SKILL]
+        assert belief.pending_examples.get(TOSS_SKILL, 0) == state.pending_examples.get(
+            TOSS_SKILL, 0
+        )
+    action = method.select_skill_to_practice(true_atoms=holding)[0]
+    values = method.practice_action_values()
+    assert "OpenGripper" in values
+    assert action.skill.name == "STOP" or action in model.get_valid_actions(
+        environment_state=search_state
+    )
 
 
 _HUMAN = "ask_for_reset_cube_bin_only(robot, cube_0, bin_0, cuboid_barrier, robot_side, "
