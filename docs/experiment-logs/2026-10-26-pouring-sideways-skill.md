@@ -1,5 +1,9 @@
 # Sideways wiggle in the actual Pour skill
 
+**Follow-up:** the [requested-count 1–5 study](2026-10-26-pouring-sideways-counts.md)
+checks frozen recipes on three starts per material and includes full native
+videos. The target-two results below remain the earlier diagnostic.
+
 The approved horizontal motion now runs inside the native Pour macro, between
 the outward tilt and upright return. In the selected seed-0 attempt for each
 material, all five cubes remain in the pitcher until the sideways stage starts;
