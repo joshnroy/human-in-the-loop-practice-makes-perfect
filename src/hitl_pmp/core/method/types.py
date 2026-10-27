@@ -520,7 +520,9 @@ class Skill(BaseModel):
     becomes a universally-quantified delete (`PddlWriter._action_str`); when applying
     an operator symbolically the atoms are dropped *before* delete/add effects, so a
     predicate that is both ignored and added stays true (predicators'
-    `utils.apply_operator`)."""
+    `utils.apply_operator`). Conditional ignore effects apply the same forgetting only
+    when their lifted conditions held in the incoming state. Their predicates quantify
+    over all objects and need not bind variables in this skill's signature."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -533,6 +535,7 @@ class Skill(BaseModel):
     # are Predicates, not LiftedAtoms -- they bind no variable to check.
     ignore_effects: frozenset[Predicate] = frozenset()
     conditional_add_effects: frozenset[ConditionalAddEffect] = frozenset()
+    conditional_ignore_effects: frozenset[ConditionalIgnoreEffect] = frozenset()
     param_dim: int
     practice_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
@@ -553,6 +556,12 @@ class Skill(BaseModel):
             variable
             for effect in self.conditional_add_effects
             for atom in (*effect.conditions, *effect.add_effects)
+            for variable in atom.variables
+        )
+        referenced.update(
+            variable
+            for effect in self.conditional_ignore_effects
+            for atom in effect.conditions
             for variable in atom.variables
         )
         undeclared = referenced - declared
@@ -647,6 +656,29 @@ class GroundSkill(BaseModel):
             for atom in effect.add_effects
         )
 
+    @property
+    def conditional_ignore_effects(self) -> frozenset[GroundConditionalIgnoreEffect]:
+        return frozenset(
+            effect.ground(substitution=self._substitution)
+            for effect in self.skill.conditional_ignore_effects
+        )
+
+    def expected_ignore_effects(
+        self, *, before_atoms: frozenset[GroundAtom]
+    ) -> frozenset[Predicate]:
+        """Predicates forgotten on success, with guards evaluated before any effects.
+
+        Evaluate this and expected_add_effects against the same incoming atoms.
+        Remove ignored predicates and delete effects before applying additions;
+        reasserted atoms survive even when their predicate is also forgotten.
+        """
+        return self.ignore_effects | frozenset(
+            predicate
+            for effect in self.conditional_ignore_effects
+            if effect.conditions <= before_atoms
+            for predicate in effect.ignore_effects
+        )
+
 
 class ConditionalAddEffect(BaseModel):
     """Add atoms when every condition held before the action's effects.
@@ -678,6 +710,32 @@ class GroundConditionalAddEffect(BaseModel):
 
     conditions: frozenset[GroundAtom]
     add_effects: frozenset[GroundAtom]
+
+
+class ConditionalIgnoreEffect(BaseModel):
+    """Forget every atom of the predicates when all incoming conditions hold."""
+
+    model_config = ConfigDict(frozen=True)
+
+    conditions: frozenset[LiftedAtom]
+    ignore_effects: frozenset[Predicate]
+
+    def ground(self, *, substitution: dict[Variable, Object]) -> GroundConditionalIgnoreEffect:
+        return GroundConditionalIgnoreEffect(
+            conditions=frozenset(
+                atom.ground(substitution=substitution) for atom in self.conditions
+            ),
+            ignore_effects=self.ignore_effects,
+        )
+
+
+class GroundConditionalIgnoreEffect(BaseModel):
+    """A grounded guard with predicate-wide forgetting, not object-local deletion."""
+
+    model_config = ConfigDict(frozen=True)
+
+    conditions: frozenset[GroundAtom]
+    ignore_effects: frozenset[Predicate]
 
 
 class Variable(BaseModel):

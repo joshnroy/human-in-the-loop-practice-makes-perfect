@@ -181,7 +181,10 @@ class FastDownwardPlanner:
         Explicit non-default aliases retain their requested configuration.
         """
         if alias == "seq-opt-lmcut" and any(
-            skill.conditional_add_effects or skill.ignore_effects for skill in skills
+            skill.conditional_add_effects
+            or skill.conditional_ignore_effects
+            or skill.ignore_effects
+            for skill in skills
         ):
             return [], ["--search", "astar(hmax())"]
         return ["--alias", alias], []
