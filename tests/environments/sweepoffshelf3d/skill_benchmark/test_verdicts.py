@@ -2,12 +2,15 @@
 
 import pytest
 
+from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark import verdicts as verdicts_module
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.types import (
     CaseResult,
+    SettingThreshold,
     SkillThreshold,
     SkillVerdict,
 )
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.verdicts import (
+    SETTING_THRESHOLDS,
     SWEEP_GRID,
     THRESHOLDS,
     Verdicts,
@@ -103,12 +106,20 @@ def test_missing_effects_and_budget_cut_offs_keep_their_own_labels() -> None:
     ] == ("budget")
 
 
-def _result(*, skill: str, state: str, label: str, params: list[float] | None = None) -> CaseResult:
+def _result(
+    *,
+    skill: str,
+    state: str,
+    label: str,
+    params: list[float] | None = None,
+    cube: str | None = None,
+) -> CaseResult:
     return CaseResult(
-        case_id=f"{state}-{skill}-{params}",
+        case_id=f"{state}-{skill}-{cube}-{params}",
         state_id=state,
         family="f",
         skill=skill,
+        cube=cube,
         params=params or [],
         label=label,
     )
@@ -134,27 +145,83 @@ def test_a_skill_without_continuous_parameters_must_succeed_from_every_state() -
     assert verdicts["PlaceCubeInBox"].passed
 
 
-def test_sweep_passes_when_every_state_has_some_succeeding_setting() -> None:
+def _pairs(*, succeeding: int, failing: int) -> list[CaseResult]:
+    """`succeeding` (state, cube) pairs where one setting works, `failing` where none
+    does, every pair over the whole grid."""
+    out = []
+    for index in range(succeeding + failing):
+        state, cube = f"s{index // 5}", f"cube_{index % 5}"
+        for i, p in enumerate(SWEEP_GRID):
+            ok = index < succeeding and i == 0
+            out.append(
+                _result(
+                    skill="SweepShelf",
+                    state=state,
+                    cube=cube,
+                    label="success" if ok else "execution_failed",
+                    params=list(p),
+                )
+            )
+    return out
+
+
+def test_without_a_pair_threshold_every_state_and_target_cube_needs_a_setting(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(verdicts_module, "SETTING_THRESHOLDS", {})
     grid = list(SWEEP_GRID)
     results = [
         _result(
             skill="SweepShelf",
             state="a",
+            cube="cube_0",
             label="success" if i == 0 else "execution_failed",
             params=list(p),
         )
         for i, p in enumerate(grid)
-    ] + [_result(skill="SweepShelf", state="b", label="success", params=list(p)) for p in grid]
+    ] + [
+        _result(skill="SweepShelf", state="a", cube="cube_1", label="success", params=list(p))
+        for p in grid
+    ]
     (sweep,) = [v for v in Verdicts.judge(results=results) if v.skill == "SweepShelf"]
-    assert sweep.target == "some setting per state"
+    assert sweep.target == "some setting per state and target cube"
     assert sweep.passed
-    assert sweep.per_state == {"a": [1, len(grid)], "b": [len(grid), len(grid)]}
+    assert sweep.per_state == {"a/cube_0": [1, len(grid)], "a/cube_1": [len(grid), len(grid)]}
+    # One target cube with no succeeding setting fails the gate, even in a state
+    # where another cube's sweep works.
     results += [
-        _result(skill="SweepShelf", state="c", label="execution_failed", params=list(p))
+        _result(
+            skill="SweepShelf", state="a", cube="cube_2", label="execution_failed", params=list(p)
+        )
         for p in grid
     ]
     (sweep,) = [v for v in Verdicts.judge(results=results) if v.skill == "SweepShelf"]
     assert not sweep.passed
+
+
+def test_the_sweep_gates_on_at_least_37_of_40_pairs_with_a_succeeding_setting() -> None:
+    """Pair-count target (Josh, 2026-10-23), set from the measured count of the angled
+    stroke's gate run at 01aae2153 (2026-10-24): 37/40 pairs had a succeeding setting."""
+    assert SETTING_THRESHOLDS["SweepShelf"] == SettingThreshold(min_pairs=37, out_of=40)
+    passing = _verdict(skill="SweepShelf", results=_pairs(succeeding=37, failing=3))
+    assert passing.target == "some setting for at least 37/40 (state, target cube) pairs"
+    assert passing.passed
+    assert (passing.gated_pairs, passing.gated_pairs_total) == (37, 40)
+    assert len(passing.per_state) == 40
+    every = _verdict(skill="SweepShelf", results=_pairs(succeeding=40, failing=0))
+    assert every.passed
+    short = _verdict(skill="SweepShelf", results=_pairs(succeeding=36, failing=4))
+    assert not short.passed
+    assert (short.gated_pairs, short.gated_pairs_total) == (36, 40)
+
+
+def test_a_pair_threshold_refuses_a_changed_number_of_pairs() -> None:
+    """As a run threshold: a state set with more or fewer pairs is refused, not rescaled."""
+    fewer = _verdict(skill="SweepShelf", results=_pairs(succeeding=39, failing=0))
+    assert not fewer.passed
+    assert "39 (state, target cube) pair(s)" in fewer.reason
+    more = _verdict(skill="SweepShelf", results=_pairs(succeeding=41, failing=0))
+    assert not more.passed
 
 
 def test_a_skill_with_no_benchmark_case_does_not_pass() -> None:
@@ -174,10 +241,18 @@ def test_a_skill_with_no_benchmark_case_does_not_pass() -> None:
 
 
 def test_the_sweep_grid_spans_the_whole_allowed_range() -> None:
-    heights = sorted({h for h, _ in SWEEP_GRID})
-    speeds = sorted({s for _, s in SWEEP_GRID})
-    assert heights[0] == 0.0 and heights[-1] == 0.04
-    assert speeds[0] == 0.05 and speeds[-1] == 0.25
+    from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
+
+    offsets = sorted({o for o, _ in SWEEP_GRID})
+    angles = sorted({a for _, a in SWEEP_GRID})
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
+    # Josh, 2026-10-24: offsets either side of the cube (none over it), the full
+    # offset range included, and angles within +/- 30 deg.
+    assert offsets == [-0.10, -0.05, -0.025, 0.025, 0.05, 0.10]
+    assert angles == [-30.0, -15.0, 0.0, 15.0, 30.0]
+    assert (offsets[0], offsets[-1]) == (o_low, o_high)
+    assert a_low <= angles[0] and angles[-1] <= a_high
+    assert len(SWEEP_GRID) == len(offsets) * len(angles)
 
 
 # Per-skill thresholds (Josh, 2026-10-20): each is x/y of a skill's gated cases, and the
@@ -294,15 +369,27 @@ def test_the_unthresholded_skills_still_must_succeed_from_every_state(*, skill: 
     assert not one_short.passed
 
 
-def test_the_sweep_keeps_its_some_setting_per_state_target() -> None:
+def test_the_sweep_has_a_pair_threshold_not_a_run_threshold() -> None:
     assert "SweepShelf" not in THRESHOLDS
-    results = [
-        _result(skill="SweepShelf", state="a", label="success", params=list(p)) for p in SWEEP_GRID
-    ]
-    sweep = _verdict(skill="SweepShelf", results=results)
-    assert sweep.target == "some setting per state"
-    assert sweep.passed
-    assert (sweep.gated_successes, sweep.gated_total) == (len(SWEEP_GRID), len(SWEEP_GRID))
+    assert set(SETTING_THRESHOLDS) == {"SweepShelf"}
+
+
+def test_the_committed_state_set_has_exactly_the_pairs_the_sweep_threshold_counts() -> None:
+    from pathlib import Path
+
+    from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateSet
+
+    states = StateSet.load(
+        path=Path(__file__).resolve().parents[4] / "benchmarks/sweepoffshelf3d/states.jsonl"
+    )
+    for skill, threshold in SETTING_THRESHOLDS.items():
+        pairs = {
+            (state.state_id, case.cube)
+            for state in states
+            for case in state.cases
+            if case.skill == skill
+        }
+        assert len(pairs) == threshold.out_of, skill
 
 
 def test_the_thresholds_name_only_robot_skills_and_families_the_state_set_has() -> None:

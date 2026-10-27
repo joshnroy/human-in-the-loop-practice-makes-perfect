@@ -85,13 +85,14 @@ def test_the_goal_is_every_cube_in_the_box():
     )
 
 
-def test_cube_order_pins_one_sweep_grounding():
-    holding = _start() - {_atom(predicate=HAND_EMPTY, objects=(O.robot,))} | {
-        _atom(predicate=HOLDING_WIPER, objects=(O.robot, O.wiper))
-    }
-    groundings = _groundings(skill=S.SWEEP_SHELF, atoms=holding)
-    assert len(groundings) == 1
-    assert groundings[0].objects[-5:] == O.cubes
+def test_a_sweep_grounds_once_per_shelf_cube():
+    """`SweepShelf(robot, wiper, box, cube)` aims one stroke at one cube: one grounding
+    per cube on the shelf, and none for a cube that is not."""
+    atoms = _holding_wiper(atoms=_start(on_shelf=O.cubes[1:], in_box=O.cubes[:1]))
+    groundings = _groundings(skill=S.SWEEP_SHELF, atoms=atoms)
+    assert sorted(g.objects[3].name for g in groundings) == [c.name for c in O.cubes[1:]]
+    for ground in groundings:
+        assert ground.objects[:3] == (O.robot, O.wiper, O.box)
 
 
 def test_cube_order_is_a_chain_over_cube_names():
@@ -100,19 +101,32 @@ def test_cube_order_is_a_chain_over_cube_names():
     )
 
 
-@pytest.mark.parametrize("on_shelf", [O.cubes, O.cubes[:2], O.cubes[3:]])
-def test_a_sweep_moves_every_shelf_cube_and_only_those(*, on_shelf):
-    elsewhere = tuple(cube for cube in O.cubes if cube not in on_shelf)
-    atoms = _start(on_shelf=on_shelf, on_floor=elsewhere)
-    atoms = _apply(ground=_groundings(skill=S.PICK_WIPER, atoms=atoms)[0], atoms=atoms)
-    after = _apply(ground=_groundings(skill=S.SWEEP_SHELF, atoms=atoms)[0], atoms=atoms)
-    for cube in on_shelf:
-        assert _atom(predicate=IN_BOX, objects=(cube, O.box)) in after
-        assert _atom(predicate=ON_SHELF, objects=(cube,)) not in after
-    for cube in elsewhere:
-        assert _atom(predicate=IN_BOX, objects=(cube, O.box)) not in after
-        assert _atom(predicate=ON_FLOOR, objects=(cube,)) in after
+def test_a_sweep_promises_its_cube_in_the_box_and_nothing_about_the_others():
+    """Whatever else the stroke moves is a side effect the planner observes and
+    replans from; the operator names only its target."""
+    atoms = _holding_wiper(atoms=_start())
+    sweep = next(
+        g for g in _groundings(skill=S.SWEEP_SHELF, atoms=atoms) if g.objects[3] == O.cubes[2]
+    )
+    assert sweep.conditional_add_effects == frozenset()
+    assert sweep.add_effects == {
+        _atom(predicate=IN_BOX, objects=(O.cubes[2], O.box)),
+        _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()),
+    }
+    assert sweep.delete_effects == {_atom(predicate=ON_SHELF, objects=(O.cubes[2],))}
+    after = _apply(ground=sweep, atoms=atoms)
+    for cube in O.cubes:
+        assert (_atom(predicate=ON_SHELF, objects=(cube,)) in after) == (cube != O.cubes[2])
     assert _atom(predicate=HOLDING_WIPER, objects=(O.robot, O.wiper)) in after
+
+
+def test_a_sweep_needs_the_wiper_in_hand_and_its_cube_on_the_shelf():
+    (_robot, _wiper, _box, cube) = S.SWEEP_SHELF.parameters
+    assert {(a.predicate.name, a.variables[-1].name) for a in S.SWEEP_SHELF.preconditions} == {
+        ("HoldingWiper", "wiper"),
+        ("OnShelf", cube.name),
+    }
+    assert _groundings(skill=S.SWEEP_SHELF, atoms=_start()) == []
 
 
 def test_pick_and_place_moves_one_cube():
@@ -199,12 +213,13 @@ def test_only_the_sweep_has_continuous_parameters():
             assert skill.param_dim == 0
 
 
-def test_sweep_bounds_cover_heights_above_a_cube():
-    """The sampled head height must reach past a 2 cm cube so the range holds
-    parameters that cannot work as well as ones that can."""
-    (h_low, h_high), _ = S.SWEEP_BOUNDS
-    assert h_low == 0.0
-    assert h_high > 2 * O.cube_half_size
+def test_sweep_parameters_are_line_offset_then_angle():
+    """[offset, angle]: the line's offset from the target cube along the head (m) and
+    the stroke's turn from the straight pull (deg). Speed and height are fixed."""
+    (o_low, o_high), (a_low, a_high) = S.SWEEP_BOUNDS
+    assert (o_low, o_high) == (-0.10, 0.10)
+    assert (a_low, a_high) == (-45.0, 45.0)
+    assert not hasattr(S, "SWEEP_HEIGHT")
 
 
 def test_fast_downward_plans_to_the_goal_from_the_start():
@@ -216,7 +231,8 @@ def test_fast_downward_plans_to_the_goal_from_the_start():
         init_atoms=_start(),
         goal=SweepOffShelf3DPredicates.goal_atoms(),
     )
-    assert [ground.skill.name for ground in plan] == ["PickWiper", "SweepShelf"]
+    assert [ground.skill.name for ground in plan] == ["PickWiper", *["SweepShelf"] * 5]
+    assert {ground.objects[3] for ground in plan[1:]} == set(O.cubes)
 
 
 _LAYOUTS = {
@@ -286,17 +302,20 @@ def test_a_sweep_of_an_empty_shelf_is_not_applicable():
 
 
 @pytest.mark.parametrize("count", [1, 3, 5])
-def test_a_sweep_of_n_cubes_promises_exactly_those_n_in_the_box(*, count):
+def test_a_sweep_promises_exactly_its_one_cube_in_the_box(*, count):
     on_shelf = O.cubes[:count]
     atoms = _holding_wiper(atoms=_start(on_shelf=on_shelf, in_box=O.cubes[count:]))
-    (sweep,) = _groundings(skill=S.SWEEP_SHELF, atoms=atoms)
-    promised = sweep.expected_add_effects(before_atoms=atoms)
-    assert {atom for atom in promised if atom.predicate == IN_BOX} == {
-        _atom(predicate=IN_BOX, objects=(cube, O.box)) for cube in on_shelf
-    }
-    after = _apply(ground=sweep, atoms=atoms)
-    assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) not in after
-    assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in after
+    sweeps = _groundings(skill=S.SWEEP_SHELF, atoms=atoms)
+    assert len(sweeps) == count
+    for sweep in sweeps:
+        promised = sweep.expected_add_effects(before_atoms=atoms)
+        assert {atom for atom in promised if atom.predicate == IN_BOX} == {
+            _atom(predicate=IN_BOX, objects=(sweep.objects[3], O.box))
+        }
+        after = _apply(ground=sweep, atoms=atoms)
+        assert _atom(predicate=ANY_CUBE_OFF_SHELF, objects=()) in after
+        # As a shelf pick, a sweep cannot know it moved the last shelf cube.
+        assert _atom(predicate=ANY_CUBE_ON_SHELF, objects=()) in after
 
 
 def test_reset_cubes_is_not_applicable_when_every_cube_is_on_the_shelf():

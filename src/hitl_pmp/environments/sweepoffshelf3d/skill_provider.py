@@ -13,8 +13,9 @@ from .objects import SweepOffShelf3DObjects as O
 from .predicates import SweepOffShelf3DAtoms, SweepOffShelf3DPredicates
 from .skills import SweepOffShelf3DSkills as S
 
-# The oracle's sweep: 5 mm over the board at the slowest pull (5/5 in the tuning grid).
-ORACLE_SWEEP_PARAMS = (0.005, 0.05)
+# The oracle's sweep: the straight stroke (angle 0) on the line 6 cm to the cube's -y
+# side, the best offset of the one-stroke probe (20/26 at the 0.05 m/s now fixed).
+ORACLE_SWEEP_PARAMS = (-0.06, 0.0)
 
 
 class SweepOffShelf3DSkillProvider(SkillProvider):
@@ -38,8 +39,8 @@ class SweepOffShelf3DSkillProvider(SkillProvider):
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if ground_skill.skill != S.SWEEP_SHELF:
             return np.zeros(0)
-        (h_low, h_high), (v_low, v_high) = S.SWEEP_BOUNDS
-        return np.array([rng.uniform(h_low, h_high), rng.uniform(v_low, v_high)])
+        (o_low, o_high), (v_low, v_high) = S.SWEEP_BOUNDS
+        return np.array([rng.uniform(o_low, o_high), rng.uniform(v_low, v_high)])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -71,23 +72,14 @@ class SweepOffShelf3DSkillProvider(SkillProvider):
 
 
 class SweepOffShelf3DActions:
-    """`[skill_id, cube_index, height, speed]`. A static-method container."""
+    """`[skill_id, cube_index, offset, speed]`. A static-method container."""
 
     @staticmethod
     def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
-        single_cube = (
-            S.PICK_CUBE_FROM_SHELF,
-            S.PICK_CUBE_FROM_FLOOR,
-            S.PLACE_CUBE_IN_BOX,
-            *S.RETURN_CUBE_SKILLS,
-        )
-        cube_index = (
-            float(O.cubes.index(ground_skill.objects[1]))
-            if ground_skill.skill in single_cube
-            else 0.0
-        )
-        height, speed = (float(v) for v in params) if len(params) == 2 else (0.0, 0.0)
-        return np.array([float(SKILL_IDS[ground_skill.skill.name]), cube_index, height, speed])
+        cubes = [obj for obj in ground_skill.objects if obj.type == O.cube_type]
+        cube_index = float(O.cubes.index(cubes[0])) if len(cubes) == 1 else 0.0
+        offset, speed = (float(v) for v in params) if len(params) == 2 else (0.0, 0.0)
+        return np.array([float(SKILL_IDS[ground_skill.skill.name]), cube_index, offset, speed])
 
 
 class SweepOffShelf3DOracle(OraclePolicyProvider):
@@ -125,7 +117,9 @@ class SweepOffShelf3DOracle(OraclePolicyProvider):
         if held:
             ground = GroundSkill(skill=S.PLACE_CUBE_IN_BOX, objects=(O.robot, held[0], O.box))
         elif on_shelf and holding_wiper:
-            ground = GroundSkill(skill=S.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, *O.cubes))
+            ground = GroundSkill(
+                skill=S.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, on_shelf[0])
+            )
             return LabeledAction(
                 action=SweepOffShelf3DActions.encode(
                     ground_skill=ground, params=np.array(ORACLE_SWEEP_PARAMS)

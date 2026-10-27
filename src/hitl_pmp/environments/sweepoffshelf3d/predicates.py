@@ -3,8 +3,8 @@
 Each is a lookup into the atom set the backend derived from the live MuJoCo scene when
 the state was built (`SweepOffShelf3DState.abstract_atoms`), so `holds` stays a pure
 function of the state while the classifiers themselves can read contacts and geometry.
-The one exception is `CubeOrder`, a static chain over cube names that lets the sweep
-take every cube as a parameter while grounding exactly once.
+The one exception is `CubeOrder`, a static chain over cube names that lets the human's
+`reset_cubes` take every cube as a parameter while grounding exactly once.
 
 `OnFloor` and `WiperOnFloor` are observed outcomes only: no operator ever adds them.
 A cube or wiper that is neither where it belongs nor held is on the floor. For a cube
@@ -20,13 +20,14 @@ atom of its own: `AnyCubeOnShelf`, `AnyCubeOffShelf` and `WiperAway` (not `Wiper
 are derived from the per-object atoms by `with_summaries`, which the backend applies
 to every observed state.
 
-The operators maintain them exactly except in two mirror-image places: picking a cube
-off the shelf cannot know whether it was the last one, so `PickCubeFromShelf` leaves
-`AnyCubeOnShelf` as it was; and returning a cube to the shelf cannot know whether it
-was the last stray one, so `ReturnCubeToShelf*` leaves `AnyCubeOffShelf` as it was. A
-forecast can therefore hold a sweep applicable after the last shelf cube was picked by
-hand, or `reset_cubes` applicable after the last stray cube was returned; every
-observed state is classified afresh, so the real applicability check is exact.
+The operators maintain them exactly except in two mirror-image places: taking a cube
+off the shelf cannot know whether it was the last one, so `PickCubeFromShelf` and
+`SweepShelf` leave `AnyCubeOnShelf` as it was; and returning a cube to the shelf
+cannot know whether it was the last stray one, so `ReturnCubeToShelf*` leaves
+`AnyCubeOffShelf` as it was. A forecast can therefore hold `AnyCubeOnShelf` after the
+last shelf cube was taken, or `reset_cubes` applicable after the last stray cube was
+returned; every observed state is classified afresh, so the real applicability check
+is exact.
 """
 
 import itertools

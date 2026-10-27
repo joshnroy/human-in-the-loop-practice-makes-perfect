@@ -2,8 +2,8 @@
 
 SweepOffShelf3D's five cubes are the case: every belief is per lifted skill, the
 deployment value counts cubes rather than naming them, and the operators treat every
-cube alike -- the `CubeOrder`-pinned sweep and human reset included, since their
-effects are symmetric in their slots. What can tell two cubes apart is learned
+cube alike -- the `CubeOrder`-pinned human reset included, since its
+effects are symmetric in its slots. What can tell two cubes apart is learned
 per *ground* skill: a cost forecast from that grounding's own executions, a failure
 effect observed in one exact state, or a starved parameter pool. The reduction must
 keep exactly the symmetry those leave, and the tests below pin that it does, by

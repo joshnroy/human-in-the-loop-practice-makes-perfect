@@ -2,7 +2,9 @@
 
 Targets (Josh, 2026-10-15): a skill with no continuous parameters must succeed from
 every benchmark state; a skill with continuous parameters (only `SweepShelf`) must have,
-from every state, at least one setting on `SWEEP_GRID` that succeeds. A skill with no
+from every state, at least one setting on `SWEEP_GRID` that succeeds. Since SweepShelf
+aims one stroke at one cube (2026-10-23) that is per (state, target cube), and
+`SETTING_THRESHOLDS` relaxes "every pair" to a pair count. A skill with no
 valid benchmark case has not been shown to meet anything, so it does not pass.
 
 `THRESHOLDS` (Josh, 2026-10-20) replaces "every state" for four skills with x/y of their
@@ -25,7 +27,7 @@ from collections import Counter, defaultdict
 from hitl_pmp.environments.sweepoffshelf3d.skills import SweepOffShelf3DSkills as S
 from hitl_pmp.environments.sweepoffshelf3d.types import SkillNote, SkillTrace
 
-from .types import CaseResult, SkillThreshold, SkillVerdict
+from .types import CaseResult, SettingThreshold, SkillThreshold, SkillVerdict
 
 # The count, not a fraction: a state set that gains or loses a case changes the
 # denominator, and the gate then refuses instead of passing at a rate never agreed.
@@ -41,8 +43,20 @@ THRESHOLDS: dict[str, SkillThreshold] = {
         min_successes=5, out_of=8, families=frozenset({"harvested"})
     ),
 }
+# A pair-count target for a continuous-parameter skill (Josh, 2026-10-23), set from the
+# measured count (2026-10-24): the angled stroke's gate run at 01aae2153 found a
+# succeeding setting for 37/40 (state, target cube) pairs. The three without one are
+# wiper-in-hand-s1-l3/cube_0 (a corner cube at y -0.225), wiper-in-hand-s0-l3/cube_3 and
+# wiper-in-hand-s1-l0/cube_3.
+SETTING_THRESHOLDS: dict[str, SettingThreshold] = {
+    S.SWEEP_SHELF.name: SettingThreshold(min_pairs=37, out_of=40),
+}
+# (line offset [m], stroke angle [deg]) (Josh, 2026-10-24): offsets either side of the
+# cube, none over it, out to the bound; angles within +/- 30 deg of the straight pull.
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(
-    (height, speed) for height in (0.0, 0.01, 0.02, 0.03, 0.04) for speed in (0.05, 0.15, 0.25)
+    (offset, angle)
+    for offset in (-0.10, -0.05, -0.025, 0.025, 0.05, 0.10)
+    for angle in (-30.0, -15.0, 0.0, 15.0, 30.0)
 )
 SCRIPTED_SKILLS = frozenset({S.SWEEP_SHELF.name, S.RETURN_WIPER.name})
 CANDIDATE_KINDS = frozenset({"no_plan", "plan_blocked", "executed", "execution_failed"})
@@ -122,15 +136,33 @@ class Verdicts:
             elif Verdicts.has_continuous_parameters(skill=skill):
                 per_state: dict[str, list[int]] = {}
                 for run in runs:
-                    tally = per_state.setdefault(run.state_id, [0, 0])
+                    key = run.state_id if run.cube is None else f"{run.state_id}/{run.cube}"
+                    tally = per_state.setdefault(key, [0, 0])
                     tally[0] += run.label == "success"
                     tally[1] += 1
-                passed = bool(per_state) and all(ok > 0 for ok, _ in per_state.values())
+                covered = sum(ok > 0 for ok, _ in per_state.values())
+                setting = SETTING_THRESHOLDS.get(skill)
+                reason = ""
+                if setting is None:
+                    target = "some setting per state and target cube"
+                    passed = bool(per_state) and covered == len(per_state)
+                else:
+                    target = setting.target()
+                    if len(per_state) != setting.out_of:
+                        reason = (
+                            f"the benchmark ran {len(per_state)} (state, target cube) pair(s), "
+                            f"the threshold is out of {setting.out_of}; the state set "
+                            "changed, so set the threshold again"
+                        )
+                    passed = not reason and covered >= setting.min_pairs
                 verdicts.append(
                     SkillVerdict(
                         skill=skill,
-                        target="some setting per state",
+                        target=target,
                         passed=passed,
+                        reason=reason,
+                        gated_pairs=covered,
+                        gated_pairs_total=len(per_state),
                         successes=successes,
                         total=len(runs),
                         gated_successes=successes,

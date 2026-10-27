@@ -84,7 +84,7 @@ def _shelf(*, wrapped: bool = True) -> _Domain:
         method=method,
         goal=SweepOffShelf3DPredicates.goal_atoms(),
         parameterized=GroundSkill(
-            skill=SweepOffShelf3DSkills.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, *O.cubes)
+            skill=SweepOffShelf3DSkills.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, O.cubes[0])
         ),
         plain=GroundSkill(
             skill=SweepOffShelf3DSkills.PICK_CUBE_FROM_SHELF, objects=(O.robot, O.cubes[0])
@@ -562,8 +562,12 @@ def _symbolic_run(
     return out
 
 
-def _shelf_start() -> frozenset[GroundAtom]:
-    named = {("HandEmpty", ("robot",)), ("WiperHome", (O.wiper.name,))}
+def _shelf_start(*, holding_wiper: bool = False) -> frozenset[GroundAtom]:
+    named = (
+        {("HoldingWiper", ("robot", O.wiper.name))}
+        if holding_wiper
+        else {("HandEmpty", ("robot",)), ("WiperHome", (O.wiper.name,))}
+    )
     named |= {("OnShelf", (cube.name,)) for cube in O.cubes}
     state = SweepOffShelf3DState(
         data={}, abstract_atoms=SweepOffShelf3DAtoms.with_summaries(atoms=frozenset(named))
@@ -602,7 +606,8 @@ def test_forced_resets_leave_the_planners_choices_and_draws_unchanged(
         return [self.random_choice(ground_skills=list(applicable))]
 
     monkeypatch.setattr(EesMethod, "select_skill_to_practice", select)
-    start = _shelf_start()
+    # The wiper in hand: one sweep per shelf cube is applicable from the first step.
+    start = _shelf_start(holding_wiper=True)
     plain = _symbolic_run(
         domain=_shelf(wrapped=False), start=start, steps=25, monkeypatch=monkeypatch
     )
@@ -610,9 +615,12 @@ def test_forced_resets_leave_the_planners_choices_and_draws_unchanged(
     wrapped = _symbolic_run(domain=wrapped_domain, start=start, steps=25, monkeypatch=monkeypatch)
     assert [label for label in wrapped if label != "RESET"] == plain
     sweeps = sum(label.startswith("SweepShelf") for label in plain)
-    assert sweeps > 0
+    assert sweeps > 1
+    # One forced reset after every SweepShelf call: one per stroke, not per shelf.
     assert wrapped.count("RESET") == _rule(domain=wrapped_domain).forced[PARAMETERIZED_SKILL]
     assert _rule(domain=wrapped_domain).skill_attempts == sweeps
+    # Every sweep but a last one the run stops right after is followed by a reset.
+    assert wrapped.count("RESET") >= sweeps - 1
 
 
 def test_a_forced_resets_measured_duration_is_not_credited_to_the_last_robot_skill(

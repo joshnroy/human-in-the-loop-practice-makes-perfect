@@ -15,8 +15,9 @@ there success means "the controller raised nothing" (`traced` counts which is wh
 
 A skill is flagged when it falls below its benchmark target: every attempt, for a skill
 with no continuous parameters. `SweepShelf`'s target is that *some* setting of its
-continuous parameters succeeds from each state, which a run's sampled settings cannot
-judge, so from logs it is flagged only when no attempt succeeded at all.
+continuous parameters (`[offset, speed]`) succeeds from each state for each target
+cube, which a run's sampled settings cannot judge, so from logs it is flagged only when
+no attempt succeeded at all.
 """
 
 import argparse
@@ -204,7 +205,7 @@ class SkillHealth:
         lines = [f"{len(report.files)} log file(s)", header]
         for name, tally in sorted(report.skills.items()):
             target = (
-                "some setting per state"
+                "some setting per state and target cube"
                 if SkillHealth.has_continuous_parameters(skill=name)
                 else "every attempt"
             )
