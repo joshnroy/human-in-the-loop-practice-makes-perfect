@@ -27,6 +27,7 @@ from .predicates import (
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -101,6 +102,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 ON_FLOOR,
                 NOT_HOLDING,
                 CLOSED_EMPTY,
+                GRIPPER_CLOSED,
                 ON_BIN_RIM,
                 ROBOT_AT_SIDE,
                 CUBE_AT_SIDE,
@@ -116,6 +118,7 @@ class Tossing3DSkillProvider(SkillProvider):
             )
         return (
             CLOSED_EMPTY,
+            GRIPPER_CLOSED,
             IN_BIN,
             HAND_EMPTY,
             HOLDING,
@@ -306,7 +309,8 @@ class Tossing3DSkillProvider(SkillProvider):
                 ConditionalAddEffect(
                     conditions=frozenset({holding}),
                     add_effects=frozenset({
-                        LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube))
+                        LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube)),
+                        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(robot,)),
                     }),
                 )
             }),

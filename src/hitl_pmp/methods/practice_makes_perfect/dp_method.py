@@ -9,14 +9,14 @@ from pydantic import Field, PrivateAttr, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, Policy
 from hitl_pmp.core.practice_costs import PracticeAccounting
-from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .always_ask_reset import AlwaysAskReset
 from .competence_models import LinearSkillCompetenceModel, OptimisticSkillCompetenceModel
 from .dp_allocator import DpAllocator
 from .dp_gurobi import DpAllocationResult, DpGurobiAllocator, DpOptimizationError
-from .dp_mdp import DpTaskModel
+from .dp_mdp import DpMdp, DpTaskModel
 from .dp_priors import DpPriorCalibration, DpSkillPrior
 from .ees_method import STOP_SKILL, EesMethod
 
@@ -38,11 +38,19 @@ class DpMethod(EesMethod):
     The curriculum follows the optimized policy's predecessor order, executing
     positive allocations only. Gurobi must certify both optimization stages;
     enumeration is an explicitly selected reference, never a silent fallback.
+
+    Practice preserves the selected grounding by default, independently of
+    pooled allocation counts and forecasts. Grounding substitution is an opt-in
+    legacy adaptation, not a requirement of the paper's skill curriculum.
     """
 
     dp_budget: float = Field(gt=0.0, allow_inf_nan=False)
     dp_budget_unit: Literal["cost", "episodes"] = "cost"
     dp_allocation_schedule: Literal["once", "period"] = "period"
+    dp_allow_grounding_substitution: bool = Field(
+        default=False,
+        description="Legacy shared/all grounding-substitution adaptation, not paper DP.",
+    )
     dp_solver: Literal["gurobi", "enumeration"] = "gurobi"
     dp_solver_time_limit: float = Field(default=60.0, gt=0.0, allow_inf_nan=False)
     dp_solver_log: Path | None = None
@@ -62,6 +70,7 @@ class DpMethod(EesMethod):
     _dp_unassigned_cost: float = PrivateAttr(default=0.0)
     _dp_forced_reset_pending: bool = PrivateAttr(default=False)
     _dp_allocation: dict[GroundSkill, int] = PrivateAttr(default_factory=dict)
+    _dp_groups: dict[GroundSkill, GroundSkill] = PrivateAttr(default_factory=dict)
     _dp_curriculum: list[GroundSkill] = PrivateAttr(default_factory=list)
     _dp_fitted_stages: set[GroundSkill] = PrivateAttr(default_factory=set)
     _dp_executed_since_solve: dict[GroundSkill, int] = PrivateAttr(default_factory=dict)
@@ -98,6 +107,16 @@ class DpMethod(EesMethod):
                 recency_size=self.competence_recency_size,
             )
         return super().competence_model(ground_skill=ground_skill)
+
+    def pooled_competence_model(
+        self, *, ground_skill: GroundSkill
+    ) -> OptimisticSkillCompetenceModel:
+        model = super().pooled_competence_model(ground_skill=ground_skill)
+        prior = self._dp_skill_priors.get(ground_skill.skill.name)
+        if prior is not None:
+            model.alpha = prior.alpha
+            model.beta = prior.beta
+        return model
 
     def practice_complete(self) -> bool:
         exhausted = (
@@ -153,12 +172,16 @@ class DpMethod(EesMethod):
         return policy
 
     def dp_allocation(self) -> dict[GroundSkill, int]:
-        """The current period's allocated target attempts, including zero counts."""
+        """Logical target attempts, keyed by one representative per shared parent."""
         return dict(self._dp_allocation)
 
     def dp_remaining_allocation(self) -> dict[GroundSkill, int]:
+        executed: dict[GroundSkill, int] = {}
+        for ground, count in self._dp_executed_since_solve.items():
+            group = self._dp_groups.get(ground, ground)
+            executed[group] = executed.get(group, 0) + count
         return {
-            ground: max(0, count - self._dp_executed_since_solve.get(ground, 0))
+            ground: max(0, count - executed.get(ground, 0))
             for ground, count in self._dp_allocation.items()
         }
 
@@ -208,6 +231,20 @@ class DpMethod(EesMethod):
             prior += self.start_reset_cost()
         return max(1e-12, prior + pending)
 
+    def practice_alternatives(self, *, ground_skill: GroundSkill) -> list[GroundSkill]:
+        """Keep target identity unless the legacy substitution adaptation is enabled."""
+        if (
+            not self.dp_allow_grounding_substitution
+            or ground_skill in self.offered_partial_resets()
+        ):
+            return [ground_skill]
+        return super().practice_alternatives(ground_skill=ground_skill)
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        """Use DP's curriculum without activating EES-only selector behavior."""
+        del true_atoms
+        return self.choose_practice_target()
+
     def choose_practice_target(self) -> list[GroundSkill]:
         remaining = self._remaining_budget()
         if self.practice_complete():
@@ -223,7 +260,11 @@ class DpMethod(EesMethod):
         if completed - self._dp_fitted_stages:
             self.fit_samplers()
             self._dp_fitted_stages.update(completed)
-        ranked = [candidate for candidate in self._dp_curriculum if left[candidate] > 0]
+        ranked = [
+            candidate
+            for candidate in self._dp_curriculum
+            if left[self._dp_groups.get(candidate, candidate)] > 0
+        ]
         for candidate in ranked[:1]:
             self.record_practice_target(name=candidate.skill.name, field="scored")
         return [*ranked[:1], STOP_SKILL]
@@ -244,7 +285,11 @@ class DpMethod(EesMethod):
         humans = self.offered_partial_resets()
         candidates = list(
             dict.fromkeys([
-                *self._competence_models,
+                *(
+                    self.practice_candidates()
+                    if self.competence_sharing != "grounded" or self.practice_groundings == "all"
+                    else self._competence_models
+                ),
                 *(transition.skill for transition in mdp.transitions),
                 *humans,
             ])
@@ -255,16 +300,29 @@ class DpMethod(EesMethod):
             history = (
                 self._human_competence_models.get(candidate)
                 if candidate in humans
-                else self._competence_models.get(candidate)
+                else (
+                    self.forecast_competence_model(ground_skill=candidate)
+                    if self.competence_sharing != "grounded"
+                    else self._competence_models.get(candidate)
+                )
             )
             model = self._linear_model(history=history, ground_skill=candidate)
             competences[candidate] = model.get_current_competence()
+            if candidate not in humans and self.competence_sharing in {"parent", "rate"}:
+                model = self._linear_model(
+                    history=self.pooled_competence_model(ground_skill=candidate),
+                    ground_skill=candidate,
+                )
             learning_rates[candidate] = model.learning_rate()
+        groups = self._allocation_groups(mdp=mdp, candidates=candidates, competences=competences)
+        self._dp_groups = groups if groups is not None else {}
         costs = {
             candidate: 1.0
             if self.dp_budget_unit == "episodes"
-            else self.dp_expected_attempt_cost(ground_skill=candidate)
-            for candidate in candidates
+            else self._group_attempt_price(ground_skill=candidate)
+            for candidate in dict.fromkeys(
+                self._dp_groups.get(ground, ground) for ground in candidates
+            )
         }
         try:
             if self.dp_solver == "gurobi":
@@ -275,6 +333,7 @@ class DpMethod(EesMethod):
                     costs=costs,
                     budget=budget,
                     time_limit=self.dp_solver_time_limit,
+                    groups=groups,
                 )
             else:
                 allocation = DpAllocator.allocate(
@@ -285,12 +344,14 @@ class DpMethod(EesMethod):
                     budget=budget,
                     max_skills=self.dp_max_skills,
                     max_allocations=self.dp_max_allocations,
+                    groups=groups,
                 )
                 value = DpAllocator.predicted_success(
                     mdp=mdp,
                     competences=competences,
                     learning_rates=learning_rates,
                     allocation=allocation,
+                    groups=groups,
                 )
                 result = DpAllocationResult[GroundSkill](
                     allocation=allocation,
@@ -306,6 +367,7 @@ class DpMethod(EesMethod):
             raise
         self._dp_solver_result = result
         self._dp_allocation = dict(result.allocation)
+        self._dp_executed_since_solve = {}
         self._write_solver_record(
             record={
                 **result.model_dump(exclude={"allocation"}),
@@ -318,25 +380,81 @@ class DpMethod(EesMethod):
                         "attempt_price": costs[ground],
                         "competence": competences[ground],
                         "learning_rate": learning_rates[ground],
+                        "group": self._allocation_identity(ground_skill=ground),
                     }
                     for ground, count in result.allocation.items()
                 ],
+                "groups": [
+                    {
+                        "skill": ground.skill.name,
+                        "objects": [obj.name for obj in ground.objects],
+                        "group": self._allocation_identity(ground_skill=ground),
+                        "competence": competences[ground],
+                        "learning_rate": learning_rates[ground],
+                    }
+                    for ground in candidates
+                ],
+                "group_price_rule": "minimum_admitted_practice_alternative",
             }
         )
-        predicted = {
-            candidate: min(1.0, competences[candidate] + learning_rates[candidate] * count)
-            for candidate, count in self._dp_allocation.items()
-        }
-        self._dp_curriculum = list(
-            dict.fromkeys([
-                *mdp.curriculum(competences=predicted),
-                *self._dp_allocation,
-            ])
+        predicted = DpAllocator.predicted_competences(
+            competences=competences,
+            learning_rates=learning_rates,
+            allocation=self._dp_allocation,
+            groups=groups,
         )
+        curriculum: dict[GroundSkill, GroundSkill] = {}
+        for candidate in [*mdp.curriculum(competences=predicted), *self._dp_allocation]:
+            curriculum.setdefault(self._dp_groups.get(candidate, candidate), candidate)
+        self._dp_curriculum = list(curriculum.values())
         self._dp_no_allocation = not any(self._dp_allocation.values())
         self._dp_fitted_stages = set()
-        self._dp_executed_since_solve = {}
         self._dp_solved_period = self._practice_periods
+
+    def _allocation_groups(
+        self,
+        *,
+        mdp: DpMdp[GroundSkill],
+        candidates: list[GroundSkill],
+        competences: dict[GroundSkill, float],
+    ) -> dict[GroundSkill, GroundSkill] | None:
+        if self.competence_sharing == "grounded":
+            return None
+        humans = set(self.offered_partial_resets())
+        representatives: dict[str, GroundSkill] = {}
+        for candidate in [*mdp.curriculum(competences=competences), *candidates]:
+            if candidate not in humans:
+                representatives.setdefault(candidate.skill.name, candidate)
+        return {
+            candidate: candidate if candidate in humans else representatives[candidate.skill.name]
+            for candidate in candidates
+        }
+
+    def _group_attempt_price(self, *, ground_skill: GroundSkill) -> float:
+        """Certainty-equivalent price of the representative's directed attempt.
+
+        The default uses the representative's own estimate. Only the explicit
+        substitution adaptation admits cheaper shared/all alternatives. Neither
+        mode pools empirical costs across contexts.
+        The estimate is frozen for this solve; realized setup, target and reset
+        costs remain attributed to the actual grounding and physical accounting.
+        This does not predict state-dependent future resets or guarantee that
+        another curriculum grounding will realize the representative's price.
+        """
+        alternatives = self.practice_alternatives(ground_skill=ground_skill)
+        return min(
+            self.dp_expected_attempt_cost(ground_skill=alternative) for alternative in alternatives
+        )
+
+    def _allocation_identity(self, *, ground_skill: GroundSkill) -> dict[str, object]:
+        shared = self.competence_sharing != "grounded" and (
+            ground_skill not in self.offered_partial_resets()
+        )
+        return {
+            "kind": "parent" if shared else "grounded",
+            "skill": ground_skill.skill.name,
+            "objects": None if shared else [obj.name for obj in ground_skill.objects],
+        }
 
     def _write_solver_record(self, *, record: dict[str, object]) -> None:
         if self.dp_solver_log is not None:
@@ -351,6 +469,22 @@ class DpMethod(EesMethod):
                     "episodes": self._dp_episodes,
                     "physical_cost": self._require_accounting().total_cost,
                     "prior_calibration_sha256": self._dp_prior_sha256,
+                    "competence_sharing": self.competence_sharing,
+                    "practice_groundings": self.practice_groundings,
+                    "dp_allow_grounding_substitution": self.dp_allow_grounding_substitution,
+                    "grounding_substitution_mode": (
+                        "legacy_adaptation"
+                        if self.dp_allow_grounding_substitution
+                        else "exact_target"
+                    ),
+                    "executed_since_solve": [
+                        {
+                            "skill": ground.skill.name,
+                            "objects": [obj.name for obj in ground.objects],
+                            "attempts": count,
+                        }
+                        for ground, count in self._dp_executed_since_solve.items()
+                    ],
                     **record,
                 })
                 + "\n",

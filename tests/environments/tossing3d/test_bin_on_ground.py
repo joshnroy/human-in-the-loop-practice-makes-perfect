@@ -159,17 +159,14 @@ def _provider(*, layout: Tossing3DLayout) -> Tossing3DSkillProvider:
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-def test_every_robot_skill_requires_bin_on_ground_and_declares_the_predicate(
-    *, layout: Tossing3DLayout
-) -> None:
+def test_manipulation_requires_upright_bin_but_opening_does_not(*, layout: Tossing3DLayout) -> None:
     provider = _provider(layout=layout)
     assert BIN_ON_GROUND in provider.predicates()
     for skill in provider.skills():
         bins = [v for v in skill.parameters if v.type == Tossing3DEnvironment.bin_type]
         assert len(bins) == 1, skill.name
-        assert LiftedAtom(predicate=BIN_ON_GROUND, variables=(bins[0],)) in skill.preconditions, (
-            skill.name
-        )
+        required = LiftedAtom(predicate=BIN_ON_GROUND, variables=(bins[0],)) in skill.preconditions
+        assert required == (skill.name != "OpenGripper")
 
 
 def test_appending_the_bin_preserves_upstream_prefix_order() -> None:
@@ -220,26 +217,34 @@ def _bin_on_ground(*, provider: Tossing3DSkillProvider) -> GroundAtom:
 
 def _closed_empty_atoms(*, provider: Tossing3DSkillProvider) -> frozenset[GroundAtom]:
     """Gripper closed on nothing: OpenGripper's own precondition, minus the bin."""
-    from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY
+    from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY, GRIPPER_CLOSED
 
     env = provider.env
     atoms = _pickable_atoms(provider=provider) - {
         GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,))
     }
-    return atoms | {GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube))}
+    return atoms | {
+        GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube)),
+        GroundAtom(predicate=GRIPPER_CLOSED, objects=(env.robot,)),
+    }
 
 
 def _holding_atoms(*, provider: Tossing3DSkillProvider) -> frozenset[GroundAtom]:
+    from hitl_pmp.environments.tossing3d.predicates import GRIPPER_CLOSED
+
     env = provider.env
     atoms = _pickable_atoms(provider=provider) - {
         GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,)),
         GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
         GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
     }
-    return atoms | {GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))}
+    return atoms | {
+        GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube)),
+        GroundAtom(predicate=GRIPPER_CLOSED, objects=(env.robot,)),
+    }
 
 
-def test_a_tipped_bin_leaves_only_the_resets_applicable() -> None:
+def test_a_tipped_bin_allows_only_opening_and_resets() -> None:
     provider = _provider(layout=Tossing3DLayout.BARRIER)
     upright_marker = _bin_on_ground(provider=provider)
     for atoms in (
@@ -256,7 +261,9 @@ def test_a_tipped_bin_leaves_only_the_resets_applicable() -> None:
         tipped = SkillGrounder.applicable_ground_skills(
             skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
         )
-        assert tipped == []
+        empty = GroundAtom(predicate=HAND_EMPTY, objects=(provider.env.robot,)) in atoms
+        expected = set() if empty else {"OpenGripper"}
+        assert {skill.skill.name for skill in tipped} == expected
         for reset in provider.movables_reset_skills():
             assert reset.preconditions <= atoms
 

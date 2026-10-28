@@ -28,8 +28,10 @@ from hitl_pmp.environments.tossing3d.pick_plannable import KB_PICK_PLANNABLE, Pi
 from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
     BIN_ON_GROUND,
+    CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -166,18 +168,31 @@ def test_every_pick_requires_pick_plannable_and_no_other_skill_does(
 
 def test_pick_plannable_replaces_grasp_clear_in_the_pick() -> None:
     """GraspClear is a fitted clearance and blocks cubes the controller can pick; the
-    barrier band and BinOnGround stay."""
+    barrier band and BinOnGround stay. Picking requires no held cube and closes
+    the hand while holding, enabling a deliberate release rather than another pick."""
     pick = Tossing3DSkills.PICK_CUBE
     assert not any(atom.predicate == GRASP_CLEAR for atom in pick.preconditions)
     assert not any(atom.predicate == PICKUP_UNBLOCKED for atom in pick.preconditions)
     assert {atom.predicate for atom in pick.preconditions} == {
         HAND_EMPTY,
+        NOT_HOLDING,
         ON_GROUND,
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_ON_GROUND,
         PICK_PLANNABLE,
     }
+    assert {atom.predicate for atom in pick.add_effects} == {HOLDING, GRIPPER_CLOSED}
+    assert {atom.predicate for atom in pick.delete_effects} == {
+        HAND_EMPTY,
+        CLOSED_EMPTY,
+        NOT_HOLDING,
+        ON_GROUND,
+    }
+    after_pick = (pick.preconditions - pick.delete_effects) | pick.add_effects
+    assert Tossing3DSkills.OPEN_GRIPPER.preconditions <= after_pick
+    assert not Tossing3DSkills.OPEN_GRIPPER.preconditions <= pick.preconditions
+    assert not pick.preconditions <= after_pick
     # The bin stays a parameter: BinOnGround names it.
     assert pick.parameters[-1] == Tossing3DSkills._bin
 

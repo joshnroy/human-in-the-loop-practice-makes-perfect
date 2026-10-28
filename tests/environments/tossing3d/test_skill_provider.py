@@ -275,6 +275,7 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
     from hitl_pmp.environments.tossing3d.predicates import (
         BIN_ON_GROUND,
+        GRIPPER_CLOSED,
         HAND_EMPTY,
         PICK_PLANNABLE,
     )
@@ -297,6 +298,8 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
         GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(env.bin,)),
     }
+    if closed:
+        atoms.add(GroundAtom(predicate=GRIPPER_CLOSED, objects=(env.robot,)))
     if not stranded:
         atoms |= {
             GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin)),

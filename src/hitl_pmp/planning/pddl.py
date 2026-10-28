@@ -74,7 +74,9 @@ class PddlWriter:
             PddlWriter._action_str(skill=skill) for skill in sorted(skills, key=lambda s: s.name)
         )
         requirements = ":typing"
-        if any(skill.conditional_add_effects for skill in skills):
+        if any(
+            skill.conditional_add_effects or skill.conditional_ignore_effects for skill in skills
+        ):
             requirements += " :conditional-effects"
         return f"""(define (domain {domain_name})
   (:requirements {requirements})
@@ -158,6 +160,19 @@ class PddlWriter:
                     for effect in skill.conditional_add_effects
                 )
             )
+        if skill.conditional_ignore_effects:
+            if effects_str:
+                effects_str += "\n        "
+            prefix = PddlWriter._quantified_variable_prefix(skill=skill)
+            effects_str += "\n        ".join(
+                sorted(
+                    PddlWriter._ignore_effect_str(
+                        predicate=predicate, prefix=prefix, conditions=effect.conditions
+                    )
+                    for effect in skill.conditional_ignore_effects
+                    for predicate in effect.ignore_effects
+                )
+            )
         return f"""(:action {skill.name}
     :parameters ({params_str})
     :precondition (and {preconds_str})
@@ -171,16 +186,23 @@ class PddlWriter:
         return f"(when (and {conditions}) (and {additions}))"
 
     @staticmethod
-    def _ignore_effect_str(*, predicate: Predicate, prefix: str) -> str:
+    def _ignore_effect_str(
+        *, predicate: Predicate, prefix: str, conditions: frozenset[LiftedAtom] | None = None
+    ) -> str:
         """One `ignore_effects` predicate as a universally-quantified delete: "after
         this action, no atom of this predicate holds, whatever its objects". Mirrors
         predicators' `STRIPSOperator.pddl_str`, apart from the quantifier naming and
         the 0-arity case (see this class's docstring, deviation 3)."""
-        if not predicate.types:
-            return f"(not ({predicate.name}))"
-        slots_str = " ".join(f"?{prefix}{i} - {t.name}" for i, t in enumerate(predicate.types))
         refs_str = " ".join(f"?{prefix}{i}" for i in range(len(predicate.types)))
-        return f"(forall ({slots_str}) (not ({predicate.name} {refs_str})))"
+        atom_str = f"({predicate.name} {refs_str})" if refs_str else f"({predicate.name})"
+        effect_str = f"(not {atom_str})"
+        if conditions is not None:
+            guard = " ".join(PddlWriter._sorted_lifted_atom_strs(atoms=conditions))
+            effect_str = f"(when (and {guard}) {effect_str})"
+        if not predicate.types:
+            return effect_str
+        slots_str = " ".join(f"?{prefix}{i} - {t.name}" for i, t in enumerate(predicate.types))
+        return f"(forall ({slots_str}) {effect_str})"
 
     @staticmethod
     def _quantified_variable_prefix(*, skill: Skill) -> str:

@@ -93,6 +93,120 @@ def test_tossing_snapshot_with_observed_competence_round_trips():
     assert restored.current_competences() == method.current_competences()
 
 
+@pytest.mark.parametrize("sharing", ["grounded", "parent", "rate"])
+def test_deployment_snapshot_preserves_shared_competence_and_forecasts(
+    *, sharing, monkeypatch, tmp_path
+):
+    from hitl_pmp.core.method.types import GroundSkill
+    from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
+    from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        competence_sharing=sharing,
+        practice_groundings="all",
+        ees_decision_log=tmp_path / "training_decisions.jsonl",
+    )
+    first, second, third = env.get_cells()[:3]
+    grounds = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, first, second)),
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, second, third)),
+    ]
+    for ground, outcomes in zip(grounds, ([False] * 8, [True] * 3), strict=True):
+        for outcome in outcomes:
+            method.observe_outcome(ground_skill=ground, success=outcome)
+    method.advance_competence_cycle()
+    method.observe_outcome(ground_skill=grounds[0], success=True)
+    method.observe_outcome(ground_skill=grounds[1], success=False, was_random_exploration=True)
+    expected_costs = method.skill_costs()
+    expected_competences = method.current_competences()
+    expected_gains = {
+        ground: method.forecast_competence_gain(ground_skill=ground) for ground in grounds
+    }
+    expected_pools = {
+        name: model.model_dump() for name, model in method._pooled_competence_models.items()
+    }
+    raw = DeploymentSnapshot.encode(method=method)
+    method.observe_outcome(ground_skill=grounds[0], success=False)
+    training_pools = {
+        name: model.model_dump() for name, model in method._pooled_competence_models.items()
+    }
+    fresh = LightSwitchEnvironment(grid_size=4)
+    restored = DeploymentSnapshot.restore(
+        raw=raw, env=fresh, provider=LightSwitchSkillProvider(env=fresh)
+    )
+    assert restored.competence_sharing == sharing
+    assert {
+        name: model.model_dump() for name, model in restored._pooled_competence_models.items()
+    } == expected_pools
+    assert restored.current_competences() == expected_competences
+    assert restored.skill_costs() == expected_costs
+    assert {
+        ground: restored.forecast_competence_gain(ground_skill=ground) for ground in grounds
+    } == expected_gains
+    planned_costs = []
+
+    def plan(**kwargs):
+        assert kwargs["practicing"] is False
+        planned_costs.append(kwargs["costs"])
+        return []
+
+    monkeypatch.setitem(restored.__dict__, "plan_to", plan)
+    task = LightSwitchTasks(env=fresh, seed=9).sample_test_task()
+    restored.get_task_policy(task=task)(task.initial_state)
+    assert planned_costs == [expected_costs]
+    assert not method.ees_decision_log.exists()
+    assert restored._all_attempt_outcomes == {}
+    assert restored._seen_tasks == []
+    restored.observe_outcome(ground_skill=grounds[1], success=False)
+    assert pickle.loads(raw)["pooled_competence_models"] == {
+        name: type(model).model_validate(expected_pools[name])
+        for name, model in restored._pooled_competence_models.items()
+    }
+    assert {
+        name: model.model_dump() for name, model in method._pooled_competence_models.items()
+    } == training_pools
+
+
+def test_legacy_grounded_deployment_snapshot_still_loads():
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider)
+    method.observe_outcome(ground_skill=method.all_practice_groundings()[0], success=False)
+    payload = pickle.loads(DeploymentSnapshot.encode(method=method))
+    payload.pop("pooled_competence_models", None)
+    restored = DeploymentSnapshot.restore(raw=pickle.dumps(payload), env=env, provider=provider)
+    assert restored.competence_sharing == "grounded"
+    assert restored._pooled_competence_models == {}
+    assert restored.current_competences() == method.current_competences()
+
+
+@pytest.mark.parametrize("sharing", ["parent", "rate"])
+def test_legacy_learned_shared_snapshot_refuses_silent_prior_fallback(*, sharing):
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, competence_sharing=sharing)
+    method.observe_outcome(ground_skill=method.all_practice_groundings()[0], success=False)
+    payload = pickle.loads(DeploymentSnapshot.encode(method=method))
+    del payload["pooled_competence_models"]
+    with pytest.raises(ValueError, match="missing pooled competence"):
+        DeploymentSnapshot.restore(raw=pickle.dumps(payload), env=env, provider=provider)
+
+
+@pytest.mark.parametrize("sharing", ["parent", "rate"])
+def test_legacy_untrained_shared_snapshot_still_loads(*, sharing):
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, competence_sharing=sharing)
+    expected_costs = method.skill_costs()
+    payload = pickle.loads(DeploymentSnapshot.encode(method=method))
+    del payload["pooled_competence_models"]
+    restored = DeploymentSnapshot.restore(raw=pickle.dumps(payload), env=env, provider=provider)
+    assert restored.skill_costs() == expected_costs
+
+
 def test_evaluation_clock_stops_at_goal_or_exact_budget():
     from hitl_pmp.step_protocol import EvaluationClock
 

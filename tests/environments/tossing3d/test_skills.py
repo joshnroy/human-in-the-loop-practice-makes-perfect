@@ -31,6 +31,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -210,6 +211,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     this list rather than a silent drift."""
     assert _SKILLS.PICK_CUBE.preconditions == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(
             predicate=ROBOT_AT_SIDE,
@@ -226,24 +228,28 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
-        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.PICK_CUBE.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
     assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube, _SKILLS._bin)
     assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
-        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
     assert _SKILLS.OPEN_GRIPPER.delete_effects == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions == frozenset({
@@ -267,6 +273,8 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
 
@@ -312,6 +320,8 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         IN_BIN,
         HAND_EMPTY,
         HOLDING,
+        CLOSED_EMPTY,
+        GRIPPER_CLOSED,
         NOT_HOLDING,
         ON_GROUND,
         ROBOT_AT_SIDE,
@@ -655,7 +665,7 @@ def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() 
         for atom in SkillGrounder.all_possible_ground_atoms(
             objects=provider.objects(), predicates=provider.predicates()
         )
-        if atom.predicate in {HAND_EMPTY, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
+        if atom.predicate in {HAND_EMPTY, NOT_HOLDING, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
         or (
             atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
             and atom.objects[-1] == Tossing3DSides.robot
