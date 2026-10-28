@@ -278,14 +278,11 @@ class ShelfSkills:
         self.cupboard_geoms = {g for g, r in owner.items() if r == "cupboard_1"}
         self.box_geoms = {g for g, r in owner.items() if r == "box_0"}
         self.wiper_geoms = sorted(g for g, r in owner.items() if r == "wiper_0")
-        sizes = self.model.geom_size[self.wiper_geoms]
-        self.handle_geom = self.wiper_geoms[int(np.argmax(sizes[:, 0]))]
-        self.head_geom = self.wiper_geoms[int(np.argmax(sizes[:, 1]))]
+        self.head_geom, self.handle_geom = self.wiper_geometry(
+            model=self.model, geoms=self.wiper_geoms
+        )
         self.wiper_body = self.model.body("wiper_0").id
-        self.board = {
-            shelf: self.core.shelf_top_z(shelf=shelf)
-            for shelf in (CUBE_SHELF, CUBE_SHELF + 1, WIPER_SHELF)
-        }
+        self.board = self.board_heights(core=self.core)
         self.front_x = self.core.shelf_front_x()
         self.wiper_start = self.wiper_pose()
         self.head_start = self.data.geom_xpos[self.head_geom].copy()
@@ -319,6 +316,27 @@ class ShelfSkills:
         # Head speed actually achieved over each pull (m/s); the base tops out at
         # 0.15 m/s, so a commanded speed above that is reached only with the arm.
         self.pull_speeds: list[float] = []
+
+    @staticmethod
+    def board_heights(*, core: Any) -> dict[int, float]:
+        if len(core._shelf_geoms()) == CUBE_SHELF + 1:
+            top = float(core.shelf_top_z(shelf=CUBE_SHELF))
+            return {CUBE_SHELF: top, CUBE_SHELF + 1: top + 1.0, WIPER_SHELF: top}
+        return {
+            shelf: float(core.shelf_top_z(shelf=shelf))
+            for shelf in (CUBE_SHELF, CUBE_SHELF + 1, WIPER_SHELF)
+        }
+
+    @staticmethod
+    def wiper_geometry(*, model: Any, geoms: list[int]) -> tuple[int, int]:
+        capsules = [geom for geom in geoms if int(model.geom_type[geom]) == 3]
+        if capsules:
+            handles = [geom for geom in geoms if int(model.geom_type[geom]) == 6]
+            if len(capsules) != 1 or len(handles) != 1:
+                raise SkillFailed("Rounded wiper requires one capsule head and one box handle")
+            return capsules[0], handles[0]
+        sizes = model.geom_size[geoms]
+        return geoms[int(np.argmax(sizes[:, 1]))], geoms[int(np.argmax(sizes[:, 0]))]
 
     @property
     def in_hand(self) -> np.ndarray | None:

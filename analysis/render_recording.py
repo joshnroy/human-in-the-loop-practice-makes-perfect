@@ -74,6 +74,12 @@ class RecordingVideo:
             return SweepOffShelf3DReplayRenderer(
                 scene=header.scene, scene_bg=True if realistic_background else None
             )
+        if header.environment == "sweeptable3d":
+            from hitl_pmp.environments.sweeptable3d.recording import SweepTable3DReplayRenderer
+
+            return SweepTable3DReplayRenderer(
+                scene=header.scene, scene_bg=True if realistic_background else None
+            )
         raise NotImplementedError(f"no replay renderer exists yet for {header.environment!r}")
 
     @staticmethod

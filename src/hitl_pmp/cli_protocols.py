@@ -132,6 +132,11 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def failure_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
+        """Whether the live task has irreversibly failed; takes priority over success."""
+        ...
+
+    @staticmethod
     def interrupted(*, problem: Problem, action: Action) -> None:
         """`take_action(action)` was cut short by the control-step budget; flush what
         the domain buffers per action."""
@@ -194,6 +199,11 @@ class SimulatedStepProtocolHooks:
     """`StepProtocolEnvironment`'s real-robot hooks, for a simulated domain: nobody
     watches its progress, and its evaluations run in their own process and scene, so
     practice's scene is never disturbed (the flags that need one are refused first)."""
+
+    @staticmethod
+    def failure_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
+        del problem, task
+        return lambda: False
 
     @staticmethod
     def practice_progress(
