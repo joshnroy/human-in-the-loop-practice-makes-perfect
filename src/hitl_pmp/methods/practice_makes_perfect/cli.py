@@ -10,9 +10,11 @@ from hitl_pmp.methods.belief_space.practice_domain import (
     TOSSING3D_DOMAIN,
     PracticeDomain,
 )
+from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
+from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
@@ -479,10 +481,37 @@ class Tossing3DPomdpCli(EesCli):
                 "competence priors from its practice domain"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
-        if domain is None:
-            raise ValueError(
-                "--method pomdp supports only --env tossing3d and --env sweepoffshelf3d"
+        if env_cli.__name__ == "FrozenPourCli":
+            counts = tuple(args.requested_counts or (2,))
+            if args.requested_count is not None:
+                counts = (args.requested_count,)
+            support = (
+                "PickPitcher",
+                "PlacePitcherAtHome",
+                "PickShrimpFromTray",
+                "PickShrimpFromFloor",
+                "DropShrimpIntoPitcher",
+                "reset_shrimp",
             )
+            pours = tuple(f"Pour{k}" for k in range(1, args.payload_count + 1))
+            domain = SkillPlansPracticeDomain(
+                deployment_horizon=3,
+                deployment_plans=tuple(
+                    ("PickPitcher", f"Pour{k}", "PlacePitcherAtHome") for k in counts
+                ),
+                belief_sources=(
+                    *((name, PracticeExampleSource.OUTCOME) for name in support),
+                    *((name, PracticeExampleSource.SAMPLER) for name in pours),
+                ),
+                initial_competence_alpha=1.0,
+                initial_competence_beta=3.0,
+                default_search_depth=4,
+                deterministic_skills=frozenset({"Wait"}),
+                human_skill_names=frozenset({"reset_shrimp"}),
+                failure_effect_skills=frozenset((*support, *pours)),
+            )
+        if domain is None:
+            raise ValueError("--method pomdp supports tossing3d, sweepoffshelf3d, and pouring3d")
         if args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
             args.pomdp_search_depth = domain.default_search_depth

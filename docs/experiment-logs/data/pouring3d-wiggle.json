@@ -1,0 +1,439 @@
+{
+  "trials": [
+    {
+      "material": "wood",
+      "label": "plain",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "wood",
+      "label": "hold",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "wood",
+      "label": "higher-static",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 101,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "wood",
+      "label": "wiggle-2s",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "wood",
+      "label": "higher-wiggle",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 100,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "wood",
+      "label": "wiggle-4s",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 4
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "plain",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 0
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "hold",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "higher-static",
+      "seed": 0,
+      "mode": "static",
+      "parameters": {
+        "tilt_angle": 111,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 0.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "wiggle-2s",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "higher-wiggle",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 110,
+        "wiggle_seconds": 2
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    },
+    {
+      "material": "foam",
+      "label": "wiggle-4s",
+      "seed": 0,
+      "mode": "wiggle",
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 4
+      },
+      "fixed_settings": {
+        "aim_offset_m": [
+          0,
+          0
+        ],
+        "wiggle_amplitude_degrees": 4.0,
+        "wiggle_hz": 1.0,
+        "axis": "fore-aft, same axis as native pour",
+        "outward_seconds": 10.0,
+        "return_seconds": 10.0,
+        "settle_seconds_min": 2,
+        "settle_seconds_max": 10,
+        "envelope": "sin(pi*t/T)^2; start and finish at the base tilt"
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "d7fc80bf9bf94b57aab4e8c8844cc0ef6687492ed3aacd63fa5e4b499c708730"
+      }
+    }
+  ],
+  "audit": {
+    "goal_snapshots_checked": 72,
+    "legacy_physics_hashes_unchanged": true,
+    "video_replays": [
+      {
+        "material": "wood",
+        "frames": 2028,
+        "fps": 40.0,
+        "seconds": 50.7,
+        "bytes": 4488856,
+        "sha256": "f595d9ee66be7612fe510f6b9b800f0b7cfce664bd1fa2394ec0aff3acd38c0c",
+        "exact_replay": true,
+        "delivered": 3
+      },
+      {
+        "material": "foam",
+        "frames": 2027,
+        "fps": 40.0,
+        "seconds": 50.675,
+        "bytes": 4527255,
+        "sha256": "d743ee887781a77e8af6dd76c71ea62a583e6d4c1626222ff25d782039569da4",
+        "exact_replay": true,
+        "delivered": 3
+      }
+    ]
+  },
+  "limitations": "Seed-0 diagnostic, no training or reliability estimate. New settling allowance is 2\u201310 seconds; do not pool with earlier fixed-2-second results."
+}

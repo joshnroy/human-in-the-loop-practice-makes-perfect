@@ -26,6 +26,8 @@ from typing import ClassVar
 from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli, StepProtocolEnvironment
 from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
+from hitl_pmp.environments.pouring3d.practice.step_protocol import FrozenPourStepProtocol
 from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.environments.sweepoffshelf3d.step_protocol import SweepOffShelf3DStepProtocol
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
@@ -51,6 +53,7 @@ from hitl_pmp.presets.preset import CliPreset
 # --env lightswitch still works, --help still lists every flag, and only actually
 # *running* --env tossing3d needs the optional dependency.
 ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
+    "pouring3d": FrozenPourCli,
     "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
@@ -73,6 +76,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
 
 # The domains `--practice-step-budget` (the step protocol, `step_protocol.py`) can run.
 STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
+    "pouring3d": FrozenPourStepProtocol,
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
     "tossing3d_real": Tossing3DRealStepProtocol,

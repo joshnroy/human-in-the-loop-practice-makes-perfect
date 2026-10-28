@@ -416,12 +416,12 @@ class Tossing3DPracticeModel(BaseModel):
         uniform falls on the same side of the same success probability) while the
         failure branch's own effects follow the state."""
         name = action.skill.name
-        belief_name = self.domain.belief_name(skill_name=name) or name
+        belief_name = self.domain.belief_name(skill_name=action.skill.name) or name
         belief = belief_state.skill_beliefs.get(belief_name)
         read = (
             belief_name,
             None if belief is None else self._belief_signature(belief=belief),
-            belief_state.sampler_training.get(name) if name == self.domain.sampler_skill else None,
+            belief_state.sampler_training.get(name) if name in self.domain.sampler_skills else None,
         )
         if scope == "skill":
             return read

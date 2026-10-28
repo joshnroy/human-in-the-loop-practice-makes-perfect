@@ -1,0 +1,457 @@
+{
+  "source_study": "pouring3d-wiggle-counts-20261026",
+  "matched_replays": 14,
+  "exact_original_trace_rows": 13318,
+  "reels": {
+    "wood-success": {
+      "group": "wood-success",
+      "video": "wood-success.mp4",
+      "fps": 40,
+      "output_frames": 8771,
+      "duration_seconds": 219.275,
+      "bytes": 16736190,
+      "sha256": "344bcf94e243d2205c442a6f90b7db1ca89833c819c0e7df00a839027237ccf8",
+      "chapters": [
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/0/validation/1/result.json",
+          "material": "wood",
+          "seed": 0,
+          "requested_count": 1,
+          "parameters": {
+            "tilt_angle": 95.5,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 1,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "263f587a3f26dbd7a2d3319c2348228e89882451f04b5fdd9479335f6806faa2",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "wood-success/0/target-1/native-tilt-wiggle.mp4",
+          "start_seconds": 0.0,
+          "end_seconds": 55.7,
+          "frames": 2148,
+          "clip_sha256": "f46e24819c408036caf4eea272209795078a59772fa40d94eb51c812de15c903",
+          "exact_original_trace_steps": 975
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/0/validation/2/result.json",
+          "material": "wood",
+          "seed": 0,
+          "requested_count": 2,
+          "parameters": {
+            "tilt_angle": 97,
+            "wiggle_seconds": 0.5
+          },
+          "eligible_count": 2,
+          "pour_success": true,
+          "full_success": false,
+          "reference_sha256": "ec22ebb63bdd1b2fcdd97142a11ac55ee9ad413e7213cbd1d5931adc07ef97c9",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": false,
+          "clip": "wood-success/0/target-2/native-tilt-wiggle.mp4",
+          "start_seconds": 55.7,
+          "end_seconds": 109.9,
+          "frames": 2088,
+          "clip_sha256": "e529ea3a6eddfa9718c4355eb8eb90079123fbdaea7d44fa0cda11142ea49f5b",
+          "exact_original_trace_steps": 960
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/1/validation/3/result.json",
+          "material": "wood",
+          "seed": 1,
+          "requested_count": 3,
+          "parameters": {
+            "tilt_angle": 97,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 3,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "a968300cc2932b94b0999af0507c7b9903214c885e9aca7f15b800f63e359ad8",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "wood-success/0/target-3/native-tilt-wiggle.mp4",
+          "start_seconds": 109.9,
+          "end_seconds": 165.6,
+          "frames": 2148,
+          "clip_sha256": "f1e4befd5b25214a8450a3046a0e402826840a15993e1fdace4f95bcec49bdc2",
+          "exact_original_trace_steps": 975
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/0/validation/5/result.json",
+          "material": "wood",
+          "seed": 0,
+          "requested_count": 5,
+          "parameters": {
+            "tilt_angle": 130,
+            "wiggle_seconds": 0
+          },
+          "eligible_count": 5,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "dfb33e50bba8f4247c5c8d53ec478a8a449b2abf9ddc81e13fb459db07f061e1",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "wood-success/0/target-5/native-tilt-wiggle.mp4",
+          "start_seconds": 165.6,
+          "end_seconds": 219.275,
+          "frames": 2067,
+          "clip_sha256": "61565fd51737d5c966c4923b465cfc2d4972838bc81f862f9671852f9dd25d0f",
+          "exact_original_trace_steps": 954
+        }
+      ]
+    },
+    "wood-failure": {
+      "group": "wood-failure",
+      "video": "wood-failure.mp4",
+      "fps": 40,
+      "output_frames": 6624,
+      "duration_seconds": 165.6,
+      "bytes": 12493309,
+      "sha256": "81c78fe89bffe510bf8265094caf2a1561dd9f36113aeff430f2689f920d671a",
+      "chapters": [
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/1/validation/1/result.json",
+          "material": "wood",
+          "seed": 1,
+          "requested_count": 1,
+          "parameters": {
+            "tilt_angle": 95.5,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 2,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "a26a2a0206d4a9dd4211dee0903db40aadd2ea222f2531a9dd2b1e78369ca861",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "wood-failure/0/target-1/native-tilt-wiggle.mp4",
+          "start_seconds": 0.0,
+          "end_seconds": 55.7,
+          "frames": 2148,
+          "clip_sha256": "73cf47f7cfb51f6490fa7bde3a0fe462b13f67be0adb823f1b41da676fbeb196",
+          "exact_original_trace_steps": 975
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/1/validation/2/result.json",
+          "material": "wood",
+          "seed": 1,
+          "requested_count": 2,
+          "parameters": {
+            "tilt_angle": 97,
+            "wiggle_seconds": 0.5
+          },
+          "eligible_count": 0,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "ef2c5a81886a266197622f9b9628fe695a89f8f98d608580ec69e8500894994d",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": false,
+          "clip": "wood-failure/0/target-2/native-tilt-wiggle.mp4",
+          "start_seconds": 55.7,
+          "end_seconds": 109.9,
+          "frames": 2088,
+          "clip_sha256": "7056a78a9602c38d15b2c255b1e934e715493ac654e9fbc64d4a642a49dd99e4",
+          "exact_original_trace_steps": 960
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/wood/0/discovery/6/result.json",
+          "material": "wood",
+          "seed": 0,
+          "requested_count": 4,
+          "parameters": {
+            "tilt_angle": 97.75,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 3,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "7a017493b2d365ac2fec69625e96dba7ff518a97bafbc1c60fa414b989156f6d",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": true,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "wood-failure/0/target-4/native-tilt-wiggle.mp4",
+          "start_seconds": 109.9,
+          "end_seconds": 165.6,
+          "frames": 2148,
+          "clip_sha256": "356049d9f032af94bd9561736bdf00648529a12938cb4e8be3e7dc28452baba6",
+          "exact_original_trace_steps": 701
+        }
+      ]
+    },
+    "foam-success": {
+      "group": "foam-success",
+      "video": "foam-success.mp4",
+      "fps": 40,
+      "output_frames": 6641,
+      "duration_seconds": 166.025,
+      "bytes": 12569951,
+      "sha256": "4891cf521443e85f78484ed880477500a2abad5d52ae6e8949a73486018a4153",
+      "chapters": [
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/0/validation/1/result.json",
+          "material": "foam",
+          "seed": 0,
+          "requested_count": 1,
+          "parameters": {
+            "tilt_angle": 107,
+            "wiggle_seconds": 3
+          },
+          "eligible_count": 1,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "7e62dee739ddaf191ad4d79f0da6a9c8ecb28a5c87bb1672331f316fb58087be",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "foam-success/0/target-1/native-tilt-wiggle.mp4",
+          "start_seconds": 0.0,
+          "end_seconds": 56.675,
+          "frames": 2187,
+          "clip_sha256": "27fc758e1772c3628ec86be0078076ba7a0cd536487f4ca4f02db5a98cfa70d4",
+          "exact_original_trace_steps": 984
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/0/validation/3/result.json",
+          "material": "foam",
+          "seed": 0,
+          "requested_count": 3,
+          "parameters": {
+            "tilt_angle": 107,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 3,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "b703315a74f48a92547750156a3be5b4efe75111c265050bace2da8af35426a9",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "foam-success/0/target-3/native-tilt-wiggle.mp4",
+          "start_seconds": 56.675,
+          "end_seconds": 112.35,
+          "frames": 2147,
+          "clip_sha256": "e2498e3e1525fd63329bb0818d863d3e44192604d2c2e40476299ee0d7cdd301",
+          "exact_original_trace_steps": 974
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/0/validation/5/result.json",
+          "material": "foam",
+          "seed": 0,
+          "requested_count": 5,
+          "parameters": {
+            "tilt_angle": 130,
+            "wiggle_seconds": 0
+          },
+          "eligible_count": 5,
+          "pour_success": true,
+          "full_success": true,
+          "reference_sha256": "a3a2c8db5326257fd3858ccaf55ca395df89e9e9ec7be0e9827d134194dc7497",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": true,
+          "placement_success": true,
+          "clip": "foam-success/0/target-5/native-tilt-wiggle.mp4",
+          "start_seconds": 112.35,
+          "end_seconds": 166.025,
+          "frames": 2067,
+          "clip_sha256": "dec9d540d9b388c872663b88429d1cbc91a282dc4ce0952a746fd2e027b77bd0",
+          "exact_original_trace_steps": 954
+        }
+      ]
+    },
+    "foam-failure": {
+      "group": "foam-failure",
+      "video": "foam-failure.mp4",
+      "fps": 40,
+      "output_frames": 8948,
+      "duration_seconds": 223.7,
+      "bytes": 16897775,
+      "sha256": "83e5a3834ff4039ccd405c3533d409e496443b28363dfb450329c33bd0f61ab4",
+      "chapters": [
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/1/validation/1/result.json",
+          "material": "foam",
+          "seed": 1,
+          "requested_count": 1,
+          "parameters": {
+            "tilt_angle": 107,
+            "wiggle_seconds": 3
+          },
+          "eligible_count": 0,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "4f965837ae9ce33eb54c76e6e1b29170fb503cc2eb2535276701ee4da54ba75d",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "foam-failure/0/target-1/native-tilt-wiggle.mp4",
+          "start_seconds": 0.0,
+          "end_seconds": 56.675,
+          "frames": 2187,
+          "clip_sha256": "70f5f69a30a0a004dfb9fc78662856287eeb810c1174a38a34ebfab28289b8bd",
+          "exact_original_trace_steps": 984
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/0/validation/2/result.json",
+          "material": "foam",
+          "seed": 0,
+          "requested_count": 2,
+          "parameters": {
+            "tilt_angle": 107,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 3,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "cec1d4efabe340be7cdab547aeb35b2d2f9588e393e7abbc65ed79a07f36cea2",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "foam-failure/0/target-2/native-tilt-wiggle.mp4",
+          "start_seconds": 56.675,
+          "end_seconds": 112.35,
+          "frames": 2147,
+          "clip_sha256": "d7206a8f329668abe9fbe27e6becc959f7e41da89c8ed83c4aeeceb7f2fab345",
+          "exact_original_trace_steps": 974
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/1/validation/3/result.json",
+          "material": "foam",
+          "seed": 1,
+          "requested_count": 3,
+          "parameters": {
+            "tilt_angle": 107,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 0,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "fb6fc248feaef786e2abb62a069dc60e0a8aa445a96e70b5f9b0d67486024a73",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "foam-failure/0/target-3/native-tilt-wiggle.mp4",
+          "start_seconds": 112.35,
+          "end_seconds": 168.025,
+          "frames": 2147,
+          "clip_sha256": "cc7a854feab7e266fde81d253f6b7d3b9069b3f746ab2a902e79b2d2a4fdb06c",
+          "exact_original_trace_steps": 974
+        },
+        {
+          "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-wiggle-counts-20261026/foam/0/probes/2/result.json",
+          "material": "foam",
+          "seed": 0,
+          "requested_count": 4,
+          "parameters": {
+            "tilt_angle": 107.375,
+            "wiggle_seconds": 2
+          },
+          "eligible_count": 3,
+          "pour_success": false,
+          "full_success": false,
+          "reference_sha256": "e8cd8bf2d435b790c95fdcde73d259e31d7727658dc7a24dec9dc5ca67e05368",
+          "exact_physical_snapshots": [
+            "initial",
+            "after_pour",
+            "final"
+          ],
+          "physics_sources_unchanged": true,
+          "placement_added_after_discovery": false,
+          "rendered_full_success": false,
+          "placement_success": true,
+          "clip": "foam-failure/0/target-4/native-tilt-wiggle.mp4",
+          "start_seconds": 168.025,
+          "end_seconds": 223.7,
+          "frames": 2147,
+          "clip_sha256": "ae9641bd2f959d536f16b78a554e69b57379c237721d63d1a05e0fa2fb45ebc5",
+          "exact_original_trace_steps": 974
+        }
+      ]
+    }
+  },
+  "notes": "Selected illustrations, not new reliability checks. Wood target-4 discovery replay adds physical placement after the matching original Pour."
+}

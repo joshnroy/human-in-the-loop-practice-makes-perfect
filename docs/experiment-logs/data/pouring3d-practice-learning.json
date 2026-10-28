@@ -1,0 +1,176 @@
+{
+  "status": {
+    "phase": "complete",
+    "updated_unix": 1793223008.8021913,
+    "practice_steps": 6000,
+    "robot_steps": 5691,
+    "human_invocations": 3,
+    "human_resets_by_destination": {
+      "reset_shrimp": 3
+    },
+    "learning_updates": 9,
+    "session_index": 9,
+    "measurement_snapshots": 1,
+    "evaluations_completed": 1,
+    "elapsed_seconds": 354.82537275808863,
+    "robot_cost": 5700.0,
+    "human_cost": 3.0,
+    "physical_cost": 5703.0,
+    "human_steps": 300,
+    "human_invocations_by_skill": {
+      "reset_shrimp": 3
+    }
+  },
+  "evaluation": {
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "Goal(request_1)",
+        "solved": false,
+        "steps": 1583,
+        "reason": "no_plan"
+      },
+      {
+        "task": 1,
+        "seed": 1109584189,
+        "goal": "Goal(request_2)",
+        "solved": false,
+        "steps": 1583,
+        "reason": "no_plan"
+      },
+      {
+        "task": 2,
+        "seed": 861111389,
+        "goal": "Goal(request_3)",
+        "solved": true,
+        "steps": 820,
+        "reason": "goal"
+      }
+    ],
+    "num_solved": 1,
+    "num_total": 3,
+    "policy_file_sha256": "ded09ff841e501ff40adb978d40180792bbb02151d087bd3ebf1435dcb01d358",
+    "elapsed_seconds": 117.48934072582051
+  },
+  "timing": {
+    "sweep_id": "20261028T172412-0400-3098370-c2aa05b3",
+    "method": "pomdp",
+    "seed": 0,
+    "start_time": "2026-10-28T17:24:12.847670-04:00",
+    "end_time": "2026-10-28T17:30:09.391088-04:00",
+    "start_epoch_seconds": 1793222652.84767,
+    "end_epoch_seconds": 1793223009.391088,
+    "elapsed_seconds": 356.54340963694267,
+    "returncode": 0,
+    "succeeded": true,
+    "spawn_attempts": 1,
+    "max_workers": 1,
+    "cpu_count": 24,
+    "sweep_runs_in_flight_at_start": 1,
+    "sweep_runs_in_flight_at_end": 1,
+    "machine_at_start": {
+      "cli_processes": 1,
+      "load_average_1min": 5.197265625
+    },
+    "machine_at_end": {
+      "cli_processes": 0,
+      "load_average_1min": 2.8818359375
+    }
+  },
+  "pour_actions": [
+    {
+      "skill": "Pour",
+      "params": [
+        90.38102717139824,
+        0.021938222646794903,
+        2.6044461664468246
+      ],
+      "controller": {
+        "requested_count": 1,
+        "shrimp_index": 0
+      },
+      "success": false,
+      "start_step": 1615,
+      "end_step": 1907
+    },
+    {
+      "skill": "Pour",
+      "params": [
+        91.73522226571288,
+        0.00850809643451666,
+        9.096030379927358
+      ],
+      "controller": {
+        "requested_count": 2,
+        "shrimp_index": 0
+      },
+      "success": false,
+      "start_step": 2686,
+      "end_step": 2963
+    },
+    {
+      "skill": "Pour",
+      "params": [
+        93.76765875145632,
+        0.0034163001971664695,
+        22.427585256752568
+      ],
+      "controller": {
+        "requested_count": 3,
+        "shrimp_index": 0
+      },
+      "success": true,
+      "start_step": 3741,
+      "end_step": 4016
+    },
+    {
+      "skill": "Pour",
+      "params": [
+        87.00177359768239,
+        0.012063440550041825,
+        18.240019952413206
+      ],
+      "controller": {
+        "requested_count": 3,
+        "shrimp_index": 0
+      },
+      "success": false,
+      "start_step": 4794,
+      "end_step": 5265
+    },
+    {
+      "skill": "Pour",
+      "params": [
+        94.41195145841029,
+        0.021181786188751946,
+        29.115400247728942
+      ],
+      "controller": {
+        "requested_count": 3,
+        "shrimp_index": 0
+      },
+      "success": true,
+      "start_step": 5265,
+      "end_step": 5519
+    }
+  ],
+  "sampler_names": [
+    "Pour"
+  ],
+  "training_counts": [
+    1.0,
+    2.0,
+    3.0,
+    3.0,
+    3.0
+  ],
+  "training_labels": [
+    false,
+    false,
+    true,
+    false,
+    true
+  ]
+}

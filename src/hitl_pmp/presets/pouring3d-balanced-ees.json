@@ -1,0 +1,38 @@
+{
+  "description": "Experimental frozen-shrimp practice: separate Pour1/Pour2/Pour3 samplers and competences, robot-selected practice counts and balanced evaluation requests 1/2/3, persistent physics and explicitly costed human payload resets. Costs are uncalibrated assumptions. Supply a practice step budget.",
+  "method": "ees",
+  "shared": {
+    "practice_reset_policy": "never",
+    "defer_rendering": true,
+    "practice_cost_config": "pouring3d_tick_priced_costs.json",
+    "max_steps_per_interaction": 8,
+    "num_test_tasks": 9,
+    "evaluation_control_steps": 2500,
+    "record_motion": "evaluation",
+    "goal_pursuit_horizon": 0,
+    "reproduce_predicators_random_when_stranded": true
+  },
+  "environments": {
+    "pouring3d": {
+      "payload_count": 3,
+      "requested_counts": [
+        1,
+        2,
+        3
+      ],
+      "surface_mu": 0.1,
+      "pour_tilt_bounds": [
+        87,
+        95
+      ],
+      "pour_amplitude_bounds": [
+        0,
+        0.025
+      ],
+      "pour_duration_bounds": [
+        0,
+        30
+      ]
+    }
+  }
+}
