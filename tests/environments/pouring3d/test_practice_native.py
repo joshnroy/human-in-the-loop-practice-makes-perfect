@@ -29,7 +29,7 @@ def test_native_pour_robot_reset_and_human_invariants():
 
     try:
         run(name="PickPitcher")
-        run(name="Pour", params=(90.5, 0.008, 30))
+        run(name="Pour2", params=(90.5, 0.008, 30))
         assert env.last_info["requested_count"] == 2
         run(name="PlacePitcherAtHome")
         # Practice selected Pour(2), despite the task distribution's reference

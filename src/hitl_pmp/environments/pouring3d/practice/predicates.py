@@ -31,6 +31,7 @@ class PourPredicates:
             "TrayHome": (O.tray_type,),
             "PayloadOrder": (O.shrimp_type, O.shrimp_type),
             "ActiveRequest": (O.request_type,),
+            **{f"Count{n}": (O.request_type,) for n in range(1, 6)},
             "SplitCorrect": (O.request_type,),
             "Goal": (O.request_type,),
             "NeedsReset": (),

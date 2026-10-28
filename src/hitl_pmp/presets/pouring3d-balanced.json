@@ -1,5 +1,5 @@
 {
-  "description": "Model B experimental frozen-shrimp practice: one Pour sampler, robot-selected practice counts and balanced evaluation requests 1/2/3, persistent physics and explicitly costed human payload resets. Costs are uncalibrated assumptions. Supply a practice step budget.",
+  "description": "Model B experimental frozen-shrimp practice: separate Pour1/Pour2/Pour3 samplers and competences, robot-selected practice counts and balanced evaluation requests 1/2/3, persistent physics and explicitly costed human payload resets. Costs are uncalibrated assumptions. Supply a practice step budget.",
   "method": "pomdp",
   "shared": {
     "practice_reset_policy": "never",

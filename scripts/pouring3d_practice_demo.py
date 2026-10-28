@@ -51,7 +51,7 @@ class PracticeDemo:
             env.set_motion_sink(sink=capture)
             capture()
             if run(name="PickPitcher"):
-                run(name="Pour", params=(90.5, 0.008, 30))
+                run(name="Pour2", params=(90.5, 0.008, 30))
                 run(name="PlacePitcherAtHome")
                 c = env.controller()
                 for _ in range(2 * env.payload_count):
@@ -113,7 +113,7 @@ class PracticeDemo:
                 root / "skills.mp4", fps=10, codec="libx264", quality=8
             ) as writer:
                 for index, (qpos, phase) in enumerate(zip(frames, phases, strict=True)):
-                    if phase != "Pour" and index % 4 and index != len(frames) - 1:
+                    if not phase.startswith("Pour") and index % 4 and index != len(frames) - 1:
                         continue
                     drawing.qpos[:] = qpos
                     mujoco.mj_forward(c.model, drawing)
@@ -123,7 +123,8 @@ class PracticeDemo:
                     draw.rectangle((0, 0, 640, 38), fill="black")
                     draw.text(
                         (12, 12),
-                        f"{phase} | {'1x' if phase == 'Pour' else '4x'} | actual native motion",
+                        f"{phase} | {'1x' if phase.startswith('Pour') else '4x'}"
+                        " | actual native motion",
                         fill="white",
                     )
                     writer.append_data(np.asarray(frame))

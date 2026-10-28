@@ -61,7 +61,9 @@ class PourBackend:
             data[obj] = np.r_[c.data.xpos[body], c.data.xquat[body], c.data.qvel[dof : dof + 6]]
         for count, obj in enumerate(o.requests(), 1):
             data[obj] = np.array([float(count)])
-        atoms: set[tuple[str, tuple[str, ...]]] = set()
+        atoms: set[tuple[str, tuple[str, ...]]] = {
+            (f"Count{n}", (obj.name,)) for n, obj in enumerate(o.requests(), 1)
+        }
         if c.held is None:
             atoms.add(("HandEmpty", ("robot",)))
         elif c.held == "pitcher":

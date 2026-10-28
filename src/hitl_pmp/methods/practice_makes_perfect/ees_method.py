@@ -1071,13 +1071,7 @@ class EesMethod(Method):
         )
 
     def observe_sampler_outcome(
-        self,
-        *,
-        skill_name: str,
-        param_dim: int,
-        sampler_input: list[float],
-        success: bool,
-        ground_skill: GroundSkill | None = None,
+        self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
     ) -> None:
         self.sampler(skill_name=skill_name, param_dim=param_dim).observe(
             sampler_input=sampler_input, success=success
@@ -1757,7 +1751,6 @@ class _EesEpisode:
             # data. This gate is what keeps the learning path byte-identical.
             if attempt is not None and attempt.records_training_row:
                 self._method.observe_sampler_outcome(
-                    ground_skill=self._pending,
                     skill_name=attempt.skill_name,
                     param_dim=attempt.param_dim,
                     sampler_input=attempt.sampler_input,

@@ -134,10 +134,11 @@ class FrozenPourEnvironment(Environment):
             if not 1 <= requested <= self.payload_count:
                 raise ValueError("Invalid skill count")
             skill = SKILL_NAMES[skill_id]
-            self.last_info["skill"] = skill
+            public_name = f"Pour{requested}" if skill == "Pour" else skill
+            self.last_info["skill"] = public_name
             if self._skill_sink is not None:
                 self._skill_sink(
-                    name=skill,
+                    name=public_name,
                     objects=[],
                     params=values[3:].tolist() if skill == "Pour" else [],
                     controller={"requested_count": requested, "shrimp_index": index},

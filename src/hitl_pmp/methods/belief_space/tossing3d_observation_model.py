@@ -87,7 +87,7 @@ class SkillBeliefModel:
         assert skill_name is not None
         pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         training = dict(state.sampler_training)
-        # The sampler can be shared even when competence is count-conditioned.
+        # Training rows belong to the acting skill's parameter sampler.
         sampler_name = self.skill.name
         if sampler_name in training:
             training[sampler_name] = training[sampler_name].observe(success=success)
@@ -102,7 +102,7 @@ def skill_belief_model(
     """Return the update contract for one provider-supplied ground skill: the belief it
     updates (its own, or the one it shares) and what advances that belief's training
     clock. A skill with no belief gets the no-op contract."""
-    belief_name = domain.ground_belief_name(ground_skill=ground_skill)
+    belief_name = domain.belief_name(skill_name=ground_skill.skill.name)
     if belief_name is None:
         return SkillBeliefModel(skill=ground_skill.skill)
     return SkillBeliefModel(
@@ -180,7 +180,8 @@ def make_default_tossing3d_belief(
             )
         )
     return Tossing3DBeliefState(
-        skill_beliefs=beliefs, sampler_training={domain.sampler_skill: SamplerTrainingState()}
+        skill_beliefs=beliefs,
+        sampler_training={name: SamplerTrainingState() for name in domain.sampler_skills},
     )
 
 

@@ -19,7 +19,7 @@ over 965 recorded joint states. Broader integrated reliability remains to measur
 | Skill | Discrete arguments | Continuous parameters |
 | --- | --- | --- |
 | PickPitcher | robot, pitcher, tray, ordered payload bindings | none |
-| Pour | robot, pitcher, tray, selected count, ordered payload bindings | tilt degrees, peak amplitude metres, maximum feeding seconds |
+| Pour1 / Pour2 / Pour3 | robot, pitcher, tray, fixed count binding, ordered payload bindings | tilt degrees, peak amplitude metres, maximum feeding seconds |
 | PlacePitcherAtHome | robot, pitcher, count | none |
 | PickShrimpFromTray | robot, selected shrimp, tray | none |
 | PickShrimpFromFloor | robot, selected shrimp | none |
@@ -27,18 +27,22 @@ over 965 recorded joint states. Broader integrated reliability remains to measur
 | Wait | none | none; one second |
 | reset_shrimp | external human intervention; all payload | none |
 
-During practice, the robot chooses the count by selecting a grounded `Pour(k)`
-skill. All counts are available to the practice planner; there is no externally
-assigned count schedule. A single learned Pour sampler receives the chosen count
-as an input along with the physical state and predicts success for the three
-continuous controls. Count is a discrete grounding argument, not a fourth
-continuous control.
+During practice, the robot chooses among `Pour1`, `Pour2`, and `Pour3`.
+Each is a separate skill with its own learned parameter sampler and competence
+belief; all call the same physical controller. There is no externally assigned
+practice count schedule and no parameter transfer between these skills. The
+five-piece variant analogously exposes `Pour1` through `Pour5`.
+
+The count binding is fixed by a static `Count1(k)`, `Count2(k)`, etc. precondition.
+It connects each skill's effects to the existing `SplitCorrect(k)`/`Goal(k)`
+facts; it is not a selectable count within that skill. Invalid bindings are also
+rejected by action encoding. All three continuous controls remain learnable.
 
 At evaluation, the task fixes `Goal(request_k)`. Pouring another count cannot
 satisfy that goal. `--requested-counts 1 2 3` balances evaluation tasks across
 counts; `--requested-count 2` fixes evaluation to count two. Neither option
 restricts which count the robot may choose to practice. `ActiveRequest(k)` records
-the task request but does not gate the Pour skill. `SplitCorrect(k)` and `Goal(k)`
+the task request but does not gate the pour skills. `SplitCorrect(k)` and `Goal(k)`
 are measured from the actual physical split, independently of the chosen action.
 The ordered payload bindings expose all starting poses to the learned sampler;
 `PayloadOrder` permits a single ordering rather than factorial equivalent choices.
@@ -96,13 +100,13 @@ counts. For the EES comparison use `--methods ees` and
 `--preset pouring3d-balanced-ees`; its random-start exploration is enabled, but
 it can still spend its budget practicing Wait after an unsuccessful recovery.
 
-The POMDP uses separate `Pour/1`, `Pour/2`, … competence beliefs and one shared
-Pour parameter sampler. An example advances the attempted count's forecast
-learning clock; the shared sampler trains on all counts. The value model averages
-a single Pick–Pour–Place attempt over the declared evaluation counts. It does
-not forecast cross-count transfer or successful recovery from a wrong split.
-These are explicit planning approximations; evaluation executes the real skills
-with the configured control-step budget.
+The POMDP uses its ordinary per-skill competence and sampler rules. The generic
+`SkillPlansPracticeDomain` configuration averages single Pick–PourN–Place
+attempts over the declared evaluation counts. The planning algorithm, training
+updates, and cost objective are unchanged; multiple learned samplers use the
+same rules independently. There is no count-conditioned competence override.
+The deployment-value surrogate does not forecast successful recovery from a
+wrong split. Evaluation executes the real skills with its control-step budget.
 
 Use the workstation's memory-capped launcher for real runs. Practice and
 evaluation have independent simulators and seed streams. Evaluation cannot
