@@ -1,0 +1,759 @@
+{
+  "status": {
+    "phase": "complete",
+    "updated_unix": 1793218063.3006752,
+    "practice_steps": 3600,
+    "robot_steps": 3600,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "reset_shrimp": 0
+    },
+    "learning_updates": 2,
+    "session_index": 1,
+    "measurement_snapshots": 1,
+    "evaluations_completed": 1,
+    "elapsed_seconds": 174.3152559711598,
+    "robot_cost": 3600.0,
+    "human_cost": 0,
+    "physical_cost": 3600.0,
+    "human_steps": 0,
+    "human_invocations_by_skill": {}
+  },
+  "evaluation": {
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "Goal(request_2)",
+        "solved": false,
+        "steps": 1341,
+        "reason": "no_plan"
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "policy_file_sha256": "034e9dc2d92b486baedaa78d3e1797f67c61b291b64a022a475ca383982fe2e8",
+    "elapsed_seconds": 46.52925547794439
+  },
+  "actions": [
+    {
+      "kind": "action",
+      "seq": 0,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "PickPitcher",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickPitcher(robot, pitcher, tray, shrimp_0, shrimp_1, shrimp_2)",
+      "start_step": 0,
+      "end_step": 349,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 349.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:05:00.852523+00:00",
+      "elapsed_seconds": 12.980648200958967
+    },
+    {
+      "kind": "action",
+      "seq": 1,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "Pour",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "request_2",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "Pour(robot, pitcher, tray, request_2, shrimp_0, shrimp_1, shrimp_2), params=[90.38, 0.02, 2.6]",
+      "start_step": 349,
+      "end_step": 648,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 299.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:05:18.335893+00:00",
+      "elapsed_seconds": 30.464018690865487
+    },
+    {
+      "kind": "action",
+      "seq": 2,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "PlacePitcherAtHome",
+      "objects": [
+        "robot",
+        "pitcher",
+        "request_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PlacePitcherAtHome(robot, pitcher, request_2)",
+      "start_step": 648,
+      "end_step": 969,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 321.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:05:36.819047+00:00",
+      "elapsed_seconds": 48.94717289879918
+    },
+    {
+      "kind": "action",
+      "seq": 3,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "PickPitcher",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickPitcher(robot, pitcher, tray, shrimp_0, shrimp_1, shrimp_2)",
+      "start_step": 969,
+      "end_step": 1326,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 357.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:05:49.897044+00:00",
+      "elapsed_seconds": 62.02516976580955
+    },
+    {
+      "kind": "action",
+      "seq": 4,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "Pour",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "request_2",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "Pour(robot, pitcher, tray, request_2, shrimp_0, shrimp_1, shrimp_2), params=[91.74, 0.01, 9.1]",
+      "start_step": 1326,
+      "end_step": 1605,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 279.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:05.455266+00:00",
+      "elapsed_seconds": 77.58339132601395
+    },
+    {
+      "kind": "action",
+      "seq": 5,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "PlacePitcherAtHome",
+      "objects": [
+        "robot",
+        "pitcher",
+        "request_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PlacePitcherAtHome(robot, pitcher, request_2)",
+      "start_step": 1605,
+      "end_step": 1925,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 320.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:10.090038+00:00",
+      "elapsed_seconds": 82.21816326584667
+    },
+    {
+      "kind": "action",
+      "seq": 6,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "PickShrimpFromTray",
+      "objects": [
+        "robot",
+        "shrimp_0",
+        "tray"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickShrimpFromTray(robot, shrimp_0, tray)",
+      "start_step": 1925,
+      "end_step": 2168,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 243.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:14.790688+00:00",
+      "elapsed_seconds": 86.91881356900558
+    },
+    {
+      "kind": "action",
+      "seq": 7,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 0,
+      "actor": "robot",
+      "skill": "DropShrimpIntoPitcher",
+      "objects": [
+        "robot",
+        "shrimp_0",
+        "pitcher"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "DropShrimpIntoPitcher(robot, shrimp_0, pitcher)",
+      "start_step": 2168,
+      "end_step": 2309,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 141.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:17.438799+00:00",
+      "elapsed_seconds": 89.56692377501167
+    },
+    {
+      "kind": "action",
+      "seq": 8,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "PickShrimpFromTray",
+      "objects": [
+        "robot",
+        "shrimp_1",
+        "tray"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickShrimpFromTray(robot, shrimp_1, tray)",
+      "start_step": 2309,
+      "end_step": 2552,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 243.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:22.739099+00:00",
+      "elapsed_seconds": 94.86722499202006
+    },
+    {
+      "kind": "action",
+      "seq": 9,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "DropShrimpIntoPitcher",
+      "objects": [
+        "robot",
+        "shrimp_1",
+        "pitcher"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "DropShrimpIntoPitcher(robot, shrimp_1, pitcher)",
+      "start_step": 2552,
+      "end_step": 2693,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 141.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:25.517100+00:00",
+      "elapsed_seconds": 97.64522582385689
+    },
+    {
+      "kind": "action",
+      "seq": 10,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "PickShrimpFromTray",
+      "objects": [
+        "robot",
+        "shrimp_2",
+        "tray"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickShrimpFromTray(robot, shrimp_2, tray)",
+      "start_step": 2693,
+      "end_step": 2936,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 243.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:30.876075+00:00",
+      "elapsed_seconds": 103.00419989787042
+    },
+    {
+      "kind": "action",
+      "seq": 11,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "DropShrimpIntoPitcher",
+      "objects": [
+        "robot",
+        "shrimp_2",
+        "pitcher"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "DropShrimpIntoPitcher(robot, shrimp_2, pitcher)",
+      "start_step": 2936,
+      "end_step": 3077,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 141.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:33.936958+00:00",
+      "elapsed_seconds": 106.06508377799764
+    },
+    {
+      "kind": "action",
+      "seq": 12,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "PickPitcher",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "PickPitcher(robot, pitcher, tray, shrimp_0, shrimp_1, shrimp_2)",
+      "start_step": 3077,
+      "end_step": 3424,
+      "success": true,
+      "goal_reached": false,
+      "outcome": null,
+      "cost": 347.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:43.114378+00:00",
+      "elapsed_seconds": 115.24250342394225
+    },
+    {
+      "kind": "action",
+      "seq": 13,
+      "phase": "practice",
+      "checkpoint": null,
+      "task_index": null,
+      "cycle": 1,
+      "actor": "robot",
+      "skill": "Pour",
+      "objects": [
+        "robot",
+        "pitcher",
+        "tray",
+        "request_2",
+        "shrimp_0",
+        "shrimp_1",
+        "shrimp_2"
+      ],
+      "params": [],
+      "controller": {},
+      "label": "Pour(robot, pitcher, tray, request_2, shrimp_0, shrimp_1, shrimp_2), params=[89.61, 0.02, 25.35]",
+      "start_step": 3424,
+      "end_step": 3600,
+      "success": false,
+      "goal_reached": false,
+      "outcome": "interrupted: practice_step_budget",
+      "cost": 176.0,
+      "moved_objects": null,
+      "num_ticks": 0,
+      "timestamp": "2026-10-28T20:06:55.160809+00:00",
+      "elapsed_seconds": 127.28893485781737
+    }
+  ],
+  "source_hashes": {
+    "src/hitl_pmp/environments/pouring3d/practice/step_protocol.py": "1c62e720c4d403900fc45d02c8fe6420a2f17e9157a62fbec886e666dcbeca05",
+    "src/hitl_pmp/environments/pouring3d/practice/types.py": "ae730df48ba8242f59c0ca0a95f427a1b3577db65cc53b95029920cf2c7d1e33",
+    "src/hitl_pmp/environments/pouring3d/practice/predicates.py": "e67cbc93e4568fb46c8a2a16396fb21abc07bfeb77e66385cb75e13f064dd545",
+    "src/hitl_pmp/environments/pouring3d/practice/recording.py": "e09dc5d8221be9e40e4c51e5662db2256d75a281ecb33493f6b2eeded942b07e",
+    "src/hitl_pmp/environments/pouring3d/practice/skill_provider.py": "364e2ba1747fdebc041c846786815c91a9806500f7c23a3fd8f2a39686cd3059",
+    "src/hitl_pmp/environments/pouring3d/practice/cli.py": "0d48b9ed55ce193733e2c81498f12f81ed9e2670fec8bad52e58b7a6659d5ad2",
+    "src/hitl_pmp/environments/pouring3d/practice/environment.py": "acec7346f3c53e7c9aa9a4544eb4827b0f5c8e2cb03fca946e139770a2d532da",
+    "src/hitl_pmp/environments/pouring3d/practice/native.py": "96cf17f415f072744f8ad8f36964ea7f8626b2fd9c0a9950229abe9f7519123c",
+    "src/hitl_pmp/environments/pouring3d/practice/__init__.py": "c8f9dcfff95a0034becc37a891d3e0dbef7d79f5de4db14e97e736963fd7a7ef",
+    "src/hitl_pmp/environments/pouring3d/practice/problem.py": "d583a3edc46b6496e3ef386d6452c4e1c83688c1a2d8e8e75c643ba7a7fc2fe7",
+    "src/hitl_pmp/environments/pouring3d/practice/skills.py": "512a0c121dfa3d11c8f40afea7fce2fc65d48fce2348b985479aade1ee9f5bdd",
+    "src/hitl_pmp/environments/pouring3d/practice/backend.py": "8ef5053c8d3de0296e61b54b6c4f26f9fc6cb48ed6b078098acd2ac9ead9cedd",
+    "src/hitl_pmp/environments/pouring3d/practice/controller.py": "299ad41dd27ce18095092fa57d7ade74d006bee9a6540fd7a2ea7a2648f14daa",
+    "src/hitl_pmp/environments/pouring3d/practice/tasks.py": "d022874ff6e7d884cd35f7c1630e11bef211e29d07d1c5e07ad99b1a8c84a428"
+  },
+  "recording_before_association_fix": true,
+  "seed70_pour_qpos_identical_states": 965,
+  "robot_reset_success": "selected actual EES practice sequence, actions6\u201311",
+  "near_wall_recovery": {
+    "seed": 70,
+    "steps": 2848,
+    "rows": [
+      {
+        "action": [
+          0.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": null,
+        "success": true,
+        "skill": "PickPitcher",
+        "seconds": 34.89999999998945,
+        "controller_steps": 349,
+        "locations": [
+          "pitcher",
+          "pitcher",
+          "pitcher"
+        ],
+        "held": "pitcher"
+      },
+      {
+        "action": [
+          1.0,
+          0.0,
+          2.0,
+          90.5,
+          0.008,
+          30.0
+        ],
+        "error": null,
+        "success": true,
+        "skill": "Pour",
+        "controller": "mouth_feedback_v1",
+        "parameters": {
+          "tilt_degrees": 90.5,
+          "amplitude_m": 0.008,
+          "duration_seconds": 30.0
+        },
+        "seconds": 29.40000000014038,
+        "cutoff_reason": "requested count crossed mouth during feeding",
+        "fixed_settings": {
+          "frequency_hz": 1.0,
+          "aim_offset_m": [
+            0,
+            0
+          ],
+          "return_speed_deg_s": 45.0,
+          "observation": "ideal simulator body centers crossing mouth plane"
+        },
+        "controller_steps": 294,
+        "locations": [
+          "tray",
+          "tray",
+          "pitcher"
+        ],
+        "held": "pitcher"
+      },
+      {
+        "action": [
+          2.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": null,
+        "success": true,
+        "skill": "PlacePitcherAtHome",
+        "seconds": 32.10000000015327,
+        "controller_steps": 321,
+        "locations": [
+          "tray",
+          "tray",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          3.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": null,
+        "success": true,
+        "skill": "PickShrimpFromTray",
+        "seconds": 28.700000000137038,
+        "controller_steps": 287,
+        "locations": [
+          "air",
+          "tray",
+          "pitcher"
+        ],
+        "held": "shrimp_0"
+      },
+      {
+        "action": [
+          5.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": null,
+        "success": true,
+        "skill": "DropShrimpIntoPitcher",
+        "seconds": 14.099999999720566,
+        "controller_steps": 141,
+        "locations": [
+          "pitcher",
+          "tray",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          3.0,
+          1.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": "Physical shrimp grasp lost",
+        "success": false,
+        "skill": "PickShrimpFromTray",
+        "seconds": 23.69999999943957,
+        "controller_steps": 237,
+        "locations": [
+          "pitcher",
+          "floor",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          4.0,
+          1.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": "Motor tracking failed in descend to shrimp body: 0.033 m",
+        "success": false,
+        "skill": "PickShrimpFromFloor",
+        "seconds": 31.59999999925276,
+        "controller_steps": 316,
+        "locations": [
+          "pitcher",
+          "floor",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          4.0,
+          1.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": "Motor tracking failed in descend to shrimp body: 0.030 m",
+        "success": false,
+        "skill": "PickShrimpFromFloor",
+        "seconds": 30.09999999928823,
+        "controller_steps": 301,
+        "locations": [
+          "pitcher",
+          "floor",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          4.0,
+          1.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": "Motor tracking failed in descend to shrimp body: 0.029 m",
+        "success": false,
+        "skill": "PickShrimpFromFloor",
+        "seconds": 30.09999999928823,
+        "controller_steps": 301,
+        "locations": [
+          "pitcher",
+          "floor",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "action": [
+          4.0,
+          1.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "error": "Motor tracking failed in descend to shrimp body: 0.029 m",
+        "success": false,
+        "skill": "PickShrimpFromFloor",
+        "seconds": 30.099999999288258,
+        "controller_steps": 301,
+        "locations": [
+          "pitcher",
+          "floor",
+          "pitcher"
+        ],
+        "held": null
+      },
+      {
+        "skill": "reset_shrimp",
+        "success": true,
+        "error": null,
+        "human_interventions": 1,
+        "seconds": 0,
+        "controller_steps": 0
+      }
+    ],
+    "ready": true,
+    "locations": [
+      "pitcher",
+      "pitcher",
+      "pitcher"
+    ]
+  },
+  "final_run": {
+    "status": {
+      "phase": "complete",
+      "updated_unix": 1793218557.572531,
+      "practice_steps": 3600,
+      "robot_steps": 3600,
+      "human_invocations": 0,
+      "human_resets_by_destination": {
+        "reset_shrimp": 0
+      },
+      "learning_updates": 2,
+      "session_index": 1,
+      "measurement_snapshots": 1,
+      "evaluations_completed": 1,
+      "elapsed_seconds": 168.85143687110394,
+      "robot_cost": 3600.0,
+      "human_cost": 0,
+      "physical_cost": 3600.0,
+      "human_steps": 0,
+      "human_invocations_by_skill": {}
+    },
+    "evaluation": {
+      "complete": true,
+      "tasks": [
+        {
+          "task": 0,
+          "seed": 357381689,
+          "goal": "Goal(request_2)",
+          "solved": false,
+          "steps": 1341,
+          "reason": "no_plan"
+        }
+      ],
+      "num_solved": 0,
+      "num_total": 1,
+      "policy_file_sha256": "2f6a6210a710d4cf79be95fc007f1a04417246e6e07d94a1156152810f1331cd",
+      "elapsed_seconds": 44.62285717111081
+    },
+    "recorded_physical_states_identical_to_prior_run": 3601
+  }
+}

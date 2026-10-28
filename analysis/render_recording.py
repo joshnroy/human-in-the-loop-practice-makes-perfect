@@ -60,6 +60,12 @@ class RecordingVideo:
 
     @staticmethod
     def default_renderer(*, header: RecordingHeader, realistic_background: bool) -> ReplayRenderer:
+        if header.environment == "pouring3d":
+            from hitl_pmp.environments.pouring3d.practice.recording import FrozenPourReplayRenderer
+
+            return FrozenPourReplayRenderer(
+                scene=header.scene, scene_bg=True if realistic_background else None
+            )
         if header.environment == "tossing3d":
             from hitl_pmp.environments.tossing3d.recording import Tossing3DReplayRenderer
 
