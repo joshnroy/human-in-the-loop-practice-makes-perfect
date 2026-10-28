@@ -1,0 +1,8 @@
+{
+  "robot_step": {"value": 0.01},
+  "human_skills": {
+    "reset_shrimp": {"cost": {"value": 5}, "duration": {"value": 1}}
+  },
+  "human_weight": 1,
+  "objective_lambda": 0.0003
+}
