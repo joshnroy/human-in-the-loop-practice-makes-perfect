@@ -65,6 +65,7 @@ class FrozenPourStepProtocol(SimulatedStepProtocolHooks):
         *, args: argparse.Namespace, problem: Problem, output_path: Path
     ) -> RunRecordWriter:
         env = FrozenPourStepProtocol.env(problem=problem)
+        assert isinstance(problem, FrozenPourProblem)
         motion = args.record_motion == "all" or (
             args.record_motion == "evaluation" and "evaluations" in output_path.parts
         )
@@ -81,6 +82,10 @@ class FrozenPourStepProtocol(SimulatedStepProtocolHooks):
                     "scene_bg": env.scene_bg,
                     "motion": motion,
                     "fps": 10,
+                    "practice_model_version": 2,
+                    "requested_counts": list(
+                        problem.tasks.requested_counts or (env.requested_count,)
+                    ),
                 },
             ),
             state_provider=lambda: FrozenPourStepProtocol.live_state(env=env),
@@ -120,7 +125,12 @@ class FrozenPourStepProtocol(SimulatedStepProtocolHooks):
 
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
-        return FrozenPourStepProtocol.env(problem=problem).last_info.get("error")
+        info = FrozenPourStepProtocol.env(problem=problem).last_info
+        if info.get("error") is not None:
+            return str(info["error"])
+        if info.get("success") is False:
+            return f"{info.get('skill', 'Skill')}: observed success conditions not achieved"
+        return None
 
     @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:

@@ -19,16 +19,27 @@ over 965 recorded joint states. Broader integrated reliability remains to measur
 | Skill | Discrete arguments | Continuous parameters |
 | --- | --- | --- |
 | PickPitcher | robot, pitcher, tray, ordered payload bindings | none |
-| Pour | robot, pitcher, tray, task request, ordered payload bindings | tilt degrees, peak amplitude metres, maximum feeding seconds |
-| PlacePitcherAtHome | robot, pitcher, task request | none |
+| Pour | robot, pitcher, tray, selected count, ordered payload bindings | tilt degrees, peak amplitude metres, maximum feeding seconds |
+| PlacePitcherAtHome | robot, pitcher, count | none |
 | PickShrimpFromTray | robot, selected shrimp, tray | none |
 | PickShrimpFromFloor | robot, selected shrimp | none |
 | DropShrimpIntoPitcher | robot, held shrimp, pitcher | none |
 | Wait | none | none; one second |
 | reset_shrimp | external human intervention; all payload | none |
 
-The count is task-supplied and cannot be changed by an action. One run fixes `k`;
-run a balanced experiment across separate `--requested-count` configurations.
+During practice, the robot chooses the count by selecting a grounded `Pour(k)`
+skill. All counts are available to the practice planner; there is no externally
+assigned count schedule. A single learned Pour sampler receives the chosen count
+as an input along with the physical state and predicts success for the three
+continuous controls. Count is a discrete grounding argument, not a fourth
+continuous control.
+
+At evaluation, the task fixes `Goal(request_k)`. Pouring another count cannot
+satisfy that goal. `--requested-counts 1 2 3` balances evaluation tasks across
+counts; `--requested-count 2` fixes evaluation to count two. Neither option
+restricts which count the robot may choose to practice. `ActiveRequest(k)` records
+the task request but does not gate the Pour skill. `SplitCorrect(k)` and `Goal(k)`
+are measured from the actual physical split, independently of the chosen action.
 The ordered payload bindings expose all starting poses to the learned sampler;
 `PayloadOrder` permits a single ordering rather than factorial equivalent choices.
 
@@ -74,11 +85,24 @@ From the repository root, with its native dependencies installed:
 
 ```bash
 scripts/with_env.sh python -m scripts.run_sweep \
-  --env pouring3d --methods ees --num-seeds 5 --max-workers 4 \
-  --results-root results/pouring3d-target2 \
-  --shared-args '--payload-count 3 --requested-count 2 --surface-mu 0.1 --practice-step-budget 3600 --measurement-interval-steps 3600 --evaluation-control-steps 2000 --num-test-tasks 5 --record-motion all --practice-reset-policy never --practice-cost-config configs/pouring3d_practice_costs.json --defer-rendering' \
-  --method-args 'ees=--num-cycles 4 --max-steps-per-interaction 8'
+  --env pouring3d --methods pomdp --num-seeds 5 --max-workers 4 \
+  --results-root results/pouring3d-balanced \
+  --shared-args '--preset pouring3d-balanced --practice-step-budget 9000 --measurement-interval-steps 9000 --record-motion all'
 ```
+
+The preset disables assigned-goal pursuit during practice. It balances nine
+held-out evaluations across requests 1/2/3, while the robot chooses its practice
+counts. For the EES comparison use `--methods ees` and
+`--preset pouring3d-balanced-ees`; its random-start exploration is enabled, but
+it can still spend its budget practicing Wait after an unsuccessful recovery.
+
+The POMDP uses separate `Pour/1`, `Pour/2`, … competence beliefs and one shared
+Pour parameter sampler. An example advances the attempted count's forecast
+learning clock; the shared sampler trains on all counts. The value model averages
+a single Pick–Pour–Place attempt over the declared evaluation counts. It does
+not forecast cross-count transfer or successful recovery from a wrong split.
+These are explicit planning approximations; evaluation executes the real skills
+with the configured control-step budget.
 
 Use the workstation's memory-capped launcher for real runs. Practice and
 evaluation have independent simulators and seed streams. Evaluation cannot
@@ -103,9 +127,10 @@ Each piece is a 3 g rigid curled compound of seven capsules. Material coefficien
 `surface_mu` is an uncalibrated sensitivity input; freezing itself is not
 simulated. Rubber finger pairs use 0.6, matching the native lower pad's declared
 coefficient, independently of plastic contact friction. No weld, adhesion,
-ice-clumping, melting or food deformation is modeled. The original three-piece
-spawn can have about 0.5 mm pre-settling wall penetration; native reset settles it.
-The five-piece scene uses separated initial layers and gravity settling.
+ice-clumping, melting or food deformation is modeled. Practice model version 2 uses a 22 mm spawn ring for three pieces, removing the
+original roughly 0.5 mm initial wall intersection. The five-piece scene uses
+separated initial layers and gravity settling. Historical feasibility results
+above predate this packing repair; they are not measurements of version 2.
 
 Targeted checks cover discrete/continuous API separation, actual planner plans,
 physical tray and floor pickup/drop, payload-only human reset invariants, and

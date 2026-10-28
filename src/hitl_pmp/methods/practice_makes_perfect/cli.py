@@ -5,6 +5,7 @@ from typing import Any, get_args
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.practice_costs import SkillStepCosts
+from hitl_pmp.methods.belief_space.pouring_domain import PouringPracticeDomain
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -479,10 +480,15 @@ class Tossing3DPomdpCli(EesCli):
                 "competence priors from its practice domain"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
-        if domain is None:
-            raise ValueError(
-                "--method pomdp supports only --env tossing3d and --env sweepoffshelf3d"
+        if env_cli.__name__ == "FrozenPourCli":
+            counts = tuple(args.requested_counts or (2,))
+            if args.requested_count is not None:
+                counts = (args.requested_count,)
+            domain = PouringPracticeDomain.create(
+                payload_count=args.payload_count, evaluation_counts=counts
             )
+        if domain is None:
+            raise ValueError("--method pomdp supports tossing3d, sweepoffshelf3d, and pouring3d")
         if args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
             args.pomdp_search_depth = domain.default_search_depth

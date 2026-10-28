@@ -14,12 +14,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_native_pour_robot_reset_and_human_invariants():
-    env = FrozenPourEnvironment(canonical_seed=70, requested_count=2, scene_bg=False)
+    env = FrozenPourEnvironment(canonical_seed=70, requested_count=1, scene_bg=False)
     provider = FrozenPourSkillProvider(env=env)
 
     def run(*, name, shrimp=0, params=()):
         state = env.get_current_state()
-        ground = provider.ground(name=name, shrimp=shrimp)
+        ground = provider.ground(name=name, shrimp=shrimp, request=2)
         env.take_action(
             action=provider.compute_action(
                 ground_skill=ground, params=np.array(params), state=state
@@ -30,7 +30,17 @@ def test_native_pour_robot_reset_and_human_invariants():
     try:
         run(name="PickPitcher")
         run(name="Pour", params=(90.5, 0.008, 30))
+        assert env.last_info["requested_count"] == 2
         run(name="PlacePitcherAtHome")
+        # Practice selected Pour(2), despite the task distribution's reference
+        # goal being one. This is skill success, but cannot pass a count-one test.
+        from hitl_pmp.environments.pouring3d.practice.tasks import FrozenPourTasks
+
+        state = env.get_current_state()
+        tasks = FrozenPourTasks(env=env)
+        assert tasks.goal(requested=2).is_satisfied(state=state)
+        assert not tasks.goal(requested=1).is_satisfied(state=state)
+        assert env.requested_count == env.controller().scene.requested_count == 1
         c = env.controller()
         selected = c.scene.cube_locations().index("tray")
         run(name="PickShrimpFromTray", shrimp=selected)

@@ -221,12 +221,28 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def observe_training_example(
-        self, *, state: Tossing3DBeliefState, skill_name: str, success: bool
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        skill_name: str,
+        success: bool,
+        ground_skill: GroundSkill | None = None,
     ) -> Tossing3DBeliefState:
         """Apply any learning-curve update associated with a sampler example."""
-        return self._skill_belief_models_by_name[skill_name].observe_training_example(
-            state=state, success=success
-        )
+        if ground_skill is None:
+            contracts = {
+                m.belief_name
+                for g, m in self._skill_belief_models.items()
+                if g.skill.name == skill_name
+            }
+            if len(contracts) > 1:
+                raise ValueError("Count-conditioned training requires the selected ground skill")
+            model = self._skill_belief_models_by_name[skill_name]
+        else:
+            if ground_skill.skill.name != skill_name:
+                raise ValueError("Sampler skill differs from selected grounding")
+            model = self._skill_belief_models[ground_skill]
+        return model.observe_training_example(state=state, success=success)
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
         """Return every applicable action not masked by an observed starved pool.
@@ -416,7 +432,7 @@ class Tossing3DPracticeModel(BaseModel):
         uniform falls on the same side of the same success probability) while the
         failure branch's own effects follow the state."""
         name = action.skill.name
-        belief_name = self.domain.belief_name(skill_name=name) or name
+        belief_name = self.domain.ground_belief_name(ground_skill=action) or name
         belief = belief_state.skill_beliefs.get(belief_name)
         read = (
             belief_name,

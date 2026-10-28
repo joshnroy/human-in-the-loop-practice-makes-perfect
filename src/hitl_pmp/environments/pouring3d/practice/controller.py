@@ -107,6 +107,20 @@ class PracticePourController(FeedbackPourController):
             self.held = None
             raise ValueError("Shrimp not retained through lift")
 
+    def clear_failed_pick(self) -> None:
+        """Open and retreat physically after a failed empty-hand pickup."""
+        if self.held is not None:
+            return
+        self.pause(phase="release failed shrimp pick", seconds=0.5, grip=0)
+        position, rotation = self.hand_pose()
+        self.move(
+            position=position + [0, 0, 0.20],
+            rotation=rotation,
+            seconds=3,
+            grip=0,
+            phase="retreat after failed shrimp pick",
+        )
+
     def drop_shrimp(self, *, index: int) -> None:
         name = self.scene.cube_names[index]
         if self.held != name or not self.vessel_home(name="pitcher"):

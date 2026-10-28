@@ -94,7 +94,16 @@ class PourBackend:
             atoms.add(("NeedsReset", ()))
         if c.ready():
             atoms.add(("ReadyToPour", ()))
-        if c.scene._check_goals() and c.held not in c.scene.cube_names:
+        # Success describes the measured split, independently of the task goal
+        # and the count the robot chose to attempt.
+        actual_count = locations.count("tray")
+        if (
+            1 <= actual_count <= o.count
+            and locations.count("pitcher") == o.count - actual_count
+            and c.scene.cubes_settled()
+            and c.held not in c.scene.cube_names
+        ):
+            request = f"request_{actual_count}"
             atoms.add(("SplitCorrect", (request,)))
             if c.held is None and c.vessel_home(name="pitcher") and c.vessel_home(name="tray"):
                 atoms.add(("Goal", (request,)))

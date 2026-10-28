@@ -18,7 +18,20 @@ class FrozenPourCli:
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--payload-count", type=int, choices=(3, 5), default=3)
-        parser.add_argument("--requested-count", type=int, default=2)
+        requests = parser.add_mutually_exclusive_group()
+        requests.add_argument(
+            "--requested-count",
+            type=int,
+            default=None,
+            help="Fixed evaluation count (default 2); practice chooses its skill count",
+        )
+        requests.add_argument(
+            "--requested-counts",
+            type=int,
+            nargs="+",
+            default=None,
+            help="Balanced evaluation requests, e.g. 1 2 3; practice chooses its skill count",
+        )
         parser.add_argument(
             "--surface-mu",
             type=float,
@@ -39,16 +52,32 @@ class FrozenPourCli:
 
     @staticmethod
     def build_problem(*, args: argparse.Namespace) -> FrozenPourProblem:
+        counts = getattr(args, "requested_counts", None)
+        # Explicit fixed-count flags also override a balanced preset's defaults.
+        if args.requested_count is not None:
+            counts = None
+        if counts and getattr(args, "num_test_tasks", len(counts)) % len(counts):
+            raise ValueError(
+                "--num-test-tasks must be a multiple of the number of requested counts"
+            )
+        requested = (
+            args.requested_count
+            if args.requested_count is not None
+            else (counts[0] if counts else 2)
+        )
         env = FrozenPourEnvironment(
             payload_count=args.payload_count,
-            requested_count=args.requested_count,
+            requested_count=requested,
             surface_mu=args.surface_mu,
             canonical_seed=args.canonical_seed,
             scene_bg=args.scene_bg,
             skill_step_limit=args.skill_step_limit,
         )
         tasks = FrozenPourTasks(
-            env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
+            env=env,
+            seed=args.seed,
+            test_env_seed_offset=args.test_env_seed_offset,
+            requested_counts=tuple(counts) if counts else None,
         )
         return FrozenPourProblem(env=env, tasks=tasks, human=UnconditionalHumanOracle)
 

@@ -76,9 +76,14 @@ class FeedbackPourController(ShrimpPourController):
         )
         self.motor_step(target_q=q, grip=1)
 
-    def run_feedback_pour(self, *, parameters: FeedbackPourParameters) -> dict[str, Any]:
+    def run_feedback_pour(
+        self, *, parameters: FeedbackPourParameters, requested_count: int | None = None
+    ) -> dict[str, Any]:
         if self.held != "pitcher":
             raise ValueError("Pour requires a retained handle grasp")
+        requested = self.scene.requested_count if requested_count is None else requested_count
+        if type(requested) is not int or not 1 <= requested <= len(self.scene.cube_names):
+            raise ValueError("Invalid requested skill count")
         before = self.scene.physical_snapshot()
         self.active_feedback = parameters
         self.feedback_trace = []
@@ -86,7 +91,7 @@ class FeedbackPourController(ShrimpPourController):
         self.cutoff_reason = None
         error = None
         try:
-            self.feedback_pour(parameters=parameters)
+            self.feedback_pour(parameters=parameters, requested_count=requested)
             for _ in range(10):
                 if self.scene.cubes_settled():
                     break
@@ -96,11 +101,19 @@ class FeedbackPourController(ShrimpPourController):
         finally:
             self.active_feedback = None
         after = self.scene.physical_snapshot()
+        locations = self.scene.cube_locations()
+        success = (
+            error is None
+            and locations.count("tray") == requested
+            and locations.count("pitcher") == len(self.scene.cube_names) - requested
+            and self.scene.cubes_settled()
+        )
         event = {
             "skill": "Pour",
             "controller": "mouth_feedback_v1",
             "parameters": parameters.model_dump(),
-            "success": error is None and after["goal"],
+            "success": success,
+            "requested_count": requested,
             "error": error,
             "before": before,
             "after": after,
@@ -117,7 +130,9 @@ class FeedbackPourController(ShrimpPourController):
         self.events.append(event)
         return event
 
-    def feedback_pour(self, *, parameters: FeedbackPourParameters) -> None:
+    def feedback_pour(
+        self, *, parameters: FeedbackPourParameters, requested_count: int | None = None
+    ) -> None:
         tray, _ = self.body_pose(name="tray")
         center = tray + [0, 0, 0.45]
         self.move_base(
@@ -134,7 +149,7 @@ class FeedbackPourController(ShrimpPourController):
             seconds=5,
             grip=1,
         )
-        requested = self.scene.requested_count
+        requested = self.scene.requested_count if requested_count is None else requested_count
         angle = 0.0
         tilt_step = self.TILT_SPEED_DEG_S / self.frequency
         while angle < parameters.tilt_degrees:
