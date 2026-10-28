@@ -44,3 +44,5 @@ Artifact root: artifacts/pouring3d-practice-integration-20261028. The runner-reb
 All trials use SweepRunner; the final smoke has a 6 GB memory cap. The user explicitly authorized bypassing run-heavy. No default human duration is claimed as measured: the example cost file assumes 100 control-tick equivalents at 10 Hz.
 
 [Integration outcomes, action records and source hashes](data/pouring3d-practice-integration.json)
+
+Publication follow-up: the pinned native commit was initially local, so the first CI attempt failed at checkout. Its native dependency is now published. The subsequent native lint fix changes only line wrapping in registration (identical parsed runtime AST) and test import placement; no physics/model code changed. The final dependency remains stacked on the native scene version used by these experiments. Local validation passed 39/39 pouring/replay tests, 56/56 CI-scope tests and 7/7 native tests, plus formatting, type, architecture and documentation-link checks.
