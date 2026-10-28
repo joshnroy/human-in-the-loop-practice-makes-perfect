@@ -40,12 +40,35 @@ def test_physical_pour_and_both_resets():
         assert sim.execute(skill="PickPitcher")["success"]
         assert sim.execute(skill="Pour")["success"]
         assert sim.execute(skill="PlacePitcherAtHome")["success"]
+        recovered = 0
+        expected_human_interventions = 1
         for _ in range(5):
             cube = sim.controller.select_reset_cube()
-            assert sim.execute(skill="PickCubeFromTray", cube=cube)["success"]
+            event = sim.execute(skill="PickCubeFromTray", cube=cube)
+            if not event["success"]:
+                # Contact-rich landings can leave an ungraspable cube. A failed
+                # lift must remain a failure, not teleport the cube into recovery.
+                assert event["error"] == "Physical cube grasp was not retained during lift"
+                assert sim.held is None
+                assert sim.locations()[cube] != "pitcher"
+                assert not sim.ready()
+                assert sim.human_interventions == 1
+                before = sim.data.qpos.copy()
+                time_before = float(sim.data.time)
+                UnconditionalHumanOracle.execute_movables_reset(env=env, destination="reset_cubes")
+                assert env.last_info["success"]
+                np.testing.assert_array_equal(
+                    sim.data.qpos[sim.controller.arm_q], before[sim.controller.arm_q]
+                )
+                assert sim.data.time == time_before
+                expected_human_interventions += 1
+                break
             assert sim.execute(skill="DropCubeIntoPitcher", cube=cube)["success"]
+            assert sim.locations()[cube] == "pitcher"
+            recovered += 1
+        assert recovered >= 1, "The test must exercise physical pickup and drop-back"
         assert sim.ready(), sim.locations()
-        assert sim.human_interventions == 1
+        assert sim.human_interventions == expected_human_interventions
         assert sim.elapsed_seconds > 0
         assert np.isfinite(sim.data.qpos).all()
     finally:

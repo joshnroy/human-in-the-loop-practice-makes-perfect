@@ -180,8 +180,8 @@ def transition_outcomes(
                 ),
             ),
         )
-    if name != domain.sampler_skill:
-        belief_name = domain.ground_belief_name(ground_skill=action)
+    if name not in domain.sampler_skills:
+        belief_name = domain.belief_name(skill_name=action.skill.name)
         assert belief_name is not None, f"{name} has no competence belief"
         return binary_outcomes(
             state=state,
@@ -279,10 +279,10 @@ def toss_outcomes(
     as `INFORMED` from a mixed-class fit and `UNINFORMATIVE` from a one-class or
     unfitted one; the tie-fraction fallback of a mixed fit is not modelled.
     """
-    belief_name = domain.ground_belief_name(ground_skill=ground_skill)
+    belief_name = domain.belief_name(skill_name=ground_skill.skill.name)
     assert belief_name is not None
     branches: list[TransitionBranch] = []
-    training = state.sampler_training.get(domain.sampler_skill)
+    training = state.sampler_training.get(ground_skill.skill.name)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
     greedy_consultation = (

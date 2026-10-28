@@ -5,15 +5,16 @@ from typing import Any, get_args
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.practice_costs import SkillStepCosts
-from hitl_pmp.methods.belief_space.pouring_domain import PouringPracticeDomain
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
     PracticeDomain,
 )
+from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
+from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
@@ -484,8 +485,30 @@ class Tossing3DPomdpCli(EesCli):
             counts = tuple(args.requested_counts or (2,))
             if args.requested_count is not None:
                 counts = (args.requested_count,)
-            domain = PouringPracticeDomain.create(
-                payload_count=args.payload_count, evaluation_counts=counts
+            support = (
+                "PickPitcher",
+                "PlacePitcherAtHome",
+                "PickShrimpFromTray",
+                "PickShrimpFromFloor",
+                "DropShrimpIntoPitcher",
+                "reset_shrimp",
+            )
+            pours = tuple(f"Pour{k}" for k in range(1, args.payload_count + 1))
+            domain = SkillPlansPracticeDomain(
+                deployment_horizon=3,
+                deployment_plans=tuple(
+                    ("PickPitcher", f"Pour{k}", "PlacePitcherAtHome") for k in counts
+                ),
+                belief_sources=(
+                    *((name, PracticeExampleSource.OUTCOME) for name in support),
+                    *((name, PracticeExampleSource.SAMPLER) for name in pours),
+                ),
+                initial_competence_alpha=1.0,
+                initial_competence_beta=3.0,
+                default_search_depth=4,
+                deterministic_skills=frozenset({"Wait"}),
+                human_skill_names=frozenset({"reset_shrimp"}),
+                failure_effect_skills=frozenset((*support, *pours)),
             )
         if domain is None:
             raise ValueError("--method pomdp supports tossing3d, sweepoffshelf3d, and pouring3d")

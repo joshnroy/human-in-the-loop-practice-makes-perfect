@@ -5,7 +5,7 @@ things are not, and a `PracticeDomain` supplies them:
 
 - which skills carry a competence belief, which share one (Tossing3D's four picks share
   `PickCube`'s), and which event advances each one's training clock;
-- the one skill whose continuous parameters a learned sampler chooses;
+- which skills have continuous parameters chosen by learned samplers;
 - which skills are known mechanisms that always succeed (Tossing3D's automatic
   non-human reset) rather than skills whose competence is inferred -- never a human
   skill, whose effects are checked and whose competence is learned like a robot's;
@@ -21,8 +21,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
-
-from hitl_pmp.core.method.types import GroundSkill
 
 from .tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
@@ -49,7 +47,7 @@ class PracticeDomain(BaseModel, abc.ABC):
     model_config = ConfigDict(frozen=True)
 
     deployment_horizon: int = Field(ge=0)
-    sampler_skill: str
+    sampler_skill: str = ""
     # Belief names in prior-seeding order, each with what advances its clock.
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...]
     # Keep seed slots when an ablation removes a skill from belief_sources.
@@ -82,9 +80,11 @@ class PracticeDomain(BaseModel, abc.ABC):
             return skill_name
         return None
 
-    def ground_belief_name(self, *, ground_skill: GroundSkill) -> str | None:
-        """Default sharing is per skill; a domain may condition on a discrete binding."""
-        return self.belief_name(skill_name=ground_skill.skill.name)
+    @property
+    def sampler_skills(self) -> frozenset[str]:
+        return frozenset(
+            name for name, source in self.belief_sources if source == PracticeExampleSource.SAMPLER
+        )
 
     def example_source(self, *, belief_name: str) -> PracticeExampleSource | None:
         if belief_name in self.deterministic_skills:

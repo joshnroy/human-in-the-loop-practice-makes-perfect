@@ -29,16 +29,14 @@ def test_practice_sampling_does_not_assign_a_count_or_change_physics():
             assert env.requested_count == c.scene.requested_count == 2
         rows = []
         for request in (3, 1, 2):
-            ground = provider.ground(name="Pour", request=request)
+            ground = provider.ground(name=f"Pour{request}")
             params = np.array([90.5, 0.008, 30.0])
             action = provider.compute_action(ground_skill=ground, state=state, params=params)
             assert action[2] == request
             rows.append(method.sampler_input_row(ground_skill=ground, state=state, params=params))
         # Bias + robot(4) + pitcher(13) + tray(13): the next feature is count.
         assert [row[31] for row in rows] == [3, 1, 2]
-        assert method.sampler(skill_name="Pour", param_dim=3) is method.sampler(
-            skill_name="Pour", param_dim=3
-        )
+        assert len({id(method.sampler(skill_name=f"Pour{k}", param_dim=3)) for k in (1, 2, 3)}) == 3
         np.testing.assert_array_equal(c.data.qpos, before[0])
         np.testing.assert_array_equal(c.data.qvel, before[1])
         assert (c.data.time, c.steps) == before[2:]

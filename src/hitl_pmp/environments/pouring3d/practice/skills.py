@@ -1,4 +1,4 @@
-"""Requested count is a grounded task argument; Pour alone has learned controls."""
+"""Each requested count is a distinct skill backed by the shared pour controller."""
 
 from hitl_pmp.core.method.types import ConditionalAddEffect, LiftedAtom, Skill, Variable
 
@@ -83,14 +83,17 @@ class PourSkills:
                 {empty, home},
                 ignore=stale,
             ),
-            skill(
-                "Pour",
-                (r, p, t, k, *slots),
-                {held, tray, *inside, *chain},
-                {split, held, atom("NoSpills"), atom("NeedsReset")},
-                set(),
-                3,
-                ignore=("InPitcher", "InTray", "OnFloor", "Settled", *stale),
+            *(
+                skill(
+                    f"Pour{n}",
+                    (r, p, t, k, *slots),
+                    {held, tray, atom(f"Count{n}", k), *inside, *chain},
+                    {split, held, atom("NoSpills"), atom("NeedsReset")},
+                    set(),
+                    3,
+                    ignore=("InPitcher", "InTray", "OnFloor", "Settled", *stale),
+                )
+                for n in range(1, count + 1)
             ),
             skill(
                 "PlacePitcherAtHome",

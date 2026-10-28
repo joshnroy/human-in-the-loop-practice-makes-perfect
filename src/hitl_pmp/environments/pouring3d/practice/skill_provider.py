@@ -60,7 +60,7 @@ class FrozenPourSkillProvider(SkillProvider):
         return self.env.objects().all()
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill.name != "Pour":
+        if not ground_skill.skill.name.startswith("Pour"):
             return np.zeros(0)
         return np.array([
             rng.uniform(*bound)
@@ -69,6 +69,11 @@ class FrozenPourSkillProvider(SkillProvider):
 
     def ground(self, *, name: str, request: int | None = None, shrimp: int = 0) -> GroundSkill:
         o = self.env.objects()
+        if name.startswith("Pour"):
+            fixed_count = int(name.removeprefix("Pour"))
+            if request is not None and request != fixed_count:
+                raise ValueError(f"{name} has fixed count {fixed_count}")
+            request = fixed_count
         request = self.env.requested_count if request is None else request
         if not 1 <= request <= o.count or not 0 <= shrimp < o.count:
             raise ValueError("Invalid discrete skill argument")
@@ -87,7 +92,8 @@ class FrozenPourSkillProvider(SkillProvider):
         if params.shape != (ground_skill.skill.param_dim,) or not np.isfinite(params).all():
             raise ValueError("Parameter dimension or values invalid")
         name = ground_skill.skill.name
-        if name not in SKILL_NAMES:
+        native_name = "Pour" if name.startswith("Pour") else name
+        if native_name not in SKILL_NAMES:
             raise ValueError("Human reset cannot be encoded as a robot action")
         bindings = dict(
             zip((v.name for v in ground_skill.skill.parameters), ground_skill.objects, strict=True)
@@ -96,8 +102,13 @@ class FrozenPourSkillProvider(SkillProvider):
         requested = (
             int(bindings["k"].name.split("_")[-1]) if "k" in bindings else self.env.requested_count
         )
+        if native_name == "Pour" and requested != int(name.removeprefix("Pour")):
+            raise ValueError(f"{name} requires its fixed count binding")
         return np.r_[
-            SKILL_NAMES.index(name), shrimp, requested, params if len(params) else np.zeros(3)
+            SKILL_NAMES.index(native_name),
+            shrimp,
+            requested,
+            params if len(params) else np.zeros(3),
         ]
 
     def compute_action(
@@ -143,7 +154,8 @@ class FrozenPourOracle(OraclePolicyProvider):
             ("InPitcher", (o.name, "pitcher")) in atoms for o in self.env.objects().shrimp()
         )
         if held:
-            name = "Pour" if all_in else "PlacePitcherAtHome"
+            request = int(state.get(obj=PourObjects.scene, feature_name="requested_count"))
+            name = f"Pour{request}" if all_in else "PlacePitcherAtHome"
         elif ("ReadyToPour", ()) in atoms:
             name = "PickPitcher"
         else:
@@ -153,7 +165,7 @@ class FrozenPourOracle(OraclePolicyProvider):
         return LabeledAction(
             action=provider.compute_action(
                 ground_skill=ground,
-                params=np.array(self.parameters) if name == "Pour" else np.zeros(0),
+                params=np.array(self.parameters) if name.startswith("Pour") else np.zeros(0),
                 state=state,
             ),
             label=name,

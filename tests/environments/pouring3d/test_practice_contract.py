@@ -8,13 +8,13 @@ from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvir
 from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
 
 
-def test_pour_has_three_controls_and_count_is_a_grounding_argument():
+def test_fixed_count_pour_has_three_controls():
     env = FrozenPourEnvironment(payload_count=3, requested_count=2)
     provider = FrozenPourSkillProvider(env=env)
-    pour = next(s for s in provider.skills() if s.name == "Pour")
+    pour = next(s for s in provider.skills() if s.name == "Pour2")
     assert pour.param_dim == 3
-    assert all(s.param_dim == 0 for s in provider.skills() if s != pour)
-    ground = provider.ground(name="Pour", request=2)
+    assert all(s.param_dim == 0 for s in provider.skills() if not s.name.startswith("Pour"))
+    ground = provider.ground(name="Pour2")
     assert isinstance(ground, GroundSkill)
     values = np.array([90.5, 0.008, 30.0])
     action = provider.encode(ground_skill=ground, params=values)
@@ -37,9 +37,9 @@ def test_invalid_count_and_parameter_shapes_are_rejected():
         FrozenPourEnvironment(payload_count=3, requested_count=4)
     provider = FrozenPourSkillProvider(env=FrozenPourEnvironment())
     with pytest.raises(ValueError):
-        provider.encode(ground_skill=provider.ground(name="Pour", request=2), params=np.zeros(2))
+        provider.encode(ground_skill=provider.ground(name="Pour2"), params=np.zeros(2))
     with pytest.raises(ValueError):
-        provider.ground(name="Pour", request=4)
+        provider.ground(name="Pour4")
 
 
 def test_planner_must_pour_and_place_to_satisfy_the_requested_count():
@@ -58,6 +58,7 @@ def test_planner_must_pour_and_place_to_satisfy_the_requested_count():
         atom("PitcherHome", o.pitcher),
         atom("TrayHome", o.tray),
         atom("ActiveRequest", o.requests()[1]),
+        *(atom(f"Count{n}", obj) for n, obj in enumerate(o.requests(), 1)),
         *(atom("InPitcher", s, o.pitcher) for s in o.shrimp()),
         *(atom("Settled", s) for s in o.shrimp()),
         *(atom("PayloadOrder", a, b) for a, b in zip(o.shrimp(), o.shrimp()[1:], strict=False)),
@@ -70,7 +71,7 @@ def test_planner_must_pour_and_place_to_satisfy_the_requested_count():
         init_atoms=initial,
         goal=frozenset({atom("Goal", o.requests()[1])}),
     )
-    assert [g.skill.name for g in plan] == ["PickPitcher", "Pour", "PlacePitcherAtHome"]
+    assert [g.skill.name for g in plan] == ["PickPitcher", "Pour2", "PlacePitcherAtHome"]
     assert o.requests()[1] in plan[1].objects
 
 
@@ -100,9 +101,15 @@ def test_every_count_is_a_reachable_practice_target():
 
     provider = FrozenPourSkillProvider(env=FrozenPourEnvironment(requested_count=2))
     pick = provider.ground(name="PickPitcher")
-    initial = pick.preconditions
+    from hitl_pmp.core.problem.tasks.types import GroundAtom
+    from hitl_pmp.environments.pouring3d.practice.predicates import PourPredicates
+
+    initial = pick.preconditions | frozenset(
+        GroundAtom(predicate=PourPredicates.get(name=f"Count{n}"), objects=(obj,))
+        for n, obj in enumerate(provider.env.objects().requests(), 1)
+    )
     for count in (1, 2, 3):
-        target = provider.ground(name="Pour", request=count)
+        target = provider.ground(name=f"Pour{count}")
         plan = FastDownwardPlanner.plan(
             skills=provider.skills(),
             objects=provider.objects(),
@@ -113,3 +120,13 @@ def test_every_count_is_a_reachable_practice_target():
         )
         assert [g.skill.name for g in plan] == ["PickPitcher"]
         assert target.preconditions <= (initial - pick.delete_effects) | pick.add_effects
+
+
+def test_pours_are_distinct_skills_with_fixed_counts():
+    provider = FrozenPourSkillProvider(env=FrozenPourEnvironment())
+    assert {s.name for s in provider.skills() if s.param_dim} == {"Pour1", "Pour2", "Pour3"}
+    for count in (1, 2, 3):
+        ground = provider.ground(name=f"Pour{count}")
+        assert provider.encode(ground_skill=ground, params=np.array([90, 0.008, 10]))[2] == count
+        with pytest.raises(ValueError, match="fixed count"):
+            provider.ground(name=f"Pour{count}", request=count % 3 + 1)
