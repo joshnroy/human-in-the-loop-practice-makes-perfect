@@ -24,8 +24,7 @@ The plan (Josh, 2026-10-19 to 2026-10-22):
   can measure 1.0 after a few samples and be wrongly treated as mastered).
 - Each arm's cost file comes from `Tossing3DArmCosts` (#532): EES vs planner prices,
   and the sampled-start reset priced for always-ask arms.
-- Every arm stops after three perfect (10/10) evaluations in a row (Josh, 2026-10-22);
-  otherwise it spends the whole budget.
+- Evaluation-based early stopping is disabled; each arm receives the whole budget.
 - Video: the step protocol writes `tossing3d_state_log.jsonl` for every run, and videos
   are reconstructed from it (hence `--defer-rendering`), so no flag is needed here.
 
@@ -190,7 +189,7 @@ class Tossing3DLaunch:
             "--measurement-interval-steps", str(size.evaluation_interval),
             "--evaluation-control-steps", str(size.evaluation_control_steps),
             "--num-test-tasks", str(size.tasks),
-            "--stop-after-perfect-evaluations", "0" if size in (PILOT, LONG_PILOT) else "3",
+            "--stop-after-perfect-evaluations", "0",
             "--practice-cost-config", str(costs),
         ]  # fmt: skip
 

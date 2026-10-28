@@ -6,14 +6,33 @@ import math
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
+from hitl_pmp.core.method.types import (
+    ConditionalAddEffect,
+    ConditionalIgnoreEffect,
+    GroundSkill,
+    LiftedAtom,
+    Skill,
+)
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY, HOLDING, IN_BIN
+from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+from hitl_pmp.environments.tossing3d.predicates import (
+    CLOSED_EMPTY,
+    CUBE_AT_SIDE,
+    GRASP_CLEAR,
+    HAND_EMPTY,
+    HOLDING,
+    IN_BIN,
+    NOT_HOLDING,
+    ON_GROUND,
+    PICK_PLANNABLE,
+)
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
 from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTaskModel, DpTransition
+from hitl_pmp.planning.grounding import SkillGrounder
 
 
 def test_joint_allocation_can_abandon_the_currently_best_task_policy():
@@ -284,3 +303,120 @@ def test_tossing3d_task_mdp_can_recover_an_unpickable_in_bin_cube_by_pouring():
         skill.skill.name
         for skill in mdp.curriculum(competences={edge.skill: 0.5 for edge in mdp.transitions})
     ] == ["PourCubeOutOfBin", "PickCube"]
+
+
+def _single_skill_successor(*, monkeypatch, ground, before, objects):
+    expanded = []
+    original = SkillGrounder.applicable_ground_skills
+
+    def capture(**kwargs):
+        expanded.append(kwargs["true_atoms"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(SkillGrounder, "applicable_ground_skills", staticmethod(capture))
+    unreachable = Predicate(
+        name="UnreachableTestGoal", types=(), holds=lambda state, objects: False
+    )
+    mdp = DpTaskModel.build(
+        tasks=[(before, frozenset({GroundAtom(predicate=unreachable, objects=())}))],
+        skills=(ground.skill,),
+        objects=objects,
+        max_states=2,
+    )
+    assert mdp.initial_probabilities == {0: 1}
+    assert mdp.transitions == [DpTransition(state=0, skill=ground, successor=1)]
+    assert len(expanded) == 2
+    assert expanded[0] == before
+    return expanded[1]
+
+
+@pytest.mark.parametrize("layout", list(Tossing3DLayout))
+@pytest.mark.parametrize("side", Tossing3DSides.objects())
+@pytest.mark.parametrize("held", [False, True])
+def test_open_gripper_graph_matches_common_model_for_held_and_closed_empty_hands(
+    *, monkeypatch, layout, side, held
+):
+    env = Tossing3DEnvironment(layout=layout)
+    provider = Tossing3DSkillProvider(env=env)
+    opening = GroundSkill(
+        skill=next(skill for skill in provider.skills() if skill.name == "OpenGripper"),
+        objects=(env.robot, env.cube, env.bin),
+    )
+    geometry = frozenset({
+        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, side)),
+        GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
+        GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
+        GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
+        GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
+    })
+    hand = (
+        {GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))}
+        if held
+        else {
+            GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube)),
+            GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
+        }
+    )
+    before = opening.preconditions | geometry | hand
+    after = _single_skill_successor(
+        monkeypatch=monkeypatch, ground=opening, before=before, objects=provider.objects()
+    )
+    assert after == opening.add_effects | (frozenset() if held else geometry)
+    assert after == apply_success_effects(
+        true_atoms=before,
+        ground_skill=opening,
+        effects={opening: (opening.add_effects, opening.delete_effects, opening.ignore_effects)},
+    )
+
+
+@pytest.mark.parametrize("conditional_add", [False, True])
+def test_graph_evaluates_guards_in_prestate_and_adds_after_conditional_forgetting(
+    *, monkeypatch, conditional_add
+):
+    guard, restored, stale, added, preserved = [
+        Predicate(name=name, types=(), holds=lambda state, objects: False)
+        for name in ["Guard", "Restored", "Stale", "Added", "Preserved"]
+    ]
+    condition = frozenset({LiftedAtom(predicate=guard, variables=())})
+    restoration = frozenset({LiftedAtom(predicate=restored, variables=())})
+    ground = GroundSkill(
+        skill=Skill(
+            name="ForgetAndRestore",
+            parameters=(),
+            preconditions=condition,
+            delete_effects=condition,
+            add_effects=frozenset({LiftedAtom(predicate=added, variables=())})
+            | (frozenset() if conditional_add else restoration),
+            conditional_add_effects=(
+                frozenset({ConditionalAddEffect(conditions=condition, add_effects=restoration)})
+                if conditional_add
+                else frozenset()
+            ),
+            conditional_ignore_effects=frozenset({
+                ConditionalIgnoreEffect(
+                    conditions=condition, ignore_effects=frozenset({restored, stale})
+                ),
+                ConditionalIgnoreEffect(
+                    conditions=frozenset({LiftedAtom(predicate=added, variables=())}),
+                    ignore_effects=frozenset({preserved}),
+                ),
+            }),
+            param_dim=0,
+        ),
+        objects=(),
+    )
+    before = frozenset(
+        GroundAtom(predicate=predicate, objects=())
+        for predicate in [guard, restored, stale, preserved]
+    )
+    after = _single_skill_successor(
+        monkeypatch=monkeypatch, ground=ground, before=before, objects=()
+    )
+    assert after == frozenset(
+        GroundAtom(predicate=predicate, objects=()) for predicate in [restored, added, preserved]
+    )
+    assert after == apply_success_effects(
+        true_atoms=before,
+        ground_skill=ground,
+        effects={ground: (ground.add_effects, ground.delete_effects, ground.ignore_effects)},
+    )

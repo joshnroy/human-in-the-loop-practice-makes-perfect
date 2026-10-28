@@ -104,6 +104,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from typing_extensions import override
 
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 
@@ -291,8 +292,6 @@ class KinderBackend(BaseModel):
     # `test_pick_cube_then_move_and_toss_scores` allows.
     pick_step_limit: ClassVar[int] = 400
     toss_step_limit: ClassVar[int] = 1000
-    # A single joint-motor actuation, not a multi-phase trajectory -- generous headroom
-    # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
     open_gripper_step_limit: ClassVar[int] = 100
     # What a controller that ran out of steps may spend backing out (upstream's pick
     # retraces its executed path, loop-erased; the t3-relaunch-20261023 barrier stall's
@@ -1482,6 +1481,11 @@ class KinderBackend(BaseModel):
         controller = lifted[key].ground(objects)
         if module == "tossing" and key == "move_to_toss_location_and_toss":
             return TossSettlingController(backend=self, controller=controller)
+        if module == "tossing" and key == "open_gripper":
+            return ClearReleaseController(
+                backend=self,
+                controller=OpenGripperSettlingController(backend=self, controller=controller),
+            )
         return controller
 
     def _pick_collision_sim(self, *, state: Any) -> Any:
@@ -1595,15 +1599,7 @@ class KinderBackend(BaseModel):
         )
 
     def run_open_gripper(self) -> ControllerRun:
-        """`open_gripper` -- upstream's parameterless gripper-open primitive.
-
-        Exists so the robot itself can recover from a near-miss grasp: the gripper can
-        end up commanded closed on nothing (`HandEmpty` False, `Holding` False, since the
-        close never actually caught the cube), and no other operator in this domain's
-        model ever re-opens it -- `MoveToTossLocationAndToss` is the only one that adds
-        `HandEmpty` back, and it requires `Holding`, which is exactly what is missing.
-        `params` is `None` for the same reason as `run_pick_cube`: nothing to sample.
-        """
+        """Clear the fixed base with the arm, open, and wait for physical settling."""
         return self.run_controller(
             module="tossing",
             key="open_gripper",
@@ -1735,6 +1731,375 @@ class TossSettlingController:
         return self.target is not None and (
             self.stable_ticks >= self.quiet_ticks or self.settle_ticks >= self.limit
         )
+
+
+class ClearReleaseController(TossSettlingController):
+    """Move the closed hand forward off the chassis before delegating opening.
+
+    Planning uses a separate PyBullet scene, including the bin, chassis meshes and
+    observed cargo transform. Only a densely collision-checked direct arm path is
+    accepted. The live base stays fixed; the hand must be measured clear and stopped
+    before opening. Failure or the seven-second motion limit keeps the old gripper
+    command. These motor steps use the ordinary charged, interruptible drive loop.
+    """
+
+    motion_seconds: ClassVar[float] = 7.0
+    max_translation: ClassVar[float] = 0.5
+    hand_radius: ClassVar[float] = 0.10
+    release_margin: ClassVar[float] = 0.03
+    target_margin: ClassVar[float] = 0.025
+    joint_tolerance: ClassVar[float] = 0.04
+    stopped_tolerance: ClassVar[float] = 0.005
+
+    @override
+    def reset(self, state: Any, params: Any) -> None:
+        del params
+        from kinder_models.dynamic3d.utils import wrap_arm_joint_difference
+
+        self.wrap_difference = wrap_arm_joint_difference
+        self.state = state
+        self._opening = False
+        self._failure: str | None = None
+        self.motion_ticks = self.motion_stable_ticks = 0
+        self.waypoint = 0
+        self.path: list[list[float]] = []
+        self.pose_features = (
+            "pos_base_x",
+            "pos_base_y",
+            "pos_base_rot",
+            *(f"pos_arm_joint{index}" for index in range(1, 8)),
+        )
+        robot = state.get_object_from_name(self.backend.robot_name)
+        self.initial_pose = self._position()
+        self.closed_command = state.get(robot, "pos_gripper")
+        self.scene = self.backend._object_centric()
+        self.robot_env = self.scene._robot_env
+        self.motion_limit = max(
+            1, int(np.ceil(self.motion_seconds * self.robot_env.control_frequency))
+        )
+        sim = self.robot_env.sim
+        self.model, self.data = sim.model.mj_model, sim.data.mj_data
+        self.base_body = self.model.body(f"{self.backend.robot_name}_base_link").id
+        self.site = self.model.site(f"{self.backend.robot_name}_pinch_site").id
+        self.carrying = bool(
+            self.closed_command > 0.2
+            and self.scene.get_gripper_object_contacts(self.backend.cube_name)
+        )
+        self._base_geometry()
+        if self._clear():
+            self._start_opening()
+            return
+        self._plan()
+
+    def _position(self) -> np.ndarray:
+        robot = self.state.get_object_from_name(self.backend.robot_name)
+        return np.array([self.state.get(robot, name) for name in self.pose_features])
+
+    def _base_geometry(self) -> None:
+        self.base_rotation = self.data.xmat[self.base_body].reshape(3, 3).copy()
+        self.base_origin = self.data.xpos[self.base_body].copy()
+        self.base_geoms = [
+            geom
+            for geom in range(self.model.ngeom)
+            if self.model.geom_bodyid[geom] == self.base_body
+            and (self.model.geom_contype[geom] or self.model.geom_conaffinity[geom])
+        ]
+        vertices = []
+        self.meshes = []
+        for geom in self.base_geoms:
+            mesh = self.model.geom_dataid[geom]
+            if mesh < 0:
+                raise ValueError("open_gripper_clearance_requires_chassis_mesh")
+            address = self.model.mesh_vertadr[mesh]
+            local = self.model.mesh_vert[address : address + self.model.mesh_vertnum[mesh]].copy()
+            rotation = self.data.geom_xmat[geom].reshape(3, 3)
+            world = local @ rotation.T + self.data.geom_xpos[geom]
+            vertices.extend((world - self.base_origin) @ self.base_rotation)
+            self.meshes.append((local, self.data.geom_xpos[geom].copy(), rotation.copy()))
+        self.base_min = np.min(vertices, axis=0)
+        self.base_max = np.max(vertices, axis=0)
+
+    def _release_points(self) -> list[tuple[np.ndarray, float]]:
+        points = [(self.data.site_xpos[self.site].copy(), self.hand_radius)]
+        if self.carrying:
+            cube = self.state.get_object_from_name(self.backend.cube_name)
+            position = np.array([self.state.get(cube, axis) for axis in "xyz"])
+            radius = float(
+                np.linalg.norm([self.state.get(cube, f"bb_{axis}") for axis in "xyz"]) / 2
+            )
+            points.append((position, radius))
+        return [
+            ((point - self.base_origin) @ self.base_rotation, radius) for point, radius in points
+        ]
+
+    def _clear(self) -> bool:
+        return all(
+            np.any(point[:2] < self.base_min[:2] - radius - self.release_margin)
+            or np.any(point[:2] > self.base_max[:2] + radius + self.release_margin)
+            for point, radius in self._release_points()
+        )
+
+    def _plan(self) -> None:
+        import pybullet
+        from kinder_models.dynamic3d.tossing.parameterized_skills import (
+            MUJOCO_GRIPPER_COMMANDS,
+            MUJOCO_GRIPPER_GAPS,
+            finger_state_for_opening,
+        )
+        from kinder_models.dynamic3d.utils import inverse_kinematics_fixed_effort
+        from pybullet_helpers.geometry import Pose
+        from pybullet_helpers.inverse_kinematics import InverseKinematicsError
+        from pybullet_helpers.motion_planning import run_motion_planning
+        from scipy.spatial.transform import Rotation
+
+        travel = max(
+            self.base_max[0] + radius + self.release_margin + self.target_margin - point[0]
+            for point, radius in self._release_points()
+        )
+        if not 0 < travel <= self.max_translation:
+            self._failure = "open_gripper_clearance_unreachable"
+            return
+        self.planning = self.backend._build_pick_collision_sim(state=self.state)
+        self.planning.set_state(self.state)
+        gap = float(
+            np.interp(
+                np.clip(self.closed_command, 0, 0.5), MUJOCO_GRIPPER_COMMANDS, MUJOCO_GRIPPER_GAPS
+            )
+        )
+        self.fingers = list(
+            self.planning.robot.finger_state_to_joints(finger_state_for_opening(gap))
+        )
+        self.held_body = (
+            self.planning.named_collision_bodies()[self.backend.cube_name]
+            if self.carrying
+            else None
+        )
+        self.obstacles = self.planning.get_collision_bodies(held_object=self.held_body)
+        for vertices, position, rotation in self.meshes:
+            shape = pybullet.createCollisionShape(
+                pybullet.GEOM_MESH,
+                vertices=vertices.tolist(),
+                physicsClientId=self.planning.physics_client_id,
+            )
+            self.obstacles.add(
+                pybullet.createMultiBody(
+                    baseMass=0,
+                    baseCollisionShapeIndex=shape,
+                    basePosition=position,
+                    baseOrientation=Rotation.from_matrix(rotation).as_quat(),
+                    physicsClientId=self.planning.physics_client_id,
+                )
+            )
+        self._refresh_planning()
+        start = self._position()[3:].tolist() + self.fingers
+        end_effector = self.planning.get_ee_pose()
+        target = Pose(
+            tuple(np.asarray(end_effector.position) + travel * self.base_rotation[:, 0]),
+            end_effector.orientation,
+        )
+        try:
+            goal = inverse_kinematics_fixed_effort(self.planning.robot, target, set_joints=False)
+        except InverseKinematicsError:
+            self._failure = "open_gripper_clearance_unreachable"
+            return
+        goal = list(goal[:7]) + self.fingers
+        path = run_motion_planning(
+            self.planning.robot,
+            start,
+            goal,
+            collision_bodies=self.obstacles,
+            seed=0,
+            physics_client_id=self.planning.physics_client_id,
+            held_object=self.held_body,
+            base_link_to_held_obj=self.attachment,
+            direct_path_only=True,
+        )
+        if not path or self._path_collision(path=path):
+            self._failure = "open_gripper_clearance_blocked"
+            return
+        self.path = path
+
+    def _refresh_planning(self) -> None:
+        from pybullet_helpers.geometry import Pose, multiply_poses
+        from pybullet_helpers.link import get_link_state
+
+        self.planning.set_state(self.state)
+        self.planning.robot.set_joints(self._position()[3:].tolist() + self.fingers)
+        self.attachment: Any = None
+        if self.carrying:
+            cube = self.state.get_object_from_name(self.backend.cube_name)
+            cube_pose = Pose(
+                tuple(self.state.get(cube, axis) for axis in "xyz"),
+                tuple(self.state.get(cube, axis) for axis in ("qx", "qy", "qz", "qw")),
+            )
+            hand = get_link_state(
+                self.planning.robot.robot_id,
+                self.planning.robot.end_effector_id,
+                self.planning.physics_client_id,
+            ).com_pose
+            self.attachment = multiply_poses(hand.invert(), cube_pose)
+
+    def _path_collision(self, *, path: Any) -> bool:
+        from kinder_models.dynamic3d.tossing.parameterized_skills import (
+            first_dense_joint_path_collision,
+        )
+        from pybullet_helpers.motion_planning import check_collisions_with_held_object
+
+        def collides(*, joints: Any) -> bool:
+            return bool(
+                check_collisions_with_held_object(
+                    self.planning.robot,
+                    self.obstacles,
+                    self.planning.physics_client_id,
+                    self.held_body,
+                    self.attachment,
+                    joints,
+                )
+            )
+
+        return (
+            first_dense_joint_path_collision(
+                self.planning.robot, path, lambda joints: collides(joints=joints)
+            )
+            is not None
+        )
+
+    def _start_opening(self) -> None:
+        self.controller.reset(self.state, None)
+        self.controller.hold_target[:3] = self.initial_pose[:3]
+        self._opening = True
+
+    @override
+    def step(self) -> np.ndarray:
+        if self._opening:
+            return np.asarray(self.controller.step())
+        position = self._position()
+        target = position.copy()
+        target[:3] = self.initial_pose[:3]
+        if self._failure is None:
+            while (
+                self.waypoint < len(self.path) - 1
+                and np.max(
+                    np.abs(
+                        self.wrap_difference(
+                            np.asarray(self.path[self.waypoint][:7]) - position[3:]
+                        )
+                    )
+                )
+                <= self.joint_tolerance
+            ):
+                self.waypoint += 1
+            difference = self.wrap_difference(
+                np.asarray(self.path[self.waypoint][:7]) - position[3:]
+            )
+            candidate = position[3:] + np.clip(difference, -0.1, 0.1)
+            self._refresh_planning()
+            if self._path_collision(
+                path=[position[3:].tolist() + self.fingers, candidate.tolist() + self.fingers]
+            ):
+                self._failure = "open_gripper_clearance_blocked"
+            else:
+                target[3:] = candidate
+        self.previous_arm = position[3:].copy()
+        action = np.r_[
+            target - position if self.robot_env.act_delta else target, self.closed_command
+        ]
+        if self.backend._env.action_space.shape == (18,):
+            action = np.r_[action, np.zeros(7)]
+        return action
+
+    @override
+    def observe(self, state: Any) -> None:
+        self.state = state
+        if self._opening:
+            self.controller.observe(state)
+            return
+        if self._failure is not None:
+            return
+        self.motion_ticks += 1
+        position = self._position()
+        if np.max(np.abs(position[:3] - self.initial_pose[:3])) > 0.01:
+            self._failure = "open_gripper_base_moved"
+            return
+        if self.carrying and not self.scene.get_gripper_object_contacts(self.backend.cube_name):
+            self._failure = "open_gripper_grasp_lost"
+            return
+        close = (
+            np.max(np.abs(self.wrap_difference(np.asarray(self.path[-1][:7]) - position[3:])))
+            <= self.joint_tolerance
+        )
+        stopped = (
+            np.max(np.abs(self.wrap_difference(position[3:] - self.previous_arm)))
+            <= self.stopped_tolerance
+        )
+        self.motion_stable_ticks = (
+            self.motion_stable_ticks + 1 if close and stopped and self._clear() else 0
+        )
+        if self.motion_stable_ticks >= 2:
+            self._start_opening()
+        elif self.motion_ticks >= self.motion_limit:
+            self._failure = "open_gripper_clearance_timeout"
+
+    @property
+    def failure(self) -> str | None:
+        if self._failure is not None:
+            return self._failure
+        return self.controller.failure if self._opening else None
+
+    @override
+    def terminated(self) -> bool:
+        return self._failure is not None or (self._opening and self.controller.terminated())
+
+
+class OpenGripperSettlingController(TossSettlingController):
+    """Keep the robot still while opening, then observe a bounded release settle.
+
+    Upstream terminates on the gripper command, not the fingers or cube. The minimum
+    wait lets the fingers move before quiet cube velocities can count as completion.
+    Rest is not a promise of floor placement, a clear grasp, or successful pickup.
+    A cube released onto the robot base can keep rocking in contact and legitimately
+    time out, even if its final velocity sample is quiet: rest requires a quiet streak.
+    """
+
+    min_seconds: ClassVar[float] = 0.5
+
+    @override
+    def reset(self, state: Any, params: Any) -> None:
+        super().reset(state, params)
+        robot = state.get_object_from_name(self.backend.robot_name)
+        self.pose_features = (
+            "pos_base_x",
+            "pos_base_y",
+            "pos_base_rot",
+            *(f"pos_arm_joint{index}" for index in range(1, 8)),
+        )
+        self.hold_target = np.array([state.get(robot, name) for name in self.pose_features])
+        robot_env = self.backend._object_centric()._robot_env
+        self.hold_delta = robot_env.act_delta
+        self.minimum_ticks = max(1, int(np.ceil(self.min_seconds * robot_env.control_frequency)))
+
+    def step(self) -> np.ndarray:
+        super().step()
+        robot = self.state.get_object_from_name(self.backend.robot_name)
+        position = np.array([self.state.get(robot, name) for name in self.pose_features])
+        action = np.r_[self.hold_target - position if self.hold_delta else self.hold_target, 0.0]
+        if self.backend._env.action_space.shape == (18,):
+            action = np.r_[action, np.zeros(7)]
+        return action
+
+    @property
+    def failure(self) -> str | None:
+        failure = getattr(self.controller, "failure", None)
+        if failure is not None:
+            return str(failure)
+        if self.limit and self.settle_ticks >= self.limit and self.stable_ticks < self.quiet_ticks:
+            return "open_gripper_settle_timeout"
+        return None
+
+    def terminated(self) -> bool:
+        if getattr(self.controller, "failure", None) is not None:
+            return bool(self.controller.terminated())
+        return self.settle_ticks >= self.minimum_ticks and super().terminated()
 
 
 class BinPourController:

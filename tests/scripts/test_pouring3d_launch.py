@@ -45,6 +45,9 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert costs.human_skills["reset_shrimp"].duration.value == 1
         if args.method == "ees":
             assert args.ees_score_human_skills
+            assert args.competence_sharing == "grounded"
+            assert args.practice_groundings == "observed"
+            assert args.record_ees_decisions
             assert not args.reproduce_predicators_skip_perfect
             assert args.reproduce_predicators_random_when_stranded
         else:
@@ -138,3 +141,37 @@ def test_array_index_is_checked(*, task, tmp_path, monkeypatch):
     PouringLaunch.write_manifest(path=path, stage="pilot", results_root=tmp_path / "results")
     with pytest.raises(ValueError, match="Task index"):
         PouringLaunch.run(manifest=path, max_workers=1, task=task)
+
+
+def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypatch):
+    from hitl_pmp.cli import METHODS
+    from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
+
+    built = []
+
+    def capture(*, args, method_factory, **kwargs):
+        problem = FrozenPourCli.build_problem(args=args)
+        method = method_factory(FrozenPourCli.context(args=args, problem=problem))
+        built.append(method)
+        assert method.goal_pursuit_horizon == 0
+        assert method.reproduce_predicators_explore_target_only
+        assert method.competence_sharing == "grounded"
+        assert method.practice_groundings == "observed"
+        assert {skill.name for skill in method.skills() if skill.name.startswith("Pour")} == {
+            "Pour1",
+            "Pour2",
+            "Pour3",
+        }
+        if args.method == "ees":
+            assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
+        else:
+            assert method.pomdp_solver == args.pomdp_solver
+            assert method.pomdp_search_depth == 6
+            assert method.pomdp_domain.sampler_skills == {"Pour1", "Pour2", "Pour3"}
+            assert method.ees_decision_log is None
+
+    monkeypatch.setattr(FrozenPourCli, "run_method", staticmethod(capture))
+    for run in PouringLaunch.runs(stage="pilot", results_root=tmp_path):
+        args = Cli.parse_args(argv=run.command[3:])
+        METHODS[args.method].run(args=args, env_cli=FrozenPourCli)
+    assert len(built) == 6

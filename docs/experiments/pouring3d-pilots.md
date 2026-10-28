@@ -3,8 +3,10 @@
 The primary comparison is EES, Curtis and expectimax on the same native environment,
 with separate Pour1/Pour2/Pour3 samplers and competences. This launcher freezes the
 configuration and verifies the source and dependency revisions before execution.
-The environment/controllers and method implementations are unchanged by this PR.
-No pilot outcomes are claimed here.
+The launch branch now integrates the shared fidelity stack through
+`2724868a657dbadf3bad5948a01598a23fc75111` (the exact revision is also recorded in git's
+merge ancestry). The pouring scene/controllers remain unchanged. No pilot outcomes
+are claimed here.
 
 ## Question / goal
 
@@ -57,8 +59,9 @@ its budget is intentionally not implemented until pilot learning/runtime are rev
 - Expectimax: Model B/local_trend, depth 6, grid inference, 1,024 cost particles,
   observation weight 0. Curtis: same model, determinized_astar/curtis, 100 queue
   iterations, node draw scope, all outcomes, observation weight 0.01.
-- EES: inherited priors and human scoring on. These are the implementation/flags in
-  the launch branch; see the newer unmerged EES stack blocker below.
+- EES: inherited priors, human scoring on, grounded competence statistics and observed
+  practice groundings (the shared implementation's defaults). Record EES decision logs.
+  This is one fixed baseline, not a selected winner from the tossing factorial study.
 - Prices match the earlier tossing comparison: robot tick 0.01, human payload reset 5,
   lambda 0.0003. Each reset consumes one counted budget tick. This is an experiment
   accounting convention, not a measured human duration. EES uses the human price in
@@ -96,7 +99,8 @@ directory as in the existing tossing worker. No Slurm submission is performed he
 
 ## Results
 
-Preparation checks only: 43 launcher/SweepRunner tests pass. Parse the real CLI for every arm/seed at both budgets, verify
+Initial preparation passed 43 launcher/SweepRunner tests before the shared-stack merge.
+Parse the real CLI for every arm/seed at both budgets, verify
 the balanced evaluation/cost contracts and refuse changed revisions, altered argv,
 invalid task indices and existing output directories. Native preflight checks
 Pour1/Pour2/Pour3 and all three pieces inside the pitcher in a ready scene.
@@ -110,14 +114,14 @@ separate from learned-policy performance.
 
 ## Recommendation / blockers
 
-1. **Baseline version reconciliation:** newer unmerged EES fidelity work exists on
-   `codex/t3-ees-fidelity-protocol` (PR #605) and the active tossing launch branch
-   `codex/launch-t3-ees-fidelity-20261027` (launch tooling PR #608). It changes shared EES/planning/step-protocol
-   code and introduces statistics/grounding choices. This preparation is based on
-   the pouring environment branch, which does not contain that stack. Reconcile the
-   shared baseline before claiming parity with the current Della experiments; rerun
-   regressions and regenerate manifests after integrating it. Do not silently select
-   a winner from its ongoing factorial experiment or add a pouring-specific variant.
+1. **Shared baseline integrated:** the launch branch includes the latest fetched
+   `codex/launch-t3-ees-fidelity-20261027` stack, including PR #605's EES fidelity and
+   PR #608's launch readiness work. EES, core skill types, planning and step protocol
+   match that stack; the additional generic multi-sampler support and fixed skill-plan
+   domain remain from the pouring integration. Regenerate manifests after the merge:
+   the original `ff1d5ae5fe7a5db95e163c95a507ec4e386cb5c4` manifests are obsolete for
+   these pilots and must not be launched. New shared-code updates require another
+   validation and freeze rather than changing running workers.
 2. **Pilot validation:** parsing/native initialization is not evidence that all three
    methods practice productively. Run the short pilots and inspect EES Wait behavior,
    planner STOPs, per-skill labels, initial headroom and runtime before the longer stage.

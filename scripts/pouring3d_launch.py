@@ -65,6 +65,8 @@ class PouringLaunch:
             return [
                 *common,
                 "--ees-score-human-skills",
+                "--competence-sharing", "grounded", "--practice-groundings", "observed",
+                "--record-ees-decisions",
             ]  # fmt: skip
         planner = [
             *common, "--pomdp-competence-model", "local_trend",

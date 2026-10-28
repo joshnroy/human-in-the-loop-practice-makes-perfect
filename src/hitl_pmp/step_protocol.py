@@ -519,7 +519,12 @@ class StepProtocolResume:
 
 
 class DeploymentSnapshot:
-    """Both structured arms inherit EES deployment; practice-only state is excluded."""
+    """Freeze EES deployment beliefs, including shared parent competence.
+
+    Pooled models carry learned deployment costs, not just practice bookkeeping.
+    Preserve their priors and cycle histories verbatim rather than reconstructing
+    them from per-ground histories. Practice-only state remains excluded.
+    """
 
     @staticmethod
     def encode(*, method: EesMethod) -> bytes:
@@ -536,6 +541,7 @@ class DeploymentSnapshot:
                     (ground.skill.name, tuple(o.name for o in ground.objects), belief)
                     for ground, belief in method._competence_models.items()
                 ],
+                "pooled_competence_models": method._pooled_competence_models,
                 "rng": method._rng.bit_generator.state,
             },
             protocol=pickle.HIGHEST_PROTOCOL,
@@ -552,6 +558,20 @@ class DeploymentSnapshot:
             GroundSkill(skill=skills[name], objects=tuple(objects[obj] for obj in names)): belief
             for name, names, belief in payload["competence_models"]
             if name in skills  # Human actions are unavailable in deployment.
+        }
+        if (
+            "pooled_competence_models" not in payload
+            and method.competence_sharing != "grounded"
+            and any(model.num_observations for model in method._competence_models.values())
+        ):
+            raise ValueError(
+                "deployment snapshot is missing pooled competence histories; "
+                "regenerate it from the trained learner to evaluate shared competence faithfully"
+            )
+        method._pooled_competence_models = {
+            name: belief
+            for name, belief in payload.get("pooled_competence_models", {}).items()
+            if name in skills
         }
         method._rng.bit_generator.state = payload["rng"]
         return method

@@ -3,7 +3,15 @@
 `PourCubeOutOfBin` is a local, parameterless skill for emptying an in-bin cube.
 It is available whether or not picking the cube is also feasible. It adds rim grasping
 and sideways emptying to the upstream pick/toss pair described below; `OpenGripper`
-handles an empty closed hand.
+opens any non-open hand, including releasing a held cube. Its name, object signature,
+action id and parameterless sampler are unchanged. It does not require an upright bin.
+
+Opening preserves landing and pickup facts only when the hand was not holding. A drop
+forgets them and requires fresh perception; neither floor placement nor a feasible pick
+is promised. Side is forgotten only for a held-cube release, through a conditional
+quantified effect that does not change the three-object signature. Empty-hand opening
+preserves the observed side. Neither case assigns an assumed drop destination: actual
+observations always recompute sides from the cube's physical position.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
@@ -103,7 +111,14 @@ from typing import ClassVar
 
 import numpy as np
 
-from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
+from hitl_pmp.core.method.types import (
+    ConditionalAddEffect,
+    ConditionalIgnoreEffect,
+    GroundSkill,
+    LiftedAtom,
+    Skill,
+    Variable,
+)
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
@@ -113,6 +128,7 @@ from .predicates import (
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -146,6 +162,20 @@ TOSS_SPEED_BOUNDS = (115.0, 420.0)
 TOSS_RELEASE_MS_BOUNDS = (400.0, 840.0)
 
 
+def preserve_nonholding_geometry(
+    *, geometry: frozenset[LiftedAtom], robot: Variable, cube: Variable
+) -> frozenset[ConditionalAddEffect]:
+    """Opening an empty hand preserves facts; a release must reobserve geometry."""
+    not_holding = LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube))
+    return frozenset(
+        ConditionalAddEffect(
+            conditions=frozenset({not_holding, atom}),
+            add_effects=frozenset({atom}),
+        )
+        for atom in geometry
+    )
+
+
 class Tossing3DSkills:
     """This domain's lifted skills and the lifted -> ground -> raw-`Action` pipeline.
 
@@ -175,6 +205,7 @@ class Tossing3DSkills:
         parameters=(_robot, _cube, _barrier, _side, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # The barrier is one-way: see this module's docstring, choice 1.
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
@@ -185,15 +216,18 @@ class Tossing3DSkills:
             # GraspClear, whose fitted clearances each described one refusal geometry
             # and blocked cubes the controller does pick.
             LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
-            # Every robot skill requires the bin upright on the floor.
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             # Deliberately NOT PickupUnblocked: an observed refusal is information,
             # not a mask. A pick that was planned and then failed while executing
             # stays retryable, and is one more failed attempt.
         }),
-        add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
+        add_effects=frozenset({
+            LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
+            LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,)),
+        }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
         }),
@@ -223,6 +257,8 @@ class Tossing3DSkills:
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
+            LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,)),
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
         }),
         # GraspClear and PickPlannable join CubeAtSide as functional updates: whether
         # the landed cube can be picked is a fact of the physics, re-read from
@@ -237,23 +273,38 @@ class Tossing3DSkills:
         practice_cost=1.0,
     )
 
-    # A third, robot-executed skill (not the human `ask_for_reset_cube_bin_only`): the
-    # robot's own gripper-open primitive, upstream's `open_gripper` controller. Exists to
-    # give the planner a way out of a near-miss grasp -- the gripper can end up commanded
-    # closed on nothing (`HandEmpty` and `Holding` are both false). `ClosedEmpty` makes
-    # that recovery state explicit, so an already-open gripper cannot be practiced as a
-    # no-op and opening while genuinely holding a cube is not modeled incorrectly.
+    _open_geometry: ClassVar[frozenset[LiftedAtom]] = frozenset({
+        LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
+        LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
+        LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
+        LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
+    })
+
     OPEN_GRIPPER: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        # The bin is appended, as #346 appended side and bin parameters, so the
-        # BinOnGround precondition every robot skill carries can name it.
         parameters=(_robot, _cube, _bin),
         preconditions=frozenset({
-            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
-            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+            LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,)),
         }),
-        add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
-        delete_effects=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
+        add_effects=frozenset({
+            LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+        }),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
+            LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,)),
+            LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
+        }),
+        ignore_effects=frozenset(atom.predicate for atom in _open_geometry),
+        conditional_ignore_effects=frozenset({
+            ConditionalIgnoreEffect(
+                conditions=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
+                ignore_effects=frozenset({CUBE_AT_SIDE}),
+            )
+        }),
+        conditional_add_effects=preserve_nonholding_geometry(
+            geometry=_open_geometry, robot=_robot, cube=_cube
+        ),
         param_dim=0,
         practice_cost=1.0,
     )
@@ -263,6 +314,7 @@ class Tossing3DSkills:
         parameters=(_robot, _cube, _bin, _barrier, _side),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
