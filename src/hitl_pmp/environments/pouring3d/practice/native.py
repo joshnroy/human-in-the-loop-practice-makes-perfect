@@ -7,7 +7,12 @@ remain unchanged; no adhesive grasp, weld or forced object motion is introduced.
 """
 
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import Any, cast
+
+import mujoco
+import numpy as np
+from kinder.envs.dynamic3d.objects.primitive_objects import Bin
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.pouring3d.five_frozen import FiveFrozenShrimpEnv, FiveFrozenShrimpScene
 from hitl_pmp.environments.pouring3d.frozen_native import FrozenShrimpEnv, FrozenShrimpScene
@@ -38,6 +43,25 @@ class FingerContacts:
 
 
 class PracticeThreeScene(FrozenShrimpScene):
+    def respawn_payload_in_pitcher(self) -> None:
+        # Version 2 uses the audited 22 mm bottom ring. The historical three-piece
+        # prototype keeps its original 24 mm layout for reproducibility.
+        pitcher = cast(Bin, self.get_object("pitcher"))
+        origin = np.asarray(pitcher.get_position(), dtype=float)
+        quat = np.asarray(pitcher.get_orientation(), dtype=float)
+        rotation = Rotation.from_quat(quat[[1, 2, 3, 0]])
+        for name, offset in zip(
+            self.cube_names, FiveFrozenShrimpScene.reset_offsets()[:3], strict=True
+        ):
+            local = offset.copy()
+            local[:2] += self.np_random.uniform(-0.0005, 0.0005, 2)
+            local[2] += pitcher.wall_thickness
+            shrimp = self.get_object(name)
+            shrimp.set_pose(origin + rotation.apply(local), quat)
+            shrimp.set_velocity([0.0] * 3, [0.0] * 3)
+        model, data = self._model_and_data()
+        mujoco.mj_forward(model, data)
+
     def _create_scene_xml(self) -> str:
         return FingerContacts.apply(
             xml=super()._create_scene_xml(), names=self.cube_names, robot=self.robot_name

@@ -407,7 +407,9 @@ class Tossing3DPomdpMethod(EesMethod):
         else:
             # A belief two operators share (ReturnCubeToShelf's FromBox and FromFloor)
             # is reached through either; compare beliefs, not skill names.
-            reachable = {self.pomdp_domain.belief_name(skill_name=name) for name in available}
+            reachable = {
+                self.pomdp_domain.ground_belief_name(ground_skill=g) for g in ground_skills
+            }
             missing = {name for name, _ in self.pomdp_domain.belief_sources} - reachable
         assert not missing, (
             "the configured practice domain's skills are missing: "
@@ -703,7 +705,13 @@ class Tossing3DPomdpMethod(EesMethod):
         )
 
     def observe_sampler_outcome(
-        self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
+        self,
+        *,
+        skill_name: str,
+        param_dim: int,
+        sampler_input: list[float],
+        success: bool,
+        ground_skill: GroundSkill | None = None,
     ) -> None:
         super().observe_sampler_outcome(
             skill_name=skill_name,
@@ -712,7 +720,10 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
         )
         self._pomdp_state = self._pomdp_model.observe_training_example(
-            state=self._pomdp_state, skill_name=skill_name, success=success
+            state=self._pomdp_state,
+            skill_name=skill_name,
+            success=success,
+            ground_skill=ground_skill,
         )
 
     def end_cycle(self) -> None:

@@ -131,8 +131,8 @@ class FrozenPourEnvironment(Environment):
             skill_id, index, requested = map(int, values[:3])
             if not 0 <= skill_id < len(SKILL_NAMES) or not 0 <= index < self.payload_count:
                 raise ValueError("Invalid skill or shrimp index")
-            if requested != self.requested_count:
-                raise ValueError("Action cannot change the task's requested count")
+            if not 1 <= requested <= self.payload_count:
+                raise ValueError("Invalid skill count")
             skill = SKILL_NAMES[skill_id]
             self.last_info["skill"] = skill
             if self._skill_sink is not None:
@@ -152,7 +152,7 @@ class FrozenPourEnvironment(Environment):
                 parameters = ExtendedFeedbackPourParameters(
                     tilt_degrees=values[3], amplitude_m=values[4], duration_seconds=values[5]
                 )
-                result = c.run_feedback_pour(parameters=parameters)
+                result = c.run_feedback_pour(parameters=parameters, requested_count=requested)
                 self.last_info.update({k: v for k, v in result.items() if k != "feedback_trace"})
             elif skill == "PickPitcher":
                 c.pick_pitcher()
@@ -173,6 +173,11 @@ class FrozenPourEnvironment(Environment):
                 self.last_info["success"] = True
         except ValueError as exc:
             self.last_info.update(error=str(exc), success=False)
+            if self.last_info.get("skill", "").startswith("PickShrimp") and c.held is None:
+                try:
+                    c.clear_failed_pick()
+                except ValueError as retreat_error:
+                    self.last_info["recovery_error"] = str(retreat_error)
         self._steps += 1
         self.last_info.update(
             seconds=float(c.data.time) - start,

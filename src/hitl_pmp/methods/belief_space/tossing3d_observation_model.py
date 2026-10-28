@@ -87,8 +87,10 @@ class SkillBeliefModel:
         assert skill_name is not None
         pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         training = dict(state.sampler_training)
-        if skill_name in training:
-            training[skill_name] = training[skill_name].observe(success=success)
+        # The sampler can be shared even when competence is count-conditioned.
+        sampler_name = self.skill.name
+        if sampler_name in training:
+            training[sampler_name] = training[sampler_name].observe(success=success)
         return state.model_copy(
             update={"pending_examples": pending_examples, "sampler_training": training}
         )
@@ -100,7 +102,7 @@ def skill_belief_model(
     """Return the update contract for one provider-supplied ground skill: the belief it
     updates (its own, or the one it shares) and what advances that belief's training
     clock. A skill with no belief gets the no-op contract."""
-    belief_name = domain.belief_name(skill_name=ground_skill.skill.name)
+    belief_name = domain.ground_belief_name(ground_skill=ground_skill)
     if belief_name is None:
         return SkillBeliefModel(skill=ground_skill.skill)
     return SkillBeliefModel(

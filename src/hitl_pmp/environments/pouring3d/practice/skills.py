@@ -54,7 +54,7 @@ class PourSkills:
 
         empty, held = atom("HandEmpty", r), atom("HoldingPitcher", r, p)
         home, tray = atom("PitcherHome", p), atom("TrayHome", t)
-        active, split = atom("ActiveRequest", k), atom("SplitCorrect", k)
+        split = atom("SplitCorrect", k)
         chain = {atom("PayloadOrder", a, b) for a, b in zip(slots, slots[1:], strict=False)}
         inside = {atom("InPitcher", x, p) for x in slots}
         settled = {atom("Settled", x) for x in slots}
@@ -86,8 +86,8 @@ class PourSkills:
             skill(
                 "Pour",
                 (r, p, t, k, *slots),
-                {held, tray, active, *inside, *chain},
-                {split, held, atom("NoSpills")},
+                {held, tray, *inside, *chain},
+                {split, held, atom("NoSpills"), atom("NeedsReset")},
                 set(),
                 3,
                 ignore=("InPitcher", "InTray", "OnFloor", "Settled", *stale),
@@ -95,7 +95,7 @@ class PourSkills:
             skill(
                 "PlacePitcherAtHome",
                 (r, p, k),
-                {held, active},
+                {held},
                 {empty, home},
                 {held},
                 conditional=frozenset({

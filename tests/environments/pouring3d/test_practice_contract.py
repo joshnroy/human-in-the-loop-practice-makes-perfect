@@ -8,7 +8,7 @@ from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvir
 from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
 
 
-def test_pour_has_three_controls_and_request_is_task_bound():
+def test_pour_has_three_controls_and_count_is_a_grounding_argument():
     env = FrozenPourEnvironment(payload_count=3, requested_count=2)
     provider = FrozenPourSkillProvider(env=env)
     pour = next(s for s in provider.skills() if s.name == "Pour")
@@ -93,3 +93,23 @@ def test_registered_replay_factory_is_lazy():
     assert isinstance(renderer, FrozenPourReplayRenderer)
     assert renderer.fps() == 10
     assert not renderer.is_storyboard()
+
+
+def test_every_count_is_a_reachable_practice_target():
+    from hitl_pmp.planning.fast_downward import FastDownwardPlanner
+
+    provider = FrozenPourSkillProvider(env=FrozenPourEnvironment(requested_count=2))
+    pick = provider.ground(name="PickPitcher")
+    initial = pick.preconditions
+    for count in (1, 2, 3):
+        target = provider.ground(name="Pour", request=count)
+        plan = FastDownwardPlanner.plan(
+            skills=provider.skills(),
+            objects=provider.objects(),
+            predicates=provider.predicates(),
+            types=provider.types(),
+            init_atoms=initial,
+            goal=target.preconditions,
+        )
+        assert [g.skill.name for g in plan] == ["PickPitcher"]
+        assert target.preconditions <= (initial - pick.delete_effects) | pick.add_effects

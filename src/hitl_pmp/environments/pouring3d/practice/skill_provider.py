@@ -104,11 +104,10 @@ class FrozenPourSkillProvider(SkillProvider):
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
         result = self.encode(ground_skill=ground_skill, params=params)
-        # Evaluation uses its own state's task, never the live practice request.
-        request = int(state.get(obj=PourObjects.scene, feature_name="requested_count"))
-        if any(v.name == "k" for v in ground_skill.skill.parameters) and result[2] != request:
-            raise ValueError("Grounded request differs from current task")
-        result[2] = request
+        # Count-bearing skills use the selected grounding, including in practice.
+        # Non-count actions carry observation metadata only (also for evaluation).
+        if not any(v.name == "k" for v in ground_skill.skill.parameters):
+            result[2] = int(state.get(obj=PourObjects.scene, feature_name="requested_count"))
         return result
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:

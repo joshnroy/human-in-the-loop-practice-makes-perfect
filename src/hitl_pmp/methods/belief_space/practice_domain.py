@@ -22,6 +22,8 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 
+from hitl_pmp.core.method.types import GroundSkill
+
 from .tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
@@ -79,6 +81,10 @@ class PracticeDomain(BaseModel, abc.ABC):
         if skill_name in dict(self.belief_sources) or skill_name in self.deterministic_skills:
             return skill_name
         return None
+
+    def ground_belief_name(self, *, ground_skill: GroundSkill) -> str | None:
+        """Default sharing is per skill; a domain may condition on a discrete binding."""
+        return self.belief_name(skill_name=ground_skill.skill.name)
 
     def example_source(self, *, belief_name: str) -> PracticeExampleSource | None:
         if belief_name in self.deterministic_skills:
