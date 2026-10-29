@@ -364,7 +364,7 @@ def test_optimal_status_does_not_bypass_independent_value_check(*, monkeypatch, 
 @pytest.mark.parametrize("regime", ["primary_bound", "small_learning_rate"])
 @pytest.mark.parametrize("toss_rate", ["negative", "constant"])
 def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
-    *, task_count, regime, toss_rate
+    *, task_count, regime, toss_rate, monkeypatch
 ):
     mdp = DpMdp(
         initial_probabilities={task * 3: 1 / task_count for task in range(task_count)},
@@ -431,6 +431,16 @@ def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
         learning_rates=arguments["learning_rates"],
         allocation=expected,
     )
+    require_optimal = DpGurobiAllocator._require_optimal
+
+    def check_solver_certificate(*, model, phase):
+        require_optimal(model=model, phase=phase)
+        assert model.ObjVal == pytest.approx(expected_value, abs=1e-9, rel=0)
+        assert model.ObjBound == pytest.approx(expected_value, abs=1e-9, rel=0)
+
+    monkeypatch.setattr(
+        DpGurobiAllocator, "_require_optimal", staticmethod(check_solver_certificate)
+    )
     result = DpGurobiAllocator.allocate(**arguments)
     assert expected == {
         "PickCube": expected_picks,
@@ -442,7 +452,7 @@ def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
         <= arguments["budget"] + 1e-7
     )
     assert result.objective == pytest.approx(expected_value, abs=1e-12, rel=0)
-    assert result.objective_bound <= expected_value + 1e-12
+    assert result.objective_bound == pytest.approx(expected_value, abs=1e-12, rel=0)
     assert result.absolute_gap <= 1e-7
 
 
@@ -542,6 +552,7 @@ def test_single_task_objective_and_solve_use_affordable_not_saturation_bounds(
         def optimize(self):
             self.update()
             solves.append(self.NumObj)
+            assert self.Params.OptimalityTol == 1e-9
             assert self.ModelSense == gp.GRB.MAXIMIZE
             assert self.getConstrByName("practice_budget").Sense == gp.GRB.LESS_EQUAL
             assert max(0, budget) == self.getConstrByName("practice_budget").RHS

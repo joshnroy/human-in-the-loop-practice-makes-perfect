@@ -12,6 +12,10 @@ reduce task value or change spend. Forecasts crossing zero still need the lower
 clip, including declining siblings of an improving shared group. This avoids
 numerically fragile MIN equalities near upper saturation without changing the
 optimization objective or the independent certification checks.
+
+Dual feasibility must be tightened alongside primal feasibility and MIP gaps:
+small learning gains can fall below the default reduced-cost tolerance, yielding
+a suboptimal allocation and an understated solver bound that agree with each other.
 """
 
 import math
@@ -95,6 +99,7 @@ class DpGurobiAllocator:
                 model.Params.MIPGapAbs = 1e-9
                 model.Params.FeasibilityTol = 1e-9
                 model.Params.IntFeasTol = 1e-9
+                model.Params.OptimalityTol = 1e-9
                 counts = {
                     group: model.addVar(
                         lb=0, ub=limits[group], vtype=gp.GRB.INTEGER, name=f"b_{index}"
