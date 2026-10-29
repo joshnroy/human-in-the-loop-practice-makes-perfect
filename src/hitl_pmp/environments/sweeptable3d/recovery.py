@@ -1,21 +1,64 @@
 """Table-only contact-tolerant grasp planning with unchanged physical collisions."""
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FloorPicks
+from hitl_pmp.environments.sweepoffshelf3d.floor_pick import (
+    PAD_HALF_WIDTH,
+    PAD_TIP_REACH,
+    FloorPicks,
+)
 from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import (
     WIPER_OBSTACLE_MARGIN,
     KinderSkills,
 )
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
+from .objects import SweepTable3DObjects as O
+
+BALL_SUPPORT_MARGIN = 0.001
+BALL_PAD_INSET = 0.004
+BALL_RETRY_POSITION_TOLERANCE = 0.003
+BALL_RETRY_ANGLE_TOLERANCE = np.deg2rad(8.0)
+
 
 class TableFloorPicks(FloorPicks):
+    retry_failed_execution: ClassVar[bool] = True
+
+    @staticmethod
+    def standoff(*, lean_deg: float) -> float:
+        """Seat spheres deeper than cubes while leaving 1 mm support clearance."""
+        lean = np.deg2rad(lean_deg)
+        drop = O.cube_half_size - BALL_SUPPORT_MARGIN - PAD_HALF_WIDTH * np.sin(lean)
+        return float(PAD_TIP_REACH - drop / np.cos(lean))
+
+    def hands(self, *, cube: str, centre: np.ndarray) -> list[tuple[float, np.ndarray]]:
+        """Reject leans that cannot put the sphere inside the supported pad region."""
+        return [
+            (lean, hand)
+            for lean, hand in super().hands(cube=cube, centre=centre)
+            if self.standoff(lean_deg=lean) <= PAD_TIP_REACH - BALL_PAD_INSET
+        ]
+
+    @staticmethod
+    def retry_key(*, hand: np.ndarray, centre: np.ndarray) -> np.ndarray:
+        """Use the full pose relative to the ball, even when a miss moves it."""
+        relative = hand.copy()
+        relative[:3, 3] -= centre
+        return relative
+
+    @staticmethod
+    def same_grasp(*, first: np.ndarray, second: np.ndarray) -> bool:
+        angle = Rotation.from_matrix(first[:3, :3].T @ second[:3, :3]).magnitude()
+        return bool(
+            angle < BALL_RETRY_ANGLE_TOLERANCE
+            and np.linalg.norm(first[:3, 3] - second[:3, 3]) < BALL_RETRY_POSITION_TOLERANCE
+        )
+
     def obstacle_geoms(self, *, cube: str) -> list[int]:
         geoms = super().obstacle_geoms(cube=cube)
         if getattr(self.kinder, "contact_target", None) != cube:
@@ -30,6 +73,48 @@ class TableFloorPicks(FloorPicks):
 
 class TableKinderSkills(KinderSkills):
     contact_target: str | None = None
+
+    def settler(
+        self,
+        *,
+        hand: np.ndarray,
+        label: str,
+        entry: tuple[np.ndarray, ...] = (),
+        cube: str | None = None,
+    ) -> Callable[[], None]:
+        return super().settler(
+            hand=hand, label=label, entry=entry, cube=cube or self.contact_target
+        )
+
+    def lifter(
+        self,
+        *,
+        pre: np.ndarray,
+        label: str,
+        cube: str,
+        outside: np.ndarray | None = None,
+    ) -> Callable[[], None]:
+        lift = super().lifter(pre=pre, label=label, cube=cube, outside=outside)
+
+        def checked_lift() -> None:
+            if self.contact_target != cube:
+                lift()
+                return
+            if not self.held(name=cube):
+                raise SkillFailed(f"{label}: {cube} not captured after closure")
+            step = self.shelf.step
+
+            def retained_step(**kwargs: Any) -> None:
+                step(**kwargs)
+                if not self.cube_in_jaws(cube=cube):
+                    raise SkillFailed(f"{label}: {cube} escaped the pads during lift")
+
+            with self.constant(module=self.shelf, name="step", value=retained_step):
+                lift()
+            if not self.held(name=cube):
+                raise SkillFailed(f"{label}: {cube} not retained after lift")
+
+        return checked_lift
 
     @contextmanager
     def allow_ball_contact(self, *, cube: str) -> Generator[None, None, None]:

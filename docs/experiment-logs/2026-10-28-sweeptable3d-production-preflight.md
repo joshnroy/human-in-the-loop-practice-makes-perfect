@@ -142,6 +142,9 @@ content. All local preflight jobs are stopped; no overnight jobs were submitted.
 
 ## Launch decision
 
+The follow-up below supersedes individual blocker diagnoses here, not the
+requirement to validate sweep learning before overnight comparisons.
+
 Keep the environment PR draft and do not launch unrestricted overnight comparisons.
 Before doing so:
 
@@ -155,3 +158,126 @@ Before doing so:
 
 The implementation, test-first regressions and reproducible failure evidence are
 ready for review. The empirical launch gates are not all green.
+
+## Follow-up: controller and bookkeeping fixes
+
+These changes preserve the core algorithms: no objective, prior, sampling rule,
+STOP rule, skill repertoire, task threshold or learner configuration is changed.
+Follow-up artifacts are local under `artifacts/sweeptable-fixes-20261028/` in the
+parent checkout.
+
+### Timeout diagnosis and correction
+
+The old POMDP log contains 22 completed search decisions totaling 13.003 seconds
+of measured search time, but approximately 53.44 GB of uncompressed diagnostic
+records. The large payload is primarily execution-cost tables whose keys contain
+the complete Pydantic skill definition, repeated both in forecasts and belief
+snapshots. It is not a 53 GB search tree. The precise final stalled stack was not
+profiled, so the original timeout alone does not establish its entire time split.
+
+The model also constructed 37,518 ground actions while only 30 satisfy the fixed
+`CubeOrder` chain. The provider now explicitly declares that invariant, and the
+grounder prunes only invariant-false combinations. The unfiltered and filtered
+models produce identical ordered feasible actions and exact decisions/values
+for both expectimax and determinized A* in four representative symbolic states.
+Domains without declared invariants retain their old grounding behavior.
+
+Cost diagnostics now use compact skill/object labels. Belief diagnostic snapshots
+omit the duplicate forecast table, retaining those values in `estimated_costs`.
+Internal cost keys, cost estimates and persisted belief models are unchanged.
+Logging-enabled and logging-disabled planner decisions and beliefs agree in the
+regression test. No full-model serialization occurs merely to build a belief
+log payload when logging is disabled.
+
+### Physical recovery
+
+The table controller seats spheres farther inside the pads while preserving
+1 mm support clearance and rejecting tip-only tilted candidates. Failed-grasp
+history distinguishes full orientations and offsets relative to the target,
+rather than excluding every vertical grasp after one miss. Capture is checked
+before lifting and retention during lifting. These behaviors are table-specific;
+the inherited shelf-cube depth and approach-axis retry defaults are preserved.
+Planning still allows neighboring-ball contact, while physical collisions remain on.
+
+The frozen-source seed-0 rerun reproduces the original initialization exactly.
+Pickup, the initial 5/5 sweep and physical wiper return remain successful.
+All 5/5 tray balls are then physically returned to the table, taking 1,127, 515,
+460, 530 and 483 control steps respectively. There are no human resets or
+unlabeled pose writes. The first ball was the prior failing recovery case.
+
+The next pickup and sweep execute, but only 4/5 balls meet strict tray containment;
+one is near the boundary. Therefore `controller-full5/report.json` still reports
+`passed=false`, `physics_gate=incomplete_or_failed`, and `launch_ready=false`.
+This is a demonstrated recovery cycle, not a passing repeated-delivery gate or
+a reliability estimate across seeds. Source hashes remain unchanged throughout,
+with manifest digest
+`de7ce32e5dd4c15447c218aec04270a86fc30bd3018da0fcf7b5d8e553c3d8c2`.
+
+### Learning-coverage diagnosis, not an algorithm workaround
+
+EES's smoke explicitly disables initial goal pursuit, unlike the CLI default,
+and only previously executed skills enter its practice-candidate set. This
+matches the older shelf launcher, so the override is not established to be an
+accident. It remains unchanged. A separate default-EES diagnostic would omit
+that override; a new horizon of two is not the canonical default.
+
+In the old POMDP run, SweepTable was a candidate at decisions 4, 5, 14 and 15.
+At decision 4, STOP scored 0.102593 versus 0.094528 for the sampled sweep
+continuation; at decision 14, the values were 0.135336 versus 0.120802.
+Both searches exhausted their remaining one-action space in 4/20 permitted
+iterations. Raising the iteration cap would not resolve those decisions.
+Other selected paths use failure-dependent reset or pickup detours before a
+favorable sampled sweep. Subsequent real success changes the state, causing
+replanning. This supports a sampled-outcome explanation, not missing sweep
+actions. No changes to that algorithm are made to force training coverage.
+
+### Same-configuration POMDP preflight
+
+`pomdp-fixed` completes 5,000 practice steps and one evaluation in 336.034 seconds
+with exit zero, within the same 1,200-second cap. Its argument snapshot differs
+from `pomdp-post-review` only in output directory. It records seven learning
+updates and five human resets. The evaluation scores 0/1; successful completion
+of the harness is not task success.
+
+The new diagnostic stream contains 101 records totaling 2,984,005 uncompressed
+bytes, with a largest record of 240,376 bytes. Its 24 measured searches total
+0.737 seconds. These are single-run engineering measurements, not a statistical
+claim about learning performance. The controller also changed, so physical costs
+and later practice decisions need not match the earlier run; algorithm parity
+is checked separately by the symbolic tests.
+
+The unchanged planner selects SweepTable at practice step 4,466. The 5,000-step
+cap interrupts that stroke after 534 control steps, so this run alone does not
+demonstrate a complete practice sweep. A separate 6,000-step coverage diagnostic
+extends only the practice/measurement budget, not planner settings or selection
+logic. Both runs use the frozen source manifest recorded above.
+
+The coverage diagnostic completes that practice attempt at step 5,081 with
+`interrupted=false`: angle -14.013384 degrees, speed 0.298729 m/s, 615 charged
+steps, and a real floor-contact failure for `cube_3`. `sampler_draws.jsonl`
+records the binary failure and parameters. Cycle 6's refit includes one
+SweepTable training example and one fitted failure, with no success examples.
+This validates the complete execution-to-learning path, not a useful learned
+classifier or improved success rate. No skill was forced into the chosen plan.
+It finishes all 6,000 practice steps and one evaluation in 390.481 seconds,
+exiting zero, with eight learning updates and six human resets. Evaluation is
+0/1. The configuration comparison confirms that only output directory, practice
+budget and matching measurement interval differ from the 5,000-step diagnostic.
+The final source-file manifest still matches the frozen digest.
+
+### Follow-up test evidence
+
+Regression tests were observed failing before the corresponding changes.
+The bookkeeping/planning checks pass 212/212 tests in the combined focused run;
+the separately memory-capped unfiltered-versus-filtered planner parity test also
+passes. Controller/domain invocations cover 475 unique passing tests: 385 domain
+tests and 117 recovery/controller/shelf tests, with 27 overlapping tests. These
+groups overlap the bookkeeping run and must not be added into a grand total.
+Ruff, full-source mypy (257 files), import boundaries and documentation links pass.
+Independent read-only review found no actionable issue in the bookkeeping diff.
+The three native table-physics regressions also pass after the fixes.
+
+The recovery and runtime defects are addressed for these bounded checks. EES's
+experimental configuration, sweep success across seeds/parameters, human-cost
+calibration and actual learning improvement are not established by these fixes.
+Keep the PR draft; no overnight experiments were launched.

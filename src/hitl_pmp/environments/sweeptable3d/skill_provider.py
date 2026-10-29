@@ -9,11 +9,11 @@ from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvi
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.problem.tasks.types import Goal, Predicate
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate
 
 from .objects import NUM_CUBES
 from .objects import SweepTable3DObjects as O
-from .predicates import SweepTable3DAtoms, SweepTable3DPredicates
+from .predicates import CUBE_ORDER, SweepTable3DAtoms, SweepTable3DPredicates
 from .skills import SKILL_IDS
 from .skills import SweepTable3DSkills as S
 
@@ -28,6 +28,9 @@ class SweepTable3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         return SweepTable3DPredicates.all()
+
+    def static_predicate_atoms(self) -> dict[Predicate, frozenset[GroundAtom]]:
+        return {CUBE_ORDER: SweepTable3DPredicates.static_atoms()}
 
     def types(self) -> tuple[Type, ...]:
         return O.all_types()

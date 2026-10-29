@@ -63,6 +63,38 @@ also only writes a plan: its `learner_commands` are bounded production CLI comma
 arrays, never automatically executed. An exit code of zero from either planning
 mode means only that a plan was written.
 
+### Learner configuration is not an algorithm fix
+
+The generated commands are deliberately small integration smokes, not calibrated
+overnight experiments. Their EES command explicitly sets goal-pursuit horizon to
+zero, matching the earlier shelf launcher but overriding the EES CLI default
+(`None`, goal pursuit enabled). EES practice candidates come from previously
+executed skills, so this setting can leave SweepTable outside its candidate set.
+A separately labeled default-EES diagnostic can omit that override; setting a
+new horizon of two is not a restoration of the existing default. The generated
+command remains unchanged to avoid silently changing the experimental treatment.
+
+POMDP's zero goal-pursuit horizon is intentional: its planner chooses practice
+actions directly. Its smoke uses four-action sessions and 20 search iterations,
+not the historical shelf launcher's 20 actions and 100 iterations. STOP decisions
+and sampled failure-dependent detours must be reported, not overridden to force
+sweep practice. Objectives, priors, learning rules and sampling remain unchanged.
+
+### Bookkeeping and diagnostic format
+
+The provider declares the complete, invariant `CubeOrder` facts. POMDP grounds
+only bindings compatible with those facts: 30 actions with human resets, rather
+than 37,518 combinations, most of which were never applicable. Other providers
+retain their previous behavior unless they explicitly declare invariant facts.
+Regression tests compare feasible action order and both planners' decisions
+against the unfiltered table model.
+
+Execution-cost diagnostics use `Skill(object, ...)` labels instead of repeating
+the complete skill definition in every key. Belief snapshots omit the duplicate
+`expected_execution_costs` table; the same values are logged under
+`estimated_costs`. Internal forecast keys, values and persisted belief models
+are unchanged. This is a diagnostic-format change, not new cost estimation.
+
 ```bash
 scripts/with_env.sh python -m scripts.sweeptable3d_preflight \
     --output-dir /tmp/table-preflight-plan --seeds 0 1 2

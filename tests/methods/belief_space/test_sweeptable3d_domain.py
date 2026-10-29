@@ -1,11 +1,13 @@
 """SweepTable belief routing and joint deployment success, without a simulator."""
 
 import argparse
+import json
 
 import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.sweeptable3d.objects import SweepTable3DObjects as O
 from hitl_pmp.environments.sweeptable3d.predicates import (
@@ -19,6 +21,7 @@ from hitl_pmp.environments.sweeptable3d.predicates import (
 from hitl_pmp.environments.sweeptable3d.skill_provider import SweepTable3DSkillProvider
 from hitl_pmp.environments.sweeptable3d.skills import SweepTable3DSkills as S
 from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
 from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
@@ -367,6 +370,137 @@ def test_method_builds_from_table_provider_with_optional_human_skills(*, solver,
         skill_belief_model(ground_skill=_sweep(), domain=method.pomdp_domain).belief_name
         == "SweepTable"
     )
+    ground = method._pomdp_model.ground_skills
+    assert len(ground) == (30 if human_reset else 28)
+    assert [action for action in ground if action.skill.name == "SweepTable"] == [_sweep()]
+
+
+def test_normalized_cost_diagnostics_are_compact_without_changing_internal_forecasts(*, tmp_path):
+    env = SymbolicEnvironment()
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=SweepTable3DSkillProvider(env=env),
+        pomdp_domain=SWEEP_TABLE_DOMAIN,
+        pomdp_num_particles=8,
+        decision_log=tmp_path / "decisions.jsonl",
+        seed=0,
+    )
+    method.configure_practice_accounting(accounting=PracticeAccounting())
+    sweep = next(
+        action for action in method._pomdp_model.ground_skills if action.skill.name == "SweepTable"
+    )
+    forecasts = dict(method.pomdp_state.expected_execution_costs)
+    assert forecasts[str(sweep)] == 1.0
+    costs = method.practice_skill_costs()
+    label = (
+        "SweepTable(robot, wiper_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4)"
+        " (execution forecast)"
+    )
+    assert costs[label] == forecasts[str(sweep)]
+    assert max(map(len, costs)) < 200
+    assert method.pomdp_state.expected_execution_costs == forecasts
+    method.record_action_cost(ground_skill=sweep)
+    method.observe_execution_cost(cost=600, steps=600, complete=True)
+    method.observe_outcome(ground_skill=sweep, success=False)
+    records = [json.loads(line) for line in method.decision_log.read_text().splitlines()]
+    outcome = next(record for record in records if record["event"] == "outcome")
+    assert "expected_execution_costs" not in outcome["belief"]
+    assert outcome["estimated_costs"][label] == 600
+    assert len(json.dumps(outcome)) < 100_000
+    assert method.pomdp_state.expected_execution_costs[str(sweep)] == 600
+
+
+def test_static_pruning_preserves_action_order_and_both_planners_decisions():
+    provider = SweepTable3DSkillProvider(env=SymbolicEnvironment())
+    skills = (*S.robot_skills(), *S.human_skills())
+    universe = SkillGrounder.all_possible_ground_atoms(
+        objects=O.all_objects(), predicates=SweepTable3DPredicates.all()
+    )
+    unfiltered = SkillGrounder.applicable_ground_skills(
+        skills=skills, objects=O.all_objects(), true_atoms=universe
+    )
+    filtered = SkillGrounder.possible_ground_skills(
+        skills=skills,
+        objects=O.all_objects(),
+        predicates=SweepTable3DPredicates.all(),
+        static_predicate_atoms=provider.static_predicate_atoms(),
+    )
+    static = SweepTable3DPredicates.static_atoms()
+    assert len(unfiltered) == 37_518
+    assert len(filtered) == 30
+    assert filtered == [
+        action
+        for action in unfiltered
+        if all(
+            atom in static for atom in action.preconditions if atom.predicate.name == "CubeOrder"
+        )
+    ]
+    original, pruned = (
+        Tossing3DPracticeModel(
+            seed=19,
+            domain=SWEEP_TABLE_DOMAIN,
+            ground_skills=tuple(actions),
+            linear_cost_lambda=3e-6,
+        )
+        for actions in (unfiltered, filtered)
+    )
+    belief = _belief()
+    for atoms in (
+        _atoms(),
+        _atoms(holding_wiper=False),
+        _atoms(on_table=(), in_box=O.cubes, active=False, holding_wiper=False),
+        _atoms(on_table=O.cubes[:3], on_floor=O.cubes[3:], active=False),
+    ):
+        state = make_tossing3d_search_state(state=belief, true_atoms=atoms)
+        assert original.get_valid_actions(environment_state=state) == pruned.get_valid_actions(
+            environment_state=state
+        )
+        for solver in ("expectimax", "determinized_astar"):
+            decisions = []
+            for model in (original, pruned):
+                planner = (
+                    ExpectimaxPlanner(use_model_j=True, observation_probability_weight=0.0)
+                    if solver == "expectimax"
+                    else DeterminizedAStarPlanner(
+                        seed=23, max_iterations=20, observation_probability_weight=0.0
+                    )
+                )
+                decisions.append(
+                    planner.solve(
+                        environment_state=state,
+                        belief_state=belief,
+                        summed_cost=0.0,
+                        horizon=2,
+                        model=model,
+                        num_samples=8,
+                    )
+                )
+            assert decisions[0] == decisions[1]
+
+
+def test_logging_does_not_change_planner_decisions_or_beliefs(*, tmp_path):
+    methods = []
+    for decision_log in (None, tmp_path / "decisions.jsonl"):
+        env = SymbolicEnvironment()
+        method = Tossing3DPomdpMethod(
+            env=env,
+            skill_provider=SweepTable3DSkillProvider(env=env),
+            pomdp_domain=SWEEP_TABLE_DOMAIN,
+            pomdp_num_particles=8,
+            pomdp_num_samples=8,
+            pomdp_solver="determinized_astar",
+            pomdp_max_search_iterations=20,
+            pomdp_observation_probability_weight=0.0,
+            decision_log=decision_log,
+            seed=9,
+        )
+        method.configure_practice_accounting(accounting=PracticeAccounting())
+        methods.append(method)
+    before = [method.pomdp_state for method in methods]
+    decisions = [method.select_skill_to_practice(true_atoms=_atoms()) for method in methods]
+    assert decisions[0] == decisions[1]
+    assert methods[0].practice_action_values() == methods[1].practice_action_values()
+    assert methods[0].pomdp_state == before[0] == methods[1].pomdp_state == before[1]
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,150 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 from hitl_pmp.environments.sweeptable3d.recovery import TableFloorPicks, TableKinderSkills
 
 
+@pytest.mark.parametrize("lean", [0.0, 15.0, 30.0])
+def test_ball_standoff_places_center_inside_pad_without_hitting_support(*, lean):
+    distance = TableFloorPicks.standoff(lean_deg=lean)
+    radians = np.deg2rad(lean)
+    lowest_pad = 0.01 + (distance - 0.042) * np.cos(radians) - 0.011 * np.sin(radians)
+    assert lowest_pad >= 0.001 - 1e-12
+    assert distance <= 0.038
+    assert distance < FloorPicks.standoff(lean_deg=lean)
+
+
+def test_ball_retry_distinguishes_yaw_offset_and_tracks_target_motion():
+    picker = TableFloorPicks(kinder=SimpleNamespace(shelf=None))
+    hand = np.eye(4)
+    hand[:3, 3] = [1, 2, 0.04]
+    centre = np.array([1, 2, 0.01])
+    tried = picker.retry_key(hand=hand, centre=centre)
+    rotated = hand.copy()
+    rotated[:3, :3] = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    shifted = hand.copy()
+    shifted[0, 3] += 0.006
+    for alternative in (rotated, shifted):
+        assert not picker.same_grasp(
+            first=tried, second=picker.retry_key(hand=alternative, centre=centre)
+        )
+    motion = np.array([0.074, 0, 0])
+    hand[:3, 3] += motion
+    assert picker.same_grasp(
+        first=tried, second=picker.retry_key(hand=hand, centre=centre + motion)
+    )
+
+
+def test_cube_retry_still_excludes_same_approach_yaws():
+    picker = FloorPicks(kinder=SimpleNamespace(shelf=None))
+    hand = np.eye(4)
+    rotated = hand.copy()
+    rotated[:3, :3] = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    assert picker.same_grasp(
+        first=picker.retry_key(hand=hand, centre=np.zeros(3)),
+        second=picker.retry_key(hand=rotated, centre=np.zeros(3)),
+    )
+
+
+def test_ball_hand_candidates_use_depth_and_reject_tip_only_leans():
+    centre = np.array([1, 2, 0.02])
+    core = SimpleNamespace(
+        get_object=lambda name: SimpleNamespace(get_pose=lambda: (centre, [1, 0, 0, 0]))
+    )
+    picker = TableFloorPicks(kinder=SimpleNamespace(shelf=SimpleNamespace(core=core)))
+    picker.neighbour_side = lambda **kwargs: 0
+    hands = picker.hands(cube="cube_0", centre=centre)
+    assert {lean for lean, _ in hands} == {0, 15, 30}
+    for lean, hand in hands:
+        local = np.linalg.inv(hand) @ np.r_[centre, 1]
+        assert local[2] == pytest.approx(TableFloorPicks.standoff(lean_deg=lean))
+        assert local[2] <= 0.038
+
+
+@pytest.mark.parametrize("picker_type", [FloorPicks, TableFloorPicks])
+def test_only_ball_failed_executions_enter_retry_history(*, monkeypatch, picker_type):
+    from contextlib import nullcontext
+
+    from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import KinderControllers
+
+    centre = np.array([1, 2, 0.02])
+    hand = np.eye(4)
+    grasp = SimpleNamespace(
+        hand=hand,
+        pre=hand,
+        lift=hand,
+        pre_conf=np.zeros(7),
+        grasp_conf=np.zeros(7),
+        base=np.zeros(3),
+    )
+    controller = SimpleNamespace()
+    monkeypatch.setattr(KinderControllers, "get", lambda **kwargs: lambda **kwargs: controller)
+    kinder = SimpleNamespace(
+        shelf=SimpleNamespace(cube_position=lambda **kwargs: centre),
+        objects=lambda *args: args,
+        cube_pose=lambda **kwargs: hand,
+        constant=lambda **kwargs: nullcontext(),
+        pose_in=lambda **kwargs: hand,
+        fixed_ik=lambda **kwargs: None,
+        planning_sim=lambda: None,
+        settler=lambda **kwargs: None,
+        lifter=lambda **kwargs: None,
+        facing_params=lambda **kwargs: None,
+        drive=Mock(side_effect=SkillFailed("capture failed")),
+    )
+    picker = picker_type(kinder=kinder)
+    picker.candidates = lambda **kwargs: iter([grasp])
+    tried = []
+    with pytest.raises(SkillFailed, match="capture failed"):
+        picker.attempt(cube="cube_0", tried=tried, label="test")
+    assert len(tried) == (1 if picker_type is TableFloorPicks else 0)
+    if tried:
+        np.testing.assert_allclose(tried[0], picker.retry_key(hand=hand, centre=centre))
+
+
+def test_ball_floor_approach_checks_target_but_wiper_does_not(*, monkeypatch):
+    settler = Mock(return_value=lambda: None)
+    monkeypatch.setattr(KinderSkills, "settler", settler)
+    kinder = object.__new__(TableKinderSkills)
+    with kinder.allow_ball_contact(cube="cube_0"):
+        kinder.settler(hand=np.eye(4), label="pick_settle")
+    assert settler.call_args.kwargs["cube"] == "cube_0"
+    kinder.settler(hand=np.eye(4), label="wiper_settle")
+    assert settler.call_args.kwargs["cube"] is None
+
+
+@pytest.mark.parametrize("loss", ["closure", "during_lift", "after_lift", None])
+def test_ball_lift_checks_capture_and_restores_step_on_loss(*, monkeypatch, loss):
+    kinder = object.__new__(TableKinderSkills)
+    step = Mock()
+    kinder.shelf = SimpleNamespace(step=step)
+    kinder.held = Mock(side_effect=[loss != "closure", loss != "after_lift"])
+    kinder.cube_in_jaws = Mock(return_value=loss != "during_lift")
+    continued = Mock()
+
+    def lift():
+        kinder.shelf.step(arm=np.zeros(7), label="test")
+        continued()
+
+    monkeypatch.setattr(KinderSkills, "lifter", lambda *args, **kwargs: lift)
+    action = kinder.lifter(pre=np.eye(4), cube="cube_0", label="test")
+    with kinder.allow_ball_contact(cube="cube_0"):
+        if loss is None:
+            action()
+        else:
+            with pytest.raises(SkillFailed, match="cube_0"):
+                action()
+    assert kinder.shelf.step is step
+    assert step.call_count == (0 if loss == "closure" else 1)
+    assert continued.call_count == (0 if loss in {"closure", "during_lift"} else 1)
+
+
+def test_non_floor_lift_keeps_existing_behavior(*, monkeypatch):
+    kinder = object.__new__(TableKinderSkills)
+    kinder.held = Mock(side_effect=AssertionError("unexpected target check"))
+    lift = Mock()
+    monkeypatch.setattr(KinderSkills, "lifter", lambda *args, **kwargs: lift)
+    kinder.lifter(pre=np.eye(4), cube="cube_0", label="table_pick")()
+    lift.assert_called_once_with()
+
+
 def test_only_neighbor_geometries_are_filtered(*, monkeypatch):
     names = ["cube_1", "box_0", "cupboard_1", "wiper_0"]
     model = SimpleNamespace(
