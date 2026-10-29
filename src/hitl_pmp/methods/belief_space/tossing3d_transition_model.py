@@ -57,6 +57,11 @@ class GroundSkillText:
     _texts: ClassVar[dict[int, tuple[GroundSkill, str]]] = {}
 
     @staticmethod
+    def label(*, ground_skill: GroundSkill) -> str:
+        """Compact diagnostic label; never substitutes for the internal cost key."""
+        return f"{ground_skill.skill.name}({', '.join(obj.name for obj in ground_skill.objects)})"
+
+    @staticmethod
     def of(*, ground_skill: GroundSkill) -> str:
         entry = GroundSkillText._texts.get(id(ground_skill))
         if entry is not None and entry[0] is ground_skill:

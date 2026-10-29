@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 
-from hitl_pmp.core.method.types import LiftedAtom, Skill, Variable
+from hitl_pmp.core.method.types import ConditionalAddEffect, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -36,6 +37,85 @@ def _move_skill() -> tuple[Skill, Variable, Variable, Variable]:
         param_dim=0,
     )
     return skill, robot, current, target
+
+
+def test_possible_ground_skills_preserves_order_and_filters_only_static_false_bindings():
+    skill, *_ = _move_skill()
+    objects = (_ROBOT, _CELL0, _CELL1, _CELL2)
+    predicates = (_IN_CELL, _ADJACENT)
+    static = frozenset({GroundAtom(predicate=_ADJACENT, objects=(_CELL0, _CELL1))})
+    all_groundings = SkillGrounder.applicable_ground_skills(
+        skills=(skill,),
+        objects=objects,
+        true_atoms=SkillGrounder.all_possible_ground_atoms(objects=objects, predicates=predicates),
+    )
+    filtered = SkillGrounder.possible_ground_skills(
+        skills=(skill,),
+        objects=objects,
+        predicates=predicates,
+        static_predicate_atoms={_ADJACENT: static},
+    )
+    assert filtered == [
+        ground
+        for ground in all_groundings
+        if all(atom in static for atom in ground.preconditions if atom.predicate == _ADJACENT)
+    ]
+    assert [ground.objects for ground in filtered] == [(_ROBOT, _CELL0, _CELL1)]
+    assert (
+        SkillGrounder.possible_ground_skills(
+            skills=(skill,),
+            objects=objects,
+            predicates=predicates,
+            static_predicate_atoms={},
+        )
+        == all_groundings
+    )
+    assert (
+        SkillGrounder.possible_ground_skills(
+            skills=(skill,),
+            objects=objects,
+            predicates=predicates,
+            static_predicate_atoms={_ADJACENT: frozenset()},
+        )
+        == []
+    )
+
+
+def test_possible_ground_skills_rejects_mutable_static_declarations():
+    skill, *_ = _move_skill()
+    with pytest.raises(ValueError, match="static.*InCell"):
+        SkillGrounder.possible_ground_skills(
+            skills=(skill,),
+            objects=(_ROBOT, _CELL0, _CELL1),
+            predicates=(_IN_CELL, _ADJACENT),
+            static_predicate_atoms={_IN_CELL: frozenset()},
+        )
+
+
+@pytest.mark.parametrize("effect_kind", ["conditional", "ignored"])
+def test_possible_ground_skills_rejects_other_ways_to_change_static_facts(*, effect_kind):
+    skill, _, current, target = _move_skill()
+    updates = (
+        {"ignore_effects": frozenset({_ADJACENT})}
+        if effect_kind == "ignored"
+        else {
+            "conditional_add_effects": frozenset({
+                ConditionalAddEffect(
+                    conditions=frozenset(),
+                    add_effects=frozenset({
+                        LiftedAtom(predicate=_ADJACENT, variables=(current, target))
+                    }),
+                )
+            })
+        }
+    )
+    with pytest.raises(ValueError, match="static.*Adjacent"):
+        SkillGrounder.possible_ground_skills(
+            skills=(skill.model_copy(update=updates),),
+            objects=(_ROBOT, _CELL0, _CELL1),
+            predicates=(_IN_CELL, _ADJACENT),
+            static_predicate_atoms={_ADJACENT: frozenset()},
+        )
 
 
 def test_applicable_ground_skills_finds_only_bindings_consistent_with_true_atoms() -> None:

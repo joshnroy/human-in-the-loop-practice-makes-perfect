@@ -33,7 +33,7 @@ Nothing here imports KINDER at module scope.
 """
 
 from collections.abc import Generator
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -98,6 +98,8 @@ class FloorPicks:
     """The floor and box picks on one live scene, through `KinderSkills`' controllers,
     MuJoCo checks and bookkeeping."""
 
+    retry_failed_execution: ClassVar[bool] = False
+
     def __init__(self, *, kinder: KinderSkills) -> None:
         self.kinder = kinder
         self.shelf = kinder.shelf
@@ -152,8 +154,8 @@ class FloorPicks:
 
     def attempt(self, *, cube: str, tried: list[np.ndarray], label: str) -> bool:
         """One grasp execution, from the first candidate whose plans KINDER finds and
-        MuJoCo clears; False when none does (nothing moved). Approaches in `tried`
-        already missed this cube; the one executed is added."""
+        MuJoCo clears; False when none does (nothing moved). Keys in `tried`
+        identify failed grasps; the one executed is added."""
         import kinder_models.dynamic3d.shelf.parameterized_skills as shelf_skills
 
         kinder = self.kinder
@@ -206,9 +208,14 @@ class FloorPicks:
                 pick.pre_conf = grasp.pre_conf.tolist()
                 pick.retract_gain = SHELF_PICK_CARRY_GAIN
                 params = kinder.facing_params(base=grasp.base, centre=centre, cube=cube)
-                outcome = kinder.drive(controller=pick, params=params, label=label)
+                try:
+                    outcome = kinder.drive(controller=pick, params=params, label=label)
+                except SkillFailed:
+                    if self.retry_failed_execution:
+                        tried.append(self.retry_key(hand=grasp.hand, centre=centre))
+                    raise
             if outcome == "done":
-                tried.append(grasp.hand[:3, 2].copy())
+                tried.append(self.retry_key(hand=grasp.hand, centre=centre))
                 return True
             failures[key] = failures.get(key, 0) + 1
             if drives >= FLOOR_PICK_PLANS:
@@ -217,18 +224,28 @@ class FloorPicks:
 
     # --- the candidates ---------------------------------------------------------------
 
+    @staticmethod
+    def retry_key(*, hand: np.ndarray, centre: np.ndarray) -> np.ndarray:
+        """Shelf cubes retain their approach-axis retry policy."""
+        return hand[:3, 2].copy()
+
+    @staticmethod
+    def same_grasp(*, first: np.ndarray, second: np.ndarray) -> bool:
+        return float(first @ second) > SHELF_PICK_SAME_APPROACH
+
     def candidates(
         self, *, cube: str, tried: list[np.ndarray] | None = None
     ) -> Generator[FloorGrasp, None, None]:
         """(grasp, base) candidates clear in MuJoCo, lazily: grasps in `hands` order, and
-        for each, bases in `bases` order. A grasp whose approach is in `tried` is skipped."""
+        for each, bases in `bases` order. A grasp whose key is in `tried` is skipped."""
         kinder = self.kinder
         centre = self.shelf.cube_position(cube=cube)
         bases = [b for b in self.bases(centre=centre) if kinder.base_clear(base=b)]
         drivable: dict[int, bool] = {}
         lift_to = self.lift_height(cube=cube, centre=centre)
         for lean, hand in self.hands(cube=cube, centre=centre):
-            if any(float(hand[:3, 2] @ t) > SHELF_PICK_SAME_APPROACH for t in tried or ()):
+            key = self.retry_key(hand=hand, centre=centre)
+            if any(self.same_grasp(first=key, second=previous) for previous in tried or ()):
                 continue
             pre = hand.copy()
             pre[:3, 3] -= FLOOR_PICK_PRE_BACK * hand[:3, 2]
@@ -280,7 +297,7 @@ class FloorPicks:
         out = []
         shifted = []
         for lean in FLOOR_PICK_LEANS_DEG:
-            standoff = FloorPicks.standoff(lean_deg=lean)
+            standoff = self.standoff(lean_deg=lean)
             for k in range(4):
                 face = normal + k * np.pi / 2
                 toward = np.array([np.cos(face), np.sin(face), 0.0])
@@ -335,7 +352,7 @@ class FloorPicks:
                 rim
                 + BOX_RIM_CLEARANCE
                 + O.cube_half_size
-                + FloorPicks.standoff(lean_deg=max(FLOOR_PICK_LEANS_DEG))
+                + self.standoff(lean_deg=max(FLOOR_PICK_LEANS_DEG))
             )
             lift = max(lift, needed)
         return lift

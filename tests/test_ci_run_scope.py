@@ -40,7 +40,11 @@ CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 TOSSING3D_JOB = "test-tossing3d"
 FILTER_NAME = "tossing3d"
 # The test directories `test / tossing3d` collects, minus the real-robot one it ignores.
-TOSSING3D_TEST_DIRS = ("tests/environments/tossing3d", "tests/environments/sweepoffshelf3d")
+TOSSING3D_TEST_DIRS = (
+    "tests/environments/tossing3d",
+    "tests/environments/sweepoffshelf3d",
+    "tests/environments/sweeptable3d",
+)
 IGNORED_TEST_DIR = "tests/environments/tossing3d/real"
 
 
@@ -269,6 +273,11 @@ def test_the_filter_covers_every_file_the_tossing3d_tests_import() -> None:
         "tests/methods/belief_space/conftest.py",
         "tests/environments/tossing3d/fixtures/seed3_rim.json",
         "tests/environments/sweepoffshelf3d/fixtures/neighbour_strike_states.jsonl",
+        "tests/environments/sweeptable3d/test_live.py",
+        "tests/environments/sweeptable3d/fixtures/settled_balls.json",
+        "scripts/sweeptable3d_preflight.py",
+        "tests/scripts/test_sweeptable3d_preflight.py",
+        "src/hitl_pmp/environments/sweeptable3d/scene.json",
         "src/hitl_pmp/environments/tossing3d/scenes/same_side.json",
         # Data the tests read by path rather than import.
         "configs/normalized_practice_costs.json",
