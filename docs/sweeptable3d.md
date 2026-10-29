@@ -37,8 +37,13 @@ the production `backend.task_succeeded()` verdict, no task failure, no controlle
 error and no budget interruption. Controller completion alone is not delivery.
 `task_failed()` includes consumed/aborted unsuccessful strokes as well as ground
 contact: **it is not evidence of floor contact**. Ground coverage requires a
-nonempty `ground_cubes()` observation. Tray footprint containment remains strict;
-near-rim or airborne balls do not earn relaxed success.
+nonempty `ground_cubes()` observation. Tray containment uses the sphere's widest
+cross-section overlapping the wall height, not its full projected radius above
+the rim. For a floor-supported 10 mm radius sphere and a 5 mm rim, that section
+has radius approximately 8.66 mm. Both horizontal clearances must fit, with the
+existing floor-height, uprightness and settling checks retained. Outside,
+wall-intersecting, rim-perched and airborne balls do not earn success. This changes
+capture scoring only, not physics, controller parameters or learning algorithms.
 
 Older exploratory outcomes do not transfer to this checkout's dependency pins.
 The parent reported a first full5 initial-sweep failure despite controller

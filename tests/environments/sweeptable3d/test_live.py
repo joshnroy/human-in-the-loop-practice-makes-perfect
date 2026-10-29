@@ -4,6 +4,7 @@ import importlib.util
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.sweeptable3d.environment import SweepTable3DEnvironment
 
@@ -47,6 +48,34 @@ def test_cube_resets_do_not_resample_the_bin_and_seed_rebuild_is_reproducible(*,
     rebuilt = backend.features()
     for name in ["box_0", *(f"cube_{index}" for index in range(5))]:
         assert np.allclose(rebuilt[name], before[name], atol=1e-6)
+
+
+def test_low_rim_fixture_counts_in_native_predicates_and_completed_sweep(*, env):
+    env.reset_to_seed(seed=0)
+    backend = env.backend()
+    backend.begin_sweep()
+    tray_position, quaternion = backend.core().get_object("box_0").get_pose()
+    rotation = Rotation.from_quat(np.asarray(quaternion)[[1, 2, 3, 0]])
+    centers = [
+        [0, -0.09, 0.02],
+        [-0.10631978331844343, -0.001313687752590165, 0.0199983977439831],
+        [0, -0.03, 0.02],
+        [0, 0.03, 0.02],
+        [0, 0.09, 0.02],
+    ]
+    backend._commit(
+        placements={
+            name: (tray_position + rotation.apply(center), np.array([1.0, 0.0, 0.0, 0.0]))
+            for name, center in zip(backend.ball_names, centers, strict=True)
+        }
+    )
+    assert all(backend.core().cube_in_box(name) for name in backend.ball_names)
+    backend.finish_sweep(completed=True)
+    assert backend.task_succeeded()
+    assert not backend.task_failed()
+    assert all(
+        ("InBox", (name, "box_0")) in backend.abstract_atoms() for name in backend.ball_names
+    )
 
 
 def test_airborne_is_not_ground_but_real_floor_contact_latches_until_reset(*, env):

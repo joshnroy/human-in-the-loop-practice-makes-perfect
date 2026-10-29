@@ -7,6 +7,10 @@ Integrate the ball-and-shallow-tray investigation as the first-class
 This is a draft implementation and bounded local preflight, not an overnight
 experiment or evidence of learned sweep competence.
 
+The [2026-10-29 scoring correction](2026-10-29-sweeptable3d-sphere-capture.md)
+supersedes the strict full-footprint interpretation below. Historical reports are
+unchanged: their 4/5 verdict is not evidence that the fifth ball escaped.
+
 The clean branch starts from main `70c3f63d202d2e6870e167d778615e61b077230d`.
 Dependency pins are unchanged: KINDER `490831fa54a40c4b2b4570d45bb08e3dd63c24ef`
 and kinder-baselines `032b42634a015c7f710667b3a791836fa839f6ff`.

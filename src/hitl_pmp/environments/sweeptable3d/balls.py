@@ -58,13 +58,22 @@ class BallScene:
         half_x: float,
         half_y: float,
         floor: float,
+        rim_height: float,
         upright: float,
     ) -> bool:
-        return bool(
+        """Require floor support and clearance at the sphere's widest wall overlap."""
+        bottom = float(local_center[2]) - radius
+        if not (
             upright >= np.cos(np.deg2rad(5))
-            and abs(local_center[0]) + radius <= half_x
-            and abs(local_center[1]) + radius <= half_y
-            and floor - 0.0001 <= local_center[2] - radius <= floor + 0.001
+            and floor - 0.0001 <= bottom <= floor + 0.001
+            and rim_height > max(floor, bottom)
+        ):
+            return False
+        rim_distance = max(0.0, float(local_center[2]) - rim_height)
+        section_radius = np.sqrt(max(0.0, radius**2 - rim_distance**2))
+        return bool(
+            abs(local_center[0]) + section_radius <= half_x
+            and abs(local_center[1]) + section_radius <= half_y
         )
 
     @staticmethod
@@ -80,6 +89,7 @@ class BallScene:
             half_x=tray.length / 2 - tray.wall_thickness,
             half_y=tray.width / 2 - tray.wall_thickness,
             floor=tray.wall_thickness,
+            rim_height=tray.height,
             upright=float(rotation.apply([0, 0, 1])[2]),
         )
 
