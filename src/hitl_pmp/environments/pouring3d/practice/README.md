@@ -20,6 +20,14 @@ transport, with a bounded oblique-grasp attempt after a recoverable approach/con
 attempts consume ordinary control ticks. Symbolic `Shrimp`/`Tray` names remain as
 compatibility identifiers for food/pan, and do not select shrimp geometry.
 
+Recovery plans the arm branch through base approach and descent before moving,
+then tracks that joint path rather than resolving onto a different IK branch at the
+hover point. Joint settling is bounded and checked from measurements. Grasp retention
+uses a 2 N minimum normal-force target per finger, increasing the existing gripper
+position command within its actuator limits. The simulator supplies contact/force
+feedback; transferring recovery to hardware requires an equivalent retention estimate.
+These are fixed recovery-controller settings, not additional learned pour parameters.
+
 Recording model version 6 stores the payload choice. Replays without that field keep
 the historical shrimp geometry. Current readiness and validation are documented in
 [the launch protocol](../../../../../docs/experiments/pouring3d-pilots.md).

@@ -30,8 +30,11 @@ class PracticePourController(FeedbackPourController):
     recovery_pitch_degrees: float = 30.0
     recovery_base_x: float = 0.20
     recovery_lift_from_actual: bool = False
+    recovery_plan_approach: bool = False
     recovery_floor_carry_angle: float = 30.0
     recovery_contact_close: bool = False
+    recovery_contact_preload: float = 0.03
+    payload_grip_force: float = 0.0
     payload_hold_grip: float = 1.0
     shrimp_approach_path: list[np.ndarray] = Field(default_factory=list)
 
@@ -174,7 +177,13 @@ class PracticePourController(FeedbackPourController):
             return position, grasp, grasp
         return position, upright, grasp
 
-    def prepare_empty_arm(self, *, position: np.ndarray, rotation: Rotation) -> None:
+    def prepare_empty_arm(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: Rotation,
+        continuation: Callable[[np.ndarray], bool] | None = None,
+    ) -> None:
         """Find a reachable empty-hand posture, then execute a checked joint path."""
 
         if self.held is not None:
@@ -202,7 +211,12 @@ class PracticePourController(FeedbackPourController):
                 if index == 0
                 else rng.uniform(np.maximum(self.lower, -np.pi), np.minimum(self.upper, np.pi))
             )
-            fit = least_squares(residual, seed, bounds=(self.lower, self.upper), max_nfev=200)
+            fit = least_squares(
+                residual,
+                np.clip(seed, self.lower + 1e-6, self.upper - 1e-6),
+                bounds=(self.lower, self.upper),
+                max_nfev=200,
+            )
             fit_error = float(np.linalg.norm(residual(fit.x)))
             best_error = min(best_error, fit_error)
             if fit_error > 0.008:
@@ -229,14 +243,43 @@ class PracticePourController(FeedbackPourController):
                 f"No collision-free empty-arm preparation path: residual {best_error:.4f}, "
                 f"reachable poses {reachable}"
             )
-        goal = min(candidates, key=lambda q: np.linalg.norm(q - start))
+        candidates.sort(key=lambda q: np.linalg.norm(q - start))
+        goal = candidates[0]
+        if continuation is not None:
+            checked: list[np.ndarray] = []
+            for candidate in candidates:
+                if any(np.linalg.norm(candidate - other) < 0.05 for other in checked):
+                    continue
+                checked.append(candidate)
+                if continuation(candidate):
+                    goal = candidate
+                    break
+                if len(checked) >= 8:
+                    raise ValueError("No feasible continuation from prepared arm postures")
+            else:
+                raise ValueError("No feasible continuation from prepared arm postures")
         self.phase = "prepare arm in clear aisle"
         count = round(max(8.0, float(np.max(np.abs(goal - start))) / 0.20) * self.frequency)
         for index in range(1, count + 1):
             u = index / count
             self.last_q = start + u * u * (3 - 2 * u) * (goal - start)
             self.motor_step(target_q=self.last_q, grip=0)
-        self.move(position=position, rotation=rotation, seconds=2, grip=0, phase=self.phase)
+        if continuation is None:
+            self.move(position=position, rotation=rotation, seconds=2, grip=0, phase=self.phase)
+        else:
+            # Preserve the branch whose continuation was checked. A fresh IK
+            # solve at this hover may choose another redundant configuration.
+            self.last_q = goal.copy()
+            for _ in range(round(10 * self.frequency)):
+                self.motor_step(target_q=goal, grip=0)
+                if np.max(np.abs(goal - self.data.qpos[self.arm_q])) < 0.025:
+                    break
+            else:
+                raise ValueError(
+                    "Prepared arm did not track the planned configuration: "
+                    f"target {np.round(np.rad2deg(goal), 1).tolist()}, "
+                    f"actual {np.round(np.rad2deg(self.data.qpos[self.arm_q]), 1).tolist()}"
+                )
 
     def pick_pitcher(self) -> None:
         self.shrimp_recovery_active = False
@@ -372,8 +415,38 @@ class PracticePourController(FeedbackPourController):
             else:
                 raise ValueError("Pitcher placement did not converge; retaining grasp")
 
+    def finger_normal_forces(self, *, name: str) -> dict[str, float]:
+        import mujoco
+
+        forces = {"left": 0.0, "right": 0.0}
+        wrench = np.zeros(6)
+        for index, contact in enumerate(self.data.contact):
+            bodies = [self.model.body(int(self.model.geom_bodyid[g])).name for g in contact.geom]
+            if name not in bodies:
+                continue
+            for side in forces:
+                if f"robot_{side}_pad" in bodies:
+                    mujoco.mj_contactForce(self.model, self.data, index, wrench)
+                    forces[side] += max(0.0, float(wrench[0]))
+        return forces
+
     def motor_step(self, *, target_q: np.ndarray, grip: float) -> None:
-        if self.recovery_contact_close and self.held in self.scene.cube_names and grip == 1:
+        if (
+            self.recovery_contact_close
+            and self.held is not None
+            and self.held in self.scene.cube_names
+            and grip > 0
+        ):
+            if (
+                self.payload_grip_force > 0
+                and min(self.finger_normal_forces(name=self.held).values())
+                < self.payload_grip_force
+            ):
+                self.payload_hold_grip = min(1.0, self.payload_hold_grip + 0.01)
+            elif self.lost_contacts:
+                # Tighten physically if one pad begins to lose contact. Retention
+                # still fails after the existing grace period if contact is lost.
+                self.payload_hold_grip = min(1.0, self.payload_hold_grip + 0.03)
             grip = self.payload_hold_grip
         if self.before_step is not None:
             self.before_step()
@@ -417,6 +490,17 @@ class PracticePourController(FeedbackPourController):
         endpoints = np.array([p for a, b, _ in CookedShrimp.segments() for p in (a, b)])
         midpoint = (endpoints.min(axis=0) + endpoints.max(axis=0)) / 2
         return position + rotation.apply(midpoint), rotation.apply([0, 1, 0])
+
+    def payload_approach_feasible(
+        self,
+        *,
+        q: np.ndarray,
+        preparation: np.ndarray,
+        grasp: np.ndarray,
+        rotation: Rotation,
+        base: np.ndarray,
+    ) -> bool:
+        return True
 
     def pick_shrimp(self, *, index: int, location: str) -> None:
         name = self.scene.cube_names[index]
@@ -481,7 +565,59 @@ class PracticePourController(FeedbackPourController):
             self.prepare_empty_arm(
                 position=grasp + [-0.30, 0, self.recovery_approach_clearance],
                 rotation=down,
+                continuation=(
+                    lambda q: self.payload_approach_feasible(
+                        q=q,
+                        preparation=grasp + [-0.30, 0, self.recovery_approach_clearance],
+                        grasp=grasp,
+                        rotation=down,
+                        base=np.array([self.recovery_base_x, point[1], 0]),
+                    )
+                )
+                if self.recovery_plan_approach
+                else None,
             )
+        self.move_to_payload_grasp(grasp=grasp, point=point, down=down, elevated=elevated)
+        self.pause(phase="settle shrimp approach", seconds=1, grip=self.recovery_open_grip)
+        self.phase = "pinch shrimp"
+        self.payload_hold_grip = 1.0
+        for grip in np.linspace(self.recovery_open_grip, 1, round(3 * self.frequency) + 1)[1:]:
+            self.motor_step(target_q=self.last_q, grip=float(grip))
+            if self.recovery_contact_close and len(self.finger_contacts(name=name)) == 2:
+                # Position control with a small preload, rather than driving the
+                # fingers fully closed through a tapered rigid object.
+                self.payload_hold_grip = min(1.0, float(grip) + self.recovery_contact_preload)
+                break
+        self.pause(phase="retain shrimp", seconds=1, grip=self.payload_hold_grip)
+        if len(self.finger_contacts(name=name)) != 2:
+            raise ValueError("Shrimp grasp lacks both finger contacts")
+        self.held, self.lost_contacts = name, 0
+        if self.recovery_contact_close and self.payload_grip_force > 0:
+            self.pause(phase="secure shrimp grasp", seconds=2, grip=1)
+        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
+        lift_rotation = down
+        if self.recovery_lift_from_actual:
+            hand, lift_rotation = self.hand_pose()
+            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
+        self.move(
+            position=lift_position,
+            rotation=lift_rotation,
+            seconds=4,
+            grip=1,
+            phase="lift shrimp",
+        )
+        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
+            self.held = None
+            raise ValueError("Shrimp not retained through lift")
+
+    def move_to_payload_grasp(
+        self,
+        *,
+        grasp: np.ndarray,
+        point: np.ndarray,
+        down: Rotation,
+        elevated: bool,
+    ) -> None:
         self.move_base(
             target=np.array([self.recovery_base_x if elevated else point[0] - 0.65, point[1], 0]),
             phase="position for shrimp pick",
@@ -511,35 +647,6 @@ class PracticePourController(FeedbackPourController):
             grip=self.recovery_open_grip,
             phase="descend to shrimp body",
         )
-        self.pause(phase="settle shrimp approach", seconds=1, grip=self.recovery_open_grip)
-        self.phase = "pinch shrimp"
-        self.payload_hold_grip = 1.0
-        for grip in np.linspace(self.recovery_open_grip, 1, round(3 * self.frequency) + 1)[1:]:
-            self.motor_step(target_q=self.last_q, grip=float(grip))
-            if self.recovery_contact_close and len(self.finger_contacts(name=name)) == 2:
-                # Position control with a small preload, rather than driving the
-                # fingers fully closed through a tapered rigid object.
-                self.payload_hold_grip = min(1.0, float(grip) + 0.03)
-                break
-        self.pause(phase="retain shrimp", seconds=1, grip=self.payload_hold_grip)
-        if len(self.finger_contacts(name=name)) != 2:
-            raise ValueError("Shrimp grasp lacks both finger contacts")
-        self.held, self.lost_contacts = name, 0
-        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
-        lift_rotation = down
-        if self.recovery_lift_from_actual:
-            hand, lift_rotation = self.hand_pose()
-            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
-        self.move(
-            position=lift_position,
-            rotation=lift_rotation,
-            seconds=4,
-            grip=1,
-            phase="lift shrimp",
-        )
-        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
-            self.held = None
-            raise ValueError("Shrimp not retained through lift")
 
     def clear_failed_pick(self) -> None:
         """Open and retreat physically after a failed empty-hand pickup."""
