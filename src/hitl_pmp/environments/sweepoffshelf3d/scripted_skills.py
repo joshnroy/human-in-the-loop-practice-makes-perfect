@@ -562,9 +562,12 @@ class ShelfSkills:
         holding: bool = False,
         attempts: int = 24,
         seed: np.ndarray | None = None,
+        held: dict[int, float] | None = None,
     ) -> tuple[np.ndarray, float]:
         """(arm joints, penetration) reaching the pose; the first attempt starts from
-        `seed` (default: the current arm), so a route stays on one IK branch."""
+        `seed` (default: the current arm), so a route stays on one IK branch. `held`
+        sets qpos entries (address: value) the scene is checked with instead of the live
+        ones: a jaw not yet shaped as it will be at the grasp."""
         mujoco = self.mujoco
         d, m = self.ik_data, self.model
         jacp, jacr = np.zeros((3, m.nv)), np.zeros((3, m.nv))
@@ -575,6 +578,8 @@ class ShelfSkills:
         err = np.full(6, np.inf)
         for attempt in range(attempts):
             d.qpos[:] = self.data.qpos
+            for address, value in (held or {}).items():
+                d.qpos[address] = value
             d.qpos[self.qa] = initial
             if base is not None:
                 d.qpos[self.ba] = base

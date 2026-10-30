@@ -58,6 +58,18 @@ class SkillNote(BaseModel):
     params: list[float] | None = None
 
 
+class FloorHand(BaseModel):
+    """One grasp on a cube for the floor and box picks (`FloorPicks.hands`): the
+    pinch-site pose, how far it tilts from straight down (deg), and how far the pads are
+    opened (m) for the approach."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    tilt_deg: float
+    hand: np.ndarray
+    opening: float
+
+
 class FloorGrasp(BaseModel):
     """One candidate for the floor and box picks (`floor_pick.py`): pinch-site poses
     for the grasp, the pre-grasp it descends from and the end of the straight lift, the
@@ -66,6 +78,7 @@ class FloorGrasp(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     lean_deg: float
+    opening: float
     hand: np.ndarray
     pre: np.ndarray
     lift: np.ndarray

@@ -160,13 +160,16 @@ def test_only_a_cube_with_a_neighbour_on_one_side_gets_off_centre_grasps(
     *, env, states, cube, shifted
 ):
     """cube_4 ends the row; cube_1 has a neighbour on both sides, so no shift frees it."""
-    from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FLOOR_PICK_LEANS_DEG, FloorPicks
+    from hitl_pmp.environments.sweepoffshelf3d.floor_pick import FloorPicks
 
     StateCapture.restore(env=env, state=states["refusal-case1-ees0-cube-row-in-box"])
     kinder = _kinder(env=env)
     centre = kinder.shelf.cube_position(cube=cube)
-    hands = FloorPicks(kinder=kinder).hands(cube=cube, centre=centre)
-    centred = 4 * len(FLOOR_PICK_LEANS_DEG)  # four faces per lean
+    picks = FloorPicks(kinder=kinder)
+    hands = picks.hands(cube=cube, centre=centre)
+    alone = FloorPicks(kinder=kinder)
+    alone.neighbour_side = lambda **_: 0.0  # type: ignore[method-assign]
+    centred = len(alone.hands(cube=cube, centre=centre))
     assert (len(hands) > centred) == shifted
 
 
