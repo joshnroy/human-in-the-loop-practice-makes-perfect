@@ -27,6 +27,7 @@ def render(*, folder: Path) -> None:
     camera.lookat[:] = [0.75, 1.05, 1.00]
     motion = np.load(folder / "motion.npz")
     rows = result.get("rows", [])
+    row_ends = np.cumsum([row.get("controller_steps", 0) for row in rows])
     recovery_piece = (
         int(rows[0]["action"][1])
         if len(rows) == 2 and rows[0].get("skill", "").startswith("PickShrimp")
@@ -59,13 +60,24 @@ def render(*, folder: Path) -> None:
                 mujoco.mj_camlight(model, data)
                 renderer.update_scene(data, camera="task_view")
                 wide = renderer.render().copy()
-                if recovery_piece is not None:
-                    camera.lookat[:] = data.xpos[model.body(f"potsticker_{recovery_piece}").id] + [
+                selected = recovery_piece
+                if rows:
+                    row = rows[min(int(np.searchsorted(row_ends, i, side="left")), len(rows) - 1)]
+                    if row.get("skill", "").startswith(("PickShrimp", "DropShrimp")):
+                        selected = int(row["action"][1])
+                if selected is not None:
+                    camera.lookat[:] = data.xpos[model.body(f"potsticker_{selected}").id] + [
                         0,
                         0,
                         0.04,
                     ]
                     camera.distance = 0.60
+                elif pouring:
+                    camera.lookat[:] = [0.75, 1.05, 1.00]
+                    camera.distance = 0.75
+                else:
+                    camera.lookat[:] = data.xpos[model.body("pitcher").id] + [0, 0, 0.10]
+                    camera.distance = 0.75
                 renderer.update_scene(data, camera=camera)
                 image = Image.fromarray(np.concatenate([wide, renderer.render().copy()], axis=1))
                 draw = ImageDraw.Draw(image)

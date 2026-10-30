@@ -2,6 +2,10 @@
 
 ## TL;DR
 
+**Later validation:** see the [repaired-entry report](2026-10-30-potsticker-repaired-entry.md)
+for fresh witnesses, current reset checks and the remaining launch gate. The historical
+numbers below are retained as recorded.
+
 **Revision note:** the table below precedes the empty-gripper withdrawal and pitcher
 collision-check repair. The first six-method/seed batch at `cd40854a0` was stopped
 and preserved in `artifacts/potsticker-pilots-20261030-cd40854/`: EES seed 2 pushed the

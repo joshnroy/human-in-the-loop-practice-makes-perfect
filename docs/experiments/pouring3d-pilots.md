@@ -147,6 +147,12 @@ separate from learned-policy performance.
    for branch experiments. A later physics rebase requires fresh validation.
 
 The current development search found exact-count witnesses for all targets on all
+three initial seeds. **Revision note:** the numbers in the following paragraph
+precede the entry-trajectory repair. Use the
+[fresh witness report](../experiment-logs/2026-10-30-potsticker-repaired-entry.md)
+for current settings; the historical paragraph is preserved below.
+
+The earlier development search found exact-count witnesses for all targets on all
 three initial seeds (0, 1, 2). The selected tilt values for Pour1/2/3 are respectively
 89/89.5/90 degrees on seed 0, 89.5/89.75/90 on seed 1, and 89.5/89.6/90 on seed 2.
 Amplitude is 8/8/15 mm and feeding duration 12 seconds in these witnesses. These
