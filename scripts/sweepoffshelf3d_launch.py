@@ -4,6 +4,7 @@
     python -m scripts.sweepoffshelf3d_launch check  [--arms A ...]
     python -m scripts.sweepoffshelf3d_launch launch --arms A ... --results-root DIR --go
     python -m scripts.sweepoffshelf3d_launch della  --tag TAG --out DIR [--sha SHA]
+    python -m scripts.sweepoffshelf3d_launch headroom --results-root DIR [--arms A ...]
     python -m scripts.sweepoffshelf3d_launch launch --arms robocode --hours H \
         --results-root DIR --sandbox-settings FILE --token-file FILE --go
 
@@ -59,6 +60,21 @@ checkout whose CLI does not accept that flag. The skill benchmark launch gate
 passed here explicitly.
 
 Before a launch:
+0. Headroom: `headroom` runs each arm's exact launch argv (`--size`, seed `--seed`,
+   default 0) with a `STOP` file already in its output directory, so the step protocol
+   takes its step-0 measurement, practises nothing and evaluates that untrained policy on
+   the launch's own held-out tasks, then reads the evaluation back through
+   `scripts/launch_headroom.py`: tasks solved x/10, per-skill calls and success, calls to
+   goal, and success by parameter bin. It fails when the step-0 policy solves more than
+   `--max-solved` (default 7) of the tasks, or when the median episode reaches the goal
+   in one continuous-parameter call: either way practice has nothing to show (launch
+   shelf-20261023b: 8/10 solved at step 0, 7/10 by the first SweepShelf call). Default
+   arms are the canonical ones, run in parallel (~11 min on agni, ~3 GiB each): an
+   always-ask arm deploys the same policy. It writes `headroom.json` beside the skill
+   benchmark report (`<benchmark root>/sweepoffshelf3d/<sha>/headroom.json`), and
+   `launch` and `della` refuse a commit without a passing one unless
+   `--skip-headroom-check` is passed; a launch elsewhere (Della) needs it copied there
+   with `report.json`.
 1. A clean worktree at the launch commit with its own `reference/` populated
    (`git submodule update --init reference/kindergarden reference/kinder-baselines`) and
    the MimicLabs meshes and textures copied in; `launch` refuses if `hitl_pmp`, `kinder`
@@ -111,6 +127,7 @@ needs the skill benchmark report for `<sha>` under the code worktree's
 """
 
 import argparse
+import json
 import shlex
 import socket
 import subprocess
@@ -118,6 +135,9 @@ import sys
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
+
+from hitl_pmp.launch_gate import LaunchGate, LaunchIdentity
+from scripts.launch_headroom import DEFAULT_MAX_SOLVED, LaunchHeadroom
 
 REPO = Path(__file__).resolve().parents[1]
 # Each method's human-reset price, in its own units (see the module docstring).
@@ -147,6 +167,8 @@ ROBOCODE_HOST = "agni"
 # and execution containers are Docker's, capped by the sandbox settings.
 ROBOCODE_MEMORY_MAX = "10G"
 DELLA_QUOTA_PATH = "/scratch/gpfs/TSILVER"
+HEADROOM_REPORT = "headroom.json"
+SKIP_HEADROOM_FLAG = "--skip-headroom-check"
 
 
 class DellaGroup(BaseModel):
@@ -230,6 +252,20 @@ class ShelfArm(BaseModel):
     method: str
     flags: list[str]
     always_ask: bool
+
+
+class HeadroomRun(BaseModel):
+    """One arm's step-0 evaluation, run through the launch's own `hitl_pmp.cli` argv."""
+
+    model_config = ConfigDict(frozen=True)
+
+    arm: str
+    output_dir: Path
+    command: list[str]
+
+    @property
+    def evaluation(self) -> Path:
+        return self.output_dir / "evaluations" / "0000"
 
 
 class ShelfLaunch:
@@ -522,6 +558,11 @@ exit $rc
 
         if args.mode == "della":
             raise SystemExit(f"refusing: the {ROBOCODE} arm runs on {ROBOCODE_HOST} only")
+        if args.mode == "headroom":
+            raise SystemExit(
+                f"headroom covers the step-protocol arms; the {ROBOCODE} arm deploys through "
+                "its own runner, which it does not measure"
+            )
         if args.mode == "print":
             for seed in ShelfLaunch.robocode_seeds():
                 output = Path(f"<root>/{ROBOCODE}/{ROBOCODE_METHOD}/{seed}")
@@ -608,6 +649,119 @@ exit $rc
             raise SystemExit(f"refusing to launch: imports from outside {REPO}: {stray}")
 
     @staticmethod
+    def headroom_arms(*, arms: dict[str, ShelfArm], names: list[str] | None) -> list[ShelfArm]:
+        """`names`, or every canonical arm: an always-ask arm deploys the same policy."""
+        if names is not None:
+            return [arms[name] for name in names]
+        return [arm for arm in arms.values() if not arm.always_ask]
+
+    @staticmethod
+    def headroom_runs(
+        *, arms: list[ShelfArm], size: Budget, seed: int, results_root: Path
+    ) -> list[HeadroomRun]:
+        runs = []
+        for arm in arms:
+            output_dir = results_root / arm.name / arm.method / str(seed)
+            argv = ShelfLaunch.cli_argv(arm=arm, size=size, seed=seed, output_dir=output_dir)
+            # The skill benchmark gate guards practice, and this run practises nothing.
+            command = [sys.executable, "-m", "hitl_pmp.cli", *argv, "--skip-skill-benchmark-gate"]
+            runs.append(HeadroomRun(arm=arm.name, output_dir=output_dir, command=command))
+        return runs
+
+    @staticmethod
+    def prepare_headroom(*, run: HeadroomRun) -> None:
+        """A `STOP` already present ends practice right after the step-0 measurement."""
+        run.output_dir.mkdir(parents=True, exist_ok=False)
+        (run.output_dir / "STOP").touch()
+
+    @staticmethod
+    def run_commands(*, runs: list[HeadroomRun]) -> list[int]:
+        """Every run at once; each one's exit code."""
+        processes = []
+        for run in runs:
+            print("+", shlex.join(run.command), flush=True)
+            log = (run.output_dir / "headroom.log").open("w")
+            processes.append(
+                subprocess.Popen(run.command, cwd=REPO, stdout=log, stderr=subprocess.STDOUT)
+            )
+        return [process.wait() for process in processes]
+
+    @staticmethod
+    def headroom_report_path(*, root: Path, sha: str) -> Path:
+        return LaunchGate.report_path(root=root, domain=ENV, commit=sha).with_name(HEADROOM_REPORT)
+
+    @staticmethod
+    def headroom(
+        *, arms: list[ShelfArm], size: Budget, seed: int, results_root: Path, max_solved: int
+    ) -> int:
+        identity = LaunchIdentity.current()
+        runs = ShelfLaunch.headroom_runs(arms=arms, size=size, seed=seed, results_root=results_root)
+        for run in runs:
+            ShelfLaunch.prepare_headroom(run=run)
+        codes = ShelfLaunch.run_commands(runs=runs)
+        crashed = [
+            f"{run.arm} exited {code}" for run, code in zip(runs, codes, strict=True) if code != 0
+        ]
+        if crashed:
+            raise SystemExit(
+                f"headroom: {', '.join(crashed)}; see headroom.log under {results_root}"
+            )
+        results = {}
+        for run in runs:
+            found = LaunchHeadroom.analyse(evaluation=run.evaluation)
+            print(LaunchHeadroom.render(arm=run.arm, headroom=found, max_solved=max_solved))
+            results[run.arm] = {
+                **found.model_dump(mode="json"),
+                "problems": LaunchHeadroom.problems(headroom=found, max_solved=max_solved),
+            }
+        report = {
+            **identity.model_dump(mode="json"),
+            "passed": not any(r["problems"] for r in results.values()),
+            "max_solved": max_solved,
+            "seed": seed,
+            "evaluation_control_steps": size.evaluation_control_steps,
+            "arms": results,
+        }
+        text = json.dumps(report, indent=2) + "\n"
+        (results_root / HEADROOM_REPORT).write_text(text)
+        stored = ShelfLaunch.headroom_report_path(
+            root=LaunchGate.default_root(), sha=identity.git_commit
+        )
+        stored.parent.mkdir(parents=True, exist_ok=True)
+        stored.write_text(text)
+        verdict = "passed" if report["passed"] else "FAILED: practice has no headroom"
+        print(f"headroom {verdict}; report {stored}")
+        return 0 if report["passed"] else 1
+
+    @staticmethod
+    def require_headroom(*, sha: str, override: bool) -> None:
+        if override:
+            print(f"headroom check SKIPPED for {sha} ({SKIP_HEADROOM_FLAG})", flush=True)
+            return
+        path = ShelfLaunch.headroom_report_path(root=LaunchGate.default_root(), sha=sha)
+        how = (
+            f"run `python -m scripts.sweepoffshelf3d_launch headroom` on this commit, "
+            f"or pass {SKIP_HEADROOM_FLAG}"
+        )
+        if not path.exists():
+            raise SystemExit(f"refusing to launch: no headroom report for {sha} ({path}); {how}")
+        report = json.loads(path.read_text())
+        if report.get("git_commit") != sha:
+            raise SystemExit(f"refusing to launch: {path} is for another commit; {how}")
+        if report.get("git_dirty", True):
+            raise SystemExit(f"refusing to launch: {path} was measured on a dirty tree; {how}")
+        if not report.get("passed"):
+            problems = [
+                f"{arm}: {problem}"
+                for arm, result in report.get("arms", {}).items()
+                for problem in result.get("problems", [])
+            ]
+            raise SystemExit(
+                f"refusing to launch: the headroom check did not pass for {sha} "
+                f"({'; '.join(problems)}); {how}"
+            )
+
+    @staticmethod
     def head_commit() -> str:
         return subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True
@@ -618,7 +772,7 @@ exit $rc
         parser = argparse.ArgumentParser(
             description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
         )
-        parser.add_argument("mode", choices=["print", "check", "launch", "della"])
+        parser.add_argument("mode", choices=["print", "check", "launch", "della", "headroom"])
         parser.add_argument("--arms", nargs="+", help="Default: every arm of the plan.")
         parser.add_argument("--expectimax-depths", nargs="+", type=int, default=[6])
         parser.add_argument("--size", choices=sorted(SIZES), default="full")
@@ -647,6 +801,18 @@ exit $rc
             "--token-file",
             type=Path,
             help="robocode launch: the file with the CLAUDE_CODE_OAUTH_TOKEN assignment.",
+        )
+        parser.add_argument("--seed", type=int, default=0, help="headroom: the run seed.")
+        parser.add_argument(
+            "--max-solved",
+            type=int,
+            default=DEFAULT_MAX_SOLVED,
+            help="headroom: fail when the step-0 policy solves more held-out tasks than this.",
+        )
+        parser.add_argument(
+            SKIP_HEADROOM_FLAG,
+            action="store_true",
+            help="launch/della: go ahead without a passing headroom report. Josh's call only.",
         )
         parser.add_argument("--tag", help="della: the results directory and job name.")
         parser.add_argument("--sha", help="della: the commit to run. Default: HEAD.")
@@ -702,10 +868,22 @@ def main(*, argv: list[str] | None = None) -> int:
             print(f"ok  {arm.name}: --method {parsed.method}, {parsed.practice_step_budget} steps")
         return 0
 
+    if args.mode == "headroom":
+        if args.results_root is None:
+            raise SystemExit("headroom needs --results-root")
+        return ShelfLaunch.headroom(
+            arms=ShelfLaunch.headroom_arms(arms=arms, names=args.arms),
+            size=size,
+            seed=args.seed,
+            results_root=args.results_root,
+            max_solved=args.max_solved,
+        )
+
     if args.mode == "della":
         if args.tag is None or args.out is None:
             raise SystemExit("della needs --tag and --out")
         sha = args.sha or ShelfLaunch.head_commit()
+        ShelfLaunch.require_headroom(sha=sha, override=args.skip_headroom_check)
         groups = ShelfLaunch.della_groups(overrides=args.della_time, field="time")
         for group, limits in ShelfLaunch.della_groups(
             overrides=args.della_qos, field="qos"
@@ -736,6 +914,7 @@ def main(*, argv: list[str] | None = None) -> int:
         raise SystemExit("launch starts the experiment: pass --go only on Josh's go")
     if args.results_root is None:
         raise SystemExit("launch needs --results-root")
+    ShelfLaunch.require_headroom(sha=ShelfLaunch.head_commit(), override=args.skip_headroom_check)
     ShelfLaunch.require_isolated()
     failed = 0
     for arm in selected:
