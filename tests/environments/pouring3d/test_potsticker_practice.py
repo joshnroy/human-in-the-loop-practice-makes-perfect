@@ -27,6 +27,41 @@ def test_default_cli_uses_three_dumplings_and_independent_skills():
     assert len({provider.ground(name=f"Pour{i}", request=i) for i in range(1, 4)}) == 3
 
 
+@pytest.mark.parametrize("all_blocked", [False, True])
+def test_floor_carry_checks_high_lift_and_restores_commanded_state(*, all_blocked):
+    c = SimpleNamespace(
+        last_q=np.zeros(7),
+        posture=0.2,
+        phase="lift shrimp",
+        bounded_ik_recoveries=4,
+        base_target=np.zeros(3),
+        recovery_floor_carry_angle=30,
+    )
+
+    def ik(*, position, rotation):
+        c.last_q += 0.01
+        c.posture += 0.01
+        c.bounded_ik_recoveries += 1
+        if all_blocked or (position[2] > 0.9 and rotation.as_rotvec()[0] > 0):
+            raise ValueError("IK infeasible: wrist limit")
+        return c.last_q.copy()
+
+    c.inverse_kinematics = ik
+    if all_blocked:
+        with pytest.raises(ValueError, match="No feasible wrist orientation"):
+            PotstickerController.floor_carry_rotation(
+                c, hand=np.array([0.65, 0, 0.30]), rotation=Rotation.identity()
+            )
+    else:
+        selected = PotstickerController.floor_carry_rotation(
+            c, hand=np.array([0.65, 0, 0.30]), rotation=Rotation.identity()
+        )
+        assert np.allclose(selected.as_rotvec(), [-np.pi / 6, 0, 0])
+    assert np.array_equal(c.last_q, np.zeros(7))
+    assert c.posture == 0.2 and c.phase == "lift shrimp"
+    assert c.bounded_ik_recoveries == 4
+
+
 @pytest.mark.parametrize(
     "kwargs", [{"payload_count": 5}, {"layout": "floor"}, {"receiving_vessel": "tray"}]
 )

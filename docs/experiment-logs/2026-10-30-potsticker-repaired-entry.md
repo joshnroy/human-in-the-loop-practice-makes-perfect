@@ -164,3 +164,41 @@ Freeze and launch a new six-run pilot batch only after inspecting the repeated-c
 result. Preserve the aborted `cd40854a0` batch separately. Report first-pour exact
 counts separately from full-task success after robot recovery, and inspect STOP,
 Wait, interruptions, labels, resets and costs before launching the overnight study.
+
+
+### v45 pilot follow-up and v47 floor-carry repair
+
+Combined candidate `9f1b712914e6fe9b09fb50dda1bbabee0b315b8e` passed CI and two
+uninterrupted pour-and-robot-reset cycles, ending ready, across 2,097,800 physics
+steps with zero audited unintended contacts. The six pilots nevertheless exposed
+a different held-out start: a piece slipped during transport, floor pickup
+succeeded, and the subsequent lift repeatedly reached the wrist joint limit
+(119.7 degrees). Those pilots were stopped before any evaluation checkpoint
+completed. Partial results are preserved under `potsticker-pilots-20261030-9f1b712`;
+these are incomplete diagnostics, not a measured zero-success learning curve.
+
+A reconstruction of the state before floor pickup reproduced the original +30°
+carry failure. +60° and +90° also failed; −30° returned the piece successfully.
+The production repair checks both lift segments using scratch kinematics, trying
+the configured wrist direction, its mirror and zero rotation before moving.
+It changes neither learned pour parameters nor the shared learning algorithms.
+The check restores commanded joint state and posture after planning; it does not
+simulate food outcomes or edit physical state.
+
+| Production repair diagnostic | Ready returns | Audited unintended contacts |
+| --- | --- | --- |
+| Reconstructed recorded pre-floor-pick start | 1/1 | 0 |
+| Original floor fixture | 1/1 | 0 |
+
+The recorded-start reconstruction restores qpos, qvel and time; controller commands
+and solver warm starts were not recorded. It is not an exact continuation. A fresh
+uninterrupted replay of the initial held-out task is running separately. Targeted
+production/guard/launcher tests pass 32/32; selected mypy and lint checks pass.
+
+![Selected floor-carry diagnostics](2026-10-30-potsticker-floor-carry.png)
+
+[Per-trial audits and source hashes](2026-10-30-potsticker-floor-carry.json).
+Fresh pilots and their inspection remain required before the full study. Della's
+exact-source native preflight and compute-node quota-relay probe passed; its cycle
+jobs were stopped when the pilot revealed the carry blocker. Their partial outputs
+are preserved. Della's observed physical throughput was slower than the workstation.

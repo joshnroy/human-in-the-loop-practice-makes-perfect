@@ -753,6 +753,9 @@ class PracticePourController(FeedbackPourController):
             phase="retreat after failed shrimp pick",
         )
 
+    def floor_carry_rotation(self, *, hand: np.ndarray, rotation: Rotation) -> Rotation:
+        return rotation * Rotation.from_euler("x", self.recovery_floor_carry_angle, degrees=True)
+
     def drop_shrimp(self, *, index: int) -> None:
         name = self.scene.cube_names[index]
         if self.held != name or not self.vessel_home(name="pitcher"):
@@ -764,7 +767,7 @@ class PracticePourController(FeedbackPourController):
         if elevated and self.recovery_lift_from_actual and hand[2] < 0.7:
             # Reorient the low floor grasp before raising it to worktop height;
             # a vertically downward wrist reaches its joint limit at that height.
-            down = down * Rotation.from_euler("x", self.recovery_floor_carry_angle, degrees=True)
+            down = self.floor_carry_rotation(hand=hand, rotation=down)
             self.move(
                 position=np.array([self.data.qpos[self.base_q][0] + 0.55, hand[1], 0.70]),
                 rotation=down,
