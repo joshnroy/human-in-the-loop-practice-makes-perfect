@@ -16,6 +16,7 @@ from hitl_pmp.environments.tossing3d.kinder_backend import (
 )
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -180,7 +181,10 @@ def test_toss_and_pour_keep_existing_functional_side_transitions(*, name):
     )
     grasp_clear = GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin))
     pick_plannable = GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube))
-    before = skill.preconditions | {previous_side, grasp_clear, pick_plannable}
+    bin_side = GroundAtom(
+        predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite)
+    )
+    before = skill.preconditions | {previous_side, bin_side, grasp_clear, pick_plannable}
     after = apply_success_effects(
         true_atoms=before,
         ground_skill=skill,
@@ -188,7 +192,7 @@ def test_toss_and_pour_keep_existing_functional_side_transitions(*, name):
     )
     assert previous_side not in after
     assert {destination_side, grasp_clear, pick_plannable} <= after
-    assert skill.add_effects <= after
+    assert skill.expected_add_effects(before_atoms=before) <= after
 
 
 @pytest.mark.parametrize("delta", [False, True])

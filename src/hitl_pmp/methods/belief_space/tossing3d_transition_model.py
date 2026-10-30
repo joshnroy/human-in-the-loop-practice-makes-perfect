@@ -125,7 +125,14 @@ def apply_success_effects(
     # after 233/430 real successes -- and a deterministic forecast leaves it as it was
     # rather than claiming it false, which would make every imagined success end in a
     # reset.
-    replaced = set(ignore_effects) & {atom.predicate for atom in add_effects}
+    conditional_additions = {
+        atom
+        for effect in ground_skill.conditional_add_effects
+        if effect.conditions <= true_atoms
+        for atom in effect.add_effects
+    }
+    expected_additions = set(add_effects) | conditional_additions
+    replaced = set(ignore_effects) & {atom.predicate for atom in expected_additions}
     if ground_skill.skill.name == "OpenGripper":
         replaced.update(ignore_effects)
     replaced.update(
@@ -137,13 +144,7 @@ def apply_success_effects(
     kept = {
         atom for atom in true_atoms if atom.predicate not in replaced and atom not in delete_effects
     }
-    conditional_additions = {
-        atom
-        for effect in ground_skill.conditional_add_effects
-        if effect.conditions <= true_atoms
-        for atom in effect.add_effects
-    }
-    return frozenset(kept | set(add_effects) | conditional_additions)
+    return frozenset(kept | expected_additions)
 
 
 def transition_outcomes(

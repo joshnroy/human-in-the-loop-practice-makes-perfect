@@ -32,7 +32,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -191,7 +190,7 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container(
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     assert params.shape == (3,)

@@ -17,7 +17,6 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.parameter_feasibility import TossParameterFeasibility
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import (
@@ -56,7 +55,7 @@ def _moved_geometry(*, bin_pose, robot_pose) -> TossFeasibilityGeometry:
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
