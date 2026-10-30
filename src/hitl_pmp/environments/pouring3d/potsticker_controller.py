@@ -422,7 +422,11 @@ class PotstickerController(PracticePourController):
         try:
             return super().inverse_kinematics(position=position, rotation=rotation)
         except ValueError as exc:
-            if not str(exc).startswith(("IK infeasible", "Discontinuous IK")):
+            if not str(exc).startswith((
+                "IK infeasible",
+                "Discontinuous IK",
+                "Insufficient obstacle clearance",
+            )):
                 raise
             original_error = exc
         # The unconstrained solver can converge onto a distant redundant branch.
