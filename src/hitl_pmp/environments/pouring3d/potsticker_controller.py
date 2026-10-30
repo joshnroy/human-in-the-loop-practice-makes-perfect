@@ -51,7 +51,23 @@ class PotstickerController(PracticePourController):
     mouth_history: dict[str, tuple[float, float, float]] = Field(default_factory=dict)
 
     def drop_shrimp(self, *, index: int) -> None:
-        super().drop_shrimp(index=index)
+        try:
+            super().drop_shrimp(index=index)
+        except ValueError as exc:
+            # A tapered piece may leave the pads just before commanded release.
+            # Complete a measured, contained drop; never forgive a spill or a
+            # lost object elsewhere along the transport path.
+            if (
+                str(exc) != "Physical shrimp grasp lost"
+                or self.phase != "center held shrimp over pitcher"
+                or self.held is not None
+                or not self.scene.cube_in_vessel(self.scene.cube_names[index], "pitcher")
+            ):
+                raise
+            self.events.append({"event": "contained release before command", "payload": index})
+            self.pause(phase="release shrimp into pitcher", seconds=3, grip=0)
+            if not self.scene.cube_in_vessel(self.scene.cube_names[index], "pitcher"):
+                raise ValueError("Dropped shrimp did not remain inside pitcher") from exc
         # A successful release leaves the open fingers over the pitcher mouth.
         # Clear the rim vertically before the next skill backs the base away or
         # changes arm posture; otherwise that motion can drag the pitcher.

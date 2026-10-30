@@ -34,6 +34,7 @@ def trial(
     full_close=False,
     recovery_order="0,1,2",
     grasp_preload=0.03,
+    pickup_only=False,
 ):
     root.mkdir(parents=True, exist_ok=True)
     if (root / "result.json").exists():
@@ -165,6 +166,7 @@ def trial(
                         "locations": c.scene.cube_locations(),
                         "rows": len(rows),
                         "forbidden_contact_steps": audit["forbidden_contact_steps"],
+                        "audit": audit,
                     })
                 )
 
@@ -179,6 +181,9 @@ def trial(
                 )
             )
             rows.append(dict(env.last_info))
+            checkpoint_dir = root / f"after-{len(rows):02d}-{name}"
+            checkpoint_dir.mkdir(exist_ok=True)
+            save_checkpoint(c=c, folder=checkpoint_dir)
             if not env.last_info["success"]:
                 raise ValueError(
                     f"{name}: {env.last_info.get('error')} / {env.last_info.get('locations')}"
@@ -196,7 +201,9 @@ def trial(
             )
             run(name="DropShrimpIntoPitcher", index=selected)
 
-        if cycles:
+        if pickup_only:
+            run(name="PickPitcher")
+        elif cycles:
             recipe = {1: (89, 0.008, 12), 2: (89.5, 0.008, 12), 3: (90, 0.015, 12)}[target]
             for _cycle in range(cycles):
                 run(name="PickPitcher")
@@ -297,6 +304,7 @@ def main():
     p.add_argument("--fixture", choices=("surface", "floor"))
     p.add_argument("--cycles", type=int, default=0)
     p.add_argument("--robot-reset", action="store_true")
+    p.add_argument("--pickup-only", action="store_true")
     p.add_argument("--grasp-yaw", type=float, default=0.0)
     p.add_argument("--grasp-depth", type=float, default=0.032)
     p.add_argument("--grasp-angle", type=float, default=60.0)
@@ -347,6 +355,7 @@ def main():
             full_close=a.full_close,
             recovery_order=a.recovery_order,
             grasp_preload=a.grasp_preload,
+            pickup_only=a.pickup_only,
         )
         if not passed:
             raise SystemExit(1)
