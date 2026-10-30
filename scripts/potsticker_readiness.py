@@ -27,12 +27,13 @@ def trial(
     robot_reset=False,
     grasp_yaw=0.0,
     grasp_depth=0.032,
-    grasp_angle=30.0,
-    grasp_open=0.0,
+    grasp_angle=60.0,
+    grasp_open=0.4,
     floor_carry_angle=30.0,
     grasp_mode="mass_pca",
     full_close=False,
     recovery_order="0,1,2",
+    grasp_preload=0.03,
 ):
     root.mkdir(parents=True, exist_ok=True)
     if (root / "result.json").exists():
@@ -42,6 +43,7 @@ def trial(
     )
     provider = FrozenPourSkillProvider(env=env)
     frames, phases, times, rows = [], [], [], []
+    grasp_forces = []
     source_hashes = hashes()
     start = time.monotonic()
     audit = {
@@ -53,6 +55,7 @@ def trial(
         "worst_phase": None,
     }
     error = None
+    passed = False
     try:
         c = env.controller()
         c.recovery_yaw_offset = grasp_yaw
@@ -62,6 +65,7 @@ def trial(
         c.recovery_floor_carry_angle = floor_carry_angle
         c.recovery_geometry = grasp_mode
         c.recovery_contact_close = not full_close
+        c.recovery_contact_preload = grasp_preload
         c.diagnostic_deadline = start + 2400
         if checkpoint:
             restore(c=c, folder=checkpoint)
@@ -114,6 +118,14 @@ def trial(
         sim.step = physics_step
 
         def capture(**_):
+            if c.held in c.scene.cube_names:
+                grasp_forces.append({
+                    "frame": len(frames),
+                    "held": c.held,
+                    "phase": c.phase,
+                    "forces": c.finger_normal_forces(name=c.held),
+                    "command": c.payload_hold_grip,
+                })
             frames.append(c.data.qpos.copy())
             phases.append(c.phase)
             times.append(float(c.data.time))
@@ -213,6 +225,7 @@ def trial(
                 success=error is None and audit["forbidden_contact_steps"] == 0,
                 rows=rows,
                 audit=audit,
+                grasp_forces=grasp_forces,
                 after=c.scene.physical_snapshot(),
                 ready=c.ready(),
                 seconds_wall=time.monotonic() - start,
@@ -225,8 +238,10 @@ def trial(
                     "floor_carry_angle": floor_carry_angle,
                     "grasp_mode": grasp_mode,
                     "full_close": full_close,
+                    "grasp_preload": grasp_preload,
                 },
             )
+            passed = result["success"]
             (root / "result.json").write_text(json.dumps(result, indent=2, default=json_default))
             np.savez_compressed(root / "motion.npz", qpos=frames, phases=phases, times=times)
             print(
@@ -236,6 +251,7 @@ def trial(
                 flush=True,
             )
         env.close()
+    return passed
 
 
 def main():
@@ -250,12 +266,13 @@ def main():
     p.add_argument("--robot-reset", action="store_true")
     p.add_argument("--grasp-yaw", type=float, default=0.0)
     p.add_argument("--grasp-depth", type=float, default=0.032)
-    p.add_argument("--grasp-angle", type=float, default=30.0)
-    p.add_argument("--grasp-open", type=float, default=0.0)
+    p.add_argument("--grasp-angle", type=float, default=60.0)
+    p.add_argument("--grasp-open", type=float, default=0.4)
     p.add_argument("--floor-carry-angle", type=float, default=30.0)
     p.add_argument("--grasp-mode", choices=("mass_pca", "bounds_local"), default="mass_pca")
     p.add_argument("--full-close", action="store_true")
     p.add_argument("--recovery-order", default="0,1,2")
+    p.add_argument("--grasp-preload", type=float, default=0.03)
     p.add_argument("--launch", type=Path)
     p.add_argument("--workers", type=int, default=4)
     a = p.parse_args()
@@ -279,7 +296,7 @@ def main():
         if not all(o.succeeded for o in outcomes):
             raise SystemExit(1)
     else:
-        trial(
+        passed = trial(
             root=a.root,
             seed=a.seed,
             target=a.target,
@@ -296,7 +313,10 @@ def main():
             grasp_mode=a.grasp_mode,
             full_close=a.full_close,
             recovery_order=a.recovery_order,
+            grasp_preload=a.grasp_preload,
         )
+        if not passed:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

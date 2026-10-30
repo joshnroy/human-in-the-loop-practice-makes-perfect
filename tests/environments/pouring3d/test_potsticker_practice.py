@@ -115,3 +115,67 @@ def test_native_dumpling_reset_and_recording(*, tmp_path):
         if replay is not None:
             replay.close()
         env.close()
+
+
+def test_approach_planning_restores_controller_state_on_failure():
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+
+    class Probe:
+        last_q = np.arange(7, dtype=float)
+        posture = 1.0
+        phase = "above payload"
+        base_target = np.zeros(3)
+        base_q = np.arange(3)
+        data = SimpleNamespace(qpos=np.zeros(10))
+        payload_approach_plan = []
+        calls = 0
+
+        def inverse_kinematics(self, **_):
+            self.calls += 1
+            self.last_q = self.last_q + 0.01
+            self.posture += 0.02
+            raise ValueError("IK infeasible in approach")
+
+    probe = Probe()
+    before = probe.last_q.copy()
+    assert not PotstickerController.payload_approach_feasible(
+        probe,
+        q=np.zeros(7),
+        preparation=np.array([0.4, 1.0, 1.1]),
+        grasp=np.array([0.7, 1.0, 0.9]),
+        rotation=Rotation.identity(),
+        base=np.array([0.2, 1.0, 0]),
+    )
+    np.testing.assert_array_equal(probe.last_q, before)
+    np.testing.assert_array_equal(probe.base_target, np.zeros(3))
+    np.testing.assert_array_equal(probe.data.qpos, np.zeros(10))
+    assert probe.posture == 1.0 and probe.phase == "above payload" and probe.calls == 1
+
+
+def test_retention_correction_applies_to_carry_hold_command(*, monkeypatch):
+    import numpy as np
+
+    from hitl_pmp.environments.pouring3d.native_controller import NativePouringController
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    commands = []
+
+    def motor(self, *, target_q, grip):  # noqa: PLR0917 -- bound-method test replacement
+        commands.append(grip)
+        self.steps += 1
+
+    monkeypatch.setattr(NativePouringController, "motor_step", motor)
+    monkeypatch.setattr(
+        PracticePourController, "finger_contacts", lambda self, **_: {"left", "right"}
+    )
+    c = PracticePourController.model_construct(
+        scene=SimpleNamespace(cube_names=("potsticker_0",)),
+        held="potsticker_0",
+        recovery_contact_close=True,
+        payload_hold_grip=0.5,
+        lost_contacts=1,
+    )
+    c.motor_step(target_q=np.zeros(7), grip=0.5)
+    assert commands == [pytest.approx(0.53)]
+    assert c.held == "potsticker_0" and c.lost_contacts == 0
