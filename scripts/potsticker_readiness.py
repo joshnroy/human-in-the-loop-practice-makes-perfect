@@ -47,10 +47,17 @@ def trial(
     source_hashes = hashes()
     start = time.monotonic()
     audit = {
-        "obstacles": ["prep_table", "stovetop", "tray", "ground_planes_except_mobile_base"],
+        "obstacles": [
+            "prep_table",
+            "stovetop",
+            "tray",
+            "ground_planes_except_mobile_base",
+            "pitcher_outside_handle_manipulation",
+        ],
         "physics_steps": 0,
         "forbidden_contact_steps": 0,
         "pad_contact_steps": 0,
+        "unexpected_pitcher_contact_steps": 0,
         "max_penetration_mm": 0.0,
         "worst_phase": None,
     }
@@ -66,7 +73,7 @@ def trial(
         c.recovery_geometry = grasp_mode
         c.recovery_contact_close = not full_close
         c.recovery_contact_preload = grasp_preload
-        c.diagnostic_deadline = start + 2400
+        c.diagnostic_deadline = start + max(2400, cycles * 2400)
         if checkpoint:
             restore(c=c, folder=checkpoint)
         if fixture:
@@ -89,6 +96,7 @@ def trial(
             for b in c.model.geom_bodyid
         ])
         ground = c.model.geom_type == mujoco.mjtGeom.mjGEOM_PLANE
+        pitcher = np.array([c.model.body(int(b)).name == "pitcher" for b in c.model.geom_bodyid])
         arm = robot & np.array([
             c.model.body(int(b)).name != "robot_base_link" for b in c.model.geom_bodyid
         ])
@@ -106,11 +114,26 @@ def trial(
                 | (ground[pairs[:, 0]] & arm[pairs[:, 1]])
             ) & (c.data.contact.dist < 0)
             allowed = (pads[pairs[:, 0]] | pads[pairs[:, 1]]) & ("shrimp" in c.phase)
+            unexpected_pitcher = (
+                (robot[pairs[:, 0]] & pitcher[pairs[:, 1]])
+                | (pitcher[pairs[:, 0]] & robot[pairs[:, 1]])
+            ) & (c.data.contact.dist < 0)
+            if c.held == "pitcher" or c.phase in {
+                "descend to pitcher handle",
+                "close fingers on pitcher handle",
+                "lift pitcher by handle",
+                "release pitcher",
+                "withdraw gripper",
+            }:
+                unexpected_pitcher[:] = False
+            if np.any(unexpected_pitcher):
+                audit["unexpected_pitcher_contact_steps"] += 1
             if np.any(mask & allowed):
                 audit["pad_contact_steps"] += 1
-            if np.any(mask & ~allowed):
+            forbidden = (mask & ~allowed) | unexpected_pitcher
+            if np.any(forbidden):
                 audit["forbidden_contact_steps"] += 1
-                depth = float(-c.data.contact.dist[mask & ~allowed].min() * 1000)
+                depth = float(-c.data.contact.dist[forbidden].min() * 1000)
                 if depth > audit["max_penetration_mm"]:
                     audit["max_penetration_mm"] = depth
                     audit["worst_phase"] = c.phase
@@ -216,6 +239,10 @@ def trial(
     finally:
         if env._controller is not None:
             c = env.controller()
+            # Preserve exact failed integration state for diagnosis; never label
+            # a resumed diagnostic as an uninterrupted end-to-end proof.
+            if error is not None:
+                save_checkpoint(c=c, folder=root)
             result = dict(
                 count=3,
                 requested=target,

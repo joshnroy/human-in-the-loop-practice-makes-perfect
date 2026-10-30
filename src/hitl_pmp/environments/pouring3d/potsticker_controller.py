@@ -50,6 +50,30 @@ class PotstickerController(PracticePourController):
     anticipation_seconds: float = 0.0
     mouth_history: dict[str, tuple[float, float, float]] = Field(default_factory=dict)
 
+    def drop_shrimp(self, *, index: int) -> None:
+        super().drop_shrimp(index=index)
+        # A successful release leaves the open fingers over the pitcher mouth.
+        # Clear the rim vertically before the next skill backs the base away or
+        # changes arm posture; otherwise that motion can drag the pitcher.
+        hand, rotation = self.hand_pose()
+        self.move(
+            position=hand + [0, 0, 0.12],
+            rotation=rotation,
+            seconds=4,
+            grip=0,
+            phase="withdraw empty gripper above pitcher",
+        )
+        # A dropped piece can disturb the previously returned pieces. Require
+        # sustained natural rest, charging every motor tick, before promising
+        # Settled to the symbolic planner. No velocity/state edits.
+        stable = 0
+        for _ in range(200):
+            self.pause(phase="settle returned potstickers", seconds=0.1, grip=0)
+            stable = stable + 1 if self.scene.cubes_settled() else 0
+            if stable >= 10:
+                return
+        raise ValueError("Returned potstickers did not settle within 20 seconds")
+
     def payload_approach_feasible(
         self,
         *,
