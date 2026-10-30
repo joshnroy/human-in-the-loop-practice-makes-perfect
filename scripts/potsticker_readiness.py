@@ -60,6 +60,7 @@ def trial(
         "unexpected_pitcher_contact_steps": 0,
         "max_penetration_mm": 0.0,
         "worst_phase": None,
+        "worst_pair": None,
     }
     error = None
     passed = False
@@ -137,6 +138,10 @@ def trial(
                 if depth > audit["max_penetration_mm"]:
                     audit["max_penetration_mm"] = depth
                     audit["worst_phase"] = c.phase
+                    contact = np.flatnonzero(forbidden)[np.argmin(c.data.contact.dist[forbidden])]
+                    audit["worst_pair"] = [
+                        c.model.body(int(c.model.geom_bodyid[g])).name for g in pairs[contact]
+                    ]
 
         sim.step = physics_step
 
@@ -159,6 +164,7 @@ def trial(
                         "frames": len(frames),
                         "locations": c.scene.cube_locations(),
                         "rows": len(rows),
+                        "forbidden_contact_steps": audit["forbidden_contact_steps"],
                     })
                 )
 

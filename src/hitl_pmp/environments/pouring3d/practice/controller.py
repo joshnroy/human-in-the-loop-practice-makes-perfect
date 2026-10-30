@@ -304,14 +304,24 @@ class PracticePourController(FeedbackPourController):
         if "prep_table" in self.scene._fixtures_dict:
             if not self.ready():
                 raise ValueError("Pitcher pick requires a ready scene")
+            hand, _ = self.hand_pose()
+            # After dropping food the hand is over the pitcher. Reorient it
+            # entirely in the aisle, then approach with the prepared posture.
+            # Endpoint clearance alone does not cover the moving finger linkage.
+            aisle_x = (
+                -0.35
+                if self.recovery_lift_from_actual
+                and np.linalg.norm(hand[:2] - self.home[:2]) < 0.25
+                else 0.0
+            )
             self.move_base(
-                target=np.array([0.0, self.home[1], 0]),
+                target=np.array([aisle_x, self.home[1], 0]),
                 phase="clear table before raising arm",
                 seconds=3,
             )
             hover, upright, _ = self.pitcher_grasp_pose()
             hover += [0, 0, self.pitcher_approach_clearance]
-            hover[0] -= self.base_home[0]
+            hover[0] += aisle_x - self.base_home[0]
             if self.handle_lean_degrees >= 90:
                 self.prepare_empty_arm(position=hover, rotation=upright)
             else:
@@ -732,6 +742,20 @@ class PracticePourController(FeedbackPourController):
                 seconds=8,
                 grip=1,
                 phase="raise held shrimp in aisle",
+            )
+        if elevated and self.recovery_lift_from_actual:
+            # First clear the support in x, then travel along the aisle. Moving
+            # sideways beside the counter with the original reach can sweep the
+            # forearm through its corner even when both endpoint poses are clear.
+            self.move_base(
+                target=np.array([-0.15, self.data.qpos[self.base_q][1], 0]),
+                phase="back away with held shrimp",
+                seconds=3,
+            )
+            self.move_base(
+                target=np.array([-0.15, pitcher[1], 0]),
+                phase="carry shrimp through clear aisle",
+                seconds=5,
             )
         self.move_base(
             target=np.array([0.20 if elevated else pitcher[0] - 0.65, pitcher[1], 0]),

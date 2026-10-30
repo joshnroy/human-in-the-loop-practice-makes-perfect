@@ -36,7 +36,7 @@ class PotstickerController(PracticePourController):
     recovery_lift_from_actual: bool = True
     recovery_plan_approach: bool = True
     recovery_contact_close: bool = True
-    payload_grip_force: float = 2.0
+    payload_grip_force: float = 5.0
     recovery_yaw_offset: float = 0.0
     payload_approach_plan: list[tuple[np.ndarray, np.ndarray, str, float]] = Field(
         default_factory=list
@@ -161,44 +161,62 @@ class PotstickerController(PracticePourController):
             self.recovery_open_grip, self.recovery_pitch_degrees = opening, pitch
 
     def pick_payload_with_retry(self, *, index: int, location: str) -> None:
-        """Try an oblique rim-clearing grasp after a recoverable failure, without reset."""
-        needs_retreat = True
-        try:
-            super().pick_shrimp(index=index, location=location)
-            return
-        except ValueError as exc:
-            if (
-                not str(exc).startswith((
-                    "Physical shrimp grasp lost",
-                    "Shrimp grasp lacks",
-                    "Shrimp not retained",
-                    "Motor tracking failed in descend to shrimp body",
-                    "Insufficient obstacle clearance in descend to shrimp body",
-                    "IK infeasible in descend to shrimp body",
-                    "No feasible continuation from prepared arm postures",
-                ))
-                or self.held is not None
-            ):
-                raise
-            if self.scene.cube_locations()[index] != location:
-                raise
-            needs_retreat = not str(exc).startswith("No feasible continuation")
-        if needs_retreat:
-            self.clear_failed_pick()
-        depth, opening, pitch = (
+        """Try three bounded, collision-checked grasp configurations without reset."""
+        original = (
             self.recovery_finger_offset,
             self.recovery_open_grip,
             self.recovery_pitch_degrees,
+            self.recovery_approach_clearance,
+            self.recovery_yaw_offset,
         )
-        self.recovery_finger_offset = 0.032
-        self.recovery_open_grip = 0.0 if pitch > 45 else 0.4
-        self.recovery_pitch_degrees = 30.0 if pitch > 45 else 60.0
+        depth, opening, pitch, clearance, yaw = original
+        candidates = (
+            original,
+            (0.032, 0.0 if pitch > 45 else 0.4, 30.0 if pitch > 45 else 60.0, 0.10, yaw),
+            (depth, opening, pitch, clearance, yaw + 45.0),
+        )
         try:
-            super().pick_shrimp(index=index, location=location)
+            for attempt, candidate in enumerate(candidates):
+                (
+                    self.recovery_finger_offset,
+                    self.recovery_open_grip,
+                    self.recovery_pitch_degrees,
+                    self.recovery_approach_clearance,
+                    self.recovery_yaw_offset,
+                ) = candidate
+                try:
+                    super().pick_shrimp(index=index, location=location)
+                    return
+                except ValueError as exc:
+                    if (
+                        attempt == len(candidates) - 1
+                        or self.held is not None
+                        or self.scene.cube_locations()[index] != location
+                        or not str(exc).startswith((
+                            "Physical shrimp grasp lost",
+                            "Shrimp grasp lacks",
+                            "Shrimp not retained",
+                            "Motor tracking failed in descend to shrimp body",
+                            "Insufficient obstacle clearance in descend to shrimp body",
+                            "IK infeasible in descend to shrimp body",
+                            "No feasible continuation from prepared arm postures",
+                            "No collision-free empty-arm preparation path",
+                        ))
+                    ):
+                        raise
+                    if not str(exc).startswith((
+                        "No feasible continuation",
+                        "No collision-free empty-arm preparation path",
+                    )):
+                        self.clear_failed_pick()
         finally:
-            self.recovery_finger_offset = depth
-            self.recovery_open_grip = opening
-            self.recovery_pitch_degrees = pitch
+            (
+                self.recovery_finger_offset,
+                self.recovery_open_grip,
+                self.recovery_pitch_degrees,
+                self.recovery_approach_clearance,
+                self.recovery_yaw_offset,
+            ) = original
 
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
         from .potsticker_native import support_vertices

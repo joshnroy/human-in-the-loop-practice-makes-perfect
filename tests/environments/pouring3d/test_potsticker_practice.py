@@ -51,6 +51,32 @@ def test_joint_pour_restores_test_goal_on_interruption():
     assert fake.mode == "joint_lateral" and fake.anticipation_seconds == 0
 
 
+def test_unreachable_preparation_tries_alternate_grasp_without_reversing_unexecuted_path(
+    *, monkeypatch
+):
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    attempts = []
+
+    def pick(self, *, index, location):  # noqa: PLR0917 -- patched bound method
+        attempts.append(self.recovery_pitch_degrees)
+        if len(attempts) == 1:
+            raise ValueError("No collision-free empty-arm preparation path: reachable poses 0")
+        self.held = "potsticker_2"
+
+    def unexpected_retreat(self):  # noqa: PLR0917 -- patched bound method
+        raise AssertionError("No arm approach was executed to reverse")
+
+    monkeypatch.setattr(PracticePourController, "pick_shrimp", pick)
+    monkeypatch.setattr(PracticePourController, "clear_failed_pick", unexpected_retreat)
+    c = PotstickerController.model_construct(
+        scene=SimpleNamespace(cube_locations=lambda: ["pitcher", "pitcher", "tray"]), held=None
+    )
+    c.pick_payload_with_retry(index=2, location="tray")
+    assert attempts == [60, 30]
+    assert c.held == "potsticker_2" and c.recovery_pitch_degrees == 60
+
+
 def test_native_dumpling_reset_and_recording(*, tmp_path):
     import argparse
     import json
