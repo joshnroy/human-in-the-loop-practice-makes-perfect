@@ -249,3 +249,100 @@ def test_rejects_a_nonpositive_cost():
             costs={"a": 0.0},
             budget=1.0,
         )
+
+
+def test_grouped_counts_improve_each_grounding_from_its_own_current_competence():
+    predicted = DpAllocator.predicted_competences(
+        competences={"left": 0.2, "right": 0.6, "human": 0.5},
+        learning_rates={"left": 0.2, "right": 0.2, "human": 0.1},
+        allocation={"toss": 2},
+        groups={"left": "toss", "right": "toss"},
+    )
+    assert predicted == pytest.approx({"left": 0.6, "right": 1.0, "human": 0.5})
+
+
+def test_shared_group_is_charged_once_and_saturates_its_last_relevant_grounding():
+    arguments = dict(
+        mdp=_mdp(plans=[["left"], ["right"]]),
+        competences={"left": 1.0, "right": 0.2},
+        learning_rates={"left": 0.2, "right": 0.2},
+        costs={"toss": 2.0},
+        budget=20.0,
+        groups={"left": "toss", "right": "toss"},
+    )
+    allocation = DpAllocator.allocate(**arguments, max_skills=1, max_allocations=5)
+    assert allocation == {"toss": 4}
+    assert DpAllocator.predicted_success(
+        **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
+        allocation=allocation,
+    ) == pytest.approx(1.0)
+
+
+def test_an_unpriced_group_keeps_all_its_members_fixed():
+    allocation = DpAllocator.allocate(
+        mdp=_mdp(plans=[["left", "right"]]),
+        competences={"left": 0.2, "right": 0.8},
+        learning_rates={"left": 0.2, "right": 0.2},
+        costs={"unused": 1.0},
+        budget=4,
+        groups={"left": "toss", "right": "toss"},
+    )
+    assert allocation == {"unused": 0}
+
+
+def test_duplicate_member_prices_are_rejected():
+    with pytest.raises(ValueError, match="price allocation groups"):
+        DpAllocator.allocate(
+            mdp=_mdp(plans=[["left", "right"]]),
+            competences={"left": 0.2, "right": 0.8},
+            learning_rates={"left": 0.2, "right": 0.2},
+            costs={"left": 1, "right": 1},
+            budget=2,
+            groups={"right": "left"},
+        )
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_grouped_allocation_matches_independent_exhaustive_counts(*, seed):
+    rng = np.random.default_rng(seed)
+    plans = [["left", "right"], ["other", "right"]]
+    probabilities = {skill: float(rng.uniform(0.1, 0.9)) for skill in ["left", "right", "other"]}
+    rates = {skill: float(rng.uniform(-0.2, 0.4)) for skill in probabilities}
+    costs = {"toss": 1.0, "other": 0.5}
+    groups = {"left": "toss", "right": "toss"}
+    budget = 3.0
+    expected_value, expected_spent = -math.inf, math.inf
+    for toss_count, other_count in itertools.product(range(4), range(7)):
+        spent = toss_count + 0.5 * other_count
+        if spent > budget:
+            continue
+        counts = {"left": toss_count, "right": toss_count, "other": other_count}
+        value = sum(
+            math.prod(
+                min(1.0, max(0.0, probabilities[skill] + rates[skill] * counts[skill]))
+                for skill in plan
+            )
+            for plan in plans
+        ) / len(plans)
+        if value > expected_value + 1e-12 or (
+            value >= expected_value - 1e-12 and spent < expected_spent - 1e-12
+        ):
+            expected_value, expected_spent = value, spent
+    allocation = DpAllocator.allocate(
+        mdp=_mdp(plans=plans),
+        competences=probabilities,
+        learning_rates=rates,
+        costs=costs,
+        budget=budget,
+        groups=groups,
+    )
+    assert DpAllocator.predicted_success(
+        mdp=_mdp(plans=plans),
+        competences=probabilities,
+        learning_rates=rates,
+        allocation=allocation,
+        groups=groups,
+    ) == pytest.approx(expected_value, abs=1e-12)
+    assert sum(costs[group] * count for group, count in allocation.items()) == pytest.approx(
+        expected_spent
+    )

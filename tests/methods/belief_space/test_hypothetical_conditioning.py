@@ -5,7 +5,10 @@ from typing import Literal
 import numpy as np
 import pytest
 
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.competence_inference import (
     BayesianSkillBelief,
@@ -134,12 +137,15 @@ def test_toss_forecast_also_retains_support_without_resampling(*, model: Model) 
     beliefs = dict(method.pomdp_state.skill_beliefs)
     beliefs[TOSS_SKILL] = prior
     state = method.pomdp_state.model_copy(update={"skill_beliefs": beliefs})
+    before = toss.preconditions | {
+        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite))
+    }
     outcomes = practice_model.outcomes(
-        environment_state=make_tossing3d_search_state(state=state, true_atoms=toss.preconditions),
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
         state=state,
         action=toss,
     )
     assert len(outcomes) == 2
     for _, branch, atoms in outcomes:
-        success = toss.add_effects <= atoms
+        success = toss.expected_add_effects(before_atoms=before) <= atoms
         assert branch.skill_beliefs[TOSS_SKILL] == prior.condition_outcome(success=success)

@@ -73,13 +73,24 @@ def test_a_fake_robot_run_measures_the_baseline_practises_and_ends_with_one_eval
     assert len(measurements) == 2
     assert measurements[0]["practice_steps"] == 0
     assert measurements[1]["practice_steps"] > 0
-    far_tosses = [
-        event
-        for event in events
-        if event["event"] == "robot"
-        and str(event.get("label", "")).startswith("MoveToTossLocationAndToss")
-        and "opposite_side)" in str(event["label"])
-    ]
+    # Side is observed state, no longer a toss grounding argument. Identify
+    # far-side attempts from the state preceding each recorded action.
+    records = [json.loads(line) for line in (output / "recording.jsonl").read_text().splitlines()]
+    features = records[0]["feature_names"]
+    bin_x = features["bin_0"].index("x")
+    barrier_x = features["cuboid_barrier"].index("x")
+    before: dict[str, list[float]] = {}
+    far_tosses = []
+    for record in records:
+        if record["kind"] == "tick":
+            before = record["state"]
+        elif (
+            record["kind"] == "action"
+            and record["phase"] == "practice"
+            and str(record.get("skill", "")).startswith("MoveToTossLocationAndToss")
+            and before["bin_0"][bin_x] > before["cuboid_barrier"][barrier_x]
+        ):
+            far_tosses.append(record)
     assert far_tosses
     # The real standoff window keeps the base clear of the tape at the far spot, so no
     # far-side toss is refused (a refused toss is charged no steps).

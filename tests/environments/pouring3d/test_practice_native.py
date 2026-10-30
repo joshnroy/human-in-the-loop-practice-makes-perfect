@@ -14,7 +14,14 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_native_pour_robot_reset_and_human_invariants():
-    env = FrozenPourEnvironment(canonical_seed=70, requested_count=1, scene_bg=False)
+    env = FrozenPourEnvironment(
+        payload_kind="shrimp",
+        receiving_vessel="tray",
+        layout="floor",
+        canonical_seed=70,
+        requested_count=1,
+        scene_bg=False,
+    )
     provider = FrozenPourSkillProvider(env=env)
 
     def run(*, name, shrimp=0, params=()):
@@ -68,7 +75,7 @@ def test_step_interrupt_adopts_actual_state_without_reset():
     from hitl_pmp.core.control_steps import ControlStepLimitReached
     from hitl_pmp.environments.pouring3d.practice.types import PourObjects
 
-    env = FrozenPourEnvironment(scene_bg=False)
+    env = FrozenPourEnvironment(layout="floor", scene_bg=False)
     provider = FrozenPourSkillProvider(env=env)
     observed = []
 
@@ -102,7 +109,7 @@ def test_step_interrupt_adopts_actual_state_without_reset():
 def test_native_floor_recovery():
     import mujoco
 
-    env = FrozenPourEnvironment(scene_bg=False)
+    env = FrozenPourEnvironment(layout="floor", scene_bg=False)
     provider = FrozenPourSkillProvider(env=env)
     try:
         env.hard_reset()
@@ -126,7 +133,8 @@ def test_native_floor_recovery():
         env.close()
 
 
-def test_motion_recording_groups_ticks_with_skill_and_replays_exact_state(*, tmp_path):
+@pytest.mark.parametrize("layout", ["floor", "stations"])
+def test_motion_recording_groups_ticks_with_skill_and_replays_exact_state(*, tmp_path, layout):
     import argparse
     import json
 
@@ -136,7 +144,7 @@ def test_motion_recording_groups_ticks_with_skill_and_replays_exact_state(*, tmp
     from hitl_pmp.environments.pouring3d.practice.tasks import FrozenPourTasks
     from hitl_pmp.recording.run_record.types import Phase
 
-    env = FrozenPourEnvironment(scene_bg=False)
+    env = FrozenPourEnvironment(layout=layout, scene_bg=False)
     problem = FrozenPourProblem(env=env, tasks=FrozenPourTasks(env=env))
     path = tmp_path / "recording.jsonl"
     writer = FrozenPourStepProtocol.attach_recording(
@@ -145,7 +153,14 @@ def test_motion_recording_groups_ticks_with_skill_and_replays_exact_state(*, tmp
         output_path=path,
     )
     replay = FrozenPourReplayRenderer(
-        scene={"payload_count": 3, "requested_count": 2, "surface_mu": 0.1, "motion": True},
+        scene={
+            "payload_count": 3,
+            "requested_count": 2,
+            "surface_mu": 0.1,
+            "receiving_vessel": "skillet",
+            "layout": layout,
+            "motion": True,
+        },
         scene_bg=False,
         width=320,
         height=240,

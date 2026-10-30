@@ -1,9 +1,19 @@
-"""Collect independent shared-learner curves and fit DP-specific competence priors."""
+"""Collect independent shared-learner curves and fit DP-specific competence priors.
+
+Open probes cover closed-empty recovery and release immediately after a successful
+Pick separately. DP currently requires one scalar prior per skill. Fitting must
+explicitly select ``equal-context``: the arithmetic mean of the two independently
+Jeffreys-smoothed fit rates, with total Beta strength two and zero learning rate.
+This is a balanced calibration benchmark, not an estimated deployment mixture or
+evidence of equal context difficulty. Validation never chooses the weights; the
+scalar must pass the existing Brier comparison in each context separately.
+"""
 
 import argparse
 import hashlib
 import json
 import math
+import time
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +21,7 @@ import numpy as np
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY
+from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY, HOLDING
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
@@ -28,6 +38,14 @@ PRIOR_STRENGTH = 2.0
 PICK = "PickCube"
 TOSS = "MoveToTossLocationAndToss"
 OPEN = "OpenGripper"
+OPEN_CONTEXTS = {"closed_empty": 900003, "holding": 900004}
+ENVIRONMENT_SETTINGS = {
+    "layout": "barrier",
+    "variant": "o1",
+    "bin_mass_kg": 1.0,
+    "cube_mass_kg": 0.1,
+}
+COMPILED_MASSES = {"bin_0": 1.0, "cube_0": 0.1}
 SIMULATOR_PINS = {
     "kinder": "490831fa54a40c4b2b4570d45bb08e3dd63c24ef",
     "kinder_models": "032b42634a015c7f710667b3a791836fa839f6ff",
@@ -36,29 +54,63 @@ SIMULATOR_PINS = {
 
 class Tossing3DDpPriors:
     @staticmethod
-    def open_protocol() -> dict:
+    def verify_metadata(*, metadata: dict, seed: int) -> None:
+        if metadata.get("split") != ("fit" if seed in FIT_SEEDS else "validation"):
+            raise ValueError("mismatched calibration seed split")
+        masses = metadata.get("compiled_masses_kg", {})
+        if set(masses) != set(COMPILED_MASSES) or any(
+            not isinstance(masses[name], (int, float))
+            or not math.isclose(masses[name], expected, rel_tol=1e-9, abs_tol=1e-12)
+            for name, expected in COMPILED_MASSES.items()
+        ):
+            raise ValueError("missing or mismatched compiled calibration masses")
+
+    @staticmethod
+    def verify_simulators() -> None:
+        for package, expected in SIMULATOR_PINS.items():
+            actual, dirty = ConfigSnapshot._repo_state(package=package)
+            if dirty or actual != expected:
+                raise ValueError(f"prior calibration simulator mismatch: {package}")
+
+    @staticmethod
+    def compiled_masses(*, env: Tossing3DEnvironment) -> dict[str, float]:
+        scene = env.kinder_backend()._object_centric()
+        model = scene._robot_env.sim.model.mj_model
+        masses = {
+            name: float(model.body_subtreemass[model.body(name).id]) for name in COMPILED_MASSES
+        }
+        if any(
+            not math.isclose(masses[name], expected, rel_tol=1e-9, abs_tol=1e-12)
+            for name, expected in COMPILED_MASSES.items()
+        ):
+            raise ValueError(f"prior calibration compiled mass mismatch: {masses}")
+        return masses
+
+    @staticmethod
+    def open_protocol(*, enable_bin_pouring: bool = True) -> dict:
         return {
             "environment": "tossing3d",
-            "layout": "barrier",
-            "variant": "o1",
-            "probes_per_seed": PROBES,
-            "scene_rng_stream": 900003,
-            "setup": "shared PickCube controller then reset_movables; verify ClosedEmpty",
+            **ENVIRONMENT_SETTINGS,
+            "enable_bin_pouring": enable_bin_pouring,
+            "probes_per_seed_per_context": PROBES,
+            "context_scene_rng_streams": dict(OPEN_CONTEXTS),
+            "setup": {
+                "closed_empty": "shared PickCube then reset_movables; verify ClosedEmpty",
+                "holding": "shared PickCube; retain held cube without reset; verify Holding",
+            },
             "controller": "shared parameterless OpenGripper via EesMethod.execute_ground_skill",
-            "fit_rule": "Jeffreys-smoothed fit success rate; strength two; zero learning rate",
+            "fit_rule": "separate Jeffreys-smoothed fit rates; explicit scalar aggregation",
             "uses_experiment_evaluations": False,
         }
 
     @staticmethod
-    def collect_open(*, seed: int, output: Path) -> dict:
+    def collect_open(*, seed: int, output: Path, enable_bin_pouring: bool = True) -> dict:
         if seed not in (*FIT_SEEDS, *VALIDATION_SEEDS):
             raise ValueError("prior calibration requires a reserved fit or validation seed")
-        for package, expected in SIMULATOR_PINS.items():
-            actual, dirty = ConfigSnapshot._repo_state(package=package)
-            if dirty or actual != expected:
-                raise ValueError(f"OpenGripper probe simulator mismatch: {package}")
+        Tossing3DDpPriors.verify_simulators()
+        started = time.monotonic()
         output.mkdir(parents=True, exist_ok=False)
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(**ENVIRONMENT_SETTINGS, enable_bin_pouring=enable_bin_pouring)
         provider = Tossing3DSkillProvider(env=env)
         method = EesMethod(env=env, skill_provider=provider, seed=seed)
         pick = GroundSkill(
@@ -71,93 +123,122 @@ class Tossing3DDpPriors:
         metadata = {
             "seed": seed,
             "split": "fit" if seed in FIT_SEEDS else "validation",
-            "protocol": Tossing3DDpPriors.open_protocol(),
+            "protocol": Tossing3DDpPriors.open_protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "config_snapshot": ConfigSnapshot.collect(
-                args=argparse.Namespace(seed=seed), fd_exec_path=None
+                args=argparse.Namespace(
+                    seed=seed, **ENVIRONMENT_SETTINGS, enable_bin_pouring=enable_bin_pouring
+                ),
+                fd_exec_path=None,
             ).model_dump(),
             "complete": False,
         }
         metadata_path = output / "metadata.json"
         metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
-        scenes = np.random.default_rng(np.random.SeedSequence([seed, 900003]))
-        completed = 0
+        metadata["context_elapsed_seconds"] = {}
         try:
-            for _attempt in range(PROBES * 10):
-                scene = int(scenes.integers(2**31 - 1))
-                state = env.reset_to_seed(seed=scene)
-                before = method.abstract_state(state=state)
-                if not pick.preconditions <= before:
-                    raise RuntimeError("OpenGripper probe pick preconditions do not hold")
-                action, _record = method.execute_ground_skill(
-                    ground_skill=pick, state=state, explore=False
-                )
-                state = env.take_action(action=action.action)
-                picked = pick.expected_add_effects(before_atoms=before) <= method.abstract_state(
-                    state=state
-                )
-                setup_error = env.last_skill_error()
-                with (output / "rollouts.jsonl").open("a") as stream:
-                    stream.write(
-                        json.dumps({
-                            "phase": "setup",
-                            "skill": PICK,
-                            "scene_seed": scene,
-                            "success": picked,
-                            "skill_error": setup_error,
-                        })
-                        + "\n"
+            for context, rng_stream in OPEN_CONTEXTS.items():
+                context_started = time.monotonic()
+                scenes = np.random.default_rng(np.random.SeedSequence([seed, rng_stream]))
+                completed = 0
+                for _attempt in range(PROBES * 10):
+                    scene = int(scenes.integers(2**31 - 1))
+                    state = env.reset_to_seed(seed=scene)
+                    metadata["compiled_masses_kg"] = Tossing3DDpPriors.compiled_masses(env=env)
+                    before = method.abstract_state(state=state)
+                    if not pick.preconditions <= before:
+                        raise RuntimeError("OpenGripper probe pick preconditions do not hold")
+                    action, _record = method.execute_ground_skill(
+                        ground_skill=pick, state=state, explore=False
                     )
-                if setup_error and "Robot starts in collision with" in setup_error:
-                    raise RuntimeError(f"invalid OpenGripper setup start contact: {setup_error}")
-                if not picked:
-                    continue
-                if not env.reset_movables():
-                    raise RuntimeError("OpenGripper probe movable reset failed")
-                state = env.get_current_state()
-                before = method.abstract_state(state=state)
-                closed = CLOSED_EMPTY.holds(state, (env.robot, env.cube))
-                if not closed or not recovery.preconditions <= before:
-                    raise RuntimeError(
-                        "OpenGripper probe requires actual ClosedEmpty preconditions"
+                    state = env.take_action(action=action.action)
+                    picked = pick.expected_add_effects(
+                        before_atoms=before
+                    ) <= method.abstract_state(state=state)
+                    setup_error = env.last_skill_error()
+                    with (output / "rollouts.jsonl").open("a") as stream:
+                        stream.write(
+                            json.dumps({
+                                "phase": "setup",
+                                "skill": PICK,
+                                "scene_seed": scene,
+                                "context": context,
+                                "success": picked,
+                                "skill_error": setup_error,
+                            })
+                            + "\n"
+                        )
+                    if setup_error and "Robot starts in collision with" in setup_error:
+                        raise RuntimeError(
+                            f"invalid OpenGripper setup start contact: {setup_error}"
+                        )
+                    if not picked:
+                        continue
+                    if context == "closed_empty" and not env.reset_movables():
+                        raise RuntimeError("OpenGripper probe movable reset failed")
+                    state = env.get_current_state()
+                    before = method.abstract_state(state=state)
+                    closed = CLOSED_EMPTY.holds(state, (env.robot, env.cube))
+                    holding = HOLDING.holds(state, (env.robot, env.cube))
+                    context_valid = (
+                        closed and not holding
+                        if context == "closed_empty"
+                        else holding and not closed
                     )
-                action, record = method.execute_ground_skill(
-                    ground_skill=recovery, state=state, explore=False
-                )
-                if record is not None:
-                    raise RuntimeError("parameterless OpenGripper unexpectedly used a sampler")
-                state = env.take_action(action=action.action)
-                success = recovery.expected_add_effects(
-                    before_atoms=before
-                ) <= method.abstract_state(state=state)
-                error = env.last_skill_error()
-                with (output / "rollouts.jsonl").open("a") as stream:
-                    stream.write(
+                    if not context_valid or not recovery.preconditions <= before:
+                        raise RuntimeError(
+                            f"OpenGripper probe requires actual {context} preconditions"
+                        )
+                    action, record = method.execute_ground_skill(
+                        ground_skill=recovery, state=state, explore=False
+                    )
+                    if record is not None:
+                        raise RuntimeError("parameterless OpenGripper unexpectedly used a sampler")
+                    state = env.take_action(action=action.action)
+                    after = method.abstract_state(state=state)
+                    added = recovery.expected_add_effects(before_atoms=before) <= after
+                    deleted = not bool(recovery.delete_effects & after)
+                    error = env.last_skill_error()
+                    success = added and deleted and error is None
+                    with (output / "rollouts.jsonl").open("a") as stream:
+                        stream.write(
+                            json.dumps({
+                                "phase": "probe",
+                                "skill": OPEN,
+                                "scene_seed": scene,
+                                "context": context,
+                                "success": success,
+                                "preconditions_satisfied": True,
+                                "closed_empty": closed,
+                                "holding": holding,
+                                "add_effects_satisfied": added,
+                                "delete_effects_satisfied": deleted,
+                                "consultation": "no_sampler",
+                                "skill_error": error,
+                            })
+                            + "\n"
+                        )
+                    if error and "Robot starts in collision with" in error:
+                        raise RuntimeError(f"invalid OpenGripper probe start contact: {error}")
+                    completed += 1
+                    print(
                         json.dumps({
-                            "phase": "probe",
-                            "skill": OPEN,
-                            "scene_seed": scene,
+                            "seed": seed,
+                            "context": context,
+                            "probes": completed,
                             "success": success,
-                            "preconditions_satisfied": True,
-                            "closed_empty": closed,
-                            "consultation": "no_sampler",
-                            "skill_error": error,
-                        })
-                        + "\n"
+                        }),
+                        flush=True,
                     )
-                if error and "Robot starts in collision with" in error:
-                    raise RuntimeError(f"invalid OpenGripper probe start contact: {error}")
-                completed += 1
-                print(
-                    json.dumps({"seed": seed, "probes": completed, "success": success}), flush=True
-                )
-                if completed == PROBES:
-                    break
-            if completed != PROBES:
-                raise RuntimeError("insufficient ClosedEmpty OpenGripper probes")
+                    if completed == PROBES:
+                        break
+                if completed != PROBES:
+                    raise RuntimeError(f"insufficient {context} OpenGripper probes")
+                metadata["context_elapsed_seconds"][context] = time.monotonic() - context_started
             metadata["complete"] = True
-            metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
         finally:
+            metadata["elapsed_seconds"] = time.monotonic() - started
+            metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
             env.close()
         return metadata
 
@@ -180,11 +261,11 @@ class Tossing3DDpPriors:
         }
 
     @staticmethod
-    def protocol() -> dict:
+    def protocol(*, enable_bin_pouring: bool = True) -> dict:
         return {
             "environment": "tossing3d",
-            "layout": "barrier",
-            "variant": "o1",
+            **ENVIRONMENT_SETTINGS,
+            "enable_bin_pouring": enable_bin_pouring,
             "checkpoints": list(CHECKPOINTS),
             "probes_per_checkpoint": PROBES,
             "refit_interval_target_rollouts": REFIT_INTERVAL,
@@ -199,11 +280,13 @@ class Tossing3DDpPriors:
         }
 
     @staticmethod
-    def collect(*, seed: int, output: Path) -> dict:
+    def collect(*, seed: int, output: Path, enable_bin_pouring: bool = True) -> dict:
         if seed not in (*FIT_SEEDS, *VALIDATION_SEEDS):
             raise ValueError("prior calibration requires a reserved fit or validation seed")
+        Tossing3DDpPriors.verify_simulators()
+        started = time.monotonic()
         output.mkdir(parents=True, exist_ok=False)
-        env = Tossing3DEnvironment()
+        env = Tossing3DEnvironment(**ENVIRONMENT_SETTINGS, enable_bin_pouring=enable_bin_pouring)
         provider = Tossing3DSkillProvider(env=env)
         learner = EesMethod(
             env=env,
@@ -219,17 +302,20 @@ class Tossing3DDpPriors:
         )
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         )
         train_scenes = np.random.default_rng(np.random.SeedSequence([seed, 900001]))
         probe_scenes = np.random.default_rng(np.random.SeedSequence([seed, 900002]))
         metadata = {
             "seed": seed,
             "split": "fit" if seed in FIT_SEEDS else "validation",
-            "protocol": Tossing3DDpPriors.protocol(),
+            "protocol": Tossing3DDpPriors.protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "config_snapshot": ConfigSnapshot.collect(
-                args=argparse.Namespace(seed=seed), fd_exec_path=None
+                args=argparse.Namespace(
+                    seed=seed, **ENVIRONMENT_SETTINGS, enable_bin_pouring=enable_bin_pouring
+                ),
+                fd_exec_path=None,
             ).model_dump(),
             "complete": False,
         }
@@ -285,9 +371,11 @@ class Tossing3DDpPriors:
                     json.dumps({"seed": seed, "checkpoint": checkpoint, "probes": completed}),
                     flush=True,
                 )
+            metadata["compiled_masses_kg"] = Tossing3DDpPriors.compiled_masses(env=env)
             metadata["complete"] = True
-            (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
         finally:
+            metadata["elapsed_seconds"] = time.monotonic() - started
+            (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
             env.close()
         return metadata
 
@@ -305,6 +393,7 @@ class Tossing3DDpPriors:
         output: Path,
     ) -> bool:
         state = env.reset_to_seed(seed=scene)
+        Tossing3DDpPriors.compiled_masses(env=env)
         for ground in (pick, toss):
             before_atoms = method.abstract_state(state=state)
             if not ground.preconditions <= before_atoms:
@@ -343,9 +432,17 @@ class Tossing3DDpPriors:
         return True
 
     @staticmethod
-    def fit(*, root: Path, open_root: Path | None = None) -> dict:
+    def fit(
+        *,
+        root: Path,
+        open_root: Path | None = None,
+        enable_bin_pouring: bool = True,
+        open_aggregation: str | None = None,
+    ) -> dict:
         if open_root is None:
-            raise ValueError("OpenGripper requires independent ClosedEmpty competence probes")
+            raise ValueError("OpenGripper requires independent closed-empty and holding probes")
+        if open_aggregation != "equal-context":
+            raise ValueError("explicit OpenGripper aggregation required: equal-context")
         runs: list[dict] = []
         collector_hashes: set[str] = set()
         stacks: set[tuple[str, str, str]] = set()
@@ -355,13 +452,16 @@ class Tossing3DDpPriors:
             metadata = json.loads((directory / "metadata.json").read_text())
             if not metadata["complete"] or metadata["seed"] != seed:
                 raise ValueError("incomplete or mismatched prior calibration run")
+            Tossing3DDpPriors.verify_metadata(metadata=metadata, seed=seed)
             recorded = dict(metadata["source_sha256"])
             current = Tossing3DDpPriors.source_hashes()
             collector_hashes.add(recorded.pop(driver, "missing"))
             current.pop(driver)
             if recorded != current:
                 raise ValueError("stale shared-learner or simulator source")
-            if metadata["protocol"] != Tossing3DDpPriors.protocol():
+            if metadata["protocol"] != Tossing3DDpPriors.protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ):
                 raise ValueError("mismatched prior calibration protocol")
             snapshot = metadata["config_snapshot"]
             if (
@@ -472,29 +572,42 @@ class Tossing3DDpPriors:
                 },
             }
         open_prior, open_diagnostics, open_hashes = Tossing3DDpPriors.fit_open(
-            root=open_root, numerical_stack=next(iter(stacks))
+            root=open_root,
+            numerical_stack=next(iter(stacks)),
+            enable_bin_pouring=enable_bin_pouring,
+            aggregation=open_aggregation,
         )
         skills[OPEN] = open_prior
         diagnostics[OPEN] = open_diagnostics
-        passed = all(
+        provider = Tossing3DSkillProvider(
+            env=Tossing3DEnvironment(**ENVIRONMENT_SETTINGS, enable_bin_pouring=enable_bin_pouring)
+        )
+        names = {skill.name for skill in provider.skills()}
+        if missing := names - set(skills):
+            raise ValueError(f"robot skills lack calibrated DP priors: {sorted(missing)}")
+        if unknown := set(skills) - names:
+            raise ValueError(f"calibrated skills absent from this domain: {sorted(unknown)}")
+        passed = open_diagnostics["validation_passed"] and all(
             item["validation_brier"] <= item["old_defaults_validation_brier"]
             for item in diagnostics.values()
         )
         return {
             "schema_version": 1,
             "environment": "tossing3d",
-            "layout": "barrier",
-            "variant": "o1",
+            **ENVIRONMENT_SETTINGS,
+            "enable_bin_pouring": enable_bin_pouring,
             "skills": skills,
             "diagnostics": diagnostics,
             "validation_passed": passed,
             "fit_seeds": list(FIT_SEEDS),
             "validation_seeds": list(VALIDATION_SEEDS),
-            "protocol": Tossing3DDpPriors.protocol(),
+            "protocol": Tossing3DDpPriors.protocol(enable_bin_pouring=enable_bin_pouring),
             "source_sha256": Tossing3DDpPriors.source_hashes(),
             "collection_driver_sha256": sorted(collector_hashes),
             "open_gripper_collection_driver_sha256": open_hashes,
-            "open_gripper_protocol": Tossing3DDpPriors.open_protocol(),
+            "open_gripper_protocol": Tossing3DDpPriors.open_protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ),
             "simulator_pins": SIMULATOR_PINS,
             "numerical_stack": dict(
                 zip(
@@ -509,15 +622,23 @@ class Tossing3DDpPriors:
                 "Refits occur every ten training tosses, not at experiment period boundaries.",
                 "Only 0--60 rollouts are probed; predicted saturation is not validated mastery.",
                 "PickCube has no learned parameters; its learning-rate prior is zero.",
-                "OpenGripper is probed after pick and movable reset, not every failed-grasp state.",
+                "OpenGripper contexts are post-Pick holding and post-reset closed-empty only.",
+                "Equal-context aggregation is a benchmark choice, not measured deployment weights.",
+                "Releasing a held cube does not guarantee a recoverable landing.",
                 "OpenGripper has no learned parameters; its learning-rate prior is zero.",
             ],
         }
 
     @staticmethod
     def fit_open(
-        *, root: Path, numerical_stack: tuple[str, str, str]
+        *,
+        root: Path,
+        numerical_stack: tuple[str, str, str],
+        aggregation: str,
+        enable_bin_pouring: bool = True,
     ) -> tuple[dict, dict, list[str]]:
+        if aggregation != "equal-context":
+            raise ValueError("explicit OpenGripper aggregation required: equal-context")
         rows_by_seed = {}
         hashes = set()
         driver = str(Path(__file__).resolve().relative_to(REPO))
@@ -526,7 +647,10 @@ class Tossing3DDpPriors:
             metadata = json.loads((directory / "metadata.json").read_text())
             if not metadata["complete"] or metadata["seed"] != seed:
                 raise ValueError("incomplete or mismatched OpenGripper probe run")
-            if metadata["protocol"] != Tossing3DDpPriors.open_protocol():
+            Tossing3DDpPriors.verify_metadata(metadata=metadata, seed=seed)
+            if metadata["protocol"] != Tossing3DDpPriors.open_protocol(
+                enable_bin_pouring=enable_bin_pouring
+            ):
                 raise ValueError("mismatched OpenGripper probe protocol")
             recorded = dict(metadata["source_sha256"])
             current = Tossing3DDpPriors.source_hashes()
@@ -550,24 +674,76 @@ class Tossing3DDpPriors:
                 json.loads(line) for line in (directory / "rollouts.jsonl").read_text().splitlines()
             ]
             probes = [row for row in rows if row["phase"] == "probe" and row["skill"] == OPEN]
-            if len(probes) != PROBES or len({row["scene_seed"] for row in probes}) != PROBES:
+            if len(probes) != PROBES * len(OPEN_CONTEXTS):
                 raise ValueError("incomplete or repeated OpenGripper probes")
+            for context in OPEN_CONTEXTS:
+                selected = [row for row in probes if row.get("context") == context]
+                if (
+                    len(selected) != PROBES
+                    or len({row["scene_seed"] for row in selected}) != PROBES
+                ):
+                    raise ValueError(f"incomplete or repeated {context} OpenGripper probes")
             if any(
-                row.get("closed_empty") is not True
+                row.get("closed_empty") is not (row.get("context") == "closed_empty")
+                or row.get("holding") is not (row.get("context") == "holding")
                 or row.get("preconditions_satisfied") is not True
                 or row.get("consultation") != "no_sampler"
                 or not isinstance(row["success"], bool)
+                or not isinstance(row.get("add_effects_satisfied"), bool)
+                or not isinstance(row.get("delete_effects_satisfied"), bool)
+                or row["success"]
+                != (
+                    row["add_effects_satisfied"]
+                    and row["delete_effects_satisfied"]
+                    and row.get("skill_error") is None
+                )
                 or "Robot starts in collision with" in (row.get("skill_error") or "")
                 for row in probes
             ):
-                raise ValueError("invalid ClosedEmpty OpenGripper probes")
+                raise ValueError("invalid context-specific OpenGripper probes")
             rows_by_seed[seed] = probes
         if len(hashes) != 1 or "missing" in hashes:
             raise ValueError("missing or inconsistent OpenGripper collection-driver provenance")
-        fitted = [row for seed in FIT_SEEDS for row in rows_by_seed[seed]]
-        held_out = [row for seed in VALIDATION_SEEDS for row in rows_by_seed[seed]]
-        successes = sum(row["success"] for row in fitted)
-        probability = (successes + 0.5) / (len(fitted) + 1)
+        contexts = {}
+        for context in OPEN_CONTEXTS:
+            fitted = [
+                row for seed in FIT_SEEDS for row in rows_by_seed[seed] if row["context"] == context
+            ]
+            held_out = [
+                row
+                for seed in VALIDATION_SEEDS
+                for row in rows_by_seed[seed]
+                if row["context"] == context
+            ]
+            successes = sum(row["success"] for row in fitted)
+            estimate = (successes + 0.5) / (len(fitted) + 1)
+            contexts[context] = {
+                "initial_competence": estimate,
+                "initial_probe_successes": successes,
+                "initial_probe_trials": len(fitted),
+                "validation_probe_successes": sum(row["success"] for row in held_out),
+                "validation_probe_trials": len(held_out),
+                "validation_brier": sum((estimate - row["success"]) ** 2 for row in held_out)
+                / len(held_out),
+                "old_defaults_validation_brier": sum(
+                    (10 / 11 - row["success"]) ** 2 for row in held_out
+                )
+                / len(held_out),
+            }
+        probability = sum(item["initial_competence"] for item in contexts.values()) / len(contexts)
+        for context, item in contexts.items():
+            held_out = [
+                row
+                for seed in VALIDATION_SEEDS
+                for row in rows_by_seed[seed]
+                if row["context"] == context
+            ]
+            item["scalar_validation_brier"] = sum(
+                (probability - row["success"]) ** 2 for row in held_out
+            ) / len(held_out)
+            item["validation_passed"] = (
+                item["scalar_validation_brier"] <= item["old_defaults_validation_brier"]
+            )
         return (
             {
                 "alpha": PRIOR_STRENGTH * probability,
@@ -576,17 +752,37 @@ class Tossing3DDpPriors:
             },
             {
                 "initial_competence": probability,
-                "initial_probe_successes": successes,
-                "initial_probe_trials": len(fitted),
+                "contexts": contexts,
+                "aggregation": {
+                    "name": aggregation,
+                    "weights": dict.fromkeys(OPEN_CONTEXTS, 1 / len(OPEN_CONTEXTS)),
+                    "rule": "mean of context-specific Jeffreys-smoothed fit rates",
+                    "interpretation": "balanced calibration benchmark, not deployment frequencies",
+                    "prior_strength": PRIOR_STRENGTH,
+                    "uses_validation_outcomes": False,
+                },
+                "initial_probe_successes": sum(
+                    item["initial_probe_successes"] for item in contexts.values()
+                ),
+                "initial_probe_trials": sum(
+                    item["initial_probe_trials"] for item in contexts.values()
+                ),
                 "predicted_saturation_rollouts": None,
-                "validation_probe_successes": sum(row["success"] for row in held_out),
-                "validation_probe_trials": len(held_out),
-                "validation_brier": sum((probability - row["success"]) ** 2 for row in held_out)
-                / len(held_out),
-                "old_defaults_validation_brier": sum(
-                    (10 / 11 - row["success"]) ** 2 for row in held_out
+                "validation_probe_successes": sum(
+                    item["validation_probe_successes"] for item in contexts.values()
+                ),
+                "validation_probe_trials": sum(
+                    item["validation_probe_trials"] for item in contexts.values()
+                ),
+                "validation_brier": sum(
+                    item["scalar_validation_brier"] for item in contexts.values()
                 )
-                / len(held_out),
+                / len(contexts),
+                "old_defaults_validation_brier": sum(
+                    item["old_defaults_validation_brier"] for item in contexts.values()
+                )
+                / len(contexts),
+                "validation_passed": all(item["validation_passed"] for item in contexts.values()),
             },
             sorted(hashes),
         )
@@ -605,13 +801,37 @@ def main() -> None:
     fit.add_argument("--root", type=Path, required=True)
     fit.add_argument("--output", type=Path, required=True)
     fit.add_argument("--open-root", type=Path, required=True)
+    fit.add_argument(
+        "--open-aggregation",
+        choices=["equal-context"],
+        required=True,
+        help="Explicit balanced benchmark: equal weight to the two smoothed Open context rates; "
+        "not an estimate of deployment context frequencies.",
+    )
+    for command in (collect, collect_open, fit):
+        command.add_argument(
+            "--no-bin-pouring",
+            dest="enable_bin_pouring",
+            action="store_false",
+            default=True,
+            help="Explicitly calibrate the original three robot skills without bin pouring.",
+        )
     args = parser.parse_args()
     if args.command == "collect":
-        Tossing3DDpPriors.collect(seed=args.seed, output=args.output)
+        Tossing3DDpPriors.collect(
+            seed=args.seed, output=args.output, enable_bin_pouring=args.enable_bin_pouring
+        )
     elif args.command == "collect-open":
-        Tossing3DDpPriors.collect_open(seed=args.seed, output=args.output)
+        Tossing3DDpPriors.collect_open(
+            seed=args.seed, output=args.output, enable_bin_pouring=args.enable_bin_pouring
+        )
     else:
-        report = Tossing3DDpPriors.fit(root=args.root, open_root=args.open_root)
+        report = Tossing3DDpPriors.fit(
+            root=args.root,
+            open_root=args.open_root,
+            enable_bin_pouring=args.enable_bin_pouring,
+            open_aggregation=args.open_aggregation,
+        )
         args.output.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
         if not report["validation_passed"]:

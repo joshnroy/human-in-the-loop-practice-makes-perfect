@@ -14,6 +14,7 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -38,10 +39,10 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
 from .observations import state
 
 
-def _toss(*, env: Tossing3DEnvironment, side=Tossing3DSides.opposite) -> GroundSkill:
+def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, side),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
@@ -199,11 +200,12 @@ def test_same_side_and_barrier_layouts_share_one_toss_implementation(*, fixed_di
     same_env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     barrier = Tossing3DSkillProvider(env=barrier_env)
     same_side = Tossing3DSkillProvider(env=same_env)
-    barrier_toss = _toss(env=barrier_env, side=Tossing3DSides.opposite)
-    same_toss = _toss(env=same_env, side=Tossing3DSides.robot)
+    barrier_toss = _toss(env=barrier_env)
+    same_toss = _toss(env=same_env)
 
     assert SameSideSkills.TOSS is Tossing3DToss
     assert same_toss.skill is barrier_toss.skill
+    assert same_toss == barrier_toss
     assert SameSideSkills.TOSS.PARAM_BOUNDS is Tossing3DToss.PARAM_BOUNDS
 
     streams = [np.random.default_rng(11) for _ in range(4)]
@@ -217,7 +219,11 @@ def test_same_side_and_barrier_layouts_share_one_toss_implementation(*, fixed_di
         for other in drawn[1:]:
             assert np.array_equal(drawn[0], other)
         scene = state(env=barrier_env)
-        same_scene = state(env=same_env)
+        same_scene = state(env=same_env, bin_x=-2.0)
+        assert BIN_AT_SIDE.holds(
+            scene, (barrier_env.bin, barrier_env.barrier, Tossing3DSides.opposite)
+        )
+        assert BIN_AT_SIDE.holds(same_scene, (same_env.bin, same_env.barrier, Tossing3DSides.robot))
         assert np.array_equal(
             barrier.compute_action(ground_skill=barrier_toss, params=drawn[0], state=scene),
             same_side.compute_action(ground_skill=same_toss, params=drawn[0], state=same_scene),

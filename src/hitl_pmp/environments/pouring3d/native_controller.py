@@ -39,6 +39,7 @@ class NativePouringController(BaseModel):
     frequency: float
     home: np.ndarray
     tray_home: np.ndarray
+    tray_home_rotation: Rotation = Field(default_factory=Rotation.identity)
     base_home: np.ndarray
     base_target: np.ndarray
     phase: str = "ready"
@@ -52,6 +53,20 @@ class NativePouringController(BaseModel):
     lost_contacts: int = 0
     posture: float = 0.0
     posture_goal: float = 0.0
+    posture_weight: float = 0.015
+    pitcher_approach_clearance: float = 0.25
+    pitcher_open_grip: float = 0.0
+    pitcher_hover_backoff: float = 0.0
+    pitcher_lift_height: float = 0.28
+    placement_base_side_step: float = 0.0
+    placement_base_backoff: float = 0.0
+    placement_clearance: float = 0.02
+    pour_clearance: float = 0.45
+    handle_roll_degrees: float = 90.0
+    handle_contact_depth: float = 0.04
+    handle_lean_degrees: float = 0.0
+    handle_lean_axis: str = "y"
+    ik_kinematics_only: bool = False
 
     @classmethod
     def create(cls, *, env: Any) -> "NativePouringController":
@@ -83,6 +98,7 @@ class NativePouringController(BaseModel):
             frequency=scene._robot_env.control_frequency,
             home=data.xpos[model.body("pitcher").id].copy(),
             tray_home=data.xpos[model.body("tray").id].copy(),
+            tray_home_rotation=Rotation.from_quat(data.xquat[model.body("tray").id][[1, 2, 3, 0]]),
             base_home=data.qpos[base_q].copy(),
             base_target=data.qpos[base_q].copy(),
         )
@@ -100,8 +116,20 @@ class NativePouringController(BaseModel):
             Rotation.from_matrix(self.data.site_xmat[self.site].reshape(3, 3)),
         )
 
-    def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
+    def obstacle_residual(self) -> np.ndarray:
+        """Optional collision-clearance cost, evaluated only in scratch state."""
+        return np.zeros(0)
+
+    def update_ik_scratch(self) -> None:
+        """IK only needs world geometry/site transforms, not contact dynamics."""
         import mujoco
+
+        if self.ik_kinematics_only:
+            mujoco.mj_kinematics(self.model, self.scratch)
+        else:
+            mujoco.mj_forward(self.model, self.scratch)
+
+    def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
 
         self.posture += float(np.clip(self.posture_goal - self.posture, -0.02, 0.02))
         self.scratch.qpos[:] = self.data.qpos
@@ -109,13 +137,14 @@ class NativePouringController(BaseModel):
 
         def residual(q: np.ndarray) -> np.ndarray:  # noqa: PLR0917
             self.scratch.qpos[self.arm_q] = q
-            mujoco.mj_forward(self.model, self.scratch)
+            self.update_ik_scratch()
             actual = Rotation.from_matrix(self.scratch.site_xmat[self.site].reshape(3, 3))
             return np.r_[
                 self.scratch.site_xpos[self.site] - position,
                 0.22 * (rotation * actual.inv()).as_rotvec(),
                 0.002 * (q - self.last_q),
-                0.015 * (q[4] - self.posture),
+                self.posture_weight * (q[4] - self.posture),
+                self.obstacle_residual(),
             ]
 
         fit = least_squares(
@@ -161,10 +190,10 @@ class NativePouringController(BaseModel):
         self.last_q = fit.x.copy()
         return fit.x
 
-    def motor_step(self, *, target_q: np.ndarray, grip: float) -> None:
-        import mujoco
-
-        motor_target = target_q.copy()
+    def payload_wrench(self) -> tuple[np.ndarray, np.ndarray]:
+        """Estimated load at the hand; controllers may supply a fixed load model."""
+        force = np.zeros(3)
+        moment = np.zeros(3)
         if self.held is not None:
             names = [self.held]
             if self.held == "pitcher":
@@ -173,8 +202,6 @@ class NativePouringController(BaseModel):
                     for name in self.scene.cube_names
                     if self.scene.cube_in_vessel(name, "pitcher")
                 ]
-            force = np.zeros(3)
-            moment = np.zeros(3)
             for name in names:
                 body = self.model.body(name).id
                 weight = -self.model.body_subtreemass[body] * self.model.opt.gravity
@@ -182,6 +209,14 @@ class NativePouringController(BaseModel):
                 moment += np.cross(
                     self.data.subtree_com[body] - self.data.site_xpos[self.site], weight
                 )
+        return force, moment
+
+    def motor_step(self, *, target_q: np.ndarray, grip: float) -> None:
+        import mujoco
+
+        motor_target = target_q.copy()
+        if self.held is not None:
+            force, moment = self.payload_wrench()
             jacp = np.zeros((3, self.model.nv))
             jacr = np.zeros((3, self.model.nv))
             mujoco.mj_jacSite(self.model, self.data, jacp, jacr, self.site)
@@ -286,46 +321,63 @@ class NativePouringController(BaseModel):
             )
         }
 
+    def pitcher_grasp_pose(self) -> tuple[np.ndarray, Rotation, Rotation]:
+        origin, rotation = self.body_pose(name="pitcher")
+        upright = Rotation.from_euler(
+            self.handle_lean_axis, -self.handle_lean_degrees, degrees=True
+        ) * Rotation.from_euler("y", np.pi)
+        down = (
+            upright * Rotation.from_euler("z", self.handle_roll_degrees, degrees=True)
+            if self.handle_lean_degrees
+            else Rotation.from_euler("z", -np.pi / 2) * upright
+        )
+        contact = origin + rotation.apply(self.scene.get_object("pitcher").handle_grasp_position)
+        target = contact + (
+            -down.apply([0, 0, self.handle_contact_depth])
+            if self.handle_lean_degrees
+            else np.array([0, 0, 0.04])
+        )
+        return target, upright, down
+
     def pick_pitcher(self) -> None:
         if not self.ready():
             raise ValueError("Pitcher pick requires a ready five-cube scene")
         self.move_base(target=self.base_home, phase="approach pitcher base", seconds=4)
-        origin, rotation = self.body_pose(name="pitcher")
-        # Pinch the open handle across its width. The 40 mm site offset puts
-        # the physical finger pads around the upper grip, not around the rim.
-        upright = Rotation.from_euler("y", np.pi)
-        down = Rotation.from_euler("z", -np.pi / 2) * upright
-        geometry = self.scene.get_object("pitcher")
-        handle = origin + rotation.apply(geometry.handle_grasp_position) + [0, 0, 0.04]
+        origin, _ = self.body_pose(name="pitcher")
+        handle, upright, down = self.pitcher_grasp_pose()
         self.move(
             phase="approach pitcher",
-            position=handle + [0, 0, 0.25],
+            position=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
             rotation=upright,
             seconds=8,
-            grip=0,
+            grip=self.pitcher_open_grip,
         )
         self.move(
             phase="align fingers across handle",
-            position=handle + [0, 0, 0.25],
+            position=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
             rotation=down,
             seconds=8,
-            grip=0,
+            grip=self.pitcher_open_grip,
         )
         self.move(
-            phase="descend to pitcher handle", position=handle, rotation=down, seconds=4, grip=0
+            phase="descend to pitcher handle",
+            position=handle,
+            rotation=down,
+            seconds=4,
+            grip=self.pitcher_open_grip,
         )
         self.pause(phase="close fingers on pitcher handle", seconds=3, grip=1)
         if len(self.finger_contacts(name="pitcher", handle_only=True)) != 2:
             raise ValueError("Pitcher handle grasp lacks handle contact on both fingers")
         self.move(
             phase="lift pitcher by handle",
-            position=handle + [0, 0, 0.28],
+            position=handle + [0, 0, self.pitcher_lift_height],
             rotation=down,
             seconds=6,
             grip=1,
         )
         position, actual_rotation = self.body_pose(name="pitcher")
-        if position[2] < origin[2] + 0.20:
+        if position[2] < origin[2] + self.pitcher_lift_height - 0.08:
             raise ValueError("Pitcher grasp did not lift the physical vessel")
         if len(self.finger_contacts(name="pitcher", handle_only=True)) != 2:
             raise ValueError("Handle grasp was not retained through the lift")
@@ -405,16 +457,21 @@ class NativePouringController(BaseModel):
         hand, orientation = self.hand_pose()
         self.hand_offset = rotation.inv().apply(hand - position)
         self.rotation_offset = rotation.inv() * orientation
-        self.move_base(target=self.base_home, phase="return base for placement", seconds=5)
+        self.move_base(
+            target=self.base_home
+            + [-self.placement_base_backoff, self.placement_base_side_step, 0],
+            phase="return base for placement",
+            seconds=5,
+        )
         self.move_pitcher(
             phase="return pitcher above home",
-            position=self.home + [0, 0, 0.28],
+            position=self.home + [0, 0, self.pitcher_lift_height],
             rotation=Rotation.identity(),
             seconds=4,
         )
         self.move_pitcher(
             phase="lower pitcher to floor",
-            position=self.home + [0, 0, 0.02],
+            position=self.home + [0, 0, self.placement_clearance],
             rotation=Rotation.identity(),
             seconds=4,
         )
@@ -444,8 +501,10 @@ class NativePouringController(BaseModel):
     def vessel_home(self, *, name: str) -> bool:
         position, rotation = self.body_pose(name=name)
         target = self.home if name == "pitcher" else self.tray_home
+        reference = Rotation.identity() if name == "pitcher" else self.tray_home_rotation
         return bool(
-            np.linalg.norm(position - target) < 0.025 and rotation.magnitude() < np.deg2rad(5)
+            np.linalg.norm(position - target) < 0.025
+            and (reference.inv() * rotation).magnitude() < np.deg2rad(5)
         )
 
     def select_reset_cube(self) -> int:

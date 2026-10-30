@@ -117,7 +117,7 @@ class SkillOraclePolicy:
         if holding:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-                objects=(env.robot, env.bin, env.cube, env.barrier, side_of(obj=env.bin)),
+                objects=(env.robot, env.bin, env.cube, env.barrier),
             )
             # Lifted into the bin's feasible band: a far bin past x ~ 2.24 has no
             # stand at all at the historical 1.35 m (see `far_standoff_bounds`).

@@ -31,6 +31,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -99,7 +100,7 @@ def _west_stand(*, monkeypatch: pytest.MonkeyPatch) -> None:
 # can be handed to upstream's controller unpermuted.
 _EXPECTED_PARAMETERS = {
     "PickCube": ("robot", "cube", "barrier", "side", "bin"),
-    "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier", "side"),
+    "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier"),
 }
 
 
@@ -117,7 +118,7 @@ def _pick_cube() -> GroundSkill:
 def _toss() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(_ENV.robot, _ENV.bin, _ENV.cube, _ENV.barrier, Tossing3DSides.opposite),
+        objects=(_ENV.robot, _ENV.bin, _ENV.cube, _ENV.barrier),
     )
 
 
@@ -171,13 +172,18 @@ def test_pick_requires_robot_and_cube_to_share_a_side() -> None:
     )
 
 
-def test_toss_copies_the_bins_side_to_the_cube() -> None:
-    toss = _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS
-    side_atom = LiftedAtom(
+@pytest.mark.parametrize("side", Tossing3DSides.objects())
+def test_toss_copies_the_bins_side_to_the_cube(*, side) -> None:
+    toss = _toss()
+    bin_side = GroundAtom(predicate=BIN_AT_SIDE, objects=(_ENV.bin, _ENV.barrier, side))
+    side_atom = GroundAtom(
         predicate=CUBE_AT_SIDE,
-        variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
+        objects=(_ENV.cube, _ENV.barrier, side),
     )
-    assert side_atom in toss.add_effects
+    assert side_atom not in toss.add_effects
+    assert toss.expected_add_effects(before_atoms=toss.preconditions | {bin_side}) == (
+        toss.add_effects | {side_atom}
+    )
     assert CUBE_AT_SIDE in toss.ignore_effects
 
 
@@ -195,14 +201,17 @@ def test_the_toss_lands_the_cube_flat_as_well_as_in_the_bin() -> None:
     )
 
 
-def test_the_toss_binds_its_destination_to_the_bins_side() -> None:
-    assert (
-        LiftedAtom(
-            predicate=BIN_AT_SIDE,
-            variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
+def test_the_toss_reads_its_destination_from_the_bins_side() -> None:
+    toss = _toss()
+    assert len(toss.conditional_add_effects) == len(Tossing3DSides.objects())
+    for side in Tossing3DSides.objects():
+        bin_side = GroundAtom(predicate=BIN_AT_SIDE, objects=(_ENV.bin, _ENV.barrier, side))
+        cube_side = GroundAtom(predicate=CUBE_AT_SIDE, objects=(_ENV.cube, _ENV.barrier, side))
+        effect = next(
+            effect for effect in toss.conditional_add_effects if bin_side in effect.conditions
         )
-        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions
-    )
+        assert effect.conditions == {bin_side}
+        assert effect.add_effects == {cube_side}
 
 
 def test_the_two_operator_models_are_exactly_as_declared() -> None:
@@ -210,6 +219,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     this list rather than a silent drift."""
     assert _SKILLS.PICK_CUBE.preconditions == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(
             predicate=ROBOT_AT_SIDE,
@@ -226,32 +236,32 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
-        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.PICK_CUBE.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
     assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube, _SKILLS._bin)
     assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
-        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
     assert _SKILLS.OPEN_GRIPPER.delete_effects == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(
-            predicate=BIN_AT_SIDE,
-            variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
-        ),
         LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects == frozenset({
@@ -259,14 +269,12 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=IN_BIN, variables=(_SKILLS._cube, _SKILLS._bin)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
-        LiftedAtom(
-            predicate=CUBE_AT_SIDE,
-            variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
-        ),
         LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
 
@@ -312,6 +320,8 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         IN_BIN,
         HAND_EMPTY,
         HOLDING,
+        CLOSED_EMPTY,
+        GRIPPER_CLOSED,
         NOT_HOLDING,
         ON_GROUND,
         ROBOT_AT_SIDE,
@@ -481,7 +491,7 @@ def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     )
     toss = GroundSkill(
         skill=skills["MoveToTossLocationAndToss"],
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     in_bin = GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
@@ -492,7 +502,10 @@ def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     assert in_bin in retrieval.delete_effects
     assert holding in retrieval.add_effects
     assert cube_side in retrieval.preconditions
-    assert cube_side in toss.add_effects
+    bin_side = GroundAtom(
+        predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.robot)
+    )
+    assert cube_side in toss.expected_add_effects(before_atoms=toss.preconditions | {bin_side})
     assert toss.skill is Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
 
 
@@ -500,11 +513,11 @@ def test_same_side_robot_skills_cost_one() -> None:
     assert {skill.evaluate_practice_cost() for skill in SameSideSkills.skills()} == {1.0}
 
 
-def test_toss_targets_the_bin_on_the_bound_side() -> None:
+def test_toss_requires_a_held_cube_and_grounded_bin_without_binding_side() -> None:
     predicates = {
         atom.predicate for atom in Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions
     }
-    assert BIN_AT_SIDE in predicates
+    assert predicates == {HOLDING, BIN_ON_GROUND}
 
 
 @pytest.mark.parametrize(
@@ -655,7 +668,7 @@ def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() 
         for atom in SkillGrounder.all_possible_ground_atoms(
             objects=provider.objects(), predicates=provider.predicates()
         )
-        if atom.predicate in {HAND_EMPTY, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
+        if atom.predicate in {HAND_EMPTY, NOT_HOLDING, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
         or (
             atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
             and atom.objects[-1] == Tossing3DSides.robot

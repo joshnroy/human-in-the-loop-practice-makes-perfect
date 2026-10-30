@@ -7,6 +7,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
     CUBE_AT_SIDE,
     HOLDING,
     NOT_HOLDING,
@@ -123,6 +124,10 @@ def _search_state(
     )
     invariants = {
         robot_side,
+        GroundAtom(
+            predicate=BIN_AT_SIDE,
+            objects=(env.bin, env.barrier, Tossing3DSides.opposite),
+        ),
     }
     if all(atom.predicate != HOLDING for atom in action.preconditions):
         invariants.add(GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)))
@@ -869,11 +874,7 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
         for g in model.ground_skills
         if g.skill.name == PICK_SKILL and g.objects[3] == Tossing3DSides.robot
     )
-    toss = next(
-        g
-        for g in model.ground_skills
-        if g.skill.name == TOSS_SKILL and g.objects[-1] == Tossing3DSides.robot
-    )
+    toss = next(ground for ground in model.ground_skills if ground.skill.name == TOSS_SKILL)
     robot_side = GroundAtom(
         predicate=ROBOT_AT_SIDE, objects=(env.robot, env.barrier, Tossing3DSides.robot)
     )
@@ -881,6 +882,7 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
         toss.preconditions
         | {robot_side}
         | {
+            GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.robot)),
             GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
             GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
             GroundAtom(
