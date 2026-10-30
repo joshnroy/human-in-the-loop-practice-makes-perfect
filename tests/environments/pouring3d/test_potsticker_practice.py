@@ -113,6 +113,67 @@ def test_failed_mobile_approach_retraces_measured_base_and_arm(*, monkeypatch):
     assert not c.shrimp_approach_path
 
 
+@pytest.mark.parametrize(
+    ("position", "tilt", "velocity", "expected"),
+    [
+        ([0, 0, 0.017], 0, [0, 0, -0.03, 0, 0, 0], True),
+        ([0, 0, 0.03], 0, [0] * 6, False),
+        ([0.01, 0, 0.017], 0, [0] * 6, False),
+        ([0, 0, 0.017], 5, [0] * 6, False),
+        ([0, 0, 0.017], 0, [0.1, 0, 0, 0, 0, 0], False),
+        ([0, 0, 0.017], 0, [0, 0, 0, 0.2, 0, 0], False),
+    ],
+)
+def test_low_pitcher_release_requires_centered_upright_slow_pose(
+    *, monkeypatch, position, tilt, velocity, expected
+):
+    monkeypatch.setattr(
+        PotstickerController,
+        "body_pose",
+        lambda self, **kw: (np.array(position), Rotation.from_euler("x", tilt, degrees=True)),
+    )
+    c = PotstickerController.model_construct(
+        home=np.zeros(3),
+        held="pitcher",
+        model=SimpleNamespace(
+            body=lambda name: SimpleNamespace(id=0), body_jntadr=[0], jnt_dofadr=[0]
+        ),
+        data=SimpleNamespace(qvel=np.array(velocity)),
+    )
+    assert c.can_release_pitcher_over_home() is expected
+    c.held = None
+    assert not c.can_release_pitcher_over_home()
+
+
+@pytest.mark.parametrize("obstacle", ["robot_base", "robot_bracelet_link"])
+def test_low_release_fallback_only_handles_palm_seating_clearance(*, monkeypatch, obstacle):
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    checks = iter([False, True])
+    releases = []
+
+    def fail(self):  # noqa: PLR0917 -- patched bound method
+        raise ValueError(
+            f"Insufficient obstacle clearance in seat pitcher on table: {obstacle}/prep_table_top"
+        )
+
+    monkeypatch.setattr(PracticePourController, "place_pitcher", fail)
+    monkeypatch.setattr(
+        PotstickerController, "can_release_pitcher_over_home", lambda self: next(checks)
+    )
+    monkeypatch.setattr(
+        PotstickerController, "release_pitcher_over_home", lambda self: releases.append(True)
+    )
+    c = PotstickerController.model_construct()
+    if obstacle == "robot_base":
+        c.place_pitcher()
+        assert releases == [True]
+    else:
+        with pytest.raises(ValueError, match="robot_bracelet_link"):
+            c.place_pitcher()
+        assert not releases
+
+
 @pytest.mark.parametrize("contained", [False, True])
 def test_premature_drop_accepts_only_measured_containment(*, monkeypatch, contained):
     from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController

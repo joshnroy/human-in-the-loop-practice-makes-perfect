@@ -129,6 +129,37 @@ Its upstream lazy installer writes a shared library without synchronization. CI 
 builds and imports the Kinova solver before starting parallel test workers; the next
 CI run must establish whether this resolves all failures.
 
+### October 30 follow-up: recovery replay and placement dead end
+
+The saved v42 pre-pick integration state now completes recovery on `b222b4de5`:
+**1/1 returned to ready**, with zero audited unintended contacts. The native video
+is retained under `artifacts/potsticker-recovery-v43/replay/`. CI is fully green on
+that commit. Della native preflight job 16477662 passed with matching source and
+dependency pins; a node-local `XDG_RUNTIME_DIR` is required for its Mesa allocation.
+The first preflight without that directory failed and is preserved as job 16477558.
+
+Inspection of the aborted Curtis seed-2 practice trace found another failure: the
+gripper palm clearance prevented seating a centered, upright pitcher about 17 mm
+above home. Repeated placement attempts then remained blocked. Reconstructing its
+recorded post-failure pose reproduces that refusal; reconstructing the earlier
+pre-placement pose does not. These reconstructions lack saved solver warm starts
+and commanded joint targets and are explicitly diagnostic, not exact continuations.
+An uninterrupted action-sequence replay is also retained separately.
+
+The placement repair permits physical release only within 20 mm above home,
+6 mm horizontally, 3 degrees upright, 50 mm/s translation and 0.1 rad/s rotation.
+It preserves the collision margins. It then verifies landing within 3 mm vertically,
+10 mm horizontally and 5 degrees before withdrawing. From the same reconstructed
+stranded state, the original retry fails **0/1**, while production repair passes
+**1/1**, with zero audited unintended contacts. Food is already in the pan, so this
+is a placement success, not a full ready-state reset. Artifacts are under
+`artifacts/potsticker-placement-v44/` and `artifacts/potsticker-placement-v45/`.
+
+![Physical regression cases, not reliability estimates](2026-10-30-potsticker-support-regressions.png)
+
+The production/guard/launch tests pass **30/30**. The combined controller still
+requires its own uninterrupted physical check, CI and the paired learning pilots.
+
 Freeze and launch a new six-run pilot batch only after inspecting the repeated-cycle
 result. Preserve the aborted `cd40854a0` batch separately. Report first-pour exact
 counts separately from full-task success after robot recovery, and inspect STOP,

@@ -50,6 +50,64 @@ class PotstickerController(PracticePourController):
     anticipation_seconds: float = 0.0
     mouth_history: dict[str, tuple[float, float, float]] = Field(default_factory=dict)
 
+    def place_pitcher(self) -> None:
+        if self.can_release_pitcher_over_home():
+            self.release_pitcher_over_home()
+            return
+        try:
+            super().place_pitcher()
+        except ValueError as exc:
+            if (
+                not str(exc).startswith(
+                    "Insufficient obstacle clearance in seat pitcher on table: robot_base/"
+                )
+                or not self.can_release_pitcher_over_home()
+            ):
+                raise
+            # A compliant handle grasp can put the palm below the handle. Do
+            # not force it through the table to remove the final small air gap.
+            self.release_pitcher_over_home()
+
+    def can_release_pitcher_over_home(self) -> bool:
+        if self.held != "pitcher":
+            return False
+        position, rotation = self.body_pose(name="pitcher")
+        joint = self.model.body_jntadr[self.model.body("pitcher").id]
+        address = self.model.jnt_dofadr[joint]
+        velocity = self.data.qvel[address : address + 6]
+        return bool(
+            0 <= position[2] - self.home[2] <= 0.02
+            and np.linalg.norm(position[:2] - self.home[:2]) < 0.006
+            and rotation.magnitude() < np.deg2rad(3)
+            and np.linalg.norm(velocity[:3]) < 0.05
+            and np.linalg.norm(velocity[3:]) < 0.1
+        )
+
+    def release_pitcher_over_home(self) -> None:
+        self.events.append({"event": "release upright pitcher within 2 cm of home support"})
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        self.base_target = self.data.qpos[self.base_q].copy()
+        self.held = None
+        self.pause(phase="release pitcher", seconds=2, grip=0)
+        position, rotation = self.body_pose(name="pitcher")
+        if (
+            abs(position[2] - self.home[2]) > 0.003
+            or np.linalg.norm(position[:2] - self.home[:2]) > 0.01
+            or rotation.magnitude() > np.deg2rad(5)
+        ):
+            raise ValueError("Released pitcher did not land upright at home")
+        hand, orientation = self.hand_pose()
+        self.move(
+            phase="withdraw gripper",
+            position=hand + [0, 0, 0.25],
+            rotation=orientation,
+            seconds=3,
+            grip=0,
+        )
+        self.move_base(
+            target=self.base_home + [-0.35, 0, 0], phase="clear workspace for reset", seconds=4
+        )
+
     def drop_shrimp(self, *, index: int) -> None:
         try:
             super().drop_shrimp(index=index)
