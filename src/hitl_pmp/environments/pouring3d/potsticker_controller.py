@@ -6,7 +6,7 @@ native motor commands; the three parameters remain independent.
 """
 
 import time
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from pydantic import Field
@@ -24,6 +24,10 @@ class PotstickerParameters(FeedbackPourParameters):
 
 
 class PotstickerController(PracticePourController):
+    # Keep the upright transport height; pour 5 cm higher once tilted.
+    station_pour_height_drop: ClassVar[float] = 0.11
+    # A closer base keeps the elevated tilt arc away from full elbow extension.
+    station_pour_base_offset: ClassVar[float] = 0.60
     mode: Literal["tilt_hold", "angular", "lateral", "feedback", "joint_lateral"] = "feedback"
     joint_pour_active: bool = False
     joint_payload_mass: float = 0.0

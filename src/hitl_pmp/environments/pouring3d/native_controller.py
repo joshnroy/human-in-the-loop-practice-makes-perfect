@@ -39,6 +39,7 @@ class NativePouringController(BaseModel):
     frequency: float
     home: np.ndarray
     tray_home: np.ndarray
+    tray_home_rotation: Rotation = Field(default_factory=Rotation.identity)
     base_home: np.ndarray
     base_target: np.ndarray
     phase: str = "ready"
@@ -97,6 +98,7 @@ class NativePouringController(BaseModel):
             frequency=scene._robot_env.control_frequency,
             home=data.xpos[model.body("pitcher").id].copy(),
             tray_home=data.xpos[model.body("tray").id].copy(),
+            tray_home_rotation=Rotation.from_quat(data.xquat[model.body("tray").id][[1, 2, 3, 0]]),
             base_home=data.qpos[base_q].copy(),
             base_target=data.qpos[base_q].copy(),
         )
@@ -499,8 +501,10 @@ class NativePouringController(BaseModel):
     def vessel_home(self, *, name: str) -> bool:
         position, rotation = self.body_pose(name=name)
         target = self.home if name == "pitcher" else self.tray_home
+        reference = Rotation.identity() if name == "pitcher" else self.tray_home_rotation
         return bool(
-            np.linalg.norm(position - target) < 0.025 and rotation.magnitude() < np.deg2rad(5)
+            np.linalg.norm(position - target) < 0.025
+            and (reference.inv() * rotation).magnitude() < np.deg2rad(5)
         )
 
     def select_reset_cube(self) -> int:
