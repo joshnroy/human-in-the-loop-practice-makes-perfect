@@ -2,7 +2,9 @@
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.control_steps import ControlStepLimitReached
@@ -75,6 +77,41 @@ def test_unreachable_preparation_tries_alternate_grasp_without_reversing_unexecu
     c.pick_payload_with_retry(index=2, location="tray")
     assert attempts == [60, 30]
     assert c.held == "potsticker_2" and c.recovery_pitch_degrees == 60
+
+
+@pytest.mark.parametrize("contained", [False, True])
+def test_premature_drop_accepts_only_measured_containment(*, monkeypatch, contained):
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    def drop(self, *, index):  # noqa: PLR0917 -- patched bound method
+        self.held = None
+        self.phase = "center held shrimp over pitcher"
+        raise ValueError("Physical shrimp grasp lost")
+
+    pauses = []
+    monkeypatch.setattr(PracticePourController, "drop_shrimp", drop)
+    monkeypatch.setattr(PotstickerController, "pause", lambda self, **kw: pauses.append(kw))
+    monkeypatch.setattr(PotstickerController, "move", lambda self, **kw: None)
+    monkeypatch.setattr(
+        PotstickerController, "hand_pose", lambda self: (np.zeros(3), Rotation.identity())
+    )
+    c = PotstickerController.model_construct(
+        scene=SimpleNamespace(
+            cube_names=["potsticker_0"],
+            cube_in_vessel=lambda *args: contained,
+            cubes_settled=lambda: True,
+        ),
+        held="potsticker_0",
+    )
+    if not contained:
+        with pytest.raises(ValueError, match="Physical shrimp grasp lost"):
+            c.drop_shrimp(index=0)
+        assert not pauses
+    else:
+        c.drop_shrimp(index=0)
+        assert c.events == [{"event": "contained release before command", "payload": 0}]
+        assert pauses[0]["grip"] == 0
+        assert sum(p["seconds"] for p in pauses) == pytest.approx(4)
 
 
 def test_native_dumpling_reset_and_recording(*, tmp_path):

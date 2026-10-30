@@ -65,6 +65,23 @@ two-cycle check is testing that repair. The v33 individual retry diagnostic reco
 the remaining pan piece with zero audited contacts, but its starting pan was already
 displaced; this is not a full ready-state recovery witness.
 
+### Subsequent repeat-cycle finding
+
+The completed v34 run failed: the second pickup succeeded but its descending finger
+spring linkage touched the prep table (2,466 audited substeps; maximum penetration
+0.609 mm). During the second reset, a dumpling left the fingers before commanded
+release and landed in the pitcher; the controller reported grasp loss and stopped.
+An isolated next pickup after floor recovery also brushed the pitcher during approach
+and failed the handle-contact check. The corresponding tabletop-start pickup passed
+without audited contacts. These are retained failures, not clean repeated-cycle passes.
+
+Before those next-pickup diagnostics, the latest v36 floor/tabletop physical pick/drop
+fixtures passed **2/2**, both returning ready with zero audited unintended contacts.
+The v38 repair partially closes the open gripper linkage in the aisle before the next
+handle approach, includes the pitcher in those approach clearance checks, and accepts
+an early drop only if the piece is measured inside the pitcher during final centering.
+It still rejects spills or losses elsewhere in transport. Physical validation is pending.
+
 Current targeted integration/shared-method/planning tests: **200/200 passed**.
 Typechecking passes for 269 source files. Full CI passed on the preceding pushed
 revision; the final recovery changes require their own CI run.

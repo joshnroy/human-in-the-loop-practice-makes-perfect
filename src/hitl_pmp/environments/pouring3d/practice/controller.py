@@ -100,7 +100,13 @@ class PracticePourController(FeedbackPourController):
                 self.pitcher_pairs
                 if self.recovery_plan_approach
                 and self.held is None
-                and self.phase == "prepare arm in clear aisle"
+                and (
+                    self.phase == "prepare arm in clear aisle"
+                    or (
+                        self.pitcher_open_grip > 0
+                        and self.phase in {"approach pitcher", "align fingers across handle"}
+                    )
+                )
                 else []
             )
         )
@@ -332,6 +338,18 @@ class PracticePourController(FeedbackPourController):
                     grip=0,
                     phase="raise arm in aisle before pitcher approach",
                 )
+            if aisle_x < 0:
+                # The fully open linkage can brush the rim or worktop from a
+                # recovered arm posture. Preclose in free space while retaining
+                # a gap wider than the handle, then keep that gap during approach.
+                opening = self.pitcher_open_grip
+                self.pitcher_open_grip = 0.4
+                try:
+                    self.pause(phase="preclose fingers for handle approach", seconds=1, grip=0.4)
+                    super().pick_pitcher()
+                finally:
+                    self.pitcher_open_grip = opening
+                return
         super().pick_pitcher()
 
     def move_base(self, *, target: np.ndarray, phase: str, seconds: float) -> None:
