@@ -204,7 +204,8 @@ def trial(
         if pickup_only:
             run(name="PickPitcher")
         elif cycles:
-            recipe = {1: (89, 0.008, 12), 2: (89.5, 0.008, 12), 3: (90, 0.015, 12)}[target]
+            # Diagnostic recipes only; the learner samples its own parameters.
+            recipe = {1: (89, 0.008, 12), 2: (89.125, 0.008, 12), 3: (90, 0.015, 12)}[target]
             for _cycle in range(cycles):
                 run(name="PickPitcher")
                 g = provider.ground(name=f"Pour{target}", request=target)
