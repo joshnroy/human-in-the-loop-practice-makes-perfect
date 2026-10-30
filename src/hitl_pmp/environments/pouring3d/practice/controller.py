@@ -37,7 +37,7 @@ class PracticePourController(FeedbackPourController):
     recovery_contact_preload: float = 0.03
     payload_grip_force: float = 0.0
     payload_hold_grip: float = 1.0
-    shrimp_approach_path: list[np.ndarray] = Field(default_factory=list)
+    shrimp_approach_path: list[tuple[np.ndarray, np.ndarray]] = Field(default_factory=list)
 
     before_step: Callable[[], None] | None = None
     after_step: Callable[[], None] | None = None
@@ -514,6 +514,18 @@ class PracticePourController(FeedbackPourController):
         if self.before_step is not None:
             self.before_step()
         before = self.steps
+        record_approach = self.shrimp_recovery_active and self.phase in {
+            "position for shrimp pick",
+            "approach above raised shrimp",
+            "approach shrimp",
+            "descend to shrimp body",
+            "lift shrimp",
+        }
+        if record_approach and not self.shrimp_approach_path:
+            self.shrimp_approach_path.append((
+                self.data.qpos[self.base_q].copy(),
+                self.data.qpos[self.arm_q].copy(),
+            ))
         try:
             super().motor_step(target_q=target_q, grip=grip)
             if self.held is not None and self.held in self.scene.cube_names:
@@ -524,18 +536,11 @@ class PracticePourController(FeedbackPourController):
                     self.held = None
                     raise ValueError("Physical shrimp grasp lost")
         finally:
-            if (
-                self.steps > before
-                and self.shrimp_recovery_active
-                and self.phase
-                in {
-                    "approach above raised shrimp",
-                    "approach shrimp",
-                    "descend to shrimp body",
-                    "lift shrimp",
-                }
-            ):
-                self.shrimp_approach_path.append(self.data.qpos[self.arm_q].copy())
+            if self.steps > before and record_approach:
+                self.shrimp_approach_path.append((
+                    self.data.qpos[self.base_q].copy(),
+                    self.data.qpos[self.arm_q].copy(),
+                ))
             if self.steps > before and self.after_step is not None:
                 self.after_step()
 
@@ -725,11 +730,15 @@ class PracticePourController(FeedbackPourController):
             path = list(reversed(self.shrimp_approach_path))
             self.shrimp_approach_path.clear()
             self.phase = "retreat after failed shrimp pick"
-            for target in path:
+            for base, target in path:
+                self.base_target = base.copy()
                 self.last_q = target.copy()
                 self.motor_step(target_q=target, grip=0)
                 for _ in range(20):
-                    if np.max(np.abs(target - self.data.qpos[self.arm_q])) < 0.025:
+                    if (
+                        np.max(np.abs(target - self.data.qpos[self.arm_q])) < 0.025
+                        and np.max(np.abs(base - self.data.qpos[self.base_q])) < 0.005
+                    ):
                         break
                     self.motor_step(target_q=target, grip=0)
                 else:

@@ -79,6 +79,40 @@ def test_unreachable_preparation_tries_alternate_grasp_without_reversing_unexecu
     assert c.held == "potsticker_2" and c.recovery_pitch_degrees == 60
 
 
+def test_failed_mobile_approach_retraces_measured_base_and_arm(*, monkeypatch):
+    from hitl_pmp.environments.pouring3d.feedback_controller import FeedbackPourController
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    moves = []
+
+    def step(self, *, target_q, grip):  # noqa: PLR0917 -- patched bound method
+        self.data.qpos[self.base_q] = self.base_target
+        self.data.qpos[self.arm_q] = target_q
+        self.steps += 1
+        moves.append(self.data.qpos.copy())
+
+    monkeypatch.setattr(FeedbackPourController, "motor_step", step)
+    monkeypatch.setattr(PracticePourController, "pause", lambda self, **kw: None)
+    c = PracticePourController.model_construct(
+        data=SimpleNamespace(qpos=np.zeros(10)),
+        base_q=np.arange(3),
+        arm_q=np.arange(3, 10),
+        base_target=np.zeros(3),
+        last_q=np.zeros(7),
+        held=None,
+        steps=0,
+        shrimp_recovery_active=True,
+        phase="position for shrimp pick",
+    )
+    for value in (0.1, 0.2):
+        c.base_target = np.full(3, value)
+        c.motor_step(target_q=np.full(7, value), grip=0)
+    c.clear_failed_pick()
+    assert np.allclose(c.data.qpos, 0)
+    assert any(np.allclose(move, 0.1) for move in moves[2:])
+    assert not c.shrimp_approach_path
+
+
 @pytest.mark.parametrize("contained", [False, True])
 def test_premature_drop_accepts_only_measured_containment(*, monkeypatch, contained):
     from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
