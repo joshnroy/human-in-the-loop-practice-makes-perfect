@@ -66,6 +66,11 @@ class PddlWriter:
         for predicate in predicates:
             PddlWriter._reject_sigil(name=predicate.name, kind="Predicate")
         types_str = " ".join(t.name for t in sorted(types, key=lambda t: t.name))
+        constants = PddlWriter.collect_constants(skills=skills)
+        constants_str = ""
+        if constants:
+            declarations = "\n    ".join(f"{obj.name} - {obj.type.name}" for obj in constants)
+            constants_str = f"\n  (:constants\n    {declarations}\n  )\n"
         preds_str = "\n    ".join(
             PddlWriter._predicate_declaration_str(predicate=predicate)
             for predicate in sorted(predicates, key=lambda p: p.name)
@@ -81,7 +86,7 @@ class PddlWriter:
         return f"""(define (domain {domain_name})
   (:requirements {requirements})
   (:types {types_str})
-
+{constants_str}
   (:predicates\n    {preds_str}
   )
 
@@ -94,14 +99,23 @@ class PddlWriter:
         objects: tuple[Object, ...],
         init_atoms: frozenset[GroundAtom],
         goal: frozenset[GroundAtom],
+        constants: tuple[Object, ...] = (),
         domain_name: str = "hitlpmp",
         problem_name: str = "hitlpmpproblem",
     ) -> str:
+        constants_by_name = {
+            obj.name.lower(): obj for obj in PddlWriter._unique_constants(objects=constants)
+        }
         for obj in objects:
             PddlWriter._reject_sigil(name=obj.name, kind="Object")
             PddlWriter._reject_sigil(name=obj.type.name, kind="Type")
+            constant = constants_by_name.get(obj.name.lower())
+            if constant is not None and constant != obj:
+                raise ValueError(f"Object {obj.name!r} conflicts with a domain constant")
         objects_str = "\n    ".join(
-            f"{obj.name} - {obj.type.name}" for obj in sorted(objects, key=lambda o: o.name)
+            f"{obj.name} - {obj.type.name}"
+            for obj in sorted(objects, key=lambda o: o.name)
+            if obj.name.lower() not in constants_by_name
         )
         init_str = "\n    ".join(PddlWriter._sorted_ground_atom_strs(atoms=init_atoms))
         goal_str = "\n    ".join(PddlWriter._sorted_ground_atom_strs(atoms=goal))
@@ -113,6 +127,32 @@ class PddlWriter:
   (:goal (and {goal_str}))
 )
 """
+
+    @staticmethod
+    def collect_constants(*, skills: tuple[Skill, ...]) -> tuple[Object, ...]:
+        """Collect effect-local constants once for domain and problem rendering."""
+        constants: list[Object] = []
+        for skill in skills:
+            parameter_names = {parameter.name.lower() for parameter in skill.parameters}
+            for effect in skill.conditional_add_effects:
+                for variable, obj in effect.constant_bindings:
+                    PddlWriter._reject_sigil(name=variable.name, kind="Variable")
+                    if variable.name.lower() in parameter_names:
+                        raise ValueError("Constant bindings cannot shadow skill parameters")
+                    constants.append(obj)
+        return PddlWriter._unique_constants(objects=tuple(constants))
+
+    @staticmethod
+    def _unique_constants(*, objects: tuple[Object, ...]) -> tuple[Object, ...]:
+        by_name: dict[str, Object] = {}
+        for obj in objects:
+            PddlWriter._reject_sigil(name=obj.name, kind="Object")
+            PddlWriter._reject_sigil(name=obj.type.name, kind="Type")
+            name = obj.name.lower()
+            if name in by_name and by_name[name] != obj:
+                raise ValueError(f"Conflicting domain constants named {obj.name!r}")
+            by_name[name] = obj
+        return tuple(sorted(by_name.values(), key=lambda obj: obj.name))
 
     @staticmethod
     def _predicate_declaration_str(*, predicate: Predicate) -> str:
@@ -181,8 +221,16 @@ class PddlWriter:
 
     @staticmethod
     def _conditional_add_effect_str(*, effect: ConditionalAddEffect) -> str:
-        conditions = " ".join(PddlWriter._sorted_lifted_atom_strs(atoms=effect.conditions))
-        additions = " ".join(PddlWriter._sorted_lifted_atom_strs(atoms=effect.add_effects))
+        conditions = " ".join(
+            PddlWriter._sorted_lifted_atom_strs(
+                atoms=effect.conditions, constant_bindings=effect.constant_bindings
+            )
+        )
+        additions = " ".join(
+            PddlWriter._sorted_lifted_atom_strs(
+                atoms=effect.add_effects, constant_bindings=effect.constant_bindings
+            )
+        )
         return f"(when (and {conditions}) (and {additions}))"
 
     @staticmethod
@@ -219,19 +267,30 @@ class PddlWriter:
         return prefix
 
     @staticmethod
-    def _sorted_lifted_atom_strs(*, atoms: frozenset[LiftedAtom]) -> list[str]:
-        return sorted(PddlWriter._lifted_atom_str(atom=atom) for atom in atoms)
+    def _sorted_lifted_atom_strs(
+        *, atoms: frozenset[LiftedAtom], constant_bindings: tuple[tuple[Variable, Object], ...] = ()
+    ) -> list[str]:
+        return sorted(
+            PddlWriter._lifted_atom_str(atom=atom, constant_bindings=constant_bindings)
+            for atom in atoms
+        )
 
     @staticmethod
     def _sorted_ground_atom_strs(*, atoms: frozenset[GroundAtom]) -> list[str]:
         return sorted(PddlWriter._ground_atom_str(atom=atom) for atom in atoms)
 
     @staticmethod
-    def _lifted_atom_str(*, atom: LiftedAtom) -> str:
+    def _lifted_atom_str(
+        *, atom: LiftedAtom, constant_bindings: tuple[tuple[Variable, Object], ...] = ()
+    ) -> str:
         if not atom.variables:
             return f"({atom.predicate.name})"
+        constants = dict(constant_bindings)
         variables_str = " ".join(
-            PddlWriter._variable_str(variable=variable) for variable in atom.variables
+            constants[variable].name
+            if variable in constants
+            else PddlWriter._variable_str(variable=variable)
+            for variable in atom.variables
         )
         return f"({atom.predicate.name} {variables_str})"
 

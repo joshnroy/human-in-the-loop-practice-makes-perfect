@@ -30,46 +30,25 @@ a policy's terminal value. Initial mass sums to one, and an acyclic policy visit
 each state at most once. Thus unit occupancy bounds are valid even at gamma=1;
 we do not substitute gamma=1 into the paper's bound 1/(1-gamma).
 
-`--dp-solver gurobi` requires Gurobi to certify both maximum task value and
-least-cost tie breaking. `dp_allocations.jsonl` records status, objective, bound,
+`--dp-solver gurobi` requires Gurobi to certify maximum task value, with no
+minimum-spend secondary objective. `dp_allocations.jsonl` records status, objective, bound,
 absolute/relative gap, runtime, allocation, completed episodes and physical cost.
 A time limit or failed solve raises; it never silently switches to enumeration.
 `--dp-solver enumeration` is an explicit independent small-problem reference.
 
-The cheapest-allocation stage preserves an independently evaluated integer
-incumbent with an absolute task-value allowance of `1e-8`, rather than fixing
-the reward to a floating-point solver objective. The primary bound is tightened
-by solving the task MDP at each skill's independently maximum reachable
-competence: `min(1, p + Delta * limit)`, where `limit` is the same useful,
-individually affordable integer attempt cap used by the optimizer. Skills with
-nonpositive learning rates, no training price or no relevant deployment route
-keep their current competence. Each skill independently receives up to the full
-budget for this bound only; those caps need not be jointly affordable. Relaxing
-the shared budget this way gives a valid upper bound because task value is
-monotone in skill success probabilities. It does not add reset lookahead or
-change the optimizer's shared-budget constraint. Both stages independently
-check physical spend, and returned task value must be within `1e-7` of that
-bound; the actual absolute/relative gaps are recorded, not overwritten with zero.
-This avoids the reproduced saturation failure where a primary solver objective
-of `1.0000009725762244` was pinned despite the reward's upper bound of one.
-The reachable-competence bound also addresses a reconstructed cost/period
-failure: when toss competence cannot improve, assuming perfect toss competence
-leaves the independent bound too loose to correct an inflated Gurobi bound.
-Independent enumeration proves the small Pick-to-Toss reconstruction's optimum;
-the regression is not an exact replay of the original run's task graph.
-The `1e-7` acceptance threshold, `1e-8` tie allowance and requirement that both
-Gurobi stages return OPTIMAL are unchanged.
-The tie stage also independently checks the preserved primary value floor.
-If numerical violations admit an over-budget or below-floor integer allocation,
-an exact no-good cut excludes only that independently invalid allocation before
-re-solving the same Gurobi cost objective. These cuts do not remove any truly
-feasible tie solution. Every re-solve still requires OPTIMAL and shares the
-original solver deadline; `tie_break_retries` records the number of exclusions.
-A repeated excluded allocation, exhausted deadline, or bound-gap failure for an
-allocation that meets the budget and preserved floor raises instead of silently
-returning the primary allocation or switching solvers. This covers a second
-reconstruction where the numerical tie solution undertrained Pick despite an
-independently optimal primary allocation.
+Counts in the production Gurobi model are bounded by affordability, not by the
+forecast's saturation point. Its budget remains an inequality; unused budget is
+permitted, and no secondary objective forces either minimum or maximum spending.
+Consequently equally optimal allocations may differ from the enumeration oracle,
+which still uses saturation pruning and minimum spending to search small problems.
+Compare their independently evaluated task values, not exact counts or expenditure.
+
+The primary bound is tightened by solving the task MDP at each skill's independently
+maximum affordable competence. Returned task value and spending are independently
+checked with the existing `1e-7` tolerance. OPTIMAL status alone is insufficient.
+Historical near-saturation, negative-rate and grouped-allocation regressions still
+check the primary optimum; the old secondary-stage infeasibility is eliminated by
+removing that non-paper objective, not by relaxing its tolerance.
 See Gurobi's [numerical-tolerance guidance](https://docs.gurobi.com/projects/optimizer/en/current/concepts/numericguide/tolerances_scaling.html).
 
 The selected policy supplies the curriculum order: practice predecessors before
@@ -164,12 +143,42 @@ a continuous-allocation relaxation. Finishing allocated attempts is also not a
 guarantee of mastering the real skill. With Beta(10,1) and initial Delta=0.1,
 the allocate-once arm can predict saturation after very few attempts. Our
 minimum-cost tie break and pruning beyond predicted saturation then select only
-those few attempts, leaving most of the budget unused. The paper does not specify
-this tie-breaking rule, and its globally optimal allocations need not be unique.
-This behavior must not be attributed to the authors' implementation. Priors and
-tie handling require review before claiming a meaningful full-run comparison;
-we do not silently change priors or replace the paper's <= budget by equality
-just to force spending.
+those few attempts, leaving most of the budget unused. That describes the historical
+implementation through `2724868`, not the corrected Gurobi path. The paper does not
+specify either added restriction. Removing them does not guarantee spending the full
+budget or empirical mastery; globally optimal allocations need not be unique.
+We do not replace the paper's <= budget by equality just to force spending.
+
+### October 29 fidelity correction and seed-0 diagnostics
+
+The online linear model now applies the published exponential-average recurrence
+once per retained skill-outcome observation in closed cycles, without division by
+cycle length. The same ordered observations yield the same rate regardless of how
+closed practice periods partition them. Calibration's initial slope and allocation
+counts remain in rollout units, not control ticks or entire practice periods.
+Negative rates remain signed. No change is made to the inner sampler, cumulative
+Beta competence estimator, inherited exclusion of random exploration observations,
+or evaluation isolation. The estimator, observation filtering, and choice of the
+recurrence's time index remain explicit adaptations, not verified author-code details.
+In particular, changing confidence in a cumulative posterior is not a controlled
+measurement of improvement of the newly trained policy. The correction does not
+promise to cure premature abandonment of a skill.
+
+Neither the full paper (Sections 5.1 and 5.3, Appendix A.3.1) nor the October MERL
+workshop version specifies an executable reallocation/stopping protocol in sufficient
+detail to verify ours. No official reference implementation has been verified.
+The once/period switches are retained as explicitly labeled diagnostic assumptions;
+do not call either arm an exact reproduction. A new stopping rule, forced budget
+spending, confidence-based mastery threshold, or negative-rate clamp is not justified
+as a paper-fidelity fix. Confirm the authors' protocol before a canonical comparison.
+
+The seed-0 diagnostics retain all four grounded/shared by episodes-once/cost-period
+arms, the 2,000 budget ceilings, and the 160,000 counted-step ceiling. Fresh output
+directories preserve historical runs. Allocation logs identify the recurrence,
+protocol status, remaining budget and completion reason: `budget_spent`,
+`zero_allocation`, or `once_curriculum_consumed`. Early endpoints are reported, not
+extended to 160,000. These diagnostics test the corrections, not a promised match
+to EES or a settled faithful reproduction of the entire paper.
 
 ### Independent cost calibration
 
@@ -210,7 +219,7 @@ test QoS, even if a different QoS is requested explicitly. This follows
 ## Explicit adaptations
 
 - The modified arm uses actual robot/human costs and per-period reallocation;
-  the paper-style arm uses the episode/allocate-once interpretation above.
+  the episode/allocate-once arm uses the explicit interpretation above.
 - Attempt costs estimate the whole directed attempt: setup, failed/retried setup,
   human resets, target execution, and trailing always-ask resets. Setup executions
   do not consume a second target allocation. Unfinished spending remains attached
@@ -218,8 +227,8 @@ test QoS, even if a different QoS is requested explicitly. This follows
 - Robot costs start from a one-control-step prior. This is optimistic before
   observing setup costs; cost estimation is empirical, not exact forecasting.
 - Samplers, competence priors, skill abstractions, and execution are shared with
-  the EES comparison. The linear model uses a per-attempt smoothed improvement
-  estimate; the paper does not specify our Beta prior or smoothing constant.
+  the EES comparison. The linear model uses a per-observation smoothed improvement
+  estimate; the paper does not specify our Beta prior, filtering or smoothing constant.
 - Humans are scored during practice but excluded from deployment. Consequently
   their allocations are zero under the same task-value rule; they can still be
   used as setup and consume the cost budget. They are not fallback practice targets.

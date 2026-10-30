@@ -141,14 +141,15 @@ class LinearSkillCompetenceModel(BaseModel):
 
     Delta is the paper's running average of observed improvement,
 
-        Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1}) / n_t
+        Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1})
 
-    updated once per closed cycle in which the skill was attempted, where p_t is the
-    posterior mean at that cycle's end and n_t its number of attempts. Dividing by n_t
-    is what keeps Delta in the same unit as b, one attempt; the paper's t indexes single
-    practice episodes, so there n_t is 1 and the two forms coincide. A cycle with no
-    attempt carries no evidence about the learning rate and leaves Delta alone, rather
-    than decaying it toward zero.
+    applied once per retained skill-outcome observation in closed cycles. Periods
+    batch learner fitting, not the recurrence: repartitioning the same closed
+    observation sequence cannot change Delta. Empty cycles leave Delta unchanged.
+    The cumulative Beta estimator and inherited outcome eligibility remain explicit
+    adaptations; this is not a controlled measurement of post-training improvement.
+    The paper does not specify the estimator or its exact update cadence. Here t
+    indexes observed skill episodes, never control ticks or whole practice periods.
 
     The paper gives no experimental values for the Delta prior or eps. 0.1 is the
     per-episode improvement in its own illustrative example, and eps = 0.5 is ours."""
@@ -177,15 +178,12 @@ class LinearSkillCompetenceModel(BaseModel):
         total = 0
         previous = self._posterior_mean(successes=0, total=0)
         for cycle in self.cycle_observations[:-1]:
-            if not cycle:
-                continue
-            successes += sum(cycle)
-            total += len(cycle)
-            current = self._posterior_mean(successes=successes, total=total)
-            delta = self.smoothing * delta + (1.0 - self.smoothing) * (current - previous) / len(
-                cycle
-            )
-            previous = current
+            for outcome in cycle:
+                successes += outcome
+                total += 1
+                current = self._posterior_mean(successes=successes, total=total)
+                delta = self.smoothing * delta + (1.0 - self.smoothing) * (current - previous)
+                previous = current
         return delta
 
     def predict_competence(self, *, num_attempts: int) -> float:

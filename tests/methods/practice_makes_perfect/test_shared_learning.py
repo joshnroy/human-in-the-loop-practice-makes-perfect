@@ -21,14 +21,15 @@ def build(**kwargs):
     )
 
 
-def tosses(*, method):
-    skill = next(skill for skill in method.skills() if skill.name == "MoveToTossLocationAndToss")
+def picks(*, method):
+    """Use the still side-bound PickCube to exercise distinct-grounding sharing."""
+    skill = next(skill for skill in method.skills() if skill.name == "PickCube")
     objects = {obj.name: obj for obj in method.objects()}
     return tuple(
         GroundSkill(
             skill=skill,
             objects=tuple(
-                objects[name] for name in ("robot", "bin_0", "cube_0", "cuboid_barrier", side)
+                objects[name] for name in ("robot", "cube_0", "cuboid_barrier", side, "bin_0")
             ),
         )
         for side in ("robot_side", "opposite_side")
@@ -42,7 +43,7 @@ def observe(*, method, ground, outcomes):
 
 def test_default_forecasts_keep_grounded_histories():
     method = build()
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True] * 8)
     observe(method=method, ground=far, outcomes=[False] * 4)
     assert method.competence_sharing == "grounded"
@@ -54,7 +55,7 @@ def test_default_forecasts_keep_grounded_histories():
 
 def test_parent_forecast_pools_actual_outcomes_once_with_one_prior():
     method = build(competence_sharing="parent")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True] * 8)
     observe(method=method, ground=far, outcomes=[False] * 4)
     pooled = method.forecast_competence_model(ground_skill=near)
@@ -63,14 +64,15 @@ def test_parent_forecast_pools_actual_outcomes_once_with_one_prior():
     assert pooled.get_current_competence() == pytest.approx(18 / 23)
     assert method.total_observations() == 12
     assert method.skill_costs()[near] == method.skill_costs()[far]
-    assert method.sampler(skill_name=near.skill.name, param_dim=3) is method.sampler(
-        skill_name=far.skill.name, param_dim=3
+    toss = next(skill for skill in method.skills() if skill.name == "MoveToTossLocationAndToss")
+    assert method.sampler(skill_name=toss.name, param_dim=toss.param_dim) is method.sampler(
+        skill_name=toss.name, param_dim=toss.param_dim
     )
 
 
 def test_rate_only_shares_improvement_not_current_competence():
     method = build(competence_sharing="rate")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True] * 8)
     observe(method=method, ground=far, outcomes=[False] * 4)
     assert method.forecast_competence_model(ground_skill=near).get_current_competence() != (
@@ -83,9 +85,9 @@ def test_rate_only_shares_improvement_not_current_competence():
 
 
 @pytest.mark.parametrize("sharing", ["parent", "rate"])
-def test_near_practice_reprices_far_toss_in_ees_task_plan(*, sharing, monkeypatch):
+def test_near_practice_reprices_far_pick_in_ees_task_plan(*, sharing, monkeypatch):
     method = build(competence_sharing=sharing)
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[False] * 8)
     method.competence_model(ground_skill=far)
     monkeypatch.setattr(EesMethod, "planning_progress_plans", lambda self, **kwargs: [[far]])
@@ -100,7 +102,7 @@ def test_near_practice_reprices_far_toss_in_ees_task_plan(*, sharing, monkeypatc
 def test_all_groundings_exposes_unseen_targets_without_changing_skills():
     original = build()
     flexible = build(practice_groundings="all")
-    near, far = tosses(method=flexible)
+    near, far = picks(method=flexible)
     assert flexible.skills() == original.skills()
     assert flexible.skill_provider.human_cube_bin_reset_skills() == (
         original.skill_provider.human_cube_bin_reset_skills()
@@ -112,7 +114,7 @@ def test_all_groundings_exposes_unseen_targets_without_changing_skills():
 @pytest.mark.parametrize("sharing", ["parent", "rate"])
 def test_shared_ees_target_keeps_its_scored_grounding(*, sharing, monkeypatch):
     method = build(competence_sharing=sharing, practice_groundings="all")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     monkeypatch.setattr(
         EesMethod, "select_skill_to_practice", lambda self, **kwargs: [far, STOP_SKILL]
     )
@@ -141,14 +143,14 @@ def test_all_ees_groundings_keep_paramless_open_gripper(*, sharing):
 
 def test_no_transfer_mode_does_not_substitute_an_unallocated_grounding():
     method = build(competence_sharing="grounded", practice_groundings="all")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     assert method.practice_alternatives(ground_skill=far) == [far]
     assert near not in method.practice_alternatives(ground_skill=far)
 
 
 def test_parent_evidence_excludes_random_attempts_and_advances_once():
     method = build(competence_sharing="parent")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True])
     method.observe_outcome(ground_skill=far, success=False, was_random_exploration=True)
     method.advance_competence_cycle()
@@ -168,7 +170,7 @@ def test_parent_mode_does_not_pool_human_reset_beliefs():
 @pytest.mark.parametrize("sharing", ["parent", "rate"])
 def test_pricing_unseen_forecasts_does_not_expand_observed_practice_menu(*, sharing):
     method = build(competence_sharing=sharing)
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True])
     assert far in method.skill_costs()
     assert method.practice_candidates() == [near]
@@ -188,7 +190,7 @@ def test_forecast_only_priors_do_not_raise_the_observed_reset_ceiling(*, sharing
         score_human_skills=False,
         reset_cost_gate=True,
     )
-    near, _far = tosses(method=method)
+    near, _far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True])
     reset = method.offered_partial_resets()[0]
     calls = []
@@ -212,7 +214,7 @@ def test_flexible_setup_compares_human_prices_and_handles_missing_alternatives(
     *, sharing, monkeypatch
 ):
     method = build(competence_sharing=sharing, practice_groundings="all")
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     near_reset, far_reset = method.offered_partial_resets()
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
     unavailable = set()
@@ -240,7 +242,7 @@ def test_flexible_setup_compares_human_prices_and_handles_missing_alternatives(
 def test_eager_and_lazy_pool_initialization_have_identical_evidence_and_cycles():
     eager = build(competence_sharing="parent")
     lazy = build(competence_sharing="parent")
-    near, far = tosses(method=eager)
+    near, far = picks(method=eager)
     eager.pooled_competence_model(ground_skill=far)
     for method in (eager, lazy):
         method.observe_outcome(ground_skill=far, success=False, was_random_exploration=True)
@@ -257,7 +259,7 @@ def test_eager_and_lazy_pool_initialization_have_identical_evidence_and_cycles()
 def test_forecast_log_preserves_ground_counts_and_shared_identity(*, tmp_path, monkeypatch):
     path = tmp_path / "forecasts.jsonl"
     method = build(competence_sharing="parent", learning_forecast_log=path)
-    near, far = tosses(method=method)
+    near, far = picks(method=method)
     observe(method=method, ground=near, outcomes=[True, True])
     observe(method=method, ground=far, outcomes=[False])
     monkeypatch.setattr(EesMethod, "fit_samplers", lambda self: None)

@@ -1,6 +1,5 @@
 """Licensed Gurobi tests; enumeration independently checks the joint optimum."""
 
-import itertools
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,7 +7,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from hitl_pmp.methods.practice_makes_perfect import dp_gurobi
 from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_gurobi import DpGurobiAllocator, DpOptimizationError
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTransition
@@ -34,7 +32,6 @@ def test_shared_cost_period_near_saturation_matches_recorded_problem_enumeration
         **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
         allocation=expected,
     )
-    expected_spent = sum(arguments["costs"][skill] * count for skill, count in expected.items())
     require_optimal = DpGurobiAllocator._require_optimal
     phases = []
 
@@ -54,20 +51,16 @@ def test_shared_cost_period_near_saturation_matches_recorded_problem_enumeration
             sum(arguments["costs"][skill] * count for skill, count in allocation.items())
             <= arguments["budget"]
         )
-        if phase == "task_value":
-            assert model.ModelSense == gp.GRB.MAXIMIZE
-            assert model.ObjVal == pytest.approx(expected_value, abs=1e-7, rel=0)
-            assert model.ObjBound == pytest.approx(expected_value, abs=1e-7, rel=0)
-        else:
-            assert phase == "least_cost_tie_break"
-            assert model.ModelSense == gp.GRB.MINIMIZE
-            assert model.ObjVal == pytest.approx(expected_spent, abs=1e-9, rel=0)
+        assert phase == "task_value"
+        assert model.ModelSense == gp.GRB.MAXIMIZE
+        assert model.NumObj == 1
+        assert model.ObjVal == pytest.approx(expected_value, abs=1e-7, rel=0)
+        assert model.ObjBound == pytest.approx(expected_value, abs=1e-7, rel=0)
 
     monkeypatch.setattr(DpGurobiAllocator, "_require_optimal", staticmethod(check_stage))
     result = DpGurobiAllocator.allocate(**arguments)
-    assert phases == ["task_value", "least_cost_tie_break"]
+    assert phases == ["task_value"]
     assert result.status == "OPTIMAL"
-    assert result.allocation == expected
     assert result.objective == pytest.approx(expected_value, abs=1e-12, rel=0)
     assert result.objective_bound == pytest.approx(expected_value, abs=1e-9, rel=0)
     assert result.absolute_gap <= 1e-7
@@ -103,7 +96,6 @@ def test_shared_declining_and_saturated_siblings_match_enumeration(*, declining_
     )
     result = DpGurobiAllocator.allocate(**arguments)
     assert result.status == "OPTIMAL"
-    assert result.allocation == expected
     assert result.objective == pytest.approx(expected_value, abs=1e-9, rel=0)
     assert result.objective_bound == pytest.approx(expected_value, abs=1e-9, rel=0)
     assert result.absolute_gap <= 1e-7
@@ -141,13 +133,11 @@ def test_grouped_forecasts_match_enumeration_on_cyclic_multi_start_mdps(*, seed)
     )
     assert result.status == "OPTIMAL"
     assert set(result.allocation) == {"toss", "other"}
-    assert result.objective == pytest.approx(expected_value, abs=1e-7)
+    assert result.objective == pytest.approx(expected_value, abs=1e-7, rel=0)
     assert result.objective_bound >= expected_value - 1e-9
     assert result.absolute_gap <= 1e-7
     costs = arguments["costs"]
-    assert sum(costs[group] * count for group, count in result.allocation.items()) == pytest.approx(
-        sum(costs[group] * count for group, count in expected.items())
-    )
+    assert sum(costs[group] * count for group, count in result.allocation.items()) <= 3.0
 
 
 def test_group_cap_and_bound_include_a_less_competent_sibling():
@@ -166,13 +156,12 @@ def test_group_cap_and_bound_include_a_less_competent_sibling():
         budget=20,
         groups={"left": "toss", "right": "toss"},
     )
-    assert result.allocation == {"toss": 4}
-    assert result.objective == pytest.approx(1)
-    assert result.objective_bound == pytest.approx(1)
+    assert result.allocation["toss"] * 2 <= 20
+    assert result.objective == pytest.approx(1, abs=1e-9, rel=0)
+    assert result.objective_bound == pytest.approx(1, abs=1e-9, rel=0)
 
 
-@pytest.mark.parametrize("failed_evaluation", [1, 2])
-def test_grouped_allocations_keep_independent_certification(*, monkeypatch, failed_evaluation):
+def test_grouped_allocations_keep_independent_certification(*, monkeypatch):
     original = DpAllocator.predicted_success
     evaluations = []
 
@@ -180,10 +169,10 @@ def test_grouped_allocations_keep_independent_certification(*, monkeypatch, fail
         evaluations.append(kwargs)
         assert kwargs["groups"] == {"left": "toss", "right": "toss"}
         actual = original(**kwargs)
-        return actual - 0.1 if len(evaluations) == failed_evaluation else actual
+        return actual - 0.1
 
     monkeypatch.setattr(DpAllocator, "predicted_success", staticmethod(independently_evaluate))
-    with pytest.raises(DpOptimizationError):
+    with pytest.raises(DpOptimizationError) as failure:
         DpGurobiAllocator.allocate(
             mdp=DpMdp(
                 initial_probabilities={0: 1},
@@ -199,6 +188,8 @@ def test_grouped_allocations_keep_independent_certification(*, monkeypatch, fail
             budget=1,
             groups={"left": "toss", "right": "toss"},
         )
+    assert failure.value.diagnostics["phase"] == "primary_independent_verification"
+    assert len(evaluations) == 1
 
 
 def test_paper_counterexample_uses_the_jointly_improved_route():
@@ -219,10 +210,10 @@ def test_paper_counterexample_uses_the_jointly_improved_route():
         costs=dict.fromkeys(skills, 1),
         budget=20,
     )
-    assert result.allocation == {"easy": 0, "hard1": 9, "hard2": 9}
-    assert result.objective == pytest.approx(4)
+    assert sum(result.allocation.values()) <= 20
+    assert result.objective == pytest.approx(4, abs=1e-7, rel=0)
     assert result.status == "OPTIMAL" and result.relative_gap < 1e-7
-    assert result.objective_bound == pytest.approx(result.objective)
+    assert result.objective_bound == pytest.approx(result.objective, abs=1e-7, rel=0)
 
 
 @pytest.mark.parametrize("seed", range(16))
@@ -265,11 +256,9 @@ def test_matches_enumeration_on_branching_cyclic_multi_start_mdps(*, seed):
         learning_rates=rates,
         allocation=expected,
     )
-    assert result.objective == pytest.approx(expected_value, abs=1e-7)
+    assert result.objective == pytest.approx(expected_value, abs=1e-7, rel=0)
     assert result.objective_bound >= expected_value - 1e-9
-    assert sum(costs[skill] * result.allocation[skill] for skill in skills) == pytest.approx(
-        sum(costs[skill] * expected[skill] for skill in skills)
-    )
+    assert sum(costs[skill] * result.allocation[skill] for skill in skills) <= budget
 
 
 def test_unreachable_unit_probability_cycle_cannot_generate_reward():
@@ -290,7 +279,7 @@ def test_unreachable_unit_probability_cycle_cannot_generate_reward():
         budget=5,
     )
     assert result.objective == 0
-    assert result.allocation == {"loop": 0, "finish": 0}
+    assert sum(result.allocation.values()) <= 5
 
 
 def test_initial_terminal_reward_and_dead_end_are_handled():
@@ -301,7 +290,7 @@ def test_initial_terminal_reward_and_dead_end_are_handled():
         costs={},
         budget=1,
     )
-    assert result.objective == pytest.approx(1)
+    assert result.objective == pytest.approx(1, abs=1e-9, rel=0)
     assert result.allocation == {}
 
 
@@ -314,7 +303,7 @@ def test_time_limit_incumbent_is_not_called_optimal():
 
 
 @pytest.mark.parametrize("task_count", [1, 3, 10])
-def test_near_saturation_tie_break_preserves_a_feasible_primary_optimum(*, task_count):
+def test_near_saturation_certifies_a_feasible_primary_optimum(*, task_count):
     mdp = DpMdp(
         initial_probabilities={task * 3: 1 / task_count for task in range(task_count)},
         terminal_rewards={task * 3 + 2: 1 for task in range(task_count)},
@@ -334,26 +323,25 @@ def test_near_saturation_tie_break_preserves_a_feasible_primary_optimum(*, task_
         costs={"pick": 6.1510810810810055, "toss": 6.519999999999959},
         budget=1719.8000000000034,
     )
-    assert result.allocation == {"pick": 44, "toss": 176}
-    assert result.objective == pytest.approx(1, abs=1e-9)
+    assert (
+        result.allocation["pick"] * 6.1510810810810055
+        + result.allocation["toss"] * 6.519999999999959
+        <= 1719.8000000000034 + 1e-7
+    )
+    assert result.objective == pytest.approx(1, abs=1e-9, rel=0)
     assert result.objective_bound <= 1 + 1e-12
     assert result.absolute_gap <= 1e-7
 
 
-@pytest.mark.parametrize(
-    ("failed_evaluation", "phase"),
-    [(1, "primary_independent_verification"), (2, "least_cost_tie_break")],
-)
-def test_optimal_status_does_not_bypass_independent_value_check(
-    *, monkeypatch, failed_evaluation, phase
-):
+@pytest.mark.parametrize("shortfall", [1.02e-7, 0.1])
+def test_optimal_status_does_not_bypass_independent_value_check(*, monkeypatch, shortfall):
     predicted_success = DpAllocator.predicted_success
     evaluations = []
 
     def independently_evaluate(**kwargs):
         evaluations.append(kwargs)
         actual = predicted_success(**kwargs)
-        return actual - 0.1 if len(evaluations) == failed_evaluation else actual
+        return actual - shortfall
 
     monkeypatch.setattr(DpAllocator, "predicted_success", staticmethod(independently_evaluate))
     with pytest.raises(DpOptimizationError) as failure:
@@ -368,13 +356,15 @@ def test_optimal_status_does_not_bypass_independent_value_check(
             costs={"toss": 1},
             budget=1,
         )
-    assert failure.value.diagnostics["phase"] == phase
+    assert failure.value.diagnostics["phase"] == "primary_independent_verification"
+    assert len(evaluations) == 1
 
 
 @pytest.mark.parametrize("task_count", [1, 3, 10])
-@pytest.mark.parametrize("regime", ["primary_bound", "tie_break"])
+@pytest.mark.parametrize("regime", ["primary_bound", "small_learning_rate"])
+@pytest.mark.parametrize("toss_rate", ["negative", "constant"])
 def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
-    *, task_count, regime
+    *, task_count, regime, toss_rate, monkeypatch
 ):
     mdp = DpMdp(
         initial_probabilities={task * 3: 1 / task_count for task in range(task_count)},
@@ -412,7 +402,7 @@ def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
         budget=1509.3299999999804,
     )
     expected_picks = 50
-    if regime == "tie_break":
+    if regime == "small_learning_rate":
         arguments.update(
             competences={
                 "PickCube": 0.9998092695021935,
@@ -432,6 +422,8 @@ def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
             budget=1366.9599999999805,
         )
         expected_picks = 79
+    if toss_rate == "constant":
+        arguments["learning_rates"]["MoveToTossLocationAndToss"] = 0.0
     expected = DpAllocator.allocate(**arguments)
     expected_value = DpAllocator.predicted_success(
         mdp=mdp,
@@ -439,19 +431,32 @@ def test_fixed_toss_ceiling_does_not_reject_an_independently_optimal_allocation(
         learning_rates=arguments["learning_rates"],
         allocation=expected,
     )
+    require_optimal = DpGurobiAllocator._require_optimal
+
+    def check_solver_certificate(*, model, phase):
+        require_optimal(model=model, phase=phase)
+        assert model.ObjVal == pytest.approx(expected_value, abs=1e-9, rel=0)
+        assert model.ObjBound == pytest.approx(expected_value, abs=1e-9, rel=0)
+
+    monkeypatch.setattr(
+        DpGurobiAllocator, "_require_optimal", staticmethod(check_solver_certificate)
+    )
     result = DpGurobiAllocator.allocate(**arguments)
     assert expected == {
         "PickCube": expected_picks,
         "MoveToTossLocationAndToss": 0,
         "OpenGripper": 0,
     }
-    assert result.allocation == expected
-    assert result.objective == pytest.approx(expected_value, abs=1e-12)
-    assert result.objective_bound <= expected_value + 1e-12
+    assert (
+        sum(arguments["costs"][skill] * count for skill, count in result.allocation.items())
+        <= arguments["budget"] + 1e-7
+    )
+    assert result.objective == pytest.approx(expected_value, abs=1e-12, rel=0)
+    assert result.objective_bound == pytest.approx(expected_value, abs=1e-12, rel=0)
     assert result.absolute_gap <= 1e-7
 
 
-def test_bound_uses_only_affordable_relevant_training_and_keeps_unpriced_skills_fixed():
+def test_bound_uses_only_affordable_training_and_keeps_unpriced_skills_fixed():
     observed = []
 
     class RecordingMdp(DpMdp[str]):
@@ -491,11 +496,11 @@ def test_bound_uses_only_affordable_relevant_training_and_keeps_unpriced_skills_
         costs={"learning": 2, "expensive": 4, "flat": 1, "declining": 1, "irrelevant": 1},
         budget=3,
     )
-    expected_upper = {**competences, "learning": 0.5}
+    expected_upper = {**competences, "learning": 0.5, "irrelevant": 0.4}
     assert expected_upper in observed
     assert dict.fromkeys(competences, 1.0) not in observed
     expected_value = 0.5 * 0.4 * 0.4 * 0.3 * 0.2
-    assert result.objective == pytest.approx(expected_value, abs=1e-10)
+    assert result.objective == pytest.approx(expected_value, abs=1e-10, rel=0)
     assert result.objective_bound <= expected_value + 1e-12
 
 
@@ -522,90 +527,64 @@ def test_bound_relaxes_shared_budget_instead_of_using_a_feasible_allocation():
         budget=2,
     )
     assert any(
-        probabilities["first"] == pytest.approx(0.6)
-        and probabilities["second"] == pytest.approx(0.6)
+        probabilities["first"] == pytest.approx(0.6, abs=1e-12, rel=0)
+        and probabilities["second"] == pytest.approx(0.6, abs=1e-12, rel=0)
         for probabilities in observed
     )
-    assert result.objective == pytest.approx(0.16, abs=1e-7)
+    assert result.objective == pytest.approx(0.16, abs=1e-7, rel=0)
     assert result.objective_bound >= result.objective - 1e-12
 
 
-def test_no_good_cut_excludes_only_the_exact_integer_allocation():
-    for first, second in itertools.product(range(3), range(2)):
-        with gp.Env(empty=True) as environment:
-            environment.setParam("OutputFlag", 0)
-            environment.start()
-            with gp.Model(env=environment) as model:
-                counts = {
-                    "first": model.addVar(lb=0, ub=2, vtype=gp.GRB.INTEGER),
-                    "second": model.addVar(lb=0, ub=1, vtype=gp.GRB.INTEGER),
-                    "fixed": model.addVar(lb=0, ub=0, vtype=gp.GRB.INTEGER),
-                }
-                model.update()
-                DpGurobiAllocator._exclude_allocation(
-                    model=model,
-                    counts=counts,
-                    allocation={"first": 1, "second": 1, "fixed": 0},
-                    index=1,
-                )
-                model.addConstr(counts["first"] == first)
-                model.addConstr(counts["second"] == second)
-                model.optimize()
-                expected = gp.GRB.INFEASIBLE if (first, second) == (1, 1) else gp.GRB.OPTIMAL
-                assert model.Status == expected
-
-
-def test_tie_break_cannot_extend_the_original_solver_deadline(*, monkeypatch):
-    times = iter([0, 2])
-    monkeypatch.setattr(dp_gurobi, "time", SimpleNamespace(monotonic=lambda: next(times)))
-    with pytest.raises(DpOptimizationError) as failure:
-        DpGurobiAllocator.allocate(
-            mdp=DpMdp(
-                initial_probabilities={0: 1},
-                terminal_rewards={1: 1},
-                transitions=[DpTransition(state=0, skill="toss", successor=1)],
-            ),
-            competences={"toss": 0.1},
-            learning_rates={"toss": 0.1},
-            costs={"toss": 1},
-            budget=1,
-            time_limit=1,
-        )
-    assert failure.value.diagnostics["reason"] == "time_limit_before_certification"
-
-
-@pytest.mark.parametrize("repeat_excluded", [False, True])
-def test_uncertified_tie_allocations_are_not_silently_accepted_or_overcut(
-    *, monkeypatch, repeat_excluded
+@pytest.mark.parametrize("budget", [-1, 0, 1000])
+def test_single_task_objective_and_solve_use_affordable_not_saturation_bounds(
+    *, monkeypatch, budget
 ):
-    predicted_success = DpAllocator.predicted_success
-    evaluations = []
-    exclusions = []
+    objectives = []
+    solves = []
+    competences = {"learning": 0.999, "saturated": 1.0, "flat": 0.4, "declining": 0.8}
+    costs = dict.fromkeys(competences, 2)
 
-    def evaluate(**kwargs):
-        evaluations.append(kwargs)
-        actual = predicted_success(**kwargs)
-        if repeat_excluded:
-            return actual if len(evaluations) == 1 else actual - 0.1
-        return actual - (9.5e-8 if len(evaluations) == 1 else 1.02e-7)
+    class RecordingModel(gp.Model):
+        def setObjective(self, *args, **kwargs):
+            objectives.append(args[1])
+            return super().setObjective(*args, **kwargs)
 
-    def record_exclusion(**kwargs):
-        exclusions.append(kwargs)
+        def optimize(self):
+            self.update()
+            solves.append(self.NumObj)
+            assert self.Params.OptimalityTol == 1e-9
+            assert self.ModelSense == gp.GRB.MAXIMIZE
+            assert self.getConstrByName("practice_budget").Sense == gp.GRB.LESS_EQUAL
+            assert max(0, budget) == self.getConstrByName("practice_budget").RHS
+            for index in range(len(costs)):
+                count = self.getVarByName(f"b_{index}")
+                assert count.VType == gp.GRB.INTEGER
+                assert count.LB == 0
+                assert max(0, budget // 2) == count.UB
+                assert count.Obj == 0
+                if budget > 0:
+                    assert count.UB > 140
+            return super().optimize()
 
-    monkeypatch.setattr(DpAllocator, "predicted_success", staticmethod(evaluate))
-    monkeypatch.setattr(DpGurobiAllocator, "_exclude_allocation", staticmethod(record_exclusion))
-    with pytest.raises(DpOptimizationError) as failure:
-        DpGurobiAllocator.allocate(
-            mdp=DpMdp(
-                initial_probabilities={0: 1},
-                terminal_rewards={1: 1},
-                transitions=[DpTransition(state=0, skill="toss", successor=1)],
-            ),
-            competences={"toss": 0.1},
-            learning_rates={"toss": 0.1},
-            costs={"toss": 1},
-            budget=1,
-        )
-    assert failure.value.diagnostics["phase"] == "independent_verification"
-    assert len(exclusions) == int(repeat_excluded)
-    assert failure.value.diagnostics["tie_break_retries"] == int(repeat_excluded)
+    def reject_enumeration_bounds(**kwargs):
+        pytest.fail("Gurobi must not use the enumeration oracle's pruned count bounds")
+
+    monkeypatch.setattr(gp, "Model", RecordingModel)
+    monkeypatch.setattr(DpAllocator, "_allocation_limits", staticmethod(reject_enumeration_bounds))
+    result = DpGurobiAllocator.allocate(
+        mdp=DpMdp(
+            initial_probabilities={0: 1},
+            terminal_rewards={1: 1},
+            transitions=[DpTransition(state=0, skill="learning", successor=1)],
+        ),
+        competences=competences,
+        learning_rates={"learning": 0.001, "saturated": 0.1, "flat": 0, "declining": -0.1},
+        costs=costs,
+        budget=budget,
+    )
+    assert objectives == [gp.GRB.MAXIMIZE]
+    assert solves == [1]
+    assert result.status == "OPTIMAL"
+    assert result.tie_break_retries == 0
+    assert result.objective == pytest.approx(1 if budget > 0 else 0.999, abs=1e-9, rel=0)
+    assert sum(costs[skill] * count for skill, count in result.allocation.items()) <= max(0, budget)
