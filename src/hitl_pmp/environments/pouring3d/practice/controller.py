@@ -328,8 +328,22 @@ class PracticePourController(FeedbackPourController):
             hover, upright, _ = self.pitcher_grasp_pose()
             hover += [0, 0, self.pitcher_approach_clearance]
             hover[0] += aisle_x - self.base_home[0]
+            selected_backoff = 0.0
             if self.handle_lean_degrees >= 90:
-                self.prepare_empty_arm(position=hover, rotation=upright)
+                # Prefer a hover outside the rim, subject to the arm's inner
+                # workspace limit. Failed planning candidates execute no motion.
+                backoffs = (0.06, 0.04, 0.02) if aisle_x < 0 else (0.0,)
+                for selected_backoff in backoffs:
+                    try:
+                        self.prepare_empty_arm(
+                            position=hover + [-selected_backoff, 0, 0], rotation=upright
+                        )
+                        break
+                    except ValueError as exc:
+                        if selected_backoff == backoffs[-1] or not str(exc).startswith(
+                            "No collision-free empty-arm preparation path"
+                        ):
+                            raise
             else:
                 self.move(
                     position=hover,
@@ -343,12 +357,15 @@ class PracticePourController(FeedbackPourController):
                 # recovered arm posture. Preclose in free space while retaining
                 # a gap wider than the handle, then keep that gap during approach.
                 opening = self.pitcher_open_grip
+                backoff = self.pitcher_hover_backoff
                 self.pitcher_open_grip = 0.4
+                self.pitcher_hover_backoff = selected_backoff
                 try:
                     self.pause(phase="preclose fingers for handle approach", seconds=1, grip=0.4)
                     super().pick_pitcher()
                 finally:
                     self.pitcher_open_grip = opening
+                    self.pitcher_hover_backoff = backoff
                 return
         super().pick_pitcher()
 

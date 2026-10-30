@@ -14,6 +14,12 @@ when starting another pickup after food recovery. Its partial results and abort 
 remain in `artifacts/potsticker-pilots-20261030-cd40854/`. The repaired controller must
 use a new manifest/output root; these partial results are not a completed pilot.
 
+The next candidate adds bounded outward handle approaches after food recovery. Both
+isolated post-recovery pickups now pass with zero audited unintended contacts. The
+fresh short pilots can run alongside final repeated-cycle validation on a frozen
+revision; neither is approval for the longer overnight study. See the
+[current validation log](../experiment-logs/2026-10-30-potsticker-repaired-entry.md).
+
 ## Question / goal
 
 Does practice improve exact-count pouring, and what robot effort and human assistance

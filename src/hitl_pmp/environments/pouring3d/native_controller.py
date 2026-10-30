@@ -55,6 +55,7 @@ class NativePouringController(BaseModel):
     posture_weight: float = 0.015
     pitcher_approach_clearance: float = 0.25
     pitcher_open_grip: float = 0.0
+    pitcher_hover_backoff: float = 0.0
     pitcher_lift_height: float = 0.28
     placement_base_side_step: float = 0.0
     placement_base_backoff: float = 0.0
@@ -344,14 +345,14 @@ class NativePouringController(BaseModel):
         handle, upright, down = self.pitcher_grasp_pose()
         self.move(
             phase="approach pitcher",
-            position=handle + [0, 0, self.pitcher_approach_clearance],
+            position=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
             rotation=upright,
             seconds=8,
             grip=self.pitcher_open_grip,
         )
         self.move(
             phase="align fingers across handle",
-            position=handle + [0, 0, self.pitcher_approach_clearance],
+            position=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
             rotation=down,
             seconds=8,
             grip=self.pitcher_open_grip,

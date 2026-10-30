@@ -82,6 +82,26 @@ handle approach, includes the pitcher in those approach clearance checks, and ac
 an early drop only if the piece is measured inside the pitcher during final centering.
 It still rejects spills or losses elsewhere in transport. Physical validation is pending.
 
+### Outward handle approach and fresh pilot candidate
+
+The v38 tabletop-start next pickup passed, but the floor-start pickup still brushed
+the rim. The v40 six-centimeter outward hover was rejected before arm motion because
+it fell inside the arm's reachable workspace boundary. The v41 controller searches
+three bounded geometric hover offsets (6, 4, 2 cm), retaining the first feasible
+path. Both saved recovery starts then complete the next handle grasp and lift:
+**2/2 pass, zero audited unintended contacts**. No body pose or velocity is edited.
+
+Current software validation is **202/202** integration/shared-method/planning checks,
+plus **9/9** legacy station/placement regressions; mypy and tracked-source lint pass.
+A fresh six-run diagnostic pilot batch and a final two-cycle physical check will use
+this frozen controller. The overnight study remains gated on their completed results.
+
+The v39 short-duration sensitivity check adds a matched amplitude counterexample:
+seed zero, tilt 89.125 degrees, feeding 3 seconds, target two. Zero amplitude delivers
+two settled pieces; 25 mm also delivers two but fails the settling requirement after
+the fixed observation window. This is an amplitude-dependent skill success/failure,
+not evidence that amplitude changed the delivered count in that pair.
+
 Current targeted integration/shared-method/planning tests: **200/200 passed**.
 Typechecking passes for 269 source files. Full CI passed on the preceding pushed
 revision; the final recovery changes require their own CI run.
