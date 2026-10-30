@@ -35,6 +35,7 @@ def trial(
     recovery_order="0,1,2",
     grasp_preload=0.03,
     pickup_only=False,
+    pour_tilt=None,
 ):
     root.mkdir(parents=True, exist_ok=True)
     if (root / "result.json").exists():
@@ -205,7 +206,9 @@ def trial(
             run(name="PickPitcher")
         elif cycles:
             # Diagnostic recipes only; the learner samples its own parameters.
-            recipe = {1: (89, 0.008, 12), 2: (89.125, 0.008, 12), 3: (90, 0.015, 12)}[target]
+            recipe = {1: (89, 0.008, 12), 2: (89.1875, 0.008, 12), 3: (90, 0.015, 12)}[target]
+            if pour_tilt is not None:
+                recipe = (pour_tilt, recipe[1], recipe[2])
             for _cycle in range(cycles):
                 run(name="PickPitcher")
                 g = provider.ground(name=f"Pour{target}", request=target)
@@ -306,6 +309,7 @@ def main():
     p.add_argument("--cycles", type=int, default=0)
     p.add_argument("--robot-reset", action="store_true")
     p.add_argument("--pickup-only", action="store_true")
+    p.add_argument("--pour-tilt", type=float)
     p.add_argument("--grasp-yaw", type=float, default=0.0)
     p.add_argument("--grasp-depth", type=float, default=0.032)
     p.add_argument("--grasp-angle", type=float, default=60.0)
@@ -357,6 +361,7 @@ def main():
             recovery_order=a.recovery_order,
             grasp_preload=a.grasp_preload,
             pickup_only=a.pickup_only,
+            pour_tilt=a.pour_tilt,
         )
         if not passed:
             raise SystemExit(1)
