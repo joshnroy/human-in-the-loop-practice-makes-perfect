@@ -1,7 +1,7 @@
 """Physical recovery, collision-aware station motions, and observable motor ticks."""
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 from pydantic import Field
@@ -18,6 +18,8 @@ from .skillet import CastIronSkillet
 
 
 class PracticePourController(FeedbackPourController):
+    station_pour_height_drop: ClassVar[float] = 0.16
+    station_pour_base_offset: ClassVar[float] = 0.70
     active_pour_count: int = 0
     obstacle_clearance: float = 0.015
     pour_height_drop: float = 0.08
@@ -79,12 +81,12 @@ class PracticePourController(FeedbackPourController):
             controller.handle_lean_degrees = 120.0
             controller.handle_contact_depth = 0.025
             controller.return_speed_deg_s = 10.0
-            controller.pour_height_drop = 0.16
+            controller.pour_height_drop = cls.station_pour_height_drop
             controller.handle_lean_axis = "y"
             controller.pitcher_approach_clearance = 0.10
             controller.pitcher_lift_height = 0.26
             controller.pour_clearance = 0.36
-            controller.pour_base_offset = 0.70
+            controller.pour_base_offset = cls.station_pour_base_offset
             controller.pour_posture = 1.0
             controller.posture_weight = 0.001
             controller.placement_base_backoff = 0.05

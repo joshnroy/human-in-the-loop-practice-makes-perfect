@@ -372,3 +372,21 @@ def test_retention_correction_applies_to_carry_hold_command(*, monkeypatch):
     c.motor_step(target_q=np.zeros(7), grip=0.5)
     assert commands == [pytest.approx(0.53)]
     assert c.held == "potsticker_0" and c.lost_contacts == 0
+
+
+@pytest.mark.parametrize(
+    "yaw_error, tilt_error, at_home", [(0, 0, True), (8, 0, False), (0, 8, False)]
+)
+def test_pan_home_uses_initial_handle_orientation(*, yaw_error, tilt_error, at_home):
+    from hitl_pmp.environments.pouring3d.native_controller import NativePouringController
+
+    initial = Rotation.from_euler("z", -90, degrees=True)
+    actual = initial * Rotation.from_euler("xy", [tilt_error, 0], degrees=True)
+    actual = Rotation.from_euler("z", yaw_error, degrees=True) * actual
+    c = SimpleNamespace(
+        home=np.zeros(3),
+        tray_home=np.array([0.85, 0.85, 0.84]),
+        tray_home_rotation=initial,
+        body_pose=lambda **_: (np.array([0.85, 0.85, 0.84]), actual),
+    )
+    assert NativePouringController.vessel_home(c, name="tray") is at_home

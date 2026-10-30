@@ -24,7 +24,7 @@ def render(*, folder: Path) -> None:
     camera.distance = 0.75
     camera.azimuth = 135
     camera.elevation = -30
-    camera.lookat[:] = [0.75, 1.05, 1.00]
+    camera.lookat[:] = data.xpos[model.body("tray").id] + [0, 0, 0.16]
     motion = np.load(folder / "motion.npz")
     rows = result.get("rows", [])
     row_ends = np.cumsum([row.get("controller_steps", 0) for row in rows])
@@ -73,7 +73,7 @@ def render(*, folder: Path) -> None:
                     ]
                     camera.distance = 0.60
                 elif pouring:
-                    camera.lookat[:] = [0.75, 1.05, 1.00]
+                    camera.lookat[:] = data.xpos[model.body("tray").id] + [0, 0, 0.16]
                     camera.distance = 0.75
                 else:
                     camera.lookat[:] = data.xpos[model.body("pitcher").id] + [0, 0, 0.10]
