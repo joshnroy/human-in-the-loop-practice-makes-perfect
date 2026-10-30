@@ -9,6 +9,11 @@ pinned; the runtime now selects the three-potsticker scene and timed joint-feedb
 controller. Pilot results are pending physical recovery validation and a fresh source
 freeze; historical shrimp results are not evidence for this configuration.
 
+The first batch at `cd40854a0` was stopped after it exposed unintended pitcher contact
+when starting another pickup after food recovery. Its partial results and abort reason
+remain in `artifacts/potsticker-pilots-20261030-cd40854/`. The repaired controller must
+use a new manifest/output root; these partial results are not a completed pilot.
+
 ## Question / goal
 
 Does practice improve exact-count pouring, and what robot effort and human assistance

@@ -15,7 +15,12 @@ pytestmark = pytest.mark.skipif(
 
 def test_native_pour_robot_reset_and_human_invariants():
     env = FrozenPourEnvironment(
-        layout="floor", canonical_seed=70, requested_count=1, scene_bg=False
+        payload_kind="shrimp",
+        receiving_vessel="tray",
+        layout="floor",
+        canonical_seed=70,
+        requested_count=1,
+        scene_bg=False,
     )
     provider = FrozenPourSkillProvider(env=env)
 

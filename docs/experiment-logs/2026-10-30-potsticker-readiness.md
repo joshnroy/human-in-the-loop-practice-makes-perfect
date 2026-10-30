@@ -2,6 +2,13 @@
 
 ## TL;DR
 
+**Revision note:** the table below precedes the empty-gripper withdrawal and pitcher
+collision-check repair. The first six-method/seed batch at `cd40854a0` was stopped
+and preserved in `artifacts/potsticker-pilots-20261030-cd40854/`: EES seed 2 pushed the
+home pitcher during preparation for the next pickup. This is a controller failure,
+not evidence about learning. Revised entry trajectories require fresh parameter
+witnesses; do not transfer the table's settings to the new revision without checking.
+
 Selected joint-feedback recipes achieve every requested count on development seeds
 0, 1 and 2: **9/9 seed/target combinations have an existence witness**. This is not
 an empirical success rate for one fixed policy and is not a learning result.
@@ -77,6 +84,23 @@ is a minimum, not a force cap: recorded normal forces range from about 1.9 to 14
 across these grasps. Friction and actuator limits are unchanged. Raw evidence is in
 `artifacts/potsticker-readiness-v25/`. The following joint-settling fix and uninterrupted
 cycles are being validated separately; pilot outcomes remain pending.
+
+### Chained recovery and subsequent repair
+
+The v26 uninterrupted trial completed a Pour3, placement, and all three physical
+pick/drop pairs, but its final readiness check failed because one returned piece
+was still rocking. It recorded zero forbidden contacts under the then-existing
+support/pan/ground audit; that audit did not include unintended pitcher contacts.
+A reconstructed-state diagnostic settled after two further simulated seconds. This
+does not turn the original failed trial into a pass.
+
+The pilot's later pitcher pickup separately displaced the pitcher by about 4 cm and
+57 degrees. Recovery now withdraws the empty hand vertically before another base or
+arm preparation motion and waits for one continuous second of payload rest, bounded
+at 20 seconds. Arm preparation includes the pitcher in its collision constraints.
+The v28 cycle audit additionally counts robot–pitcher contacts outside intended
+handle manipulation. Two recovery orders and all three human-reset targets are
+being checked over consecutive cycles, with the unchanged containment/rest criteria.
 
 ## Recommendation / remaining gates
 

@@ -34,8 +34,10 @@ def test_practice_sampling_does_not_assign_a_count_or_change_physics():
             action = provider.compute_action(ground_skill=ground, state=state, params=params)
             assert action[2] == request
             rows.append(method.sampler_input_row(ground_skill=ground, state=state, params=params))
-        # Bias + robot(4) + pitcher(13) + tray(13): the next feature is count.
-        assert [row[31] for row in rows] == [3, 1, 2]
+        # Locate the request after bias and the preceding grounded objects;
+        # the robot observation also includes its measured joint state.
+        count_index = 1 + sum(len(state[o]) for o in ground.objects[:3])
+        assert [row[count_index] for row in rows] == [3, 1, 2]
         assert len({id(method.sampler(skill_name=f"Pour{k}", param_dim=3)) for k in (1, 2, 3)}) == 3
         np.testing.assert_array_equal(c.data.qpos, before[0])
         np.testing.assert_array_equal(c.data.qvel, before[1])

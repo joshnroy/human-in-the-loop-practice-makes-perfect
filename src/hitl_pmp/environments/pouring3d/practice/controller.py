@@ -23,6 +23,7 @@ class PracticePourController(FeedbackPourController):
     pour_height_drop: float = 0.08
     obstacle_pairs: list[tuple[int, int]] = Field(default_factory=list)
     pan_pairs: list[tuple[int, int]] = Field(default_factory=list)
+    pitcher_pairs: list[tuple[int, int]] = Field(default_factory=list)
     shrimp_recovery_active: bool = False
     recovery_approach_clearance: float = 0.10
     recovery_finger_offset: float = 0.039
@@ -67,6 +68,13 @@ class PracticePourController(FeedbackPourController):
                 if controller.model.body(int(controller.model.geom_bodyid[i])).name == "tray"
             ]
             controller.pan_pairs = [(a, b) for a in robot_geoms for b in pan_geoms]
+            pitcher_geoms = [
+                i
+                for i in range(controller.model.ngeom)
+                if controller.model.body(int(controller.model.geom_bodyid[i])).name == "pitcher"
+                and controller.model.geom_contype[i]
+            ]
+            controller.pitcher_pairs = [(a, b) for a in robot_geoms for b in pitcher_geoms]
             controller.base_home[0] = 0.0
             controller.handle_lean_degrees = 120.0
             controller.handle_contact_depth = 0.025
@@ -85,8 +93,16 @@ class PracticePourController(FeedbackPourController):
         return controller
 
     def active_obstacle_pairs(self) -> list[tuple[int, int]]:
-        return self.obstacle_pairs + (
-            self.pan_pairs if self.held == "pitcher" or self.shrimp_recovery_active else []
+        return (
+            self.obstacle_pairs
+            + (self.pan_pairs if self.held == "pitcher" or self.shrimp_recovery_active else [])
+            + (
+                self.pitcher_pairs
+                if self.recovery_plan_approach
+                and self.held is None
+                and self.phase == "prepare arm in clear aisle"
+                else []
+            )
         )
 
     def obstacle_residual(self) -> np.ndarray:
@@ -188,6 +204,8 @@ class PracticePourController(FeedbackPourController):
 
         if self.held is not None:
             raise ValueError("Arm preparation requires an empty hand")
+        if self.recovery_plan_approach:
+            self.phase = "prepare arm in clear aisle"
         start = self.data.qpos[self.arm_q].copy()
         self.scratch.qpos[:] = self.data.qpos
 
