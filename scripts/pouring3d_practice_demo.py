@@ -106,6 +106,9 @@ class PracticeDemo:
         from PIL import Image, ImageDraw
 
         c = controller
+        stations = "prep_table" in c.scene._fixtures_dict
+        close = mujoco.MjvCamera()
+        close.distance, close.azimuth, close.elevation = 1.05, 135, -32
         drawing = mujoco.MjData(c.model)
         renderer = mujoco.Renderer(c.model, height=480, width=640)
         try:
@@ -118,9 +121,19 @@ class PracticeDemo:
                     drawing.qpos[:] = qpos
                     mujoco.mj_forward(c.model, drawing)
                     renderer.update_scene(drawing, camera="task_view")
-                    frame = Image.fromarray(renderer.render().copy())
+                    pixels = renderer.render().copy()
+                    if stations:
+                        body = (
+                            "tray"
+                            if phase.startswith("Pour") or phase == "PickShrimpFromTray"
+                            else "pitcher"
+                        )
+                        close.lookat[:] = drawing.xpos[c.model.body(body).id] + [0, 0, 0.10]
+                        renderer.update_scene(drawing, camera=close)
+                        pixels = np.concatenate((pixels, renderer.render().copy()), axis=1)
+                    frame = Image.fromarray(pixels)
                     draw = ImageDraw.Draw(frame)
-                    draw.rectangle((0, 0, 640, 38), fill="black")
+                    draw.rectangle((0, 0, frame.width, 38), fill="black")
                     draw.text(
                         (12, 12),
                         f"{phase} | {'1x' if phase.startswith('Pour') else '4x'}"
@@ -130,6 +143,9 @@ class PracticeDemo:
                     writer.append_data(np.asarray(frame))
                     if index == len(frames) - 1:
                         frame.save(root / "final.png")
+                        if phase == "HumanResetToPitcher":
+                            for _ in range(20):
+                                writer.append_data(np.asarray(frame))
         finally:
             renderer.close()
 

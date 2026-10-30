@@ -13,6 +13,7 @@ SKILL_NAMES = (
     "PickShrimpFromFloor",
     "DropShrimpIntoPitcher",
     "Wait",
+    "PickShrimpFromSurface",
 )
 RESET_NAME = "reset_shrimp"
 
@@ -72,6 +73,7 @@ class PourSkills:
             for name, source in (
                 ("PickShrimpFromTray", "InTray"),
                 ("PickShrimpFromFloor", "OnFloor"),
+                ("PickShrimpFromSurface", "OnSurface"),
             )
         )
         return (
@@ -91,7 +93,7 @@ class PourSkills:
                     {split, held, atom("NoSpills"), atom("NeedsReset")},
                     set(),
                     3,
-                    ignore=("InPitcher", "InTray", "OnFloor", "Settled", *stale),
+                    ignore=("InPitcher", "InTray", "OnFloor", "OnSurface", "Settled", *stale),
                 )
                 for n in range(1, count + 1)
             ),
@@ -123,6 +125,6 @@ class PourSkills:
                 {empty, home, tray, atom("NeedsReset"), *chain},
                 {*inside, *settled, atom("ReadyToPour"), atom("NoSpills")},
                 {atom("NeedsReset")},
-                ignore=("InTray", "OnFloor", *stale),
+                ignore=("InTray", "OnFloor", "OnSurface", *stale),
             ),
         )

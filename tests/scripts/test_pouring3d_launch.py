@@ -22,7 +22,7 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.measurement_interval_steps == 3200
         assert args.initial_measurement
         assert args.num_test_tasks == 9
-        assert args.evaluation_control_steps == 2500
+        assert args.evaluation_control_steps == 7500
         assert args.requested_counts == [1, 2, 3]
         assert args.payload_count == 3
         assert args.practice_reset_policy == "never"

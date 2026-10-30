@@ -35,7 +35,10 @@ class PouringLaunch:
         if arm not in ARMS:
             raise ValueError("Only EES, Curtis and expectimax are admitted; always-ask is pending")
         common = [
+            "--pour-payload", "potsticker",
             "--payload-count", "3", "--requested-counts", "1", "2", "3",
+            "--receiving-vessel", "skillet",
+            "--pour-layout", "stations",
             "--surface-mu", "0.1", "--canonical-seed", "0",
             "--pour-tilt-bounds", "87", "95",
             "--pour-amplitude-bounds", "0", "0.025",
@@ -45,7 +48,7 @@ class PouringLaunch:
             "--max-steps-per-interaction", "20",
             "--practice-step-budget", str(STAGES[stage]),
             "--measurement-interval-steps", "3200", "--initial-measurement",
-            "--num-test-tasks", "9", "--evaluation-control-steps", "2500",
+            "--num-test-tasks", "9", "--evaluation-control-steps", "7500",
             "--skill-step-limit", "2500", "--stop-after-perfect-evaluations", "0",
             "--practice-cost-config", str(COSTS), "--human-reset-practice-cost", "5",
             "--defer-rendering", "--record-motion", "all" if seed == 0 else "evaluation",
@@ -175,6 +178,8 @@ class PouringLaunch:
         try:
             problem.hard_reset()
             controller = problem.env.controller()
+            if problem.env.payload_kind != "potsticker" or controller.mode != "joint_lateral":
+                raise RuntimeError("Pilot requires joint-feedback dumpling controller")
             provider = FrozenPourCli.context(args=args, problem=problem).skill_provider
             skills = sorted(skill.name for skill in provider.skills())
             pours = [name for name in skills if name.startswith("Pour")]
@@ -239,7 +244,7 @@ class PouringLaunch:
         parser.add_argument("--manifest", type=Path)
         parser.add_argument("--task", type=int, help="Run one manifest row (1-based array index)")
         parser.add_argument("--native", action="store_true")
-        parser.add_argument("--max-workers", type=int, choices=(1, 2, 3), default=1)
+        parser.add_argument("--max-workers", type=int, choices=(1, 2, 3, 4, 5, 6), default=1)
         parser.add_argument("--go", action="store_true")
         args = parser.parse_args()
         if args.mode == "check":
