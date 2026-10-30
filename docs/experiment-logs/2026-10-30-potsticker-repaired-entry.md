@@ -108,6 +108,27 @@ revision; the final recovery changes require their own CI run.
 
 ## Recommendation
 
+### October 30 follow-up: aborted candidate and retreat repair
+
+The v42 uninterrupted check on `660a0200a` failed during the second cycle's pan
+recovery, with two pieces inside the pitcher and one in the pan. It recorded zero
+audited unintended contacts. The supervisor stopped the six diagnostic pilots at
+04:07 EDT; none had completed an evaluation checkpoint. Their original outputs are
+preserved under `artifacts/potsticker-pilots-20261030-660a020` and must not be reported
+as completed learning results.
+
+The failed approach was still moving the base and arm together. The retreat trace
+omitted that phase and stored only arm joints, so retry requested an infeasible
+vertical Cartesian retreat. The repair records measured base and arm configurations
+from the start of that motion and retraces both. A regression test reproduces the
+missing trace; the saved-state v43 check and a fresh uninterrupted two-cycle check
+are in progress. These are not yet physical passes.
+
+The same candidate's CI native shard encountered an IKFast extension import failure.
+Its upstream lazy installer writes a shared library without synchronization. CI now
+builds and imports the Kinova solver before starting parallel test workers; the next
+CI run must establish whether this resolves all failures.
+
 Freeze and launch a new six-run pilot batch only after inspecting the repeated-cycle
 result. Preserve the aborted `cd40854a0` batch separately. Report first-pour exact
 counts separately from full-task success after robot recovery, and inspect STOP,

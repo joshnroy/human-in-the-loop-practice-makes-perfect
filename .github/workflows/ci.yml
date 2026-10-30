@@ -520,6 +520,18 @@ jobs:
               assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
               print(f"{mod.__name__}: {path}")
           PY
+      # The upstream lazy installer writes one shared extension without a lock.
+      # Compile and import it before xdist workers can race on the same .so.
+      - name: Build and verify Kinova IKFast before parallel tests
+        run: |
+          python - <<'PY'
+          from pybullet_helpers.ikfast.load import import_ikfast
+          from pybullet_helpers.robots.kinova import KinovaGen3RobotiqGripperPyBulletRobot
+          info = KinovaGen3RobotiqGripperPyBulletRobot.ikfast_info()
+          assert info is not None
+          solver = import_ikfast(info)
+          print(solver.__file__)
+          PY
       # `-n auto` (pytest-xdist, one worker per *physical* core: 2 here) does not reopen the LLVM collision
       # this job exists to avoid: workers only ever draw tests from this job's own path, so
       # no worker process mixes OSMesa with torch's triton any more than the serial run
