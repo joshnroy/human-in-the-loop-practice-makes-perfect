@@ -552,12 +552,19 @@ class Skill(BaseModel):
             for atom in (*self.preconditions, *self.add_effects, *self.delete_effects)
             for variable in atom.variables
         }
-        referenced.update(
-            variable
-            for effect in self.conditional_add_effects
-            for atom in (*effect.conditions, *effect.add_effects)
-            for variable in atom.variables
-        )
+        parameter_names = {parameter.name for parameter in self.parameters}
+        for effect in self.conditional_add_effects:
+            bound = {variable for variable, _ in effect.constant_bindings}
+            if any(variable.name in parameter_names for variable in bound):
+                raise ValueError(
+                    f"Skill {self.name!r}: constant bindings cannot shadow skill parameters"
+                )
+            referenced.update(
+                variable
+                for atom in (*effect.conditions, *effect.add_effects)
+                for variable in atom.variables
+                if variable not in bound
+            )
         referenced.update(
             variable
             for effect in self.conditional_ignore_effects
@@ -685,14 +692,37 @@ class ConditionalAddEffect(BaseModel):
 
     Resetting a held object removes Holding but leaves the gripper closed: the
     ClosedEmpty effect therefore depends on Holding in the incoming state.
+
+    Constant bindings substitute named objects only within this effect's guard
+    and additions. They are not skill parameters and introduce no action groundings.
     """
 
     model_config = ConfigDict(frozen=True)
 
     conditions: frozenset[LiftedAtom]
     add_effects: frozenset[LiftedAtom]
+    constant_bindings: tuple[tuple[Variable, Object], ...] = ()
+
+    @model_validator(mode="after")
+    def _check_constant_bindings(self) -> ConditionalAddEffect:
+        names: set[str] = set()
+        for variable, obj in self.constant_bindings:
+            if variable.name in names:
+                raise ValueError(f"Duplicate constant binding for variable {variable.name!r}")
+            names.add(variable.name)
+            if variable.type != obj.type:
+                raise ValueError(
+                    f"Constant binding for {variable.name!r}: object {obj.name!r} has type "
+                    f"{obj.type.name!r}, but variable declares {variable.type.name!r}"
+                )
+        return self
 
     def ground(self, *, substitution: dict[Variable, Object]) -> GroundConditionalAddEffect:
+        if {variable.name for variable, _ in self.constant_bindings} & {
+            variable.name for variable in substitution
+        }:
+            raise ValueError("Constant bindings cannot shadow action substitution parameters")
+        substitution = {**substitution, **dict(self.constant_bindings)}
         return GroundConditionalAddEffect(
             conditions=frozenset(
                 atom.ground(substitution=substitution) for atom in self.conditions

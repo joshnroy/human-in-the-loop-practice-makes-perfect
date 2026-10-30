@@ -12,7 +12,7 @@ from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
 from hitl_pmp.methods.practice_makes_perfect.ees_method import STOP_SKILL, _EesEpisode
 
-from .test_dp_method import _build, _execute, _ground, _shared_toss_setup
+from .test_dp_method import _build, _execute, _ground, _shared_pick_setup
 
 
 def test_grounding_substitution_is_an_explicit_default_off_adaptation():
@@ -27,7 +27,7 @@ def test_grounding_substitution_is_an_explicit_default_off_adaptation():
 def test_default_executes_selected_side_and_binds_setup_cost_to_it(
     *, monkeypatch, sharing, groundings
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch, sharing=sharing, groundings=groundings
     )
     assert same.preconditions != opposite.preconditions
@@ -57,7 +57,7 @@ def test_default_executes_selected_side_and_binds_setup_cost_to_it(
 def test_solver_price_and_diagnostics_follow_admitted_empirical_costs(
     *, monkeypatch, tmp_path, sharing, allow_substitution
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch,
         sharing=sharing,
         groundings="all",

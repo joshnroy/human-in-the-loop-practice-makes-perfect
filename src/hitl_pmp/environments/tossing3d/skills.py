@@ -86,8 +86,10 @@ execute. Both are upstream's own, for the same reasons upstream gives:
 1. **`PickCube` binds the robot and cube to one typed side.** The base cannot cross the
    barrier, so a cube on the opposite side can never be grasped. This replaces the old,
    redundant ``Reachable`` predicate with the same fact in relational form.
-2. **The toss copies the bin's side to the cube.** ``CubeAtSide`` is functional, so the
-   old value is cleared before the selected destination side is added.
+2. **The toss copies the bin's side to the cube without binding a side parameter.**
+   Conditional effects read the bin's current side. ``CubeAtSide`` is functional,
+   so the old value is cleared before the observed destination side is added.
+   Same-side and opposite-side placement share one Toss practice target.
 
 And one add effect that is neither of those: **the toss adds `OnGround(?cube)`**, because
 upstream measured 15/15 scoring throws leaving the cube resting on a face. Upstream's
@@ -96,8 +98,8 @@ face it started on" would call most scoring throws a failure, and this add effec
 not be honest against it. That is one of the things this domain gets for free by looking
 upstream's atoms up rather than re-implementing them (see `predicates.py`).
 
-The typed relation also makes same-side practice honest: tossing into a same-side bin
-leaves the cube pickable, while tossing across the barrier does not.
+The typed relation preserves the side constraint on subsequent picks. A same-side
+landing still requires feasible pick geometry; an opposite-side landing is inaccessible.
 
 ## No operator takes a goal region
 
@@ -238,10 +240,9 @@ class Tossing3DSkills:
     MOVE_TO_TOSS_LOCATION_AND_TOSS: ClassVar[Skill] = Skill(
         name="MoveToTossLocationAndToss",
         # Upstream's own object order: (robot, target, held, barrier).
-        parameters=(_robot, _bin, _cube, _barrier, _side),
+        parameters=(_robot, _bin, _cube, _barrier),
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
         }),
         add_effects=frozenset({
@@ -250,10 +251,29 @@ class Tossing3DSkills:
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
             # Measured upstream on 20 throws: 15/15 that scored left the cube on a face.
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
-            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
             # The toss relocates the cube, so a refusal observed at its old
             # position no longer describes it -- a true add, not a forget.
             LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
+        }),
+        conditional_add_effects=frozenset({
+            ConditionalAddEffect(
+                constant_bindings=((_side, Tossing3DSides.robot),),
+                conditions=frozenset({
+                    LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side))
+                }),
+                add_effects=frozenset({
+                    LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side))
+                }),
+            ),
+            ConditionalAddEffect(
+                constant_bindings=((_side, Tossing3DSides.opposite),),
+                conditions=frozenset({
+                    LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side))
+                }),
+                add_effects=frozenset({
+                    LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side))
+                }),
+            ),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
