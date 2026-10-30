@@ -446,7 +446,7 @@ def test_once_with_optimistic_priors_can_leave_most_of_budget_unused(*, monkeypa
     assert method.dp_episodes() == 2
 
 
-def _shared_toss_setup(
+def _shared_pick_setup(
     *, monkeypatch, sharing: str, groundings: str, dp_allow_grounding_substitution: bool = False
 ):
     env = Tossing3DEnvironment(enable_bin_pouring=False)
@@ -468,7 +468,7 @@ def _shared_toss_setup(
         skill.name: DpSkillPrior(alpha=0.4, beta=1.6, initial_learning_rate=0.2)
         for skill in method.skills()
     }
-    skill = next(skill for skill in provider.skills() if skill.name == "MoveToTossLocationAndToss")
+    skill = next(skill for skill in provider.skills() if skill.name == "PickCube")
     bindings = {"robot": env.robot, "cube": env.cube, "bin": env.bin, "barrier": env.barrier}
     grounds = [
         GroundSkill(
@@ -497,7 +497,7 @@ def _shared_toss_setup(
 def test_legacy_same_side_fulfills_opposite_target_only_with_shared_all(
     *, monkeypatch, sharing, groundings
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch,
         sharing=sharing,
         groundings=groundings,
@@ -526,7 +526,7 @@ def test_legacy_same_side_fulfills_opposite_target_only_with_shared_all(
 
 @pytest.mark.parametrize("sharing", ["parent", "rate"])
 def test_grouped_method_forecasts_use_pooled_rates_and_one_budget_count(*, monkeypatch, sharing):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch, sharing=sharing, groundings="all"
     )
     method.advance_competence_cycle()
@@ -586,7 +586,7 @@ def test_grouped_method_forecasts_use_pooled_rates_and_one_budget_count(*, monke
 def test_legacy_group_price_uses_allowed_contexts_without_pooling_actual_costs(
     *, monkeypatch, sharing, groundings, price
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch,
         sharing=sharing,
         groundings=groundings,
@@ -603,7 +603,7 @@ def test_legacy_group_price_uses_allowed_contexts_without_pooling_actual_costs(
 def test_grouped_solver_log_distinguishes_forecasts_from_physical_attempts(
     *, monkeypatch, tmp_path
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch, sharing="parent", groundings="all"
     )
     method.dp_solver_log = tmp_path / "grouped.jsonl"
@@ -634,7 +634,7 @@ def test_grouped_solver_log_distinguishes_forecasts_from_physical_attempts(
 
 
 def test_shared_once_curriculum_counts_real_attempts_across_periods(*, monkeypatch):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch, sharing="parent", groundings="all"
     )
     method.dp_allocation_schedule = "once"
@@ -655,7 +655,7 @@ def test_shared_once_curriculum_counts_real_attempts_across_periods(*, monkeypat
 def test_observed_allocation_candidates_do_not_expand_when_forecast_models_are_created(
     *, monkeypatch, sharing
 ):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch, sharing=sharing, groundings="observed"
     )
     observed = method.practice_candidates()
@@ -678,7 +678,7 @@ def test_observed_allocation_candidates_do_not_expand_when_forecast_models_are_c
 
 
 def test_rate_all_real_attempt_updates_only_its_grounded_current_competence(*, monkeypatch):
-    method, same, opposite = _shared_toss_setup(
+    method, same, opposite = _shared_pick_setup(
         monkeypatch=monkeypatch,
         sharing="rate",
         groundings="all",

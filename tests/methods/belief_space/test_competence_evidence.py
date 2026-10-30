@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import SamplerConsultation
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
@@ -125,8 +128,14 @@ def test_search_forecasts_under_the_same_evidence_rule(
     state = method.pomdp_state.model_copy(update={"sampler_training": {TOSS_SKILL: training}})
     model = method._pomdp_model  # noqa: SLF001
     toss = next(g for g in model.ground_skills if g.skill.name == TOSS_SKILL)
+    before = toss.preconditions | {
+        GroundAtom(
+            predicate=BIN_AT_SIDE,
+            objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+        )
+    }
     outcomes = model.outcomes(
-        environment_state=make_tossing3d_search_state(state=state, true_atoms=toss.preconditions),
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
         state=state,
         action=toss,
     )

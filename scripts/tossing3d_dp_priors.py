@@ -302,7 +302,7 @@ class Tossing3DDpPriors:
         )
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         )
         train_scenes = np.random.default_rng(np.random.SeedSequence([seed, 900001]))
         probe_scenes = np.random.default_rng(np.random.SeedSequence([seed, 900002]))

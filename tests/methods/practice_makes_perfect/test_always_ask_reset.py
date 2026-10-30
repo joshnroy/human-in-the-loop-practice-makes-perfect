@@ -108,7 +108,7 @@ def _tossing_domain(*, method: EesMethod, env: Tossing3DEnvironment) -> _Domain:
         goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
         parameterized=GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         ),
         plain=GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
