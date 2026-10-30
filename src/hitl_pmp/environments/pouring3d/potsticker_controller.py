@@ -108,6 +108,39 @@ class PotstickerController(PracticePourController):
             target=self.base_home + [-0.35, 0, 0], phase="clear workspace for reset", seconds=4
         )
 
+    def floor_carry_rotation(self, *, hand: np.ndarray, rotation: Rotation) -> Rotation:
+        # Floor grasps have arbitrary yaw. The same wrist tilt can move toward
+        # or away from a joint limit; validate both lift segments before moving.
+        # This searches kinematics only, without predicting food outcomes.
+        previous, posture, phase = self.last_q.copy(), self.posture, self.phase
+        recoveries = self.bounded_ik_recoveries
+        base_x = self.base_target[0]
+        try:
+            for angle in (self.recovery_floor_carry_angle, -self.recovery_floor_carry_angle, 0):
+                self.last_q, self.posture = previous.copy(), posture
+                candidate = rotation * Rotation.from_euler("x", angle, degrees=True)
+                middle = np.array([base_x + 0.55, hand[1], 0.70])
+                destination = np.array([base_x + 0.45, hand[1], 1.03])
+                try:
+                    for a, b, start_rot, end_rot, label in (
+                        (hand, middle, rotation, candidate, "reorient held shrimp in aisle"),
+                        (middle, destination, candidate, candidate, "raise held shrimp in aisle"),
+                    ):
+                        self.phase = label
+                        relative = (end_rot * start_rot.inv()).as_rotvec()
+                        for u in np.linspace(0, 1, 41)[1:]:
+                            self.inverse_kinematics(
+                                position=a + u * (b - a),
+                                rotation=Rotation.from_rotvec(u * relative) * start_rot,
+                            )
+                    return candidate
+                except ValueError:
+                    continue
+            raise ValueError("No feasible wrist orientation for floor payload carry")
+        finally:
+            self.last_q, self.posture, self.phase = previous, posture, phase
+            self.bounded_ik_recoveries = recoveries
+
     def drop_shrimp(self, *, index: int) -> None:
         try:
             super().drop_shrimp(index=index)
