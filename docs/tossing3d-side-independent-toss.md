@@ -73,8 +73,15 @@ runtime). Its evidence is retained; it produced no new validation or training da
 - Changed-file lint/format checks pass. Broader type checking reports the same
   30 errors on the original collector and current collector, including installed
   simulator API mismatches; these are not waived as a clean type-check result.
-- The live simulator walk passed the Toss dispatch point after the oracle's
-  grounding was updated, but failed its later OpenGripper HandEmpty assertion.
-  The frozen pre-change source reproduces that same recovery failure on this local
-  runtime. This is not a passing full physics gate. Validate with the pinned
-  experiment runtime before any full relaunch; do not weaken the recovery test.
+- The complete live operator-fidelity walk passes (97.56 seconds) with the pinned
+  simulator dependencies. It exercises the oracle trajectory and recovery skills.
+  The first local attempt had imported different root-worktree simulator revisions
+  and failed a later OpenGripper HandEmpty assertion on both new and old source.
+  Explicit pinned import paths resolve that failure without changing the test or
+  recovery implementation: KINDER `490831fa54a40c4b2b4570d45bb08e3dd63c24ef`,
+  kinder-baselines `032b42634a015c7f710667b3a791836fa839f6ff`.
+
+Implementation and targeted local validation are complete. Fresh EES/expectimax
+seed-0 runs can use this encoding with the matching runtime. DP full-run readiness
+still requires fresh source-bound prior calibration and its launch preflight.
+No new experiments were submitted as part of this change.

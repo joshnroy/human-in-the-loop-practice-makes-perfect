@@ -81,7 +81,8 @@ deg/s.
 
 The rule here is that an operator model must never permit *more* than the raw dynamics
 allow -- a precondition weaker than reality yields plans that look valid and cannot
-execute. Both are upstream's own, for the same reasons upstream gives:
+execute. The spatial constraints follow the simulator dynamics; their symbolic
+encoding below is ours:
 
 1. **`PickCube` binds the robot and cube to one typed side.** The base cannot cross the
    barrier, so a cube on the opposite side can never be grasped. This replaces the old,
