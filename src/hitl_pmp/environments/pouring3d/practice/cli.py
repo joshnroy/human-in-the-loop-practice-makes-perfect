@@ -17,7 +17,12 @@ from .tasks import FrozenPourTasks
 class FrozenPourCli:
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--pour-payload", choices=("potsticker", "shrimp"), default="potsticker"
+        )
         parser.add_argument("--payload-count", type=int, choices=(3, 5), default=3)
+        parser.add_argument("--receiving-vessel", choices=("skillet", "tray"), default="skillet")
+        parser.add_argument("--pour-layout", choices=("stations", "floor"), default="stations")
         requests = parser.add_mutually_exclusive_group()
         requests.add_argument(
             "--requested-count",
@@ -66,7 +71,10 @@ class FrozenPourCli:
             else (counts[0] if counts else 2)
         )
         env = FrozenPourEnvironment(
+            payload_kind=getattr(args, "pour_payload", "potsticker"),
             payload_count=args.payload_count,
+            receiving_vessel=getattr(args, "receiving_vessel", "skillet"),
+            layout=getattr(args, "pour_layout", "stations"),
             requested_count=requested,
             surface_mu=args.surface_mu,
             canonical_seed=args.canonical_seed,

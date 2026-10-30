@@ -1,12 +1,13 @@
-# Frozen-shrimp pouring pilots: preparation, not submission
+# Three-dumpling pouring pilots
 
 The primary comparison is EES, Curtis and expectimax on the same native environment,
 with separate Pour1/Pour2/Pour3 samplers and competences. This launcher freezes the
 configuration and verifies the source and dependency revisions before execution.
-The launch branch now integrates the shared fidelity stack through
-`2724868a657dbadf3bad5948a01598a23fc75111` (the exact revision is also recorded in git's
-merge ancestry). The pouring scene/controllers remain unchanged. No pilot outcomes
-are claimed here.
+The launch branch integrates the shared planner/skill-identity stack through
+`d079f94b92b442d3eb5473081fae275ce163ac35`. The native pouring dependency remains
+pinned; the runtime now selects the three-potsticker scene and timed joint-feedback
+controller. Pilot results are pending physical recovery validation and a fresh source
+freeze; historical shrimp results are not evidence for this configuration.
 
 ## Question / goal
 
@@ -46,11 +47,19 @@ The longer stage restarts from the same seeds with its own output root. It is no
 continuation of pilot checkpoints. A full comparison will use six seeds, 0 through 5;
 its budget is intentionally not implemented until pilot learning/runtime are reviewed.
 
-- Three rigid frozen-shrimp proxies, contact assumption mu=0.1, normal lab background.
+- Three rigid frozen-potsticker proxies, contact assumption mu=0.1, normal lab background.
   Tilt 87–95 degrees, horizontal sideways peak amplitude 0–25 mm, feed duration 0–30 s.
 - Initial evaluation and every 3,200 counted ticks: nine held-out tasks, three per count,
-  identical across methods for each seed/checkpoint; 2,500 control ticks per task.
+  identical across methods for each seed/checkpoint; 7,500 control ticks per task.
   Evaluation uses the ordinary robot-only deployment policy, including recovery.
+  The cap allows an initial pick/pour/place (~2,100 ticks), three physical recoveries
+  (~900 ticks each in selected pan witnesses), and another pour; the old 2,500-tick
+  cap left almost no room for recovery. Skill calls retain their 2,500-tick limit.
+  Training budgets and costs are unchanged. These are caps, not guaranteed runtime.
+- Pour parameters are tilt, horizontal sideways amplitude and feeding duration. Joint
+  feedback tracks the commanded movement; there is no food-count cutoff or simulated
+  lookahead. Three distinct skills share this implementation. Their competences and
+  samplers are separate, using the unchanged shared method implementations.
 - Twenty skill slots per interaction, no scheduled resets, goal pursuit off, no
   perfect-score early termination in pilots. Normal STOP/safety termination remains.
 - Shared learner: epsilon 0.5, sampler refit limit 10,000, competence window/recency 5/5,
@@ -90,8 +99,8 @@ the same validation. Existing result directories are never overwritten. A copied
 manifest is not portable to a different checkout path: regenerate it at the destination
 and retain both manifests as preparation/deployment records.
 
-Use a memory-capped service in agents.slice locally, initially one worker until measured;
-max-workers is explicitly bounded at three. On Della, stage the exact clean source,
+Use a memory-capped service in agents.slice locally, with worker count chosen from current shared memory/load;
+max-workers is explicitly bounded at six. On Della, stage the exact clean source,
 dependencies and assets, generate the manifest there, and use one row per array task,
 two CPUs/16 GB and an initial two-hour pilot ceiling. Those are provisional resource
 limits, not measured ETAs. Use the scratch watchdog and a job-specific temporary
@@ -115,10 +124,9 @@ separate from learned-policy performance.
 ## Recommendation / blockers
 
 1. **Shared baseline integrated:** the launch branch includes the latest fetched
-   `codex/launch-t3-ees-fidelity-20261027` stack, including PR #605's EES fidelity and
-   PR #608's launch readiness work. EES, core skill types, planning and step protocol
-   match that stack; the additional generic multi-sampler support and fixed skill-plan
-   domain remain from the pouring integration. Regenerate manifests after the merge:
+   `codex/t3-side-independent-toss` stack through `d079f94b9`, including the newer
+   generic skill-identity/constant-effect and DP fidelity changes. No pouring-specific
+   learner or competence class is introduced. Regenerate manifests after the merge:
    the original `ff1d5ae5fe7a5db95e163c95a507ec4e386cb5c4` manifests are obsolete for
    these pilots and must not be launched. New shared-code updates require another
    validation and freeze rather than changing running workers.
@@ -133,7 +141,12 @@ separate from learned-policy performance.
    dependencies are published and pinned, so merging is not intrinsically required
    for branch experiments. A later physics rebase requires fresh validation.
 
-The partial-count controller can still fail; especially target one has not been shown
-feasible for every packing. That is a pilot question, not evidence that the software
-cannot be launched. Full-study claims remain blocked on learning curves and the
-baseline/version/reset decisions above.
+The current development search found exact-count witnesses for all targets on all
+three initial seeds (0, 1, 2). The selected tilt values for Pour1/2/3 are respectively
+89/89.5/90 degrees on seed 0, 89.5/89.75/90 on seed 1, and 89.5/89.6/90 on seed 2.
+Amplitude is 8/8/15 mm and feeding duration 12 seconds in these witnesses. These
+parameters are diagnostic evidence only: the launcher does not seed learned samplers
+with them. Seeds 1 and 2 were searched from physically prepared checkpoints; they do
+not establish full-task reliability or generalization. Repeated payload resets change
+the arrangement and can invalidate a fixed recipe. Full-study claims remain blocked
+on completed pilot learning curves and recovery validation.

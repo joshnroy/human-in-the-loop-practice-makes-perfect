@@ -30,6 +30,11 @@ class FeedbackPourController(ShrimpPourController):
     TILT_SPEED_DEG_S: ClassVar[float] = 10.0
     RETURN_SPEED_DEG_S: ClassVar[float] = 45.0
 
+    return_speed_deg_s: float = 45.0
+    pour_yaw_degrees: float = 90.0
+    pour_base_offset: float = 0.55
+    pour_posture: float = 1.0
+
     active_feedback: FeedbackPourParameters | None = None
     feedback_trace: list[dict[str, Any]] = Field(default_factory=list)
     outbound: set[str] = Field(default_factory=set)
@@ -64,15 +69,28 @@ class FeedbackPourController(ShrimpPourController):
         })
         return len(self.outbound)
 
+    def pour_orientation(self, *, angle: float) -> Rotation:
+        if self.pour_yaw_degrees == 90.0:
+            return Rotation.from_rotvec(
+                np.array([-1.0, 0, 0]) * np.deg2rad(angle)
+            ) * Rotation.from_euler("z", np.pi / 2)
+        return Rotation.from_euler("z", self.pour_yaw_degrees, degrees=True) * Rotation.from_euler(
+            "y", angle, degrees=True
+        )
+
+    def wiggle_direction(self) -> np.ndarray:
+        if self.pour_yaw_degrees == 90.0:
+            return np.array([1.0, 0, 0])
+        yaw = np.deg2rad(self.pour_yaw_degrees)
+        return np.array([np.sin(yaw), -np.cos(yaw), 0])
+
     def tracked_step(self, *, center: np.ndarray, angle: float, offset: float = 0) -> None:
         _, actual = self.body_pose(name="pitcher")
         _, hand = self.hand_pose()
         measured_grasp = actual.inv() * hand
-        desired = Rotation.from_rotvec(
-            np.array([-1.0, 0, 0]) * np.deg2rad(angle)
-        ) * Rotation.from_euler("z", np.pi / 2)
+        desired = self.pour_orientation(angle=angle)
         q = self.inverse_kinematics(
-            position=center + [offset, 0, 0], rotation=desired * measured_grasp
+            position=center + offset * self.wiggle_direction(), rotation=desired * measured_grasp
         )
         self.motor_step(target_q=q, grip=1)
 
@@ -122,26 +140,40 @@ class FeedbackPourController(ShrimpPourController):
             "feedback_trace": self.feedback_trace,
             "fixed_settings": {
                 "frequency_hz": self.FEED_HZ,
+                "pour_yaw_degrees": self.pour_yaw_degrees,
+                "wiggle_axis_world": self.wiggle_direction().tolist(),
                 "aim_offset_m": [0, 0],
-                "return_speed_deg_s": self.RETURN_SPEED_DEG_S,
+                "return_speed_deg_s": self.return_speed_deg_s,
                 "observation": "ideal simulator body centers crossing mouth plane",
             },
         }
         self.events.append(event)
         return event
 
+    def return_pitcher_upright(
+        self, *, center: np.ndarray, angle: float, start_offset: float
+    ) -> None:
+        return_elapsed = 0.0
+        while angle > 0:
+            angle = max(0, angle - self.return_speed_deg_s / self.frequency)
+            return_elapsed += 1 / self.frequency
+            offset = start_offset * max(0, 1 - return_elapsed / 0.3)
+            self.phase = "feedback return upright"
+            self.tracked_step(center=center, angle=angle, offset=offset)
+            self.observe_mouth()
+
     def feedback_pour(
         self, *, parameters: FeedbackPourParameters, requested_count: int | None = None
     ) -> None:
         tray, _ = self.body_pose(name="tray")
-        center = tray + [0, 0, 0.45]
+        center = tray + [0, 0, self.pour_clearance]
         self.move_base(
-            target=np.array([center[0] - 0.55, center[1], 0]),
+            target=np.array([center[0] - self.pour_base_offset, center[1], 0]),
             phase="position base for pour",
             seconds=5,
         )
-        self.posture_goal = 1.0
-        upright = Rotation.from_euler("z", np.pi / 2)
+        self.posture_goal = self.pour_posture
+        upright = self.pour_orientation(angle=0)
         self.move(
             phase="transport pour pivot above tray",
             position=center,
@@ -172,15 +204,5 @@ class FeedbackPourController(ShrimpPourController):
             offset = self.offset(elapsed=elapsed, amplitude_m=parameters.amplitude_m)
             self.phase = "feedback horizontal sideways wiggle"
             self.tracked_step(center=center, angle=angle, offset=offset)
-        # Same bounded physical cutoff for every parameter choice. Continue
-        # observing but do not assume no further pieces can leave during return.
-        start_offset = offset
-        return_elapsed = 0.0
-        while angle > 0:
-            angle = max(0, angle - self.RETURN_SPEED_DEG_S / self.frequency)
-            return_elapsed += 1 / self.frequency
-            offset = start_offset * max(0, 1 - return_elapsed / 0.3)
-            self.phase = "feedback return upright"
-            self.tracked_step(center=center, angle=angle, offset=offset)
-            self.observe_mouth()
+        self.return_pitcher_upright(center=center, angle=angle, start_offset=offset)
         self.pause(phase="settle shrimp in tray", seconds=2)

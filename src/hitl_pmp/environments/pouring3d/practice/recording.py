@@ -35,6 +35,9 @@ class FrozenPourReplayRenderer(ReplayRenderer):
                 requested=int(self.scene["requested_count"]),
                 mu=float(self.scene["surface_mu"]),
                 seed=0,
+                payload_kind=str(self.scene.get("payload_kind", "shrimp")),
+                layout=str(self.scene.get("layout", "floor")),
+                receiving_vessel=str(self.scene.get("receiving_vessel", "tray")),
                 scene_bg=bool(self.scene.get("scene_bg", True))
                 if self.scene_bg is None
                 else self.scene_bg,

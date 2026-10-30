@@ -18,10 +18,13 @@ from .types import FrozenPourState, PourObjects
 class FrozenPourEnvironment(Environment):
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=np.float64),
-        high=np.array([6, 4, 5, 130, 0.025, 60], dtype=np.float64),
+        high=np.array([7, 4, 5, 130, 0.025, 60], dtype=np.float64),
         dtype=np.float64,
     )
     payload_count: Literal[3, 5] = 3
+    payload_kind: Literal["shrimp", "potsticker"] = "shrimp"
+    receiving_vessel: Literal["skillet", "tray"] = "skillet"
+    layout: Literal["stations", "floor"] = "stations"
     requested_count: int = Field(default=2, ge=1, le=5, strict=True)
     surface_mu: float = Field(default=0.1, ge=0, allow_inf_nan=False)
     canonical_seed: int = 0
@@ -39,12 +42,18 @@ class FrozenPourEnvironment(Environment):
 
     @model_validator(mode="after")
     def validate_request(self) -> "FrozenPourEnvironment":
+        if self.payload_kind == "potsticker" and (
+            self.payload_count != 3
+            or self.layout != "stations"
+            or self.receiving_vessel != "skillet"
+        ):
+            raise ValueError("Dumpling practice requires three pieces and station skillet")
         if self.requested_count > self.payload_count:
             raise ValueError("Requested count exceeds payload")
         return self
 
     def objects(self) -> PourObjects:
-        return PourObjects(count=self.payload_count)
+        return PourObjects(count=self.payload_count, payload_kind=self.payload_kind)
 
     def controller(self) -> Any:
         if self._controller is None:
@@ -75,6 +84,9 @@ class FrozenPourEnvironment(Environment):
             mu=self.surface_mu,
             scene_bg=self.scene_bg,
             seed=seed,
+            receiving_vessel=self.receiving_vessel,
+            layout=self.layout,
+            payload_kind=self.payload_kind,
         )
         self._controller.before_step = self.before_tick
         self._controller.after_step = self.after_tick
@@ -153,7 +165,8 @@ class FrozenPourEnvironment(Environment):
                 parameters = ExtendedFeedbackPourParameters(
                     tilt_degrees=values[3], amplitude_m=values[4], duration_seconds=values[5]
                 )
-                result = c.run_feedback_pour(parameters=parameters, requested_count=requested)
+                run = c.run_joint_pour if self.payload_kind == "potsticker" else c.run_feedback_pour
+                result = run(parameters=parameters, requested_count=requested)
                 self.last_info.update({k: v for k, v in result.items() if k != "feedback_trace"})
             elif skill == "PickPitcher":
                 c.pick_pitcher()
@@ -164,7 +177,14 @@ class FrozenPourEnvironment(Environment):
                 c.place_pitcher()
                 self.last_info["success"] = c.held is None and c.vessel_home(name="pitcher")
             elif skill.startswith("PickShrimp"):
-                c.pick_shrimp(index=index, location="tray" if skill.endswith("Tray") else "floor")
+                c.pick_shrimp(
+                    index=index,
+                    location={
+                        "PickShrimpFromTray": "tray",
+                        "PickShrimpFromFloor": "floor",
+                        "PickShrimpFromSurface": "surface",
+                    }[skill],
+                )
                 self.last_info["success"] = c.held == c.scene.cube_names[index]
             elif skill == "DropShrimpIntoPitcher":
                 c.drop_shrimp(index=index)
