@@ -50,14 +50,13 @@ def main():
             return
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
         stroke = plan_stroke(
-            food_corners=np.concatenate([
-                backend.corners(name=name) for name in backend.cube_names
-            ]),
+            food_corners=np.stack([backend.corners(name=name) for name in backend.cube_names]),
             rack_back=rack.x_max,
             rack_front=rack.x_min,
             rack_center_y=0,
             rack_top=rack.top_z,
-            angle_deg=0,
+            dy=0,
+            phi_deg=0,
             blade_width=0.25,
             tray_back=tray.x_max,
         )

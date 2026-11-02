@@ -12,6 +12,7 @@ from hitl_pmp.environments.racktoserving3d.skill_provider import (
     RackServingActions,
     RackServingSkillProvider,
 )
+from hitl_pmp.environments.racktoserving3d.skills import SWEEP_SPEED_M_S
 from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
 
 
@@ -31,18 +32,25 @@ def _sweep():
     )
 
 
-def test_sweep_samples_angle_degrees_and_speed_in_bounds():
+def test_sweep_samples_lateral_offset_and_plow_angle_in_bounds():
     provider = _provider()
     rng = np.random.default_rng(10)
-    samples = np.array([provider.sample_params(ground_skill=_sweep(), rng=rng) for _ in range(100)])
-    assert samples.shape == (100, 2)
-    assert np.all((samples[:, 0] >= -40) & (samples[:, 0] <= 40))
-    assert np.all((samples[:, 1] >= 0.03) & (samples[:, 1] <= 0.25))
-    assert samples[:, 0].min() < 0 < samples[:, 0].max()
+    samples = np.array([provider.sample_params(ground_skill=_sweep(), rng=rng) for _ in range(200)])
+    assert samples.shape == (200, 2)
+    assert np.all(np.abs(samples[:, 0]) <= 0.1875)
+    assert np.all(np.abs(samples[:, 1]) <= 40)
+    assert samples[:, 0].min() < -0.1 and samples[:, 0].max() > 0.1
+    assert samples[:, 1].min() < -20 and samples[:, 1].max() > 20
     action = provider.compute_action(
-        ground_skill=_sweep(), params=np.array([-20, 0.12]), state=State(data={})
+        ground_skill=_sweep(), params=np.array([-0.04, 15.0]), state=State(data={})
     )
-    np.testing.assert_array_equal(action, [1, 0, -20, 0.12])
+    np.testing.assert_array_equal(action, [1, 0, -0.04, 15.0])
+
+
+def test_sweep_bounds_are_lateral_offset_then_plow_angle_with_fixed_speed():
+    assert Skills.SWEEP_BOUNDS == ((-0.1875, 0.1875), (-40.0, 40.0))
+    assert SWEEP_SPEED_M_S == 0.06
+    assert Skills.SWEEP_RACK.param_dim == 2
 
 
 def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index():
@@ -66,14 +74,25 @@ def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index
 
 @pytest.mark.parametrize(
     "params",
-    [[], [0], [0, 0], [41, 0.1], [-41, 0.1], [0, 0.26], [0, np.nan], [np.inf, 0.1], [[0, 0.1]]],
+    [
+        [],
+        [0],
+        [0, 0, 0.06],
+        [0.19, 0],
+        [-0.19, 0],
+        [0, 41],
+        [0, -41],
+        [0, np.nan],
+        [np.inf, 0],
+        [[0, 0]],
+    ],
 )
 def test_invalid_sweep_parameters_rejected(*, params):
     with pytest.raises(ValueError):
         RackServingActions.encode(ground_skill=_sweep(), params=np.array(params))
 
 
-@pytest.mark.parametrize("params", [[-40, 0.03], [40, 0.25]])
+@pytest.mark.parametrize("params", [[-0.1875, -40], [0.1875, 40]])
 def test_sweep_parameter_boundaries_are_inclusive(*, params):
     assert RackServingActions.encode(ground_skill=_sweep(), params=np.array(params)).shape == (4,)
 

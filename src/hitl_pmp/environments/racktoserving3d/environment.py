@@ -98,7 +98,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             if skill_id == SKILL_IDS["PickScraper"]:
                 controllers.pick_scraper()
             elif skill_id == SKILL_IDS["SweepRack"]:
-                controllers.sweep(angle=values[2], speed=values[3])
+                controllers.sweep(dy=values[2], phi=values[3])
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
             elif skill_id == SKILL_IDS["PickFood"]:

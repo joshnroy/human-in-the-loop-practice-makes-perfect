@@ -54,7 +54,7 @@ def test_blocked_destination_does_not_start_surface_approach():
 
 
 def test_push_keeps_45_degree_handle_behind_the_blade():
-    rotation = RackControllers.push_rotation(angle=0)
+    rotation = RackControllers.push_rotation(phi=0)
     handle_direction = rotation[:, 2]
     assert handle_direction[0] > 0
     assert handle_direction[2] > 0
@@ -62,7 +62,7 @@ def test_push_keeps_45_degree_handle_behind_the_blade():
 
 
 def test_upright_push_has_horizontal_face_normal():
-    rotation = RackControllers.push_rotation(angle=0, tilt=0)
+    rotation = RackControllers.push_rotation(phi=0, tilt=0)
     np.testing.assert_allclose(rotation[:, 1], [-1, 0, 0], atol=1e-12)
     np.testing.assert_allclose(rotation[:, 2], [0, 0, 1], atol=1e-12)
 
@@ -111,3 +111,34 @@ def test_release_lifts_without_dragging_food_back_then_waits():
     np.testing.assert_allclose(pose[:3, 3], [1.33, 0.01, 0.926])
     assert events == ["lift", "settle"]
     controller.shelf.hold.assert_called_once_with(count=40, label="food_settle")
+
+
+@pytest.mark.parametrize("phi", [-30.0, 0.0, 15.0, 40.0])
+def test_plow_rotation_yaws_the_blade_line_like_the_planned_stroke(*, phi):
+    from hitl_pmp.environments.racktoserving3d.stroke import plan_stroke
+
+    rotation = RackControllers.push_rotation(phi=phi)
+    plan = plan_stroke(
+        food_corners=np.array([[[1.5, 0.0, 0.94]]]),
+        rack_back=1.6275,
+        rack_front=1.3725,
+        rack_center_y=0.0,
+        rack_top=0.925,
+        dy=0.0,
+        phi_deg=phi,
+        blade_width=0.25,
+        tray_back=1.3625,
+    )
+    np.testing.assert_allclose(rotation[:, 0], plan.axis, atol=1e-12)
+    lean = rotation[:, 2]
+    assert lean[:2] @ plan.axis[:2] == pytest.approx(0, abs=1e-12)
+    assert lean[0] > 0 and lean[2] > 0
+
+
+@pytest.mark.parametrize(
+    ("dy", "phi"), [(0.19, 0.0), (-0.19, 0.0), (0.0, 41.0), (0.0, -41.0), (float("nan"), 0.0)]
+)
+def test_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(*, dy, phi):
+    controller = RackControllers.__new__(RackControllers)
+    with pytest.raises(SkillFailed, match="SweepRack requires"):
+        controller.sweep(dy=dy, phi=phi)

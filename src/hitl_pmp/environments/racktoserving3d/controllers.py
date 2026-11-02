@@ -12,6 +12,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 from .backend import RackServingBackend
 from .food import RackFoodController
 from .servo import SweepServo
+from .skills import SWEEP_BOUNDS, SWEEP_SPEED_M_S
 from .stroke import plan_stroke
 from .tool import RackScraper, RackShelfSkills
 
@@ -70,9 +71,10 @@ class RackControllers:
             self.tool.place()
 
     @staticmethod
-    def push_rotation(*, angle: float, tilt: float = 45) -> np.ndarray:
+    def push_rotation(*, phi: float, tilt: float = 45) -> np.ndarray:
+        """Blade line along local x yawed to (sin phi, cos phi); lean stays normal to it."""
         return (
-            Rotation.from_euler("z", -angle, degrees=True).as_matrix()
+            Rotation.from_euler("z", -phi, degrees=True).as_matrix()
             @ Rotation.from_euler("y", tilt, degrees=True).as_matrix()
             @ Rotation.from_euler("z", 90, degrees=True).as_matrix()
         )
@@ -162,11 +164,16 @@ class RackControllers:
                 if self.backend.ledger.ready:
                     break
 
-    def sweep(self, *, angle: float, speed: float) -> None:
-        if not np.isfinite([angle, speed]).all() or not (
-            -40 <= angle <= 40 and 0.03 <= speed <= 0.25
+    def sweep(self, *, dy: float, phi: float) -> None:
+        """Straight push toward the plate at a fixed speed; (dy, phi) choose the blade."""
+        (dy_low, dy_high), (phi_low, phi_high) = SWEEP_BOUNDS
+        if not np.isfinite([dy, phi]).all() or not (
+            dy_low <= dy <= dy_high and phi_low <= phi <= phi_high
         ):
-            raise SkillFailed("SweepRack requires angle [-40,40] deg and speed [.03,.25] m/s")
+            raise SkillFailed(
+                f"SweepRack requires dy [{dy_low},{dy_high}] m and phi [{phi_low},{phi_high}] deg"
+            )
+        speed = SWEEP_SPEED_M_S
         self.backend.sync_clock()
         if not self.backend.ledger.ready:
             raise SkillFailed("food is not elapsed-time ready; wait first")
@@ -179,12 +186,13 @@ class RackControllers:
             raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
         rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
         stroke = plan_stroke(
-            food_corners=np.concatenate([backend.corners(name=name) for name in names]),
+            food_corners=np.stack([backend.corners(name=name) for name in names]),
             rack_back=rack.x_max,
             rack_front=rack.x_min,
             rack_center_y=(rack.y_min + rack.y_max) / 2,
             rack_top=rack.top_z,
-            angle_deg=angle,
+            dy=dy,
+            phi_deg=phi,
             blade_width=2 * shelf.model.geom_size[tool.head_geom, 0],
             tray_back=tray.x_max,
             release_clearance=0.01
@@ -201,7 +209,8 @@ class RackControllers:
             "start_edge": stroke.start.tolist(),
             "end_edge": stroke.end.tolist(),
             "max_rack_displacement_m": 0.0,
-            "angle_deg": angle,
+            "dy_m": dy,
+            "phi_deg": phi,
             "speed_m_s": speed,
         }
         with self.feedback():
@@ -209,7 +218,7 @@ class RackControllers:
             shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ tool.wiper_pose()
             tool.top, tool.front = rack.top_z, rack.x_min
             body = np.eye(4)
-            body[:3, :3] = self.push_rotation(angle=angle, tilt=backend.config.scraper_tilt_degrees)
+            body[:3, :3] = self.push_rotation(phi=phi, tilt=backend.config.scraper_tilt_degrees)
             body[:3, 3] = stroke.start - tool.blade_edge(pose=body).mean(axis=0)
             target = body @ np.linalg.inv(shelf.in_hand)
             rotation, position = target[:3, :3], target[:3, 3]
