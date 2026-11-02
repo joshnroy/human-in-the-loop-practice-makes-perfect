@@ -38,6 +38,32 @@ def test_missing_measurements_stay_unknown_and_proxies_are_configurable():
         KitchenGeometry(water_depth_proxy_m=0.2)
 
 
+def test_pan_sits_on_a_desk_height_hob_while_the_jug_counter_is_unchanged():
+    geometry = KitchenGeometry()
+    assert geometry.hob_height_m == pytest.approx(0.74)
+    assert geometry.counter_height_m == pytest.approx(0.84)
+    config = geometry.scene_config()
+    assert config["fixtures"]["pourstovetop"]["stovetop"]["height"] == pytest.approx(0.74)
+    pan_region = config["regions"]["tray_home"]["ranges"][0]
+    assert pan_region[2] == pan_region[5] == pytest.approx(0.7405)
+    jug_region = config["regions"]["pitcher_home"]["ranges"][0]
+    assert jug_region[2] == jug_region[5] == pytest.approx(0.8405)
+
+
+def test_kitchen_dumplings_default_to_dough_on_cast_iron_friction_only_in_the_kitchen():
+    from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
+
+    assert KitchenEnvironment().surface_mu == pytest.approx(0.4)
+    kitchen = argparse.ArgumentParser()
+    KitchenCli.add_arguments(parser=kitchen)
+    assert kitchen.parse_args([]).surface_mu == pytest.approx(0.4)
+    # The legacy pouring benchmark keeps its own assumption.
+    assert FrozenPourEnvironment().surface_mu == pytest.approx(0.1)
+    legacy = argparse.ArgumentParser()
+    FrozenPourCli.add_arguments(parser=legacy)
+    assert legacy.parse_args([]).surface_mu == pytest.approx(0.1)
+
+
 def test_reset_cost_and_deployment_boundary_without_native_dependencies():
     practice = KitchenEnvironment(human_interruption_cost=7)
     provider = KitchenSkillProvider(env=practice)
