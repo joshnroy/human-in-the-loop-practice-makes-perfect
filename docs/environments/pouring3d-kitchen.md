@@ -100,8 +100,9 @@ loaded transport waypoints. Ingredients and
 partial outcomes are not snapped into desired bins after robot actions.
 
 Before PickPitcher and before every ingredient pick, and only with an empty hand,
-each continuous arm joint (1, 3, 5, 7) wound `k = round((q - q_neutral) / 360 deg)`
-whole turns from its episode-initial angle is rotated back by `k` turns along a
+each continuous arm joint (1, 3, 5, 7) at least a full turn from its episode-initial
+angle (`|q - q_neutral| >= 360 deg`, so a joint near +-180 deg never flips) is rotated
+back by `k = round((q - q_neutral) / 360 deg)` whole turns along a
 collision-checked joint path (same hand pose; joints 2, 4, 6 untouched; no home
 posture). IK resolves each continuous joint to the equivalent nearest its previous
 angle, so without this pick/place cycles ratchet joint 1 towards the +-688 deg IK

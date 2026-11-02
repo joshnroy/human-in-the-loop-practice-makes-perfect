@@ -19,7 +19,7 @@ class Wound:
     """A kitchen whose shoulder joint has ratcheted two whole turns from neutral."""
 
     @staticmethod
-    def kitchen(*, turns: dict[int, int]) -> KitchenController:
+    def kitchen(*, turns: dict[int, float]) -> KitchenController:
         env = KitchenEnvironment(requested_count=1)
         c = env.controller()
         for joint, n in turns.items():
@@ -61,7 +61,9 @@ def test_the_continuous_joints_are_the_ones_unwound():
 def test_a_pick_starts_within_half_a_turn_of_neutral_with_the_hand_where_it_was(
     *, monkeypatch, owner, name, pick
 ):
-    c = Wound.kitchen(turns={0: 2, 4: -1})
+    # Joint 5 sits a tenth of a turn past one full turn: exactly one turn would put
+    # it on the hysteresis threshold, where settling decides the outcome.
+    c = Wound.kitchen(turns={0: 2, 4: -1.1})
     before_q, before_hand = c.data.qpos[c.arm_q].copy(), c.hand_pose()[0]
     seen = Wound.entry(monkeypatch=monkeypatch, owner=owner, name=name)
     pick(c)
@@ -80,6 +82,15 @@ def test_an_unwound_arm_is_left_alone(*, monkeypatch):
     seen = Wound.entry(monkeypatch=monkeypatch, owner=PracticePourController, name="pick_pitcher")
     c.pick_pitcher()
     assert seen and c.steps == steps
+
+
+@pytest.mark.parametrize("degrees", [185.0, -185.0])
+def test_a_joint_less_than_a_full_turn_from_neutral_never_flips(*, degrees):
+    c = Wound.kitchen(turns={6: degrees / 360.0})
+    q, steps = c.data.qpos[c.arm_q].copy(), c.steps
+    c.unwind_continuous_joints()
+    assert c.steps == steps
+    np.testing.assert_array_equal(c.data.qpos[c.arm_q], q)
 
 
 def test_nothing_is_unwound_while_holding():
