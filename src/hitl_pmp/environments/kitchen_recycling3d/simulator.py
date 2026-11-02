@@ -10,6 +10,7 @@ import copy
 import json
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -33,18 +34,18 @@ class RecyclingSimulator:
         self,
         *,
         config: KitchenConfig | None = None,
-        phase="training",
-        seed=0,
-        frame_callback=None,
-        pretty=True,
-    ):
+        phase: Any = "training",
+        seed: int = 0,
+        frame_callback: Any = None,
+        pretty: bool = True,
+    ) -> None:
         self.config = config or KitchenConfig()
         self.episode = RecyclingEpisode(config=self.config, phase=phase)
         self.frame_callback = frame_callback
         self.caption = "Initial scene"
         self.steps = 0
-        self.before_step = None
-        self.after_step = None
+        self.before_step: Any = None
+        self.after_step: Any = None
         self.seed = seed
         self.backend = KinderBackend(scene_bg=pretty, allow_state_access=True)
         api = self.backend.api()
@@ -88,7 +89,7 @@ class RecyclingSimulator:
                 raise ValueError("Initial objects must fit entirely on the kitchen side")
         self.idle(seconds=0.8)
 
-    def _initialize_sideways_bottle(self):
+    def _initialize_sideways_bottle(self) -> None:
         state = self.backend._require_state().copy()
         rng = np.random.default_rng(self.seed + 81000)
         for spec in self.config.objects:
@@ -105,13 +106,13 @@ class RecyclingSimulator:
         self.scene.set_state(state)
         self.backend._state = state
 
-    def _remove_visuals_from_planning(self):
+    def _remove_visuals_from_planning(self) -> None:
         state = self.backend._state
         for obj in list(state):
             if obj.name == "sprout_mats":
                 del state.data[obj]
 
-    def observe(self):
+    def observe(self) -> RecyclingEpisode:
         import mujoco
 
         observations = []
@@ -151,7 +152,7 @@ class RecyclingSimulator:
         )
         return self.episode
 
-    def step(self, *, action):
+    def step(self, *, action: Any) -> None:
         action = np.asarray(action)
         if (
             action.ndim not in (1, 2)
@@ -182,19 +183,19 @@ class RecyclingSimulator:
                 frame=self.backend.render(), caption=self.caption, episode=self.episode
             )
 
-    def idle(self, *, seconds: float, closed=False):
+    def idle(self, *, seconds: float, closed: bool = False) -> None:
         action = np.zeros(self.backend._env.action_space.shape, dtype=np.float32)
         action[10] = float(closed)
         for _ in range(max(1, int(np.ceil(seconds * self.scene._robot_env.control_frequency)))):
             self.step(action=action)
 
-    def _execute(self, *, controller, params, limit):
+    def _execute(self, *, controller: Any, params: Any, limit: int) -> dict[str, Any]:
         from bilevel_planning.trajectory_samplers.trajectory_sampler import (
             TrajectorySamplingFailure,
         )
 
         start = self.steps
-        error = None
+        error: str | None = None
         try:
             controller.reset(self.backend._require_state(), params)
             for _ in range(limit):
@@ -209,7 +210,7 @@ class RecyclingSimulator:
             error = f"{type(failure).__name__}: {failure}"
         return {"steps": self.steps - start, "error": error}
 
-    def pick(self, *, name: str, calibration=None):
+    def pick(self, *, name: str, calibration: Any = None) -> dict[str, Any]:
         from .controllers import RecyclingPickController
 
         spec = self.config.object(name=name)
@@ -221,7 +222,7 @@ class RecyclingSimulator:
         if classify_zone(config=self.config, observation=observation) != "kitchen":
             nearest = self.config.kitchen_bounds[2] - self.config.robot_radius
             if observation.position[0] - nearest > self.config.direct_placement_reach:
-                result = {
+                result: dict[str, Any] = {
                     "steps": 0,
                     "error": "Object outside permitted robot reach",
                     "success": False,
@@ -248,7 +249,7 @@ class RecyclingSimulator:
         collision = self.backend._pick_collision_sim(state=state)
         collision._bounding_boxes["cuboid_barrier"] = (0.016, 5.0, 0.001)
         controller = RecyclingPickController(objects, pybullet_sim=collision)
-        controller.ACTION_DIM = self.backend._env.action_space.shape[0]
+        vars(controller)["ACTION_DIM"] = self.backend._env.action_space.shape[0]
         controller.configure(
             episode=self.episode,
             spec=spec,
@@ -266,7 +267,7 @@ class RecyclingSimulator:
         finally:
             collision.close()
 
-    def toss(self, *, name: str, calibration=None):
+    def toss(self, *, name: str, calibration: Any = None) -> dict[str, Any]:
         if name not in self.episode.holding:
             raise ValueError("Toss requires sustained two-finger contact and observed lift")
         context = self.episode.context()
@@ -330,7 +331,7 @@ class RecyclingSimulator:
         finally:
             collision.close()
 
-    def human(self, *, action: str, name=None, destination=None):
+    def human(self, *, action: str, name: Any = None, destination: Any = None) -> dict[str, Any]:
         event = self.episode.request_human(action=action, object_name=name, destination=destination)
         if action == "restore_bin":
             destination = self.config.bin_position
@@ -356,11 +357,11 @@ class RecyclingSimulator:
         event["completed"] = bool(np.linalg.norm(np.array(actual) - destination) < 0.025)
         return event
 
-    def begin_deployment(self):
+    def begin_deployment(self) -> None:
         self.episode.begin_deployment()
         self.caption = "DEPLOYMENT: human at gym | no help, no bin relocation"
 
-    def open_gripper(self):
+    def open_gripper(self) -> dict[str, Any]:
         from hitl_pmp.environments.tossing3d.kinder_backend import (
             ClearReleaseController,
             OpenGripperSettlingController,
@@ -371,7 +372,9 @@ class RecyclingSimulator:
             return {"steps": 0, "error": None, "success": True}
         released_name = next(iter(self.episode.holding), None)
         name = released_name or self.config.objects[0].name
-        view = RecyclingBackendView(backend=self.backend, cube_name=self.names[name])
+        view = cast(
+            KinderBackend, RecyclingBackendView(backend=self.backend, cube_name=self.names[name])
+        )
         state = self.backend._require_state()
         controller = (
             self.backend
@@ -415,7 +418,7 @@ class RecyclingSimulator:
             if planning is not None:
                 planning.close()
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, Any]:
         import mujoco
 
         specification = mujoco.mjtState.mjSTATE_INTEGRATION
@@ -430,7 +433,7 @@ class RecyclingSimulator:
             "seed": self.seed,
         }
 
-    def restore(self, *, snapshot):
+    def restore(self, *, snapshot: Any) -> None:
         import mujoco
 
         self.scene.set_state(snapshot["state"].copy())
@@ -444,15 +447,15 @@ class RecyclingSimulator:
         self.steps = snapshot["steps"]
         self.seed = snapshot["seed"]
 
-    def close(self):
+    def close(self) -> None:
         self.backend.close()
 
 
 class RecyclingBackendView:
-    def __init__(self, *, backend, cube_name):
+    def __init__(self, *, backend: Any, cube_name: Any) -> None:
         self.backend = backend
         self.cube_name = cube_name
 
-    def __getattr__(self, *args):
+    def __getattr__(self, *args: Any) -> Any:
         (name,) = args
         return getattr(self.backend, name)

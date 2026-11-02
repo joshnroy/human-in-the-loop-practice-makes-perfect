@@ -2,6 +2,7 @@
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from kinder.envs.dynamic3d import envs
 
@@ -10,7 +11,7 @@ FURNITURE_SCALE = (0.6, 0.6, 0.8)
 CHAIR_POSITIONS = ((2.15, 0.67), (2.85, 0.67), (2.15, 2.03), (2.85, 2.03))
 
 
-def rectangular_kitchen(*, root):
+def rectangular_kitchen(*, root: Any) -> None:
     world = root.find("worldbody")
     assert world is not None
     for parent in world.iter():
@@ -247,5 +248,5 @@ class RecyclingObjectCentricEnv(envs.ObjectCentricTidyBot3DEnv):
 
 
 class RecyclingEnv(envs.TidyBot3DEnv):
-    def _create_object_centric_env(self, *args, **kwargs):
+    def _create_object_centric_env(self, *args: Any, **kwargs: Any) -> Any:
         return RecyclingObjectCentricEnv(*args, **kwargs)

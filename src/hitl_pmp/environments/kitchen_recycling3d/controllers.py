@@ -3,6 +3,8 @@
 This module is simulation-only. No global vendor constants or cube controllers change.
 """
 
+from typing import Any, cast
+
 import numpy as np
 from kinder_models.dynamic3d.tossing.parameterized_skills import (
     PickCubeController,
@@ -27,7 +29,7 @@ from .domain import ObjectObservation, grasp_yaws, projected_bounds
 class RecyclingPickController(PickCubeController):
     """Keep collision-checked pick/retrace; replace cube poses and attachment geometry."""
 
-    def configure(self, *, episode, spec, calibration):
+    def configure(self, *, episode: Any, spec: Any, calibration: Any) -> None:
         self.episode = episode
         self.spec = spec
         self.calibration = calibration
@@ -35,7 +37,7 @@ class RecyclingPickController(PickCubeController):
             (-0.005, 0.0, calibration.grasp_offset), (2**-0.5, 2**-0.5, 0.0, 0.0)
         )
 
-    def grasp_candidates(self, *args):
+    def grasp_candidates(self, *args: Any) -> list[Any]:
         (state,) = args
         target = self.objects[1]
         observation = ObjectObservation(
@@ -65,15 +67,15 @@ class RecyclingPickController(PickCubeController):
         candidates.extend(alternatives)
         return candidates
 
-    def rescue_sides(self, *args):
+    def rescue_sides(self, *args: Any) -> list[Any]:
         return []
 
-    def _robot_is_close_to_pose(self, *args, atol=0.004):
+    def _robot_is_close_to_pose(self, *args: Any, atol: float = 0.004) -> Any:
         """Preserve the millimetre clearance left by a cylinder in the open gripper."""
         (pose,) = args
         return super()._robot_is_close_to_pose(pose, atol=atol)
 
-    def _robot_is_close_to_conf(self, *args, atol=0.04):
+    def _robot_is_close_to_conf(self, *args: Any, atol: float = 0.04) -> Any:
         """Pass through intermediate waypoints, but converge before phase handoffs."""
         (conf,) = args
         plan = self.plans.get(self.current_phase)
@@ -81,15 +83,15 @@ class RecyclingPickController(PickCubeController):
             atol = 0.008
         return super()._robot_is_close_to_conf(conf, atol=atol)
 
-    def _step_trajectory_phase(self, *args):
+    def _step_trajectory_phase(self, *args: Any) -> Any:
         """Damp the endpoint command instead of oscillating across its tolerance."""
         phase, next_phase = args
         action = super()._step_trajectory_phase(phase, next_phase)
-        if self._plan_step_idx[phase] == len(self.plans[phase]) - 1:
+        if self._plan_step_idx[phase] == len(cast(list[Any], self.plans[phase])) - 1:
             action[3:10] *= 0.5
         return action
 
-    def _plan_base_motion(self, *args):
+    def _plan_base_motion(self, *args: Any) -> Any:
         """Keep the chassis clear of every object, including the not-yet-held target."""
         state, target, extend_xy_magnitude, extend_rot_magnitude, grasp_quat = args
         simulator = self._pybullet_sim
@@ -111,9 +113,10 @@ class RecyclingPickController(PickCubeController):
             )
             center = np.asarray(observation.position[:2]) + (lower[:2] + upper[:2]) / 2
             extent = upper[:2] - lower[:2] + 0.02
-            footprints.append(Rectangle.from_center(*center, *extent, rotation_about_center=0.0))
+            from_center = cast(Any, Rectangle.from_center)
+            footprints.append(from_center(*center, *extent, rotation_about_center=0.0))
 
-        def collides(*args):
+        def collides(*args: Any) -> Any:
             (pose,) = args
             try:
                 self.episode.check_drive(start=(pose.x, pose.y), end=(pose.x, pose.y))
@@ -136,7 +139,7 @@ class RecyclingPickController(PickCubeController):
             body_collision_fn=collides,
         )
 
-    def _plan_grasp_and_lift(self, *args, endpoints_only=False):
+    def _plan_grasp_and_lift(self, *args: Any, endpoints_only: bool = False) -> bool:
         state, start_joints, candidate, held_object_collision_threshold = args
         simulator = self._pybullet_sim
         assert simulator is not None
@@ -168,7 +171,7 @@ class RecyclingPickController(PickCubeController):
         target_body = simulator._cubes[target.name]
         obstacles = simulator.get_collision_bodies(held_object=target_body)
 
-        def clearance(*args):
+        def clearance(*args: Any) -> bool:
             (configuration,) = args
             return not check_collisions_with_held_object(
                 simulator.robot,

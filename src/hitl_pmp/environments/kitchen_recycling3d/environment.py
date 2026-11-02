@@ -1,6 +1,7 @@
 """Experiment-harness boundary for the observed multi-object recycling simulator."""
 
-from typing import Any, ClassVar, Literal
+from collections.abc import Callable
+from typing import Any, ClassVar, Literal, cast
 
 import numpy as np
 from gymnasium.spaces import Box
@@ -8,7 +9,7 @@ from pydantic import ConfigDict, Field, PrivateAttr
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.core.problem.environment.environment import Environment
-from hitl_pmp.core.problem.environment.types import Action, State
+from hitl_pmp.core.problem.environment.types import Action, Object, State
 
 from .domain import KitchenConfig, classify_zone, projected_bounds
 from .scene import initial_positions
@@ -35,22 +36,22 @@ class KitchenRecyclingEnvironment(Environment):
     _state_key: tuple | None = PrivateAttr(default=None)
 
     @property
-    def objects(self):
+    def objects(self) -> KitchenObjects:
         return KitchenObjects(config=self.config)
 
     @property
-    def robot(self):
+    def robot(self) -> Object:
         return self.objects.robot
 
     @property
-    def bin(self):
+    def bin(self) -> Object:
         return self.objects.bin
 
     @property
-    def items(self):
+    def items(self) -> tuple[Object, ...]:
         return self.objects.items
 
-    def simulator(self):
+    def simulator(self) -> Any:
         if self._simulator is None:
             self.hard_reset()
         return self._simulator
@@ -146,10 +147,11 @@ class KitchenRecyclingEnvironment(Environment):
             at_target,
         ])
         key = (simulator.steps, self._skills_taken, self.seed, self.phase)
+        current = cast(KitchenState, self.current_state)
         if self._state_key == key and all(
-            np.array_equal(values, self.current_state.data[obj]) for obj, values in data.items()
+            np.array_equal(values, current.data[obj]) for obj, values in data.items()
         ):
-            return self.current_state
+            return current
         self.current_state = KitchenState(data=data)
         self._state_key = key
         return self.current_state
@@ -279,13 +281,13 @@ class KitchenRecyclingEnvironment(Environment):
             self.get_current_state()
         return bool(event["completed"])
 
-    def cost_observation(self):
+    def cost_observation(self) -> dict[str, Any]:
         return {"human_cost": self.simulator().episode.human_cost, "phase": self.phase}
 
     def is_solved(self) -> bool:
         return self.simulator().episode.solved
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, Any]:
         return {
             "simulator": self.simulator().snapshot(),
             "phase": self.phase,
@@ -295,7 +297,7 @@ class KitchenRecyclingEnvironment(Environment):
             "error": self._error,
         }
 
-    def restore(self, *, snapshot) -> KitchenState:
+    def restore(self, *, snapshot: Any) -> KitchenState:
         if snapshot["phase"] != self.phase or snapshot["config"] != self.config.model_dump():
             raise ValueError("Snapshot phase/config differs from this environment")
         self.simulator().restore(snapshot=snapshot["simulator"])
@@ -306,7 +308,9 @@ class KitchenRecyclingEnvironment(Environment):
         self._state_key = None
         return self.get_current_state()
 
-    def set_control_step_observers(self, *, before, after) -> None:
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None, after: Callable[[], None] | None
+    ) -> None:
         self._before, self._after = before, after
         if self._simulator is not None:
             self._simulator.before_step, self._simulator.after_step = before, after
@@ -317,13 +321,13 @@ class KitchenRecyclingEnvironment(Environment):
         self._error = reason
         return self.get_current_state()
 
-    def last_skill_error(self):
+    def last_skill_error(self) -> str | None:
         return self._error
 
-    def last_controller_steps(self):
+    def last_controller_steps(self) -> tuple[int, ...]:
         return self._controller_steps
 
-    def drain_execution_timing(self):
+    def drain_execution_timing(self) -> None:
         return None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
@@ -332,11 +336,11 @@ class KitchenRecyclingEnvironment(Environment):
         if self._simulator is not None:
             self._simulator.frame_callback = self._capture_frame if enabled else None
 
-    def _capture_frame(self, *, frame, caption, episode):
+    def _capture_frame(self, *, frame: Any, caption: Any, episode: Any) -> None:
         del caption, episode
         self._frames.append(frame)
 
-    def drain_substep_frames(self):
+    def drain_substep_frames(self) -> list[np.ndarray]:
         frames, self._frames = self._frames, []
         return frames
 

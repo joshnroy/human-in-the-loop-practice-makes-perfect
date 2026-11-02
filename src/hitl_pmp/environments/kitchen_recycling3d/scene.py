@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import Any, cast
 
 import numpy as np
 
@@ -14,7 +15,7 @@ def internal_name(*, index: int) -> str:
     return f"cube_{index}"
 
 
-def register_simulation_objects():
+def register_simulation_objects() -> None:
     """Register new names only, leaving every original object class untouched."""
     from kinder.envs.dynamic3d.objects.base import register_fixture, register_object
     from kinder.envs.dynamic3d.objects.fixtures import FixedCuboid
@@ -22,7 +23,7 @@ def register_simulation_objects():
 
     @register_object(name="kitchen_recycling_proxy")
     class RecyclingProxy(Cuboid):
-        def _create_xml_element(self):
+        def _create_xml_element(self) -> ET.Element:
             if self.options["kind"] in ("cube", "packaging"):
                 return super()._create_xml_element()
             body = ET.Element("body", name=self.name)
@@ -57,11 +58,11 @@ def register_simulation_objects():
     @register_fixture
     class KitchenMatVisual(FixedCuboid):
         @staticmethod
-        def get_bounding_box_from_config(*args):
+        def get_bounding_box_from_config(*args: Any) -> list[Any]:
             pos, _ = args
             return [*pos, *pos]
 
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             for geom in self.xml_element.iter("geom"):
                 geom.set("contype", "0")
@@ -80,7 +81,7 @@ def initial_positions(*, config: KitchenConfig, seed: int) -> list[tuple[float, 
     lower[0] = max(lower[0], -0.9)
     if np.any(lower >= upper):
         raise ValueError("Kitchen has no clear area for scattered floor objects")
-    positions = []
+    positions: list[np.ndarray] = []
     for spec in config.objects:
         radius = float(np.linalg.norm(spec.dimensions)) / 2
         for _ in range(1000):
@@ -93,7 +94,7 @@ def initial_positions(*, config: KitchenConfig, seed: int) -> list[tuple[float, 
             break
         else:
             raise ValueError("Unable to scatter separated objects on the clear kitchen floor")
-    return [tuple(map(float, position)) for position in positions]
+    return [cast(tuple[float, float], tuple(map(float, position))) for position in positions]
 
 
 def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:

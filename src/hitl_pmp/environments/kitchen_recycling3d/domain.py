@@ -7,7 +7,7 @@ Simulation assumptions are deliberately separate from measured hardware facts.
 from __future__ import annotations
 
 from math import atan2, isfinite, pi
-from typing import Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
@@ -58,7 +58,7 @@ class Calibration(FrozenModel):
     hardware_validated: bool = False
 
     @model_validator(mode="after")
-    def valid_settling_window(self):
+    def valid_settling_window(self) -> Calibration:
         if self.settle_timeout <= self.settle_duration:
             raise ValueError("Settling timeout must exceed the confirmation window")
         return self
@@ -157,7 +157,7 @@ class KitchenConfig(FrozenModel):
         return missing
 
 
-def inside_rect(*, position, bounds, dimensions=(0.0, 0.0)) -> bool:
+def inside_rect(*, position: Any, bounds: Any, dimensions: Any = (0.0, 0.0)) -> bool:
     return bool(
         all(isfinite(float(value)) for value in (*position, *bounds, *dimensions))
         and bounds[0] <= position[0] - dimensions[0] / 2
@@ -187,7 +187,7 @@ def world_extent(*, spec: ObjectSpec, observation: ObjectObservation) -> np.ndar
     return 2 * np.maximum(np.abs(lower), np.abs(upper))
 
 
-def projected_bounds(*, spec: ObjectSpec, rotation: Rotation):
+def projected_bounds(*, spec: ObjectSpec, rotation: Rotation) -> tuple[Any, Any]:
     """Support against coordinate planes, including cylindrical rather than box corners."""
     if spec.kind in ("cube", "packaging"):
         half = np.abs(rotation.as_matrix()) @ np.array(spec.dimensions) / 2
@@ -196,7 +196,7 @@ def projected_bounds(*, spec: ObjectSpec, rotation: Rotation):
     half_height = spec.dimensions[2] / 2
     axis = rotation.apply([0, 0, 1])
     radial = np.sqrt(np.maximum(0, 1 - axis**2))
-    parts = [(0, half_height, radius)]
+    parts: list[tuple[float, float, float]] = [(0, half_height, radius)]
     if spec.kind == "bottle":
         parts = [
             (-BOTTLE_CAP_HEIGHT / 2, half_height - BOTTLE_CAP_HEIGHT / 2, radius),
@@ -234,7 +234,7 @@ def grasp_yaws(*, spec: ObjectSpec, observation: ObjectObservation) -> tuple[flo
     return tuple(yaw + offset * pi / 2 for offset in range(4))
 
 
-def contained(*, config: KitchenConfig, observation: ObjectObservation, bin_pose) -> bool:
+def contained(*, config: KitchenConfig, observation: ObjectObservation, bin_pose: Any) -> bool:
     center, quaternion = bin_pose
     inverse = Rotation.from_quat(quaternion).inv()
     local = inverse.apply(np.array(observation.position) - center)
@@ -269,19 +269,19 @@ class RecyclingEpisode(BaseModel):
     _initial_height: dict[str, float] = PrivateAttr(default_factory=dict)
     _time: float | None = PrivateAttr(default=None)
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: Any) -> None:
         self.bin_pose = (self.config.bin_position, (0, 0, 0, 1))
 
     def context(self) -> str:
         distance = self.bin_pose[0][0] - self.config.kitchen_bounds[2]
         return "near" if distance < self.config.near_distance else "far"
 
-    def start_pick(self, *, name: str):
+    def start_pick(self, *, name: str) -> None:
         self._initial_height[name] = self.observations[name].position[2]
         self._hold_since.pop(name, None)
         self.holding.discard(name)
 
-    def update(self, *, observations: list[ObjectObservation], bin_pose, time: float):
+    def update(self, *, observations: list[ObjectObservation], bin_pose: Any, time: float) -> None:
         if not isfinite(time) or (self._time is not None and time <= self._time):
             raise ValueError("Observations require strictly increasing finite timestamps")
         names = [observation.name for observation in observations]
@@ -321,17 +321,18 @@ class RecyclingEpisode(BaseModel):
 
     @property
     def solved(self) -> bool:
-        return (
+        return cast(
+            bool,
             set(self.config.required_objects) <= self.settled
             and np.linalg.norm(np.array(self.bin_pose[0]) - self.config.bin_position) < 0.025
-            and Rotation.from_quat(self.bin_pose[1]).magnitude() < 0.05
+            and Rotation.from_quat(self.bin_pose[1]).magnitude() < 0.05,
         )
 
     @property
     def human_cost(self) -> float:
         return sum(event["cost"] for event in self.events if event["kind"] == "human")
 
-    def check_drive(self, *, start, end):
+    def check_drive(self, *, start: Any, end: Any) -> None:
         diameter = 2 * self.config.robot_radius
         if not all(
             inside_rect(
@@ -341,7 +342,7 @@ class RecyclingEpisode(BaseModel):
         ):
             raise PermissionError("Robot swept footprint leaves the allowed kitchen driving zone")
 
-    def begin_deployment(self):
+    def begin_deployment(self) -> None:
         if self.phase == "deployment":
             raise ValueError("Already in deployment")
         if not np.allclose(self.bin_pose[0], self.config.bin_position, atol=0.025) or (
@@ -351,7 +352,9 @@ class RecyclingEpisode(BaseModel):
         self.phase = "deployment"
         self.events.append({"kind": "phase", "phase": "deployment", "time": self._time})
 
-    def request_human(self, *, action: str, object_name: str | None = None, destination=None):
+    def request_human(
+        self, *, action: str, object_name: str | None = None, destination: Any = None
+    ) -> dict[str, Any]:
         if self.phase == "deployment":
             raise PermissionError("Human actions and bin relocation are disabled at deployment")
         costs = {
@@ -400,7 +403,7 @@ class RecyclingEpisode(BaseModel):
         self.events.append(event)
         return event
 
-    def record_practice(self, *, name: str, skill: str, success: bool, context: str):
+    def record_practice(self, *, name: str, skill: str, success: bool, context: str) -> None:
         self.config.object(name=name)
         if context not in ("near", "far"):
             raise ValueError("Practice records must retain the starting context")

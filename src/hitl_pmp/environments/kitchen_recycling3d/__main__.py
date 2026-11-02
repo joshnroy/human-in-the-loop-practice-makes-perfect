@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import imageio.v2 as imageio
 import numpy as np
@@ -13,7 +14,7 @@ from .domain import KitchenConfig
 from .simulator import RecyclingSimulator
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path)
@@ -38,7 +39,7 @@ def main():
     )
     captured = 0
 
-    def record(*, frame, caption, episode):
+    def record(*, frame: Any, caption: Any, episode: Any) -> None:
         nonlocal captured
         canvas = Image.new("RGB", (frame.shape[1], frame.shape[0] + 130), "#111827")
         canvas.paste(Image.fromarray(frame), (0, 60))

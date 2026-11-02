@@ -10,11 +10,12 @@ import itertools
 import json
 import multiprocessing
 from pathlib import Path
+from typing import Any
 
 from .domain import Calibration, KitchenConfig
 
 
-def trial(*args):
+def trial(*args: Any) -> dict[str, Any]:
     from .simulator import RecyclingSimulator
 
     (job,) = args
@@ -44,7 +45,7 @@ def trial(*args):
         simulator.close()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path)
