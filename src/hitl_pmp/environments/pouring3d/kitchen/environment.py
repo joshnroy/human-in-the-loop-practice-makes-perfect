@@ -23,6 +23,9 @@ class KitchenEnvironment(FrozenPourEnvironment):
     layout: Literal["stations"] = "stations"
     receiving_vessel: Literal["skillet"] = "skillet"
     geometry: KitchenGeometry = Field(default_factory=KitchenGeometry)
+    # Frozen dough on dry seasoned cast iron, a judgement in 0.3-0.5, not a measurement.
+    # The legacy 0.1 is ice-like. Pad-dumpling friction is a separate explicit 0.6 pair.
+    surface_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
     human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
     human_interventions: int = 0
