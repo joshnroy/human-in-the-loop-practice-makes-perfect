@@ -129,7 +129,60 @@ class CircularSupport(BaseModel):
         )
 
 
-ServingRegion = SupportRegion | CircularSupport
+class RectangularSupport(BaseModel):
+    """Measured oriented rectangle (a lipped platter's interior) and its floor elevation.
+
+    ``half_x``/``half_y`` are the lip's inner half extents along the platter's own
+    axes, yawed by ``yaw`` about world z. Containment is tested in that frame, so a
+    yawed platter never scores points that only its axis-aligned box contains.
+    """
+
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+
+    center_x: float
+    center_y: float
+    yaw: float
+    half_x: float = Field(gt=0)
+    half_y: float = Field(gt=0)
+    top_z: float
+
+    def _aabb_half(self) -> tuple[float, float]:
+        cos, sin = abs(math.cos(self.yaw)), abs(math.sin(self.yaw))
+        return self.half_x * cos + self.half_y * sin, self.half_x * sin + self.half_y * cos
+
+    @property
+    def x_min(self) -> float:
+        return self.center_x - self._aabb_half()[0]
+
+    @property
+    def x_max(self) -> float:
+        return self.center_x + self._aabb_half()[0]
+
+    @property
+    def y_min(self) -> float:
+        return self.center_y - self._aabb_half()[1]
+
+    @property
+    def y_max(self) -> float:
+        return self.center_y + self._aabb_half()[1]
+
+    def contains_xy(self, *, points: Iterable[Sequence[float]], margin: float = 0.0) -> bool:
+        cos, sin = math.cos(self.yaw), math.sin(self.yaw)
+        for x, y, *_ in points:
+            dx, dy = x - self.center_x, y - self.center_y
+            local_x, local_y = cos * dx + sin * dy, -sin * dx + cos * dy
+            if abs(local_x) > self.half_x - margin or abs(local_y) > self.half_y - margin:
+                return False
+        return True
+
+    def supports(self, *, food: FoodMeasurement, tolerance: float) -> bool:
+        """The whole horizontal footprint lies inside the lip, resting on the floor."""
+        return self.contains_xy(points=food.horizontal_points()) and food.rests_on(
+            top_z=self.top_z, tolerance=tolerance
+        )
+
+
+ServingRegion = SupportRegion | CircularSupport | RectangularSupport
 
 
 class _GeometryTolerance(BaseModel):

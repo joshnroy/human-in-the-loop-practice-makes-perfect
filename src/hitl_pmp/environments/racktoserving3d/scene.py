@@ -14,6 +14,7 @@ COUNTER_TYPE = "rackservingcounter"
 RACK_TYPE = "rack_serving_rack"
 TRAY_TYPE = "rack_serving_slate"
 PLATE_TYPE = "rack_serving_round_plate"
+PLATTER_TYPE = "rack_serving_lipped_platter"
 SCRAPER_TYPE = "rack_serving_scraper"
 DUMPLING_TYPE = "rack_serving_dumpling"
 
@@ -109,13 +110,15 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
         ],
         "yaw_ranges": [[0, 0]],
     }
-    round_plate = config.serving_target == "round_plate"
-    serving_type = PLATE_TYPE if round_plate else TRAY_TYPE
-    serving_noun = "round serving plate" if round_plate else "slate serving tray"
-    serving_rgba = [0.93, 0.92, 0.88, 1] if round_plate else [0.16, 0.18, 0.19, 1]
+    serving_type, serving_noun, serving_rgba = {
+        "round_plate": (PLATE_TYPE, "flat round serving plate", [0.93, 0.92, 0.88, 1]),
+        "slate": (TRAY_TYPE, "flat slate serving tray", [0.16, 0.18, 0.19, 1]),
+        "lipped_platter": (PLATTER_TYPE, "lipped serving platter", [0.86, 0.84, 0.78, 1]),
+    }[config.serving_target]
+    lipped = config.serving_target == "lipped_platter"
     return {
         "description": (
-            f"Movable cooling rack to movable flat {serving_noun}; rigid dumpling proxies. "
+            f"Movable cooling rack to movable {serving_noun}; rigid dumpling proxies. "
             "Hardware height, mass, friction and cooling are unverified assumptions."
         ),
         "robots": {"tidybot": {"robot": {}}},
@@ -147,16 +150,25 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
                     "size": [
                         config.serving_depth / 2,
                         config.serving_width / 2,
-                        config.tray_thickness / 2,
+                        config.serving_thickness / 2,
                     ],
                     "length": config.serving_depth,
                     "width": config.serving_width,
-                    "height": config.tray_thickness,
+                    "height": config.serving_thickness,
                     "wall_thickness": 0.0,
-                    "mass": config.tray_mass,
+                    "mass": config.serving_mass,
                     "friction": list(config.tray_friction),
                     "contact_dimension": config.support_contact_dimension,
                     "rgba": serving_rgba,
+                    **(
+                        {
+                            "base_thickness": config.platter_base_thickness,
+                            "lip_height": config.platter_lip_height,
+                            "lip_wall": config.platter_lip_wall,
+                        }
+                        if lipped
+                        else {}
+                    ),
                 }
             },
             SCRAPER_TYPE: {

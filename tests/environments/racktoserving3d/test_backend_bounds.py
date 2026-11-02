@@ -9,7 +9,11 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
-from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
+from hitl_pmp.environments.racktoserving3d.semantics import (
+    CircularSupport,
+    RectangularSupport,
+    SupportRegion,
+)
 
 
 def _backend(*, monkeypatch, kind, size, rotation, center, config=None):
@@ -200,3 +204,92 @@ def test_food_inside_plate_box_but_outside_circle_is_not_on_tray(*, monkeypatch,
     )
     assert plate.x_min < 1.2325 + 0.095 - 0.015 and plate.x_max > 1.2325 + 0.095 + 0.015
     assert backend.location(name="cube_0") == expected
+
+
+PLATTER_GEOMS = (
+    "box_0_platter_floor",
+    "box_0_lip_front",
+    "box_0_lip_back",
+    "box_0_lip_left",
+    "box_0_lip_right",
+)
+
+
+def _platter_backend(*, monkeypatch, yaw=0.0, tilt=0.0, centre=(1.2125, 0.0)):
+    """Five live box geoms of a 0.30 x 0.45 platter: 6 mm floor and 8 mm x 12 mm lip."""
+    rotation = Rotation.from_euler("zx", [yaw, tilt], degrees=True).as_matrix()
+    local = {
+        "box_0_platter_floor": ((0, 0, 0.003), (0.15, 0.225, 0.003)),
+        "box_0_lip_front": ((-0.146, 0, 0.012), (0.004, 0.217, 0.006)),
+        "box_0_lip_back": ((0.146, 0, 0.012), (0.004, 0.217, 0.006)),
+        "box_0_lip_left": ((0, -0.221, 0.012), (0.15, 0.004, 0.006)),
+        "box_0_lip_right": ((0, 0.221, 0.012), (0.15, 0.004, 0.006)),
+    }
+    origin = np.array([*centre, 0.9])
+    model = SimpleNamespace(
+        geom_type=np.full(5, 6),
+        geom_size=np.array([local[name][1] for name in PLATTER_GEOMS]),
+        geom=lambda name: SimpleNamespace(id=PLATTER_GEOMS.index(name)),
+    )
+    data = SimpleNamespace(
+        geom_xmat=np.array([rotation.reshape(-1)] * 5),
+        geom_xpos=np.array([
+            origin + rotation @ np.array(local[name][0]) for name in PLATTER_GEOMS
+        ]),
+    )
+    monkeypatch.setattr(RackServingBackend, "model", lambda self: model)
+    monkeypatch.setattr(RackServingBackend, "data", lambda self: data)
+    monkeypatch.setattr(RackServingBackend, "body_geoms", lambda self, **kwargs: set(range(5)))
+    return RackServingBackend(config=RackServingConfig(serving_target="lipped_platter"))
+
+
+def test_platter_support_is_the_live_lip_inner_rectangle_at_floor_height(*, monkeypatch):
+    platter = _platter_backend(monkeypatch=monkeypatch).support(name="box_0")
+    assert isinstance(platter, RectangularSupport)
+    assert (platter.center_x, platter.center_y) == pytest.approx((1.2125, 0.0))
+    assert (platter.half_x, platter.half_y) == pytest.approx((0.142, 0.217))
+    assert platter.top_z == pytest.approx(0.906)
+    assert platter.x_max == pytest.approx(1.2125 + 0.142)
+
+
+def test_yawed_platter_support_rotates_with_the_body(*, monkeypatch):
+    platter = _platter_backend(monkeypatch=monkeypatch, yaw=20).support(name="box_0")
+    assert platter.yaw == pytest.approx(np.deg2rad(20))
+    assert (platter.half_x, platter.half_y) == pytest.approx((0.142, 0.217))
+
+
+def test_tilted_platter_support_shrinks_conservatively(*, monkeypatch):
+    platter = _platter_backend(monkeypatch=monkeypatch, tilt=10).support(name="box_0")
+    assert platter.half_y == pytest.approx(0.217 * np.cos(np.deg2rad(10)))
+    assert platter.half_x == pytest.approx(0.142 * np.cos(np.deg2rad(10)))
+
+
+@pytest.mark.parametrize(
+    ("food_x", "food_z", "expected"),
+    [
+        (1.2125, 0.9185, "OnTray"),
+        (1.2125 + 0.142 - 0.010, 0.9185, None),
+        (1.2125 + 0.146, 0.9305, None),
+    ],
+)
+def test_platter_location_tests_the_food_footprint_against_the_lip(
+    *, monkeypatch, food_x, food_z, expected
+):
+    platter = _platter_backend(monkeypatch=monkeypatch).support(name="box_0")
+    food = _backend(
+        monkeypatch=monkeypatch,
+        kind=4,
+        size=np.array([0.015, 0.0225, 0.0125]),
+        rotation=np.eye(3),
+        center=np.array([food_x, 0.0, food_z]),
+        config=RackServingConfig(serving_target="lipped_platter"),
+    )
+    rack = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, top_z=0.925)
+    monkeypatch.setattr(RackServingBackend, "held", lambda self, **kwargs: False)
+    monkeypatch.setattr(RackServingBackend, "supporting_bodies", lambda self, **kwargs: {"box_0"})
+    monkeypatch.setattr(
+        RackServingBackend,
+        "support",
+        lambda self, *, name: platter if name == "box_0" else rack,
+    )
+    assert food.location(name="cube_0") == expected

@@ -25,6 +25,7 @@ from .semantics import (
     FoodLocation,
     FoodMeasurement,
     RackServingLedger,
+    RectangularSupport,
     ServingRegion,
     SupportRegion,
     classify_food,
@@ -178,6 +179,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def support(self, *, name: str) -> ServingRegion:
         if name == "box_0" and self.config.serving_target == "round_plate":
             return self.plate_support()
+        if name == "box_0" and self.config.serving_target == "lipped_platter":
+            return self.platter_support()
         if name == "counter":
             config = self.config
             return SupportRegion(
@@ -210,6 +213,27 @@ class RackServingBackend(SweepOffShelf3DBackend):
             center_y=float(data.geom_xpos[geom][1]),
             radius=float(model.geom_size[geom][0] * abs(rotation[2, 2])),
             top_z=float(self.corners(name="box_0")[:, 2].max()),
+        )
+
+    def platter_support(self) -> RectangularSupport:
+        """Live inner rectangle of the platter's lip, at the top of its floor slab.
+
+        A tilted platter's interior shadow shrinks by at most |cos tilt| on each
+        axis; scaling both inner half extents by that keeps containment strict.
+        """
+        model, data = self.model(), self.data()
+        floor = model.geom("box_0_platter_floor").id
+        rotation = data.geom_xmat[floor].reshape(3, 3)
+        half_x, half_y, _ = model.geom_size[floor]
+        wall = self.config.platter_lip_wall
+        shrink = abs(rotation[2, 2])
+        return RectangularSupport(
+            center_x=float(data.geom_xpos[floor][0]),
+            center_y=float(data.geom_xpos[floor][1]),
+            yaw=float(np.arctan2(rotation[1, 0], rotation[0, 0])),
+            half_x=float((half_x - wall) * shrink),
+            half_y=float((half_y - wall) * shrink),
+            top_z=float(data.geom_xpos[floor][2] + np.abs(rotation[2]) @ model.geom_size[floor]),
         )
 
     def box_interior(self) -> tuple[tuple[float, float, float, float], float]:
@@ -246,7 +270,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
             held=self.held(name=name),
             footprint=(
                 tuple((float(x), float(y)) for x, y in self.footprint(name=name))
-                if isinstance(tray, CircularSupport)
+                if isinstance(tray, CircularSupport | RectangularSupport)
                 else None
             ),
         )

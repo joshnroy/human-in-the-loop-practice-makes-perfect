@@ -22,10 +22,11 @@ class RackServingConfig(BaseModel):
 
     Rack and serving-object poses use bottom-center body origins. Dumpling
     poses use their geometric centers. The serving object (``box_0``) is a round
-    plate by default or the original rectangular slate, selected by
-    ``serving_target``; its position is derived to preserve ``gap`` in front of
-    the rack's exit edge, centred on the rack's centre line. Neither the rack
-    nor the serving object is fixed or assumed ungraspable.
+    plate by default, the original rectangular slate, or a wide platter with a
+    low continuous lip, selected by ``serving_target``; its position is derived
+    to preserve ``gap`` in front of the rack's exit edge, centred on the rack's
+    centre line. Neither the rack nor the serving object is fixed or assumed
+    ungraspable.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -55,11 +56,19 @@ class RackServingConfig(BaseModel):
     concept_pitch: Positive = 0.025
     concept_thickness: Positive = 0.003
 
-    serving_target: Literal["round_plate", "slate"] = "round_plate"
+    serving_target: Literal["round_plate", "slate", "lipped_platter"] = "round_plate"
     plate_radius: Positive = 0.13
     tray_width: Positive = Field(default=0.375, description="slate only")
     tray_depth: Positive = Field(default=0.30, description="slate only")
     tray_mass: Positive = 1.0
+    platter_width: Positive = Field(default=0.45, description="lipped_platter only")
+    platter_depth: Positive = Field(default=0.30, description="lipped_platter only")
+    platter_base_thickness: Positive = Field(default=0.006, description="lipped_platter only")
+    platter_lip_height: Positive = Field(
+        default=0.012, description="lipped_platter only; above the platter floor"
+    )
+    platter_lip_wall: Positive = Field(default=0.008, description="lipped_platter only")
+    platter_mass: Positive = Field(default=1.5, description="lipped_platter only")
     tray_friction: Friction = (0.6, 0.005, 0.003)
     counter_x_min: float = 0.98
     counter_x_max: float = 1.70
@@ -101,12 +110,31 @@ class RackServingConfig(BaseModel):
     @property
     def serving_depth(self) -> float:
         """World-x extent of the serving object's footprint."""
+        if self.serving_target == "lipped_platter":
+            return self.platter_depth
         return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_depth
 
     @property
     def serving_width(self) -> float:
         """World-y extent of the serving object's footprint."""
+        if self.serving_target == "lipped_platter":
+            return self.platter_width
         return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_width
+
+    @property
+    def serving_thickness(self) -> float:
+        """Height of the surface food rests on: the platter floor, not its lip."""
+        if self.serving_target == "lipped_platter":
+            return self.platter_base_thickness
+        return self.tray_thickness
+
+    @property
+    def serving_mass(self) -> float:
+        return self.platter_mass if self.serving_target == "lipped_platter" else self.tray_mass
+
+    @property
+    def platter_lip_top_z(self) -> float:
+        return self.counter_height + self.platter_base_thickness + self.platter_lip_height
 
     @property
     def tray_center_x(self) -> float:
@@ -126,7 +154,7 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_top_z(self) -> float:
-        return self.counter_height + self.tray_thickness
+        return self.counter_height + self.serving_thickness
 
     @property
     def counter_front_x(self) -> float:
@@ -151,8 +179,13 @@ class RackServingConfig(BaseModel):
     @model_validator(mode="after")
     def validate_layout(self) -> "RackServingConfig":
         """Reject unsupported layouts rather than silently clipping hardware."""
-        if self.rack_height < self.tray_thickness:
+        if self.rack_height < self.serving_thickness:
             raise ValueError("Rack top must be at or above tray top")
+        if self.serving_target == "lipped_platter":
+            if self.platter_lip_top_z >= self.rack_top_z:
+                raise ValueError("Platter lip must stay below the rack top")
+            if 2 * self.platter_lip_wall >= min(self.platter_depth, self.platter_width):
+                raise ValueError("Platter lip must leave an interior")
         if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
             raise ValueError("Rack and tray must fit on the counter in x")
         if (
