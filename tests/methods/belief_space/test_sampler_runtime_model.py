@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief, smooth_history
@@ -135,13 +138,19 @@ def test_hypothetical_first_success_enables_refit_without_changing_current_sampl
     state = method.pomdp_state
     practice_model = method._pomdp_model  # noqa: SLF001
     toss = next(g for g in practice_model.ground_skills if g.skill.name == TOSS_SKILL)
-    search_state = make_tossing3d_search_state(state=state, true_atoms=toss.preconditions)
+    bin_side = GroundAtom(
+        predicate=BIN_AT_SIDE,
+        objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+    )
+    search_state = make_tossing3d_search_state(
+        state=state, true_atoms=toss.preconditions | {bin_side}
+    )
     outcomes = practice_model.outcomes(environment_state=search_state, state=state, action=toss)
     assert len(outcomes) == 2
     assert sum(p for p, _, _ in outcomes) == pytest.approx(1.0)
     prior = _toss_belief(state=state)
     for probability, branch, atoms in outcomes:
-        success = toss.add_effects <= atoms
+        success = toss.expected_add_effects(before_atoms=search_state.true_atoms) <= atoms
         assert probability == pytest.approx(
             prior.mean_competence() if success else 1 - prior.mean_competence()
         )
@@ -156,7 +165,7 @@ def test_hypothetical_first_success_enables_refit_without_changing_current_sampl
             # actions of this practice cycle. The current policy stays frozen.
             next_outcomes = practice_model.outcomes(
                 environment_state=make_tossing3d_search_state(
-                    state=branch, true_atoms=toss.preconditions
+                    state=branch, true_atoms=search_state.true_atoms
                 ),
                 state=branch,
                 action=toss,
@@ -164,7 +173,7 @@ def test_hypothetical_first_success_enables_refit_without_changing_current_sampl
             assert len(next_outcomes) == 2
             refitted_outcomes = practice_model.outcomes(
                 environment_state=make_tossing3d_search_state(
-                    state=projected, true_atoms=toss.preconditions
+                    state=projected, true_atoms=search_state.true_atoms
                 ),
                 state=projected,
                 action=toss,

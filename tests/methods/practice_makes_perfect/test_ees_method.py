@@ -608,11 +608,11 @@ def test_random_exploration_attempts_do_not_touch_competence_by_default() -> Non
 def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
     """What the flag does: a greedy attempt lands twice and a random one once.
 
-    The name is historical and wrong. At reference/predicators 5bd3f5bd,
+    At reference/predicators 5bd3f5bd,
     `_update_ground_op_hist` calls observe() once, only under
-    `if not exploration_indicator` -- this port's default. So the flag departs from
-    predicators rather than reproducing it; this test pins what it does, not what
-    predicators does."""
+    `if not exploration_indicator` -- this port's default. The audited release
+    instead observes every attempt once plus non-exploration attempts once again,
+    which is what this flag reproduces."""
     method, env = _build(seed=1)
     skill = _turn_on_light(env=env)
 
@@ -627,8 +627,8 @@ def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
 def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     """What the flag costs: with random attempts counted at half the weight of
     greedy ones, a skill the robot has actually mastered still reads as mediocre (its
-    random attempts keep failing). Not a predicators behaviour -- see the test
-    above."""
+    random attempts keep failing). This is the audited release behavior, not
+    vendor 5bd3f5bd's behavior."""
     buggy, env = _build()
     buggy.reproduce_predicators_double_observe = True
     fixed, _ = _build()
@@ -652,8 +652,8 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
 def test_predicators_matching_flag_defaults() -> None:
     """The port defaults toward matching predicators, with two documented exceptions.
     practice_target_history is ON (a clean match). double_observe is OFF, which is
-    what matches predicators (it observes once, never twice). explore_target_only stays OFF
-    because it is coupled to a horizon cap this port lacks -- ON alone starves
+    what matches vendor 5bd3f5bd, but not the audited release. explore_target_only stays OFF
+    because it is coupled to a horizon cap that defaults to None -- ON alone starves
     goal-directed learning (see its field comment)."""
     method, _ = _build()
     assert method.reproduce_predicators_practice_target_history is True
@@ -2188,7 +2188,7 @@ def test_evaluation_episodes_ignore_the_goal_pursuit_schedule() -> None:
     assert episode._goal_phase_done is False
 
 
-def test_a_non_pursuing_period_still_records_its_task_as_seen() -> None:
+def test_a_non_pursuing_period_still_records_its_task_as_seen(*, monkeypatch) -> None:
     """predicators adds the task to `_seen_train_task_idxs` at the top of its option
     policy whatever `pursue_task_goal_first` is (carried over from 46379575)."""
     env = LightSwitchEnvironment(grid_size=4)
@@ -2200,8 +2200,10 @@ def test_a_non_pursuing_period_still_records_its_task_as_seen() -> None:
         goal_pursuit_interval=5,
     )
     tasks = LightSwitchTasks(env=env, seed=0)
+    monkeypatch.setattr(_EesEpisode, "step", lambda self, **kwargs: None)
     for _ in range(2):
-        method.get_practice_policy(task=tasks.sample_train_task())
+        task = tasks.sample_train_task()
+        method.get_practice_policy(task=task)(task.initial_state)
     assert method._practice_episode is not None
     assert method._practice_episode._goal_phase_done is True
     assert len(method._seen_tasks) == 2

@@ -26,6 +26,7 @@ class PourPredicates:
             "InPitcher": (O.shrimp_type, O.pitcher_type),
             "InTray": (O.shrimp_type, O.tray_type),
             "OnFloor": (O.shrimp_type,),
+            "OnSurface": (O.shrimp_type,),
             "Settled": (O.shrimp_type,),
             "PitcherHome": (O.pitcher_type,),
             "TrayHome": (O.tray_type,),

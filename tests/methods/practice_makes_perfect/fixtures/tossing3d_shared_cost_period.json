@@ -1,0 +1,353 @@
+[
+  {
+    "seed": 2,
+    "provenance": {
+      "scenario": "shared_flexible DPcost cost/period",
+      "replay_status": "reconstruction_not_verified_against_archived_allocator_input",
+      "note": "The isolated pre-repair MIN formulation reproduces the user-supplied overnight failure diagnostics exactly with Gurobi 13.0.0. This does not establish an exact replay of the original run's full task MDP or allocator input."
+    },
+    "arguments": {
+      "mdp": {
+        "initial_probabilities": {
+          "0": 0.1,
+          "1": 0.1,
+          "2": 0.1,
+          "3": 0.1,
+          "4": 0.1,
+          "5": 0.1,
+          "6": 0.1,
+          "7": 0.1,
+          "8": 0.1,
+          "9": 0.1
+        },
+        "terminal_rewards": {
+          "12": 1.0,
+          "13": 1.0,
+          "14": 1.0,
+          "17": 1.0,
+          "20": 1.0,
+          "21": 1.0,
+          "22": 1.0,
+          "24": 1.0,
+          "26": 1.0,
+          "27": 1.0
+        },
+        "transitions": [
+          {
+            "state": 0,
+            "skill": "PickCube",
+            "successor": 10
+          },
+          {
+            "state": 1,
+            "skill": "PickCube",
+            "successor": 11
+          },
+          {
+            "state": 2,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 12
+          },
+          {
+            "state": 3,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 13
+          },
+          {
+            "state": 4,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 14
+          },
+          {
+            "state": 5,
+            "skill": "PickCube",
+            "successor": 15
+          },
+          {
+            "state": 6,
+            "skill": "OpenGripper",
+            "successor": 16
+          },
+          {
+            "state": 7,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 17
+          },
+          {
+            "state": 8,
+            "skill": "PickCube",
+            "successor": 18
+          },
+          {
+            "state": 9,
+            "skill": "OpenGripper",
+            "successor": 19
+          },
+          {
+            "state": 10,
+            "skill": "Toss_opposite",
+            "successor": 20
+          },
+          {
+            "state": 11,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 21
+          },
+          {
+            "state": 15,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 22
+          },
+          {
+            "state": 16,
+            "skill": "PickCube",
+            "successor": 23
+          },
+          {
+            "state": 18,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 24
+          },
+          {
+            "state": 19,
+            "skill": "PickCube",
+            "successor": 25
+          },
+          {
+            "state": 23,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 26
+          },
+          {
+            "state": 25,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 27
+          }
+        ],
+        "discount": 1.0
+      },
+      "competences": {
+        "PickCube": 0.9998056365403305,
+        "MoveToTossLocationAndToss": 0.09733124018838304,
+        "OpenGripper": 0.9997757344696121,
+        "ask_for_reset_cube_bin_only_robot_side": 0.99,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.9090909090909091,
+        "PickCube_opposite": 0.9998056365403305,
+        "Toss_opposite": 0.09733124018838304
+      },
+      "learning_rates": {
+        "PickCube": 2.347908692329682e-06,
+        "MoveToTossLocationAndToss": -0.003351362179487182,
+        "OpenGripper": 3.410222841977177e-06,
+        "ask_for_reset_cube_bin_only_robot_side": 0.00013516268213966363,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.1,
+        "PickCube_opposite": 2.347908692329682e-06,
+        "Toss_opposite": -0.003351362179487182
+      },
+      "costs": {
+        "PickCube": 0.01,
+        "MoveToTossLocationAndToss": 2.4499999999999917,
+        "OpenGripper": 0.01,
+        "ask_for_reset_cube_bin_only_robot_side": 0.01,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.01
+      },
+      "budget": 1378.0899999999888,
+      "groups": {
+        "PickCube_opposite": "PickCube",
+        "Toss_opposite": "MoveToTossLocationAndToss"
+      }
+    },
+    "expected_allocation": {
+      "PickCube": 83,
+      "MoveToTossLocationAndToss": 0,
+      "OpenGripper": 66,
+      "ask_for_reset_cube_bin_only_robot_side": 0,
+      "ask_for_reset_cube_bin_only_opposite_side": 0
+    },
+    "original_failure": {
+      "phase": "primary_independent_verification",
+      "objective": 0.09733113302978867,
+      "solver_objective": 0.09733128589635942,
+      "objective_bound": 0.09733124018838303,
+      "spent": 1.48
+    }
+  },
+  {
+    "seed": 3,
+    "provenance": {
+      "scenario": "shared_flexible DPcost cost/period",
+      "replay_status": "reconstruction_not_verified_against_archived_allocator_input",
+      "note": "The isolated pre-repair MIN formulation reproduces the user-supplied overnight failure diagnostics exactly with Gurobi 13.0.0. This does not establish an exact replay of the original run's full task MDP or allocator input."
+    },
+    "arguments": {
+      "mdp": {
+        "initial_probabilities": {
+          "0": 0.1,
+          "1": 0.1,
+          "2": 0.1,
+          "3": 0.1,
+          "4": 0.1,
+          "5": 0.1,
+          "6": 0.1,
+          "7": 0.1,
+          "8": 0.1,
+          "9": 0.1
+        },
+        "terminal_rewards": {
+          "13": 1.0,
+          "14": 1.0,
+          "17": 1.0,
+          "20": 1.0,
+          "21": 1.0,
+          "22": 1.0,
+          "23": 1.0,
+          "25": 1.0,
+          "27": 1.0,
+          "28": 1.0
+        },
+        "transitions": [
+          {
+            "state": 0,
+            "skill": "PickCube",
+            "successor": 10
+          },
+          {
+            "state": 1,
+            "skill": "PickCube",
+            "successor": 11
+          },
+          {
+            "state": 2,
+            "skill": "PickCube",
+            "successor": 12
+          },
+          {
+            "state": 3,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 13
+          },
+          {
+            "state": 4,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 14
+          },
+          {
+            "state": 5,
+            "skill": "PickCube",
+            "successor": 15
+          },
+          {
+            "state": 6,
+            "skill": "OpenGripper",
+            "successor": 16
+          },
+          {
+            "state": 7,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 17
+          },
+          {
+            "state": 8,
+            "skill": "PickCube",
+            "successor": 18
+          },
+          {
+            "state": 9,
+            "skill": "OpenGripper",
+            "successor": 19
+          },
+          {
+            "state": 10,
+            "skill": "Toss_opposite",
+            "successor": 20
+          },
+          {
+            "state": 11,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 21
+          },
+          {
+            "state": 12,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 22
+          },
+          {
+            "state": 15,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 23
+          },
+          {
+            "state": 16,
+            "skill": "PickCube",
+            "successor": 24
+          },
+          {
+            "state": 18,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 25
+          },
+          {
+            "state": 19,
+            "skill": "PickCube",
+            "successor": 26
+          },
+          {
+            "state": 24,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 27
+          },
+          {
+            "state": 26,
+            "skill": "MoveToTossLocationAndToss",
+            "successor": 28
+          }
+        ],
+        "discount": 1.0
+      },
+      "competences": {
+        "PickCube": 0.9998270494638534,
+        "MoveToTossLocationAndToss": 0.1054421768707483,
+        "OpenGripper": 0.9997999199679872,
+        "ask_for_reset_cube_bin_only_robot_side": 0.9911504424778761,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.9090909090909091,
+        "PickCube_opposite": 0.9998270494638534,
+        "Toss_opposite": 0.1054421768707483
+      },
+      "learning_rates": {
+        "PickCube": 1.8037891820057966e-06,
+        "MoveToTossLocationAndToss": -0.0035758896361574935,
+        "OpenGripper": 2.50998945194208e-06,
+        "ask_for_reset_cube_bin_only_robot_side": 9.91088469370475e-05,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.1,
+        "PickCube_opposite": 1.8037891820057966e-06,
+        "Toss_opposite": -0.0035758896361574935
+      },
+      "costs": {
+        "PickCube": 0.01,
+        "MoveToTossLocationAndToss": 2.138333333333295,
+        "OpenGripper": 0.01,
+        "ask_for_reset_cube_bin_only_robot_side": 0.01,
+        "ask_for_reset_cube_bin_only_opposite_side": 0.01
+      },
+      "budget": 1296.0499999999997,
+      "groups": {
+        "PickCube_opposite": "PickCube",
+        "Toss_opposite": "MoveToTossLocationAndToss"
+      }
+    },
+    "expected_allocation": {
+      "PickCube": 96,
+      "MoveToTossLocationAndToss": 0,
+      "OpenGripper": 80,
+      "ask_for_reset_cube_bin_only_robot_side": 0,
+      "ask_for_reset_cube_bin_only_opposite_side": 0
+    },
+    "original_failure": {
+      "phase": "primary_independent_verification",
+      "objective": 0.10544205947198751,
+      "solver_objective": 0.10544220777401431,
+      "objective_bound": 0.10544217687074833,
+      "spent": 1.75
+    }
+  }
+]

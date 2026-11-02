@@ -33,7 +33,7 @@ def _provider() -> Tossing3DSkillProvider:
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
@@ -67,7 +67,7 @@ def test_same_side_toss_uses_the_same_feature_layout() -> None:
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     toss = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=toss,
@@ -275,6 +275,7 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
     from hitl_pmp.environments.tossing3d.predicates import (
         BIN_ON_GROUND,
+        GRIPPER_CLOSED,
         HAND_EMPTY,
         PICK_PLANNABLE,
     )
@@ -297,6 +298,8 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
         GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(env.bin,)),
     }
+    if closed:
+        atoms.add(GroundAtom(predicate=GRIPPER_CLOSED, objects=(env.robot,)))
     if not stranded:
         atoms |= {
             GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin)),

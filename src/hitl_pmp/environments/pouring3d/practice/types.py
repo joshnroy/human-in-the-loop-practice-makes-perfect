@@ -1,6 +1,6 @@
 """Observed state and typed cast for count-conditioned pouring."""
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 import numpy as np  # noqa: F401
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ class FrozenPourState(State):
 
 class PourObjects(BaseModel):
     count: int = 3
+    payload_kind: Literal["shrimp", "potsticker"] = "shrimp"
     pose_features: ClassVar[tuple[str, ...]] = (
         "x",
         "y",
@@ -29,7 +30,12 @@ class PourObjects(BaseModel):
         "wy",
         "wz",
     )
-    robot_type: ClassVar[Type] = Type(name="pour_robot", feature_names=("x", "y", "yaw", "grip"))
+    robot_type: ClassVar[Type] = Type(
+        name="pour_robot",
+        feature_names=("x", "y", "yaw", "grip")
+        + tuple(f"arm_q{i}" for i in range(7))
+        + tuple(f"arm_dq{i}" for i in range(7)),
+    )
     shrimp_type: ClassVar[Type] = Type(name="shrimp", feature_names=pose_features)
     pitcher_type: ClassVar[Type] = Type(name="pitcher", feature_names=pose_features)
     tray_type: ClassVar[Type] = Type(name="pour_tray", feature_names=pose_features)
@@ -43,7 +49,10 @@ class PourObjects(BaseModel):
     scene: ClassVar[Object] = Object(name="scene", type=scene_type)
 
     def shrimp(self) -> tuple[Object, ...]:
-        return tuple(Object(name=f"shrimp_{i}", type=self.shrimp_type) for i in range(self.count))
+        return tuple(
+            Object(name=f"{self.payload_kind}_{i}", type=self.shrimp_type)
+            for i in range(self.count)
+        )
 
     def requests(self) -> tuple[Object, ...]:
         return tuple(

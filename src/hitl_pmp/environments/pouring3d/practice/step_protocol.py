@@ -77,12 +77,24 @@ class FrozenPourStepProtocol(SimulatedStepProtocolHooks):
                 run_seed=args.seed,
                 scene={
                     "payload_count": env.payload_count,
+                    "payload_kind": env.payload_kind,
+                    "pour_controller": "joint_lateral"
+                    if env.payload_kind == "potsticker"
+                    else "mouth_feedback",
+                    "receiving_vessel": env.receiving_vessel,
+                    "layout": env.layout,
                     "requested_count": env.requested_count,
                     "surface_mu": env.surface_mu,
                     "scene_bg": env.scene_bg,
                     "motion": motion,
                     "fps": 10,
-                    "practice_model_version": 2,
+                    "practice_model_version": 6
+                    if env.payload_kind == "potsticker"
+                    else (
+                        5
+                        if env.layout == "stations"
+                        else (3 if env.receiving_vessel == "skillet" else 2)
+                    ),
                     "requested_counts": list(
                         problem.tasks.requested_counts or (env.requested_count,)
                     ),

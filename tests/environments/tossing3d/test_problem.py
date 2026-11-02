@@ -20,6 +20,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
+    GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -31,7 +32,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -79,6 +79,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         HAND_EMPTY,
         HOLDING,
         CLOSED_EMPTY,
+        GRIPPER_CLOSED,
         NOT_HOLDING,
         ON_GROUND,
         ROBOT_AT_SIDE,
@@ -106,8 +107,7 @@ def test_every_predicate_a_skill_references_is_one_the_provider_publishes() -> N
 def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     """Walked with the real grounder rather than by hand: from the initial abstract state
     `PickCube` is applicable, and holding the cube unlocks the composed toss.
-    `OpenGripper` is applicable only after a failed grasp leaves the hand closed
-    without holding the cube.
+    `OpenGripper` also permits releasing a held cube or recovering an empty closed hand.
 
     **There is no third *rung* any more** -- `OpenGripper` is not a step in the oracle's
     plan shape, just a failed-grasp rescue the oracle never needs. Where the robot
@@ -133,12 +133,14 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     assert applicable() == {"PickCube"}
     assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4) == {
         "MoveToTossLocationAndToss",
+        "OpenGripper",
     }
     # Standing at the old throw standoff changes nothing: the composed skill drives there
     # itself, so no precondition reads the base pose -- and no *atom* reports it either,
     # since upstream deleted `RobotAtThrowPose` with the pose it named.
     assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4, base_x=BIN_X - 1.35) == {
         "MoveToTossLocationAndToss",
+        "OpenGripper",
     }
     closed_empty_atoms = INITIAL_ATOMS - {("HandEmpty", ("robot",))}
     assert applicable(atoms=closed_empty_atoms, gripper=1.0) == {"OpenGripper"}
@@ -150,7 +152,7 @@ def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_b
     make progress toward the goal remains -- a planner asked to recover from here
     correctly finds no plan.
 
-    The hand is already open, so `OpenGripper`'s `ClosedEmpty` precondition is false
+    The hand is already open, so `OpenGripper`'s `GripperClosed` precondition is false
     and the recovery skill is also inapplicable."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
     landed = state(
@@ -188,7 +190,7 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container(
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     assert params.shape == (3,)

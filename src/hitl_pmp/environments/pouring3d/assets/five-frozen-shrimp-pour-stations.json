@@ -1,0 +1,364 @@
+{
+    "description": "Frozen shrimp pouring between a prep table and a separate unheated stovetop using a mobile TidyBot.",
+    "variant_description": "Exact-count frozen-shrimp pouring into a freely moving 4.74 kg cast iron skillet.",
+    "variant_specific_description": "Same geometry and mass as the prior cooked-shrimp proxy; freezing alone does not change this rigid model.",
+    "robots": {
+        "tidybot": {
+            "robot": {}
+        }
+    },
+    "scene": "lab2",
+    "observe_static_colliders": true,
+    "regions": {
+        "robot_home": {
+            "target": "ground",
+            "ranges": [
+                [
+                    0,
+                    -1.05,
+                    0,
+                    0,
+                    -1.05,
+                    0
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "pitcher_home": {
+            "target": "ground",
+            "ranges": [
+                [
+                    0.7,
+                    -1.05,
+                    0.7405,
+                    0.7,
+                    -1.05,
+                    0.7405
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "tray_home": {
+            "target": "ground",
+            "ranges": [
+                [
+                    0.75,
+                    1.05,
+                    0.8405,
+                    0.75,
+                    1.05,
+                    0.8405
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "tray_interior": {
+            "target": "tray",
+            "ranges": [
+                [
+                    -0.09,
+                    -0.09,
+                    0.0045,
+                    0.09,
+                    0.09,
+                    0.066548
+                ]
+            ],
+            "rgba": [
+                0,
+                0.7,
+                0,
+                0
+            ]
+        },
+        "prep_table_home": {
+            "target": "ground",
+            "ranges": [
+                [
+                    1.0,
+                    -1.05,
+                    0,
+                    1.0,
+                    -1.05,
+                    0
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "stovetop_home": {
+            "target": "ground",
+            "ranges": [
+                [
+                    1.0,
+                    1.05,
+                    0,
+                    1.0,
+                    1.05,
+                    0
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        }
+    },
+    "objects": {
+        "pouringpitcher": {
+            "pitcher": {
+                "length": 0.11,
+                "width": 0.114,
+                "height": 0.14,
+                "wall_thickness": 0.003,
+                "mass": 0.17,
+                "rgba": [
+                    0.88,
+                    0.9,
+                    0.86,
+                    0.2
+                ],
+                "solref": [
+                    0.004,
+                    1
+                ],
+                "solimp": [
+                    0.99,
+                    0.999,
+                    0.001
+                ],
+                "spout_flare": 0.008,
+                "handle_outset": 0.016
+            }
+        },
+        "castironskillet": {
+            "tray": {
+                "length": 0.381,
+                "width": 0.381,
+                "height": 0.066548,
+                "wall_thickness": 0.0045,
+                "mass": 4.7400402665,
+                "bottom_radius": 0.15,
+                "handle_extension": 0.11605,
+                "helper_extension": 0.03,
+                "rgba": [
+                    0.075,
+                    0.075,
+                    0.08,
+                    1
+                ],
+                "solref": [
+                    0.004,
+                    1
+                ],
+                "solimp": [
+                    0.99,
+                    0.999,
+                    0.001
+                ]
+            }
+        },
+        "frozenshrimp": {
+            "shrimp_0": {
+                "size": [
+                    0.017,
+                    0.018,
+                    0.0055
+                ],
+                "mass": 0.003
+            },
+            "shrimp_1": {
+                "size": [
+                    0.017,
+                    0.018,
+                    0.0055
+                ],
+                "mass": 0.003
+            },
+            "shrimp_2": {
+                "size": [
+                    0.017,
+                    0.018,
+                    0.0055
+                ],
+                "mass": 0.003
+            },
+            "shrimp_3": {
+                "size": [
+                    0.017,
+                    0.018,
+                    0.0055
+                ],
+                "mass": 0.003
+            },
+            "shrimp_4": {
+                "size": [
+                    0.017,
+                    0.018,
+                    0.0055
+                ],
+                "mass": 0.003
+            }
+        }
+    },
+    "cameras": {
+        "task_view": {
+            "position": [
+                2.3,
+                -2.6,
+                2.5
+            ],
+            "lookat": [
+                0.5,
+                0,
+                0.65
+            ],
+            "fovy": 60,
+            "resolution": [
+                640,
+                480
+            ]
+        },
+        "pitcher_detail": {
+            "position": [
+                -0.1,
+                -1.85,
+                1.55
+            ],
+            "lookat": [
+                0.75,
+                -1.05,
+                0.85
+            ],
+            "fovy": 35,
+            "resolution": [
+                640,
+                480
+            ]
+        },
+        "pour_detail": {
+            "position": [
+                -0.15,
+                0.25,
+                1.8
+            ],
+            "lookat": [
+                0.75,
+                1.05,
+                1.05
+            ],
+            "fovy": 55,
+            "resolution": [
+                640,
+                480
+            ]
+        }
+    },
+    "initial_state": [
+        [
+            "on",
+            "prep_table",
+            "prep_table_home"
+        ],
+        [
+            "on",
+            "stovetop",
+            "stovetop_home"
+        ],
+        [
+            "on",
+            "robot",
+            "robot_home"
+        ],
+        [
+            "on",
+            "pitcher",
+            "pitcher_home"
+        ],
+        [
+            "on",
+            "tray",
+            "tray_home"
+        ]
+    ],
+    "goal_state": [
+        [
+            "on",
+            "shrimp_0",
+            "tray_interior"
+        ],
+        [
+            "on",
+            "shrimp_1",
+            "tray_interior"
+        ],
+        [
+            "on",
+            "shrimp_2",
+            "tray_interior"
+        ],
+        [
+            "on",
+            "shrimp_3",
+            "tray_interior"
+        ],
+        [
+            "on",
+            "shrimp_4",
+            "tray_interior"
+        ]
+    ],
+    "fixtures": {
+        "table": {
+            "prep_table": {
+                "shape": "rectangle",
+                "length": 0.8,
+                "width": 0.8,
+                "height": 0.74,
+                "thickness": 0.04
+            }
+        },
+        "pourstovetop": {
+            "stovetop": {
+                "shape": "rectangle",
+                "length": 0.8,
+                "width": 0.8,
+                "height": 0.84,
+                "thickness": 0.035,
+                "rgba_table_top": [
+                    0.06,
+                    0.065,
+                    0.07,
+                    1
+                ],
+                "rgba_table_leg": [
+                    0.5,
+                    0.5,
+                    0.5,
+                    1
+                ]
+            }
+        }
+    }
+}

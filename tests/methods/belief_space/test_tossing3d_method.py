@@ -10,6 +10,8 @@ from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
@@ -647,7 +649,12 @@ def test_a_granted_movables_reset_clears_the_starved_pool_record(
     action mask -- are cleared, not only at a new session."""
     method = _build()
     toss = _grounding(method=method, name=TOSS_SKILL)
-    atoms = toss.preconditions
+    atoms = toss.preconditions | {
+        GroundAtom(
+            predicate=BIN_AT_SIDE,
+            objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+        )
+    }
     method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
     assert method.starved_ground_skills(true_atoms=atoms) == {toss}
     assert method._pomdp_model.starved_pools  # noqa: SLF001

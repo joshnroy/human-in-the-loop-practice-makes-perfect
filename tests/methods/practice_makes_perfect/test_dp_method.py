@@ -3,6 +3,8 @@
 Built on SweepOffShelf3D's symbolic layer only (it offers human resets as well as
 robot skills); nothing here touches the simulator or the planner."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -15,6 +17,9 @@ from hitl_pmp.core.practice_costs import (
 )
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.skill_provider import SweepOffShelf3DSkillProvider
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import (
     PARAMETERIZED_SKILL,
     AlwaysAskReset,
@@ -23,6 +28,7 @@ from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_gurobi import DpGurobiAllocator, DpOptimizationError
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTaskModel, DpTransition
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
 from hitl_pmp.methods.practice_makes_perfect.ees_method import STOP_SKILL, _EesEpisode
 
 STEP_PRICE = 0.01
@@ -229,8 +235,10 @@ def test_by_default_a_human_skill_is_a_candidate_allocated_by_the_same_rule(*, m
 def test_stops_practising_once_the_budget_is_spent(*, monkeypatch):
     method, _pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=1.0)
     assert method.practice_complete() is False
+    assert method.practice_completion_reason() is None
     method._practice_accounting.robot_cost = 1.0  # noqa: SLF001
     assert method.practice_complete() is True
+    assert method.practice_completion_reason() == "budget_spent"
     assert method.choose_practice_target() == [STOP_SKILL]
 
 
@@ -304,6 +312,7 @@ def test_no_profitable_allocation_finishes_without_random_practice(*, monkeypatc
     method, _pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=0.001)
     assert method.choose_practice_target() == [STOP_SKILL]
     assert method.practice_complete()
+    assert method.practice_completion_reason() == "zero_allocation"
 
 
 def test_dp_skips_ees_goal_pursuit_even_when_enabled():
@@ -361,6 +370,7 @@ def test_once_allocation_survives_periods_and_finishes_when_consumed(*, monkeypa
     _execute(method=method, ground=back)
     assert method.dp_episodes() == 5
     assert method.practice_complete()
+    assert method.practice_completion_reason() == "once_curriculum_consumed"
     assert method.choose_practice_target() == [STOP_SKILL]
 
 
@@ -434,3 +444,261 @@ def test_once_with_optimistic_priors_can_leave_most_of_budget_unused(*, monkeypa
     _execute(method=method, ground=back)
     assert method.practice_complete()
     assert method.dp_episodes() == 2
+
+
+def _shared_pick_setup(
+    *, monkeypatch, sharing: str, groundings: str, dp_allow_grounding_substitution: bool = False
+):
+    env = Tossing3DEnvironment(enable_bin_pouring=False)
+    provider = Tossing3DSkillProvider(env=env)
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=3,
+        dp_budget_unit="episodes",
+        dp_solver="enumeration",
+        competence_sharing=sharing,
+        practice_groundings=groundings,
+        dp_allow_grounding_substitution=dp_allow_grounding_substitution,
+    )
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(costs=PracticeCosts(robot_step=ChargeFunction(value=1)))
+    )
+    method._dp_skill_priors = {
+        skill.name: DpSkillPrior(alpha=0.4, beta=1.6, initial_learning_rate=0.2)
+        for skill in method.skills()
+    }
+    skill = next(skill for skill in provider.skills() if skill.name == "PickCube")
+    bindings = {"robot": env.robot, "cube": env.cube, "bin": env.bin, "barrier": env.barrier}
+    grounds = [
+        GroundSkill(
+            skill=skill,
+            objects=tuple(
+                side if parameter.name == "side" else bindings[parameter.name]
+                for parameter in skill.parameters
+            ),
+        )
+        for side in Tossing3DSides.objects()
+    ]
+    same, opposite = grounds
+    _observe(method=method, ground=same, outcomes=[True])
+    _observe(method=method, ground=opposite, outcomes=[False])
+    mdp = DpMdp(
+        initial_probabilities={0: 1},
+        terminal_rewards={1: 1},
+        transitions=[DpTransition(state=0, skill=opposite, successor=1)],
+    )
+    monkeypatch.setattr(DpTaskModel, "build", staticmethod(lambda **kwargs: mdp))
+    return method, same, opposite
+
+
+@pytest.mark.parametrize("sharing", ["grounded", "parent", "rate"])
+@pytest.mark.parametrize("groundings", ["observed", "all"])
+def test_legacy_same_side_fulfills_opposite_target_only_with_shared_all(
+    *, monkeypatch, sharing, groundings
+):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch,
+        sharing=sharing,
+        groundings=groundings,
+        dp_allow_grounding_substitution=True,
+    )
+    assert method.choose_practice_target() == [opposite, STOP_SKILL]
+    before = method.dp_remaining_allocation()[opposite]
+    monkeypatch.setattr(DpMethod, "plan_to", lambda self, **kwargs: [same])
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True, pursue_goal=False)
+    plan = episode._practice_plan(true_atoms=same.preconditions)
+    flexible = sharing != "grounded" and groundings == "all"
+    assert plan == ([same] if flexible else [same, opposite])
+    method.record_action_cost(ground_skill=same)
+    method.observe_execution_cost(cost=2, steps=1, complete=True)
+    assert method.dp_episodes() == int(flexible)
+    assert method.dp_remaining_allocation()[opposite] == before - int(flexible)
+    assert method._dp_executed_since_solve == ({same: 1} if flexible else {})
+    if not flexible:
+        method.record_action_cost(ground_skill=opposite)
+        method.observe_execution_cost(cost=3, steps=1, complete=True)
+        assert method.dp_episodes() == 1
+        assert method.dp_remaining_allocation()[opposite] == before - 1
+        assert method._dp_executed_since_solve == {opposite: 1}
+        assert method.dp_expected_attempt_cost(ground_skill=opposite) == pytest.approx(5)
+
+
+@pytest.mark.parametrize("sharing", ["parent", "rate"])
+def test_grouped_method_forecasts_use_pooled_rates_and_one_budget_count(*, monkeypatch, sharing):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch, sharing=sharing, groundings="all"
+    )
+    method.advance_competence_cycle()
+    captured = []
+    original = DpAllocator.allocate
+
+    def allocate(**kwargs):
+        captured.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(allocate))
+    method.choose_practice_target()
+    arguments = captured[0]
+    assert arguments["groups"][same] == arguments["groups"][opposite] == opposite
+    assert same not in arguments["costs"]
+    assert arguments["costs"][opposite] == 1
+    assert sum(method.dp_allocation().values()) == 3
+    pooled = method._linear_model(
+        history=method.pooled_competence_model(ground_skill=same), ground_skill=same
+    )
+    assert arguments["learning_rates"][same] == arguments["learning_rates"][opposite]
+    assert arguments["learning_rates"][opposite] == pytest.approx(pooled.learning_rate())
+    if sharing == "rate":
+        assert arguments["competences"][same] > arguments["competences"][opposite]
+        grounded_rate = method._linear_model(
+            history=method.competence_model(ground_skill=opposite), ground_skill=opposite
+        ).learning_rate()
+        assert arguments["learning_rates"][opposite] != pytest.approx(grounded_rate)
+    else:
+        assert arguments["competences"][same] == arguments["competences"][opposite]
+    forecast = DpAllocator.predicted_competences(
+        competences=arguments["competences"],
+        learning_rates=arguments["learning_rates"],
+        allocation=method.dp_allocation(),
+        groups=arguments["groups"],
+    )
+    assert forecast[same] > arguments["competences"][same]
+    assert forecast[opposite] > arguments["competences"][opposite]
+    assert method._dp_executed_since_solve == {}
+    assert method.dp_episodes() == 0
+    assert method.competence_model(ground_skill=opposite).num_observations == 1
+    human = method.offered_partial_resets()[0]
+    assert arguments["groups"][human] == human
+    assert method.dp_allocation()[human] == 0
+    assert arguments["competences"][human] == pytest.approx(10 / 11)
+
+
+@pytest.mark.parametrize(
+    ("sharing", "groundings", "price"),
+    [
+        ("parent", "all", 2),
+        ("parent", "observed", 8),
+        ("rate", "all", 2),
+        ("rate", "observed", 8),
+    ],
+)
+def test_legacy_group_price_uses_allowed_contexts_without_pooling_actual_costs(
+    *, monkeypatch, sharing, groundings, price
+):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch,
+        sharing=sharing,
+        groundings=groundings,
+        dp_allow_grounding_substitution=True,
+    )
+    _execute(method=method, ground=same, cost=2)
+    _execute(method=method, ground=opposite, cost=8)
+    assert method._group_attempt_price(ground_skill=opposite) == pytest.approx(price)
+    assert method.dp_expected_attempt_cost(ground_skill=same) == pytest.approx(2)
+    assert method.dp_expected_attempt_cost(ground_skill=opposite) == pytest.approx(8)
+    assert method.dp_episodes() == 2
+
+
+def test_grouped_solver_log_distinguishes_forecasts_from_physical_attempts(
+    *, monkeypatch, tmp_path
+):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch, sharing="parent", groundings="all"
+    )
+    method.dp_solver_log = tmp_path / "grouped.jsonl"
+    method.choose_practice_target()
+    _execute(method=method, ground=same, cost=2)
+    method._write_solver_record(record={"event": "test_execution"})
+    allocation, execution = [
+        json.loads(line) for line in method.dp_solver_log.read_text().splitlines()
+    ]
+    assert allocation["completion_reason"] is None
+    assert allocation["learning_rate_update"] == "per_retained_episode_closed_cycles"
+    assert execution["remaining_budget"] == pytest.approx(method.dp_budget - 1)
+    rows = [row for row in allocation["groups"] if row["skill"] == same.skill.name]
+    assert len(rows) == 2
+    assert (
+        rows[0]["group"]
+        == rows[1]["group"]
+        == {"kind": "parent", "skill": same.skill.name, "objects": None}
+    )
+    assert allocation["competence_sharing"] == "parent"
+    assert allocation["practice_groundings"] == "all"
+    assert len([row for row in allocation["allocation"] if row["skill"] == same.skill.name]) == 1
+    assert execution["episodes"] == 1
+    assert execution["executed_since_solve"] == [
+        {"skill": same.skill.name, "objects": [obj.name for obj in same.objects], "attempts": 1}
+    ]
+    assert method.dp_remaining_allocation()[opposite] == 2
+
+
+def test_shared_once_curriculum_counts_real_attempts_across_periods(*, monkeypatch):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch, sharing="parent", groundings="all"
+    )
+    method.dp_allocation_schedule = "once"
+    method.choose_practice_target()
+    _execute(method=method, ground=same)
+    method._practice_periods += 1
+    assert method.choose_practice_target() == [opposite, STOP_SKILL]
+    assert method.dp_remaining_allocation()[opposite] == 2
+    _execute(method=method, ground=opposite)
+    _execute(method=method, ground=same)
+    assert method.dp_episodes() == 3
+    assert method._dp_executed_since_solve == {same: 2, opposite: 1}
+    assert method.practice_complete()
+    assert method.choose_practice_target() == [STOP_SKILL]
+
+
+@pytest.mark.parametrize("sharing", ["parent", "rate"])
+def test_observed_allocation_candidates_do_not_expand_when_forecast_models_are_created(
+    *, monkeypatch, sharing
+):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch, sharing=sharing, groundings="observed"
+    )
+    observed = method.practice_candidates()
+    for ground in method.all_practice_groundings():
+        method.forecast_competence_model(ground_skill=ground)
+    assert method.practice_candidates() == observed
+    captured = []
+    original = DpAllocator.allocate
+
+    def allocate(**kwargs):
+        captured.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(allocate))
+    method.choose_practice_target()
+    arguments = captured[0]
+    robots = set(arguments["competences"]) - set(method.offered_partial_resets())
+    assert robots == {same, opposite}
+    assert set(arguments["costs"]) == {opposite, *method.offered_partial_resets()}
+
+
+def test_rate_all_real_attempt_updates_only_its_grounded_current_competence(*, monkeypatch):
+    method, same, opposite = _shared_pick_setup(
+        monkeypatch=monkeypatch,
+        sharing="rate",
+        groundings="all",
+        dp_allow_grounding_substitution=True,
+    )
+    method.choose_practice_target()
+    current = method.forecast_competence_model(ground_skill=opposite).get_current_competence()
+    pooled = method.pooled_competence_model(ground_skill=same)
+    before = pooled.num_observations
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True, pursue_goal=False)
+    assert episode._practice_plan(true_atoms=same.preconditions) == [same]
+    method.record_action_cost(ground_skill=same)
+    method.observe_execution_cost(cost=2, steps=1, complete=True)
+    method.observe_outcome(ground_skill=same, success=True)
+    assert pooled.num_observations == before + 1
+    assert (
+        method.forecast_competence_model(ground_skill=opposite).get_current_competence() == current
+    )
+    assert method.competence_model(ground_skill=opposite).num_observations == 1
+    assert method._all_attempt_outcomes[opposite] == [False]
+    assert method._dp_executed_since_solve == {same: 1}
+    assert method.dp_remaining_allocation()[opposite] == 2
+    assert method.dp_episodes() == 1

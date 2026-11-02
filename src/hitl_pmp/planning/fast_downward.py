@@ -181,7 +181,10 @@ class FastDownwardPlanner:
         Explicit non-default aliases retain their requested configuration.
         """
         if alias == "seq-opt-lmcut" and any(
-            skill.conditional_add_effects or skill.ignore_effects for skill in skills
+            skill.conditional_add_effects
+            or skill.conditional_ignore_effects
+            or skill.ignore_effects
+            for skill in skills
         ):
             return [], ["--search", "astar(hmax())"]
         return ["--alias", alias], []
@@ -253,7 +256,12 @@ class FastDownwardPlanner:
         which is what keeps it a cache of the translator rather than of the priced
         plan -- see `TranslationCache`."""
         domain_str = PddlWriter.domain_str(skills=skills, predicates=predicates, types=types)
-        problem_str = PddlWriter.problem_str(objects=objects, init_atoms=init_atoms, goal=goal)
+        problem_str = PddlWriter.problem_str(
+            objects=objects,
+            init_atoms=init_atoms,
+            goal=goal,
+            constants=PddlWriter.collect_constants(skills=skills),
+        )
         if translation_cache is not None:
             cached = translation_cache.get(
                 alias=alias, domain_str=domain_str, problem_str=problem_str
