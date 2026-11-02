@@ -44,7 +44,12 @@ SKILL_IDS = {
     "ReturnFoodToRack": 5,
     "Wait": 6,
 }
-SWEEP_BOUNDS = ((-40.0, 40.0), (0.03, 0.25))
+# SweepRack(dy, phi): dy is the blade centre's lateral start offset from the rack
+# centre line (m), bounded by the default rack's half width so the blade centre
+# never starts off the rack; phi is the plow angle (deg), the blade's yaw relative
+# to its fixed travel toward the plate. Speed is a constant, not a parameter.
+SWEEP_BOUNDS = ((-0.1875, 0.1875), (-40.0, 40.0))
+SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)
 _SCRAPER = Variable(name="scraper", type=Objects.scraper_type)

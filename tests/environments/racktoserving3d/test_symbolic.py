@@ -95,7 +95,7 @@ def test_object_names_features_and_scene_exclusion():
 
 def test_robot_ids_bounds_and_human_separation():
     assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(7))
-    assert SWEEP_BOUNDS == ((-40.0, 40.0), (0.03, 0.25))
+    assert SWEEP_BOUNDS == ((-0.1875, 0.1875), (-40.0, 40.0))
     assert Skills.SWEEP_RACK.param_dim == 2
     assert all(
         skill.param_dim == 0 for skill in Skills.robot_skills() if skill != Skills.SWEEP_RACK

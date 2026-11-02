@@ -72,7 +72,7 @@ class RackServingSkillProvider(SkillProvider):
 
 
 class RackServingActions:
-    """Encode [robot skill ID, food index, angle degrees, speed metres/second]."""
+    """Encode [robot skill ID, food index, sweep dy metres, sweep plow phi degrees]."""
 
     @staticmethod
     def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
@@ -84,18 +84,18 @@ class RackServingActions:
         params = np.asarray(params, dtype=float)
         if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
             raise ValueError(f"{skill.name} requires {skill.param_dim} finite parameters")
-        angle, speed = 0.0, 0.0
+        dy, phi = 0.0, 0.0
         if skill == Skills.SWEEP_RACK:
             if any(
                 not lower <= value <= upper
                 for value, (lower, upper) in zip(params, SWEEP_BOUNDS, strict=True)
             ):
-                raise ValueError("sweep angle/speed are outside the declared bounds")
-            angle, speed = (float(value) for value in params)
+                raise ValueError("sweep dy/phi are outside the declared bounds")
+            dy, phi = (float(value) for value in params)
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
             food_index = Objects.food.index(ground_skill.objects[1])
-        return np.array([SKILL_IDS[skill.name], food_index, angle, speed], dtype=float)
+        return np.array([SKILL_IDS[skill.name], food_index, dy, phi], dtype=float)
 
 
 class RackServingOracle(OraclePolicyProvider):
@@ -137,7 +137,7 @@ class RackServingOracle(OraclePolicyProvider):
                 skill=Skills.SWEEP_RACK,
                 objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
             )
-            params = np.array([0.0, 0.08])
+            params = np.array([0.0, 0.0])
         elif holding_scraper:
             ground = GroundSkill(
                 skill=Skills.RETURN_SCRAPER, objects=(Objects.robot, Objects.scraper)
