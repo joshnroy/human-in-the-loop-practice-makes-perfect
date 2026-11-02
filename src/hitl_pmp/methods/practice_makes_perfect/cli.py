@@ -13,6 +13,10 @@ from hitl_pmp.methods.belief_space.practice_domain import (
     PracticeDomain,
 )
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
+from hitl_pmp.methods.belief_space.rack_serving_domain import (
+    RACK_SERVING_DOMAIN,
+    RackServingPracticeDomain,
+)
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
@@ -341,7 +345,7 @@ class EesCli:
 
 
 class Tossing3DPomdpCli(EesCli):
-    """Exact belief-space practice selection for Tossing3D and SweepOffShelf3D."""
+    """Belief-space practice selection for the registered 3D manipulation domains."""
 
     # The practice domain for each supported environment CLI, by class name: a
     # method-CLI never imports an environment.
@@ -351,6 +355,7 @@ class Tossing3DPomdpCli(EesCli):
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
         # The kitchen is Tossing3D re-flavoured: the same skills, so the same domain.
         "KitchenRecyclingCli": TOSSING3D_DOMAIN,
+        "RackServingCli": RACK_SERVING_DOMAIN,
     }
 
     @staticmethod
@@ -377,7 +382,7 @@ class Tossing3DPomdpCli(EesCli):
             type=int,
             default=None,
             help="Exact belief-space expectimax depth in future skill executions "
-            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D). Expectimax "
+            "(default: the domain's -- 3 for Tossing3D/RackServing3D, 7 for SweepOffShelf3D). Expectimax "
             "only: determinized_astar refuses it.",
         )
         parser.add_argument(
@@ -572,7 +577,11 @@ class Tossing3DPomdpCli(EesCli):
         if domain is None:
             raise ValueError(
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
-                "pouring3d_kitchen and kitchen_recycling3d"
+                "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
+            )
+        if isinstance(domain, RackServingPracticeDomain):
+            domain = domain.model_copy(
+                update={"initially_ready": args.initial_elapsed_seconds >= args.cooling_seconds}
             )
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.

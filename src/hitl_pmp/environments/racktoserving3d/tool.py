@@ -1,0 +1,984 @@
+"""Physical scraper pickup, transport and return for RackToServing3D.
+
+TableWiper is ported from scratch/prototypes/sweeptable-kitchen/src/hitl_pmp/
+environments/sweeptable3d/wiper.py. RackScraper adds counter-home configuration
+and full-box clearance without modifying the source benchmark. Only
+initialize_rest writes a live object pose; measured in_hand transforms are
+kinematic bookkeeping, never an attachment.
+"""
+
+from collections.abc import Generator
+from contextlib import contextmanager
+from itertools import product
+from typing import Any
+
+import numpy as np
+from scipy.spatial.transform import Rotation, Slerp
+
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
+    ShelfSkills,
+    SkillFailed,
+    WiperLost,
+)
+
+from .transit import ArmTransit, EmptyHandTransit, geom_half_extents, segment_samples
+
+BODY_REST = (
+    Rotation.from_euler("y", -90, degrees=True).as_matrix()
+    @ Rotation.from_euler("z", 90, degrees=True).as_matrix()
+)
+OVERHANG = 0.059
+PRE_GRASP = 0.10
+LIFT = 0.12
+PLACE_CLEARANCE = 0.002
+SCRAPER_RETURN_STANDOFF = 0.05
+
+
+@contextmanager
+def wiper_unwatched(*, shelf: ShelfSkills) -> Generator[None, None, None]:
+    """Port the kitchen release guard for older ShelfSkills, including nesting."""
+    watching = shelf.watch_wiper
+    shelf.watch_wiper = False
+    try:
+        yield
+    finally:
+        shelf.watch_wiper, shelf.wiper_unheld_steps = watching, 0
+
+
+class RackShelfSkills(ShelfSkills):
+    """Optional compatibility subclass; existing ShelfSkills instances also work."""
+
+    def wiper_unwatched(self) -> Any:
+        return wiper_unwatched(shelf=self)
+
+
+class TableWiper:
+    """Attach to one live ShelfSkills without resetting it or replacing its recorder.
+
+    Only initialize_rest writes an object pose, for scene setup or a human reset.
+    Pick and place command the robot exclusively through ShelfSkills control steps.
+    """
+
+    def __init__(
+        self,
+        *,
+        shelf: ShelfSkills,
+        rest_y: float = -0.42,
+        home_top: float | None = None,
+        home_front: float | None = None,
+        base: np.ndarray | None = None,
+    ) -> None:
+        self.shelf = shelf
+        self.core = shelf.core
+        self.model = shelf.model
+        self.data = shelf.data
+        self.rest_y = float(rest_y)
+        self.base = np.array([0.60, self.rest_y, 0.0] if base is None else base, dtype=float)
+        self.top = float(shelf.board[1])
+        self.front = float(shelf.front_x)
+        self.home_top = self.top if home_top is None else float(home_top)
+        self.home_front = self.front if home_front is None else float(home_front)
+        if self.base.shape != (3,) or not np.isfinite(self.base).all():
+            raise ValueError("Tool base must be a finite (x, y, heading) vector")
+        if not np.isfinite([self.rest_y, self.home_top, self.home_front]).all():
+            raise ValueError("Tool home coordinates must be finite")
+        heads = [geom for geom in shelf.wiper_geoms if int(self.model.geom_type[geom]) == 3]
+        handles = [geom for geom in shelf.wiper_geoms if int(self.model.geom_type[geom]) == 6]
+        self.is_bench_scraper = not heads and len(handles) == 2
+        if self.is_bench_scraper:
+            heads = [max(handles, key=lambda geom: self.model.geom_size[geom, 2])]
+            handles = [geom for geom in handles if geom != heads[0]]
+        if len(heads) != 1 or len(handles) != 1:
+            raise SkillFailed("TableWiper requires a capsule or box blade and one box handle")
+        self.head_geom, self.handle_geom = heads[0], handles[0]
+        shelf.head_geom, shelf.handle_geom = self.head_geom, self.handle_geom
+        self.radius = float(self.model.geom_size[self.head_geom, 0])
+        handle_rotation = self.geom_rotation(geom=self.handle_geom)
+        handle_axis = int(np.argmax(self.model.geom_size[self.handle_geom]))
+        if self.is_bench_scraper:
+            handle_axis = 2
+        self.handle_axis = handle_rotation[:, handle_axis].copy()
+        offset = self.model.geom_pos[self.handle_geom] - self.model.geom_pos[self.head_geom]
+        if float(offset @ self.handle_axis) < 0:
+            self.handle_axis *= -1
+        self.end_in_body = (
+            self.model.geom_pos[self.handle_geom]
+            + self.model.geom_size[self.handle_geom, handle_axis] * self.handle_axis
+        )
+        self.point = self.end_in_body - 0.01 * self.handle_axis
+        self.hand_in_body = self.coax_hand_rotation(body_rotation=np.eye(3))
+        self.wiper_dof = int(self.model.jnt_dofadr[self.model.body_jntadr[shelf.wiper_body]])
+
+    def rest_pose(self) -> np.ndarray:
+        """Level, outward-facing rest pose with measured support on the tabletop."""
+        pose = np.eye(4)
+        pose[:3, :3] = BODY_REST
+        end_offset = BODY_REST @ self.end_in_body
+        lowest = min(
+            self.capsule_bottom(pose=pose),
+            float(self.handle_corners(pose=pose)[:, 2].min()),
+        )
+        if self.is_bench_scraper:
+            lowest = self.capsule_bottom(pose=pose)
+        pose[:3, 3] = [
+            self.home_front - OVERHANG - end_offset[0],
+            self.rest_y,
+            self.home_top - lowest,
+        ]
+        return pose
+
+    def initialize_rest(self) -> None:
+        """Set up the rest pose; privileged setup/human reset only, never a skill."""
+        pose = self.rest_pose()
+        quaternion = Rotation.from_matrix(pose[:3, :3]).as_quat()[[3, 0, 1, 2]]
+        obj = self.core.get_object("wiper_0")
+        obj.set_pose(pose[:3, 3], quaternion)
+        obj.set_velocity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        self.shelf.in_hand = None
+        self.shelf.grip = 0.0
+        self.shelf.sim.forward()
+        self.shelf.hold(count=20, label="wiper_initialize_rest")
+
+    def at_home(self) -> bool:
+        """Read live support, orientation, overhang, velocity and robot clearance."""
+        pose = self.wiper_pose()
+        if not np.isfinite(pose).all():
+            return False
+        handle = pose[:3, :3] @ self.handle_axis
+        blade_axis = 0 if self.is_bench_scraper else 2
+        blade = pose[:3, :3] @ self.geom_rotation(geom=self.head_geom)[:, blade_axis]
+        end = self.handle_end(pose=pose)
+        overhang = self.home_front - end[0]
+        level_limit = np.sin(np.deg2rad(5.0))
+        if abs(handle[2]) > level_limit or abs(blade[2]) > level_limit:
+            return False
+        if handle[0] > -np.cos(np.deg2rad(5.0)):
+            return False
+        if not 0.0537 <= overhang <= 0.065:
+            return False
+        if abs(pose[1, 3] - self.rest_y) > 0.02:
+            return False
+        bottom = min(
+            self.capsule_bottom(pose=pose),
+            self.handle_table_bottom(pose=pose),
+        )
+        if abs(bottom - self.home_top) > 0.003:
+            return False
+        velocity = self.data.qvel[self.wiper_dof : self.wiper_dof + 6]
+        if not np.isfinite(velocity).all():
+            return False
+        if np.linalg.norm(velocity[:3]) > 0.01 or np.linalg.norm(velocity[3:]) > 0.1:
+            return False
+        if self.shelf.in_hand is not None:
+            return False
+        supported = False
+        wiper_geoms = set(self.shelf.wiper_geoms)
+        for contact in self.data.contact[: self.data.ncon]:
+            for mine, other in (
+                (int(contact.geom1), int(contact.geom2)),
+                (int(contact.geom2), int(contact.geom1)),
+            ):
+                if mine not in wiper_geoms:
+                    continue
+                if other in self.shelf.robot_geoms:
+                    return False
+                if (
+                    other in self.shelf.cupboard_geoms
+                    and contact.dist <= 0.001
+                    and abs(contact.pos[2] - self.home_top) <= 0.003
+                    and abs(contact.frame[2]) >= 0.9
+                ):
+                    supported = True
+        return supported
+
+    def pick(self) -> None:
+        """Approach the live handle end-on, verify the grasp, lift and tilt 45 degrees."""
+        shelf = self.shelf
+        if shelf.in_hand is not None or shelf.pads_hold_wiper():
+            raise SkillFailed("PickWiper requires an empty gripper")
+        try:
+            shelf.grip = 0.0
+            if self.is_bench_scraper:
+                EmptyHandTransit(shelf=shelf).drive(target=self.base, label="pick_wiper_base")
+            else:
+                shelf.move_base(target=self.base, label="pick_wiper_base")
+            pose = self.wiper_pose()
+            rotation = pose[:3, :3] @ self.hand_in_body
+            grasp = self.grasp_world(pose=pose)
+            pre = grasp - PRE_GRASP * rotation[:, 2]
+            self.transit(
+                position=pre + [0, 0, 0.15],
+                rotation=rotation,
+                label="pick_wiper_pre_high",
+                holding=False,
+            )
+            self.line(position=pre, rotation=rotation, label="pick_wiper_pre", holding=False)
+            self.line(
+                position=grasp,
+                rotation=rotation,
+                label="pick_wiper_approach",
+                holding=False,
+                step=0.005,
+                settle=60,
+            )
+            live_grasp = self.grasp_world()
+            site = shelf.site_pose()
+            live_rotation = self.wiper_pose()[:3, :3] @ self.hand_in_body
+            error = float(np.linalg.norm(site[:3, 3] - live_grasp))
+            angle = self.rotation_error(actual=site[:3, :3], target=live_rotation)
+            if error >= 0.005 or angle >= 5.0:
+                raise SkillFailed(
+                    f"PickWiper pre-close grasp error {error * 1000:.1f} mm / {angle:.1f} deg"
+                )
+            shelf.grip = 1.0
+            shelf.hold(count=40, label="pick_wiper_close")
+            if not self.pads_hold_grip():
+                raise SkillFailed("PickWiper: both pads must hold the handle before lifting")
+            shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
+            lifted = grasp + [0, 0, LIFT]
+            self.line(
+                position=lifted,
+                rotation=rotation,
+                label="pick_wiper_lift",
+                holding=True,
+            )
+            shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
+            sweep_rotation = self.sweep_body_rotation(yaw_deg=0)
+            site_rotation = sweep_rotation @ shelf.in_hand[:3, :3].T
+            predicted = np.eye(4)
+            predicted[:3, :3] = sweep_rotation
+            predicted[:3, 3] = lifted + site_rotation @ shelf.in_hand[:3, 3]
+            lowest = min(
+                self.capsule_bottom(pose=predicted),
+                float(self.handle_corners(pose=predicted)[:, 2].min()),
+            )
+            clearance = max(0.0, max(self.top, self.home_top) + 0.03 - lowest)
+            if clearance > 0:
+                lifted[2] += clearance
+                self.line(
+                    position=lifted,
+                    rotation=shelf.site_pose()[:3, :3],
+                    label="pick_wiper_tilt_clearance",
+                    holding=True,
+                )
+                shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
+            self.line(
+                position=lifted,
+                rotation=sweep_rotation @ shelf.in_hand[:3, :3].T,
+                label="pick_wiper_tilt",
+                holding=True,
+                steps_per=4,
+            )
+            shelf.hold(count=10, label="pick_wiper_hold")
+            self.require_held(label="pick_wiper_hold")
+            angle = self.rotation_error(
+                actual=self.wiper_pose()[:3, :3],
+                target=sweep_rotation,
+            )
+            if angle > 5.0:
+                raise SkillFailed(f"PickWiper: lifted wiper orientation error {angle:.1f} deg")
+        except WiperLost as exc:
+            raise SkillFailed(f"PickWiper: {exc}") from exc
+
+    def place(self) -> None:
+        """Return using the measured grasp and wait for physical rest after release.
+
+        Stand farther from the board when returning the flat scraper to keep the
+        low forearm clear of the base. Untilting can shift the physical grasp, so
+        remeasure it before lowering rather than commanding a stale tool pose.
+        """
+        shelf = self.shelf
+        self.require_held(label="place_wiper_start")
+        shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
+        target_site = self.rest_pose() @ np.linalg.inv(shelf.in_hand)
+        rotation, grasp = target_site[:3, :3], target_site[:3, 3]
+        return_base = self.base.copy()
+        if self.is_bench_scraper:
+            return_base[0] -= SCRAPER_RETURN_STANDOFF
+        try:
+            here = shelf.site_pose()
+            carry_z = max(float(here[2, 3]), float(grasp[2] + LIFT))
+            self.line(
+                position=np.array([here[0, 3], here[1, 3], carry_z]),
+                rotation=here[:3, :3],
+                label="place_wiper_raise",
+                holding=True,
+            )
+            self.move_base(target=return_base, label="place_wiper_base")
+            above = np.array([grasp[0], grasp[1], carry_z])
+            self.line(
+                position=above,
+                rotation=self.sweep_body_rotation(yaw_deg=0) @ shelf.in_hand[:3, :3].T,
+                label="place_wiper_carry",
+                holding=True,
+                steps_per=20,
+            )
+            self.line(
+                position=above,
+                rotation=rotation,
+                label="place_wiper_untilt",
+                holding=True,
+                steps_per=4,
+            )
+            if self.is_bench_scraper:
+                self.require_held(label="place_wiper_remeasure")
+                shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
+                target_site = self.rest_pose() @ np.linalg.inv(shelf.in_hand)
+                rotation, grasp = target_site[:3, :3], target_site[:3, 3]
+            self.line(
+                position=grasp + [0, 0, PLACE_CLEARANCE],
+                rotation=rotation,
+                label="place_wiper_lower",
+                holding=True,
+                step=0.005,
+            )
+            if self.is_bench_scraper:
+                self.seat_scraper(position=grasp + [0, 0, PLACE_CLEARANCE], rotation=rotation)
+            with wiper_unwatched(shelf=shelf):
+                shelf.grip = 0.0
+                shelf.hold(count=30, label="place_wiper_release")
+                shelf.in_hand = None
+                pre = grasp - PRE_GRASP * rotation[:, 2]
+                self.line(
+                    position=pre + [0, 0, PLACE_CLEARANCE],
+                    rotation=rotation,
+                    label="place_wiper_retreat",
+                    holding=False,
+                    step=0.005,
+                )
+                self.line(
+                    position=pre + [0, 0, 0.15],
+                    rotation=rotation,
+                    label="place_wiper_clear",
+                    holding=False,
+                    step=0.02,
+                )
+                consecutive = 0
+                for _ in range(100):
+                    shelf.hold(count=1, label="place_wiper_settle")
+                    consecutive = consecutive + 1 if self.at_home() else 0
+                    if consecutive >= 10:
+                        return
+            raise SkillFailed("PlaceWiper: wiper did not come to rest at home with gripper clear")
+        except WiperLost as exc:
+            raise SkillFailed(f"PlaceWiper: {exc}") from exc
+
+    def table_support(self) -> bool:
+        """Require a physical upward support force at the board surface."""
+        shelf = self.shelf
+        force = np.zeros(6)
+        for index, contact in enumerate(shelf.data.contact[: shelf.data.ncon]):
+            pair = {int(contact.geom1), int(contact.geom2)}
+            if (
+                pair & set(shelf.wiper_geoms)
+                and pair & shelf.cupboard_geoms
+                and contact.dist <= 0
+                and abs(contact.pos[2] - self.home_top) <= 0.003
+                and abs(contact.frame[2]) >= 0.9
+            ):
+                shelf.mujoco.mj_contactForce(shelf.model, shelf.data, index, force)
+                if force[0] > 0.01:
+                    return True
+        return False
+
+    def seat_scraper(self, *, position: np.ndarray, rotation: np.ndarray) -> None:
+        """Seek board support over at most six millimeters, without releasing early."""
+        del position, rotation
+        for attempt in range(7):
+            self.require_held(label="place_wiper_seat")
+            if self.table_support():
+                return
+            if attempt == 6:
+                break
+            self.shelf.in_hand = np.linalg.inv(self.shelf.site_pose()) @ self.wiper_pose()
+            desired_body = self.rest_pose().copy()
+            desired_body[2, 3] += PLACE_CLEARANCE - 0.001 * (attempt + 1)
+            target = desired_body @ np.linalg.inv(self.shelf.in_hand)
+            self.line(
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                label="place_wiper_seat",
+                holding=True,
+                step=0.001,
+            )
+        raise SkillFailed("PlaceWiper: no board support; retaining scraper")
+
+    @staticmethod
+    def sweep_body_rotation(*, yaw_deg: float) -> np.ndarray:
+        """World body rotation; callers using travel yaw pass its negative here."""
+        return (
+            Rotation.from_euler("z", yaw_deg, degrees=True).as_matrix()
+            @ Rotation.from_euler("y", -45, degrees=True).as_matrix()
+            @ Rotation.from_euler("z", 90, degrees=True).as_matrix()
+        )
+
+    def wiper_pose(self) -> np.ndarray:
+        return self.shelf.wiper_pose()
+
+    @contextmanager
+    def compensate_payload(self) -> Generator[None, None, None]:
+        """Compensate the held scraper's weight through bounded robot joint torques."""
+        if not self.is_bench_scraper:
+            yield
+            return
+        shelf = self.shelf
+        robot = shelf.core._robot_env
+        original = robot._compute_arm_torques
+        jacobian = np.zeros((3, shelf.model.nv))
+        hand_body = int(shelf.model.site_bodyid[shelf.site])
+        payload = float(shelf.model.body_mass[shelf.wiper_body])
+
+        def compensated(*args: Any, **kwargs: Any) -> np.ndarray:
+            torques = np.array(original(*args, **kwargs), copy=True)
+            if shelf.in_hand is not None and shelf.pads_hold_wiper():
+                shelf.mujoco.mj_jac(
+                    shelf.model,
+                    shelf.data,
+                    jacobian,
+                    None,
+                    shelf.data.xipos[shelf.wiper_body],
+                    hand_body,
+                )
+                torques += jacobian[:, shelf.va].T @ (-payload * shelf.model.opt.gravity)
+            return np.clip(torques, -robot.ARM_TORQUE_LIMITS, robot.ARM_TORQUE_LIMITS)
+
+        robot._compute_arm_torques = compensated
+        try:
+            yield
+        finally:
+            robot._compute_arm_torques = original
+
+    def grasp_world(self, *, pose: np.ndarray | None = None) -> np.ndarray:
+        pose = self.wiper_pose() if pose is None else pose
+        return pose[:3, :3] @ self.point + pose[:3, 3]
+
+    def handle_end(self, *, pose: np.ndarray | None = None) -> np.ndarray:
+        pose = self.wiper_pose() if pose is None else pose
+        return pose[:3, :3] @ self.end_in_body + pose[:3, 3]
+
+    def handle_corners(self, *, pose: np.ndarray | None = None) -> np.ndarray:
+        pose = self.wiper_pose() if pose is None else pose
+        signs = np.array(list(product((-1, 1), repeat=3)))
+        local = (signs * self.model.geom_size[self.handle_geom]) @ self.geom_rotation(
+            geom=self.handle_geom
+        ).T + self.model.geom_pos[self.handle_geom]
+        return local @ pose[:3, :3].T + pose[:3, 3]
+
+    def capsule_bottom(self, *, pose: np.ndarray | None = None) -> float:
+        """Lowest physical head point, including the flat blade in the kitchen scene."""
+        pose = self.wiper_pose() if pose is None else pose
+        center = pose[:3, :3] @ self.model.geom_pos[self.head_geom] + pose[:3, 3]
+        if self.is_bench_scraper:
+            rotation = pose[:3, :3] @ self.geom_rotation(geom=self.head_geom)
+            return float(center[2] - np.abs(rotation[2]) @ self.model.geom_size[self.head_geom])
+        axis = pose[:3, :3] @ self.geom_rotation(geom=self.head_geom)[:, 2]
+        return float(
+            center[2] - self.model.geom_size[self.head_geom, 1] * abs(axis[2]) - self.radius
+        )
+
+    def blade_edge(self, *, pose: np.ndarray | None = None) -> np.ndarray:
+        """Endpoints of the flat scraper's lower working edge in world coordinates."""
+        if not self.is_bench_scraper:
+            raise ValueError("A capsule has no flat blade edge")
+        pose = self.wiper_pose() if pose is None else pose
+        rotation = pose[:3, :3] @ self.geom_rotation(geom=self.head_geom)
+        size = self.model.geom_size[self.head_geom]
+        center = pose[:3, :3] @ self.model.geom_pos[self.head_geom] + pose[:3, 3]
+        local = np.array([
+            [-size[0], -np.copysign(size[1], rotation[2, 1]), -size[2]],
+            [size[0], -np.copysign(size[1], rotation[2, 1]), -size[2]],
+        ])
+        return local @ rotation.T + center
+
+    def handle_table_bottom(self, *, pose: np.ndarray | None = None) -> float:
+        """Clip the handle at the table edge: its overhang can lie below the board."""
+        corners = self.handle_corners(pose=pose)
+        heights = [float(corner[2]) for corner in corners if corner[0] >= self.home_front]
+        for index, corner in enumerate(corners):
+            for edge in (1, 2, 4):
+                other_index = index ^ edge
+                if index >= other_index:
+                    continue
+                other = corners[other_index]
+                if (corner[0] - self.home_front) * (other[0] - self.home_front) < 0:
+                    fraction = (self.home_front - corner[0]) / (other[0] - corner[0])
+                    heights.append(float(corner[2] + fraction * (other[2] - corner[2])))
+        return min(heights, default=float("inf"))
+
+    def geom_rotation(self, *, geom: int) -> np.ndarray:
+        return Rotation.from_quat(self.model.geom_quat[geom][[1, 2, 3, 0]]).as_matrix()
+
+    @staticmethod
+    def coax_hand_rotation(*, body_rotation: np.ndarray) -> np.ndarray:
+        handle = body_rotation[:, 2]
+        approach = -handle
+        closing = np.cross(handle, body_rotation[:, 0])
+        closing /= np.linalg.norm(closing)
+        return np.column_stack([closing, np.cross(approach, closing), approach])
+
+    @staticmethod
+    def rotation_error(*, actual: np.ndarray, target: np.ndarray) -> float:
+        return float(np.rad2deg(Rotation.from_matrix(actual.T @ target).magnitude()))
+
+    def pads_hold_grip(self) -> bool:
+        return self.shelf.pads_hold_wiper()
+
+    def require_held(self, *, label: str) -> None:
+        if self.shelf.in_hand is None or not self.pads_hold_grip():
+            self.shelf.in_hand = None
+            raise SkillFailed(f"{label}: wiper is not held by both pads")
+
+    def ik(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        holding: bool,
+        seed: np.ndarray | None = None,
+        tolerance: float = 0.008,
+    ) -> np.ndarray:
+        shelf = self.shelf
+        arm, penetration = shelf.ik(
+            position=position,
+            rotation=rotation,
+            base=shelf.base_target,
+            holding=holding,
+            attempts=12,
+            seed=seed,
+        )
+        pose = shelf.site_at(base=shelf.base_target, arm=arm)
+        error = float(np.linalg.norm(pose[:3, 3] - position))
+        angle = self.rotation_error(actual=pose[:3, :3], target=rotation)
+        if not np.isfinite(arm).all() or not np.isfinite([penetration, error, angle]).all():
+            raise SkillFailed("Wiper waypoint IK returned a nonfinite solution")
+        if error > tolerance or angle > 2.0:
+            raise SkillFailed(f"Wiper waypoint IK error {error * 1000:.1f} mm / {angle:.1f} deg")
+        return arm
+
+    def line(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        label: str,
+        holding: bool,
+        step: float = 0.01,
+        steps_per: int = 3,
+        settle: int = 40,
+    ) -> None:
+        """Interpolate Cartesian position and rotation on one guarded IK branch."""
+        shelf = self.shelf
+        start = shelf.site_pose()
+        distance = float(np.linalg.norm(position - start[:3, 3]))
+        angle = self.rotation_error(actual=start[:3, :3], target=rotation)
+        count = max(1, int(np.ceil(max(distance / step, angle / 3.0))))
+        slerp = Slerp([0, 1], Rotation.from_matrix([start[:3, :3], rotation]))
+        arm = shelf.data.qpos[shelf.qa].copy()
+        for fraction in np.linspace(0, 1, count + 1)[1:]:
+            waypoint = (1 - fraction) * start[:3, 3] + fraction * position
+            previous = arm
+            try:
+                arm = self.ik(
+                    position=waypoint,
+                    rotation=slerp(fraction).as_matrix(),
+                    holding=holding,
+                    seed=previous,
+                )
+            except SkillFailed as exc:
+                raise SkillFailed(f"{label}: Cartesian fraction {fraction:.3f}: {exc}") from exc
+            jump = float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi)))
+            if jump > 0.6:
+                raise SkillFailed(f"{label}: IK branch jump {jump:.2f} rad")
+            for _ in range(steps_per):
+                self.step(arm=arm, label=label)
+        self.settle_hand(
+            arm=arm,
+            position=position,
+            rotation=rotation,
+            label=label,
+            limit=settle,
+        )
+        if holding:
+            self.require_held(label=label)
+
+    def transit(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        label: str,
+        holding: bool,
+    ) -> None:
+        """Joint-space transit in open space before the end-on Cartesian approach."""
+        arm = self.ik(position=position, rotation=rotation, holding=holding, tolerance=0.005)
+        self.settle_hand(arm=arm, position=position, rotation=rotation, label=label, limit=300)
+        if holding:
+            self.require_held(label=label)
+
+    def step(self, *, arm: np.ndarray, label: str) -> None:
+        self.shelf.step(arm=arm, base=self.shelf.base_target, label=label)
+
+    def move_base(self, *, target: np.ndarray, label: str) -> None:
+        self.shelf.move_base(target=target, label=label)
+
+    def settle_hand(
+        self,
+        *,
+        arm: np.ndarray,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        label: str,
+        limit: int,
+    ) -> None:
+        error, angle = float("inf"), float("inf")
+        for _ in range(limit):
+            self.step(arm=arm, label=label)
+            pose = self.shelf.site_pose()
+            error = float(np.linalg.norm(pose[:3, 3] - position))
+            angle = self.rotation_error(actual=pose[:3, :3], target=rotation)
+            if error < 0.001 and angle < 0.5:
+                return
+        if not np.isfinite([error, angle]).all() or error > 0.005 or angle > 2.0:
+            raise SkillFailed(
+                f"{label}: hand tracking error {error * 1000:.1f} mm / {angle:.1f} deg"
+            )
+
+
+SUPPORT_ALLOWANCE = 0.003
+
+
+def box_overlap(
+    *,
+    center: np.ndarray,
+    rotation: np.ndarray,
+    size: np.ndarray,
+    other_center: np.ndarray,
+    other_rotation: np.ndarray,
+    other_size: np.ndarray,
+) -> float:
+    """Signed separating-axis overlap of two complete oriented boxes, in metres."""
+    axes = [*rotation.T, *other_rotation.T]
+    axes.extend(np.cross(first, second) for first in rotation.T for second in other_rotation.T)
+    delta = other_center - center
+    overlap = float("inf")
+    for axis in axes:
+        length = float(np.linalg.norm(axis))
+        if length < 1e-10:
+            continue
+        axis = axis / length
+        projected = (
+            np.abs(rotation.T @ axis) @ size
+            + np.abs(other_rotation.T @ axis) @ other_size
+            - abs(delta @ axis)
+        )
+        overlap = min(overlap, float(projected))
+        if overlap < 0:
+            return overlap
+    return overlap
+
+
+class RackScraper(TableWiper):
+    """Physical broad scraper with a counter home independent of the rack top.
+
+    Configuration is duck typed: counter_height, counter_front_x and tool_rest_y
+    default to 0.9, 0.98 and -0.34 respectively. Explicit home_top, home_front,
+    rest_y and base take precedence. top/front retain the rack's sweep geometry;
+    rest_pose is the setup callback and initialize_rest is the only pose writer.
+    The backend owns the actual two-box blade/full-width-handle geometry.
+    """
+
+    def __init__(
+        self,
+        *,
+        shelf: ShelfSkills,
+        config: Any = None,
+        home_top: float | None = None,
+        home_front: float | None = None,
+        rest_y: float | None = None,
+        base: np.ndarray | None = None,
+    ) -> None:
+        home_top = getattr(config, "counter_height", 0.9) if home_top is None else home_top
+        home_front = getattr(config, "counter_front_x", 0.98) if home_front is None else home_front
+        rest_y = getattr(config, "tool_rest_y", -0.34) if rest_y is None else rest_y
+        super().__init__(
+            shelf=shelf, rest_y=rest_y, home_top=home_top, home_front=home_front, base=base
+        )
+        if not self.is_bench_scraper:
+            raise SkillFailed("RackScraper requires a physical box blade and full-width handle")
+        self.point = self.end_in_body + 0.010 * self.handle_axis
+        blade = self.model.geom_size[self.head_geom]
+        handle = self.model.geom_size[self.handle_geom]
+        width = float(getattr(config, "scraper_width", 2 * blade[0]))
+        if (
+            not np.isfinite(np.r_[blade, handle]).all()
+            or np.any(blade <= 0)
+            or np.any(handle <= 0)
+            or not np.isclose(2 * blade[0], width)
+            or not np.isclose(handle[0], blade[0])
+            or not 0 < 2 * blade[1] <= 0.005
+            or blade[1] >= handle[1]
+        ):
+            raise SkillFailed(
+                "RackScraper requires the configured thin blade and full-width handle"
+            )
+
+    def pads_hold_grip(self) -> bool:
+        """Require bilateral handle contact, not an accidental blade pinch."""
+        shelf = self.shelf
+        touched = [False] * len(shelf.pad_sides)
+        for contact in shelf.data.contact[: shelf.data.ncon]:
+            if contact.dist > 0:
+                continue
+            for pad, other in (
+                (int(contact.geom1), int(contact.geom2)),
+                (int(contact.geom2), int(contact.geom1)),
+            ):
+                if other == self.handle_geom:
+                    for index, pads in enumerate(shelf.pad_sides):
+                        touched[index] |= pad in pads
+        return len(touched) >= 2 and all(touched)
+
+    def tool_clear(self, *, pose: np.ndarray, data: Any = None) -> bool:
+        """Check both complete boxes against current rack, counter and tray geometry.
+
+        Only shallow upward support at the counter home or rack sweep height is
+        permitted. Vertical faces and rack members are never removed from the
+        collider set. Calculations use transforms, not freejoint pose writes.
+        """
+        if not np.isfinite(pose).all():
+            return False
+        data = self.data if data is None else data
+        shelf, model = self.shelf, self.model
+        for geom in (self.head_geom, self.handle_geom):
+            center = pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3]
+            rotation = pose[:3, :3] @ self.geom_rotation(geom=geom)
+            size = model.geom_size[geom]
+            bottom = float(center[2] - np.abs(rotation[2]) @ size)
+            for obstacle in shelf.cupboard_geoms | shelf.box_geoms:
+                if not (model.geom_contype[obstacle] or model.geom_conaffinity[obstacle]):
+                    continue
+                kind = int(model.geom_type[obstacle])
+                other_center = data.geom_xpos[obstacle]
+                other_rotation = data.geom_xmat[obstacle].reshape(3, 3)
+                other_size = geom_half_extents(model=model, geom=obstacle)
+                if np.any(
+                    np.abs(other_center - center)
+                    > np.abs(rotation) @ size + np.abs(other_rotation) @ other_size
+                ):
+                    continue
+                overlap = box_overlap(
+                    center=center,
+                    rotation=rotation,
+                    size=size,
+                    other_center=other_center,
+                    other_rotation=other_rotation,
+                    other_size=other_size,
+                )
+                if overlap <= 1e-9:
+                    continue
+                support_top = float(other_center[2] + np.abs(other_rotation[2]) @ other_size)
+                support = (
+                    obstacle in shelf.cupboard_geoms
+                    and (
+                        (kind == 6 and abs(other_rotation[2, 2]) >= np.cos(np.deg2rad(2)))
+                        or (kind in (3, 5) and abs(other_rotation[2, 2]) <= np.sin(np.deg2rad(2)))
+                        or kind == 2
+                    )
+                    and min(abs(support_top - self.home_top), abs(support_top - self.top)) <= 0.003
+                    and bottom >= support_top - SUPPORT_ALLOWANCE
+                )
+                if not support:
+                    return False
+        return True
+
+    def check_configuration(self, *, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
+        """Reject robot collision and complete carried geometry in scratch kinematics."""
+        shelf = self.shelf
+        if shelf.ik_data is shelf.data:
+            raise SkillFailed("Scraper clearance requires separate scratch data")
+        if not np.isfinite(np.r_[base, arm]).all():
+            raise SkillFailed("Scraper clearance requires finite joint targets")
+        pose = shelf.site_at(base=base, arm=arm)
+        collision = shelf.collision_cost(d=shelf.ik_data, holding=holding)
+        if not np.isfinite(collision) or collision > 0:
+            pairs = []
+            contacts = getattr(shelf.ik_data, "contact", ())
+            for contact in contacts[: getattr(shelf.ik_data, "ncon", 0)]:
+                if contact.dist <= 0 and (
+                    contact.geom1 in shelf.robot_geoms or contact.geom2 in shelf.robot_geoms
+                ):
+                    names = [
+                        shelf.model.geom(geom).name
+                        or f"{shelf.model.body(shelf.model.geom_bodyid[geom]).name}/geom_{geom}"
+                        for geom in (contact.geom1, contact.geom2)
+                    ]
+                    pairs.append((*names, round(float(contact.dist), 5)))
+            raise SkillFailed(f"Scraper motion would collide, cost {collision:.5f}: {pairs[:8]}")
+        if holding:
+            if shelf.in_hand is None:
+                raise SkillFailed("Scraper clearance requires a measured grasp")
+            if not self.tool_clear(pose=pose @ shelf.in_hand, data=shelf.ik_data):
+                raise SkillFailed("Scraper blade or handle would collide with fixture geometry")
+
+    def check_arm_segment(
+        self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
+    ) -> None:
+        """Check the same wrapped, axis-clipped joint path used by ShelfSkills.step."""
+        delta = (target - start + np.pi) % (2 * np.pi) - np.pi
+        count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
+        for fraction in np.linspace(0, 1, count + 1):
+            try:
+                self.check_configuration(base=base, arm=start + fraction * delta, holding=holding)
+            except SkillFailed as exc:
+                raise SkillFailed(f"straight joint segment fraction {fraction:.3f}: {exc}") from exc
+        for distance in np.arange(0, np.max(np.abs(delta)), 0.025):
+            try:
+                self.check_configuration(
+                    base=base,
+                    arm=start + np.sign(delta) * np.minimum(np.abs(delta), distance),
+                    holding=holding,
+                )
+            except SkillFailed as exc:
+                raise SkillFailed(
+                    f"axis-clipped joint segment at {distance:.3f} rad: {exc}"
+                ) from exc
+
+    def ik(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        holding: bool,
+        seed: np.ndarray | None = None,
+        tolerance: float = 0.008,
+    ) -> np.ndarray:
+        arm = super().ik(
+            position=position, rotation=rotation, holding=holding, seed=seed, tolerance=tolerance
+        )
+        start = self.shelf.data.qpos[self.shelf.qa].copy() if seed is None else seed
+        self.check_arm_segment(
+            start=start, target=arm, base=self.shelf.base_target, holding=holding
+        )
+        return arm
+
+    def step(self, *, arm: np.ndarray, label: str) -> None:
+        """Recheck measured and next commanded configurations against mutable fixtures."""
+        shelf = self.shelf
+        holding = shelf.in_hand is not None
+        if holding:
+            self.require_held(label=label)
+        current_arm = shelf.data.qpos[shelf.qa].copy()
+        current_base = shelf.data.qpos[shelf.ba].copy()
+        delta = (arm - current_arm + np.pi) % (2 * np.pi) - np.pi
+        next_arm = current_arm + np.clip(delta, -0.1, 0.1)
+        next_base = current_base + np.clip(
+            shelf.base_target - current_base, -shelf.base_step_limit, shelf.base_step_limit
+        )
+        for fraction in np.linspace(0, 1, 5):
+            self.check_configuration(
+                base=(1 - fraction) * current_base + fraction * next_base,
+                arm=(1 - fraction) * current_arm + fraction * next_arm,
+                holding=holding,
+            )
+        super().step(arm=arm, label=label)
+
+    def transit(
+        self,
+        *,
+        position: np.ndarray,
+        rotation: np.ndarray,
+        label: str,
+        holding: bool,
+    ) -> None:
+        """Use bounded joint detours only for transit, never for approach or lowering."""
+        shelf = self.shelf
+        if holding:
+            self.require_held(label=label)
+        try:
+            target = super().ik(
+                position=position, rotation=rotation, holding=holding, tolerance=0.005
+            )
+            planner = ArmTransit(tool=self, base=shelf.base_target, holding=holding)
+            route = planner.plan(start=shelf.data.qpos[shelf.qa].copy(), target=target)
+            if route is None:
+                raise SkillFailed(
+                    f"no safe arm transit within planning budget ({planner.edge_checks} edges): "
+                    f"{planner.last_failure}"
+                )
+            steps = 0
+            for waypoint in route[:-1]:
+                self.check_arm_segment(
+                    start=shelf.data.qpos[shelf.qa].copy(),
+                    target=waypoint,
+                    base=shelf.base_target,
+                    holding=holding,
+                )
+                for _ in range(80):
+                    error = planner.delta(start=shelf.data.qpos[shelf.qa], target=waypoint)
+                    if np.max(np.abs(error)) < 0.02:
+                        break
+                    if steps >= 360:
+                        raise SkillFailed("arm transit exhausted its 360-step detour budget")
+                    self.step(arm=waypoint, label=label)
+                    steps += 1
+                else:
+                    raise SkillFailed("arm transit waypoint failed to converge")
+            self.check_arm_segment(
+                start=shelf.data.qpos[shelf.qa].copy(),
+                target=target,
+                base=shelf.base_target,
+                holding=holding,
+            )
+            self.settle_hand(
+                arm=target, position=position, rotation=rotation, label=label, limit=300
+            )
+            if holding:
+                self.require_held(label=label)
+        except SkillFailed as exc:
+            raise SkillFailed(f"{label}: {exc}") from exc
+
+    def move_base(self, *, target: np.ndarray, label: str) -> None:
+        """Preflight direct and axis-separated routes with full held-tool geometry."""
+        shelf = self.shelf
+        arm = shelf.arm_reference.copy()
+        start = shelf.data.qpos[shelf.ba].copy()
+        target = np.asarray(target, dtype=float).copy()
+        holding = shelf.in_hand is not None
+        outside = min(start[0], target[0]) - 0.10
+        candidates = [
+            [target],
+            [np.array([start[0], target[1], start[2]]), target],
+            [np.array([target[0], start[1], start[2]]), target],
+            [
+                np.array([outside, start[1], start[2]]),
+                np.array([outside, target[1], start[2]]),
+                target,
+            ],
+        ]
+        route = None
+        failure = "no candidate route"
+        for candidate in candidates:
+            try:
+                for begin, end in zip([start, *candidate[:-1]], candidate, strict=True):
+                    for base in segment_samples(start=begin, target=end):
+                        self.check_configuration(base=base, arm=arm, holding=holding)
+            except SkillFailed as exc:
+                failure = str(exc)
+                continue
+            route = candidate
+            break
+        if route is None:
+            raise SkillFailed(f"{label}: no safe base transit: {failure}")
+        for waypoint in route:
+            current = shelf.data.qpos[shelf.ba].copy()
+            for base in segment_samples(start=current, target=waypoint):
+                self.check_configuration(base=base, arm=arm, holding=holding)
+            shelf.base_target = waypoint.copy()
+            distance = np.max(np.abs(waypoint - current))
+            limit = max(150, int(np.ceil(distance / shelf.base_step_limit)) + 50)
+            for _ in range(limit):
+                self.step(arm=arm, label=label)
+                if np.max(np.abs(shelf.data.qpos[shelf.ba] - waypoint)) < 0.003:
+                    break
+            else:
+                raise SkillFailed(f"Base failed to converge during {label}")

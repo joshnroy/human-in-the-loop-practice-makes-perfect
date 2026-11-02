@@ -32,6 +32,8 @@ from hitl_pmp.environments.pouring3d.kitchen.cli import KitchenCli
 from hitl_pmp.environments.pouring3d.kitchen.step_protocol import KitchenStepProtocol
 from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
 from hitl_pmp.environments.pouring3d.practice.step_protocol import FrozenPourStepProtocol
+from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
+from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
 from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.environments.sweepoffshelf3d.step_protocol import SweepOffShelf3DStepProtocol
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
@@ -62,6 +64,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "ballring": BallRingCli,
     "kitchen_recycling3d": KitchenRecyclingCli,
     "lightswitch": LightSwitchCli,
+    "racktoserving3d": RackServingCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
     "tossing3d": Tossing3DCli,
     # The same domain on the real TidyBot, or a fake robot: see tossing3d/real/cli.py.
@@ -85,6 +88,7 @@ STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
     "pouring3d": FrozenPourStepProtocol,
     "pouring3d_kitchen": KitchenStepProtocol,
     "kitchen_recycling3d": KitchenRecyclingStepProtocol,
+    "racktoserving3d": RackServingStepProtocol,
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
     "tossing3d_real": Tossing3DRealStepProtocol,
