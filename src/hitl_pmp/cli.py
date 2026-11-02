@@ -25,6 +25,8 @@ from typing import ClassVar
 
 from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli, StepProtocolEnvironment
 from hitl_pmp.environments.ballring.cli import BallRingCli
+from hitl_pmp.environments.kitchen_recycling3d.cli import KitchenRecyclingCli
+from hitl_pmp.environments.kitchen_recycling3d.step_protocol import KitchenRecyclingStepProtocol
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.pouring3d.kitchen.cli import KitchenCli
 from hitl_pmp.environments.pouring3d.kitchen.step_protocol import KitchenStepProtocol
@@ -58,6 +60,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "pouring3d": FrozenPourCli,
     "pouring3d_kitchen": KitchenCli,
     "ballring": BallRingCli,
+    "kitchen_recycling3d": KitchenRecyclingCli,
     "lightswitch": LightSwitchCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
     "tossing3d": Tossing3DCli,
@@ -81,6 +84,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
 STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
     "pouring3d": FrozenPourStepProtocol,
     "pouring3d_kitchen": KitchenStepProtocol,
+    "kitchen_recycling3d": KitchenRecyclingStepProtocol,
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
     "tossing3d_real": Tossing3DRealStepProtocol,
@@ -134,6 +138,13 @@ class Cli:
             "config_snapshot.json as given). Refused with --resume.",
         )
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
+        parser.add_argument(
+            "--no-early-stop",
+            action="store_true",
+            help="Step protocol: continue to the budget despite perfect evaluations, STOPs, "
+            "or no-progress sessions. Charge an explicit STOP step for a zero-step session. "
+            "External STOP files and execution errors still terminate the run.",
+        )
         parser.add_argument(
             "--initial-measurement",
             action=argparse.BooleanOptionalAction,

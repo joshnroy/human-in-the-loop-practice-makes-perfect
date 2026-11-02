@@ -563,8 +563,9 @@ class CountsLearning(ScriptedMethod):
         (3, 2),  # one full cycle, then a partial one of 2 actions
     ],
 )
+@pytest.mark.parametrize("interval", [1, 5, 100])
 def test_the_cycle_the_budget_ends_is_learned_from_before_the_final_measurement(
-    *, tmp_path, max_actions: int, expected_cycles: int
+    *, tmp_path, max_actions: int, expected_cycles: int, interval: int
 ):
     output = tmp_path / "run"
     method = CountsLearning(
@@ -575,7 +576,7 @@ def test_the_cycle_the_budget_ends_is_learned_from_before_the_final_measurement(
     StepPracticeRunner.run(
         environment=FakeStepProtocol,
         args=_step_args(
-            output_dir=output, budget=5, interval=100, max_steps_per_interaction=max_actions
+            output_dir=output, budget=5, interval=interval, max_steps_per_interaction=max_actions
         ),
         method=method,
         problem=FakeProblem(),
@@ -1017,6 +1018,38 @@ def test_ten_stop_only_sessions_in_a_row_end_the_run(*, tmp_path):
     assert len(_stop_events(output=output)) == 11
     assert _measured(output=output)[-1] == 1 + 11
     assert json.loads((output / "status.json").read_text())["phase"] == "complete"
+
+
+@pytest.mark.parametrize("kind", ["stop", "zero", "human"])
+def test_no_early_stop_reaches_budget_without_robot_progress(*, tmp_path, kind):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    action = {
+        "stop": InteractionComplete(planner_stop=True),
+        "zero": 0,
+        "human": HumanCubeBinResetRequested(destination="robot_side", cost=1.0),
+    }[kind]
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=12,
+            interval=12,
+            max_steps_per_interaction=1,
+            no_early_stop=True,
+            stop_on_no_practice_action=True,
+            repeated_zero_step_limit=1,
+        ),
+        method=_scripted_method(script=[action] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert _measured(output=output)[-1] == 12
+    if kind == "zero":
+        assert len(_stop_events(output=output)) == 12
+        assert all(event["reason"] == "zero_step_session" for event in _stop_events(output=output))
 
 
 def test_a_session_with_an_action_resets_the_stop_streak(*, tmp_path):
