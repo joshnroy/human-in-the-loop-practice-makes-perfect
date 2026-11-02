@@ -48,7 +48,7 @@ from .tossing3d_observation_model import (
     mean_learning_rate,
     refit_belief_state,
 )
-from .tossing3d_transition_model import make_tossing3d_search_state
+from .tossing3d_transition_model import GroundSkillText, make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.determinized import DeterminizedVariant, DrawScope
@@ -259,7 +259,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._refresh_execution_forecasts()
         self.record_diagnostic(
             event="execution_cost",
-            skill=str(ground),
+            skill=None if ground is None else GroundSkillText.label(ground_skill=ground),
             cost=cost,
             steps=steps,
             complete=complete,
@@ -285,8 +285,11 @@ class Tossing3DPomdpMethod(EesMethod):
     def practice_skill_costs(self) -> dict[str, float]:
         if self._practice_accounting is not None:
             return {
-                name + " (execution forecast)": cost
-                for name, cost in self._pomdp_state.expected_execution_costs.items()
+                GroundSkillText.label(ground_skill=ground)
+                + " (execution forecast)": self._pomdp_state.expected_execution_costs[key]
+                for ground in self._pomdp_model.ground_skills
+                if (key := GroundSkillText.of(ground_skill=ground))
+                in self._pomdp_state.expected_execution_costs
             }
         return {
             skill_name + " (belief mean)": mean_cost(belief=belief)
@@ -310,6 +313,12 @@ class Tossing3DPomdpMethod(EesMethod):
             skill_name: belief.diagnostics()
             for skill_name, belief in self._pomdp_state.skill_beliefs.items()
         }
+
+    def _belief_log_payload(self) -> dict[str, Any] | None:
+        """Keep belief snapshots, with forecasts recorded once under compact labels."""
+        if self.decision_log is None:
+            return None
+        return self._pomdp_state.model_dump(mode="json", exclude={"expected_execution_costs"})
 
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
@@ -365,12 +374,11 @@ class Tossing3DPomdpMethod(EesMethod):
         robot_skills = self.skills()
         human_skills = self.human_skills()
         practice_skills = (*robot_skills, *human_skills)
-        ground_skills = SkillGrounder.applicable_ground_skills(
+        ground_skills = SkillGrounder.possible_ground_skills(
             skills=practice_skills,
             objects=self.objects(),
-            true_atoms=SkillGrounder.all_possible_ground_atoms(
-                objects=self.objects(), predicates=self.predicates()
-            ),
+            predicates=self.predicates(),
+            static_predicate_atoms=self.skill_provider.static_predicate_atoms(),
         )
         self.pomdp_planner = make_belief_space_planner(
             planner=self.pomdp_planner,
@@ -538,7 +546,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 if consultation is None
                 else self.pomdp_competence_evidence.admits(consultation=consultation)
             ),
-            belief=self._pomdp_state.model_dump(mode="json"),
+            belief=self._belief_log_payload(),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=configured_cost_observation,
             cost_observation_source="configured_practice_cost"
@@ -693,7 +701,7 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             missing_effects=sorted(str(atom) for atom in missing),
             random_exploration=False,
-            belief=self._pomdp_state.model_dump(mode="json"),
+            belief=self._belief_log_payload(),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=observed_cost,
             cost_observation_source="configured_practice_cost"
@@ -750,7 +758,7 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         self.record_diagnostic(
             event="refit",
-            belief=self._pomdp_state.model_dump(mode="json"),
+            belief=self._belief_log_payload(),
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
             training_examples=training_examples,

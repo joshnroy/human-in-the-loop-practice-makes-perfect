@@ -26,7 +26,11 @@ import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from hitl_pmp.cli_protocols import EnvironmentCli, StepProtocolEnvironment
+from hitl_pmp.cli_protocols import (
+    EnvironmentCli,
+    SimulatedStepProtocolHooks,
+    StepProtocolEnvironment,
+)
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.control_steps import ControlStepLimitReached
 from hitl_pmp.core.log_timing import LogTiming
@@ -219,19 +223,31 @@ class EvaluationClock(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     budget: int = Field(gt=0)
     check_goal: Callable[[], bool]
+    check_failure: Callable[[], bool] = lambda: False
     steps: int = 0
     solved: bool = False
+    failed: bool = False
 
     def before(self) -> None:
-        if self.solved or self.steps >= self.budget:
+        self.failed = self.failed or self.check_failure()
+        if self.failed:
+            self.solved = False
+        if self.failed or self.solved or self.steps >= self.budget:
             raise ControlStepLimitReached()
 
     def after(self) -> None:
         self.steps += 1
-        self.solved = self.solved or self.check_goal()
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Observe terminal status without charging a step, including at skill end."""
+        self.failed = self.failed or self.check_failure()
+        self.solved = not self.failed and (self.solved or self.check_goal())
 
     def interruption(self) -> str:
-        """Why `before` cut the running skill off: the goal latch takes precedence."""
+        """Why `before` cut the skill off: failure, then goal, then budget."""
+        if self.failed:
+            return "stopped: task failed"
         return "stopped: goal reached" if self.solved else "interrupted: evaluation step budget"
 
 
@@ -606,15 +622,23 @@ class StepEvaluation:
                 )
                 policy = method.get_task_policy(task=task)
                 check_goal = environment.goal_check(problem=problem, task=task)
+                failure_check = getattr(
+                    environment, "failure_check", SimulatedStepProtocolHooks.failure_check
+                )
                 clock = EvaluationClock(
                     budget=args.evaluation_control_steps,
                     check_goal=check_goal,
-                    solved=check_goal(),
+                    check_failure=failure_check(problem=problem, task=task),
                 )
+                clock.refresh()
                 reason = "goal" if clock.solved else "step_budget"
                 problem.env.set_control_step_observers(before=clock.before, after=clock.after)
                 try:
-                    while not clock.solved and clock.steps < args.evaluation_control_steps:
+                    while (
+                        not clock.failed
+                        and not clock.solved
+                        and clock.steps < args.evaluation_control_steps
+                    ):
                         action = policy(state)
                         if np.array_equal(action.action, problem.env.noop_action()):
                             reason = "no_plan"
@@ -625,6 +649,16 @@ class StepEvaluation:
                             state = problem.take_action(action=action.action)
                         except ControlStepLimitReached:
                             environment.interrupted(problem=problem, action=action.action)
+                            StepFiles.event(
+                                path=directory / "actions.jsonl",
+                                task=index,
+                                label=action.label,
+                                start_step=previous,
+                                end_step=clock.steps,
+                                skill_error=environment.last_skill_error(problem=problem),
+                                outcome=clock.interruption(),
+                                **StepFiles.trace(environment=environment, problem=problem),
+                            )
                             writer.robot_action(
                                 label=action.label,
                                 start_step=previous,
@@ -634,6 +668,7 @@ class StepEvaluation:
                                 goal_reached=clock.solved,
                             )
                             break
+                        clock.refresh()
                         error = environment.last_skill_error(problem=problem)
                         StepFiles.event(
                             path=directory / "actions.jsonl",
@@ -642,21 +677,24 @@ class StepEvaluation:
                             start_step=previous,
                             end_step=clock.steps,
                             skill_error=error,
+                            outcome="task_failed" if clock.failed else error,
                             **StepFiles.trace(environment=environment, problem=problem),
                         )
                         writer.robot_action(
                             label=action.label,
                             start_step=previous,
                             end_step=clock.steps,
-                            success=error is None,
-                            outcome=error,
+                            success=error is None and not clock.failed,
+                            outcome="task_failed" if clock.failed else error,
                         )
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
                 finally:
                     problem.env.set_control_step_observers(before=None, after=None)
-                if clock.solved:
+                if clock.failed:
+                    reason = "task_failed"
+                elif clock.solved:
                     reason = "goal"
                 results.append({
                     "task": index,

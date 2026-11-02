@@ -62,6 +62,7 @@ jobs:
               - 'scripts/__init__.py'
               - 'scripts/run_sweep.py'
               - 'scripts/sweepoffshelf3d_launch.py'
+              - 'scripts/sweeptable3d_preflight.py'
               - 'scripts/tossing3d_layout_demo.py'
               - 'tests/__init__.py'
               - 'tests/environments/__init__.py'
@@ -70,6 +71,8 @@ jobs:
               - 'tests/ci_shard_durations.json'
               - 'tests/environments/tossing3d/**'
               - 'tests/environments/sweepoffshelf3d/**'
+              - 'tests/environments/sweeptable3d/**'
+              - 'tests/scripts/test_sweeptable3d_preflight.py'
               - 'configs/**'
               - 'benchmarks/**'
               - 'docs/**/*.json'
@@ -526,17 +529,17 @@ jobs:
       # module-scoped fixture is built once rather than once per worker that receives one
       # of its tests (tests/test_xdist_groups.py). Every pytest call carries
       # `--durations=25` so the slowest tests stay visible in the log.
-      # SweepOffShelf3D is also a KINDER Dynamic3D scene (lab2), so its simulator tests need
-      # this job's OSMesa rendering too; no other job collects them (tests/test_ci_coverage.py).
+      # SweepOffShelf3D and SweepTable3D also use KINDER Dynamic3D, so their simulator tests
+      # need this job's OSMesa rendering; no other job collects them (tests/test_ci_coverage.py).
       # The real-robot domain (`tossing3d/real`) imports no MuJoCo but runs whole practice
       # cycles in-process, and the first torch optimizer a learning update builds imports
       # triton: in a worker an earlier simulator test loaded OSMesa into, that segfaults,
       # and the crashed worker then stalls the run until the 6-hour limit. Those tests run
       # in `test / unit & core` instead.
-      - name: Pytest — Tossing3D and SweepOffShelf3D (load MuJoCo/OSMesa; own processes)
+      - name: Pytest — Tossing3D, SweepOffShelf3D and SweepTable3D (load MuJoCo/OSMesa; own processes)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/sweeptable3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
       # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.

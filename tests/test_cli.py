@@ -75,6 +75,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
         "ballring",
         "lightswitch",
         "sweepoffshelf3d",
+        "sweeptable3d",
         "tossing3d",
         # Not a fork: the same domain on the real TidyBot (or a fake robot).
         "tossing3d_real",

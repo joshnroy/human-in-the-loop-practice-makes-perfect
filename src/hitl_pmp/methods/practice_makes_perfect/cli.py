@@ -10,6 +10,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
     TOSSING3D_DOMAIN,
     PracticeDomain,
 )
+from hitl_pmp.methods.belief_space.sweeptable3d_domain import SWEEP_TABLE_DOMAIN
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
@@ -300,7 +301,7 @@ class EesCli:
 
 
 class Tossing3DPomdpCli(EesCli):
-    """Exact belief-space practice selection for Tossing3D and SweepOffShelf3D."""
+    """Exact belief-space practice selection for tossing and sweeping domains."""
 
     # The practice domain for each supported environment CLI, by class name: a
     # method-CLI never imports an environment.
@@ -308,6 +309,7 @@ class Tossing3DPomdpCli(EesCli):
         "Tossing3DCli": TOSSING3D_DOMAIN,
         "Tossing3DRealCli": TOSSING3D_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
+        "SweepTable3DCli": SWEEP_TABLE_DOMAIN,
     }
 
     @staticmethod
@@ -334,7 +336,7 @@ class Tossing3DPomdpCli(EesCli):
             type=int,
             default=None,
             help="Exact belief-space expectimax depth in future skill executions "
-            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D).",
+            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D/SweepTable3D).",
         )
         parser.add_argument(
             "--pomdp-solver",
@@ -481,7 +483,8 @@ class Tossing3DPomdpCli(EesCli):
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if domain is None:
             raise ValueError(
-                "--method pomdp supports only --env tossing3d and --env sweepoffshelf3d"
+                "--method pomdp supports only --env tossing3d, tossing3d_real, "
+                "sweepoffshelf3d and sweeptable3d"
             )
         if args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.

@@ -100,6 +100,45 @@ class SkillGrounder:
         return frozenset(atoms)
 
     @staticmethod
+    def possible_ground_skills(
+        *,
+        skills: tuple[Skill, ...],
+        objects: tuple[Object, ...],
+        predicates: tuple[Predicate, ...],
+        static_predicate_atoms: dict[Predicate, frozenset[GroundAtom]],
+    ) -> list[GroundSkill]:
+        """Ground in the existing order, excluding only invariant-false bindings."""
+        mutable = {
+            atom.predicate
+            for skill in skills
+            for atom in (
+                *skill.add_effects,
+                *skill.delete_effects,
+                *(atom for effect in skill.conditional_add_effects for atom in effect.add_effects),
+            )
+        } | {predicate for skill in skills for predicate in skill.ignore_effects}
+        for predicate, atoms in static_predicate_atoms.items():
+            if predicate in mutable:
+                raise ValueError(f"static predicate {predicate.name} appears in skill effects")
+            if predicate not in predicates or any(
+                atom.predicate != predicate or not set(atom.objects) <= set(objects)
+                for atom in atoms
+            ):
+                raise ValueError(f"invalid static facts for predicate {predicate.name}")
+        universe = SkillGrounder.all_possible_ground_atoms(
+            objects=objects,
+            predicates=tuple(
+                predicate for predicate in predicates if predicate not in static_predicate_atoms
+            ),
+        )
+        return SkillGrounder.applicable_ground_skills(
+            skills=skills,
+            objects=objects,
+            true_atoms=universe
+            | frozenset(atom for atoms in static_predicate_atoms.values() for atom in atoms),
+        )
+
+    @staticmethod
     def applicable_ground_skills(
         *, skills: tuple[Skill, ...], objects: tuple[Object, ...], true_atoms: frozenset[GroundAtom]
     ) -> list[GroundSkill]:

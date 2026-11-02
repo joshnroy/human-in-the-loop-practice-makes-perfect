@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.problem.tasks.types import Goal, Predicate
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate
 
 # The one name `_EesEpisode.step` checks for to intercept this ground skill before it
 # would otherwise be dispatched through the normal controller/skill-execution path
@@ -50,6 +50,15 @@ class SkillProvider(BaseModel, abc.ABC):
     @abc.abstractmethod
     def predicates(self) -> tuple[Predicate, ...]:
         raise NotImplementedError
+
+    def static_predicate_atoms(self) -> dict[Predicate, frozenset[GroundAtom]]:
+        """Complete truths of explicitly declared, environment-invariant predicates.
+
+        Omitted predicates remain unconstrained. An empty truth set declares that
+        predicate always false. These facts must survive actions, failures and resets;
+        they are not observations of the current scene.
+        """
+        return {}
 
     @abc.abstractmethod
     def types(self) -> tuple[Type, ...]:

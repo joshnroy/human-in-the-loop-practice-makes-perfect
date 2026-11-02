@@ -28,6 +28,8 @@ from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.environments.sweepoffshelf3d.step_protocol import SweepOffShelf3DStepProtocol
+from hitl_pmp.environments.sweeptable3d.cli import SweepTable3DCli
+from hitl_pmp.environments.sweeptable3d.step_protocol import SweepTable3DStepProtocol
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.real.cli import Tossing3DRealCli
 from hitl_pmp.environments.tossing3d.real.step_protocol import Tossing3DRealStepProtocol
@@ -54,6 +56,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
+    "sweeptable3d": SweepTable3DCli,
     "tossing3d": Tossing3DCli,
     # The same domain on the real TidyBot, or a fake robot: see tossing3d/real/cli.py.
     "tossing3d_real": Tossing3DRealCli,
@@ -74,6 +77,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
 # The domains `--practice-step-budget` (the step protocol, `step_protocol.py`) can run.
 STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
+    "sweeptable3d": SweepTable3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
     "tossing3d_real": Tossing3DRealStepProtocol,
 }

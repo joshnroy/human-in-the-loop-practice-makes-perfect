@@ -228,4 +228,4 @@ layers = [
 ]
 
 [tool.setuptools.package-data]
-hitl_pmp = ["environments/tossing3d/scenes/*.json", "full_agentic/*.json", "full_agentic/*.md", "presets/*.json"]
+hitl_pmp = ["environments/tossing3d/scenes/*.json", "environments/sweeptable3d/*.json", "full_agentic/*.json", "full_agentic/*.md", "presets/*.json"]

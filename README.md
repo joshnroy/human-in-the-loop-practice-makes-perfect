@@ -31,6 +31,9 @@ python -m hitl_pmp.cli --env lightswitch --method skill-oracle --output-dir out/
 
 Both `--env` and `--method` are required; all flags are named.
 
+The ball-and-tray `sweeptable3d` environment has a dedicated
+[task contract and bounded preflight guide](docs/sweeptable3d.md).
+
 ## Checks
 
 ```bash

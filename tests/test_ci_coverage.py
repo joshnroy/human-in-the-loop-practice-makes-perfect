@@ -8,6 +8,7 @@ missing from every job, so none of the shelf's simulator tests ran in CI.
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
@@ -55,6 +56,43 @@ class CiJobs:
         runs = [step["run"] for step in steps if "pytest" in step.get("run", "")]
         assert len(runs) == 1, f"{job} has {len(runs)} pytest steps"
         return runs[0].replace("\\\n", " ")
+
+    @staticmethod
+    def collects(*, job: str, path: str) -> bool:
+        arguments = CiJobs.pytest_command(job=job).split()
+        selected = {argument for argument in arguments if argument.startswith("tests/")}
+        ignored = {
+            argument.removeprefix("--ignore=")
+            for argument in arguments
+            if argument.startswith("--ignore=")
+        }
+        return CiPaths.covers(test_file=REPO / path, paths=selected) and not CiPaths.covers(
+            test_file=REPO / path, paths=ignored
+        )
+
+
+def test_table_environment_tests_run_only_in_the_osmesa_job() -> None:
+    files = sorted((REPO / "tests/environments/sweeptable3d").glob("test_*.py"))
+    assert files
+    for test_file in files:
+        path = test_file.relative_to(REPO).as_posix()
+        assert CiJobs.collects(job="test-tossing3d", path=path), path
+        for job in ("test-unit", "test-scripts", "test-tossingroom", "test-analysis"):
+            assert not CiJobs.collects(job=job, path=path), (job, path)
+
+
+@pytest.mark.parametrize(
+    ("job", "path"),
+    [
+        ("test-unit", "tests/test_sweeptable3d_integration.py"),
+        ("test-unit", "tests/test_step_protocol_failure.py"),
+        ("test-unit", "tests/methods/belief_space/test_sweeptable3d_domain.py"),
+        ("test-scripts", "tests/scripts/test_sweeptable3d_preflight.py"),
+    ],
+)
+def test_mocked_table_learner_and_harness_checks_stay_outside_physics(*, job: str, path: str):
+    assert CiJobs.collects(job=job, path=path)
+    assert not CiJobs.collects(job="test-tossing3d", path=path)
 
 
 def test_the_real_robot_tests_run_outside_the_osmesa_job() -> None:

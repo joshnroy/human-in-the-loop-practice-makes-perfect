@@ -695,7 +695,9 @@ class KinderSkills:
             tuple(x.get(box, k) for k in ("x", "y", "z")),
             tuple(x.get(box, k) for k in ("qx", "qy", "qz", "qw")),
         )
-        sim.add_bin(name=BOX, pose=pose, **BOX_DIMENSIONS)
+        live_box = self.core.get_object(BOX)
+        dimensions = {name: float(getattr(live_box, name)) for name in BOX_DIMENSIONS}
+        sim.add_bin(name=BOX, pose=pose, **dimensions)
         if target != WIPER and not self.wiper_on_robot():
             self.add_wiper_obstacle(sim=sim)
         return sim
