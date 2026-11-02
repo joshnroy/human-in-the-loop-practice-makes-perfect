@@ -74,18 +74,6 @@ class EesCli:
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "--competence-sharing",
-            choices=("grounded", "parent", "rate"),
-            default="grounded",
-            help="EES/DP ablation: separate grounded forecasts, pooled parent-skill forecasts, "
-            "or pooled improvement with separate current competences. Does not change the learner.",
-        )
-        parser.add_argument(
-            "--record-learning-forecasts",
-            action="store_true",
-            help="Write grounded and pooled learning evidence each period; requires output-dir.",
-        )
-        parser.add_argument(
             "--record-ees-decisions",
             action="store_true",
             help="Write EES target scores and selection diagnostics to ees_decisions.jsonl; "
@@ -95,9 +83,9 @@ class EesCli:
             "--practice-groundings",
             choices=("observed", "all"),
             default="observed",
-            help="EES/DP ablation: offer observed or all typed robot groundings. EES practices "
-            "the selected grounding even when statistics are shared. DP also includes untried "
-            "deployment-MDP skills; alternative-grounding execution requires its explicit flag.",
+            help="EES/DP: offer observed or all typed robot groundings as practice targets. "
+            "EES practices the selected grounding. DP also includes untried deployment-MDP "
+            "skills.",
         )
         # 10 cycles = predicators' num_online_learning_cycles default; 150 steps =
         # the paper's stated Light Switch free-period length.
@@ -294,23 +282,15 @@ class EesCli:
     ) -> dict[str, Any]:
         """EesMethod's constructor arguments from EES's flags, shared by every method
         that is EES with a different practice-target choice (`DpCli`)."""
-        if args.record_learning_forecasts and args.output_dir is None:
-            raise ValueError("--record-learning-forecasts requires --output-dir")
         if args.record_ees_decisions and args.output_dir is None:
             raise ValueError("--record-ees-decisions requires --output-dir")
         return dict(
             env=ctx.env,
             skill_provider=ctx.skill_provider,
             seed=args.seed,
-            competence_sharing=args.competence_sharing,
             practice_groundings=args.practice_groundings,
             ees_decision_log=(
                 Path(args.output_dir) / "ees_decisions.jsonl" if args.record_ees_decisions else None
-            ),
-            learning_forecast_log=(
-                Path(args.output_dir) / "learning_forecasts.jsonl"
-                if args.record_learning_forecasts
-                else None
             ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
@@ -515,12 +495,8 @@ class Tossing3DPomdpCli(EesCli):
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
                 "every human skill its practice domain does not treat as deterministic"
             )
-        if (
-            args.competence_sharing != "grounded"
-            or args.practice_groundings != "observed"
-            or args.record_learning_forecasts
-        ):
-            raise ValueError("shared-learning ablation flags apply only to --method ees or dp")
+        if args.practice_groundings != "observed":
+            raise ValueError("--practice-groundings applies only to --method ees or dp")
         defaults = (
             EesMethod.model_fields["prior_alpha"].default,
             EesMethod.model_fields["prior_beta"].default,
@@ -696,14 +672,6 @@ class DpCli(EesCli):
             help="Allocate once before the curriculum, or reallocate every practice period.",
         )
         parser.add_argument(
-            "--dp-allow-grounding-substitution",
-            action=argparse.BooleanOptionalAction,
-            default=False,
-            help="Explicit legacy adaptation: shared/all DP may practice an alternative "
-            "grounding of its allocated parent skill. Off by default; statistical sharing "
-            "alone does not authorize changing the selected grounded target.",
-        )
-        parser.add_argument(
             "--dp-solver",
             choices=["gurobi", "enumeration"],
             default=fields["dp_solver"].default,
@@ -782,7 +750,6 @@ class DpCli(EesCli):
                 dp_budget=args.dp_budget,
                 dp_budget_unit=args.dp_budget_unit,
                 dp_allocation_schedule=args.dp_allocation_schedule,
-                dp_allow_grounding_substitution=args.dp_allow_grounding_substitution,
                 dp_solver=args.dp_solver,
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
