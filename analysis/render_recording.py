@@ -60,6 +60,12 @@ class RecordingVideo:
 
     @staticmethod
     def default_renderer(*, header: RecordingHeader, realistic_background: bool) -> ReplayRenderer:
+        if header.environment == "pouring3d_kitchen":
+            from hitl_pmp.environments.pouring3d.kitchen.recording import KitchenReplayRenderer
+
+            return KitchenReplayRenderer(
+                scene=header.scene, scene_bg=True if realistic_background else None
+            )
         if header.environment == "pouring3d":
             from hitl_pmp.environments.pouring3d.practice.recording import FrozenPourReplayRenderer
 
