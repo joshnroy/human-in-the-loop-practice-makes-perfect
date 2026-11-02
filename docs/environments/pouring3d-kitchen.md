@@ -89,6 +89,16 @@ a larger IK clearance margin and wait on measured joint tracking before advancin
 loaded transport waypoints. Ingredients and
 partial outcomes are not snapped into desired bins after robot actions.
 
+Before PickPitcher and before every ingredient pick, and only with an empty hand,
+each continuous arm joint (1, 3, 5, 7) wound `k = round((q - q_neutral) / 360 deg)`
+whole turns from its episode-initial angle is rotated back by `k` turns along a
+collision-checked joint path (same hand pose; joints 2, 4, 6 untouched; no home
+posture). IK resolves each continuous joint to the equivalent nearest its previous
+angle, so without this pick/place cycles ratchet joint 1 towards the +-688 deg IK
+bound, where it pins and strands the jug. A loaded IK target within 20 deg of that
+bound fails the skill with a message naming the joint. The motors track about
+0.2 rad/s, so unwinding costs about 31 s (about 314 ticks at 10 Hz) per turn.
+
 Existing predicates remain: HandEmpty, HoldingPitcher, HoldingShrimp, PitcherHome,
 TrayHome, InPitcher, InTray, OnFloor, OnSurface, Settled, PayloadOrder, Count1/2/3,
 ActiveRequest, NoSpills, NeedsReset, ReadyToPour, SplitCorrect, Goal. Added predicates:
