@@ -263,6 +263,7 @@ class KitchenController(PotstickerController):
         Continuous joints go the short way round, as upstream's follower does.
         """
         self.phase = phase
+        self.grip = grip
         continuous = self.lower == -12
         current = self.data.qpos[self.arm_q].copy()
         for waypoint in path[1:]:
@@ -388,18 +389,45 @@ class KitchenController(PotstickerController):
         super().move(phase=phase, position=position, rotation=rotation, seconds=seconds, grip=grip)
 
     def prepare_to_pour(self) -> np.ndarray:
-        if np.linalg.norm(self.data.qpos[self.base_q][:2] - self.base_home[:2]) < 0.3:
-            hand, rotation = self.hand_pose()
-            # Fold the elbow up in the clear aisle before approaching the hob.
-            # A base-offset-only change leaves the carried elbow below its edge.
-            self.move(
-                position=hand + [-0.15, 0, 0.25],
-                rotation=rotation,
-                phase="fold and raise pitcher for transport",
-                seconds=6,
-                grip=1,
+        """Plan the whole carry to the pour start upright (PyBullet), then follow it.
+
+        Replaces the scripted fold, base move and pivot transport. Returns the pour's
+        pivot, as the scripted version did.
+        """
+        from .planning.parameterized_skills import CarryToPourController
+        from .planning.utils import KitchenPyBulletSim
+
+        tray, _ = self.body_pose(name="tray")
+        center = tray + [0, 0, self.pour_clearance]
+        locations = self.scene.cube_locations()
+        riders = tuple(
+            name
+            for name, at in zip(self.scene.cube_names, locations, strict=True)
+            if at == "pitcher"
+        )
+        _, hand_rotation = self.hand_pose()
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            planner = CarryToPourController(sim=sim)
+            planner.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base=self.data.qpos[self.base_q].copy(),
+                base_target=np.array([center[0] - self.pour_base_offset, center[1], 0.0]),
+                hand_rotation=hand_rotation,
+                start=center,
+                start_rotation=self.pour_orientation(angle=0) * self.rotation_offset,
+                riders=riders,
             )
-        return super().prepare_to_pour()
+        finally:
+            sim.close()
+        self.follow_arm_path(path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=1)
+        self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
+        self.follow_arm_path(
+            path=planner.plans[planner.MOVE_ARM_TO_POUR], phase=planner.MOVE_ARM_TO_POUR, grip=1
+        )
+        self.posture_goal = self.pour_posture
+        return center
 
     def move_base(self, *, target: np.ndarray, phase: str, seconds: float) -> None:
         """Preflight the carried arm along the base path, before issuing motors."""

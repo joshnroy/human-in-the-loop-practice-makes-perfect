@@ -30,6 +30,9 @@ MIRRORED_MOVABLES = ("pitcher", "tray")
 # A planned configuration keeps at least this far (m) from every obstacle, which
 # covers the PyBullet/MuJoCo robot-model gap measured in the parity test.
 PLANNING_MARGIN_M = 0.015
+# A held jug of loose dumplings stays within this of vertical through every planned
+# configuration. Provisional until the spill angle with three dumplings is measured.
+UPRIGHT_TILT_LIMIT_DEG = 10.0
 
 
 class KitchenPyBulletSim(PyBulletSim):
