@@ -87,8 +87,10 @@ class SkillBeliefModel:
         assert skill_name is not None
         pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         training = dict(state.sampler_training)
-        if skill_name in training:
-            training[skill_name] = training[skill_name].observe(success=success)
+        # Training rows belong to the acting skill's parameter sampler.
+        sampler_name = self.skill.name
+        if sampler_name in training:
+            training[sampler_name] = training[sampler_name].observe(success=success)
         return state.model_copy(
             update={"pending_examples": pending_examples, "sampler_training": training}
         )
@@ -178,7 +180,8 @@ def make_default_tossing3d_belief(
             )
         )
     return Tossing3DBeliefState(
-        skill_beliefs=beliefs, sampler_training={domain.sampler_skill: SamplerTrainingState()}
+        skill_beliefs=beliefs,
+        sampler_training={name: SamplerTrainingState() for name in domain.sampler_skills},
     )
 
 

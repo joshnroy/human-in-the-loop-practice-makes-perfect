@@ -1,0 +1,1652 @@
+{
+  "recipes": {
+    "wood": {
+      "1": {
+        "parameters": {
+          "tilt_angle": 95.5,
+          "wiggle_seconds": 2
+        },
+        "discovery_count": 1,
+        "exact_candidate_found": true
+      },
+      "2": {
+        "parameters": {
+          "tilt_angle": 97,
+          "wiggle_seconds": 0.5
+        },
+        "discovery_count": 2,
+        "exact_candidate_found": true
+      },
+      "3": {
+        "parameters": {
+          "tilt_angle": 97,
+          "wiggle_seconds": 2
+        },
+        "discovery_count": 3,
+        "exact_candidate_found": true
+      },
+      "4": {
+        "parameters": {
+          "tilt_angle": 130,
+          "wiggle_seconds": 0
+        },
+        "discovery_count": 5,
+        "exact_candidate_found": false
+      },
+      "5": {
+        "parameters": {
+          "tilt_angle": 130,
+          "wiggle_seconds": 0
+        },
+        "discovery_count": 5,
+        "exact_candidate_found": true
+      }
+    },
+    "foam": {
+      "1": {
+        "parameters": {
+          "tilt_angle": 107,
+          "wiggle_seconds": 3
+        },
+        "discovery_count": 1,
+        "exact_candidate_found": true
+      },
+      "2": {
+        "parameters": {
+          "tilt_angle": 107,
+          "wiggle_seconds": 2
+        },
+        "discovery_count": 3,
+        "exact_candidate_found": false
+      },
+      "3": {
+        "parameters": {
+          "tilt_angle": 107,
+          "wiggle_seconds": 2
+        },
+        "discovery_count": 3,
+        "exact_candidate_found": true
+      },
+      "4": {
+        "parameters": {
+          "tilt_angle": 130,
+          "wiggle_seconds": 0
+        },
+        "discovery_count": 5,
+        "exact_candidate_found": false
+      },
+      "5": {
+        "parameters": {
+          "tilt_angle": 130,
+          "wiggle_seconds": 0
+        },
+        "discovery_count": 5,
+        "exact_candidate_found": true
+      }
+    }
+  },
+  "discovery_trials": 16,
+  "validation_trials": 30,
+  "targeted_probe_trials": 4,
+  "goal_snapshots_checked": 268,
+  "source_hashes_identical": true,
+  "discovery": [
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": false
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 1
+      },
+      "eligible_count": 2,
+      "pour_success": true
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 3
+      },
+      "eligible_count": 3,
+      "pour_success": false
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 96.25,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 2,
+      "pour_success": false
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 97.75,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": false
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 1,
+      "pour_success": true
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 1
+      },
+      "eligible_count": 0,
+      "pour_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 3
+      },
+      "eligible_count": 1,
+      "pour_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 1.2
+      },
+      "eligible_count": 0,
+      "pour_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 107.75,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 5,
+      "pour_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2.5
+      },
+      "eligible_count": 3,
+      "pour_success": false
+    }
+  ],
+  "targeted_probes": [
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 1.6
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2.8
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 107.375,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 98.875,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false
+    }
+  ],
+  "validation": [
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 2,
+      "pour_success": true,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 0,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 1,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 2,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 1,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 1,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 1,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 2,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 95.5,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 2,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 0.5
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": false,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 2,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 97,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 2,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "wood",
+      "seed": 2,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 3
+      },
+      "eligible_count": 1,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "tray",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 0,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 1,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 3
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 1,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 1,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 0,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 1,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 1,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 2,
+      "requested_count": 1,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 3
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 2,
+      "requested_count": 2,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 2,
+      "requested_count": 3,
+      "parameters": {
+        "tilt_angle": 107,
+        "wiggle_seconds": 2
+      },
+      "eligible_count": 3,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "pitcher",
+        "tray",
+        "tray",
+        "tray",
+        "pitcher"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 2,
+      "requested_count": 4,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": false,
+      "full_success": false,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": false,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    },
+    {
+      "material": "foam",
+      "seed": 2,
+      "requested_count": 5,
+      "parameters": {
+        "tilt_angle": 130,
+        "wiggle_seconds": 0
+      },
+      "eligible_count": 5,
+      "pour_success": true,
+      "full_success": true,
+      "source_sha256": {
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/reference/kindergarden/src/kinder/envs/dynamic3d/tasks/PitcherPour3D/PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/src/hitl_pmp/environments/pouring3d/wiggle.py": "c6f9eb2cf09fe3fc1f60ed0998bc56ec84bc91c20a17d4151e5423fa2f42079e",
+        "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/pouring3d-pr-review/scripts/pouring3d_wiggle_demo.py": "9ccb71c95954f7e059c8722012f0111f1cac7927e981389e622e2405141d605d"
+      },
+      "after_pour_locations": [
+        "tray",
+        "tray",
+        "tray",
+        "tray",
+        "tray"
+      ],
+      "after_pour_settled": true,
+      "events": [
+        {
+          "skill": "PickPitcher",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "Pour",
+          "success": true,
+          "error": null
+        },
+        {
+          "skill": "PlacePitcherAtHome",
+          "success": true,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "audit": {
+    "approved_physics_source_hashes": {
+      "pitcher_pour3d.py": "c20e8b09597d445460383b3db5ac261f517c982d9d4abb4b82e1746de5381b29",
+      "PitcherPour3D-o5-winco.json": "5532a6bd25c0e2fad973faf82d701be0078a837bd458180a4f7e3af63ea88232",
+      "native_controller.py": "020eaf021b9bf5f7cca5cf644b92f53a15b9d76eafa3a4f2957901216d2310e9"
+    },
+    "finite_physical_arrays": true,
+    "worker_semantics_unchanged_after_typing_edits": true
+  }
+}

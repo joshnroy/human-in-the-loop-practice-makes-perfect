@@ -63,7 +63,11 @@ def test_the_planners_plain_arm_is_the_presets_own_cost_file() -> None:
 
 
 def test_the_arm_cost_files_are_not_listed_as_presets() -> None:
-    assert CliPreset.names() == ["tossing3d-canonical"]
+    assert CliPreset.names() == [
+        "pouring3d-balanced",
+        "pouring3d-balanced-ees",
+        "tossing3d-canonical",
+    ]
 
 
 def test_an_always_ask_arm_on_the_presets_cost_file_is_refused() -> None:

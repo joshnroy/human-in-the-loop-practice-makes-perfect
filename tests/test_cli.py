@@ -74,6 +74,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
     assert set(ENVIRONMENTS) == {
         "ballring",
         "lightswitch",
+        "pouring3d",
         "sweepoffshelf3d",
         "tossing3d",
         # Not a fork: the same domain on the real TidyBot (or a fake robot).
