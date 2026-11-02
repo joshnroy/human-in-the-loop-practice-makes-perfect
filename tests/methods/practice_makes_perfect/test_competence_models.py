@@ -224,8 +224,6 @@ def test_returns_are_plain_floats():
 #
 # Expected numbers are worked by hand from the Beta posterior mean
 # (alpha + s) / (alpha + beta + n), pooled over every outcome so far, and from the
-# running average Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1}) / n_t,
-# where n_t is the number of attempts in the cycle that just closed.
 
 
 def test_linear_fresh_model_reports_its_priors():
@@ -238,16 +236,50 @@ def test_linear_learning_rate_is_the_papers_running_average_per_attempt():
     model = LinearSkillCompetenceModel()
     _observe_all(model=model, outcomes=[False, False])
     model.advance_cycle()
-    p0, p1 = 10.0 / 11.0, 10.0 / 13.0
-    delta1 = 0.5 * 0.1 + 0.5 * (p1 - p0) / 2
+    prior, first, second = 10.0 / 11.0, 10.0 / 12.0, 10.0 / 13.0
+    delta1 = 0.5 * (0.5 * 0.1 + 0.5 * (first - prior)) + 0.5 * (second - first)
     assert model.learning_rate() == pytest.approx(delta1)
 
     _observe_all(model=model, outcomes=[True, True, True])
     model.advance_cycle()
-    p2 = 13.0 / 16.0
-    delta2 = 0.5 * delta1 + 0.5 * (p2 - p1) / 3
+    third, fourth, fifth = 11.0 / 14.0, 12.0 / 15.0, 13.0 / 16.0
+    delta2 = 0.5 * (
+        0.5 * (0.5 * delta1 + 0.5 * (third - second)) + 0.5 * (fourth - third)
+    ) + 0.5 * (fifth - fourth)
     assert model.learning_rate() == pytest.approx(delta2)
-    assert model.get_current_competence() == pytest.approx(p2)
+    assert model.get_current_competence() == pytest.approx(fifth)
+
+
+@pytest.mark.parametrize("smoothing", [0.0, 0.5, 0.9, 1.0])
+def test_linear_rate_does_not_depend_on_closed_period_partition(*, smoothing):
+    outcomes = [False, False, True, False, True, True, True, False]
+    batched = LinearSkillCompetenceModel(smoothing=smoothing)
+    episodic = LinearSkillCompetenceModel(smoothing=smoothing)
+    _observe_all(model=batched, outcomes=outcomes)
+    batched.advance_cycle()
+    for outcome in outcomes:
+        episodic.observe(success=outcome)
+        episodic.advance_cycle()
+    assert batched.get_current_competence() == episodic.get_current_competence()
+    assert batched.learning_rate() == pytest.approx(episodic.learning_rate())
+
+
+def test_linear_recorded_seed_zero_failures_keep_signed_episode_updates():
+    probability = 0.1326530612244898
+    model = LinearSkillCompetenceModel(
+        alpha=2 * probability,
+        beta=2 * (1 - probability),
+        initial_delta=0.00620110544217687,
+        cycle_observations=[[False] * 8, []],
+    )
+    expected = model.initial_delta
+    previous = probability
+    for count in range(1, 9):
+        current = 2 * probability / (2 + count)
+        expected = 0.5 * expected + 0.5 * (current - previous)
+        previous = current
+    assert model.learning_rate() == pytest.approx(expected)
+    assert model.learning_rate() < 0
 
 
 def test_linear_open_cycle_moves_competence_but_not_the_learning_rate():

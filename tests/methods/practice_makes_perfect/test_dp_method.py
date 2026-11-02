@@ -235,8 +235,10 @@ def test_by_default_a_human_skill_is_a_candidate_allocated_by_the_same_rule(*, m
 def test_stops_practising_once_the_budget_is_spent(*, monkeypatch):
     method, _pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=1.0)
     assert method.practice_complete() is False
+    assert method.practice_completion_reason() is None
     method._practice_accounting.robot_cost = 1.0  # noqa: SLF001
     assert method.practice_complete() is True
+    assert method.practice_completion_reason() == "budget_spent"
     assert method.choose_practice_target() == [STOP_SKILL]
 
 
@@ -310,6 +312,7 @@ def test_no_profitable_allocation_finishes_without_random_practice(*, monkeypatc
     method, _pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=0.001)
     assert method.choose_practice_target() == [STOP_SKILL]
     assert method.practice_complete()
+    assert method.practice_completion_reason() == "zero_allocation"
 
 
 def test_dp_skips_ees_goal_pursuit_even_when_enabled():
@@ -367,6 +370,7 @@ def test_once_allocation_survives_periods_and_finishes_when_consumed(*, monkeypa
     _execute(method=method, ground=back)
     assert method.dp_episodes() == 5
     assert method.practice_complete()
+    assert method.practice_completion_reason() == "once_curriculum_consumed"
     assert method.choose_practice_target() == [STOP_SKILL]
 
 
@@ -493,12 +497,15 @@ def test_solver_log_records_candidates_and_physical_attempts(*, monkeypatch, tmp
     allocation, execution = [
         json.loads(line) for line in method.dp_solver_log.read_text().splitlines()
     ]
+    assert allocation["completion_reason"] is None
+    assert allocation["learning_rate_update"] == "per_retained_episode_closed_cycles"
     assert allocation["practice_groundings"] == "all"
     rows = [row for row in allocation["groups"] if row["skill"] == same.skill.name]
     assert {tuple(row["objects"]) for row in rows} >= {
         tuple(obj.name for obj in same.objects),
         tuple(obj.name for obj in opposite.objects),
     }
+    assert execution["remaining_budget"] == pytest.approx(method.dp_budget - 1)
     assert execution["episodes"] == 1
     assert execution["executed_since_solve"] == [
         {

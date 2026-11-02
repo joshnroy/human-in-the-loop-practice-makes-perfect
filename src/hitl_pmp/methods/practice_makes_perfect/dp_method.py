@@ -36,7 +36,7 @@ class DpMethod(EesMethod):
     state-dependent belief-space lookahead over future practice resets.
 
     The curriculum follows the optimized policy's predecessor order, executing
-    positive allocations only. Gurobi must certify both optimization stages;
+    positive allocations only. Gurobi must certify the task-value optimum;
     enumeration is an explicitly selected reference, never a silent fallback.
     """
 
@@ -100,6 +100,9 @@ class DpMethod(EesMethod):
         return super().competence_model(ground_skill=ground_skill)
 
     def practice_complete(self) -> bool:
+        return self.practice_completion_reason() is not None
+
+    def practice_completion_reason(self) -> str | None:
         exhausted = (
             self.dp_allocation_schedule == "once"
             and self._dp_solved_period is not None
@@ -112,7 +115,13 @@ class DpMethod(EesMethod):
                 self._practice_accounting.total_cost if self._practice_accounting is not None else 0
             )
         )
-        return self._dp_no_allocation or exhausted or spent >= self.dp_budget
+        if spent >= self.dp_budget:
+            return "budget_spent"
+        if self._dp_no_allocation:
+            return "zero_allocation"
+        if exhausted:
+            return "once_curriculum_consumed"
+        return None
 
     def dp_episodes(self) -> int:
         return self._dp_episodes
@@ -316,6 +325,8 @@ class DpMethod(EesMethod):
         self._dp_solver_result = result
         self._dp_allocation = dict(result.allocation)
         self._dp_executed_since_solve = {}
+        self._dp_no_allocation = not any(self._dp_allocation.values())
+        self._dp_solved_period = self._practice_periods
         self._write_solver_record(
             record={
                 **result.model_dump(exclude={"allocation"}),
@@ -350,9 +361,7 @@ class DpMethod(EesMethod):
         self._dp_curriculum = list(
             dict.fromkeys([*mdp.curriculum(competences=predicted), *self._dp_allocation])
         )
-        self._dp_no_allocation = not any(self._dp_allocation.values())
         self._dp_fitted_stages = set()
-        self._dp_solved_period = self._practice_periods
 
     def _write_solver_record(self, *, record: dict[str, object]) -> None:
         if self.dp_solver_log is not None:
@@ -363,6 +372,10 @@ class DpMethod(EesMethod):
                     "event": "allocation",
                     "budget_unit": self.dp_budget_unit,
                     "allocation_schedule": self.dp_allocation_schedule,
+                    "allocation_schedule_status": "unverified_author_protocol",
+                    "learning_rate_update": "per_retained_episode_closed_cycles",
+                    "completion_reason": self.practice_completion_reason(),
+                    "remaining_budget": self._remaining_budget(),
                     "period": self._practice_periods,
                     "episodes": self._dp_episodes,
                     "physical_cost": self._require_accounting().total_cost,

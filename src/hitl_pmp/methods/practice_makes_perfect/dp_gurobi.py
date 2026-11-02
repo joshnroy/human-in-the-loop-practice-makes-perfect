@@ -6,13 +6,16 @@ success-or-absorbing-failure dynamics. Policy ranks exclude circulation, giving
 valid unit occupancy bounds even for the undiscounted success objective.
 
 Task value is nondecreasing in every success probability. When an affine forecast
-stays nonnegative, p <= raw and p <= 1 preserve the maximum task value and the
-least-cost allocations meeting a task-value floor. The probabilities themselves
-need not equal the clipped forecasts: increasing them to those forecasts cannot
+stays nonnegative, p <= raw and p <= 1 preserve the maximum task value. The
+probabilities themselves need not equal the clipped forecasts: increasing them cannot
 reduce task value or change spend. Forecasts crossing zero still need the lower
 clip, including declining siblings of an improving shared group. This avoids
-numerically fragile MIN equalities near upper saturation without changing either
+numerically fragile MIN equalities near upper saturation without changing the
 optimization objective or the independent certification checks.
+
+Dual feasibility must be tightened alongside primal feasibility and MIP gaps:
+small learning gains can fall below the default reduced-cost tolerance, yielding
+a suboptimal allocation and an understated solver bound that agree with each other.
 """
 
 import math
@@ -81,14 +84,10 @@ class DpGurobiAllocator:
             if not 0 <= competences[skill] <= 1 or not math.isfinite(learning_rates[skill]):
                 raise ValueError(f"invalid competence or learning rate for {skill!r}")
         started = time.monotonic()
-        limits = DpAllocator._allocation_limits(
-            mdp=mdp,
-            competences=competences,
-            learning_rates=learning_rates,
-            costs=costs,
-            budget=budget,
-            groups=groups,
-        )
+        for group in costs:
+            if identities.get(group, group) != group:
+                raise ValueError("DP costs must price allocation groups, not duplicate members")
+        limits = {group: max(0, math.floor(budget / cost + 1e-9)) for group, cost in costs.items()}
         with gp.Env(empty=True) as environment:
             environment.setParam("OutputFlag", 0)
             environment.start()
@@ -100,6 +99,7 @@ class DpGurobiAllocator:
                 model.Params.MIPGapAbs = 1e-9
                 model.Params.FeasibilityTol = 1e-9
                 model.Params.IntFeasTol = 1e-9
+                model.Params.OptimalityTol = 1e-9
                 counts = {
                     group: model.addVar(
                         lb=0, ub=limits[group], vtype=gp.GRB.INTEGER, name=f"b_{index}"
@@ -176,124 +176,38 @@ class DpGurobiAllocator:
                 model.setObjective(reward, gp.GRB.MAXIMIZE)
                 model.optimize()
                 DpGurobiAllocator._require_optimal(model=model, phase="task_value")
-                primary_allocation = {skill: int(round(counts[skill].X)) for skill in costs}
+                allocation = {skill: int(round(counts[skill].X)) for skill in costs}
                 value = DpAllocator.predicted_success(
                     mdp=mdp,
                     competences=competences,
                     learning_rates=learning_rates,
-                    allocation=primary_allocation,
+                    allocation=allocation,
                     groups=groups,
                 )
                 theoretical_bound, _ = mdp.solve(competences=maximum_competences)
                 bound = min(model.ObjBound, theoretical_bound)
-                primary_spent = sum(
-                    costs[skill] * count for skill, count in primary_allocation.items()
-                )
-                if primary_spent > max(0, budget) + 1e-7 or bound - value > 1e-7:
+                spent = sum(costs[skill] * count for skill, count in allocation.items())
+                if spent > max(0, budget) + 1e-7 or bound - value > 1e-7:
                     raise DpOptimizationError(
                         diagnostics={
                             "phase": "primary_independent_verification",
                             "objective": value,
                             "solver_objective": model.ObjVal,
                             "objective_bound": bound,
-                            "spent": primary_spent,
+                            "spent": spent,
                             "budget": budget,
                         }
-                    )
-                minimum_task_value = value - 1e-8
-                model.addConstr(reward >= minimum_task_value, name="preserve_optimal_task_value")
-                model.setObjective(spend, gp.GRB.MINIMIZE)
-                rejected_allocations: set[tuple[int, ...]] = set()
-                while True:
-                    remaining = time_limit - (time.monotonic() - started)
-                    if remaining <= 0:
-                        raise DpOptimizationError(
-                            diagnostics={
-                                "phase": "least_cost_tie_break",
-                                "reason": "time_limit_before_certification",
-                                "tie_break_retries": len(rejected_allocations),
-                            }
-                        )
-                    model.Params.TimeLimit = remaining
-                    model.optimize()
-                    DpGurobiAllocator._require_optimal(model=model, phase="least_cost_tie_break")
-                    allocation = {skill: int(round(counts[skill].X)) for skill in costs}
-                    actual = DpAllocator.predicted_success(
-                        mdp=mdp,
-                        competences=competences,
-                        learning_rates=learning_rates,
-                        allocation=allocation,
-                        groups=groups,
-                    )
-                    spent = sum(costs[skill] * count for skill, count in allocation.items())
-                    over_budget = spent > max(0, budget) + 1e-7
-                    preserves_task_value = actual >= minimum_task_value
-                    if not over_budget and preserves_task_value and bound - actual <= 1e-7:
-                        if time.monotonic() - started >= time_limit:
-                            raise DpOptimizationError(
-                                diagnostics={
-                                    "phase": "least_cost_tie_break",
-                                    "reason": "time_limit_before_certification",
-                                    "tie_break_retries": len(rejected_allocations),
-                                }
-                            )
-                        break
-                    diagnostics = {
-                        "phase": "independent_verification",
-                        "objective": actual,
-                        "solver_objective": value,
-                        "objective_bound": bound,
-                        "spent": spent,
-                        "budget": budget,
-                        "minimum_task_value": minimum_task_value,
-                        "tie_break_retries": len(rejected_allocations),
-                    }
-                    signature = tuple(allocation.values())
-                    if (
-                        not over_budget and preserves_task_value
-                    ) or signature in rejected_allocations:
-                        raise DpOptimizationError(diagnostics=diagnostics)
-                    rejected_allocations.add(signature)
-                    DpGurobiAllocator._exclude_allocation(
-                        model=model,
-                        counts=counts,
-                        allocation=allocation,
-                        index=len(rejected_allocations),
                     )
                 return DpAllocationResult(
                     allocation=allocation,
                     solver="gurobi",
                     status="OPTIMAL",
-                    objective=actual,
+                    objective=value,
                     objective_bound=bound,
-                    relative_gap=max(0, bound - actual) / max(abs(actual), 1e-12),
-                    absolute_gap=max(0, bound - actual),
-                    tie_break_retries=len(rejected_allocations),
+                    relative_gap=max(0, bound - value) / max(abs(value), 1e-12),
+                    absolute_gap=max(0, bound - value),
                     runtime_seconds=time.monotonic() - started,
                 )
-
-    @staticmethod
-    def _exclude_allocation(
-        *,
-        model: Any,
-        counts: Mapping[SkillKey, Any],
-        allocation: Mapping[SkillKey, int],
-        index: int,
-    ) -> None:
-        import gurobipy as gp
-
-        alternatives = []
-        for position, (skill, count) in enumerate(allocation.items()):
-            variable = counts[skill]
-            if count > variable.LB:
-                lower = model.addVar(vtype=gp.GRB.BINARY, name=f"reject_{index}_{position}_lower")
-                model.addGenConstrIndicator(lower, True, variable <= count - 1)
-                alternatives.append(lower)
-            if count < variable.UB:
-                higher = model.addVar(vtype=gp.GRB.BINARY, name=f"reject_{index}_{position}_higher")
-                model.addGenConstrIndicator(higher, True, variable >= count + 1)
-                alternatives.append(higher)
-        model.addConstr(gp.quicksum(alternatives) >= 1, name=f"reject_allocation_{index}")
 
     @staticmethod
     def _require_optimal(*, model: Any, phase: str) -> None:
