@@ -149,6 +149,14 @@ configurations near every obstacle, wherever PyBullet clears the 1.5 cm planning
 margin MuJoCo is not in contact. Out of contact PyBullet is at most about 1 cm more
 optimistic than MuJoCo, all of it at the bracelet/gripper coupling, whose meshes differ.
 
+**PickPitcher** plans its free-space motion: a base path to the pick pose
+(`run_base_motion_planning`, the arm checked in 3-D along it) and an arm path to a hover
+above the handle (`plan_checked_arm_motion`: BiRRT, remapped, densely re-checked, 1.5 cm
+margin), both before the robot moves; a refusal executes nothing. The kitchen follows
+every waypoint at 0.2 rad/s and 0.15 m/s. The descent, grasp and lift that follow are
+contact motions and stay scripted. The hand-tuned aisle detour for a hand left over the
+jug is gone; the planner routes around it.
+
 `mj_geomDistance` (MuJoCo 3.3.7) sometimes returns 0 for mesh pairs centimetres apart,
 with witness points on neither geom; the parity test recomputes those from vertices.
 The scripted controller's clearance checks use the same call, so some of their
