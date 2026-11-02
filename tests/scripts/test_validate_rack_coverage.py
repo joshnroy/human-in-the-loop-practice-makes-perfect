@@ -591,20 +591,57 @@ def test_pile_centred_baseline_is_resolved_from_the_measured_initial_pile():
     manifest = build_manifest(pairs=[(0, 0), (0.04, 15)], pile_centred_baseline=True)
     pile = manifest["pairs"][-1]
     assert pile == {"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}
+    config = manifest["config"]
     initial = {
         "poses": {
+            "rack_0": [1.5, 0.0, 0.9, 1, 0, 0, 0],
             "cube_0": [1.4, 0.10, 0.94, 1, 0, 0, 0],
             "cube_1": [1.5, 0.02, 0.94, 1, 0, 0, 0],
             "cube_2": [1.2, -0.30, 0.92, 1, 0, 0, 0],
         },
         "locations": {"cube_0": "OnRack", "cube_1": "OnRack", "cube_2": "SpilledCounter"},
     }
-    assert NativeTrial.resolve_pair(pair=pile, initial=initial) == pytest.approx((0.06, 0.0))
-    assert NativeTrial.resolve_pair(pair=manifest["pairs"][1], initial=initial) == (0.04, 15.0)
-    far = json.loads(json.dumps(initial))
+    resolve = NativeTrial.resolve_pair
+    assert resolve(pair=pile, initial=initial, config=config) == pytest.approx((0.06, 0.0))
+    assert resolve(pair=manifest["pairs"][1], initial=initial, config=config) == (0.04, 15.0)
+    shifted = json.loads(json.dumps(initial))
+    shifted["poses"]["rack_0"][1] = 0.30
     for name in ("cube_0", "cube_1"):
-        far["poses"][name][1] = 0.5
-    assert NativeTrial.resolve_pair(pair=pile, initial=far) == pytest.approx((0.1875, 0.0))
+        shifted["poses"][name][1] += 0.30
+    assert resolve(pair=pile, initial=shifted, config=config) == pytest.approx((0.1875, 0.0))
+
+
+def test_pile_centroid_uses_food_over_the_rack_even_while_it_is_still_dropping():
+    """Right after human_batch_return the food is mid-drop, so every location is None."""
+    manifest = build_manifest(pairs=[(0, 0)], pile_centred_baseline=True)
+    initial = {
+        "poses": {
+            "rack_0": [1.5, 0.0, 0.9, 1, 0, 0, 0],
+            "cube_0": [1.45, -0.05, 0.939, 1, 0, 0, 0],
+            "cube_1": [1.55, 0.01, 0.939, 1, 0, 0, 0],
+            "cube_2": [1.30, 0.20, 0.93, 1, 0, 0, 0],
+        },
+        "locations": {"cube_0": None, "cube_1": None, "cube_2": None},
+    }
+    dy, phi = NativeTrial.resolve_pair(
+        pair=manifest["pairs"][-1], initial=initial, config=manifest["config"]
+    )
+    assert (dy, phi) == pytest.approx((-0.02, 0.0))
+    empty = json.loads(json.dumps(initial))
+    for name in ("cube_0", "cube_1"):
+        empty["poses"][name][0] = 1.2
+    with pytest.raises(RuntimeError, match="over the rack"):
+        NativeTrial.resolve_pair(
+            pair=manifest["pairs"][-1], initial=empty, config=manifest["config"]
+        )
+
+
+def test_pile_only_manifest_runs_just_the_pile_centred_baseline():
+    manifest = build_manifest(pairs=[], pile_centred_baseline=True)
+    assert manifest["pairs"] == [{"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}]
+    assert manifest["constant_pair"] == manifest["pairs"][0]
+    with pytest.raises(ValueError):
+        build_manifest(pairs=[])
 
 
 def test_native_adapter_sends_resolved_lateral_offset_and_plow_angle(*, tmp_path, monkeypatch):
