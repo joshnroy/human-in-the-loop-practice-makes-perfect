@@ -14,6 +14,7 @@ from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.scene import (
     COUNTER_TYPE,
     DUMPLING_TYPE,
+    PLATE_TYPE,
     RACK_TYPE,
     SCRAPER_TYPE,
     TRAY_TYPE,
@@ -269,6 +270,34 @@ def install_geometry() -> None:
                 return _bottom_bounds(position=pos, options=object_config)
 
         register_object(name=TRAY_TYPE)(SlateTray)
+
+    if PLATE_TYPE not in REGISTERED_OBJECTS:
+
+        class RoundPlate(Cuboid):
+            """Flat bottom-origin circular plate: one cylinder, free joint, no rim."""
+
+            def _create_xml_element(self) -> ET.Element:
+                self.length, self.width, self.height = (2 * extent for extent in self.size)
+                self.wall_thickness = 0.0
+                self.fixed = False
+                body = super()._create_xml_element()
+                geom = body.find("geom")
+                assert geom is not None
+                geom.set("name", f"{self.name}_plate")
+                geom.set("type", "cylinder")
+                geom.set("size", _values(values=(self.length / 2, self.height / 2)))
+                geom.set("pos", f"0 0 {self.height / 2}")
+                geom.set("friction", _values(values=self.options["friction"]))
+                geom.set("condim", str(self.options["contact_dimension"]))
+                return body
+
+            @staticmethod
+            def get_bounding_box_from_config(  # noqa: PLR0917 -- KINDER calls positionally
+                pos: Any, object_config: dict[str, Any]
+            ) -> list[float]:
+                return _bottom_bounds(position=pos, options=object_config)
+
+        register_object(name=PLATE_TYPE)(RoundPlate)
 
     if DUMPLING_TYPE not in REGISTERED_OBJECTS:
 

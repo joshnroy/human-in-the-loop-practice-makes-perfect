@@ -3,7 +3,7 @@
 import argparse
 from collections.abc import Callable
 from contextlib import ExitStack
-from typing import Literal
+from typing import Literal, get_args, get_origin
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
@@ -24,8 +24,9 @@ class RackServingCli:
             if name == "mode":
                 continue
             flag = "--" + name.replace("_", "-")
-            if name == "surface_kind":
-                parser.add_argument(flag, choices=("wire", "concept"), default=field.default)
+            choices = get_args(field.annotation) if get_origin(field.annotation) is Literal else ()
+            if choices:
+                parser.add_argument(flag, choices=choices, default=field.default)
             elif isinstance(field.default, tuple):
                 parser.add_argument(flag, nargs=3, type=float, default=field.default)
             else:

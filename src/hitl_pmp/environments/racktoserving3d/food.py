@@ -21,6 +21,7 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
+from .semantics import CircularSupport
 from .tool import RackScraper, box_overlap
 from .transit import ArmTransit, geom_half_extents, segment_samples
 
@@ -428,6 +429,11 @@ class RackFoodController:
             )
             self._require_held(name=name)
 
+    @staticmethod
+    def _box_xy(*, lower: np.ndarray, upper: np.ndarray) -> list[tuple[float, float]]:
+        """The four horizontal corners of an axis-aligned box."""
+        return [(float(x), float(y)) for x in (lower[0], upper[0]) for y in (lower[1], upper[1])]
+
     def _placement_candidates(self, *, name: str, destination: str) -> list[np.ndarray]:
         region = self.backend.support(name=destination)
         corners = self.backend.corners(name=name)
@@ -437,10 +443,15 @@ class RackFoodController:
         ys = (region.y_min - lower[1] + 0.02, region.y_max - upper[1] - 0.02)
         if xs[0] > xs[1] or ys[0] > ys[1]:
             raise SkillFailed("Food footprint does not fit destination")
+        round_target = isinstance(region, CircularSupport)
         candidates = []
-        for target_x in np.linspace(*xs, 3):
-            for target_y in np.linspace(*ys, 5):
+        for target_x in np.linspace(*xs, 7 if round_target else 3):
+            for target_y in np.linspace(*ys, 7 if round_target else 5):
                 target = np.array([target_x, target_y, region.top_z - lower[2] + 0.003])
+                if round_target and not region.contains_xy(
+                    points=self._box_xy(lower=target + lower, upper=target + upper), margin=0.02
+                ):
+                    continue
                 occupied = False
                 for other in self.backend.cube_names:
                     if other == name:
@@ -539,11 +550,8 @@ class RackFoodController:
             target = np.r_[target_xy, region.top_z + centre[2] - corners[:, 2].min() + 0.003]
             error = target - centre
             bounds = corners[:, :2] + error[:2]
-            if (
-                bounds[:, 0].min() < region.x_min
-                or bounds[:, 0].max() > region.x_max
-                or bounds[:, 1].min() < region.y_min
-                or bounds[:, 1].max() > region.y_max
+            if not region.contains_xy(
+                points=self._box_xy(lower=bounds.min(axis=0), upper=bounds.max(axis=0))
             ):
                 raise SkillFailed("Observed food no longer fits the planned support footprint")
             distance = np.linalg.norm(error)

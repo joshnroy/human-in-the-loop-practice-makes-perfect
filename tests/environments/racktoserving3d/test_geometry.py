@@ -12,9 +12,9 @@ from hitl_pmp.environments.racktoserving3d.geometry import install_geometry
 from hitl_pmp.environments.racktoserving3d.scene import (
     COUNTER_TYPE,
     DUMPLING_TYPE,
+    PLATE_TYPE,
     RACK_TYPE,
     SCRAPER_TYPE,
-    TRAY_TYPE,
     build_scene,
 )
 
@@ -58,13 +58,15 @@ def test_registration_is_isolated_and_idempotent() -> None:
     )
 
 
+@pytest.mark.parametrize("serving_target", ["round_plate", "slate"])
 @pytest.mark.parametrize("surface_kind", ["wire", "concept"])
 def test_counter_and_free_objects_compile_without_hidden_support(
-    *, registry: Any, surface_kind: str
+    *, registry: Any, surface_kind: str, serving_target: str
 ) -> None:
     import mujoco
 
-    config = RackServingConfig(surface_kind=surface_kind)
+    config = RackServingConfig(surface_kind=surface_kind, serving_target=serving_target)
+    serving_geom = "box_0_plate" if serving_target == "round_plate" else "box_0_slate"
     scene = build_scene(config=config)
     fixture_options = scene["fixtures"][COUNTER_TYPE]["cupboard_1"]
     counter = registry.REGISTERED_FIXTURES[COUNTER_TYPE](
@@ -120,7 +122,7 @@ def test_counter_and_free_objects_compile_without_hidden_support(
     rack_geoms = rack.xml_element.findall("geom")
     assert all(geom.get("friction") == "0.6 0.005 0.003" for geom in rack_geoms)
     assert all(geom.get("condim") == "6" for geom in rack_geoms)
-    assert int(model.geom_condim[model.geom("box_0_slate").id]) == 6
+    assert int(model.geom_condim[model.geom(serving_geom).id]) == 6
     assert len([geom for geom in rack_geoms if "foot" in geom.get("name")]) == 4
     surfaces = [geom for geom in rack_geoms if "foot" not in geom.get("name")]
     assert len(surfaces) > 4
@@ -148,9 +150,21 @@ def test_counter_and_free_objects_compile_without_hidden_support(
     assert tray.wall_thickness == 0
     assert tray.fixed is False
     assert tray.height == config.tray_thickness
-    assert data.geom("box_0_slate").xpos[2] + model.geom("box_0_slate").size[2] == pytest.approx(
-        config.tray_top_z
-    )
+    serving = model.geom(serving_geom)
+    if serving_target == "round_plate":
+        assert int(model.geom_type[serving.id]) == int(mujoco.mjtGeom.mjGEOM_CYLINDER)
+        assert serving.size[0] == pytest.approx(config.plate_radius)
+        assert data.geom(serving_geom).xpos[2] + serving.size[1] == pytest.approx(config.tray_top_z)
+        assert data.geom(serving_geom).xpos[:2] == pytest.approx([
+            config.tray_center_x,
+            config.tray_center_y,
+        ])
+        assert config.tray_center_x + serving.size[0] == pytest.approx(
+            config.rack_front_x - config.gap
+        )
+    else:
+        assert int(model.geom_type[serving.id]) == int(mujoco.mjtGeom.mjGEOM_BOX)
+        assert data.geom(serving_geom).xpos[2] + serving.size[2] == pytest.approx(config.tray_top_z)
     scraper = objects["wiper_0"]
     handle, blade = scraper.xml_element.findall("geom")
     handle_size = np.fromstring(handle.get("size"), sep=" ")
@@ -196,7 +210,7 @@ def test_scene_initial_poses_pass_native_sampler(*, registry: Any) -> None:
             assert pose["position"] == pytest.approx(
                 scene["regions"][regions[name]]["ranges"][0][:3]
             )
-            assert kind in {RACK_TYPE, TRAY_TYPE, SCRAPER_TYPE, DUMPLING_TYPE}
+            assert kind in {RACK_TYPE, PLATE_TYPE, SCRAPER_TYPE, DUMPLING_TYPE}
 
 
 def test_custom_mass_and_friction_reach_native_geometry(*, registry: Any) -> None:

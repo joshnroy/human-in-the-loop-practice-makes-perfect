@@ -2,12 +2,14 @@
 
 import math
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
 from hitl_pmp.environments.racktoserving3d.semantics import (
     HUMAN_BATCH_RETURN,
     HUMAN_TOOL_RECOVERY,
+    CircularSupport,
     FoodMeasurement,
     RackServingLedger,
     SupportRegion,
@@ -127,3 +129,81 @@ def test_invalid_measurements_are_rejected():
         _region(x_min=1, x_max=-1)
     with pytest.raises(ValidationError):
         _classify(support_tolerance=math.inf)
+
+
+def _plate(*, radius=0.13, top_z=1.0):
+    return CircularSupport(center_x=0.0, center_y=0.0, radius=radius, top_z=top_z)
+
+
+def test_round_plate_bounding_box_matches_circle():
+    plate = _plate()
+    assert (plate.x_min, plate.x_max, plate.y_min, plate.y_max) == (-0.13, 0.13, -0.13, 0.13)
+
+
+def test_round_plate_rejects_footprint_inside_bounding_box_but_outside_circle():
+    corner = FoodMeasurement(
+        position=(0.1, 0.1, 1.02),
+        half_extents=(0.01, 0.01, 0.02),
+        footprint=((0.09, 0.09), (0.11, 0.09), (0.11, 0.11), (0.09, 0.11)),
+    )
+    assert _plate().x_min <= 0.09 and _plate().x_max >= 0.11
+    assert not _plate().supports(food=corner, tolerance=0.005)
+
+
+def test_round_plate_uses_actual_footprint_not_centre_only():
+    footprint = ((0.115, 0.0), (0.135, 0.0), (0.125, 0.01), (0.125, -0.01))
+    food = FoodMeasurement(
+        position=(0.125, 0.0, 1.02), half_extents=(0.01, 0.01, 0.02), footprint=footprint
+    )
+    assert np.hypot(*food.position[:2]) < 0.13
+    assert not _plate().supports(food=food, tolerance=0.005)
+    assert _plate(radius=0.136).supports(food=food, tolerance=0.005)
+
+
+def test_round_plate_without_footprint_falls_back_to_conservative_box_corners():
+    food = FoodMeasurement(position=(0.09, 0.09, 1.02), half_extents=(1e-4, 1e-4, 0.02))
+    assert _plate().supports(food=food, tolerance=0.005)
+    boxed = FoodMeasurement(position=(0.085, 0.085, 1.02), half_extents=(0.01, 0.01, 0.02))
+    assert not _plate().supports(food=boxed, tolerance=0.005)
+
+
+def test_round_plate_still_requires_resting_height():
+    food = FoodMeasurement(position=(0.0, 0.0, 1.05), half_extents=(0.01, 0.01, 0.02))
+    assert not _plate().supports(food=food, tolerance=0.005)
+
+
+def test_classify_food_scores_on_round_plate():
+    food = FoodMeasurement(
+        position=(0.12, 0.0, 1.02),
+        half_extents=(0.02, 0.02, 0.02),
+        footprint=((0.10, -0.02), (0.14, -0.02), (0.14, 0.02), (0.10, 0.02)),
+    )
+    common = {
+        "food": food,
+        "rack": _region(x_min=0.2, x_max=0.6),
+        "counter": _region(x_min=-2, x_max=2),
+        "support_contacts": frozenset({"tray", "counter"}),
+    }
+    assert classify_food(tray=_plate(), **common) == "SpilledCounter"
+    assert classify_food(tray=_plate(radius=0.15), **common) == "OnTray"
+
+
+@pytest.mark.parametrize(
+    ("points", "margin", "expected"),
+    [
+        (((0.0, 0.0), (0.12, 0.0)), 0.0, True),
+        (((0.0, 0.0), (0.12, 0.0)), 0.02, False),
+        (((0.092, 0.092),), 0.0, False),
+    ],
+)
+def test_contains_xy_for_both_support_shapes(*, points, margin, expected):
+    assert _plate().contains_xy(points=points, margin=margin) is expected
+    box = SupportRegion(x_min=-0.13, x_max=0.13, y_min=-0.13, y_max=0.13, top_z=1.0)
+    assert box.contains_xy(points=points, margin=margin) is all(
+        abs(x) <= 0.13 - margin and abs(y) <= 0.13 - margin for x, y in points
+    )
+
+
+def test_round_plate_rejects_nonpositive_radius():
+    with pytest.raises(ValidationError):
+        CircularSupport(center_x=0.0, center_y=0.0, radius=0.0, top_z=1.0)

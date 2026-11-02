@@ -7,6 +7,8 @@ Returning cooked food to the rack never starts a new cooling interval.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -18,13 +20,32 @@ HUMAN_TOOL_RECOVERY = "human_tool_recovery"
 
 
 class FoodMeasurement(BaseModel):
-    """World-space centre and measured axis-aligned half extents, in metres."""
+    """World-space centre and measured axis-aligned half extents, in metres.
+
+    ``footprint`` optionally carries points whose convex hull encloses the
+    food's horizontal shadow; a round support tests those instead of the box.
+    """
 
     model_config = ConfigDict(frozen=True, allow_inf_nan=False)
 
     position: tuple[float, float, float]
     half_extents: tuple[float, float, float]
     held: bool = False
+    footprint: tuple[tuple[float, float], ...] | None = None
+
+    def horizontal_points(self) -> tuple[tuple[float, float], ...]:
+        if self.footprint:
+            return self.footprint
+        centre_x, centre_y, _ = self.position
+        half_x, half_y, _ = self.half_extents
+        return tuple(
+            (centre_x + sign_x * half_x, centre_y + sign_y * half_y)
+            for sign_x in (-1, 1)
+            for sign_y in (-1, 1)
+        )
+
+    def rests_on(self, *, top_z: float, tolerance: float) -> bool:
+        return abs(self.position[2] - self.half_extents[2] - top_z) <= tolerance
 
     @model_validator(mode="after")
     def _positive_extents(self) -> FoodMeasurement:
@@ -61,6 +82,55 @@ class SupportRegion(BaseModel):
             and abs(centre_z - half_z - self.top_z) <= tolerance
         )
 
+    def contains_xy(self, *, points: Iterable[Sequence[float]], margin: float = 0.0) -> bool:
+        return all(
+            self.x_min + margin <= x <= self.x_max - margin
+            and self.y_min + margin <= y <= self.y_max - margin
+            for x, y, *_ in points
+        )
+
+
+class CircularSupport(BaseModel):
+    """Measured round support (a plate): live centre, radius and top elevation, in metres."""
+
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+
+    center_x: float
+    center_y: float
+    radius: float = Field(gt=0)
+    top_z: float
+
+    @property
+    def x_min(self) -> float:
+        return self.center_x - self.radius
+
+    @property
+    def x_max(self) -> float:
+        return self.center_x + self.radius
+
+    @property
+    def y_min(self) -> float:
+        return self.center_y - self.radius
+
+    @property
+    def y_max(self) -> float:
+        return self.center_y + self.radius
+
+    def contains_xy(self, *, points: Iterable[Sequence[float]], margin: float = 0.0) -> bool:
+        return all(
+            math.hypot(x - self.center_x, y - self.center_y) <= self.radius - margin
+            for x, y, *_ in points
+        )
+
+    def supports(self, *, food: FoodMeasurement, tolerance: float) -> bool:
+        """The whole horizontal footprint lies inside the circle, resting on its top."""
+        return self.contains_xy(points=food.horizontal_points()) and food.rests_on(
+            top_z=self.top_z, tolerance=tolerance
+        )
+
+
+ServingRegion = SupportRegion | CircularSupport
+
 
 class _GeometryTolerance(BaseModel):
     value: float = Field(ge=0, allow_inf_nan=False)
@@ -70,9 +140,9 @@ class _GeometryTolerance(BaseModel):
 def classify_food(
     *,
     food: FoodMeasurement,
-    rack: SupportRegion,
-    tray: SupportRegion,
-    counter: SupportRegion,
+    rack: ServingRegion,
+    tray: ServingRegion,
+    counter: ServingRegion,
     support_contacts: frozenset[Literal["rack", "tray", "counter", "floor"]],
     floor_z: float = 0.0,
     support_tolerance: float = 0.005,
@@ -86,7 +156,7 @@ def classify_food(
     tolerance = _GeometryTolerance(value=support_tolerance, floor_z=floor_z)
     if food.held:
         return "HoldingFood"
-    candidates: tuple[tuple[SupportRegion, str, FoodLocation], ...] = (
+    candidates: tuple[tuple[ServingRegion, str, FoodLocation], ...] = (
         (tray, "tray", "OnTray"),
         (rack, "rack", "OnRack"),
         (counter, "counter", "SpilledCounter"),

@@ -18,15 +18,21 @@ TRANSFER_TURN = np.deg2rad(0.5)
 
 
 def geom_half_extents(*, model: Any, geom: int) -> np.ndarray:
-    """Conservative local bounds for boxes, spheres and rounded wire members."""
+    """Conservative local bounds for boxes, spheres, rounded wires and flat cylinders.
+
+    A cylinder has flat caps, so its exact box is (r, r, half-length); treating it
+    as a capsule would put a radius-tall phantom block above a wide plate.
+    """
     kind = int(model.geom_type[geom])
     size = model.geom_size[geom]
     if kind == 6:
         return np.array(size, copy=True)
     if kind == 2:
         return np.full(3, size[0])
-    if kind in (3, 5):
+    if kind == 3:
         return np.array([size[0], size[0], size[1] + size[0]])
+    if kind == 5:
+        return np.array([size[0], size[0], size[1]])
     return np.full(3, model.geom_rbound[geom])
 
 

@@ -196,3 +196,16 @@ def test_train_test_and_human_reset_rng_streams_are_independent(*, monkeypatch):
     train_one = first.sample_train_task().initial_state.get(obj=Objects.scene, feature_name="seed")
     train_two = second.sample_train_task().initial_state.get(obj=Objects.scene, feature_name="seed")
     assert train_one == train_two
+
+
+@pytest.mark.parametrize("target", ["round_plate", "slate"])
+def test_cli_selects_the_serving_target(*, target):
+    args = _parse(argv=("--serving-target", target, "--plate-radius", "0.12"))
+    problem = RackServingCli.build_problem(args=args, mode="training")
+    assert problem.env.config.serving_target == target
+    assert problem.env.config.plate_radius == 0.12
+
+
+def test_cli_rejects_unknown_serving_target():
+    with pytest.raises(SystemExit):
+        _parse(argv=("--serving-target", "bowl"))

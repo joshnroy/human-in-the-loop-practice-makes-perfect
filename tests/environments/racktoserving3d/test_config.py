@@ -21,7 +21,9 @@ def test_default_layout_and_semantics() -> None:
     assert config.human_interruption_cost == 5
     assert config.rack_front_x == pytest.approx(1.3725)
     assert config.rack_back_x == pytest.approx(1.6275)
-    assert config.tray_center_x == pytest.approx(1.2125)
+    assert config.serving_target == "round_plate"
+    assert config.plate_radius == pytest.approx(0.13)
+    assert config.tray_center_x == pytest.approx(1.3725 - 0.010 - 0.13)
     assert config.rack_top_z == pytest.approx(0.925)
     assert config.tray_top_z == pytest.approx(0.912)
     assert config.rack_front_x - config.tray_back_x == pytest.approx(0.010)
@@ -53,6 +55,9 @@ def test_config_is_frozen_and_json_roundtrips() -> None:
     "overrides",
     [
         {"surface_kind": "plate"},
+        {"serving_target": "bowl"},
+        {"plate_radius": 0},
+        {"plate_radius": 0.6},
         {"mode": "test"},
         {"rack_height": 0.01},
         {"rack_mass": 0},
@@ -101,3 +106,34 @@ def test_layout_is_derived_from_config_not_hardcoded() -> None:
     second_scene = build_scene(config=config)
     scene["regions"].clear()
     assert second_scene["regions"]
+
+
+def test_round_plate_sits_centred_in_front_of_the_rack_exit() -> None:
+    config = RackServingConfig()
+    assert (config.serving_depth, config.serving_width) == pytest.approx((0.26, 0.26))
+    assert config.tray_back_x == pytest.approx(config.rack_front_x - config.gap)
+    assert config.tray_front_x == pytest.approx(config.tray_back_x - 0.26)
+    assert config.tray_center_y == config.rack_center_y
+    assert config.tray_top_z < config.rack_top_z
+    assert config.tray_mass == 1.0
+
+
+def test_slate_remains_selectable_with_its_original_geometry() -> None:
+    slate = RackServingConfig(serving_target="slate")
+    assert (slate.serving_depth, slate.serving_width) == (0.30, 0.375)
+    assert slate.tray_center_x == pytest.approx(1.2125)
+
+
+@pytest.mark.parametrize(
+    ("target", "kind"),
+    [("round_plate", "rack_serving_round_plate"), ("slate", "rack_serving_slate")],
+)
+def test_scene_uses_the_selected_serving_object(*, target, kind) -> None:
+    config = RackServingConfig(serving_target=target)
+    scene = build_scene(config=config)
+    assert list(scene["objects"][kind]) == ["box_0"]
+    other = {"rack_serving_round_plate", "rack_serving_slate"} - {kind}
+    assert not other & set(scene["objects"])
+    goal = scene["regions"]["serving_goal"]["ranges"][0]
+    assert goal[3] - goal[0] == pytest.approx(config.serving_depth)
+    assert goal[4] - goal[1] == pytest.approx(config.serving_width)
