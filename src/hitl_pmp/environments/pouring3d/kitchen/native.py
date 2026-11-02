@@ -142,13 +142,16 @@ class KitchenController(PotstickerController):
         return controller
 
     def continuous_turns(self) -> np.ndarray:
-        """Whole turns each continuous arm joint has wound away from its neutral angle."""
+        """Whole turns each continuous arm joint has wound away from its neutral angle.
+
+        Hysteresis: a joint less than a full turn from neutral counts as unwound, so
+        one resting near +-180 deg (the wrist after a pour) never flips back and forth.
+        """
         continuous = self.lower == -12
-        q = self.data.qpos[self.arm_q]
-        turns = np.zeros(len(q), dtype=int)
-        turns[continuous] = np.round(
-            (q[continuous] - self.arm_neutral_q[continuous]) / (2 * np.pi)
-        ).astype(int)
+        offset = self.data.qpos[self.arm_q] - self.arm_neutral_q
+        wound = continuous & (np.abs(offset) >= 2 * np.pi)
+        turns = np.zeros(len(offset), dtype=int)
+        turns[wound] = np.round(offset[wound] / (2 * np.pi)).astype(int)
         return turns
 
     def unwind_continuous_joints(self) -> None:
