@@ -272,7 +272,11 @@ class PotstickerController(PracticePourController):
             self.recovery_open_grip, self.recovery_pitch_degrees = opening, pitch
 
     def pick_payload_with_retry(self, *, index: int, location: str) -> None:
-        """Try three bounded, collision-checked grasp configurations without reset."""
+        """Try four bounded, collision-checked grasp configurations without reset.
+
+        Top-down (no wrist tilt) first, then the configured tilt, the steeper
+        low-clearance variant and the configured tilt rotated 45 degrees in yaw.
+        """
         original = (
             self.recovery_finger_offset,
             self.recovery_open_grip,
@@ -282,6 +286,7 @@ class PotstickerController(PracticePourController):
         )
         depth, opening, pitch, clearance, yaw = original
         candidates = (
+            (depth, opening, 0.0, clearance, yaw),
             original,
             (0.032, 0.0 if pitch > 45 else 0.4, 30.0 if pitch > 45 else 60.0, 0.10, yaw),
             (depth, opening, pitch, clearance, yaw + 45.0),
