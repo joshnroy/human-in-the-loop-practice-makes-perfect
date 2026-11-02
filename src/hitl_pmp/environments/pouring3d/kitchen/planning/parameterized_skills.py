@@ -29,6 +29,7 @@ from pybullet_helpers.geometry import Pose
 from pybullet_helpers.ikfast.utils import IKFastHyperparameters, ikfast_closest_inverse_kinematics
 from pybullet_helpers.inverse_kinematics import (
     check_collisions_with_held_object,
+    set_robot_joints_with_held_object,
 )
 from pybullet_helpers.link import get_link_state
 from pydantic import BaseModel, ConfigDict
@@ -82,6 +83,15 @@ class HeldObject(BaseModel):
     def obstacles(self, *, sim: KitchenPyBulletSim) -> set[int]:
         return sim.get_collision_bodies(held_object=self.body) - set(self.riders)
 
+    def tilt_deg(self, *, sim: KitchenPyBulletSim, arm: Any) -> float:
+        """The held object's tilt from vertical with the arm at `arm`."""
+        set_robot_joints_with_held_object(
+            sim.robot, sim.physics_client_id, self.body, self.base_link_to_held_obj, list(arm)
+        )
+        _, xyzw = p.getBasePositionAndOrientation(self.body, physicsClientId=sim.physics_client_id)
+        axis_z = float(Rotation.from_quat(xyzw).apply([0.0, 0.0, 1.0])[2])
+        return float(np.rad2deg(np.arccos(np.clip(axis_z, -1.0, 1.0))))
+
     def upright(self, *, sim: KitchenPyBulletSim, limit_deg: float) -> Callable[[Any], bool]:
         """True while the held object's axis stays within `limit_deg` of vertical.
 
@@ -127,11 +137,16 @@ class KitchenMotionPlanner:
         """
         start_joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=start)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
-        constraint = (
-            None
-            if held is None
-            else held.upright(sim=sim, limit_deg=KitchenMotionPlanner.tilt_limit_deg)
-        )
+        constraint = None
+        if held is not None:
+            # A compliant grasp can leave the jug hanging past the limit when a skill
+            # starts (measured 10.2 deg after a pour's return to upright). Never tilt it
+            # further than it starts; plan towards upright.
+            limit = max(
+                KitchenMotionPlanner.tilt_limit_deg,
+                held.tilt_deg(sim=sim, arm=start_joints) + 0.1,
+            )
+            constraint = held.upright(sim=sim, limit_deg=limit)
 
         def collides(q: Any) -> bool:  # noqa: PLR0917 -- upstream's collision callback
             if check_collisions_with_held_object(
