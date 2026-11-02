@@ -5,8 +5,9 @@ Control modes differ only in how they feed/cut off flow. Robot motion remains
 native motor commands; the three parameters remain independent.
 """
 
+import copy
 import time
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import Field
@@ -14,7 +15,45 @@ from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
 from .feedback_controller import FeedbackPourController, FeedbackPourParameters
-from .practice.controller import PracticePourController
+from .practice.controller import PickPlanned, PracticePourController
+from .types import PayloadPickPlan
+
+
+class MjDataSnapshot:
+    """In-place save and restore of every field of an `mjData`, never instantiated.
+
+    The bindings expose no `mj_copyData` into an existing struct, and the live
+    struct cannot be swapped for a copy: the robot env holds views into it. So every
+    array field (contacts included) and every settable scalar is copied out, and
+    back in with the size counters first, so that size-dependent views (contacts,
+    constraint rows) take their saved shapes. `efc_AR_*` is skipped: it is the
+    arena's unused scratch unless a PGS/no-slip solver fills it, and reads back
+    whatever the last call left there.
+    """
+
+    @staticmethod
+    def capture(*, data: Any) -> dict[str, Any]:
+        saved: dict[str, Any] = {}
+        for owner, prefix in ((data, ""), (data.contact, "contact.")):
+            for name in dir(owner):
+                if name.startswith("_") or name.startswith("efc_AR") or name == "signature":
+                    continue
+                value = getattr(owner, name)
+                if isinstance(value, np.ndarray):
+                    saved[prefix + name] = value.copy()
+                elif prefix == "" and type(value) in {int, float}:
+                    saved[name] = value
+        return saved
+
+    @staticmethod
+    def restore(*, data: Any, saved: dict[str, Any]) -> None:
+        for name, value in saved.items():
+            if not isinstance(value, np.ndarray):
+                setattr(data, name, value)
+        for name, value in saved.items():
+            if isinstance(value, np.ndarray):
+                owner = data.contact if name.startswith("contact.") else data
+                getattr(owner, name.removeprefix("contact."))[...] = value
 
 
 class PotstickerParameters(FeedbackPourParameters):
@@ -333,6 +372,53 @@ class PotstickerController(PracticePourController):
                 self.recovery_approach_clearance,
                 self.recovery_yaw_offset,
             ) = original
+
+    def recovery_candidate(self) -> tuple[float, ...]:
+        return (*super().recovery_candidate(), self.recovery_yaw_offset)
+
+    def payload_pick_plan(self, *, index: int, location: str) -> PayloadPickPlan:
+        """Dry-run `pick_shrimp` up to its first plan, then restore everything exactly.
+
+        The pick's planning is not kinematic: it first drives the base to the aisle
+        ("clear aisle for shrimp pick") and plans from wherever the motors left the
+        arm. So the dry run is the dispatch itself, on the live simulation, stopped by
+        `PickPlanned` the moment a plan exists. `mjData` and the IK scratch are
+        restored in place (`MjDataSnapshot`), as are every controller field and the
+        gym env's step counter and cached observation; no tick reaches a recorder, an
+        observer or the step budget.
+        """
+        live = {"env", "scene", "model", "data", "scratch"}
+        hooks = {"callback", "before_step", "after_step"}
+        saved_fields = {
+            name: getattr(self, name) if name in hooks else copy.deepcopy(getattr(self, name))
+            for name in type(self).model_fields
+            if name not in live
+        }
+        saved_data = MjDataSnapshot.capture(data=self.data)
+        saved_scratch = MjDataSnapshot.capture(data=self.scratch)
+        robot_env = self.scene._robot_env
+        saved_timestep = robot_env.timestep
+        saved_observation = self.scene._current_state
+        self.callback = self.before_step = self.after_step = None
+        self.pick_plan_only = True
+        try:
+            self.pick_shrimp(index=index, location=location)
+        except PickPlanned as found:
+            return PayloadPickPlan(
+                plannable=True,
+                candidate=found.candidate,
+                goal=None if found.goal is None else found.goal.tolist(),
+            )
+        except ValueError as exc:
+            return PayloadPickPlan(plannable=False, error=str(exc))
+        finally:
+            MjDataSnapshot.restore(data=self.data, saved=saved_data)
+            MjDataSnapshot.restore(data=self.scratch, saved=saved_scratch)
+            robot_env.timestep = saved_timestep
+            self.scene._current_state = saved_observation
+            for name, value in saved_fields.items():
+                setattr(self, name, value)
+        raise RuntimeError("A planning-only pick neither planned nor refused")
 
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
         from .potsticker_native import support_vertices
