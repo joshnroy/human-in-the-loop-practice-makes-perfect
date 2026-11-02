@@ -26,8 +26,9 @@ class PackagingTests(unittest.TestCase):
             for smoke, timeout in ((True, 1800), (False, None)):
                 with self.subTest(smoke=smoke):
                     with (
-                        patch.object(worker.subprocess, "run",
-                                     side_effect=RuntimeError("intercepted")) as run,
+                        patch.object(
+                            worker.subprocess, "run", side_effect=RuntimeError("intercepted")
+                        ) as run,
                         self.assertRaisesRegex(RuntimeError, "intercepted"),
                     ):
                         worker.run(launch=launch, row=row, smoke=smoke, manifest={})
@@ -56,15 +57,26 @@ class PackagingTests(unittest.TestCase):
     def test_proposal_is_seed_major_non_submitting_and_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "launch"
-            command = [sys.executable, str(HERE / "prepare.py"), "--out", str(output),
-                       "--tag", "kitchen-recycling-unit-test", "--max-parallel", "4"]
+            command = [
+                sys.executable,
+                str(HERE / "prepare.py"),
+                "--out",
+                str(output),
+                "--tag",
+                "kitchen-recycling-unit-test",
+                "--max-parallel",
+                "4",
+            ]
             subprocess.run(command, check=True, capture_output=True)
             manifest = json.loads((output / "manifest.json").read_text())
-            self.assertEqual([(row["seed"], row["arm"]) for row in manifest["runs"]],
-                             [(seed, arm) for seed in range(3) for arm in prepare.ARMS])
+            self.assertEqual(
+                [(row["seed"], row["arm"]) for row in manifest["runs"]],
+                [(seed, arm) for seed in range(3) for arm in prepare.ARMS],
+            )
             self.assertNotIn("cost_budget_flag", manifest)
-            self.assertEqual(manifest["budget_policy"],
-                             "160k counted steps; cost logged, not a hard cap")
+            self.assertEqual(
+                manifest["budget_policy"], "160k counted steps; cost logged, not a hard cap"
+            )
             self.assertIn("--array=0-8%4", (output / "full.sbatch").read_text())
             self.assertIn("--time=02:00:00", (output / "smoke.sbatch").read_text())
             self.assertIn("--time=48:00:00", (output / "full.sbatch").read_text())
@@ -74,8 +86,14 @@ class PackagingTests(unittest.TestCase):
 
     def test_reject_old_experiment_tag(self):
         with tempfile.TemporaryDirectory() as directory:
-            command = [sys.executable, str(HERE / "prepare.py"), "--out", directory,
-                       "--tag", "t3-ours-sidefree-20261030-0912"]
+            command = [
+                sys.executable,
+                str(HERE / "prepare.py"),
+                "--out",
+                directory,
+                "--tag",
+                "t3-ours-sidefree-20261030-0912",
+            ]
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
 

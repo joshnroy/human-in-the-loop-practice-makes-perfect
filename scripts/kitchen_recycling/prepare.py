@@ -37,17 +37,28 @@ def digest(*, path: Path) -> str:
 
 
 def argv(*, arm: str, seed: int, cost_file: str, kitchen_config: str) -> list[str]:
-    result = [*COMMON, "--seed", str(seed), "--practice-cost-config", cost_file,
-              "--kitchen-config", kitchen_config]
+    result = [
+        *COMMON,
+        "--seed",
+        str(seed),
+        "--practice-cost-config",
+        cost_file,
+        "--kitchen-config",
+        kitchen_config,
+    ]
     if arm == "ees":
         return result + shlex.split(
             "--method ees --competence-sharing grounded --practice-groundings all "
             "--ees-score-human-skills --record-ees-decisions"
         )
     return result + [
-        "--method", "pomdp", *PLANNER,
-        "--pomdp-solver", "expectimax" if arm == "expectimax" else "determinized_astar",
-        "--pomdp-observation-probability-weight", "0" if arm == "expectimax" else "0.01",
+        "--method",
+        "pomdp",
+        *PLANNER,
+        "--pomdp-solver",
+        "expectimax" if arm == "expectimax" else "determinized_astar",
+        "--pomdp-observation-probability-weight",
+        "0" if arm == "expectimax" else "0.01",
         *([] if arm == "expectimax" else ["--pomdp-determinized-variant", "curtis"]),
     ]
 
@@ -72,24 +83,43 @@ def main() -> None:
     rows = []
     for seed in range(3):
         for arm in ARMS:
-            command = argv(arm=arm, seed=seed, cost_file=args.cost_file,
-                           kitchen_config=args.kitchen_config)
+            command = argv(
+                arm=arm, seed=seed, cost_file=args.cost_file, kitchen_config=args.kitchen_config
+            )
             rows.append({"index": len(rows), "arm": arm, "seed": seed, "argv": command})
     manifest = {
-        "schema": 1, "tag": args.tag, "remote_root": root,
+        "schema": 1,
+        "tag": args.tag,
+        "remote_root": root,
         "max_parallel": args.max_parallel,
-        "budget_policy": "160k counted steps; cost logged, not a hard cap", "runs": rows,
-        "resources": {"account": "tsilver", "partition": "cpu", "cpus": 2,
-                      "memory": "16G", "time": "48:00:00", "gpus": 0},
+        "budget_policy": "160k counted steps; cost logged, not a hard cap",
+        "runs": rows,
+        "resources": {
+            "account": "tsilver",
+            "partition": "cpu",
+            "cpus": 2,
+            "memory": "16G",
+            "time": "48:00:00",
+            "gpus": 0,
+        },
         "status": "PROPOSAL_ONLY_NOT_AUTHORIZED",
     }
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (args.out / "commands.txt").write_text("\n".join(
-        f"{row['index']} seed={row['seed']} arm={row['arm']} "
-        + shlex.join(["python", "-m", "hitl_pmp.cli", *row["argv"], "--output-dir",
-                      f"{root}/results/{row['arm']}/{row['seed']}"])
-        for row in rows
-    ) + "\n")
+    (args.out / "commands.txt").write_text(
+        "\n".join(
+            f"{row['index']} seed={row['seed']} arm={row['arm']} "
+            + shlex.join([
+                "python",
+                "-m",
+                "hitl_pmp.cli",
+                *row["argv"],
+                "--output-dir",
+                f"{root}/results/{row['arm']}/{row['seed']}",
+            ])
+            for row in rows
+        )
+        + "\n"
+    )
     for phase in ("smoke", "full"):
         array = f"#SBATCH --array=0-8%{args.max_parallel}\n" if phase == "full" else ""
         script = (
@@ -103,13 +133,13 @@ def main() -> None:
             f"ROOT={shlex.quote(root)}\n"
             'cd "$ROOT/source"\n'
             'export PYTHONPATH="$ROOT/runtime-overlay:$ROOT/source/src:'
-            '$ROOT/source/reference/kindergarden/src:'
+            "$ROOT/source/reference/kindergarden/src:"
             '$ROOT/source/reference/kinder-baselines/kinder-models/src:$ROOT/source"\n'
-            'export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1\n'
-            'export DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1\n'
-            'export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl\n'
-            'export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1\n'
-            'export NUMEXPR_NUM_THREADS=1 BLIS_NUM_THREADS=1\n'
+            "export PYTHONDONTWRITEBYTECODE=1 PYTHONNOUSERSITE=1\n"
+            "export DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1\n"
+            "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl\n"
+            "export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1\n"
+            "export NUMEXPR_NUM_THREADS=1 BLIS_NUM_THREADS=1\n"
             'export FD_EXEC_PATH="$ROOT/source/downward"\n'
             'export LD_LIBRARY_PATH="$ROOT/env/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\n'
             'export LD_PRELOAD="$ROOT/env/lib/libstdc++.so.6"\n'
@@ -120,10 +150,15 @@ def main() -> None:
             f'{phase} --launch "$ROOT/launch" --task "${{SLURM_ARRAY_TASK_ID:-0}}"\n'
         )
         (args.out / f"{phase}.sbatch").write_text(script)
-    print(json.dumps({"manifest": str(args.out / "manifest.json"), "jobs": len(rows),
-                      "sha256": digest(path=args.out / "manifest.json"),
-                      "blocking": "Final single-object config, pinned snapshot, pickup/scatter "
-                      "evidence, CLI pilots and main authorization pending"}))
+    print(
+        json.dumps({
+            "manifest": str(args.out / "manifest.json"),
+            "jobs": len(rows),
+            "sha256": digest(path=args.out / "manifest.json"),
+            "blocking": "Final single-object config, pinned snapshot, pickup/scatter "
+            "evidence, CLI pilots and main authorization pending",
+        })
+    )
 
 
 if __name__ == "__main__":

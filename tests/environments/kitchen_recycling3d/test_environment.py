@@ -189,6 +189,6 @@ def test_refused_pick_marks_blocked_despite_post_attempt_settling(*, environment
     assert simulator.steps > before
     assert state.get(obj=environment.items[0], feature_name="blocked") == 1
     assert environment.reset_movables(destination="recover:cube_control")
-    assert environment.get_current_state().get(
-        obj=environment.items[0], feature_name="blocked"
-    ) == 0
+    assert (
+        environment.get_current_state().get(obj=environment.items[0], feature_name="blocked") == 0
+    )

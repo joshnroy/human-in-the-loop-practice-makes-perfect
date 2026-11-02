@@ -15,10 +15,15 @@ REPO = Path(__file__).resolve().parents[2]
 ARMS = ("ees", "expectimax", "curtis")
 SMOKE_TIMEOUT_SECONDS = 1800
 READINESS = (
-    "selected_object_pickup", "single_object_train_eval",
-    "seeded_scatter_reproducible", "scatter_across_kitchen",
-    "training_deployment_isolation", "deployment_no_human_actions",
-    "dependency_resolution", "final_refit_evaluation", "kitchen_costs_approved",
+    "selected_object_pickup",
+    "single_object_train_eval",
+    "seeded_scatter_reproducible",
+    "scatter_across_kitchen",
+    "training_deployment_isolation",
+    "deployment_no_human_actions",
+    "dependency_resolution",
+    "final_refit_evaluation",
+    "kitchen_costs_approved",
 )
 
 
@@ -35,8 +40,10 @@ def sha(*, path: Path) -> str:
 
 
 def binding(*, launch: Path) -> dict:
-    return {name: sha(path=launch / name)
-            for name in ("manifest.json", "snapshot.json", "runtime-lock.json")}
+    return {
+        name: sha(path=launch / name)
+        for name in ("manifest.json", "snapshot.json", "runtime-lock.json")
+    }
 
 
 def verify(*, launch: Path, full: bool) -> dict:
@@ -84,16 +91,21 @@ def verify(*, launch: Path, full: bool) -> dict:
         if set(gate.get("arms", [])) != set(ARMS):
             raise ValueError("Smoke must cover every method")
         authorization = read(path=launch / "authorization.json")
-        if authorization != {"binding": binding(launch=launch), "authorized_by": "main",
-                             "submit_full": True}:
+        if authorization != {
+            "binding": binding(launch=launch),
+            "authorized_by": "main",
+            "submit_full": True,
+        }:
             raise ValueError("Explicit main authorization for this exact package is required")
     else:
         authorization = read(path=launch / "smoke-authorization.json")
         if authorization.get("authorized_by") not in {"main", "user"}:
             raise ValueError("Smoke authorization must come from main or the user")
-        if authorization != {"binding": binding(launch=launch),
-                             "authorized_by": authorization["authorized_by"],
-                             "submit_smoke": True}:
+        if authorization != {
+            "binding": binding(launch=launch),
+            "authorized_by": authorization["authorized_by"],
+            "submit_smoke": True,
+        }:
             raise ValueError("Explicit main smoke authorization for this package is required")
     from hitl_pmp.cli import Cli
     from hitl_pmp.environments.kitchen_recycling3d.tasks import KitchenRecyclingTasks
@@ -127,16 +139,33 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
     output.mkdir(parents=True, exist_ok=False)
     command = [sys.executable, "-m", "hitl_pmp.cli", *row["argv"], "--output-dir", str(output)]
     if smoke:
-        command += ["--practice-step-budget", "3200", "--measurement-interval-steps", "3200",
-                    "--num-test-tasks", "1", "--evaluation-control-steps", "500"]
+        command += [
+            "--practice-step-budget",
+            "3200",
+            "--measurement-interval-steps",
+            "3200",
+            "--num-test-tasks",
+            "1",
+            "--evaluation-control-steps",
+            "500",
+        ]
     start = time.monotonic()
     with (output / "worker.log").open("w") as logfile:
-        subprocess.run(command, cwd=REPO, stdout=logfile, stderr=subprocess.STDOUT,
-                       timeout=SMOKE_TIMEOUT_SECONDS if smoke else None, check=True)
+        subprocess.run(
+            command,
+            cwd=REPO,
+            stdout=logfile,
+            stderr=subprocess.STDOUT,
+            timeout=SMOKE_TIMEOUT_SECONDS if smoke else None,
+            check=True,
+        )
     status = read(path=output / "status.json")
     evaluations = read(path=output / "step_evaluations.json")
-    ends = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()
-            if line.strip()]
+    ends = [
+        json.loads(line)
+        for line in (output / "step_events.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
     ends = [event for event in ends if event.get("event") == "practice_end"]
     if status.get("phase") != "complete" or not evaluations:
         raise ValueError("Process exit alone is not experiment completion")
@@ -150,9 +179,15 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
         raise ValueError("Smoke did not reach its practice ceiling")
     if not smoke and status.get("practice_steps", 0) < 160000:
         raise ValueError("Run stopped before the full 160000 counted-step horizon")
-    receipt = {"arm": row["arm"], "seed": row["seed"], "binding": binding(launch=launch),
-               "elapsed_seconds": time.monotonic() - start, "status": status,
-               "endpoint": ends[-1], "command": command}
+    receipt = {
+        "arm": row["arm"],
+        "seed": row["seed"],
+        "binding": binding(launch=launch),
+        "elapsed_seconds": time.monotonic() - start,
+        "status": status,
+        "endpoint": ends[-1],
+        "command": command,
+    }
     (output / "completion-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
 
@@ -170,10 +205,16 @@ def main() -> None:
     elif args.mode == "smoke":
         if not os.environ.get("SLURM_JOB_ID"):
             raise ValueError("Run physics smoke in an authorized compute allocation, not login")
-        receipts = [run(launch=launch, row=row, smoke=True, manifest=manifest)
-                    for row in manifest["runs"][:3]]
-        gate = {"binding": binding(launch=launch), "passed": True,
-                "arms": list(ARMS), "receipts": receipts}
+        receipts = [
+            run(launch=launch, row=row, smoke=True, manifest=manifest)
+            for row in manifest["runs"][:3]
+        ]
+        gate = {
+            "binding": binding(launch=launch),
+            "passed": True,
+            "arms": list(ARMS),
+            "receipts": receipts,
+        }
         with (launch / "smoke-passed.json").open("x") as stream:
             json.dump(gate, stream, indent=2)
     else:

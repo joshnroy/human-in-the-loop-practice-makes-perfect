@@ -41,11 +41,18 @@ def main() -> None:
     paths = []
     for subtree in ("src", "configs", "scripts/kitchen_recycling", "tests"):
         paths.extend((REPO / subtree).rglob("*"))
-    paths += [REPO / name for name in ("pyproject.toml", "README.md", "LICENSE",
-                                     "docs/kitchen-recycling3d.md")]
-    paths = sorted({path for path in paths if path.is_file()
-                    and "__pycache__" not in path.parts and path.suffix != ".pyc"
-                    and not any(part.endswith(".egg-info") for part in path.parts)})
+    paths += [
+        REPO / name
+        for name in ("pyproject.toml", "README.md", "LICENSE", "docs/kitchen-recycling3d.md")
+    ]
+    paths = sorted({
+        path
+        for path in paths
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+        and not any(part.endswith(".egg-info") for part in path.parts)
+    })
     modules = {}
     with tarfile.open(args.out / "source.tar.gz", "w:gz", compresslevel=1) as archive:
         for path in paths:
@@ -56,19 +63,26 @@ def main() -> None:
             files[relative] = hashlib.sha256(content).hexdigest()
             info = archive.gettarinfo(str(path), arcname=relative)
             archive.addfile(info, io.BytesIO(content))
-        changed = [str(path.relative_to(REPO)) for path in paths
-                   if sha(path=path) != files[str(path.relative_to(REPO))]]
+        changed = [
+            str(path.relative_to(REPO))
+            for path in paths
+            if sha(path=path) != files[str(path.relative_to(REPO))]
+        ]
         if changed:
             raise RuntimeError(f"Source changed during copy; discard and rebuild: {changed}")
         for module in MODULES:
             revision = CANONICAL[module]
-            actual = git(root=args.dependency_root / module,
-                         arguments=["rev-parse", "HEAD"]).decode().strip()
+            actual = (
+                git(root=args.dependency_root / module, arguments=["rev-parse", "HEAD"])
+                .decode()
+                .strip()
+            )
             if actual != revision:
                 raise ValueError(f"Expected pr-publish-20261027 pin for {module}: {revision}")
             modules[module] = revision
-            content = git(root=args.dependency_root / module,
-                          arguments=["archive", "--format=tar", revision])
+            content = git(
+                root=args.dependency_root / module, arguments=["archive", "--format=tar", revision]
+            )
             with tarfile.open(fileobj=io.BytesIO(content)) as upstream:
                 for member in upstream:
                     if member.issym() or member.islnk():
@@ -104,7 +118,8 @@ def main() -> None:
         "worktree": str(REPO),
         "head": git(root=REPO, arguments=["rev-parse", "HEAD"]).decode().strip(),
         "status": git(root=REPO, arguments=["status", "--short"]).decode(),
-        "modules": modules, "files": files,
+        "modules": modules,
+        "files": files,
         "dependency_source": str(args.dependency_root),
         "dependency_pin_basis": "pr-publish-20261027, explicitly verified; not worktree gitlinks",
         "archives": {path.name: sha(path=path) for path in args.out.glob("*.tar*")},

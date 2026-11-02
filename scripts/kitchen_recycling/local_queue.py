@@ -24,8 +24,16 @@ def main() -> None:
     launch = args.launch.resolve()
     manifest = read(path=launch / "manifest.json")
     commands = [
-        [sys.executable, "-m", "scripts.kitchen_recycling.worker", "full",
-         "--launch", str(launch), "--task", str(row["index"])]
+        [
+            sys.executable,
+            "-m",
+            "scripts.kitchen_recycling.worker",
+            "full",
+            "--launch",
+            str(launch),
+            "--task",
+            str(row["index"]),
+        ]
         for row in manifest["runs"]
     ]
     if not args.execute:
@@ -34,15 +42,21 @@ def main() -> None:
         print("\n".join(shlex.join(command) for command in commands))
         return
     authorization = read(path=launch / "local-authorization.json")
-    if authorization != {"binding": binding(launch=launch), "authorized_by": "main",
-                         "run_local": True, "max_parallel": args.max_parallel}:
+    if authorization != {
+        "binding": binding(launch=launch),
+        "authorized_by": "main",
+        "run_local": True,
+        "max_parallel": args.max_parallel,
+    }:
         raise ValueError("Main must explicitly authorize this exact local fallback and concurrency")
     verify(launch=launch, full=True)
     lock = launch / "local-submission.lock"
     lock.mkdir()
     with ThreadPoolExecutor(max_workers=args.max_parallel) as executor:
-        tasks = {executor.submit(execute, command=command): index
-                 for index, command in enumerate(commands)}
+        tasks = {
+            executor.submit(execute, command=command): index
+            for index, command in enumerate(commands)
+        }
         failures = {}
         for future in as_completed(tasks):
             result = future.result()
