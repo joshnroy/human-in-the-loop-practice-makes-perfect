@@ -531,7 +531,9 @@ class Tossing3DPomdpCli(EesCli):
                 "competence priors from its practice domain"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
-        if env_cli.__name__ == "FrozenPourCli":
+        if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:
+            kitchen = env_cli.__name__ == "KitchenCli"
+            reset_name = "human_bulk_pour_back" if kitchen else "reset_shrimp"
             counts = tuple(args.requested_counts or (2,))
             if args.requested_count is not None:
                 counts = (args.requested_count,)
@@ -541,7 +543,8 @@ class Tossing3DPomdpCli(EesCli):
                 "PickShrimpFromTray",
                 "PickShrimpFromFloor",
                 "DropShrimpIntoPitcher",
-                "reset_shrimp",
+                reset_name,
+                *(("PickShrimpFromSurface",) if kitchen else ()),
             )
             pours = tuple(f"Pour{k}" for k in range(1, args.payload_count + 1))
             domain = SkillPlansPracticeDomain(
@@ -557,11 +560,14 @@ class Tossing3DPomdpCli(EesCli):
                 initial_competence_beta=3.0,
                 default_search_depth=4,
                 deterministic_skills=frozenset({"Wait"}),
-                human_skill_names=frozenset({"reset_shrimp"}),
+                human_skill_names=frozenset({reset_name}),
                 failure_effect_skills=frozenset((*support, *pours)),
             )
         if domain is None:
-            raise ValueError("--method pomdp supports tossing3d, sweepoffshelf3d, and pouring3d")
+            raise ValueError(
+                "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
+                "and pouring3d_kitchen"
+            )
         if args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
             args.pomdp_search_depth = domain.default_search_depth
