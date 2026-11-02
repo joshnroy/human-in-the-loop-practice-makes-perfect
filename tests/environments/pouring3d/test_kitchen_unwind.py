@@ -7,12 +7,15 @@ import pytest
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
 from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
-from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
 
 pytestmark = pytest.mark.xdist_group("kitchen_unwind")
 
 TURN = 2 * np.pi
 CONTINUOUS = [0, 2, 4, 6]
+
+
+class Stop(Exception):
+    """Raised where the wrapped pick would begin, so the test stops there."""
 
 
 class Wound:
@@ -36,6 +39,7 @@ class Wound:
 
         def record(self, **_):  # noqa: PLR0917 -- patched bound method
             seen.append((self.data.qpos[self.arm_q].copy(), self.hand_pose()[0]))
+            raise Stop
 
         monkeypatch.setattr(owner, name, record)
         return seen
@@ -50,7 +54,8 @@ def test_the_continuous_joints_are_the_ones_unwound():
 @pytest.mark.parametrize(
     ("owner", "name", "pick"),
     [
-        (PracticePourController, "pick_pitcher", lambda c: c.pick_pitcher()),
+        # The planned pick reads the grasp pose first, right after unwinding.
+        (KitchenController, "pitcher_grasp_pose", lambda c: c.pick_pitcher()),
         (
             PotstickerController,
             "pick_payload_with_retry",
@@ -66,7 +71,8 @@ def test_a_pick_starts_within_half_a_turn_of_neutral_with_the_hand_where_it_was(
     c = Wound.kitchen(turns={0: 2, 4: -1.1})
     before_q, before_hand = c.data.qpos[c.arm_q].copy(), c.hand_pose()[0]
     seen = Wound.entry(monkeypatch=monkeypatch, owner=owner, name=name)
-    pick(c)
+    with pytest.raises(Stop):
+        pick(c)
     (q, hand) = seen[0]
     offset = q - c.arm_neutral_q
     assert np.all(np.abs(offset[CONTINUOUS]) <= np.pi)
@@ -79,8 +85,9 @@ def test_a_pick_starts_within_half_a_turn_of_neutral_with_the_hand_where_it_was(
 def test_an_unwound_arm_is_left_alone(*, monkeypatch):
     c = Wound.kitchen(turns={})
     steps = c.steps
-    seen = Wound.entry(monkeypatch=monkeypatch, owner=PracticePourController, name="pick_pitcher")
-    c.pick_pitcher()
+    seen = Wound.entry(monkeypatch=monkeypatch, owner=KitchenController, name="pitcher_grasp_pose")
+    with pytest.raises(Stop):
+        c.pick_pitcher()
     assert seen and c.steps == steps
 
 
