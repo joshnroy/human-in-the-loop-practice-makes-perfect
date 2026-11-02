@@ -1,10 +1,11 @@
 """The robot side's skill server, as this package calls it: the one module to update
 when its API changes.
 
-Built against prpl-tidybot's skill server API of 2026-10-20 (v2, prpl-tidybot 35d785c on branch
-josh/skill-server-one-path; `hitl-pmp-results/skill-server-api-20261020.md`), without
-importing it: that package cannot be installed in this environment. The RPC is
-`multiprocessing.managers.BaseManager` with one shared object, `Skills`, on port 50002.
+Built against prpl-tidybot's skill server API of 2026-10-20 (v2, prpl-tidybot 35d785c on
+branch josh/skill-server-one-path; `hitl-pmp-results/skill-server-api-20261020.md`), plus
+`dump_bin` (2026-11-02), without importing it: that package cannot be installed in this
+environment. The RPC is `multiprocessing.managers.BaseManager` with one shared object,
+`Skills`, on port 50002.
 Everything is in the robot's map frame (metres, radians); `real/frame.py` converts.
 
     observe() -> {robot [x, y, yaw], cube [x, y, yaw] | None,
@@ -19,6 +20,11 @@ Everything is in the robot's map frame (metres, radians); `real/frame.py` conver
         inside_bin, pose, direction, bin, swing}
         direction is the map-frame azimuth bin -> robot; raises ValueError and moves
         nothing outside the robot's bounds or for a pose it does not allow
+    dump_bin() -> {dumped, refused, reason, note, bin, stages, gripper, stand, face,
+        turn_deg, pour_point}
+        empties the bin onto the floor beside it (prpl-tidybot 0c2efcd, 2026-11-02);
+        refused: nothing moved; dumped False and not refused: it moved, the bin is
+        back down and let go, and whatever was in it still is
     open_gripper(), retract(), go_home(), stop()
 
 The authkey is never committed: it is read from `$TIDYBOT_RPC_AUTHKEY` or a file.
@@ -111,6 +117,21 @@ class TossReply(BaseModel):
     swing: dict[str, Any] | None = None
 
 
+class DumpReply(BaseModel):
+    dumped: bool
+    # True: nothing moved -- no bin, holding something, or no stand or plan for it.
+    refused: bool
+    reason: str | None = None
+    note: str | None = None
+    bin: BinReply | None = None
+    gripper: float | None = None
+    # The plan's, once there is one: where the base stood and where the contents fall.
+    stand: tuple[float, float, float] | None = None
+    pour_point: tuple[float, float] | None = None
+    # A per-stage log, for logging only: not a stable schema.
+    stages: list[dict[str, Any]] = []
+
+
 @runtime_checkable
 class TossingRobot(Protocol):
     """What the real backend calls: the skill server's client, or the fake."""
@@ -124,6 +145,8 @@ class TossingRobot(Protocol):
     def toss(
         self, *, standoff: float, speed: float, release_ms: float, direction: float
     ) -> dict[str, Any]: ...
+
+    def dump_bin(self) -> dict[str, Any]: ...
 
     def open_gripper(self) -> None: ...
 
@@ -198,6 +221,9 @@ class SkillServerClient(BaseModel):
                 args=(float(standoff), float(speed), float(release_ms), float(direction)),
             )
         )
+
+    def dump_bin(self) -> dict[str, Any]:
+        return dict(self._call(name="dump_bin"))
 
     def open_gripper(self) -> None:
         self._call(name="open_gripper")

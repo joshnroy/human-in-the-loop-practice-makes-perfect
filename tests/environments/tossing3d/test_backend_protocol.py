@@ -67,6 +67,10 @@ class ScriptedBackend:
         self.calls.append("open_gripper")
         return ControllerRun(steps=1, terminated=True)
 
+    def run_pour_bin(self) -> ControllerRun:
+        self.calls.append("pour_bin")
+        return ControllerRun(steps=1, terminated=True)
+
     def run_move_to_toss_location_and_toss(
         self,
         *,

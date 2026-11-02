@@ -277,6 +277,8 @@ class Tossing3DBackend(Protocol):
 
     def run_open_gripper(self) -> ControllerRun: ...
 
+    def run_pour_bin(self) -> ControllerRun: ...
+
     def run_move_to_toss_location_and_toss(
         self,
         *,
