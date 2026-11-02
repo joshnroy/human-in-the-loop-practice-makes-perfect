@@ -72,6 +72,12 @@ class PracticeDomain(BaseModel, abc.ABC):
     # so a domain that has never been checked for it searches exactly as before.
     reduce_expectimax_search: bool = False
 
+    @property
+    def sampler_skills(self) -> frozenset[str]:
+        return frozenset(
+            name for name, source in self.belief_sources if source == PracticeExampleSource.SAMPLER
+        )
+
     def belief_name(self, *, skill_name: str) -> str | None:
         shared = dict(self.shared_beliefs)
         if skill_name in shared:

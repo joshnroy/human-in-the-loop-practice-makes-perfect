@@ -189,7 +189,7 @@ def transition_outcomes(
                 ),
             ),
         )
-    if name != domain.sampler_skill:
+    if domain.belief_name(skill_name=name) not in domain.sampler_skills:
         belief_name = domain.belief_name(skill_name=name)
         assert belief_name is not None, f"{name} has no competence belief"
         return binary_outcomes(
@@ -289,7 +289,9 @@ def toss_outcomes(
     unfitted one; the tie-fraction fallback of a mixed fit is not modelled.
     """
     branches: list[TransitionBranch] = []
-    training = state.sampler_training.get(domain.sampler_skill)
+    sampler_skill = domain.belief_name(skill_name=ground_skill.skill.name)
+    assert sampler_skill is not None
+    training = state.sampler_training.get(sampler_skill)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
     greedy_consultation = (
@@ -301,7 +303,7 @@ def toss_outcomes(
         (
             False,
             1.0 - exploration_epsilon,
-            mean_competence(belief=state.skill_beliefs[domain.sampler_skill]),
+            mean_competence(belief=state.skill_beliefs[sampler_skill]),
         ),
         (True, exploration_epsilon, random_toss_competence),
     ):
@@ -312,7 +314,7 @@ def toss_outcomes(
             probability = choice_probability * observation_probability
             if probability <= 0.0:
                 continue
-            belief = state.skill_beliefs[domain.sampler_skill]
+            belief = state.skill_beliefs[sampler_skill]
             if competence_evidence.admits(
                 consultation=SamplerConsultation.EPSILON_RANDOM
                 if is_random
@@ -340,7 +342,7 @@ def toss_outcomes(
                 state=state,
                 added_cost=toss_cost,
                 toss_belief=belief,
-                sampler_skill=domain.sampler_skill,
+                sampler_skill=sampler_skill,
             )
             next_state = skill_belief_model(
                 ground_skill=ground_skill, domain=domain

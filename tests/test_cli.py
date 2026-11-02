@@ -73,6 +73,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
     name would slip past the per-name assertions above."""
     assert set(ENVIRONMENTS) == {
         "ballring",
+        "kitchen_recycling3d",
         "lightswitch",
         "sweepoffshelf3d",
         "tossing3d",

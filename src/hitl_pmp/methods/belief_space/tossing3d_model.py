@@ -439,7 +439,9 @@ class Tossing3DPracticeModel(BaseModel):
         read = (
             belief_name,
             None if belief is None else self._belief_signature(belief=belief),
-            belief_state.sampler_training.get(name) if name == self.domain.sampler_skill else None,
+            belief_state.sampler_training.get(belief_name)
+            if belief_name in self.domain.sampler_skills
+            else None,
         )
         if scope == "skill":
             return read

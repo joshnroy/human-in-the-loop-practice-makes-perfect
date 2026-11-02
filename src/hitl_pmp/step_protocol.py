@@ -1004,6 +1004,7 @@ class StepPracticeRunner:
         practice scene nothing would use, and the policy measured is the method the
         factory built, which no reset touches."""
         evaluate_only = getattr(args, "evaluate_only", False)
+        no_early_stop = getattr(args, "no_early_stop", False)
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
         (output / "snapshots").mkdir(exist_ok=saved is not None)
@@ -1060,7 +1061,9 @@ class StepPracticeRunner:
         recorder = recorder or RunRecordWriter.disabled()
         if not evaluate_only:  # A practice segment needs the scene no reset observed.
             recorder.begin_segment(phase=Phase.PRACTICE, scene_seed=args.seed)
-        stop_on_no_practice_action = getattr(args, "stop_on_no_practice_action", False)
+        stop_on_no_practice_action = (
+            getattr(args, "stop_on_no_practice_action", False) and not no_early_stop
+        )
         zero_step_limit = getattr(
             args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
         )
@@ -1068,7 +1071,7 @@ class StepPracticeRunner:
 
         def status() -> None:
             nonlocal early_stop
-            early_stop = EvaluationStopping.reached(
+            early_stop = not no_early_stop and EvaluationStopping.reached(
                 records=EvaluationStopping.completed(futures=futures),
                 patience=getattr(args, "stop_after_perfect_evaluations", 0),
                 num_tasks=args.num_test_tasks,
@@ -1137,7 +1140,7 @@ class StepPracticeRunner:
             budget=args.practice_step_budget or 1,
             interval=args.measurement_interval_steps,
             human_steps=args.human_skill_steps,
-            on_measure=measure,
+            on_measure=lambda: measure() if clock.measurement_steps < clock.budget else None,
             on_progress=status,
             accounting=accounting,
         )
@@ -1284,6 +1287,7 @@ class StepPracticeRunner:
                 path=output / "step_protocol.json",
                 value={
                     "practice_step_budget": args.practice_step_budget,
+                    "no_early_stop": no_early_stop,
                     "evaluate_only": evaluate_only,
                     "measurement_interval_steps": clock.interval,
                     "human_skill_steps": clock.human_steps,
@@ -1295,15 +1299,17 @@ class StepPracticeRunner:
                     "evaluation_x_axis": "practice_steps",
                     "evaluation_feedback": False,
                     "normalized_costs": accounting is not None,
-                    "stop_after_perfect_evaluations": getattr(
-                        args, "stop_after_perfect_evaluations", 0
+                    "stop_after_perfect_evaluations": (
+                        0 if no_early_stop else getattr(args, "stop_after_perfect_evaluations", 0)
                     ),
                     "stop_on_no_practice_action": stop_on_no_practice_action,
                     "stop_skill_steps": 1,
-                    "repeated_stop_limit": StepPracticeRunner.REPEATED_STOP_LIMIT,
-                    "repeated_zero_step_limit": zero_step_limit,
+                    "repeated_stop_limit": (
+                        None if no_early_stop else StepPracticeRunner.REPEATED_STOP_LIMIT
+                    ),
+                    "repeated_zero_step_limit": None if no_early_stop else zero_step_limit,
                     "repeated_no_robot_action_limit": (
-                        StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
+                        None if no_early_stop else StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
                     ),
                     "skill_cost_prior_steps": getattr(method, "skill_cost_prior_steps", None),
                     "robot_skill_step_costs": getattr(method, "pomdp_skill_step_costs", None),
@@ -1432,7 +1438,7 @@ class StepPracticeRunner:
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
                     break
-                if method.practice_complete():
+                if method.practice_complete() and not no_early_stop:
                     endpoint = "method_practice_complete"
                     break
                 task = PracticeLoop._sample_practice_task(
@@ -1448,13 +1454,18 @@ class StepPracticeRunner:
                 stopped = False
                 session_robot_steps = clock.robot_steps
                 session_human_invocations = clock.human_invocations
+                session_start_steps = clock.steps
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
                 recorder.begin_cycle(cycle=cycle, task=task, start_step=clock.steps)
                 for action_index in range(args.max_steps_per_interaction):
                     status()
-                    if clock.steps >= clock.budget or early_stop or method.practice_complete():
+                    if (
+                        clock.steps >= clock.budget
+                        or early_stop
+                        or (method.practice_complete() and not no_early_stop)
+                    ):
                         break
                     environment.practice_progress(
                         problem=problem,
@@ -1481,7 +1492,7 @@ class StepPracticeRunner:
                         actions += 1
                         continue
                     except InteractionComplete as completion:
-                        if method.practice_complete():
+                        if method.practice_complete() and not no_early_stop:
                             stopped = True
                             break
                         reason = (
@@ -1587,7 +1598,7 @@ class StepPracticeRunner:
                     if actions > 0:
                         learn(actions=actions, reason=endpoint)
                     break
-                if method.practice_complete():
+                if method.practice_complete() and not no_early_stop:
                     # Before the session-end bookkeeping, which can force a reset.
                     endpoint = "method_practice_complete"
                     if actions > 0:
@@ -1618,7 +1629,7 @@ class StepPracticeRunner:
                 ):
                     endpoint = "practice_step_budget"
                     break
-                if stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
+                if not no_early_stop and stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
                     endpoint = "repeated_stop"
                     break
                 # Human resets with no robot skill, STOP or not. A STOP-only session
@@ -1627,7 +1638,10 @@ class StepPracticeRunner:
                     no_robot_action_streak = 0
                 elif actions > 0:
                     no_robot_action_streak += 1
-                if no_robot_action_streak >= StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT:
+                if (
+                    not no_early_stop
+                    and no_robot_action_streak >= StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
+                ):
                     endpoint = "repeated_no_robot_action"
                     break
                 # A STOP's own charge is not a control step, and a STOP-only session
@@ -1638,9 +1652,33 @@ class StepPracticeRunner:
                         or clock.human_invocations > session_human_invocations
                     )
                     zero_step_streak = 0 if progressed else zero_step_streak + 1
-                if zero_step_streak >= zero_step_limit:
+                if not no_early_stop and zero_step_streak >= zero_step_limit:
                     endpoint = "repeated_zero_step"
                     break
+                if no_early_stop and clock.steps == session_start_steps:
+                    before_count = clock.steps
+                    before_cost = accounting.total_cost if accounting else 0
+                    clock.stop_invoked()
+                    stop_cost = accounting.total_cost - before_cost if accounting else None
+                    StepFiles.event(
+                        path=events,
+                        event="stop",
+                        cycle=cycle,
+                        start_step=before_count,
+                        end_step=clock.steps,
+                        reason="zero_step_session",
+                        success=True,
+                        cost=stop_cost,
+                    )
+                    recorder.robot_action(
+                        label="STOP",
+                        start_step=before_count,
+                        end_step=clock.steps,
+                        success=True,
+                        outcome="zero_step_session",
+                        cycle=cycle,
+                        cost=stop_cost,
+                    )
                 learn(actions=actions, reason=reason)
                 cycle += 1
                 due = (

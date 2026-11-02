@@ -178,7 +178,8 @@ def make_default_tossing3d_belief(
             )
         )
     return Tossing3DBeliefState(
-        skill_beliefs=beliefs, sampler_training={domain.sampler_skill: SamplerTrainingState()}
+        skill_beliefs=beliefs,
+        sampler_training={name: SamplerTrainingState() for name in sorted(domain.sampler_skills)},
     )
 
 
