@@ -1,0 +1,170 @@
+"""Metric layout and explicitly assumed hardware for rack-to-serving.
+
+The specified rack footprint is 0.375 m wide (world y) by 0.255 m deep
+(world x). Rack height and mass are UNVERIFIED configurable assumptions, not
+manufacturer specifications. All other hardware dimensions, masses, friction,
+and cooling times below are modeling assumptions requiring physical calibration.
+The dumpling is a rigid cooked-food proxy, not a deformable or thermal model.
+``concept`` denotes an invented perforated platform, not the specified wire rack.
+"""
+
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+Positive = Annotated[float, Field(gt=0)]
+Nonnegative = Annotated[float, Field(ge=0)]
+Friction = tuple[Nonnegative, Nonnegative, Nonnegative]
+
+
+class RackServingConfig(BaseModel):
+    """Frozen SI-unit configuration; front/exit is the negative world-x side.
+
+    Rack and tray poses use bottom-center body origins. Dumpling poses use
+    their geometric centers. The tray position is derived to preserve ``gap``.
+    Neither the rack nor the slate tray is fixed or assumed ungraspable.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
+
+    surface_kind: Literal["wire", "concept"] = "wire"
+    mode: Literal["training", "deployment"] = "training"
+    counter_height: Positive = 0.90
+    rack_height: Positive = Field(default=0.025, description="UNVERIFIED height assumption")
+    rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
+    tray_thickness: Positive = 0.012
+    gap: Nonnegative = 0.010
+    cooling_seconds: Nonnegative = 300
+    initial_elapsed_seconds: Nonnegative = 0
+    wait_seconds: Positive = 30
+    human_interruption_cost: Positive = 5
+
+    rack_width: Positive = 0.375
+    rack_depth: Positive = 0.255
+    rack_center_x: float = 1.5
+    rack_center_y: float = 0.0
+    rack_wire_radius: Positive = 0.0015
+    rack_wire_spacing: Positive = 0.015
+    rack_leg_width: Positive = 0.012
+    rack_friction: Friction = (0.6, 0.005, 0.003)
+    support_contact_dimension: Literal[3, 4, 6] = 6
+    concept_web_width: Positive = 0.008
+    concept_pitch: Positive = 0.025
+    concept_thickness: Positive = 0.003
+
+    tray_width: Positive = 0.375
+    tray_depth: Positive = 0.30
+    tray_mass: Positive = 1.0
+    tray_friction: Friction = (0.6, 0.005, 0.003)
+    counter_x_min: float = 0.98
+    counter_x_max: float = 1.70
+    counter_width: Positive = 1.0
+    counter_thickness: Positive = 0.04
+    counter_leg_width: Positive = 0.05
+    counter_friction: Friction = (0.7, 0.005, 0.0001)
+
+    dumpling_depth: Positive = 0.030
+    dumpling_width: Positive = 0.045
+    dumpling_height: Positive = 0.025
+    dumpling_mass: Positive = 0.020
+    dumpling_friction: Friction = (0.45, 0.005, 0.003)
+    dumpling_contact_dimension: Literal[3, 4, 6] = 6
+    food_grip_command: float = Field(default=0.8, gt=0, le=1)
+    gripper_contact_dimension: Literal[3, 4, 6] = 4
+    scraper_width: Positive = 0.25
+    scraper_blade_height: Positive = 0.12
+    scraper_blade_thickness: Positive = 0.001
+    scraper_handle_width: Positive = 0.018
+    scraper_handle_height: Positive = 0.020
+    scraper_mass: Positive = 0.275
+    scraper_tilt_degrees: float = Field(default=45, ge=-45, le=45)
+    scraper_friction: Friction = (0.4, 0.005, 0.0001)
+    scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
+
+    @property
+    def rack_front_x(self) -> float:
+        return self.rack_center_x - self.rack_depth / 2
+
+    @property
+    def rack_back_x(self) -> float:
+        return self.rack_center_x + self.rack_depth / 2
+
+    @property
+    def rack_top_z(self) -> float:
+        return self.counter_height + self.rack_height
+
+    @property
+    def tray_center_x(self) -> float:
+        return self.rack_front_x - self.gap - self.tray_depth / 2
+
+    @property
+    def tray_center_y(self) -> float:
+        return self.rack_center_y
+
+    @property
+    def tray_front_x(self) -> float:
+        return self.tray_center_x - self.tray_depth / 2
+
+    @property
+    def tray_back_x(self) -> float:
+        return self.rack_front_x - self.gap
+
+    @property
+    def tray_top_z(self) -> float:
+        return self.counter_height + self.tray_thickness
+
+    @property
+    def counter_front_x(self) -> float:
+        return self.counter_x_min
+
+    @property
+    def counter_center_x(self) -> float:
+        return (self.counter_x_min + self.counter_x_max) / 2
+
+    @property
+    def counter_depth(self) -> float:
+        return self.counter_x_max - self.counter_x_min
+
+    @property
+    def counter_y_min(self) -> float:
+        return -self.counter_width / 2
+
+    @property
+    def counter_y_max(self) -> float:
+        return self.counter_width / 2
+
+    @model_validator(mode="after")
+    def validate_layout(self) -> "RackServingConfig":
+        """Reject unsupported layouts rather than silently clipping hardware."""
+        if self.rack_height < self.tray_thickness:
+            raise ValueError("Rack top must be at or above tray top")
+        if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
+            raise ValueError("Rack and tray must fit on the counter in x")
+        if (
+            abs(self.rack_center_y) + max(self.rack_width, self.tray_width) / 2
+            > self.counter_width / 2
+        ):
+            raise ValueError("Rack and tray must fit on the counter in y")
+        if self.counter_thickness >= self.counter_height:
+            raise ValueError("Counter thickness must leave room for legs")
+        if self.counter_leg_width >= min(self.counter_depth, self.counter_width) / 2:
+            raise ValueError("Counter legs must fit under the counter")
+        if max(2 * self.rack_wire_radius, self.concept_thickness) >= self.rack_height:
+            raise ValueError("Rack surface must leave room for support legs")
+        if (
+            not 2 * self.rack_wire_radius
+            < self.rack_wire_spacing
+            < min(self.rack_depth, self.rack_width)
+        ):
+            raise ValueError("Wire spacing must leave open gaps within the rack footprint")
+        if not self.concept_web_width < self.concept_pitch < min(self.rack_depth, self.rack_width):
+            raise ValueError("Concept platform must have actual perforations")
+        if self.rack_leg_width >= min(self.rack_depth, self.rack_width) / 2:
+            raise ValueError("Rack legs must fit within its footprint")
+        if self.dumpling_depth * 3 >= self.rack_depth or self.dumpling_width * 3 >= self.rack_width:
+            raise ValueError("Rack must accommodate five separated dumpling proxies")
+        if self.scraper_blade_thickness >= self.scraper_handle_width:
+            raise ValueError("Scraper blade must be thinner than its grip")
+        if self.scraper_width >= self.rack_width:
+            raise ValueError("Scraper must fit across the rack")
+        return self
