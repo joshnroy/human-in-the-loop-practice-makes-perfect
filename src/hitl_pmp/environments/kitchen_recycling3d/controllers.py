@@ -6,12 +6,15 @@ This module is simulation-only. No global vendor constants or cube controllers c
 from typing import Any, cast
 
 import numpy as np
+from bilevel_planning.trajectory_samplers.trajectory_sampler import TrajectorySamplingFailure
 from kinder_models.dynamic3d.tossing.parameterized_skills import (
+    MoveToTossLocationAndTossController,
     PickCubeController,
     PickCubeGraspCandidate,
     plan_checked_arm_motion,
 )
 from kinder_models.dynamic3d.utils import (
+    get_overhead_object_se2_pose,
     get_target_robot_pose_from_parameters,
     inverse_kinematics_fixed_effort,
     run_base_motion_planning,
@@ -24,6 +27,61 @@ from spatialmath import SE2
 from tomsgeoms2d.structs import Rectangle
 
 from .domain import ObjectObservation, grasp_yaws, projected_bounds
+from .drive_zone import KitchenDriveZone
+
+
+class RecyclingTossController(MoveToTossLocationAndTossController):
+    """KINDER's move-and-toss, with its base planned inside the kitchen drive zone.
+
+    Upstream plans against world bounds and a thin barrier box, so it accepted toss
+    poses whose footprint crosses the mat edge; the episode then refused them mid-drive.
+    """
+
+    def configure(self, *, config: Any) -> None:
+        self.config = config
+
+    def _plan_base_motion(self, *args: Any) -> Any:
+        x, current_params, extend_xy_magnitude, extend_rot_magnitude, disabled = args
+        if disabled is None:
+            disabled = [self.objects[1].name]
+        simulator = self._pybullet_sim
+        assert simulator is not None
+        held_cube, held_object = self._configure_held_cube(x)
+        simulator.set_state(x, held_object=held_cube)
+        carried = list(self._return_home_arm_config)
+        bodies = simulator.get_collision_bodies(held_object=held_object)
+        config = self.config
+
+        def collides(*args: Any) -> Any:
+            (pose,) = args
+            if not KitchenDriveZone.allows(config=config, position=(pose.x, pose.y)):
+                return True
+            return simulator.robot_collides_at_base(
+                pose, carried, held_object=held_object, collision_bodies=bodies
+            )
+
+        target_pose = get_target_robot_pose_from_parameters(
+            get_overhead_object_se2_pose(x, x.get_object_from_name("bin_0")),
+            current_params[0],
+            current_params[1],
+        )
+        lower, upper = KitchenDriveZone.bounds(config=config)
+        plan = run_base_motion_planning(
+            state=x,
+            target_base_pose=target_pose,
+            x_bounds=(float(lower[0]), float(upper[0])),
+            y_bounds=(float(lower[1]), float(upper[1])),
+            seed=0,
+            extend_xy_magnitude=extend_xy_magnitude,
+            extend_rot_magnitude=extend_rot_magnitude,
+            disable_collision_objects=disabled,
+            bounding_boxes=simulator.bounding_boxes,
+            static_obstacles=simulator.static_base_obstacles,
+            body_collision_fn=collides,
+        )
+        if plan is None:
+            raise TrajectorySamplingFailure("Base motion planning failed")
+        return plan
 
 
 class RecyclingPickController(PickCubeController):
@@ -116,21 +174,20 @@ class RecyclingPickController(PickCubeController):
             from_center = cast(Any, Rectangle.from_center)
             footprints.append(from_center(*center, *extent, rotation_about_center=0.0))
 
+        config = self.episode.config
+
         def collides(*args: Any) -> Any:
             (pose,) = args
-            try:
-                self.episode.check_drive(start=(pose.x, pose.y), end=(pose.x, pose.y))
-            except PermissionError:
+            if not KitchenDriveZone.allows(config=config, position=(pose.x, pose.y)):
                 return True
             return simulator.robot_collides_at_base(pose, carried, collision_bodies=bodies)
 
-        left, bottom, right, top = self.episode.config.kitchen_bounds
-        radius = self.episode.config.robot_radius
+        lower, upper = KitchenDriveZone.bounds(config=config)
         return run_base_motion_planning(
             state=state,
             target_base_pose=target_pose,
-            x_bounds=(left + radius, right - radius),
-            y_bounds=(bottom + radius, top - radius),
+            x_bounds=(float(lower[0]), float(upper[0])),
+            y_bounds=(float(lower[1]), float(upper[1])),
             seed=0,
             extend_xy_magnitude=extend_xy_magnitude,
             extend_rot_magnitude=extend_rot_magnitude,

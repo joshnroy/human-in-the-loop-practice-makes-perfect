@@ -24,6 +24,7 @@ from .domain import (
     classify_zone,
     projected_bounds,
 )
+from .drive_zone import KitchenDriveZone
 from .scene import internal_name, register_simulation_objects, scene_config
 
 
@@ -219,18 +220,18 @@ class RecyclingSimulator:
         context = self.episode.context()
         observation = self.episode.observations[name]
         self.episode.start_pick(name=name)
-        if classify_zone(config=self.config, observation=observation) != "kitchen":
-            nearest = self.config.kitchen_bounds[2] - self.config.robot_radius
-            if observation.position[0] - nearest > self.config.direct_placement_reach:
-                result: dict[str, Any] = {
-                    "steps": 0,
-                    "error": "Object outside permitted robot reach",
-                    "success": False,
-                }
-                self.episode.record_practice(
-                    name=name, skill="pick", success=False, context=context
-                )
-                return result
+        if classify_zone(
+            config=self.config, observation=observation
+        ) != "kitchen" and not KitchenDriveZone.pick_reachable(
+            config=self.config, position=observation.position
+        ):
+            result: dict[str, Any] = {
+                "steps": 0,
+                "error": "Object outside permitted robot reach",
+                "success": False,
+            }
+            self.episode.record_practice(name=name, skill="pick", success=False, context=context)
+            return result
         state = self.backend._require_state()
         objects = [
             state.get_object_from_name(self.backend.robot_name),
@@ -275,15 +276,17 @@ class RecyclingSimulator:
         state = self.backend._require_state()
         collision = self.backend._pick_collision_sim(state=state)
         collision._bounding_boxes["cuboid_barrier"] = (0.016, 5.0, 0.001)
-        factory = self.backend.api().tossing_controllers(
-            self.backend._env.action_space, pybullet_sim=collision, init_constant_state=state
-        )
-        controller = factory["move_to_toss_location_and_toss"].ground(
+        from .controllers import RecyclingTossController
+
+        controller = RecyclingTossController(
             tuple(
                 state.get_object_from_name(key)
                 for key in (self.backend.robot_name, self.names[name], "cuboid_barrier")
-            )
+            ),
+            pybullet_sim=collision,
         )
+        vars(controller)["ACTION_DIM"] = self.backend._env.action_space.shape[0]
+        controller.configure(config=self.config)
         self.caption = f"TOSS {name} | {context} context | uncalibrated simulation proposal"
         try:
             result = self._execute(
