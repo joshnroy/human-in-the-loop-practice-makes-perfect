@@ -12,6 +12,7 @@ from hitl_pmp.environments.racktoserving3d.semantics import (
     CircularSupport,
     FoodMeasurement,
     RackServingLedger,
+    RectangularSupport,
     SupportRegion,
     classify_food,
 )
@@ -207,3 +208,74 @@ def test_contains_xy_for_both_support_shapes(*, points, margin, expected):
 def test_round_plate_rejects_nonpositive_radius():
     with pytest.raises(ValidationError):
         CircularSupport(center_x=0.0, center_y=0.0, radius=0.0, top_z=1.0)
+
+
+def _platter(*, yaw=0.0, top_z=1.0):
+    """Lip inner rectangle of a 0.30 x 0.45 platter with an 8 mm wall."""
+    return RectangularSupport(
+        center_x=0.0, center_y=0.0, yaw=yaw, half_x=0.142, half_y=0.217, top_z=top_z
+    )
+
+
+def _food_at(*, x, y, bottom_z, half=(0.015, 0.0225, 0.0125)):
+    half_x, half_y, half_z = half
+    return FoodMeasurement(
+        position=(x, y, bottom_z + half_z),
+        half_extents=half,
+        footprint=tuple((x + sx * half_x, y + sy * half_y) for sx in (-1, 1) for sy in (-1, 1)),
+    )
+
+
+def test_platter_scores_a_footprint_inside_the_lip_resting_on_the_floor():
+    assert _platter().supports(food=_food_at(x=0.0, y=0.0, bottom_z=1.0), tolerance=0.009)
+    flush = _food_at(x=0.142 - 0.0155, y=0.217 - 0.023, bottom_z=1.0)
+    assert _platter().supports(food=flush, tolerance=0.009)
+
+
+def test_platter_rejects_a_footprint_reaching_over_the_lip():
+    over = _food_at(x=0.142 - 0.014, y=0.0, bottom_z=1.0)
+    assert not _platter().supports(food=over, tolerance=0.009)
+    side = _food_at(x=0.0, y=0.217 - 0.020, bottom_z=1.0)
+    assert not _platter().supports(food=side, tolerance=0.009)
+
+
+def test_platter_rejects_food_resting_on_top_of_the_lip():
+    on_lip = _food_at(x=0.146, y=0.0, bottom_z=1.012)
+    assert not _platter().supports(food=on_lip, tolerance=0.009)
+    # Even a footprint inside the lip does not score at lip-top height.
+    raised = _food_at(x=0.0, y=0.0, bottom_z=1.012)
+    assert not _platter().supports(food=raised, tolerance=0.009)
+
+
+def test_platter_containment_follows_the_live_yaw():
+    yawed = _platter(yaw=np.deg2rad(30))
+    assert yawed.x_max == pytest.approx(0.142 * np.cos(np.deg2rad(30)) + 0.217 * 0.5)
+    corner = (0.142 * np.cos(np.deg2rad(30)) + 0.05, 0.0)
+    assert _platter().contains_xy(points=[(0.12, 0.0)])
+    assert yawed.x_min <= corner[0] <= yawed.x_max
+    assert not yawed.contains_xy(points=[(0.2, 0.2)])
+    local = np.array([0.14, 0.21])
+    rotation = np.array([
+        [np.cos(np.deg2rad(30)), -np.sin(np.deg2rad(30))],
+        [np.sin(np.deg2rad(30)), np.cos(np.deg2rad(30))],
+    ])
+    assert yawed.contains_xy(points=[tuple(rotation @ local)])
+    assert not _platter().contains_xy(points=[tuple(rotation @ local)])
+
+
+def test_classify_food_scores_on_the_platter_only_inside_the_lip():
+    common = {
+        "rack": _region(x_min=0.5, x_max=0.9),
+        "counter": _region(x_min=-2, x_max=2),
+        "support_contacts": frozenset({"tray", "counter"}),
+        "support_tolerance": 0.009,
+    }
+    inside = _food_at(x=0.0, y=0.1, bottom_z=1.0)
+    assert classify_food(food=inside, tray=_platter(), **common) == "OnTray"
+    leaning = _food_at(x=0.135, y=0.1, bottom_z=1.004)
+    assert classify_food(food=leaning, tray=_platter(), **common) != "OnTray"
+
+
+def test_platter_rejects_nonpositive_extent():
+    with pytest.raises(ValidationError):
+        RectangularSupport(center_x=0, center_y=0, yaw=0, half_x=0.0, half_y=0.1, top_z=1)

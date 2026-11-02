@@ -15,6 +15,7 @@ from hitl_pmp.environments.racktoserving3d.scene import (
     COUNTER_TYPE,
     DUMPLING_TYPE,
     PLATE_TYPE,
+    PLATTER_TYPE,
     RACK_TYPE,
     SCRAPER_TYPE,
     TRAY_TYPE,
@@ -298,6 +299,64 @@ def install_geometry() -> None:
                 return _bottom_bounds(position=pos, options=object_config)
 
         register_object(name=PLATE_TYPE)(RoundPlate)
+
+    if PLATTER_TYPE not in REGISTERED_OBJECTS:
+
+        class LippedPlatter(Cuboid):
+            """Bottom-origin rectangular platter: one floor slab and a closed four-wall lip.
+
+            The walls sit on the floor's outer perimeter, so the outer footprint is
+            the floor's. Mass is split by volume so the body totals the configured
+            mass; every geom shares the slate's friction and contact dimension.
+            """
+
+            def _create_xml_element(self) -> ET.Element:
+                half_x, half_y, _ = self.size
+                base = self.options["base_thickness"]
+                lip = self.options["lip_height"]
+                wall = self.options["lip_wall"]
+                self.length, self.width, self.height = 2 * half_x, 2 * half_y, base
+                self.wall_thickness = 0.0
+                self.fixed = False
+                body = ET.Element("body", name=self.name)
+                ET.SubElement(body, "freejoint", name=self.joint_name)
+                lip_z = base + lip / 2
+                parts = (
+                    ("platter_floor", (0, 0, base / 2), (half_x, half_y, base / 2)),
+                    (
+                        "lip_front",
+                        (-half_x + wall / 2, 0, lip_z),
+                        (wall / 2, half_y - wall, lip / 2),
+                    ),
+                    ("lip_back", (half_x - wall / 2, 0, lip_z), (wall / 2, half_y - wall, lip / 2)),
+                    ("lip_left", (0, -half_y + wall / 2, lip_z), (half_x, wall / 2, lip / 2)),
+                    ("lip_right", (0, half_y - wall / 2, lip_z), (half_x, wall / 2, lip / 2)),
+                )
+                volume = sum(math.prod(size) for _, _, size in parts)
+                for name, position, size in parts:
+                    ET.SubElement(
+                        body,
+                        "geom",
+                        name=f"{self.name}_{name}",
+                        type="box",
+                        pos=_values(values=position),
+                        size=_values(values=size),
+                        mass=str(self.options["mass"] * math.prod(size) / volume),
+                        friction=_values(values=self.options["friction"]),
+                        condim=str(self.options["contact_dimension"]),
+                        rgba=_values(values=self.options["rgba"]),
+                    )
+                return body
+
+            @staticmethod
+            def get_bounding_box_from_config(  # noqa: PLR0917 -- KINDER calls positionally
+                pos: Any, object_config: dict[str, Any]
+            ) -> list[float]:
+                half_x, half_y, _ = object_config["size"]
+                height = object_config["base_thickness"] + object_config["lip_height"]
+                return _bottom_bounds(position=pos, options={"size": [half_x, half_y, height / 2]})
+
+        register_object(name=PLATTER_TYPE)(LippedPlatter)
 
     if DUMPLING_TYPE not in REGISTERED_OBJECTS:
 

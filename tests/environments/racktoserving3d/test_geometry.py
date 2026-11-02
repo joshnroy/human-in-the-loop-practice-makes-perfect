@@ -222,3 +222,97 @@ def test_custom_mass_and_friction_reach_native_geometry(*, registry: Any) -> Non
     geoms = rack.xml_element.findall("geom")
     assert sum(float(geom.get("mass")) for geom in geoms) == pytest.approx(0.8)
     assert all(geom.get("friction") == "0.2 0.003 0.0002" for geom in geoms)
+
+
+def _compiled_scene(*, registry: Any, config: RackServingConfig) -> tuple[Any, Any]:
+    """Compile the counter and every free object at its initial region, as the scene does."""
+    import mujoco
+
+    scene = build_scene(config=config)
+    counter = registry.REGISTERED_FIXTURES[COUNTER_TYPE](
+        name="cupboard_1",
+        fixture_config=scene["fixtures"][COUNTER_TYPE]["cupboard_1"],
+        position=[config.counter_center_x, 0, 0],
+        yaw=0,
+    )
+    root = ET.Element("mujoco")
+    world = ET.SubElement(root, "worldbody")
+    world.append(counter.xml_element)
+    for kind, named_options in scene["objects"].items():
+        for name, options in named_options.items():
+            instance = registry.REGISTERED_OBJECTS[kind](name=name, options=options)
+            region_name = next(entry[2] for entry in scene["initial_state"] if entry[1] == name)
+            body = copy.deepcopy(instance.xml_element)
+            body.set("pos", " ".join(map(str, scene["regions"][region_name]["ranges"][0][:3])))
+            world.append(body)
+    model = mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    return model, data
+
+
+def _world_top(*, model: Any, data: Any, geoms: list[int]) -> float:
+    return max(
+        float(
+            data.geom_xpos[geom][2]
+            + np.abs(data.geom_xmat[geom].reshape(3, 3)[2])
+            @ (
+                model.geom_size[geom]
+                if int(model.geom_type[geom]) == 6
+                else np.array([model.geom_size[geom][0]] * 2 + [model.geom_size[geom][1]])
+            )
+        )
+        for geom in geoms
+    )
+
+
+def test_lipped_platter_compiles_with_a_continuous_lip_below_the_rack_top(*, registry: Any) -> None:
+    import mujoco
+
+    config = RackServingConfig(serving_target="lipped_platter")
+    model, data = _compiled_scene(registry=registry, config=config)
+    platter = model.body("box_0").id
+    assert model.body_mass[platter] == pytest.approx(1.5)
+    assert int(model.jnt_type[model.body_jntadr[platter]]) == int(mujoco.mjtJoint.mjJNT_FREE)
+    geoms = [int(geom) for geom in np.flatnonzero(model.geom_bodyid == platter)]
+    names = {model.geom(geom).name for geom in geoms}
+    assert names == {
+        "box_0_platter_floor",
+        "box_0_lip_front",
+        "box_0_lip_back",
+        "box_0_lip_left",
+        "box_0_lip_right",
+    }
+    assert all(int(model.geom_type[geom]) == int(mujoco.mjtGeom.mjGEOM_BOX) for geom in geoms)
+    assert all(model.geom_friction[geom] == pytest.approx(config.tray_friction) for geom in geoms)
+    assert all(int(model.geom_condim[geom]) == 6 for geom in geoms)
+
+    floor = model.geom("box_0_platter_floor").id
+    lips = [model.geom(f"box_0_lip_{side}").id for side in ("front", "back", "left", "right")]
+    floor_top = _world_top(model=model, data=data, geoms=[floor])
+    lip_top = _world_top(model=model, data=data, geoms=lips)
+    rack_geoms = [int(g) for g in np.flatnonzero(model.geom_bodyid == model.body("rack_0").id)]
+    rack_top = max(
+        float(data.geom_xpos[g][2] + model.geom_size[g][0])
+        for g in rack_geoms
+        if int(model.geom_type[g]) == int(mujoco.mjtGeom.mjGEOM_CAPSULE)
+    )
+    assert floor_top - config.counter_height == pytest.approx(0.006)
+    assert lip_top - floor_top == pytest.approx(0.012)
+    assert lip_top < rack_top
+    assert rack_top == pytest.approx(config.rack_top_z)
+
+    lower = np.min([data.geom_xpos[g] - model.geom_size[g] for g in [floor, *lips]], axis=0)
+    upper = np.max([data.geom_xpos[g] + model.geom_size[g] for g in [floor, *lips]], axis=0)
+    assert upper[0] - lower[0] == pytest.approx(0.30)
+    assert upper[1] - lower[1] == pytest.approx(0.45)
+    assert config.rack_front_x - upper[0] == pytest.approx(0.010)
+    assert (lower[1] + upper[1]) / 2 == pytest.approx(config.rack_center_y)
+    for geom in lips:
+        assert min(model.geom_size[geom][:2]) * 2 == pytest.approx(0.008)
+        assert data.geom_xpos[geom][2] - model.geom_size[geom][2] == pytest.approx(floor_top)
+    # The walls close a ring: each long wall spans the full outer length of its side.
+    front, back, left, right = (model.geom_size[g] for g in lips)
+    assert 2 * left[0] == pytest.approx(0.30) and 2 * right[0] == pytest.approx(0.30)
+    assert 2 * front[1] + 0.0 >= 0.45 - 2 * 0.008 - 1e-9
+    assert 2 * back[1] >= 0.45 - 2 * 0.008 - 1e-9

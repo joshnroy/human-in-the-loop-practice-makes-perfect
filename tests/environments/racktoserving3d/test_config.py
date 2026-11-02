@@ -126,14 +126,57 @@ def test_slate_remains_selectable_with_its_original_geometry() -> None:
 
 @pytest.mark.parametrize(
     ("target", "kind"),
-    [("round_plate", "rack_serving_round_plate"), ("slate", "rack_serving_slate")],
+    [
+        ("round_plate", "rack_serving_round_plate"),
+        ("slate", "rack_serving_slate"),
+        ("lipped_platter", "rack_serving_lipped_platter"),
+    ],
 )
 def test_scene_uses_the_selected_serving_object(*, target, kind) -> None:
     config = RackServingConfig(serving_target=target)
     scene = build_scene(config=config)
     assert list(scene["objects"][kind]) == ["box_0"]
-    other = {"rack_serving_round_plate", "rack_serving_slate"} - {kind}
+    other = {
+        "rack_serving_round_plate",
+        "rack_serving_slate",
+        "rack_serving_lipped_platter",
+    } - {kind}
     assert not other & set(scene["objects"])
     goal = scene["regions"]["serving_goal"]["ranges"][0]
     assert goal[3] - goal[0] == pytest.approx(config.serving_depth)
     assert goal[4] - goal[1] == pytest.approx(config.serving_width)
+
+
+def test_lipped_platter_is_wide_low_heavy_and_on_the_slate_centre_line() -> None:
+    platter = RackServingConfig(serving_target="lipped_platter")
+    slate = RackServingConfig(serving_target="slate")
+    assert (platter.serving_depth, platter.serving_width) == pytest.approx((0.30, 0.45))
+    assert platter.tray_back_x == pytest.approx(platter.rack_front_x - 0.010)
+    assert platter.tray_back_x == pytest.approx(slate.tray_back_x)
+    assert platter.tray_center_x == pytest.approx(slate.tray_center_x)
+    assert platter.tray_center_y == slate.tray_center_y == platter.rack_center_y
+    assert platter.platter_base_thickness == pytest.approx(0.006)
+    assert platter.platter_lip_height == pytest.approx(0.012)
+    assert platter.platter_lip_wall == pytest.approx(0.008)
+    assert platter.serving_mass == pytest.approx(1.5)
+    assert slate.serving_mass == pytest.approx(slate.tray_mass)
+    assert platter.tray_top_z == pytest.approx(platter.counter_height + 0.006)
+    assert platter.platter_lip_top_z == pytest.approx(platter.counter_height + 0.018)
+    assert platter.platter_lip_top_z < platter.rack_top_z
+
+
+def test_lipped_platter_lip_must_stay_below_the_rack_top() -> None:
+    with pytest.raises(ValidationError):
+        RackServingConfig(serving_target="lipped_platter", platter_lip_height=0.025)
+
+
+def test_lipped_platter_scene_uses_its_mass_and_floor_goal() -> None:
+    config = RackServingConfig(serving_target="lipped_platter")
+    options = build_scene(config=config)["objects"]["rack_serving_lipped_platter"]["box_0"]
+    assert options["mass"] == pytest.approx(1.5)
+    assert options["friction"] == list(config.tray_friction)
+    assert options["base_thickness"] == pytest.approx(0.006)
+    assert options["lip_height"] == pytest.approx(0.012)
+    assert options["lip_wall"] == pytest.approx(0.008)
+    goal = build_scene(config=config)["regions"]["serving_goal"]["ranges"][0]
+    assert goal[2] == pytest.approx(config.counter_height + 0.006)
