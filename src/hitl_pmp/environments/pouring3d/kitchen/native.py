@@ -237,6 +237,15 @@ class KitchenController(PotstickerController):
         )
         self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
 
+    def level_hand_rotation(self) -> Rotation:
+        """The hand orientation that, with the current grasp, holds the jug upright at
+        its current heading: the carry pose's orientation."""
+        _, jug = self.body_pose(name="pitcher")
+        _, hand = self.hand_pose()
+        axis = jug.apply([1.0, 0.0, 0.0])
+        level = Rotation.from_euler("z", float(np.arctan2(axis[1], axis[0])))
+        return level * (jug.inv() * hand)
+
     def follow_base_path(self, *, path: list[np.ndarray], phase: str) -> None:
         """Drive the base through every waypoint, the arm held where it is."""
         self.phase = phase
@@ -356,7 +365,7 @@ class KitchenController(PotstickerController):
                 arm=self.data.qpos[self.arm_q].copy(),
                 base=self.data.qpos[self.base_q].copy(),
                 base_target=self.base_home.copy(),
-                hand_rotation=orientation,
+                hand_rotation=self.level_hand_rotation(),
                 hand_offset=self.hand_offset,
                 rotation_offset=self.rotation_offset,
                 home=self.home.copy(),
@@ -477,7 +486,6 @@ class KitchenController(PotstickerController):
             for name, at in zip(self.scene.cube_names, locations, strict=True)
             if at == "pitcher"
         )
-        _, hand_rotation = self.hand_pose()
         sim = KitchenPyBulletSim.from_controller(controller=self)
         try:
             planner = CarryToPourController(sim=sim)
@@ -486,7 +494,7 @@ class KitchenController(PotstickerController):
                 arm=self.data.qpos[self.arm_q].copy(),
                 base=self.data.qpos[self.base_q].copy(),
                 base_target=np.array([center[0] - self.pour_base_offset, center[1], 0.0]),
-                hand_rotation=hand_rotation,
+                hand_rotation=self.level_hand_rotation(),
                 start=center,
                 start_rotation=self.pour_orientation(angle=0) * self.rotation_offset,
                 riders=riders,
