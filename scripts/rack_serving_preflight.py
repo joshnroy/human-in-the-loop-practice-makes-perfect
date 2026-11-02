@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
-from scripts.validate_rack_coverage import Coverage
+from scripts.validate_rack_coverage import Coverage, NativeTrial
 
 
 def main():
@@ -22,8 +22,18 @@ def main():
     parser.add_argument("--surface", choices=("wire", "concept"), default="wire")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--human-layout", action="store_true")
-    parser.add_argument("--angle", type=float, default=0.0)
-    parser.add_argument("--speed", type=float, default=0.12)
+    parser.add_argument("--dy", type=float, default=0.0, help="SweepRack lateral offset, m")
+    parser.add_argument("--phi", type=float, default=0.0, help="SweepRack plow angle, deg")
+    parser.add_argument(
+        "--pile-centred",
+        action="store_true",
+        help="dy = measured y-centroid of food on the rack (clipped), as in the coverage grid",
+    )
+    parser.add_argument("--serving-target", choices=("round_plate", "slate"), default="round_plate")
+    parser.add_argument("--caption", default="", help="case label burned into every frame")
+    parser.add_argument(
+        "--settle-steps", type=int, default=20, help="post-return settle, as the coverage grid"
+    )
     parser.add_argument("--scraper-tilt-degrees", type=float, default=45)
     parser.add_argument("--food-grip-command", type=float, default=0.8)
     parser.add_argument("--gripper-contact-dimension", type=int, choices=(3, 4, 6), default=4)
@@ -47,6 +57,7 @@ def main():
     args.output.mkdir(parents=True)
     config = RackServingConfig(
         surface_kind=args.surface,
+        serving_target=args.serving_target,
         cooling_seconds=args.cooling_seconds,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
         food_grip_command=args.food_grip_command,
@@ -68,6 +79,8 @@ def main():
         "experiment_relaunched": False,
     }
     renderer = writer = trace = None
+    dy = args.dy
+    serving_name = "ROUND PLATE" if args.serving_target == "round_plate" else "SLATE TRAY"
     tick = 0
     label = "Initial scene"
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 17)
@@ -143,7 +156,8 @@ def main():
             draw = ImageDraw.Draw(canvas)
             draw.text(
                 (12, 5),
-                f"RACK → SERVING TRAY | {args.surface.upper()} GEOMETRY | native robot physics",
+                f"RACK → {serving_name} | SweepRack(dy={dy:+.3f} m, phi={args.phi:+.0f}°)"
+                f" | {args.caption}"[:120],
                 font=font,
                 fill="white",
             )
@@ -157,7 +171,7 @@ def main():
             locations = [backend.location(name=name) for name in backend.cube_names]
             text = (
                 f"{label[:55]} | rack {locations.count('OnRack')}/5"
-                f" | tray {locations.count('OnTray')}/5"
+                f" | plate {locations.count('OnTray')}/5"
                 f" | counter {locations.count('SpilledCounter')}"
                 f" | floor {locations.count('SpilledFloor')}"
                 f" | air/other {locations.count(None)}"
@@ -233,6 +247,14 @@ def main():
         backend.set_tick_observer(observer=record_tick)
         report["initial_locations"] = [backend.location(name=name) for name in backend.cube_names]
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
+        initial = NativeTrial.snapshot(env=env)
+        report["initial"] = initial
+        if args.pile_centred:
+            dy, _ = NativeTrial.resolve_pair(
+                pair={"dy_m": None, "phi_deg": args.phi, "dy_source": "pile_centroid"},
+                initial=initial,
+            )
+        report["sweep_parameters"] = {"dy_m": dy, "phi_deg": args.phi}
         report["measured_geometry"] = {
             "rack": rack.model_dump(),
             "tray": tray.model_dump(),
@@ -243,7 +265,7 @@ def main():
             nonlocal label
             label = name
             before = backend.ledger.elapsed_seconds
-            env.take_action(action=np.array([SKILL_IDS[name], index, args.angle, args.speed]))
+            env.take_action(action=np.array([SKILL_IDS[name], index, dy, args.phi]))
             row = {
                 "skill": name,
                 "food_index": index,
@@ -317,8 +339,20 @@ def main():
                         "cumulative_cost": backend.ledger.human_cost,
                     })
                     frame(repeat=20)
+            controllers = env.rack_controllers()
+            label = "settling (same post-return settle as the coverage grid)"
+            with controllers.feedback():
+                for _ in range(args.settle_steps):
+                    controllers.shelf.hold(count=1, label="coverage_settling")
             report["final_locations"] = [backend.location(name=name) for name in backend.cube_names]
             report["final_success"] = backend.task_succeeded()
+            report["final"] = NativeTrial.snapshot(env=env)
+            report["scraper_home"] = bool(controllers.tool.at_home())
+            label = (
+                f"FINAL: task_succeeded={report['final_success']}"
+                f" scraper_home={report['scraper_home']}"
+            )
+            frame(repeat=20)
         report["complete"] = True
     except Exception as error:
         report["fatal_error"] = f"{type(error).__name__}: {error}"

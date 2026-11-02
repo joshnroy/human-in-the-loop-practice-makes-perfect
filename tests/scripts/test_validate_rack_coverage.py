@@ -67,15 +67,15 @@ def test_manifest_distinguishes_fixed_repeats_from_seeded_human_layouts():
         {"seeds": []},
         {"seeds": [-1]},
         {"layouts": ["unknown"]},
-        {"pairs": [(41, 0.1)]},
-        {"pairs": [(0, 0.001)]},
-        {"pairs": [(float("nan"), 0.1)]},
+        {"pairs": [(0, 41)]},
+        {"pairs": [(0.19, 0)]},
+        {"pairs": [(float("nan"), 0)]},
         {"max_trials": 0},
         {"max_seconds": float("inf")},
         {"max_seconds": 43201},
         {"trial_seconds": 901},
         {"search_mode": "unknown"},
-        {"constant_pair": (0, 0)},
+        {"constant_pair": (0, -41)},
         {"scraper_tilt_degrees": float("nan")},
         {"states": ["fixed:-1"]},
         {"step_limit": 0},
@@ -94,12 +94,12 @@ def test_full_robot_trial_can_have_a_bounded_ten_minute_wall_budget():
 def test_dry_run_writes_only_an_unexecuted_manifest(*, tmp_path):
     output = tmp_path / "coverage"
     assert (
-        main(argv=["--dry-run", "--output", str(output), "--seeds", "3", "--pair", "-20", ".1"])
+        main(argv=["--dry-run", "--output", str(output), "--seeds", "3", "--pair", "0.04", "-20"])
         == 0
     )
     assert [path.name for path in output.iterdir()] == ["manifest.json"]
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["pairs"] == [{"angle_deg": -20.0, "speed_m_s": 0.1}]
+    assert manifest["pairs"] == [{"dy_m": 0.04, "phi_deg": -20.0}]
     assert manifest["native_workers_started"] == 0
     assert all(state["status"] == "untested" for state in manifest["states"])
 
@@ -167,8 +167,8 @@ class TrialStub:
             "locations": {"cube_0": "OnRack"},
             "supports": {"cube_0": ["rack_0"]},
         }
-        success = (state["seed"] == 0 and pair["angle_deg"] == 20) or (
-            state["seed"] == 1 and pair["angle_deg"] == 0
+        success = (state["seed"] == 0 and pair["phi_deg"] == 20) or (
+            state["seed"] == 1 and pair["phi_deg"] == 0
         )
         result = {
             "status": "timeout" if self.timeout else "complete",
@@ -187,16 +187,14 @@ class TrialStub:
 
 
 def test_existential_coverage_retains_failures_and_stops_each_state(*, tmp_path):
-    manifest = build_manifest(
-        seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0.03), (20, 0.03)]
-    )
+    manifest = build_manifest(seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0), (0, 20)])
     stub = TrialStub()
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=stub.run)
     assert len(stub.calls) == 3
     assert summary["claim"]["all_sampled_states_covered"]
     assert not summary["claim"]["common_parameter_required"]
     assert not summary["claim"]["full_space_proof"]
-    assert [state["witness"]["angle_deg"] for state in summary["states"]] == [20, 0]
+    assert [state["witness"]["phi_deg"] for state in summary["states"]] == [20, 0]
     assert [trial["success"] for trial in summary["attempts"]] == [False, True, True]
     assert json.loads((tmp_path / "summary.json").read_text()) == summary
     assert len(list((tmp_path / "trials").glob("*/trial.json"))) == 3
@@ -204,7 +202,7 @@ def test_existential_coverage_retains_failures_and_stops_each_state(*, tmp_path)
 
 @pytest.mark.parametrize("kind", ["mismatch", "timeout", "invalid"])
 def test_partial_evidence_and_invalidating_issues_stop_run(*, tmp_path, kind):
-    manifest = build_manifest(seeds=[0, 1], pairs=[(0, 0.03), (20, 0.03)])
+    manifest = build_manifest(seeds=[0, 1], pairs=[(0, 0), (0, 20)])
     stub = TrialStub(**{kind: True})
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=stub.run)
     assert len(stub.calls) == (2 if kind == "mismatch" else 1)
@@ -214,7 +212,7 @@ def test_partial_evidence_and_invalidating_issues_stop_run(*, tmp_path, kind):
 
 
 def test_trial_budget_and_duplicate_layout_reporting(*, tmp_path):
-    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], pairs=[(20, 0.03)], max_trials=1)
+    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], pairs=[(0, 20)], max_trials=1)
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
     assert len(summary["attempts"]) == 1
     assert summary["stop_reason"] == "max_trials"
@@ -230,7 +228,7 @@ def test_aggregation_does_not_trust_success_flag_alone(*, tmp_path, field):
         result[field] = False
         return result
 
-    manifest = build_manifest(seeds=[1], layouts=["fixed"], pairs=[(0, 0.03)])
+    manifest = build_manifest(seeds=[1], layouts=["fixed"], pairs=[(0, 0)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert not summary["claim"]["all_sampled_states_covered"]
 
@@ -239,7 +237,7 @@ def test_grid_reports_constant_baseline_and_per_state_oracle(*, tmp_path):
     manifest = build_manifest(
         seeds=[0, 1],
         layouts=["human_batch_return"],
-        pairs=[(0, 0.03), (20, 0.03)],
+        pairs=[(0, 0), (0, 20)],
         search_mode="grid",
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
@@ -252,9 +250,7 @@ def test_grid_reports_constant_baseline_and_per_state_oracle(*, tmp_path):
 
 
 def test_early_success_does_not_disprove_untested_common_pair(*, tmp_path):
-    manifest = build_manifest(
-        seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0.03), (20, 0.03)]
-    )
+    manifest = build_manifest(seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0), (0, 20)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
     assert summary["comparison"]["common_pair_status"] == "inconclusive"
     assert summary["comparison"]["per_state_oracle"]["covered"] == 2
@@ -267,7 +263,7 @@ def test_common_setting_and_duplicate_layouts_are_reported(*, tmp_path):
         request["state"]["seed"] = 0
         return stub.run(request=request, output=output)
 
-    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], pairs=[(20, 0.03)])
+    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], pairs=[(0, 20)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["comparison"]["common_pair_status"] == "witness_found"
     assert summary["comparison"]["measured_distinct_layouts"] == 1
@@ -275,8 +271,8 @@ def test_common_setting_and_duplicate_layouts_are_reported(*, tmp_path):
 
 
 def test_explicit_baseline_is_first_and_budgeted():
-    manifest = build_manifest(pairs=[(20, 0.06)], constant_pair=(0, 0.03))
-    assert manifest["pairs"][0] == {"angle_deg": 0.0, "speed_m_s": 0.03}
+    manifest = build_manifest(pairs=[(0.04, 20)], constant_pair=(0, 0))
+    assert manifest["pairs"][0] == {"dy_m": 0.0, "phi_deg": 0.0}
     assert len(manifest["pairs"]) == 2
 
 
@@ -435,7 +431,7 @@ def test_source_drift_invalidates_previous_witnesses(*, tmp_path, monkeypatch):
         digest[0] = "after"
         return result
 
-    manifest = build_manifest(seeds=[1], layouts=["fixed"], pairs=[(0, 0.03)])
+    manifest = build_manifest(seeds=[1], layouts=["fixed"], pairs=[(0, 0)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["stop_reason"] == "invalidating_issue"
     assert summary["comparison"]["common_pair_status"] == "invalidated"
@@ -451,7 +447,7 @@ def test_unstarted_states_and_control_cutoffs_remain_unresolved(*, tmp_path):
         return result
 
     manifest = build_manifest(
-        seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0.03)], max_trials=1
+        seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0)], max_trials=1
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["comparison"]["constant_policy"]["tested"] == 0
@@ -500,7 +496,7 @@ def test_native_adapters_recreate_each_pair_and_seeded_layout(*, tmp_path, monke
     environments = []
 
     def factory(*, request):
-        env = FakeEnvironment(request=request, verdict=request["pair"]["angle_deg"] == 20)
+        env = FakeEnvironment(request=request, verdict=request["pair"]["phi_deg"] == 20)
         environments.append(env)
         return env
 
@@ -508,9 +504,7 @@ def test_native_adapters_recreate_each_pair_and_seeded_layout(*, tmp_path, monke
         return NativeTrial.execute(request=request, output=output, env_factory=factory)
 
     monkeypatch.setattr(NativeTrial, "snapshot", FakeEnvironment.snapshot)
-    manifest = build_manifest(
-        seeds=[3, 7], layouts=["human_batch_return"], pairs=[(0, 0.03), (20, 0.03)]
-    )
+    manifest = build_manifest(seeds=[3, 7], layouts=["human_batch_return"], pairs=[(0, 0), (0, 20)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=runner)
     assert len(environments) == 4
     assert all(env.closed for env in environments)
@@ -585,3 +579,99 @@ def test_same_initial_detects_velocity_and_orientation_changes():
     changed = json.loads(json.dumps(initial))
     changed["poses"]["cube_0"][3:] = [0, 1, 0, 0]
     assert not Coverage.same_initial(left=initial, right=changed)
+
+
+def test_default_pairs_are_lateral_offset_and_plow_angle():
+    manifest = build_manifest()
+    assert {"dy_m": 0.0, "phi_deg": 0.0} in manifest["pairs"]
+    assert all(set(pair) == {"dy_m", "phi_deg"} for pair in manifest["pairs"])
+
+
+def test_pile_centred_baseline_is_resolved_from_the_measured_initial_pile():
+    manifest = build_manifest(pairs=[(0, 0), (0.04, 15)], pile_centred_baseline=True)
+    pile = manifest["pairs"][-1]
+    assert pile == {"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}
+    initial = {
+        "poses": {
+            "cube_0": [1.4, 0.10, 0.94, 1, 0, 0, 0],
+            "cube_1": [1.5, 0.02, 0.94, 1, 0, 0, 0],
+            "cube_2": [1.2, -0.30, 0.92, 1, 0, 0, 0],
+        },
+        "locations": {"cube_0": "OnRack", "cube_1": "OnRack", "cube_2": "SpilledCounter"},
+    }
+    assert NativeTrial.resolve_pair(pair=pile, initial=initial) == pytest.approx((0.06, 0.0))
+    assert NativeTrial.resolve_pair(pair=manifest["pairs"][1], initial=initial) == (0.04, 15.0)
+    far = json.loads(json.dumps(initial))
+    for name in ("cube_0", "cube_1"):
+        far["poses"][name][1] = 0.5
+    assert NativeTrial.resolve_pair(pair=pile, initial=far) == pytest.approx((0.1875, 0.0))
+
+
+def test_native_adapter_sends_resolved_lateral_offset_and_plow_angle(*, tmp_path, monkeypatch):
+    manifest = build_manifest(seeds=[0], layouts=["fixed"], pairs=[(-0.04, 30)])
+    request = {
+        "state": manifest["states"][0],
+        "pair": manifest["pairs"][0],
+        "config": manifest["config"],
+        "limits": manifest["limits"],
+        "deadline": time.monotonic() + 30,
+    }
+    env = FakeEnvironment(request=request)
+    actions = []
+    original = env.take_action
+
+    def record(*, action):
+        actions.append(list(action))
+        original(action=action)
+
+    env.take_action = record
+    monkeypatch.setattr(NativeTrial, "snapshot", FakeEnvironment.snapshot)
+    result = NativeTrial.execute(request=request, output=tmp_path, env_factory=lambda **_: env)
+    assert [action[2:] for action in actions if action[0] == 1] == [[-0.04, 30.0]]
+    assert result["resolved_pair"] == {"dy_m": -0.04, "phi_deg": 30.0}
+
+
+@pytest.mark.parametrize(
+    ("location", "supports", "settled", "expected"),
+    [
+        ("OnTray", {"box_0"}, True, "on_plate"),
+        ("OnTray", {"box_0"}, False, "on_plate_unsettled"),
+        (None, {"box_0", "rack_0"}, False, "bridging"),
+        (None, {"box_0"}, False, "overhang"),
+        ("SpilledCounter", {"box_0", "cupboard_1"}, False, "overhang"),
+        ("OnRack", {"rack_0"}, False, "on_rack"),
+        (None, {"rack_0"}, False, "on_rack"),
+        ("SpilledCounter", {"cupboard_1"}, False, "on_counter"),
+        ("SpilledFloor", {"floor"}, False, "floor"),
+        ("HoldingFood", set(), False, "held"),
+        (None, set(), False, "unsupported"),
+    ],
+)
+def test_physical_delivery_category_is_separate_from_controller_errors(
+    *, location, supports, settled, expected
+):
+    category = NativeTrial.physical_category(
+        location=location, supports=frozenset(supports), settled=settled
+    )
+    assert category == expected
+
+
+def test_grid_mode_keeps_running_after_an_unresolved_trial(*, tmp_path):
+    stub = TrialStub()
+
+    def run(*, request, output):
+        result = stub.run(request=request, output=output)
+        if len(stub.calls) == 1:
+            result.update(status="timeout", success=False)
+        return result
+
+    manifest = build_manifest(
+        seeds=[0, 1], layouts=["human_batch_return"], pairs=[(0, 0), (0, 20)], search_mode="grid"
+    )
+    summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
+    assert len(stub.calls) == 4
+    assert summary["stop_reason"] == "search_complete"
+    assert summary["attempts"][0]["status"] == "timeout"
+    assert not summary["attempts"][0]["success"]
+    constant = summary["comparison"]["constant_policy"]
+    assert "human_batch_return:seed=0" in constant["unresolved_state_ids"]
