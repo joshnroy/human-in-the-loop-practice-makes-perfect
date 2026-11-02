@@ -93,6 +93,62 @@ def test_tossing_snapshot_with_observed_competence_round_trips():
     assert restored.current_competences() == method.current_competences()
 
 
+def test_deployment_snapshot_preserves_competence_and_forecasts(*, monkeypatch, tmp_path):
+    from hitl_pmp.core.method.types import GroundSkill
+    from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
+    from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        practice_groundings="all",
+        ees_decision_log=tmp_path / "training_decisions.jsonl",
+    )
+    first, second, third = env.get_cells()[:3]
+    grounds = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, first, second)),
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, second, third)),
+    ]
+    for ground, outcomes in zip(grounds, ([False] * 8, [True] * 3), strict=True):
+        for outcome in outcomes:
+            method.observe_outcome(ground_skill=ground, success=outcome)
+    method.advance_competence_cycle()
+    method.observe_outcome(ground_skill=grounds[0], success=True)
+    method.observe_outcome(ground_skill=grounds[1], success=False, was_random_exploration=True)
+    expected_costs = method.skill_costs()
+    expected_competences = method.current_competences()
+    expected_gains = {
+        ground: method.forecast_competence_gain(ground_skill=ground) for ground in grounds
+    }
+    raw = DeploymentSnapshot.encode(method=method)
+    method.observe_outcome(ground_skill=grounds[0], success=False)
+    fresh = LightSwitchEnvironment(grid_size=4)
+    restored = DeploymentSnapshot.restore(
+        raw=raw, env=fresh, provider=LightSwitchSkillProvider(env=fresh)
+    )
+    assert restored.practice_groundings == "all"
+    assert restored.current_competences() == expected_competences
+    assert restored.skill_costs() == expected_costs
+    assert {
+        ground: restored.forecast_competence_gain(ground_skill=ground) for ground in grounds
+    } == expected_gains
+    planned_costs = []
+
+    def plan(**kwargs):
+        assert kwargs["practicing"] is False
+        planned_costs.append(kwargs["costs"])
+        return []
+
+    monkeypatch.setitem(restored.__dict__, "plan_to", plan)
+    task = LightSwitchTasks(env=fresh, seed=9).sample_test_task()
+    restored.get_task_policy(task=task)(task.initial_state)
+    assert planned_costs == [expected_costs]
+    assert not method.ees_decision_log.exists()
+    assert restored._all_attempt_outcomes == {}
+    assert restored._seen_tasks == []
+
+
 def test_evaluation_clock_stops_at_goal_or_exact_budget():
     from hitl_pmp.step_protocol import EvaluationClock
 

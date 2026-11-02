@@ -9,7 +9,7 @@ from pydantic import Field, PrivateAttr, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, Policy
 from hitl_pmp.core.practice_costs import PracticeAccounting
-from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .always_ask_reset import AlwaysAskReset
@@ -207,6 +207,11 @@ class DpMethod(EesMethod):
         if self.always_ask_reset is not None and AlwaysAskReset.triggers(ground_skill=ground_skill):
             prior += self.start_reset_cost()
         return max(1e-12, prior + pending)
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        """Use DP's curriculum without activating EES-only selector behavior."""
+        del true_atoms
+        return self.choose_practice_target()
 
     def choose_practice_target(self) -> list[GroundSkill]:
         remaining = self._remaining_budget()

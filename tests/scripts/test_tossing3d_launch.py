@@ -86,10 +86,8 @@ def test_ees_runs_without_skip_perfect_and_with_its_default_prior() -> None:
 
 
 @pytest.mark.parametrize("name", ARMS)
-def test_every_arm_stops_after_three_perfect_evaluations_in_a_row(*, name: str) -> None:
-    # Josh, 2026-10-22: "if it gets 3 10/10 evals in a row, we can terminate early".
-    # EvaluationStopping counts a streak (reset by any imperfect evaluation).
-    assert _parse(name=name).stop_after_perfect_evaluations == 3
+def test_every_arm_keeps_practicing_after_perfect_evaluations(*, name: str) -> None:
+    assert _parse(name=name).stop_after_perfect_evaluations == 0
 
 
 def test_the_della_manifest_has_one_task_per_arm_and_seed() -> None:

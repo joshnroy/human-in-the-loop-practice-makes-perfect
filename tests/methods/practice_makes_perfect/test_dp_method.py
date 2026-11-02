@@ -3,6 +3,8 @@
 Built on SweepOffShelf3D's symbolic layer only (it offers human resets as well as
 robot skills); nothing here touches the simulator or the planner."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -15,6 +17,9 @@ from hitl_pmp.core.practice_costs import (
 )
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.skill_provider import SweepOffShelf3DSkillProvider
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import (
     PARAMETERIZED_SKILL,
     AlwaysAskReset,
@@ -23,6 +28,7 @@ from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_gurobi import DpGurobiAllocator, DpOptimizationError
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTaskModel, DpTransition
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
 from hitl_pmp.methods.practice_makes_perfect.ees_method import STOP_SKILL, _EesEpisode
 
 STEP_PRICE = 0.01
@@ -434,3 +440,70 @@ def test_once_with_optimistic_priors_can_leave_most_of_budget_unused(*, monkeypa
     _execute(method=method, ground=back)
     assert method.practice_complete()
     assert method.dp_episodes() == 2
+
+
+def _pick_setup(*, monkeypatch, groundings: str):
+    env = Tossing3DEnvironment(enable_bin_pouring=False)
+    provider = Tossing3DSkillProvider(env=env)
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=3,
+        dp_budget_unit="episodes",
+        dp_solver="enumeration",
+        practice_groundings=groundings,
+    )
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(costs=PracticeCosts(robot_step=ChargeFunction(value=1)))
+    )
+    method._dp_skill_priors = {
+        skill.name: DpSkillPrior(alpha=0.4, beta=1.6, initial_learning_rate=0.2)
+        for skill in method.skills()
+    }
+    skill = next(skill for skill in provider.skills() if skill.name == "PickCube")
+    bindings = {"robot": env.robot, "cube": env.cube, "bin": env.bin, "barrier": env.barrier}
+    grounds = [
+        GroundSkill(
+            skill=skill,
+            objects=tuple(
+                side if parameter.name == "side" else bindings[parameter.name]
+                for parameter in skill.parameters
+            ),
+        )
+        for side in Tossing3DSides.objects()
+    ]
+    same, opposite = grounds
+    _observe(method=method, ground=same, outcomes=[True])
+    _observe(method=method, ground=opposite, outcomes=[False])
+    mdp = DpMdp(
+        initial_probabilities={0: 1},
+        terminal_rewards={1: 1},
+        transitions=[DpTransition(state=0, skill=opposite, successor=1)],
+    )
+    monkeypatch.setattr(DpTaskModel, "build", staticmethod(lambda **kwargs: mdp))
+    return method, same, opposite
+
+
+def test_solver_log_records_candidates_and_physical_attempts(*, monkeypatch, tmp_path):
+    method, same, opposite = _pick_setup(monkeypatch=monkeypatch, groundings="all")
+    method.dp_solver_log = tmp_path / "solver.jsonl"
+    method.choose_practice_target()
+    _execute(method=method, ground=opposite, cost=2)
+    method._write_solver_record(record={"event": "test_execution"})
+    allocation, execution = [
+        json.loads(line) for line in method.dp_solver_log.read_text().splitlines()
+    ]
+    assert allocation["practice_groundings"] == "all"
+    rows = [row for row in allocation["groups"] if row["skill"] == same.skill.name]
+    assert {tuple(row["objects"]) for row in rows} >= {
+        tuple(obj.name for obj in same.objects),
+        tuple(obj.name for obj in opposite.objects),
+    }
+    assert execution["episodes"] == 1
+    assert execution["executed_since_solve"] == [
+        {
+            "skill": opposite.skill.name,
+            "objects": [obj.name for obj in opposite.objects],
+            "attempts": 1,
+        }
+    ]

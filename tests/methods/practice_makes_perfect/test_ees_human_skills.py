@@ -1,5 +1,6 @@
 """EES with `score_human_skills`: a human skill is scored, tracked and priced like a
-robot skill. Off by default, so Tossing3D's published EES behaviour is unchanged.
+robot skill. On by default; off preserves the port's earlier fixed-price resets.
+Neither audited reference explorer defines a human-reset pricing model.
 
 Built on SweepOffShelf3D's symbolic layer only; nothing here touches the simulator.
 """

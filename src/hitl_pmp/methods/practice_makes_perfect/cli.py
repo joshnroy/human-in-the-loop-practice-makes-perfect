@@ -72,6 +72,12 @@ class EesCli:
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
+            "--record-ees-decisions",
+            action="store_true",
+            help="Write EES target scores and selection diagnostics to ees_decisions.jsonl; "
+            "requires output-dir. Does not recompute scores or draw random numbers.",
+        )
+        parser.add_argument(
             "--practice-groundings",
             choices=("observed", "all"),
             default="observed",
@@ -103,9 +109,9 @@ class EesCli:
             "--reproduce-predicators-double-observe",
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_double_observe"].default,
-            help="Observe each practice outcome an extra time (default off). Despite the "
-            "name this is NOT predicators' behaviour: predicators observes once, only "
-            "for non-exploration attempts, as the default does. On is a deviation.",
+            help="Default off matches the audited vendor: observe non-exploration attempts "
+            "once and exploration attempts zero times. On matches the audited release's "
+            "observation counts (two and one); it is not a complete release-mode switch.",
         )
         parser.add_argument(
             "--reproduce-predicators-practice-target-history",
@@ -274,11 +280,16 @@ class EesCli:
     ) -> dict[str, Any]:
         """EesMethod's constructor arguments from EES's flags, shared by every method
         that is EES with a different practice-target choice (`DpCli`)."""
+        if args.record_ees_decisions and args.output_dir is None:
+            raise ValueError("--record-ees-decisions requires --output-dir")
         return dict(
             env=ctx.env,
             skill_provider=ctx.skill_provider,
             seed=args.seed,
             practice_groundings=args.practice_groundings,
+            ees_decision_log=(
+                Path(args.output_dir) / "ees_decisions.jsonl" if args.record_ees_decisions else None
+            ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
@@ -473,6 +484,10 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if args.record_ees_decisions:
+            raise ValueError(
+                "--record-ees-decisions is an EES flag; pomdp has its own decision log"
+            )
         if args.ees_score_human_skills is not None:
             raise ValueError(
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
