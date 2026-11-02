@@ -169,6 +169,14 @@ scripted closed-loop controller. Measured in MuJoCo on 2026-11-02: closest appro
 3.14 cm, jug tilt at most 11.5 deg (it hangs 3.6 deg in the compliant grasp), no
 dumpling lost.
 
+**PlacePitcherAtHome** plans the return the same way, upright and before anything
+moves: tuck into the carry pose, base to the pick pose (from which the arm demonstrably
+reaches the handle at its seated height), arm to a hover with the jug upright 4 cm
+above home, the scripted seat's own alignment height. Seat, release and the hand's
+withdrawal from the handle stay scripted contact motions; backing the base off is
+planned again. This replaces the scripted return whose inherited pour-time arm
+configuration could not seat the jug on a 0.74 m counter.
+
 `mj_geomDistance` (MuJoCo 3.3.7) sometimes returns 0 for mesh pairs centimetres apart,
 with witness points on neither geom; the parity test recomputes those from vertices.
 The scripted controller's clearance checks use the same call, so some of their

@@ -347,3 +347,89 @@ class CarryToPourController:
                 held=held,
             ),
         }
+
+
+class PlacePitcherController:
+    """Return the held jug from the pour to a hover just above its home on the counter.
+
+    Planned, upright, before anything moves: the arm tucks the jug into the carry pose;
+    the base drives to the pick pose, from which the arm demonstrably reaches the handle
+    at its seated height; the arm brings the jug to a hover `HOVER_M` above home. The seat
+    itself is a contact motion and stays scripted, as do release and the landing checks.
+    """
+
+    TUCK = "planned tuck jug for return"
+    BASE_MOTION = "planned carry jug to placement pose"
+    MOVE_ARM_TO_HOVER = "planned arm to jug hover above home"
+    # The scripted seat's own alignment height (`move_pitcher`, "align pitcher above table").
+    HOVER_M = 0.04
+
+    def __init__(self, *, sim: KitchenPyBulletSim) -> None:
+        self.sim = sim
+        self.plans: dict[str, list[np.ndarray]] = {}
+
+    def reset(
+        self,
+        *,
+        x: Any,
+        arm: np.ndarray,
+        base: np.ndarray,
+        base_target: np.ndarray,
+        hand_rotation: Rotation,
+        hand_offset: np.ndarray,
+        rotation_offset: Rotation,
+        home: np.ndarray,
+        riders: tuple[str, ...],
+    ) -> None:
+        sim = self.sim
+        sim.set_state(x)
+        sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+        held = HeldObject.grasped(sim=sim, arm=arm, name="pitcher", riders=riders)
+        carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler("z", float(base[2])).apply(
+            CarryToPourController.CARRY_HAND_IN_BASE
+        )
+        tuck = KitchenMotionPlanner.plan_arm(
+            sim=sim,
+            start=arm,
+            position=carry,
+            rotation=hand_rotation,
+            what="the carry pose",
+            held=held,
+        )
+        base_path = KitchenMotionPlanner.plan_base(
+            sim=sim, state=x, target=base_target, arm=tuck[-1], what="placement", held=held
+        )
+        sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
+        # The jug upright over home; the hand where the current grasp puts it.
+        jug = home + np.array([0.0, 0.0, self.HOVER_M])
+        self.plans = {
+            self.TUCK: tuck,
+            self.BASE_MOTION: base_path,
+            self.MOVE_ARM_TO_HOVER: KitchenMotionPlanner.plan_arm(
+                sim=sim,
+                start=tuck[-1],
+                position=jug + hand_offset,
+                rotation=rotation_offset,
+                what="the jug hover above home",
+                held=held,
+            ),
+        }
+
+
+class ClearWorkspaceController:
+    """After the release and the scripted withdrawal of the hand from the handle (the
+    mirror of the scripted descent onto it): back the base off, arm carried as is."""
+
+    BASE_MOTION = "planned clear workspace"
+
+    def __init__(self, *, sim: KitchenPyBulletSim) -> None:
+        self.sim = sim
+        self.plans: dict[str, list[np.ndarray]] = {}
+
+    def reset(self, *, x: Any, arm: np.ndarray, base_target: np.ndarray) -> None:
+        self.sim.set_state(x)
+        self.plans = {
+            self.BASE_MOTION: KitchenMotionPlanner.plan_base(
+                sim=self.sim, state=x, target=base_target, arm=arm, what="the cleared workspace"
+            )
+        }
