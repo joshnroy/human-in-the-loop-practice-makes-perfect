@@ -1,7 +1,11 @@
 """Bounded, serial existential rack coverage with durable per-attempt evidence.
 
 Example: scripts/with_env.sh python scripts/validate_rack_coverage.py --dry-run
-    --output artifacts/rack-coverage-plan --seeds 0 1 --pair 0 .03 --pair 20 .06
+    --output artifacts/rack-coverage-plan --seeds 0 1 --pair 0 0 --pair 0.04 15
+
+A pair is SweepRack(dy metres, phi degrees). --pile-centred-baseline appends
+(dy = measured y-centroid of the food on the rack, clipped to bounds; phi = 0),
+resolved per trial from that trial's own measured initial state.
 
 Default is dry-run. Native execution requires --run --physical-witness-confirmed;
 that flag attests main has cleared physical validity, it does not establish it.
@@ -235,9 +239,14 @@ class Coverage:
                     if attempt.get("invalidating_issue"):
                         state["status"] = "invalid"
                         summary["stop_reason"] = "invalidating_issue"
-                    elif result["status"] in ("timeout", "interrupted", "worker_crashed"):
+                    elif result["status"] == "interrupted" or (
+                        result["status"] in ("timeout", "worker_crashed")
+                        and manifest["search_mode"] != "grid"
+                    ):
                         state["status"] = "incomplete"
                         summary["stop_reason"] = result["status"]
+                    elif result["status"] in ("timeout", "worker_crashed"):
+                        state["status"] = "covered" if state.get("witness") else "incomplete"
                     elif attempt["success"]:
                         state["status"] = "covered"
                         state.setdefault("witness", pair)
@@ -334,6 +343,40 @@ class NativeTrial:
         )
 
     @staticmethod
+    def resolve_pair(*, pair: dict[str, Any], initial: dict[str, Any]) -> tuple[float, float]:
+        """A fixed (dy, phi), or the pile-centred dy measured from this trial's initial state."""
+        from hitl_pmp.environments.racktoserving3d.skills import SWEEP_BOUNDS
+
+        if pair.get("dy_source") != "pile_centroid":
+            return float(pair["dy_m"]), float(pair["phi_deg"])
+        on_rack = [
+            initial["poses"][name][1]
+            for name, location in initial["locations"].items()
+            if location == "OnRack"
+        ]
+        if not on_rack:
+            raise RuntimeError("pile-centred baseline needs food measured on the rack")
+        (low, high), _ = SWEEP_BOUNDS
+        return float(min(high, max(low, sum(on_rack) / len(on_rack)))), float(pair["phi_deg"])
+
+    @staticmethod
+    def physical_category(*, location: str | None, supports: frozenset[str], settled: bool) -> str:
+        """Where a food physically ended, independent of any controller error."""
+        if location == "HoldingFood":
+            return "held"
+        if location == "OnTray":
+            return "on_plate" if settled else "on_plate_unsettled"
+        if "box_0" in supports:
+            return "bridging" if "rack_0" in supports else "overhang"
+        if location == "OnRack" or "rack_0" in supports:
+            return "on_rack"
+        if location == "SpilledCounter" or "cupboard_1" in supports:
+            return "on_counter"
+        if location == "SpilledFloor" or "floor" in supports:
+            return "floor"
+        return "unsupported"
+
+    @staticmethod
     def snapshot(*, env: Any) -> dict[str, Any]:
         backend = env.backend()
         backend.sync_clock()
@@ -352,6 +395,14 @@ class NativeTrial:
             "locations": {name: backend.location(name=name) for name in backend.cube_names},
             "supports": {
                 name: sorted(backend.supporting_bodies(name=name)) for name in backend.cube_names
+            },
+            "physical": {
+                name: NativeTrial.physical_category(
+                    location=backend.location(name=name),
+                    supports=frozenset(backend.supporting_bodies(name=name)),
+                    settled=backend.settled_on_tray(name=name),
+                )
+                for name in backend.cube_names
             },
             "ledger": backend.ledger.model_dump(mode="json"),
             "control_steps": backend.control_steps(),
@@ -437,17 +488,14 @@ class NativeTrial:
                 left=reference, right=result["initial"]
             ):
                 raise RuntimeError("initial state differs across pairs")
+            dy, phi = NativeTrial.resolve_pair(pair=request["pair"], initial=result["initial"])
+            result["resolved_pair"] = {"dy_m": dy, "phi_deg": phi}
             measure()
             for skill in ("Wait", "PickScraper", "SweepRack", "ReturnScraper"):
                 phase_start = env.backend().control_steps()
                 result["phase"] = skill
                 persist()
-                action = np.array([
-                    SKILL_IDS[skill],
-                    0,
-                    request["pair"]["angle_deg"],
-                    request["pair"]["speed_m_s"],
-                ])
+                action = np.array([SKILL_IDS[skill], 0, dy, phi])
                 env.take_action(action=action)
                 error = env.last_skill_error()
                 if error:
@@ -515,6 +563,7 @@ def build_manifest(
     seeds: list[int] | None = None,
     layouts: list[str] | None = None,
     pairs: list[tuple[float, float]] | None = None,
+    pile_centred_baseline: bool = False,
     max_trials: int = 12,
     max_seconds: float = 150,
     step_limit: int = 3500,
@@ -525,12 +574,18 @@ def build_manifest(
     search_mode: str = "existential",
     constant_pair: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
-    """Describe requested trials and limits without importing a simulator."""
+    """Describe requested trials and limits without importing a simulator.
+
+    Pairs are SweepRack(dy metres, phi degrees); speed is the skill's constant.
+    """
     from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.skills import SWEEP_BOUNDS, SWEEP_SPEED_M_S
+
+    (dy_low, dy_high), (phi_low, phi_high) = SWEEP_BOUNDS
 
     seeds = [0, 1, 2] if seeds is None else seeds
     layouts = ["fixed", "human_batch_return"] if layouts is None else layouts
-    pairs = [(0.0, 0.03), (0.0, 0.06), (-20.0, 0.06), (20.0, 0.06)] if pairs is None else pairs
+    pairs = [(0.0, 0.0), (0.0, -15.0), (0.0, 15.0)] if pairs is None else pairs
     if constant_pair is not None:
         pairs = [constant_pair, *pairs]
     if not seeds or any(type(seed) is not int or seed < 0 for seed in seeds):
@@ -538,13 +593,16 @@ def build_manifest(
     if not layouts or any(layout not in ("fixed", "human_batch_return") for layout in layouts):
         raise ValueError("layouts must be fixed or human_batch_return")
     if not pairs or any(
-        not math.isfinite(angle)
-        or not math.isfinite(speed)
-        or not -40 <= angle <= 40
-        or not 0.03 <= speed <= 0.25
-        for angle, speed in pairs
+        len(pair) != 2
+        or not math.isfinite(pair[0])
+        or not math.isfinite(pair[1])
+        or not dy_low <= pair[0] <= dy_high
+        or not phi_low <= pair[1] <= phi_high
+        for pair in pairs
     ):
-        raise ValueError("pairs require finite angle [-40,40] and speed [.03,.25]")
+        raise ValueError(
+            f"pairs require finite dy [{dy_low},{dy_high}] m and phi [{phi_low},{phi_high}] deg"
+        )
     if type(max_trials) is not int or not 1 <= max_trials <= 1000:
         raise ValueError("max_trials must be an integer in [1,1000]")
     if not math.isfinite(max_seconds) or not 0 < max_seconds <= 43200:
@@ -582,7 +640,8 @@ def build_manifest(
         "native_workers_started": 0,
         "config": config.model_dump(mode="json"),
         "search_mode": search_mode,
-        "constant_pair": {"angle_deg": float(pairs[0][0]), "speed_m_s": float(pairs[0][1])},
+        "constant_pair": {"dy_m": float(pairs[0][0]), "phi_deg": float(pairs[0][1])},
+        "sweep_speed_m_s": SWEEP_SPEED_M_S,
         "claim": {
             "full_space_proof": False,
             "common_parameter_required": False,
@@ -607,8 +666,12 @@ def build_manifest(
             for layout, seed in dict.fromkeys(selected_states)
         ],
         "pairs": [
-            {"angle_deg": float(angle), "speed_m_s": float(speed)}
-            for angle, speed in dict.fromkeys(pairs)
+            *({"dy_m": float(dy), "phi_deg": float(phi)} for dy, phi in dict.fromkeys(pairs)),
+            *(
+                [{"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}]
+                if pile_centred_baseline
+                else []
+            ),
         ],
         "limits": {
             "max_trials_total": max_trials,
@@ -624,7 +687,8 @@ def build_manifest(
             "For human layouts, call training human_batch_return once after each seed reset.",
             "Log actual setup cost, food poses, support contacts, measured locations and config.",
             "Compare measured starting states across pairs; flag mismatches and duplicate layouts.",
-            "Use actual Wait, PickScraper, SweepRack(angle,speed), ReturnScraper controllers.",
+            "Use actual Wait, PickScraper, SweepRack(dy,phi), ReturnScraper controllers.",
+            "Record each food's physical outcome separately from controller errors.",
             "Verify physical task success and scraper home; do not infer success from no error.",
             "Test the constant baseline first; existential mode stops at each state's success.",
             "Grid mode continues after success to compare all requested constant policies.",
@@ -656,7 +720,7 @@ def main(*, argv: list[str] | None = None) -> int:
         "--constant-pair",
         nargs=2,
         type=float,
-        metavar=("ANGLE", "SPEED"),
+        metavar=("DY", "PHI"),
         help="baseline tested first for every state; defaults to first --pair",
     )
     parser.add_argument("--trial-seconds", type=float, default=180)
@@ -667,7 +731,12 @@ def main(*, argv: list[str] | None = None) -> int:
         choices=("fixed", "human_batch_return"),
         default=["fixed", "human_batch_return"],
     )
-    parser.add_argument("--pair", nargs=2, action="append", type=float, metavar=("ANGLE", "SPEED"))
+    parser.add_argument("--pair", nargs=2, action="append", type=float, metavar=("DY", "PHI"))
+    parser.add_argument(
+        "--pile-centred-baseline",
+        action="store_true",
+        help="append dy = measured on-rack food y-centroid (clipped), phi = 0",
+    )
     parser.add_argument("--max-trials", type=int, default=12)
     parser.add_argument("--max-seconds", type=float, default=150)
     parser.add_argument("--step-limit", type=int, default=3500)
@@ -687,6 +756,7 @@ def main(*, argv: list[str] | None = None) -> int:
             seeds=args.seeds,
             layouts=args.layouts,
             pairs=None if args.pair is None else [tuple(pair) for pair in args.pair],
+            pile_centred_baseline=args.pile_centred_baseline,
             max_trials=args.max_trials,
             max_seconds=args.max_seconds,
             step_limit=args.step_limit,
