@@ -12,6 +12,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State
 
 from .domain import KitchenConfig, classify_zone, projected_bounds
+from .drive_zone import KitchenDriveZone
 from .placement import KitchenHumanPlacement
 from .scene import initial_positions
 from .types import KitchenObjects, KitchenState
@@ -106,14 +107,8 @@ class KitchenRecyclingEnvironment(Environment):
             on_floor = classify_zone(config=self.config, observation=observation) == "kitchen" and (
                 abs(observation.position[2] + lower[2]) < 0.035
             )
-            nearest = np.clip(
-                observation.position[:2],
-                np.array(self.config.kitchen_bounds[:2]) + self.config.robot_radius,
-                np.array(self.config.kitchen_bounds[2:]) - self.config.robot_radius,
-            )
-            reachable = (
-                np.linalg.norm(nearest - observation.position[:2])
-                <= self.config.direct_placement_reach
+            reachable = KitchenDriveZone.pick_reachable(
+                config=self.config, position=observation.position
             )
             last = self._blocked.get(item.name)
             signature = tuple((
