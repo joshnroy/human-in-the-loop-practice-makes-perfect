@@ -9,10 +9,13 @@ from pydantic import Field, PrivateAttr
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvironment
 from hitl_pmp.environments.pouring3d.practice.skills import RESET_NAME as LEGACY_RESET
+from hitl_pmp.environments.pouring3d.practice.skills import SKILL_NAMES
 from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
 
 from .config import KitchenGeometry
+from .pick_plannable import KitchenPickPlannable
 from .types import KitchenObjects as O
+from .types import PickRefusal
 
 HUMAN_RESET = "human_bulk_pour_back"
 
@@ -32,6 +35,11 @@ class KitchenEnvironment(FrozenPourEnvironment):
     interruption_cost_total: float = 0
     episode_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     _started: bool = PrivateAttr(default=False)
+    # Planning refusals of dispatched dumpling picks, by dumpling name; kept for the
+    # life of this instance (see `pick_plannable.py`).
+    _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
+    # While a dumpling pick runs: its dumpling, starting poses and any finger contact.
+    _pick_watch: dict[str, Any] | None = PrivateAttr(default=None)
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=float),
         high=np.array([9, 2, 3, 130, 0.025, 60], dtype=float),
@@ -86,6 +94,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         atoms.add(("HobOn" if on else "HobOff", ("hob",)))
         if not on:
             atoms.add(("ColdIngredients", ()))
+        atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
         away = c.base_home[:2].copy()
         away[0] -= self.geometry.retreat_distance_m
         if np.linalg.norm(c.data.qpos[c.base_q][:2] - away) < 0.025:
@@ -97,12 +106,50 @@ class KitchenEnvironment(FrozenPourEnvironment):
         state.abstract_atoms = frozenset(atoms)
         return state
 
+    def after_tick(self) -> None:
+        super().after_tick()
+        watch = self._pick_watch
+        if watch is not None and not watch["touched"]:
+            watch["touched"] = bool(self.controller().finger_contacts(name=watch["name"]))
+
+    def watched_pick(self, *, action: Action, index: int) -> State:
+        """Dispatch a dumpling pick; remember it if it refused to plan (`pick_plannable`)."""
+        c = self.controller()
+        if not 0 <= index < len(c.scene.cube_names):
+            return super().take_action(action=action)
+        name = c.scene.cube_names[index]
+        before = PickRefusal(
+            dumpling=KitchenPickPlannable.pose(controller=c, name=name),
+            pan=KitchenPickPlannable.pose(controller=c, name="tray"),
+        )
+        watch = self._pick_watch = {"name": name, "touched": False}
+        try:
+            state = super().take_action(action=action)
+        finally:
+            self._pick_watch = None
+        refusal = KitchenPickPlannable.refusal(
+            controller=c,
+            name=name,
+            before=before,
+            error=self.last_info.get("error"),
+            touched=watch["touched"],
+        )
+        if refusal is None:
+            return state
+        self._pick_refusals[name] = refusal
+        self.current_state = self.observe()
+        return self.current_state
+
     def take_action(self, *, action: Action) -> State:
         values = np.asarray(action, dtype=float)
         self.controller()
         self._started = True
         if values.shape != (6,) or not np.isfinite(values).all():
             return super().take_action(action=action)
+        skill_id, index = int(values[0]), int(values[1])
+        picks = values[0] == skill_id and 0 <= skill_id < len(SKILL_NAMES)
+        if picks and SKILL_NAMES[skill_id].startswith("PickShrimp"):
+            return self.watched_pick(action=action, index=index)
         action_id = values[0]
         on = self.controller().scene.cooking_observed()
         if action_id not in (8, 9) and not on:
