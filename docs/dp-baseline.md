@@ -26,10 +26,17 @@ a policy's terminal value. Initial mass sums to one, and an acyclic policy visit
 each state at most once. Thus unit occupancy bounds are valid even at gamma=1;
 we do not substitute gamma=1 into the paper's bound 1/(1-gamma).
 
-`--dp-solver gurobi` requires Gurobi to certify maximum task value, with no
-minimum-spend secondary objective. `dp_allocations.jsonl` records status, objective, bound,
-absolute/relative gap, runtime, allocation, completed episodes and physical cost.
-A time limit or failed solve raises; it never silently switches to enumeration.
+`--dp-solver gurobi` maximizes task value with Gurobi, with no minimum-spend
+secondary objective. As in the paper (§6), a solve that reaches
+`--dp-solver-time-limit` with a feasible incumbent returns that bounded-suboptimal
+incumbent with status `TIME_LIMIT`; `dp_allocations.jsonl` records status, objective,
+bound, absolute/relative gap, runtime, allocation, completed episodes and physical
+cost, so every such allocation is visible. A time limit with no incumbent, or any
+other non-optimal status, raises; it never silently switches to enumeration. The
+independent budget check still applies to a time-limited incumbent; the `1e-7`
+bound-gap requirement applies only to an `OPTIMAL` one. Calibration
+(`scripts/tossing3d_dp_launch.py`) still refuses any pilot allocation whose status
+is not `OPTIMAL`.
 `--dp-solver enumeration` is an explicit independent small-problem reference.
 
 Counts in the production Gurobi model are bounded by affordability, not by the
