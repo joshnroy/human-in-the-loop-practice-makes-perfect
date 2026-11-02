@@ -12,8 +12,9 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State
 
 from .domain import KitchenConfig, classify_zone, projected_bounds
+from .placement import KitchenHumanPlacement
 from .scene import initial_positions
-from .types import NEAR_BIN_POSITION, KitchenObjects, KitchenState
+from .types import KitchenObjects, KitchenState
 
 
 class KitchenRecyclingEnvironment(Environment):
@@ -259,6 +260,13 @@ class KitchenRecyclingEnvironment(Environment):
                         if other != name
                     ):
                         continue
+                    if not KitchenHumanPlacement.recovery_clear_of_bin(
+                        config=self.config,
+                        position=position,
+                        item_radius=float(np.linalg.norm(spec.dimensions)) / 2,
+                        bin_pose=simulator.episode.bin_pose,
+                    ):
+                        continue
                     break
                 else:
                     raise ValueError("No clear reachable recovery position")
@@ -269,7 +277,21 @@ class KitchenRecyclingEnvironment(Environment):
                 )
                 self._blocked.pop(name, None)
             elif destination == "relocate_bin_near":
-                event = simulator.human(action="relocate_bin", destination=NEAR_BIN_POSITION)
+                raw = simulator.backend._require_state()
+                bin_destination = KitchenHumanPlacement.near_bin_destination(
+                    config=self.config,
+                    robot=self.get_current_state().data[self.robot][:2],
+                    items=[
+                        observation.position[:2]
+                        for observation in simulator.episode.observations.values()
+                    ],
+                    furniture=[
+                        tuple(raw.get(obj, key) for key in ("x", "y", "bb_x", "bb_y"))
+                        for obj in raw
+                        if obj.type.name == "mujoco_static_collider"
+                    ],
+                )
+                event = simulator.human(action="relocate_bin", destination=bin_destination)
                 self._blocked.clear()
             elif destination == "restore_bin_target":
                 event = simulator.human(action="restore_bin")
