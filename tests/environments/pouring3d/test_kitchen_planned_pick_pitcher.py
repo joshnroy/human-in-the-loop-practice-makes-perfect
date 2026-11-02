@@ -10,6 +10,11 @@ from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironme
 pytestmark = pytest.mark.xdist_group("kitchen_planned_pick_pitcher")
 
 PICK_PITCHER = np.array([0, 0, 1, 0, 0, 0], dtype=float)
+# The bar for every planned kitchen skill: over its planned phases, MuJoCo's arm (and
+# held object) never comes closer to the scene than this. Planning keeps 1.5 cm in
+# PyBullet, which test_kitchen_pybullet_scene measured to be up to about 1 cm more
+# optimistic than MuJoCo (at the bracelet/gripper coupling): 1.5 - 1.0 = 0.5 cm.
+MUJOCO_CLEARANCE_M = 0.005
 OBSTACLES = (
     "prep_table",
     "stovetop",
@@ -37,11 +42,20 @@ class Clearance:
             if sink is not None:
                 sink(**kwargs)
             if c.phase.startswith("planned "):
-                distance = Mujoco.distance(model=m, data=c.data, a=arm, b=obstacles, cap=0.05)
+                distance = Mujoco.distance(model=m, data=c.data, a=arm, b=obstacles, cap=0.15)
                 seen.append((c.phase, distance))
 
         c.callback = tick
         return seen
+
+    @staticmethod
+    def check(*, seen: list[tuple[str, float]]) -> None:
+        """Print the closest approach (MuJoCo, vertex fallback for spurious zeros) and
+        hold it to the bar."""
+        assert seen, "no planned phase was recorded"
+        phase, closest = min(seen, key=lambda r: r[1])
+        print(f"closest MuJoCo approach over planned phases: {closest * 100:.2f} cm in {phase}")
+        assert closest >= MUJOCO_CLEARANCE_M, (phase, closest)
 
 
 def test_a_refused_plan_moves_nothing(*, monkeypatch):
@@ -69,7 +83,7 @@ def test_the_planned_pick_lifts_the_jug_without_touching_anything():
     assert env.last_info["success"] is True, env.last_info
     phases = {phase for phase, _ in seen}
     assert {"planned base to pitcher", "planned arm to pitcher hover"} <= phases
-    assert min(d for _, d in seen) > 0, min(seen, key=lambda r: r[1])
+    Clearance.check(seen=seen)
 
 
 def test_the_planned_pick_starts_from_a_hand_over_the_jug():
@@ -107,4 +121,4 @@ def test_the_planned_pick_starts_from_a_hand_over_the_jug():
     seen = Clearance.record(env=env)
     env.take_action(action=PICK_PITCHER)
     assert env.last_info["success"] is True, env.last_info
-    assert min(d for _, d in seen) > 0, min(seen, key=lambda r: r[1])
+    Clearance.check(seen=seen)
