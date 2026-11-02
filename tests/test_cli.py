@@ -75,6 +75,8 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
         "ballring",
         "lightswitch",
         "pouring3d",
+        # Not a fork: the kitchen lifecycle (deployment, cooking, human reset) on pouring3d.
+        "pouring3d_kitchen",
         "sweepoffshelf3d",
         "tossing3d",
         # Not a fork: the same domain on the real TidyBot (or a fake robot).
