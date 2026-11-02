@@ -253,6 +253,7 @@ def main():
             dy, _ = NativeTrial.resolve_pair(
                 pair={"dy_m": None, "phi_deg": args.phi, "dy_source": "pile_centroid"},
                 initial=initial,
+                config=config.model_dump(mode="json"),
             )
         report["sweep_parameters"] = {"dy_m": dy, "phi_deg": args.phi}
         report["measured_geometry"] = {

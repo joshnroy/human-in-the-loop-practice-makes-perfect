@@ -343,21 +343,31 @@ class NativeTrial:
         )
 
     @staticmethod
-    def resolve_pair(*, pair: dict[str, Any], initial: dict[str, Any]) -> tuple[float, float]:
-        """A fixed (dy, phi), or the pile-centred dy measured from this trial's initial state."""
+    def resolve_pair(
+        *, pair: dict[str, Any], initial: dict[str, Any], config: dict[str, Any]
+    ) -> tuple[float, float]:
+        """A fixed (dy, phi), or the pile-centred dy measured from this trial's initial state.
+
+        The pile is the food whose measured centre lies over the rack's footprint
+        (live rack pose, configured depth and width). Location labels are not
+        used: right after a human batch return the food is still dropping onto
+        the wires, so it is over the rack but not yet classified OnRack.
+        """
         from hitl_pmp.environments.racktoserving3d.skills import SWEEP_BOUNDS
 
         if pair.get("dy_source") != "pile_centroid":
             return float(pair["dy_m"]), float(pair["phi_deg"])
-        on_rack = [
+        rack_x, rack_y = initial["poses"]["rack_0"][:2]
+        over_rack = [
             initial["poses"][name][1]
-            for name, location in initial["locations"].items()
-            if location == "OnRack"
+            for name in initial["locations"]
+            if abs(initial["poses"][name][0] - rack_x) <= config["rack_depth"] / 2
+            and abs(initial["poses"][name][1] - rack_y) <= config["rack_width"] / 2
         ]
-        if not on_rack:
-            raise RuntimeError("pile-centred baseline needs food measured on the rack")
+        if not over_rack:
+            raise RuntimeError("pile-centred baseline needs food measured over the rack")
         (low, high), _ = SWEEP_BOUNDS
-        return float(min(high, max(low, sum(on_rack) / len(on_rack)))), float(pair["phi_deg"])
+        return float(min(high, max(low, sum(over_rack) / len(over_rack)))), float(pair["phi_deg"])
 
     @staticmethod
     def physical_category(*, location: str | None, supports: frozenset[str], settled: bool) -> str:
@@ -488,7 +498,9 @@ class NativeTrial:
                 left=reference, right=result["initial"]
             ):
                 raise RuntimeError("initial state differs across pairs")
-            dy, phi = NativeTrial.resolve_pair(pair=request["pair"], initial=result["initial"])
+            dy, phi = NativeTrial.resolve_pair(
+                pair=request["pair"], initial=result["initial"], config=request["config"]
+            )
             result["resolved_pair"] = {"dy_m": dy, "phi_deg": phi}
             measure()
             for skill in ("Wait", "PickScraper", "SweepRack", "ReturnScraper"):
@@ -588,11 +600,12 @@ def build_manifest(
     pairs = [(0.0, 0.0), (0.0, -15.0), (0.0, 15.0)] if pairs is None else pairs
     if constant_pair is not None:
         pairs = [constant_pair, *pairs]
+    pile_only = pile_centred_baseline and not pairs
     if not seeds or any(type(seed) is not int or seed < 0 for seed in seeds):
         raise ValueError("seeds must be nonnegative integers")
     if not layouts or any(layout not in ("fixed", "human_batch_return") for layout in layouts):
         raise ValueError("layouts must be fixed or human_batch_return")
-    if not pairs or any(
+    if (not pairs and not pile_only) or any(
         len(pair) != 2
         or not math.isfinite(pair[0])
         or not math.isfinite(pair[1])
@@ -640,7 +653,11 @@ def build_manifest(
         "native_workers_started": 0,
         "config": config.model_dump(mode="json"),
         "search_mode": search_mode,
-        "constant_pair": {"dy_m": float(pairs[0][0]), "phi_deg": float(pairs[0][1])},
+        "constant_pair": (
+            {"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}
+            if pile_only
+            else {"dy_m": float(pairs[0][0]), "phi_deg": float(pairs[0][1])}
+        ),
         "sweep_speed_m_s": SWEEP_SPEED_M_S,
         "claim": {
             "full_space_proof": False,
