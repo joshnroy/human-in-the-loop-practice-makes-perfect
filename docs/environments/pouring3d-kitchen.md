@@ -41,15 +41,24 @@ there is no implemented pan-grasp/dump skill.
 The jug candidate is the approximately 1 L [Norpro 3037, listed in Norpro's catalog](https://www.norpro.com/wp-content/uploads/2023/08/2023-Norpro50thYrCatalogDigitalw1.pdf).
 `KitchenGeometry` retains missing measured inner pan dimensions, jug dimensions,
 handle clearance, and jug mass as `null`. Separately named `*_proxy_*` fields are
-explicit simulation assumptions, not product measurements. The default counter
-and hob height is 0.84 m. A `--kitchen-geometry` JSON file can override these fields;
+explicit simulation assumptions, not product measurements. The default jug counter
+height is 0.84 m. The pan's hob is 0.74 m: the real setup stands the skillet directly
+on a fixed-height desk (about 29 in, not measured) in place of a stove, and at the
+earlier 0.84 m hob the dumpling pickup was often out of the arm's reach. Recordings
+made before this change embed their own 0.84 m hob and replay at it. A
+`--kitchen-geometry` JSON file can override these fields;
 the complete configuration is embedded in recordings.
 
 Deployment water is a visible, **non-colliding visual proxy**, not a solid surface or lid.
 Fluid motion, buoyancy, added water inertia, and heat transfer are not simulated.
 The pan and handled jug retain their native rigid-body contact geometry. Dumplings
-are the existing three potsticker proxies. Contact/friction values are inherited
-simulation assumptions, not calibrated material measurements.
+are the existing three potsticker proxies. Contact/friction values are simulation
+assumptions, not calibrated material measurements. The kitchen's default dumpling
+`--surface-mu` is 0.4, a judgement for frozen dough on dry seasoned cast iron (0.3-0.5),
+where the legacy `pouring3d` default stays 0.1. The dumpling geoms carry contact
+priority, so this one value governs dumpling contact with the pan, the jug, the
+worktops, the floor and each other. Gripper-pad contact is a separate explicit 0.6
+pair and is unchanged.
 
 ## Skill interface
 
