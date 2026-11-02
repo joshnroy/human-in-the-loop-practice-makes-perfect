@@ -296,11 +296,19 @@ body pinned to a full SHA (re-pin as the last step after the final force-push), 
   goes straight to the OOM killer.
 
   ```bash
-  systemd-run --user --scope -p MemoryMax=16G -p OOMPolicy=continue <your command>
+  systemd-run --user --scope -p MemoryMax=16G -p OOMPolicy=continue choom -n 200 -- <your command>
   ```
 
   A `--scope` dies with the shell that launched it; long runs need a **service**, not a
   scope. Use `16G` for a full sweep, `2-8G` for probes so a leak hits a wall in seconds.
+- **A capped job must be killable — prefix it with `choom -n 200 --`.** Agent sessions
+  run at `oom_score_adj = -1000` ("never OOM-kill") and every child inherits it. If an
+  unkillable job hits its `MemoryMax`, the kernel cannot kill anything in the group: the
+  job livelocks at the cap and logs a full OOM report per allocation attempt. On
+  2026-11-02 one stuck `pytest -n 4` scope wrote ~630 GB to `/var/log/kern.log` and
+  `syslog` in under 2 h, filled the disk and killed an overnight pipeline. `run-heavy`
+  applies `choom` itself; add it to every other capped command (`systemd-run` scopes and
+  services alike). Check with `cat /proc/<pid>/oom_score_adj` — it must not be `-1000`.
 - **Budget concurrency globally.** `--max-workers` defaults to all 24 cores *per sweep*,
   so two agents taking the default both run ~1.4x slower for no extra throughput. Check
   `pgrep -af '[h]itl_pmp\.cli'` and `/proc/loadavg` first; aim for ~22 concurrent runs
