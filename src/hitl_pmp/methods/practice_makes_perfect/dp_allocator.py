@@ -28,14 +28,39 @@ class DpAllocator:
         competences: Mapping[SkillKey, float],
         learning_rates: Mapping[SkillKey, float],
         allocation: Mapping[SkillKey, int],
+        groups: Mapping[SkillKey, SkillKey] | None = None,
     ) -> float:
         """Optimal task value after training, including policies not optimal today."""
-        predicted = {
-            skill: min(1.0, max(0.0, competence + learning_rates[skill] * allocation.get(skill, 0)))
-            for skill, competence in competences.items()
-        }
+        predicted = DpAllocator.predicted_competences(
+            competences=competences,
+            learning_rates=learning_rates,
+            allocation=allocation,
+            groups=groups,
+        )
         value, _policy = mdp.solve(competences=predicted)
         return value
+
+    @staticmethod
+    def predicted_competences(
+        *,
+        competences: Mapping[SkillKey, float],
+        learning_rates: Mapping[SkillKey, float],
+        allocation: Mapping[SkillKey, int],
+        groups: Mapping[SkillKey, SkillKey] | None = None,
+    ) -> dict[SkillKey, float]:
+        """Expand logical training counts into concrete deployment probabilities."""
+        identities = groups if groups is not None else {}
+        return {
+            skill: min(
+                1.0,
+                max(
+                    0.0,
+                    competence
+                    + learning_rates[skill] * allocation.get(identities.get(skill, skill), 0),
+                ),
+            )
+            for skill, competence in competences.items()
+        }
 
     @staticmethod
     def allocate(
@@ -47,10 +72,13 @@ class DpAllocator:
         budget: float,
         max_skills: int = 8,
         max_allocations: int = 200_000,
+        groups: Mapping[SkillKey, SkillKey] | None = None,
     ) -> dict[SkillKey, int]:
         """The integer attempt counts, one per key of `costs`, that maximise
         `predicted_success` subject to sum(b_u * c_u) <= `budget`; among equally good
-        allocations, the cheapest. A transition skill outside `costs` keeps its competence.
+        allocations, the cheapest. `groups` maps concrete skills to allocation keys;
+        each key in `costs` is charged once and returned once. An unpriced group
+        keeps its competence. Omitted mappings use the concrete skill itself.
 
         Raises `ValueError` when more than `max_skills` skills would be enumerated, or
         when the enumeration could exceed `max_allocations` allocations."""
@@ -69,17 +97,18 @@ class DpAllocator:
         allocation = dict.fromkeys(costs, 0)
         if budget <= 0.0 or not mdp.initial_probabilities:
             return allocation
-        relevant = mdp.relevant_skills()
-
-        limits: dict[SkillKey, int] = {}
-        for skill, cost in costs.items():
-            limit = DpAllocator._useful_attempts(
-                competence=competences.get(skill, 1.0),
-                learning_rate=learning_rates.get(skill, 0.0),
-                affordable=math.floor(budget / cost + 1e-9),
-            )
-            if skill in relevant and limit > 0:
-                limits[skill] = limit
+        limits = {
+            skill: limit
+            for skill, limit in DpAllocator._allocation_limits(
+                mdp=mdp,
+                competences=competences,
+                learning_rates=learning_rates,
+                costs=costs,
+                budget=budget,
+                groups=groups,
+            ).items()
+            if limit > 0
+        }
         if len(limits) > max_skills:
             raise ValueError(
                 f"DP allocation over {len(limits)} improvable skills exceeds the cap of "
@@ -106,6 +135,7 @@ class DpAllocator:
                     competences=competences,
                     learning_rates=learning_rates,
                     allocation=counts,
+                    groups=groups,
                 )
                 if value > best_value + _TOLERANCE or (
                     value >= best_value - _TOLERANCE and spent < best_spent - _TOLERANCE
@@ -124,6 +154,36 @@ class DpAllocator:
         visit(index=0, spent=0.0)
         allocation.update(best)
         return allocation
+
+    @staticmethod
+    def _allocation_limits(
+        *,
+        mdp: DpMdp[SkillKey],
+        competences: Mapping[SkillKey, float],
+        learning_rates: Mapping[SkillKey, float],
+        costs: Mapping[SkillKey, float],
+        budget: float,
+        groups: Mapping[SkillKey, SkillKey] | None = None,
+    ) -> dict[SkillKey, int]:
+        """A shared count remains useful until its last improving member saturates."""
+        identities = groups if groups is not None else {}
+        for group in costs:
+            if identities.get(group, group) != group:
+                raise ValueError("DP costs must price allocation groups, not duplicate members")
+        limits = dict.fromkeys(costs, 0)
+        for skill in mdp.relevant_skills():
+            group = identities.get(skill, skill)
+            if group not in costs:
+                continue
+            limits[group] = max(
+                limits[group],
+                DpAllocator._useful_attempts(
+                    competence=competences[skill],
+                    learning_rate=learning_rates[skill],
+                    affordable=max(0, math.floor(budget / costs[group] + 1e-9)),
+                ),
+            )
+        return limits
 
     @staticmethod
     def _useful_attempts(*, competence: float, learning_rate: float, affordable: int) -> int:

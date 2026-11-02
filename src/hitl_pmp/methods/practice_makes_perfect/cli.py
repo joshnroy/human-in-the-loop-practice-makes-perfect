@@ -71,6 +71,14 @@ class EesCli:
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--practice-groundings",
+            choices=("observed", "all"),
+            default="observed",
+            help="EES/DP: offer observed or all typed robot groundings as practice targets. "
+            "EES practices the selected grounding. DP also includes untried deployment-MDP "
+            "skills.",
+        )
         # 10 cycles = predicators' num_online_learning_cycles default; 150 steps =
         # the paper's stated Light Switch free-period length.
         PracticeCycleCli.add_arguments(parser=parser, default_num_cycles=10, default_max_steps=150)
@@ -270,6 +278,7 @@ class EesCli:
             env=ctx.env,
             skill_provider=ctx.skill_provider,
             seed=args.seed,
+            practice_groundings=args.practice_groundings,
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
@@ -469,6 +478,8 @@ class Tossing3DPomdpCli(EesCli):
                 "--ees-score-human-skills is an EES flag: --method pomdp already scores "
                 "every human skill its practice domain does not treat as deterministic"
             )
+        if args.practice_groundings != "observed":
+            raise ValueError("--practice-groundings applies only to --method ees or dp")
         defaults = (
             EesMethod.model_fields["prior_alpha"].default,
             EesMethod.model_fields["prior_beta"].default,

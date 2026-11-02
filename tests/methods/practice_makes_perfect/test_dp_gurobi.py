@@ -14,6 +14,97 @@ from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTransition
 gp = pytest.importorskip("gurobipy")
 
 
+@pytest.mark.parametrize("seed", range(8))
+def test_grouped_forecasts_match_enumeration_on_cyclic_multi_start_mdps(*, seed):
+    rng = np.random.default_rng(seed)
+    skills = ["left", "right", "other"]
+    mdp = DpMdp(
+        initial_probabilities={0: 0.7, 1: 0.3},
+        terminal_rewards={3: 1},
+        transitions=[
+            DpTransition(state=state, skill=skills[int(rng.integers(3))], successor=successor)
+            for state in range(3)
+            for successor in range(4)
+            if state != successor
+        ],
+        discount=1.0 if seed % 2 else 0.9,
+    )
+    arguments = dict(
+        mdp=mdp,
+        competences={skill: float(rng.uniform(0.1, 0.8)) for skill in skills},
+        learning_rates={skill: float(rng.uniform(-0.2, 0.4)) for skill in skills},
+        costs={"toss": 1.0, "other": 0.5},
+        budget=3.0,
+        groups={"left": "toss", "right": "toss"},
+    )
+    expected = DpAllocator.allocate(**arguments)
+    result = DpGurobiAllocator.allocate(**arguments)
+    expected_value = DpAllocator.predicted_success(
+        **{key: value for key, value in arguments.items() if key not in {"costs", "budget"}},
+        allocation=expected,
+    )
+    assert result.status == "OPTIMAL"
+    assert set(result.allocation) == {"toss", "other"}
+    assert result.objective == pytest.approx(expected_value, abs=1e-7)
+    assert result.objective_bound >= expected_value - 1e-9
+    assert result.absolute_gap <= 1e-7
+    costs = arguments["costs"]
+    assert sum(costs[group] * count for group, count in result.allocation.items()) == pytest.approx(
+        sum(costs[group] * count for group, count in expected.items())
+    )
+
+
+def test_group_cap_and_bound_include_a_less_competent_sibling():
+    result = DpGurobiAllocator.allocate(
+        mdp=DpMdp(
+            initial_probabilities={0: 0.5, 1: 0.5},
+            terminal_rewards={2: 1},
+            transitions=[
+                DpTransition(state=0, skill="left", successor=2),
+                DpTransition(state=1, skill="right", successor=2),
+            ],
+        ),
+        competences={"left": 1, "right": 0.2},
+        learning_rates={"left": 0.2, "right": 0.2},
+        costs={"toss": 2},
+        budget=20,
+        groups={"left": "toss", "right": "toss"},
+    )
+    assert result.allocation == {"toss": 4}
+    assert result.objective == pytest.approx(1)
+    assert result.objective_bound == pytest.approx(1)
+
+
+@pytest.mark.parametrize("failed_evaluation", [1, 2])
+def test_grouped_allocations_keep_independent_certification(*, monkeypatch, failed_evaluation):
+    original = DpAllocator.predicted_success
+    evaluations = []
+
+    def independently_evaluate(**kwargs):
+        evaluations.append(kwargs)
+        assert kwargs["groups"] == {"left": "toss", "right": "toss"}
+        actual = original(**kwargs)
+        return actual - 0.1 if len(evaluations) == failed_evaluation else actual
+
+    monkeypatch.setattr(DpAllocator, "predicted_success", staticmethod(independently_evaluate))
+    with pytest.raises(DpOptimizationError):
+        DpGurobiAllocator.allocate(
+            mdp=DpMdp(
+                initial_probabilities={0: 1},
+                terminal_rewards={2: 1},
+                transitions=[
+                    DpTransition(state=0, skill="left", successor=1),
+                    DpTransition(state=1, skill="right", successor=2),
+                ],
+            ),
+            competences={"left": 0.2, "right": 0.4},
+            learning_rates={"left": 0.2, "right": 0.2},
+            costs={"toss": 1},
+            budget=1,
+            groups={"left": "toss", "right": "toss"},
+        )
+
+
 def test_paper_counterexample_uses_the_jointly_improved_route():
     mdp = DpMdp(
         initial_probabilities={0: 1},

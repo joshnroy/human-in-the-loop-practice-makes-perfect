@@ -244,7 +244,11 @@ class DpMethod(EesMethod):
         humans = self.offered_partial_resets()
         candidates = list(
             dict.fromkeys([
-                *self._competence_models,
+                *(
+                    self.practice_candidates()
+                    if self.practice_groundings == "all"
+                    else self._competence_models
+                ),
                 *(transition.skill for transition in mdp.transitions),
                 *humans,
             ])
@@ -306,6 +310,7 @@ class DpMethod(EesMethod):
             raise
         self._dp_solver_result = result
         self._dp_allocation = dict(result.allocation)
+        self._dp_executed_since_solve = {}
         self._write_solver_record(
             record={
                 **result.model_dump(exclude={"allocation"}),
@@ -321,21 +326,27 @@ class DpMethod(EesMethod):
                     }
                     for ground, count in result.allocation.items()
                 ],
+                "groups": [
+                    {
+                        "skill": ground.skill.name,
+                        "objects": [obj.name for obj in ground.objects],
+                        "competence": competences[ground],
+                        "learning_rate": learning_rates[ground],
+                    }
+                    for ground in candidates
+                ],
             }
         )
-        predicted = {
-            candidate: min(1.0, competences[candidate] + learning_rates[candidate] * count)
-            for candidate, count in self._dp_allocation.items()
-        }
+        predicted = DpAllocator.predicted_competences(
+            competences=competences,
+            learning_rates=learning_rates,
+            allocation=self._dp_allocation,
+        )
         self._dp_curriculum = list(
-            dict.fromkeys([
-                *mdp.curriculum(competences=predicted),
-                *self._dp_allocation,
-            ])
+            dict.fromkeys([*mdp.curriculum(competences=predicted), *self._dp_allocation])
         )
         self._dp_no_allocation = not any(self._dp_allocation.values())
         self._dp_fitted_stages = set()
-        self._dp_executed_since_solve = {}
         self._dp_solved_period = self._practice_periods
 
     def _write_solver_record(self, *, record: dict[str, object]) -> None:
@@ -351,6 +362,15 @@ class DpMethod(EesMethod):
                     "episodes": self._dp_episodes,
                     "physical_cost": self._require_accounting().total_cost,
                     "prior_calibration_sha256": self._dp_prior_sha256,
+                    "practice_groundings": self.practice_groundings,
+                    "executed_since_solve": [
+                        {
+                            "skill": ground.skill.name,
+                            "objects": [obj.name for obj in ground.objects],
+                            "attempts": count,
+                        }
+                        for ground, count in self._dp_executed_since_solve.items()
+                    ],
                     **record,
                 })
                 + "\n",

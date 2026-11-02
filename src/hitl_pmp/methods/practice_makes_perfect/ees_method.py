@@ -1,6 +1,9 @@
+import itertools
+import json
 import logging
 import math
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -33,6 +36,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
+from hitl_pmp.results_writer.jsonl_log import JsonlLog
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import PARAMETERIZED_SKILL, STOP_ONLY_SESSION, STRANDED, AlwaysAskReset
@@ -138,6 +142,8 @@ class EesMethod(Method):
     env: Environment
     skill_provider: SkillProvider
     seed: int = 0
+    practice_groundings: Literal["observed", "all"] = "observed"
+    max_practice_groundings: int = Field(default=10000, ge=1)
 
     # --- EES hyperparameters, defaulted to predicators'/the paper's own values ---
     # CFG.skill_competence_model_lookahead
@@ -325,6 +331,7 @@ class EesMethod(Method):
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
+    _possible_practice_groundings: tuple[GroundSkill, ...] | None = PrivateAttr(default=None)
     # Per ground skill, one bool per execution regardless of the epsilon-greedy
     # random branch -- predicators' `_ground_op_hist`. Only consulted when
     # `reproduce_predicators_practice_target_history` is on; competence always reads
@@ -469,6 +476,37 @@ class EesMethod(Method):
             self._competence_models[ground_skill] = self._new_competence_model()
         return self._competence_models[ground_skill]
 
+    def forecast_competence_gain(self, *, ground_skill: GroundSkill) -> float:
+        """The optimistic improvement one lookahead of practice predicts. Scoring adds it
+        back to the current competence rather than reading the prediction directly; the
+        two agree up to floating-point rounding, and the sum is the form every run since
+        practice-grounding scope was introduced has used."""
+        model = self.competence_model(ground_skill=ground_skill)
+        return (
+            model.predict_competence(num_additional_data=self.competence_lookahead)
+            - model.get_current_competence()
+        )
+
+    def all_practice_groundings(self) -> tuple[GroundSkill, ...]:
+        if self._possible_practice_groundings is None:
+            grounds: list[GroundSkill] = []
+            for skill in self.skills():
+                slots = [
+                    [obj for obj in self.objects() if obj.type == variable.type]
+                    for variable in skill.parameters
+                ]
+                for objects in itertools.product(*slots):
+                    if len(grounds) >= self.max_practice_groundings:
+                        raise ValueError("practice grounding enumeration exceeds configured limit")
+                    grounds.append(GroundSkill(skill=skill, objects=tuple(objects)))
+            self._possible_practice_groundings = tuple(grounds)
+        return self._possible_practice_groundings
+
+    def practice_candidates(self) -> list[GroundSkill]:
+        if self.practice_groundings == "all":
+            return list(self.all_practice_groundings())
+        return list(self._competence_models)
+
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
@@ -594,9 +632,16 @@ class EesMethod(Method):
     def skill_costs(self) -> dict[GroundSkill, float]:
         """`-log(competence)` per ground skill: summing these over a plan and
         minimizing is exactly maximizing the product of competences."""
+        grounds = (
+            self.all_practice_groundings()
+            if self.practice_groundings == "all"
+            else tuple(self._competence_models)
+        )
         return {
-            ground_skill: -math.log(max(model.get_current_competence(), 1e-12))
-            for ground_skill, model in self._competence_models.items()
+            ground: -math.log(
+                max(self.competence_model(ground_skill=ground).get_current_competence(), 1e-12)
+            )
+            for ground in grounds
         }
 
     # ---------------------------------------------------------------- planning
@@ -887,10 +932,10 @@ class EesMethod(Method):
             and self.measured_success_rate(ground_skill=ground_skill) == 1.0
         ):
             return -math.inf
-        model = self.competence_model(ground_skill=ground_skill)
-        extrapolated = model.predict_competence(num_additional_data=self.competence_lookahead)
+        gain = self.forecast_competence_gain(ground_skill=ground_skill)
         costs = self.skill_costs()
-        costs[ground_skill] = -math.log(max(extrapolated, 1e-12))
+        current = self.competence_model(ground_skill=ground_skill).get_current_competence()
+        costs[ground_skill] = -math.log(max(min(1.0, current + gain), 1e-12))
 
         plans = self.planning_progress_plans()
         if not plans:
@@ -922,7 +967,7 @@ class EesMethod(Method):
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
-        for candidate in list(self._competence_models):
+        for candidate in self.practice_candidates():
             score = self.score_ground_skill(ground_skill=candidate)
             self.record_practice_target(
                 name=candidate.skill.name,
@@ -1080,7 +1125,10 @@ class EesMethod(Method):
     # ---------------------------------------------------------------- lifecycle
 
     def advance_competence_cycle(self) -> None:
-        for model in (*self._competence_models.values(), *self._human_competence_models.values()):
+        for model in (
+            *self._competence_models.values(),
+            *self._human_competence_models.values(),
+        ):
             model.advance_cycle()
 
     def fit_samplers(self) -> None:
