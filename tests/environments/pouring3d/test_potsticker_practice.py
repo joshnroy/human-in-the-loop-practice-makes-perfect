@@ -110,8 +110,39 @@ def test_unreachable_preparation_tries_alternate_grasp_without_reversing_unexecu
         scene=SimpleNamespace(cube_locations=lambda: ["pitcher", "pitcher", "tray"]), held=None
     )
     c.pick_payload_with_retry(index=2, location="tray")
-    assert attempts == [60, 30]
+    assert attempts == [0, 60]
     assert c.held == "potsticker_2" and c.recovery_pitch_degrees == 60
+
+
+def test_grasp_candidates_start_top_down_then_keep_their_original_order(*, monkeypatch):
+    from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
+
+    attempts = []
+
+    def refuse(self, *, index, location):  # noqa: PLR0917 -- patched bound method
+        attempts.append((
+            self.recovery_finger_offset,
+            self.recovery_open_grip,
+            self.recovery_pitch_degrees,
+            self.recovery_approach_clearance,
+            self.recovery_yaw_offset,
+        ))
+        raise ValueError("No feasible continuation from prepared arm postures")
+
+    monkeypatch.setattr(PracticePourController, "pick_shrimp", refuse)
+    c = PotstickerController.model_construct(
+        scene=SimpleNamespace(cube_locations=lambda: ["pitcher", "pitcher", "tray"]),
+        held=None,
+        recovery_pitch_degrees=30.0,
+    )
+    with pytest.raises(ValueError, match="No feasible continuation"):
+        c.pick_payload_with_retry(index=2, location="tray")
+    assert attempts == [
+        (0.032, 0.4, 0.0, 0.16, 0.0),
+        (0.032, 0.4, 30.0, 0.16, 0.0),
+        (0.032, 0.4, 60.0, 0.10, 0.0),
+        (0.032, 0.4, 30.0, 0.16, 45.0),
+    ]
 
 
 def test_failed_mobile_approach_retraces_measured_base_and_arm(*, monkeypatch):
