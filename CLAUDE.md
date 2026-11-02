@@ -39,8 +39,9 @@ cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./b
 | `reference/tidybot_real` | `yixuanhuang98/tidybot_real` |
 
 **Four of the five point at the canonical upstream remote**, and the two KINDER rows did
-not until 2026-08-14; `prpl-tidybot` points at Josh's fork (below). Forks bought exactly one thing: a submodule *hard-fails* when its pinned
-SHA is force-pushed away, and a fork Josh controls cannot be force-pushed under us. That
+not until 2026-08-14; `prpl-tidybot` points at Josh's fork (below). Forks bought exactly
+one thing: a submodule *hard-fails* when its pinned SHA is force-pushed away, and a fork
+Josh controls cannot be force-pushed under us. That
 protection is given up here, knowingly. The two KINDER rows carry it: neither pin is on
 lab `main`. `kinder-baselines` @ `427ad6c` is reachable from two `keep/` branches
 (`keep/hitl-pmp-main-pin-427ad6c`, `keep/hitl-pmp-480-pin-2a7c1b4`) and two `codex/`
