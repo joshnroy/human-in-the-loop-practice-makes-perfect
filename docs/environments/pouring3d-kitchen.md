@@ -157,6 +157,18 @@ every waypoint at 0.2 rad/s and 0.15 m/s. The descent, grasp and lift that follo
 contact motions and stay scripted. The hand-tuned aisle detour for a hand left over the
 jug is gone; the planner routes around it.
 
+**The carry to the pour** (inside Pour1/2/3) is planned whole before anything moves,
+with the jug held rigidly in the planning model, its riding dumplings exempt from
+collision with it, and its axis within 10 deg of vertical at every checked
+configuration (provisional, until the spill angle is measured): the arm tucks the jug
+into a carry pose 0.45 m ahead of the base and 1.10 m high; the base drives to the pour
+pose with arm and jug checked in 3-D; the arm moves the jug to the pour start above the
+pan. The goal configuration is the closest IKFast solution that is collision-free and
+upright, not simply the closest. The tilt, wiggle and return of the pour stay the
+scripted closed-loop controller. Measured in MuJoCo on 2026-11-02: closest approach
+3.14 cm, jug tilt at most 11.5 deg (it hangs 3.6 deg in the compliant grasp), no
+dumpling lost.
+
 `mj_geomDistance` (MuJoCo 3.3.7) sometimes returns 0 for mesh pairs centimetres apart,
 with witness points on neither geom; the parity test recomputes those from vertices.
 The scripted controller's clearance checks use the same call, so some of their

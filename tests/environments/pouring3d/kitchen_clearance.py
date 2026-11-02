@@ -1,7 +1,24 @@
 """MuJoCo-side distances for the kitchen planning tests (not a test module)."""
 
+from typing import Any
+
 import mujoco
 import numpy as np
+
+# The bar for every planned kitchen skill: over its planned phases, MuJoCo's arm and
+# held jug never come closer to the scene than this. Planning keeps 1.5 cm in PyBullet,
+# which test_kitchen_pybullet_scene measured to be up to about 1 cm more optimistic than
+# MuJoCo (at the bracelet/gripper coupling): 1.5 - 1.0 = 0.5 cm.
+MUJOCO_CLEARANCE_M = 0.005
+SCENE = (
+    "prep_table",
+    "stovetop",
+    "pitcher",
+    "tray",
+    "potsticker_0",
+    "potsticker_1",
+    "potsticker_2",
+)
 
 
 class Mujoco:
@@ -113,3 +130,52 @@ class Mujoco:
         if kind == mujoco.mjtGeom.mjGEOM_SPHERE:
             return float(np.maximum(np.linalg.norm(local, axis=1) - size[0], 0).min())
         raise ValueError(f"No fallback distance for geom type {kind}")
+
+
+class Clearance:
+    """Every control tick of a planned phase: MuJoCo distance from the arm (and the
+    held jug, and nothing riding in it) to the rest of the scene, and the jug's tilt."""
+
+    @staticmethod
+    def record(*, env: Any) -> list[tuple[str, float, float, int]]:
+        c = env.controller()
+        m = c.model
+        arm = Mujoco.arm_geoms(model=m)
+        jug = Mujoco.geoms(model=m, names=["pitcher"])
+        seen: list[tuple[str, float, float, int]] = []
+        sink = c.callback
+
+        def tick(**kwargs):  # noqa: PLR0917 -- controller callback signature
+            if sink is not None:
+                sink(**kwargs)
+            if not c.phase.startswith("planned "):
+                return
+            locations = c.scene.cube_locations()
+            if c.held == "pitcher":
+                riders = [
+                    n
+                    for n, at in zip(c.scene.cube_names, locations, strict=True)
+                    if at == "pitcher"
+                ]
+                scene = [n for n in SCENE if n != "pitcher" and n not in riders]
+                moving = arm + jug
+            else:
+                scene, moving = list(SCENE), arm
+            distance = Mujoco.distance(
+                model=m, data=c.data, a=moving, b=Mujoco.geoms(model=m, names=scene), cap=0.15
+            )
+            _, rotation = c.body_pose(name="pitcher")
+            tilt = float(np.rad2deg(np.arccos(np.clip(rotation.apply([0, 0, 1])[2], -1, 1))))
+            seen.append((c.phase, distance, tilt, locations.count("pitcher")))
+
+        c.callback = tick
+        return seen
+
+    @staticmethod
+    def check(*, seen: list[tuple[str, float, float, int]]) -> None:
+        """Print the closest approach (vertex fallback for spurious zeros) and hold it
+        to the bar."""
+        assert seen, "no planned phase was recorded"
+        phase, closest, _, _ = min(seen, key=lambda r: r[1])
+        print(f"closest MuJoCo approach over planned phases: {closest * 100:.2f} cm in {phase}")
+        assert closest >= MUJOCO_CLEARANCE_M, (phase, closest)
