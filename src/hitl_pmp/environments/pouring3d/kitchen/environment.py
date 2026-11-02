@@ -1,5 +1,6 @@
 """Opt-in kitchen lifecycle. Episode initialization is never a practice action."""
 
+from collections import OrderedDict
 from typing import Any, ClassVar, Literal
 
 import numpy as np
@@ -10,8 +11,10 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvironment
 from hitl_pmp.environments.pouring3d.practice.skills import RESET_NAME as LEGACY_RESET
 from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
+from hitl_pmp.environments.pouring3d.types import PayloadPickPlan
 
 from .config import KitchenGeometry
+from .pick_plannable import KitchenPickPlannable
 from .types import KitchenObjects as O
 
 HUMAN_RESET = "human_bulk_pour_back"
@@ -32,6 +35,9 @@ class KitchenEnvironment(FrozenPourEnvironment):
     interruption_cost_total: float = 0
     episode_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     _started: bool = PrivateAttr(default=False)
+    _pick_plans: OrderedDict[tuple[int, str, bytes], PayloadPickPlan] = PrivateAttr(
+        default_factory=OrderedDict
+    )
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=float),
         high=np.array([9, 2, 3, 130, 0.025, 60], dtype=float),
@@ -86,6 +92,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         atoms.add(("HobOn" if on else "HobOff", ("hob",)))
         if not on:
             atoms.add(("ColdIngredients", ()))
+        atoms |= KitchenPickPlannable.atoms(controller=c, cache=self._pick_plans)
         away = c.base_home[:2].copy()
         away[0] -= self.geometry.retreat_distance_m
         if np.linalg.norm(c.data.qpos[c.base_q][:2] - away) < 0.025:

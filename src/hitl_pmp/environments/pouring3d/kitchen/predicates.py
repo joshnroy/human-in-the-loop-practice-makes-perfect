@@ -22,6 +22,7 @@ class KitchenPredicates:
                     ("ColdIngredients", ()),
                     ("RobotAway", (O.robot_type,)),
                     ("MealStarted", (O.request_type,)),
+                    ("PickPlannable", (O.robot_type, O.shrimp_type)),
                 )
             ),
         )
