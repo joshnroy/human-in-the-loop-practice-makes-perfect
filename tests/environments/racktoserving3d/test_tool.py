@@ -354,13 +354,20 @@ def test_return_without_support_retains_the_physical_grasp():
     assert shelf.watch_wiper
 
 
-@pytest.mark.parametrize("kind", [3, 5])
-def test_wire_and_cylinder_bounds_include_rounded_ends(*, kind):
+def test_wire_capsule_bounds_include_rounded_ends():
     shelf = FakeShelf()
-    shelf.model.geom_type[5] = kind
+    shelf.model.geom_type[5] = 3
     np.testing.assert_allclose(
         geom_half_extents(model=shelf.model, geom=5), [0.0015, 0.0015, 0.1815]
     )
+
+
+def test_flat_cylinder_bounds_are_its_exact_box_without_phantom_caps():
+    """A 0.13 m plate is not a capsule: caps would add a 0.13 m exclusion above it."""
+    shelf = FakeShelf()
+    shelf.model.geom_type[5] = 5
+    shelf.model.geom_size[5] = [0.13, 0.006, 0]
+    np.testing.assert_allclose(geom_half_extents(model=shelf.model, geom=5), [0.13, 0.13, 0.006])
 
 
 def test_transit_route_bounds_accept_mutable_wire_fixtures():

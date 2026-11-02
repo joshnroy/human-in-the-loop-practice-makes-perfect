@@ -8,6 +8,7 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.food import RackFoodController, _FoodMotion
+from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
@@ -202,7 +203,7 @@ def test_pick_does_not_repurpose_scraper_transform(*, food):
 
 def test_placement_avoids_occupied_footprints(*, food):
     food.backend.support = Mock(
-        return_value=SimpleNamespace(
+        return_value=SupportRegion(
             x_min=1.37,
             x_max=1.63,
             y_min=-0.1875,
@@ -453,7 +454,7 @@ def test_lowering_reobserves_food_extent_instead_of_using_old_grasp_offset(*, fo
         centre + [0.015, 0.02, half_height[0]],
     ])
     food.backend.support = Mock(
-        return_value=SimpleNamespace(x_min=1.2, x_max=1.6, y_min=-0.2, y_max=0.2, top_z=0.925)
+        return_value=SupportRegion(x_min=1.2, x_max=1.6, y_min=-0.2, y_max=0.2, top_z=0.925)
     )
     food.shelf.site_pose = lambda: Frames.pose(
         rotation=np.eye(3), position=centre + [0.0, 0.0, 0.03]
@@ -552,3 +553,55 @@ def test_joint_staging_executes_planned_configuration_without_ik():
     np.testing.assert_array_equal(planner.plan.call_args.kwargs["target"], target)
     np.testing.assert_array_equal(motion.step.call_args.kwargs["arm"], target)
     np.testing.assert_array_equal(motion.settle_hand.call_args.kwargs["arm"], target)
+
+
+def _round_plate_food(*, food):
+    plate = CircularSupport(center_x=1.2325, center_y=0.0, radius=0.13, top_z=0.912)
+    food.backend.support = Mock(return_value=plate)
+    half_size = np.array([0.015, 0.0225, 0.0125])
+    food.backend.corners = Mock(
+        side_effect=lambda *, name: (
+            np.array([
+                np.array([1.2, 0, 0.925]) - half_size,
+                np.array([1.2, 0, 0.925]) + half_size,
+            ])
+            if name == "cube_0"
+            else np.array([[5, 5, 5], [5.01, 5.01, 5.01]])
+        )
+    )
+    return plate, half_size
+
+
+def test_round_plate_placements_keep_the_whole_footprint_inside_the_circle(*, food):
+    plate, half_size = _round_plate_food(food=food)
+    candidates = food._placement_candidates(name="cube_0", destination="box_0")
+    assert len(candidates) >= 5
+    for target in candidates:
+        corners = [
+            (target[0] + sx * half_size[0], target[1] + sy * half_size[1])
+            for sx in (-1, 1)
+            for sy in (-1, 1)
+        ]
+        assert plate.contains_xy(points=corners, margin=0.02)
+        assert target[2] - half_size[2] == pytest.approx(0.912 + 0.003)
+
+
+def test_round_plate_lowering_rejects_a_footprint_leaving_the_circle(*, food):
+    plate, _ = _round_plate_food(food=food)
+    food.backend.held.return_value = True
+    centre = np.array([1.2325 + 0.09, 0.09, 0.95])
+    food._pose = lambda **kwargs: Frames.pose(rotation=np.eye(3), position=centre.copy())
+    food.backend.corners = lambda **kwargs: np.array([
+        centre - [0.015, 0.0225, 0.0125],
+        centre + [0.015, 0.0225, 0.0125],
+    ])
+    assert plate.x_min < centre[0] < plate.x_max and plate.y_min < centre[1] < plate.y_max
+    with pytest.raises(SkillFailed, match="no longer fits"):
+        RackFoodController._lower_food(
+            food,
+            name="cube_0",
+            destination="box_0",
+            target_xy=centre[:2],
+            rotation=np.eye(3),
+        )
+    food.motion.line.assert_not_called()

@@ -21,12 +21,16 @@ from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom, RackServing3DAtoms
 from .scene import build_scene
 from .semantics import (
+    CircularSupport,
     FoodLocation,
     FoodMeasurement,
     RackServingLedger,
+    ServingRegion,
     SupportRegion,
     classify_food,
 )
+
+FOOTPRINT_SAMPLES = 64
 
 
 class RackServingBackend(SweepOffShelf3DBackend):
@@ -136,6 +140,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
             size = model.geom_size[geom].copy()
             if int(model.geom_type[geom]) == 3:
                 size = np.array([size[0], size[0], size[0] + size[1]])
+            elif int(model.geom_type[geom]) == 5:
+                size = np.array([size[0], size[0], size[1]])
             elif int(model.geom_type[geom]) == 2:
                 size[:] = size[0]
             elif int(model.geom_type[geom]) == 4:
@@ -147,7 +153,31 @@ class RackServingBackend(SweepOffShelf3DBackend):
             )
         return np.asarray(points)
 
-    def support(self, *, name: str) -> SupportRegion:
+    def footprint(self, *, name: str) -> np.ndarray:
+        """Points whose convex hull encloses the body's horizontal shadow.
+
+        An ellipsoid's shadow is an exact ellipse; its sampled polygon is scaled
+        out by sec(pi/N) so the polygon circumscribes, never undercuts, it.
+        Other geoms contribute their (conservative) bounding-box corners.
+        """
+        model, data = self.model(), self.data()
+        angles = np.linspace(0, 2 * np.pi, FOOTPRINT_SAMPLES, endpoint=False)
+        circle = np.stack([np.cos(angles), np.sin(angles)]) / np.cos(np.pi / FOOTPRINT_SAMPLES)
+        points: list[np.ndarray] = []
+        for geom in sorted(self.body_geoms(name=name)):
+            if int(model.geom_type[geom]) != 4:
+                continue
+            rotation = data.geom_xmat[geom].reshape(3, 3)
+            shadow = (rotation @ np.diag(np.square(model.geom_size[geom])) @ rotation.T)[:2, :2]
+            points.extend((data.geom_xpos[geom][:2, None] + np.linalg.cholesky(shadow) @ circle).T)
+        others = [geom for geom in self.body_geoms(name=name) if int(model.geom_type[geom]) != 4]
+        if others or not points:
+            points.extend(self.corners(name=name)[:, :2])
+        return np.asarray(points)
+
+    def support(self, *, name: str) -> ServingRegion:
+        if name == "box_0" and self.config.serving_target == "round_plate":
+            return self.plate_support()
         if name == "counter":
             config = self.config
             return SupportRegion(
@@ -161,6 +191,25 @@ class RackServingBackend(SweepOffShelf3DBackend):
         lower, upper = corners.min(axis=0), corners.max(axis=0)
         return SupportRegion(
             x_min=lower[0], x_max=upper[0], y_min=lower[1], y_max=upper[1], top_z=upper[2]
+        )
+
+    def plate_support(self) -> CircularSupport:
+        """Live circle of the plate's single cylinder geom.
+
+        A tilted plate's shadow is an ellipse whose minor semi-axis is
+        radius * |cos tilt|; using that as the radius keeps containment strict.
+        """
+        model, data = self.model(), self.data()
+        geoms = [geom for geom in self.body_geoms(name="box_0") if int(model.geom_type[geom]) == 5]
+        if len(geoms) != 1:
+            raise RuntimeError("the round serving plate must be exactly one cylinder geom")
+        geom = geoms[0]
+        rotation = data.geom_xmat[geom].reshape(3, 3)
+        return CircularSupport(
+            center_x=float(data.geom_xpos[geom][0]),
+            center_y=float(data.geom_xpos[geom][1]),
+            radius=float(model.geom_size[geom][0] * abs(rotation[2, 2])),
+            top_z=float(self.corners(name="box_0")[:, 2].max()),
         )
 
     def box_interior(self) -> tuple[tuple[float, float, float, float], float]:
@@ -190,10 +239,16 @@ class RackServingBackend(SweepOffShelf3DBackend):
         """
         corners = self.corners(name=name)
         lower, upper = corners.min(axis=0), corners.max(axis=0)
+        tray = self.support(name="box_0")
         measured = FoodMeasurement(
             position=tuple((lower + upper) / 2),
             half_extents=tuple((upper - lower) / 2),
             held=self.held(name=name),
+            footprint=(
+                tuple((float(x), float(y)) for x, y in self.footprint(name=name))
+                if isinstance(tray, CircularSupport)
+                else None
+            ),
         )
         supports = self.supporting_bodies(name=name)
         contact_names: dict[str, Literal["rack", "tray", "counter", "floor"]] = {
@@ -207,7 +262,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
         location = classify_food(
             food=measured,
             rack=self.support(name="rack_0"),
-            tray=self.support(name="box_0"),
+            tray=tray,
             counter=self.support(name="counter"),
             support_contacts=frozenset(
                 contact_names[name] for name in supports if name in contact_names

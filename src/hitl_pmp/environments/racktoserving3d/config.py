@@ -20,9 +20,12 @@ Friction = tuple[Nonnegative, Nonnegative, Nonnegative]
 class RackServingConfig(BaseModel):
     """Frozen SI-unit configuration; front/exit is the negative world-x side.
 
-    Rack and tray poses use bottom-center body origins. Dumpling poses use
-    their geometric centers. The tray position is derived to preserve ``gap``.
-    Neither the rack nor the slate tray is fixed or assumed ungraspable.
+    Rack and serving-object poses use bottom-center body origins. Dumpling
+    poses use their geometric centers. The serving object (``box_0``) is a round
+    plate by default or the original rectangular slate, selected by
+    ``serving_target``; its position is derived to preserve ``gap`` in front of
+    the rack's exit edge, centred on the rack's centre line. Neither the rack
+    nor the serving object is fixed or assumed ungraspable.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
@@ -52,8 +55,10 @@ class RackServingConfig(BaseModel):
     concept_pitch: Positive = 0.025
     concept_thickness: Positive = 0.003
 
-    tray_width: Positive = 0.375
-    tray_depth: Positive = 0.30
+    serving_target: Literal["round_plate", "slate"] = "round_plate"
+    plate_radius: Positive = 0.13
+    tray_width: Positive = Field(default=0.375, description="slate only")
+    tray_depth: Positive = Field(default=0.30, description="slate only")
     tray_mass: Positive = 1.0
     tray_friction: Friction = (0.6, 0.005, 0.003)
     counter_x_min: float = 0.98
@@ -94,8 +99,18 @@ class RackServingConfig(BaseModel):
         return self.counter_height + self.rack_height
 
     @property
+    def serving_depth(self) -> float:
+        """World-x extent of the serving object's footprint."""
+        return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_depth
+
+    @property
+    def serving_width(self) -> float:
+        """World-y extent of the serving object's footprint."""
+        return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_width
+
+    @property
     def tray_center_x(self) -> float:
-        return self.rack_front_x - self.gap - self.tray_depth / 2
+        return self.rack_front_x - self.gap - self.serving_depth / 2
 
     @property
     def tray_center_y(self) -> float:
@@ -103,7 +118,7 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_front_x(self) -> float:
-        return self.tray_center_x - self.tray_depth / 2
+        return self.tray_center_x - self.serving_depth / 2
 
     @property
     def tray_back_x(self) -> float:
@@ -141,7 +156,7 @@ class RackServingConfig(BaseModel):
         if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
             raise ValueError("Rack and tray must fit on the counter in x")
         if (
-            abs(self.rack_center_y) + max(self.rack_width, self.tray_width) / 2
+            abs(self.rack_center_y) + max(self.rack_width, self.serving_width) / 2
             > self.counter_width / 2
         ):
             raise ValueError("Rack and tray must fit on the counter in y")

@@ -8,16 +8,17 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
-from hitl_pmp.environments.racktoserving3d.semantics import SupportRegion
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 
 
-def _backend(*, monkeypatch, kind, size, rotation, center):
+def _backend(*, monkeypatch, kind, size, rotation, center, config=None):
     model = SimpleNamespace(geom_type=np.array([kind]), geom_size=np.array([size]))
     data = SimpleNamespace(geom_xmat=np.array([rotation.reshape(-1)]), geom_xpos=np.array([center]))
     monkeypatch.setattr(RackServingBackend, "model", lambda self: model)
     monkeypatch.setattr(RackServingBackend, "data", lambda self: data)
     monkeypatch.setattr(RackServingBackend, "body_geoms", lambda self, **kwargs: {0})
-    return RackServingBackend()
+    return RackServingBackend() if config is None else RackServingBackend(config=config)
 
 
 @pytest.mark.parametrize("angles", [(45, 0, 0), (0, 37, 0), (41, 23, 17), (90, 0, 0)])
@@ -45,6 +46,8 @@ def test_non_ellipsoid_bounds_are_unchanged(*, monkeypatch, kind, angles):
     )
     if kind == 3:
         extent = np.array([size[0], size[0], size[0] + size[1]])
+    elif kind == 5:
+        extent = np.array([size[0], size[0], size[1]])
     elif kind == 2:
         extent = np.full(3, size[0])
     else:
@@ -108,3 +111,92 @@ def test_background_floor_uses_contact_geometry_not_scene_body_name(
         lambda self, **kwargs: SupportRegion(x_min=1, x_max=2, y_min=-0.5, y_max=0.5, top_z=0.9),
     )
     assert RackServingBackend().location(name="cube_0") == expected
+
+
+@pytest.mark.parametrize("angles", [(0, 0, 0), (45, 0, 0), (41, 23, 17), (10, 80, 5)])
+def test_ellipsoid_footprint_encloses_its_exact_horizontal_shadow(*, monkeypatch, angles):
+    rotation = Rotation.from_euler("zyx", angles, degrees=True).as_matrix()
+    size = np.array([0.015, 0.0225, 0.0125])
+    center = np.array([1.2, -0.04, 0.94])
+    backend = _backend(monkeypatch=monkeypatch, kind=4, size=size, rotation=rotation, center=center)
+    footprint = backend.footprint(name="cube_0")
+    assert footprint.ndim == 2 and footprint.shape[1] == 2
+    shadow = (rotation @ np.diag(size**2) @ rotation.T)[:2, :2]
+    for theta in np.linspace(0, 2 * np.pi, 361):
+        direction = np.array([np.cos(theta), np.sin(theta)])
+        exact = center[:2] @ direction + np.sqrt(direction @ shadow @ direction)
+        reach = float(np.max(footprint @ direction))
+        assert exact - 1e-12 <= reach <= exact + 1e-4
+
+
+def test_box_footprint_is_its_horizontal_corners(*, monkeypatch):
+    rotation = Rotation.from_euler("z", 30, degrees=True).as_matrix()
+    size = np.array([0.015, 0.0225, 0.0125])
+    backend = _backend(
+        monkeypatch=monkeypatch, kind=6, size=size, rotation=rotation, center=np.zeros(3)
+    )
+    np.testing.assert_allclose(
+        backend.footprint(name="rack_0"), backend.corners(name="rack_0")[:, :2]
+    )
+
+
+def _plate_backend(*, monkeypatch, tilt=0.0, serving_target="round_plate"):
+    rotation = Rotation.from_euler("x", tilt, degrees=True).as_matrix()
+    return _backend(
+        monkeypatch=monkeypatch,
+        kind=5,
+        size=np.array([0.13, 0.006, 0.0]),
+        rotation=rotation,
+        center=np.array([1.2325, 0.01, 0.906]),
+        config=RackServingConfig(serving_target=serving_target),
+    )
+
+
+def test_round_plate_support_is_the_live_cylinder_circle(*, monkeypatch):
+    plate = _plate_backend(monkeypatch=monkeypatch).support(name="box_0")
+    assert isinstance(plate, CircularSupport)
+    assert (plate.center_x, plate.center_y, plate.radius) == pytest.approx((1.2325, 0.01, 0.13))
+    assert plate.top_z == pytest.approx(0.912)
+    assert plate.x_max == pytest.approx(1.3625)
+
+
+def test_tilted_round_plate_support_shrinks_conservatively(*, monkeypatch):
+    plate = _plate_backend(monkeypatch=monkeypatch, tilt=10).support(name="box_0")
+    assert plate.radius == pytest.approx(0.13 * np.cos(np.deg2rad(10)))
+
+
+def test_slate_target_keeps_rectangular_support(*, monkeypatch):
+    rotation = np.eye(3)
+    backend = _backend(
+        monkeypatch=monkeypatch,
+        kind=6,
+        size=np.array([0.15, 0.1875, 0.006]),
+        rotation=rotation,
+        center=np.array([1.2125, 0, 0.906]),
+        config=RackServingConfig(serving_target="slate"),
+    )
+    assert isinstance(backend.support(name="box_0"), SupportRegion)
+
+
+@pytest.mark.parametrize(("food_y", "expected"), [(0.0, "OnTray"), (0.10, None)])
+def test_food_inside_plate_box_but_outside_circle_is_not_on_tray(*, monkeypatch, food_y, expected):
+    size = np.array([0.015, 0.0225, 0.0125])
+    backend = _backend(
+        monkeypatch=monkeypatch,
+        kind=4,
+        size=size,
+        rotation=np.eye(3),
+        center=np.array([1.2325 + 0.095, food_y, 0.9245]),
+        config=RackServingConfig(),
+    )
+    monkeypatch.setattr(RackServingBackend, "held", lambda self, **kwargs: False)
+    monkeypatch.setattr(RackServingBackend, "supporting_bodies", lambda self, **kwargs: {"box_0"})
+    plate = CircularSupport(center_x=1.2325, center_y=0.0, radius=0.13, top_z=0.912)
+    rack = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, top_z=0.925)
+    monkeypatch.setattr(
+        RackServingBackend,
+        "support",
+        lambda self, *, name: plate if name == "box_0" else rack,
+    )
+    assert plate.x_min < 1.2325 + 0.095 - 0.015 and plate.x_max > 1.2325 + 0.095 + 0.015
+    assert backend.location(name="cube_0") == expected

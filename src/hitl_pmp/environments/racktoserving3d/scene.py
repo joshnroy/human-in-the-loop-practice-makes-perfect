@@ -13,6 +13,7 @@ from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 COUNTER_TYPE = "rackservingcounter"
 RACK_TYPE = "rack_serving_rack"
 TRAY_TYPE = "rack_serving_slate"
+PLATE_TYPE = "rack_serving_round_plate"
 SCRAPER_TYPE = "rack_serving_scraper"
 DUMPLING_TYPE = "rack_serving_dumpling"
 
@@ -99,18 +100,22 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
         "ranges": [
             [
                 config.tray_front_x,
-                config.tray_center_y - config.tray_width / 2,
+                config.tray_center_y - config.serving_width / 2,
                 config.tray_top_z,
                 config.tray_back_x,
-                config.tray_center_y + config.tray_width / 2,
+                config.tray_center_y + config.serving_width / 2,
                 config.tray_top_z + config.dumpling_height,
             ]
         ],
         "yaw_ranges": [[0, 0]],
     }
+    round_plate = config.serving_target == "round_plate"
+    serving_type = PLATE_TYPE if round_plate else TRAY_TYPE
+    serving_noun = "round serving plate" if round_plate else "slate serving tray"
+    serving_rgba = [0.93, 0.92, 0.88, 1] if round_plate else [0.16, 0.18, 0.19, 1]
     return {
         "description": (
-            "Movable cooling rack to movable flat slate tray; rigid dumpling proxies. "
+            f"Movable cooling rack to movable flat {serving_noun}; rigid dumpling proxies. "
             "Hardware height, mass, friction and cooling are unverified assumptions."
         ),
         "robots": {"tidybot": {"robot": {}}},
@@ -137,21 +142,21 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
                     "rack_serving_config": config.model_dump(mode="json"),
                 }
             },
-            TRAY_TYPE: {
+            serving_type: {
                 "box_0": {
                     "size": [
-                        config.tray_depth / 2,
-                        config.tray_width / 2,
+                        config.serving_depth / 2,
+                        config.serving_width / 2,
                         config.tray_thickness / 2,
                     ],
-                    "length": config.tray_depth,
-                    "width": config.tray_width,
+                    "length": config.serving_depth,
+                    "width": config.serving_width,
                     "height": config.tray_thickness,
                     "wall_thickness": 0.0,
                     "mass": config.tray_mass,
                     "friction": list(config.tray_friction),
                     "contact_dimension": config.support_contact_dimension,
-                    "rgba": [0.16, 0.18, 0.19, 1],
+                    "rgba": serving_rgba,
                 }
             },
             SCRAPER_TYPE: {

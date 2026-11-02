@@ -8,23 +8,30 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.geometry import install_geometry
-from hitl_pmp.environments.racktoserving3d.scene import DUMPLING_TYPE, TRAY_TYPE, build_scene
+from hitl_pmp.environments.racktoserving3d.scene import (
+    DUMPLING_TYPE,
+    PLATE_TYPE,
+    TRAY_TYPE,
+    build_scene,
+)
 
 
+@pytest.mark.parametrize("serving_target", ["round_plate", "slate"])
 @pytest.mark.parametrize("tilt", [0, 15, 45])
-def test_production_food_settles_on_priority_tray(*, tilt: float) -> None:
+def test_production_food_settles_on_priority_tray(*, tilt: float, serving_target: str) -> None:
     mujoco = pytest.importorskip("mujoco")
     pytest.importorskip("kinder")
     from kinder.envs.dynamic3d.objects.base import REGISTERED_OBJECTS
 
     install_geometry()
-    config = RackServingConfig()
+    config = RackServingConfig(serving_target=serving_target)
     scene = build_scene(config=config)
+    serving_type = PLATE_TYPE if serving_target == "round_plate" else TRAY_TYPE
     root = ET.Element("mujoco")
     ET.SubElement(root, "option", timestep="0.0005")
     world = ET.SubElement(root, "worldbody")
     ET.SubElement(world, "geom", type="plane", size="1 1 0.1")
-    for kind, name in ((TRAY_TYPE, "box_0"), (DUMPLING_TYPE, "cube_0")):
+    for kind, name in ((serving_type, "box_0"), (DUMPLING_TYPE, "cube_0")):
         instance = REGISTERED_OBJECTS[kind](name=name, options=scene["objects"][kind][name])
         body = instance.xml_element
         if name == "box_0":
@@ -58,5 +65,5 @@ def test_production_food_settles_on_priority_tray(*, tilt: float) -> None:
     assert observed_dimensions == {6}
     assert np.linalg.norm(data.qvel[velocity_index : velocity_index + 3]) < 0.001
     assert np.linalg.norm(data.qvel[velocity_index + 3 : velocity_index + 6]) < 0.05
-    assert abs(data.xpos[food_body, 0]) < config.tray_depth / 2 - config.dumpling_depth / 2
+    assert abs(data.xpos[food_body, 0]) < config.serving_depth / 2 - config.dumpling_depth / 2
     assert data.xpos[food_body, 2] > config.tray_thickness
