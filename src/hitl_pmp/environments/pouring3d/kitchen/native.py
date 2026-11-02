@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
+from pydantic import Field
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
@@ -77,6 +78,13 @@ class KitchenController(PotstickerController):
     station_pour_base_offset: ClassVar[float] = 0.60
     recovery_pitch_degrees: float = 30.0
     recovery_base_x: float = 0.30
+    # Episode-initial arm configuration; set by build(). Continuous joints are
+    # unwound by whole turns towards it before every empty-hand pick.
+    arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
+    unwind_speed: float = 0.20
+    # A loaded motion within this of a continuous joint's IK bound fails loudly.
+    held_bound_margin: ClassVar[float] = np.deg2rad(20.0)
 
     @classmethod
     def build(
@@ -113,7 +121,88 @@ class KitchenController(PotstickerController):
             (a, b) for a, b in controller.pan_pairs if controller.model.geom_contype[b] != 0
         ]
         controller.mode = "joint_lateral"
+        controller.arm_neutral_q = controller.data.qpos[controller.arm_q].copy()
         return controller
+
+    def continuous_turns(self) -> np.ndarray:
+        """Whole turns each continuous arm joint has wound away from its neutral angle."""
+        continuous = self.lower == -12
+        q = self.data.qpos[self.arm_q]
+        turns = np.zeros(len(q), dtype=int)
+        turns[continuous] = np.round(
+            (q[continuous] - self.arm_neutral_q[continuous]) / (2 * np.pi)
+        ).astype(int)
+        return turns
+
+    def unwind_continuous_joints(self) -> None:
+        """Rotate each wound continuous joint back by whole turns, empty hand only.
+
+        IK resolves each continuous joint to the equivalent nearest the previous
+        angle, so pick/place cycles ratchet joint 1 by roughly a turn every few
+        cycles until it pins at the IK bound (+-12 rad) and strands the jug. A whole
+        turn leaves the hand pose unchanged; the joint path between is collision-
+        checked in scratch before any motor command, and a blocked path executes
+        nothing. The other joints are untouched and there is no home posture.
+        """
+        if self.held is not None:
+            raise ValueError("Unwinding requires an empty hand")
+        turns = self.continuous_turns()
+        if not turns.any():
+            return
+        start = self.data.qpos[self.arm_q].copy()
+        goal = start - 2 * np.pi * turns
+        self.phase = "unwind continuous arm joints"
+        self.scratch.qpos[:] = self.data.qpos
+        for u in np.linspace(0, 1, 1 + 4 * int(np.ceil(np.max(np.abs(goal - start)) / 0.05))):
+            self.scratch.qpos[self.arm_q] = start + u * (goal - start)
+            self.update_ik_scratch()
+            if np.max(self.obstacle_residual(), initial=0) > 0.005:
+                self.events.append({"unwind_blocked": turns.tolist(), "fraction": float(u)})
+                return
+            if self.scratch.site_xpos[self.site, 2] < 0.25:
+                self.events.append({"unwind_blocked": turns.tolist(), "fraction": float(u)})
+                return
+        seconds = max(2.0, float(np.max(np.abs(goal - start))) / self.unwind_speed)
+        count = round(seconds * self.frequency)
+        for index in range(1, count + 1):
+            u = index / count
+            self.last_q = start + u * u * (3 - 2 * u) * (goal - start)
+            self.motor_step(target_q=self.last_q, grip=0)
+        self.last_q = goal.copy()
+        for _ in range(round(10 * self.frequency)):
+            if np.max(np.abs(goal - self.data.qpos[self.arm_q])) < 0.025:
+                return
+            self.motor_step(target_q=goal, grip=0)
+        raise ValueError("Arm did not track the unwinding motion")
+
+    def pick_pitcher(self) -> None:
+        if self.held is None:
+            self.unwind_continuous_joints()
+        super().pick_pitcher()
+
+    def pick_shrimp(self, *, index: int, location: str) -> None:
+        if self.held is None:
+            self.unwind_continuous_joints()
+        super().pick_shrimp(index=index, location=location)
+
+    def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
+        previous = self.last_q.copy()
+        q = super().inverse_kinematics(position=position, rotation=rotation)
+        if self.held is not None:
+            continuous = self.lower == -12
+            room = np.minimum(q - self.lower, self.upper - q)
+            near = np.flatnonzero(continuous & (room < self.held_bound_margin))
+            if near.size:
+                # Unwinding needs an empty hand, so a loaded arm this wound would
+                # pin at the bound and strand what it carries. Say so by name.
+                self.last_q = previous
+                joint = int(near[0])
+                raise ValueError(
+                    f"Continuous joint {joint + 1} at {np.rad2deg(q[joint]):.0f} deg is within "
+                    f"{np.rad2deg(self.held_bound_margin):.0f} deg of its IK bound "
+                    f"({np.rad2deg(self.upper[joint]):.0f} deg) while holding {self.held}"
+                )
+        return q
 
     def can_release_pitcher_over_home(self) -> bool:
         if self.held != "pitcher":
