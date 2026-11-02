@@ -50,13 +50,14 @@ def test_pan_sits_on_a_desk_height_hob_while_the_jug_counter_is_unchanged():
     assert jug_region[2] == jug_region[5] == pytest.approx(0.8405)
 
 
-def test_kitchen_dumplings_default_to_dough_on_cast_iron_friction_only_in_the_kitchen():
+def test_kitchen_skillet_carries_dough_on_cast_iron_friction_and_dumplings_stay_low():
     from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
 
-    assert KitchenEnvironment().surface_mu == pytest.approx(0.4)
+    assert KitchenEnvironment().surface_mu == pytest.approx(0.1)
+    assert KitchenEnvironment().skillet_mu == pytest.approx(0.4)
     kitchen = argparse.ArgumentParser()
     KitchenCli.add_arguments(parser=kitchen)
-    assert kitchen.parse_args([]).surface_mu == pytest.approx(0.4)
+    assert kitchen.parse_args([]).surface_mu == pytest.approx(0.1)
     # The legacy pouring benchmark keeps its own assumption.
     assert FrozenPourEnvironment().surface_mu == pytest.approx(0.1)
     legacy = argparse.ArgumentParser()

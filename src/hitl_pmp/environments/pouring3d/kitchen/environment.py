@@ -26,9 +26,12 @@ class KitchenEnvironment(FrozenPourEnvironment):
     layout: Literal["stations"] = "stations"
     receiving_vessel: Literal["skillet"] = "skillet"
     geometry: KitchenGeometry = Field(default_factory=KitchenGeometry)
-    # Frozen dough on dry seasoned cast iron, a judgement in 0.3-0.5, not a measurement.
-    # The legacy 0.1 is ice-like. Pad-dumpling friction is a separate explicit 0.6 pair.
-    surface_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
+    # Dumpling geoms: governs dumpling-jug, dumpling-dumpling and worktop/floor contact.
+    # Low so the pours can meter pieces out of the jug. Pads are an explicit 0.6 pair.
+    surface_mu: float = Field(default=0.1, ge=0, allow_inf_nan=False)
+    # Skillet geoms, at a contact priority above the dumplings: frozen dough on dry
+    # seasoned cast iron, a judgement in 0.3-0.5, not a measurement.
+    skillet_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
     human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
     human_interventions: int = 0
@@ -67,6 +70,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
             seed=seed,
             scene_bg=self.scene_bg,
             surface_mu=self.surface_mu,
+            skillet_mu=self.skillet_mu,
         )
         self._controller.before_step = self.before_tick
         self._controller.after_step = self.after_tick
