@@ -37,7 +37,7 @@ def test_a_map_direction_into_the_far_side_is_domain_plus_x() -> None:
 def test_the_two_bin_spots_land_on_their_named_sides_in_the_domain_frame() -> None:
     robot_spot = BIN_SPOTS[Tossing3DSide.ROBOT]
     far_spot = BIN_SPOTS[Tossing3DSide.OPPOSITE]
-    assert robot_spot.center == (-0.30, -0.78)
+    assert robot_spot.center == (-0.30, -1.00)
     assert far_spot.center == (0.24, 1.40)
     assert ROOM_FRAME.to_domain(x=robot_spot.center[0], y=robot_spot.center[1])[0] < 0.0
     assert ROOM_FRAME.to_domain(x=far_spot.center[0], y=far_spot.center[1])[0] > 0.0

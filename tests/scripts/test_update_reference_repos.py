@@ -298,17 +298,20 @@ def test_the_recorded_pins_are_the_five_reference_repos() -> None:
     urls = [line.split("=", 1)[1].strip() for line in gitmodules.splitlines() if "url =" in line]
     assert len(urls) == 5
     assert all(url.startswith("https://github.com/") for url in urls), urls
-    # Every URL is now the canonical upstream remote. The two KINDER rows pointed at
-    # forks Josh controls until this changed, because a submodule *hard-fails* when a
-    # pinned SHA is force-pushed away and a fork cannot be force-pushed under us. That
-    # protection is deliberately given up -- see CLAUDE.md's `reference/` section for the
-    # hazard that buys and for which of the two rows actually carries it.
+    # Every URL but prpl-tidybot's is the canonical upstream remote. The two KINDER rows
+    # pointed at forks Josh controls until this changed, because a submodule *hard-fails*
+    # when a pinned SHA is force-pushed away and a fork cannot be force-pushed under us.
+    # That protection is deliberately given up for them -- see CLAUDE.md's `reference/`
+    # section for the hazard that buys. prpl-tidybot is pinned on Josh's fork's `main`,
+    # where the real-robot work is reviewed (2026-11-02).
     assert "Princeton-Robot-Planning-and-Learning/kindergarden" in gitmodules
     assert "Princeton-Robot-Planning-and-Learning/kinder-baselines" in gitmodules
     assert "Learning-and-Intelligent-Systems/predicators" in gitmodules
-    assert "Princeton-Robot-Planning-and-Learning/prpl-tidybot" in gitmodules
+    assert "joshnroy/prpl-tidybot" in gitmodules
     assert "yixuanhuang98/tidybot_real" in gitmodules
-    assert "joshnroy/" not in gitmodules
+    assert [url for url in urls if "joshnroy/" in url] == [
+        "https://github.com/joshnroy/prpl-tidybot.git"
+    ]
 
 
 def test_kindergarden_is_initialised_blobless_by_default() -> None:

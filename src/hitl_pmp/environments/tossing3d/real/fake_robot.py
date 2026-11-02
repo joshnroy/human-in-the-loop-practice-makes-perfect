@@ -5,7 +5,8 @@ It answers in the map frame with replies shaped like the robot side's. Its rules
 stand-in, not a model of the room: a cube is pickable on the robot's side of the tape,
 a stand is refused unless the whole base stays on the robot's side, and a toss lands in
 the bin when its speed suits its standoff (`FakeTossingRobot.lands_in_bin`), and short
-of the bin, toward the robot, otherwise.
+of the bin, toward the robot, otherwise. A dump empties the bin onto `_POUR_OFFSET`
+beside it when the rim grip holds (`dump_grips`).
 """
 
 import math
@@ -23,7 +24,11 @@ _STAND_MARGIN_M = 0.38
 # A cube this far into the robot's side, or farther, can be picked.
 _PICK_MARGIN_M = 0.15
 _SHORT_LANDING_M = 0.45
-_BIN = {"length": 0.39, "width": 0.29, "height": 0.21}
+# The blue recycling bin's outer rim and height.
+_BIN = {"length": 0.365, "width": 0.26, "height": 0.384}
+# Where a dump drops the contents, from the bin's centre (map frame): the 2026-11-02 real
+# dumps at the robot-side spot poured at about this offset.
+_POUR_OFFSET = (0.65, 0.75)
 # The robot side's own `real_toss_bounds`, wider than this package's real set.
 _SERVER_TOSS_BOUNDS = TossParameterSet(
     standoff_bounds=(0.9, 1.45), speed_bounds=(100.0, 140.0), release_ms_bounds=(500.0, 850.0)
@@ -39,6 +44,7 @@ class FakeTossingRobot(BaseModel):
     holding: bool = False
     gripper_command: float = 0.0
     barrier_enabled: bool = True
+    dump_grips: bool = True
     calls: list[tuple[str, tuple[Any, ...]]] = Field(default_factory=list)
 
     def put(
@@ -171,6 +177,34 @@ class FakeTossingRobot(BaseModel):
         it, and only mid-range releases score."""
         suited = 100.0 + 40.0 * (standoff - 0.9) / 0.55
         return abs(speed - suited) <= 10.0 and 550.0 <= release_ms <= 800.0
+
+    def dump_bin(self) -> dict[str, Any]:
+        self.calls.append(("dump_bin", ()))
+        reply: dict[str, Any] = {
+            "dumped": False,
+            "refused": False,
+            "reason": None,
+            "note": None,
+            "stages": [],
+            "gripper": None,
+        }
+        why = None
+        if self.holding:
+            why = "holding the cube: open the gripper first"
+        elif self.bin is None:
+            why = "no bin found"
+        elif ROOM_FRAME.to_domain(x=self.bin[0], y=self.bin[1])[0] > -_STAND_MARGIN_M:
+            why = "the bin is across the barrier"
+        if why is not None:
+            return reply | {"refused": True, "reason": why, "note": why}
+        assert self.bin is not None
+        pour = (self.bin[0] + _POUR_OFFSET[0], self.bin[1] + _POUR_OFFSET[1])
+        reply |= {"pour_point": list(pour)}
+        if not self.dump_grips:
+            return reply | {"note": "no grip on the bin's rim (gripper read 1.00)", "gripper": 1.0}
+        if self.cube is not None and self._in_bin(xy=(self.cube[0], self.cube[1]), margin=0.0):
+            self.cube = (pour[0], pour[1], 0.0)
+        return reply | {"dumped": True, "gripper": 0.93}
 
     def open_gripper(self) -> None:
         self.calls.append(("open_gripper", ()))

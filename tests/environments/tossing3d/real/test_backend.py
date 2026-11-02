@@ -176,7 +176,7 @@ def test_each_real_skill_is_charged_its_sim_mean_ticks_after_one_before_check() 
     env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
     assert counts == {"before": 1, "after": RealSkillStepCosts().pick_cube}
     assert RealSkillStepCosts() == RealSkillStepCosts(
-        pick_cube=119, move_to_toss_location_and_toss=90, open_gripper=1
+        pick_cube=119, move_to_toss_location_and_toss=90, open_gripper=1, pour_bin=680
     )
 
 

@@ -10,8 +10,10 @@ geometry (walls, drivable box, reach) and is asked, never re-derived.
 
 Room facts (2026-10-20): the tape's robot-side edge is `y = 0.349 + 0.0267 x`, 0.05 m
 thick, with the robot on map `-y`; the far-side bin spot is the box x 0.03..0.45,
-y 1.24..1.56 (centre ~(0.24, 1.40)); the close-side spot is centred at ~(-0.30, -0.78)
-with the bin's long side along y.
+y 1.24..1.56 (centre ~(0.24, 1.40)); the close-side spot was centred at ~(-0.30, -0.78)
+with the bin's long side along y. On 2026-11-02 it moved to (-0.30, -1.00), where every
+real dump of the blue bin was tested: the pour there lands clear of the ceiling cameras'
+overlap band.
 """
 
 import math
@@ -81,7 +83,7 @@ ROOM_FRAME: Final = RealRoomFrame(barrier_center=(0.0, 0.374), robot_side=(0.026
 
 BIN_SPOTS: Final[dict[Tossing3DSide, BinSpot]] = {
     Tossing3DSide.ROBOT: BinSpot(
-        center=(-0.30, -0.78),
+        center=(-0.30, -1.00),
         yaw=math.pi / 2,
         description="the close spot on the robot's side of the tape, long side along y",
     ),

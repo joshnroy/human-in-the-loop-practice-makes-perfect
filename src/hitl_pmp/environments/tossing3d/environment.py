@@ -798,13 +798,7 @@ class Tossing3DEnvironment(Environment):
         if skill_id == self.pick_cube_from_bin_id and self.layout is Tossing3DLayout.SAME_SIDE:
             return [backend.run_pick_cube()]
         if skill_id == self.pour_bin_id and self.supports_bin_pouring and self.enable_bin_pouring:
-            if isinstance(backend, KinderBackend):
-                return [backend.run_pour_bin()]
-            return [
-                ControllerRun(
-                    steps=0, terminated=False, error="Bin pouring is unavailable on this backend"
-                )
-            ]
+            return [backend.run_pour_bin()]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 

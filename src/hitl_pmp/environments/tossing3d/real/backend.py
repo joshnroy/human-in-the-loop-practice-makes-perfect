@@ -67,7 +67,7 @@ from hitl_pmp.environments.tossing3d.types import (
     TossParameterSet,
 )
 
-from .contract import CanPickReply, ObserveReply, PickReply, TossingRobot, TossReply
+from .contract import CanPickReply, DumpReply, ObserveReply, PickReply, TossingRobot, TossReply
 from .frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME, BinSpot, RealRoomFrame
 from .session_log import RealSessionLog
 
@@ -91,7 +91,9 @@ class RealSkillStepCosts(BaseModel):
     Measured from the per-tick state logs of the 18 completed runs of
     `hitl-pmp-results/coded-sampler-20261014/full` (barrier layout, canonical seed 125),
     pooled over every execution and rounded: `PickCube` 118.53 (n=12695),
-    `MoveToTossLocationAndToss` 90.06 (n=12651), `OpenGripper` 1.00 (n=43). A sim
+    `MoveToTossLocationAndToss` 90.06 (n=12651), `OpenGripper` 1.00 (n=43). No run of
+    that sweep poured, so `PourCubeOutOfBin` is the barrier-layout sim pour of the four
+    `pick_plannable/exp22_*` scenes, 667-700 ticks, mean 679.5 (n=4, 2026-11-02). A sim
     controller change moves these means; re-measure then.
     """
 
@@ -100,6 +102,7 @@ class RealSkillStepCosts(BaseModel):
     pick_cube: int = Field(default=119, gt=0)
     move_to_toss_location_and_toss: int = Field(default=90, gt=0)
     open_gripper: int = Field(default=1, gt=0)
+    pour_bin: int = Field(default=680, gt=0)
 
 
 class PracticeProgress(BaseModel):
@@ -552,6 +555,23 @@ class RealTossingBackend(BaseModel):
             f"{release_speed_deg_s:.0f} deg/s, release {gripper_release_ms:.0f} ms)"
         )
         return self._skill(action=action, act=act, cost=cost)
+
+    def run_pour_bin(self) -> ControllerRun:
+        """`dump_bin`: grasp the bin's side wall, lift, turn, roll it over onto the floor
+        beside it, set it back down and let go. A dump that moved and did not empty the
+        bin is charged in full, as a pick that missed."""
+        cost = self.step_costs.pour_bin
+
+        def act() -> ControllerRun:
+            reply = DumpReply.model_validate(self.robot.dump_bin())
+            if reply.refused:
+                return ControllerRun(
+                    steps=0, terminated=True, error=f"dump refused: {reply.reason}"
+                )
+            error = None if reply.dumped else f"dump did not empty the bin: {reply.note}"
+            return ControllerRun(steps=cost, terminated=True, error=error)
+
+        return self._skill(action="PourCubeOutOfBin", act=act, cost=cost)
 
     def _skill(self, *, action: str, act: Callable[[], ControllerRun], cost: int) -> ControllerRun:
         """One robot skill, one fresh observation, then its charged steps.
