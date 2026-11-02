@@ -17,6 +17,19 @@ from hitl_pmp.environments.pouring3d.shrimp_native import CookedShrimp
 from .skillet import CastIronSkillet
 
 
+class PickPlanned(Exception):
+    """A planning-only pick found its plan; raised past the grasp-retry loop.
+
+    Not a `ValueError`, so neither the retry loop nor an environment's failure
+    handling mistakes it for a refused or failed attempt.
+    """
+
+    def __init__(self, *, goal: np.ndarray | None, candidate: tuple[float, ...]) -> None:
+        super().__init__("pick planned")
+        self.goal = goal
+        self.candidate = candidate
+
+
 class PracticePourController(FeedbackPourController):
     station_pour_height_drop: ClassVar[float] = 0.16
     station_pour_base_offset: ClassVar[float] = 0.70
@@ -40,6 +53,8 @@ class PracticePourController(FeedbackPourController):
     payload_grip_force: float = 0.0
     payload_hold_grip: float = 1.0
     shrimp_approach_path: list[tuple[np.ndarray, np.ndarray]] = Field(default_factory=list)
+    # Set only inside a dry run: stop the shrimp pick once its planning succeeds.
+    pick_plan_only: bool = False
 
     before_step: Callable[[], None] | None = None
     after_step: Callable[[], None] | None = None
@@ -284,6 +299,8 @@ class PracticePourController(FeedbackPourController):
                     raise ValueError("No feasible continuation from prepared arm postures")
             else:
                 raise ValueError("No feasible continuation from prepared arm postures")
+        if self.pick_plan_only:
+            raise PickPlanned(goal=goal, candidate=self.recovery_candidate())
         self.phase = "prepare arm in clear aisle"
         count = round(max(8.0, float(np.max(np.abs(goal - start))) / 0.20) * self.frequency)
         for index in range(1, count + 1):
@@ -555,6 +572,15 @@ class PracticePourController(FeedbackPourController):
             and self.vessel_home(name="tray")
         )
 
+    def recovery_candidate(self) -> tuple[float, ...]:
+        """The grasp configuration the shrimp pick is currently planning with."""
+        return (
+            self.recovery_finger_offset,
+            self.recovery_open_grip,
+            self.recovery_pitch_degrees,
+            self.recovery_approach_clearance,
+        )
+
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
         position, rotation = self.body_pose(name=name)
         endpoints = np.array([p for a, b, _ in CookedShrimp.segments() for p in (a, b)])
@@ -647,6 +673,9 @@ class PracticePourController(FeedbackPourController):
                 if self.recovery_plan_approach
                 else None,
             )
+        if self.pick_plan_only:
+            # The floor pick has no planning stage before its motion.
+            raise PickPlanned(goal=None, candidate=self.recovery_candidate())
         self.move_to_payload_grasp(grasp=grasp, point=point, down=down, elevated=elevated)
         self.pause(phase="settle shrimp approach", seconds=1, grip=self.recovery_open_grip)
         self.phase = "pinch shrimp"

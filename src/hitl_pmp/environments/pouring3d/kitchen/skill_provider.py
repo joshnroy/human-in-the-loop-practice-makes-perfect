@@ -9,6 +9,7 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Type
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+from hitl_pmp.environments.pouring3d.practice.skills import RESET_NAME as LEGACY_RESET
 from hitl_pmp.environments.pouring3d.practice.skills import PourSkills
 
 from .environment import HUMAN_RESET, KitchenEnvironment
@@ -24,10 +25,21 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
     @lru_cache(maxsize=1)
     def domain(*, count: int) -> tuple[Skill, ...]:
         cold = LiftedAtom(predicate=P.get(name="ColdIngredients"), variables=())
-        base = tuple(
-            s.model_copy(update={"preconditions": s.preconditions | {cold}})
-            for s in PourSkills.build(count=count)
-        )
+        plannable = P.get(name="PickPlannable")
+
+        def kitchen(s: Skill) -> Skill:  # noqa: PLR0917
+            # Each dumpling pick requires its planner to find a plan (see
+            # `pick_plannable.py`); the human pour-back deliberately does not.
+            # Skills that move dumplings forget the verdict; it is re-read on observation.
+            pre = s.preconditions | {cold}
+            if s.name.startswith("PickShrimp"):
+                pre |= {LiftedAtom(predicate=plannable, variables=s.parameters[:2])}
+            ignore = s.ignore_effects
+            if s.name.startswith("Pour") or s.name == LEGACY_RESET:
+                ignore |= {plannable}
+            return s.model_copy(update={"preconditions": pre, "ignore_effects": ignore})
+
+        base = tuple(kitchen(s) for s in PourSkills.build(count=count))
         r, k = Variable(name="r", type=O.robot_type), Variable(name="k", type=O.request_type)
         # Hob is unique and needs no new binding type in the shared grounding interface.
         # Using a zero-argument appliance predicate would lose observed object typing;

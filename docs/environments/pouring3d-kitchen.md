@@ -92,10 +92,20 @@ partial outcomes are not snapped into desired bins after robot actions.
 Existing predicates remain: HandEmpty, HoldingPitcher, HoldingShrimp, PitcherHome,
 TrayHome, InPitcher, InTray, OnFloor, OnSurface, Settled, PayloadOrder, Count1/2/3,
 ActiveRequest, NoSpills, NeedsReset, ReadyToPour, SplitCorrect, Goal. Added predicates:
-HobOff, HobOn, ColdIngredients, RobotAway, MealStarted. Containment,
+HobOff, HobOn, ColdIngredients, RobotAway, MealStarted, PickPlannable. Containment,
 settling and robot-away checks use native observed state. Hob state is an explicit
 simulator userdata channel with a visible burner/control indicator. The simulated activation
 skill is **not** a validated physical heat-control interface.
+
+`PickPlannable(robot, ingredient)` is a precondition of all three ingredient picks
+and of nothing else; in particular the human bulk pour-back does not require it. It
+is true iff the pick controller's own planner, run as a dry run of the dispatched
+pick (base move to the aisle, hover IK, approach/descend/lift continuation, for each
+grasp candidate in order), finds a plan from the observed state. The dry run is made
+on the live simulation and restored exactly, and cached per state; where there is
+no pick to plan (ingredient held, in the jug, on the floor, or the hand not empty)
+the atom is carried present. See `kitchen/pick_plannable.py`. An ingredient the
+robot cannot pick therefore leaves the costed human reset as the planner's route.
 
 ## Validation and video reproduction
 
