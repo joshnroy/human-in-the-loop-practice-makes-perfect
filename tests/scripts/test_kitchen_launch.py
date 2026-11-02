@@ -35,7 +35,7 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.sampler_max_train_iters == 10000
         assert args.reproduce_predicators_explore_target_only
         assert not args.reproduce_predicators_double_observe
-        assert args.surface_mu == 0.4
+        assert args.surface_mu == 0.1
         assert args.pour_tilt_bounds == [87, 95]
         assert args.pour_amplitude_bounds == [0, 0.025]
         assert args.pour_duration_bounds == [0, 30]

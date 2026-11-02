@@ -53,12 +53,22 @@ Deployment water is a visible, **non-colliding visual proxy**, not a solid surfa
 Fluid motion, buoyancy, added water inertia, and heat transfer are not simulated.
 The pan and handled jug retain their native rigid-body contact geometry. Dumplings
 are the existing three potsticker proxies. Contact/friction values are simulation
-assumptions, not calibrated material measurements. The kitchen's default dumpling
-`--surface-mu` is 0.4, a judgement for frozen dough on dry seasoned cast iron (0.3-0.5),
-where the legacy `pouring3d` default stays 0.1. The dumpling geoms carry contact
-priority, so this one value governs dumpling contact with the pan, the jug, the
-worktops, the floor and each other. Gripper-pad contact is a separate explicit 0.6
-pair and is unchanged.
+assumptions, not calibrated material measurements. Friction is set per surface
+through MuJoCo's contact priority, under which a contact takes the coefficient of
+its higher-priority geom:
+
+| Geom | Priority | Coefficient | Governs |
+| --- | ---: | ---: | --- |
+| Skillet (`skillet_mu`) | 3 | 0.4 | every skillet contact: dumplings, desk, jug |
+| Dumplings (`--surface-mu`) | 2 | 0.1 | dumpling-jug, dumpling-dumpling, worktops, floor |
+| Jug | 1 | 0.7 | jug-counter |
+
+The skillet's 0.4 is a judgement for frozen dough on dry seasoned cast iron
+(0.3-0.5); the dumplings' 0.1 lets the pours meter pieces out of the jug. Raising the
+skillet's priority also replaces its desk contact, previously max(0.6, 1.0) = 1.0, with
+0.4. Gripper-pad contact is a separate explicit 0.6 pair and is unchanged. The
+legacy `pouring3d` environment keeps its own 0.1 and priorities.
+`test_kitchen_friction.py` reads these values from the solver's live contacts.
 
 ## Skill interface
 
