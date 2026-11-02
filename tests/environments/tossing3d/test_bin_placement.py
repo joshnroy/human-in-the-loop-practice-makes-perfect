@@ -336,7 +336,7 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
         assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         )
         low, high = Tossing3DToss.standoff_bounds(ground_skill=toss, state=picked)
         assert low < high

@@ -17,6 +17,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -244,11 +245,8 @@ def test_tossing3d_empty_gripper_recovery_route_is_preserved(*, bin_side, pourin
     }
     grounds = {}
     for skill in provider.skills():
-        bindings = dict(objects)
-        if skill.name == "MoveToTossLocationAndToss":
-            bindings["side"] = bin_side
         grounds[skill.name] = GroundSkill(
-            skill=skill, objects=tuple(bindings[parameter.name] for parameter in skill.parameters)
+            skill=skill, objects=tuple(objects[parameter.name] for parameter in skill.parameters)
         )
     recovery = {"OpenGripper", "PickCube", "MoveToTossLocationAndToss"}
     # This scene starts with a closed empty hand and the cube outside the bin.
@@ -261,6 +259,7 @@ def test_tossing3d_empty_gripper_recovery_route_is_preserved(*, bin_side, pourin
         for atom in ground.preconditions
         if atom.predicate not in {HAND_EMPTY, HOLDING}
     )
+    initial |= {GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, bin_side))}
     goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
     mdp = DpTaskModel.build(
         tasks=[(initial, goal)],

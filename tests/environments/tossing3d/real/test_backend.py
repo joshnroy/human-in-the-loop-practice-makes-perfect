@@ -101,10 +101,10 @@ def test_a_human_reset_prompts_for_the_named_spot_moves_no_robot_and_reobserves(
     assert _side(env=env, predicate=CUBE_AT_SIDE, obj=env.cube) == {"robot_side"}
 
 
-def _toss_skill(*, env: RealTossing3DEnvironment, side: str) -> GroundSkill:
+def _toss_skill(*, env: RealTossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.parse(name=side)),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
@@ -118,7 +118,7 @@ def test_the_real_toss_is_thrown_from_the_fixed_direction_of_the_bins_side(
     env.reset_movables(destination=destination)
     env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
     state = env.get_current_state()
-    skill = _toss_skill(env=env, side=destination)
+    skill = _toss_skill(env=env)
     bounds = Tossing3DToss.standoff_bounds(
         ground_skill=skill, state=state, parameters=REAL_TOSS_PARAMETERS
     )

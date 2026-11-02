@@ -21,6 +21,7 @@ from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import (
     BIN_RESET_REGION_BY_SIDE,
@@ -42,6 +43,9 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     WIDE_TOSS_STANDOFF_BOUNDS,
     WideLongRangeTossProposal,
 )
+from hitl_pmp.planning.grounding import SkillGrounder
+
+from .observations import state
 
 SUCCESS_WITNESSES = (
     (2.5, 360.0, 480.0),
@@ -99,7 +103,7 @@ SIM_MISS_WITNESS = (2.5, 390.0, 440.0)
 def _toss_ground_skill(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
@@ -182,22 +186,19 @@ def test_every_sweep_witness_lies_inside_the_support(*, no_kinder_import) -> Non
 
 
 def test_both_bin_sides_draw_from_the_one_unified_proposal(*, no_kinder_import) -> None:
-    """The toss proposal interface is the same for both sides: the BinAtSide
-    binding no longer routes to a different draw, so a robot-side toss and an
-    opposite-side toss consume the identical sample stream."""
+    """The same ground toss consumes identical samples at either bin-side state."""
     del no_kinder_import
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
-    for side in (Tossing3DSides.robot, Tossing3DSides.opposite):
-        toss = GroundSkill(
-            skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, side),
-        )
+    toss = _toss_ground_skill(env=env)
+    for side, bin_x in ((Tossing3DSides.robot, -2.0), (Tossing3DSides.opposite, 2.0)):
+        scene = state(env=env, bin_x=bin_x)
+        assert BIN_AT_SIDE.holds(scene, (env.bin, env.barrier, side))
         rng = np.random.default_rng(62)
         direct_rng = np.random.default_rng(62)
         for _ in range(10):
             assert np.array_equal(
-                provider.sample_params(ground_skill=toss, rng=rng),
+                provider.sample_params_at_state(ground_skill=toss, rng=rng, state=scene),
                 WideLongRangeTossProposal.sample(rng=direct_rng),
             ), side
 
@@ -310,11 +311,12 @@ def test_robot_side_witnesses_score_and_complete_misses_at_a_robot_side_receiver
 
     env = Tossing3DEnvironment()
     scored = 0
+    provider = Tossing3DSkillProvider(env=env)
     completed_misses = 0
     try:
         robot_side_toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         )
         for standoff, speed, release, expect_score in ROBOT_SIDE_WITNESSES:
             env.reset_to_seed(seed=ROBOT_SIDE_WITNESS_SEED)
@@ -328,7 +330,12 @@ def test_robot_side_witnesses_score_and_complete_misses_at_a_robot_side_receiver
             assert env.last_skill_error() is None, (standoff, speed, release)
             assert sum(env.last_controller_steps()) > 0
             landed_in_bin = all(
-                atom.predicate.holds(post, atom.objects) for atom in robot_side_toss.add_effects
+                atom.predicate.holds(post, atom.objects)
+                for atom in robot_side_toss.expected_add_effects(
+                    before_atoms=SkillGrounder.abstract_state(
+                        state=picked, objects=provider.objects(), predicates=provider.predicates()
+                    )
+                )
             )
             if expect_score:
                 assert landed_in_bin, (standoff, speed, release, action[2])

@@ -33,7 +33,7 @@ def _provider() -> Tossing3DSkillProvider:
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
 
 
@@ -67,7 +67,7 @@ def test_same_side_toss_uses_the_same_feature_layout() -> None:
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     toss = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=toss,

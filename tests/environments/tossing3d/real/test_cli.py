@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ import pytest
 from hitl_pmp.cli import ENVIRONMENTS, STEP_PROTOCOL_ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.real.cli import Tossing3DRealCli
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
+from hitl_pmp.environments.tossing3d.real.frame import ROOM_FRAME
 from hitl_pmp.environments.tossing3d.real.step_protocol import (
     InProcessEvaluations,
     Tossing3DRealStepProtocol,
@@ -73,12 +75,15 @@ def test_a_fake_robot_run_measures_the_baseline_practises_and_ends_with_one_eval
     assert len(measurements) == 2
     assert measurements[0]["practice_steps"] == 0
     assert measurements[1]["practice_steps"] > 0
+    # Toss carries no side argument, so a far-side toss is told apart by the fixed
+    # direction the robot throws from at the far spot (map azimuth -pi/2, from -y).
+    far_direction = ROOM_FRAME.yaw_to_domain(yaw=-math.pi / 2)
     far_tosses = [
         event
         for event in events
         if event["event"] == "robot"
         and str(event.get("label", "")).startswith("MoveToTossLocationAndToss")
-        and "opposite_side)" in str(event["label"])
+        and math.isclose(event["action"][2], far_direction, abs_tol=1e-9)
     ]
     assert far_tosses
     # The real standoff window keeps the base clear of the tape at the far spot, so no

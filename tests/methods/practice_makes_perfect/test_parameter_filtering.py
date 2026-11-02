@@ -9,11 +9,13 @@ import pytest
 
 from hitl_pmp.core.method.method import InteractionComplete, NoFeasibleParametersError
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
@@ -185,13 +187,16 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
     )
     ground = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
+    atoms = ground.preconditions | {
+        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite))
+    }
     state = Tossing3DState(
         data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
         abstract_atoms=frozenset(),
     )
-    monkeypatch.setattr(EesMethod, "abstract_state", lambda self, **kwargs: ground.preconditions)
+    monkeypatch.setattr(EesMethod, "abstract_state", lambda self, **kwargs: atoms)
     monkeypatch.setattr(
         Tossing3DSkillProvider,
         "parameter_rejection_reason",
@@ -321,7 +326,9 @@ def test_pomdp_masks_starved_action_so_the_planner_chooses_again(*, monkeypatch,
         for ground in method._pomdp_model.ground_skills  # noqa: SLF001
         if ground.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
     )
-    atoms = frozenset(toss.preconditions)
+    atoms = toss.preconditions | {
+        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite))
+    }
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     assert toss in method._pomdp_model.get_valid_actions(  # noqa: SLF001
         environment_state=search_state
@@ -331,7 +338,7 @@ def test_pomdp_masks_starved_action_so_the_planner_chooses_again(*, monkeypatch,
     assert toss not in masked
     # The mask is the exact (symbolic state, action) pair, not the action globally:
     # a state with one more atom still offers the toss.
-    extra = next(iter(toss.add_effects - atoms))
+    extra = next(iter(toss.expected_add_effects(before_atoms=atoms) - atoms))
     other = make_tossing3d_search_state(
         state=method.pomdp_state, true_atoms=frozenset(atoms | {extra})
     )
@@ -353,7 +360,7 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     method = EesMethod(env=env, skill_provider=provider, num_candidates=2)
     ground = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     snapshot = object()
     state = Tossing3DState(

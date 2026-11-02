@@ -9,6 +9,8 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
@@ -45,6 +47,13 @@ def _skill(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
     )
 
 
+def _bin_side(*, method: Tossing3DPomdpMethod) -> GroundAtom:
+    return GroundAtom(
+        predicate=BIN_AT_SIDE,
+        objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+    )
+
+
 def _atoms(*, method: Tossing3DPomdpMethod, names: set[str]) -> frozenset[GroundAtom]:
     return frozenset(
         atom
@@ -77,7 +86,7 @@ def test_toss_failure_distribution_learns_retained_and_released_outcomes_without
 ) -> None:
     method = _method(exploration_epsilon=0.0, decision_log=tmp_path / "effects.jsonl")
     toss = _skill(method=method, name=TOSS_SKILL)
-    before = toss.preconditions
+    before = toss.preconditions | {_bin_side(method=method)}
     released = _atoms(method=method, names={"HandEmpty", "OnGround"})
     initial_model = method._pomdp_model  # noqa: SLF001
     initial_belief = method.pomdp_state
@@ -128,7 +137,7 @@ def test_failure_effects_use_only_matching_context_and_exploration_mode() -> Non
         }
     )
     toss = _skill(method=method, name=TOSS_SKILL)
-    before = toss.preconditions
+    before = toss.preconditions | {_bin_side(method=method)}
     released = _atoms(method=method, names={"HandEmpty", "OnGround"})
     method.observe_symbolic_transition(
         ground_skill=toss,
@@ -170,7 +179,7 @@ def test_failure_effects_use_only_matching_context_and_exploration_mode() -> Non
 def test_binary_failure_branches_share_the_original_belief_update(*, skill_name: str) -> None:
     method = _method()
     skill = _skill(method=method, name=skill_name)
-    before = skill.preconditions
+    before = skill.preconditions | {_bin_side(method=method)}
     # Failed attempts can change reachability while missing their success effects.
     after = before ^ _atoms(method=method, names={"CubeAtSide"})
     initial_model = method._pomdp_model  # noqa: SLF001
@@ -199,11 +208,11 @@ def test_binary_failure_branches_share_the_original_belief_update(*, skill_name:
 def test_success_and_hypothetical_search_do_not_train_failure_effects() -> None:
     method = _method(exploration_epsilon=0.0)
     toss = _skill(method=method, name=TOSS_SKILL)
-    before = toss.preconditions
+    before = toss.preconditions | {_bin_side(method=method)}
     method.observe_symbolic_transition(
         ground_skill=toss,
         before_atoms=before,
-        after_atoms=toss.add_effects,
+        after_atoms=(before - toss.delete_effects) | toss.expected_add_effects(before_atoms=before),
         success=True,
         was_random_exploration=False,
     )
