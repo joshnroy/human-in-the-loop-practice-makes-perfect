@@ -41,7 +41,7 @@ class FrozenPourCli:
             "--surface-mu",
             type=float,
             default=0.1,
-            help="Explicit uncalibrated contact assumption; default 0.1",
+            help="Explicit uncalibrated contact assumption; default %(default)s",
         )
         parser.add_argument("--canonical-seed", type=int, default=0)
         parser.add_argument("--test-env-seed-offset", type=int, default=10000)

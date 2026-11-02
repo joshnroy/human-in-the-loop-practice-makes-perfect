@@ -26,7 +26,9 @@ class KitchenCli:
             help="KitchenGeometry JSON; unspecified real measurements stay null",
         )
         parser.set_defaults(
-            human_reset_practice_cost=5, practice_reset_policy=PracticeResetPolicy.NEVER
+            human_reset_practice_cost=5,
+            practice_reset_policy=PracticeResetPolicy.NEVER,
+            surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
         )
 
     @staticmethod
