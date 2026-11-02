@@ -92,10 +92,27 @@ partial outcomes are not snapped into desired bins after robot actions.
 Existing predicates remain: HandEmpty, HoldingPitcher, HoldingShrimp, PitcherHome,
 TrayHome, InPitcher, InTray, OnFloor, OnSurface, Settled, PayloadOrder, Count1/2/3,
 ActiveRequest, NoSpills, NeedsReset, ReadyToPour, SplitCorrect, Goal. Added predicates:
-HobOff, HobOn, ColdIngredients, RobotAway, MealStarted. Containment,
+HobOff, HobOn, ColdIngredients, RobotAway, MealStarted, PickPlannable. Containment,
 settling and robot-away checks use native observed state. Hob state is an explicit
 simulator userdata channel with a visible burner/control indicator. The simulated activation
 skill is **not** a validated physical heat-control interface.
+
+`PickPlannable(robot, ingredient)` is a precondition of all three ingredient picks and
+of nothing else; in particular the human bulk pour-back does not require it. It is
+**history-dependent**: false iff this environment instance has seen the dispatched pick
+of that ingredient refuse to plan from the ingredient's current pose (within 5 mm and
+5 deg) with the pan where it was, and true otherwise, including every state never tried
+and every imagined planner state. A refusal is recorded only for a planning error
+(the retry loop's "No feasible continuation..." / "No collision-free empty-arm
+preparation path...", or an IK/clearance rejection before the fingers reach the
+ingredient) with no finger contact during the skill and the ingredient unmoved; a
+slip, lost grasp or tracking fault is an ordinary failed attempt. A refusal is
+forgotten once the ingredient or pan moves. Why history: the pick's planning is
+deterministic, so one refusal is exact evidence and costs one attempt, where asking
+the planner by dry run cost a median 49 s per observation. A practice run keeps the
+memory across sessions; a fresh evaluation environment starts empty. An ingredient the
+robot cannot pick therefore leaves the costed human reset as the planner's route. See
+`kitchen/pick_plannable.py`.
 
 ## Validation and video reproduction
 
