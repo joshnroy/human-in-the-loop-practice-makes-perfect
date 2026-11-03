@@ -348,8 +348,8 @@ def test_tilted_corelle_support_shrinks_conservatively(*, monkeypatch):
     [
         (CORELLE_CENTRE[0], 0.907, "OnTray"),
         (CORELLE_CENTRE[0] + 0.095 - 0.0155, 0.907, "OnTray"),
-        # Footprint straddles the rim's inner edge.
-        (CORELLE_CENTRE[0] + 0.095 - 0.010, 0.909, None),
+        # Footprint straddles the rim's inner edge, centre inside it, on the floor.
+        (CORELLE_CENTRE[0] + 0.095 - 0.010, 0.909, "OnTray"),
         # Resting on the rim, well outside its inner edge.
         (CORELLE_CENTRE[0] + 0.113, 0.913, None),
         # Footprint inside but lifted to rim-top height (e.g. stacked): not on the well.
@@ -376,4 +376,63 @@ def test_corelle_location_scores_only_food_on_the_well_inside_the_rim(
         "support",
         lambda self, *, name: plate if name == "box_0" else rack,
     )
+    assert food.location(name="cube_0") == expected
+
+
+LYING = Rotation.from_euler("y", 98, degrees=True).as_matrix()
+DUMPLING = np.array([0.015, 0.0225, 0.0125])
+
+
+def _corelle_food(*, monkeypatch, radial, supports):
+    """One 4.5x3x2.5 cm dumpling on its side, long axis radial, its bottom on the
+    well; `supports` maps each food to the bodies it rests on."""
+    plate = _corelle_backend(monkeypatch=monkeypatch).support(name="box_0")
+    extent = np.sqrt(LYING**2 @ DUMPLING**2)
+    food = _backend(
+        monkeypatch=monkeypatch,
+        kind=4,
+        size=DUMPLING,
+        rotation=LYING,
+        center=np.array([CORELLE_CENTRE[0], radial, plate.top_z + extent[2]]),
+        config=CORELLE,
+    )
+    rack = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, top_z=0.925)
+    monkeypatch.setattr(RackServingBackend, "held", lambda self, **kwargs: False)
+    monkeypatch.setattr(
+        RackServingBackend, "supporting_bodies", lambda self, *, name: supports.get(name, set())
+    )
+    monkeypatch.setattr(
+        RackServingBackend,
+        "support",
+        lambda self, *, name: plate if name == "box_0" else rack,
+    )
+    return food, plate
+
+
+def test_corelle_serves_a_dumpling_lying_on_its_side_against_the_rim(*, monkeypatch):
+    food, plate = _corelle_food(
+        monkeypatch=monkeypatch, radial=0.077, supports={"cube_0": {"box_0"}}
+    )
+    reach = 0.077 + np.sqrt(LYING**2 @ DUMPLING**2)[1]
+    assert reach > plate.radius
+    assert food.location(name="cube_0") == "OnTray"
+
+
+@pytest.mark.parametrize(
+    ("radial", "supports", "expected"),
+    [
+        # Resting only on another dumpling that is itself served.
+        (0.0, {"cube_0": {"cube_1"}, "cube_1": {"box_0"}}, "OnTray"),
+        # The dumpling underneath rests on the rack, so it is not served.
+        (0.0, {"cube_0": {"cube_1"}, "cube_1": {"rack_0"}}, None),
+        # Two dumplings each supported only by the other are not served.
+        (0.0, {"cube_0": {"cube_1"}, "cube_1": {"cube_0"}}, None),
+        # Stacked on served food, but its centre lies outside the well.
+        (0.11, {"cube_0": {"cube_1"}, "cube_1": {"box_0"}}, None),
+    ],
+)
+def test_corelle_serves_food_stacked_on_served_food_over_the_well(
+    *, monkeypatch, radial, supports, expected
+):
+    food, _ = _corelle_food(monkeypatch=monkeypatch, radial=radial, supports=supports)
     assert food.location(name="cube_0") == expected
