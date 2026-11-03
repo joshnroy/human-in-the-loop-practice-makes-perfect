@@ -89,7 +89,7 @@ def test_object_names_features_and_scene_exclusion():
 
 def test_robot_ids_bounds_and_human_separation():
     assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(6))
-    assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (-0.03, 0.045), (0.04, 0.12))
+    assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (-0.03, 0.04), (0.04, 0.12))
     assert Skills.GATHER_AND_SWEEP.name == "GatherAndSweep"
     assert Skills.GATHER_AND_SWEEP.param_dim == 3
     assert "SweepRack" not in SKILL_IDS

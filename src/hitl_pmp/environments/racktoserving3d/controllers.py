@@ -19,6 +19,7 @@ from .stroke import GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
 RELEASE_RETREAT = 0.03
+PLATE_CLEARANCE = 0.008
 
 
 class StrokeStances(BaseModel):
@@ -100,6 +101,9 @@ class StrokeStances(BaseModel):
 
 class RackControllers:
     stances: ClassVar[StrokeStances] = StrokeStances()
+    SETTLE_STEPS: ClassVar[int] = 30
+    SETTLE_TOLERANCE: ClassVar[float] = 0.005
+    SETTLE_LIMIT: ClassVar[float] = 0.06
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
@@ -334,15 +338,16 @@ class RackControllers:
             self.around_counter(to_rear=True)
 
     def plate_clear_z(self) -> float:
-        """Sweep floor over the plate: 5 mm above its rim (or its top for flat targets).
+        """Sweep floor over the plate: 8 mm above its rim (or its top for flat targets).
 
-        5 mm, not 2: IK accepts 2 deg of blade roll, which drops one end 4.4 mm, and
-        a 2 mm floor let the blade clip the rim mid-sweep in 4/10 real-arm layouts at
-        d = 0.10 (2026-11-03).
+        IK accepts 2 deg of blade roll, which drops one end of the blade 4.4 mm. Floors
+        of 2 mm and 5 mm both let the blade clip box_0_rim_5..7 mid-sweep in 4/10
+        real-arm layouts at d = 0.10, with the blade's lowest point 5 mm under its edge
+        centre (2026-11-03). At 8 mm the descent from the 3 mm rack glide is 1 mm.
         """
         config, tray = self.backend.config, self.backend.support(name="box_0")
         top = config.corelle_rim_top_z if config.serving_target == "corelle_plate" else tray.top_z
-        return float(max(top, tray.top_z) + 0.005)
+        return float(max(top, tray.top_z) + PLATE_CLEARANCE)
 
     def stroke_geometry(self) -> dict[str, float]:
         """Live rack and plate geometry; the plate radius is its outer, not scoring, edge."""
@@ -444,6 +449,9 @@ class RackControllers:
                 break
         else:
             raise SkillFailed(f"{label} stalled; preserving the observed physical state")
+        before_settle, _ = self.settle_stroke_end(
+            stroke=stroke, body=body, base=base, arm=arm, label=label
+        )
         edge = tool.blade_edge().mean(axis=0)
         self.metrics.setdefault("strokes", []).append({
             "label": label,
@@ -451,9 +459,50 @@ class RackControllers:
             "planned_end": stroke.end.round(4).tolist(),
             "blade_end": edge.round(4).tolist(),
             "blade_end_error_m": float(np.linalg.norm(edge - stroke.end)),
+            "blade_end_error_before_settle_m": before_settle,
             "base": base.round(4).tolist(),
         })
         self.release_swept_food(rotation=body[:3, :3], retreat=-RELEASE_RETREAT * stroke.direction)
+
+    def settle_stroke_end(
+        self,
+        *,
+        stroke: Stroke,
+        body: np.ndarray,
+        base: np.ndarray,
+        arm: np.ndarray,
+        label: str,
+    ) -> tuple[float, float]:
+        """Hold the stroke's end until the measured blade edge is on it in every axis.
+
+        The push loop ends on progress along travel only, so a blade the food has shoved
+        along its own length (or lifted) stops off target: 5.1 cm on a shallow real-arm
+        gather (2026-11-03). This commands the end pose plus an accumulated correction
+        of the measured error, for at most ``SETTLE_STEPS`` steps, and never commands the
+        edge more than 2 mm below the planned end, so it cannot press into the rack.
+        Returns the edge error before and after, in metres; reaching the tolerance is
+        not required.
+        """
+        tool, shelf = self.tool, self.shelf
+        before = after = float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
+        offset = np.zeros(3)
+        end_offset = stroke.end - stroke.start
+        for _ in range(self.SETTLE_STEPS):
+            if after < self.SETTLE_TOLERANCE:
+                break
+            error = stroke.end - tool.blade_edge().mean(axis=0)
+            offset = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
+            offset[2] = max(offset[2], -0.002)
+            desired = body.copy()
+            desired[:3, 3] += end_offset + offset
+            waypoint = self.hand_for_tool(body=desired)
+            shelf.base_target = base.copy()
+            arm = tool.ik(
+                position=waypoint[:3, 3], rotation=waypoint[:3, :3], holding=True, seed=arm
+            )
+            tool.step(arm=arm, label=f"{label}_settle")
+            after = float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
+        return before, after
 
     def release_swept_food(
         self, *, rotation: np.ndarray | None = None, retreat: np.ndarray | None = None

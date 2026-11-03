@@ -160,7 +160,7 @@ def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
         (0.029, 0.0, 0.1),
         (0.141, 0.0, 0.1),
         (0.07, -0.031, 0.1),
-        (0.07, 0.046, 0.1),
+        (0.07, 0.041, 0.1),
         (0.07, 0.0, 0.039),
         (0.07, 0.0, 0.121),
         (float("nan"), 0.0, 0.1),
@@ -265,4 +265,64 @@ def test_sweep_clears_the_plate_rim_by_more_than_an_ik_accepted_blade_roll():
     )
     # 2 deg of accepted IK rotation error drops one end of the 25 cm blade 4.4 mm.
     roll_drop = 0.125 * np.sin(np.deg2rad(2.0))
-    assert controller.plate_clear_z() - config.corelle_rim_top_z > roll_drop
+    clearance = controller.plate_clear_z() - config.corelle_rim_top_z
+    # The blade's lowest point was measured 5 mm under its edge centre mid-sweep.
+    assert clearance > max(roll_drop, 0.005) + 0.0025
+
+
+def _settling_controller(*, lag):
+    """Fake arm whose blade edge sits a fixed ``lag`` short of every commanded edge."""
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    controller = RackControllers.__new__(RackControllers)
+    stroke = GatherAndSweepPlanner.gather(
+        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
+    )[0]
+    edge = {"now": stroke.end - lag}
+    steps = []
+
+    def step(*, arm, label):
+        steps.append(label)
+        edge["now"] = np.asarray(arm) - lag
+
+    controller.tool = SimpleNamespace(
+        blade_edge=Mock(side_effect=lambda pose=None: np.array([edge["now"], edge["now"]])),
+        ik=Mock(side_effect=lambda **kwargs: kwargs["position"].copy()),
+        step=Mock(side_effect=step),
+    )
+    controller.shelf = SimpleNamespace(base_target=None)
+    controller.hand_for_tool = lambda *, body: body
+    body = np.eye(4)
+    body[:3, 3] = stroke.start
+    return controller, stroke, body, steps
+
+
+def test_stroke_end_settle_removes_a_steady_lag_in_every_axis():
+    lag = np.array([0.05, 0.0075, -0.001])
+    controller, stroke, body, steps = _settling_controller(lag=lag)
+    before, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert before == pytest.approx(np.linalg.norm(lag))
+    assert after < 0.005
+    assert 0 < len(steps) <= RackControllers.SETTLE_STEPS
+    assert set(steps) == {"gather_settle"}
+
+
+def test_stroke_end_settle_does_nothing_when_already_on_target():
+    controller, stroke, body, steps = _settling_controller(lag=np.array([0.001, 0.0, 0.0]))
+    before, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert steps == []
+    assert before == after == pytest.approx(0.001)
+
+
+def test_stroke_end_settle_never_presses_the_blade_down_into_the_rack():
+    # The blade rode up 1.3 cm on a dumpling: the settle may not chase it 1.3 cm down.
+    controller, stroke, body, _ = _settling_controller(lag=np.array([0.0, 0.0, -0.013]))
+    controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
+    assert min(position[2] for position in commanded) >= stroke.end[2] - 0.002 - 1e-12

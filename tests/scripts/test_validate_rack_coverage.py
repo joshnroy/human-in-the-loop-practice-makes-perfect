@@ -70,7 +70,7 @@ def test_manifest_distinguishes_fixed_repeats_from_seeded_human_layouts():
         {"param_sets": [(0.07, 0.0, 0.13)]},
         {"param_sets": [(0, 0.26, 0)]},
         {"param_sets": [(0.07, 0.0)]},
-        {"param_sets": [(0.07, 0.046, 0.1)]},
+        {"param_sets": [(0.07, 0.041, 0.1)]},
         {"param_sets": [(float("nan"), 0.0, 0.1)]},
         {"max_trials": 0},
         {"max_seconds": float("inf")},

@@ -1,0 +1,21 @@
+{
+  "description": "The canonical planner arm (Model B) on RackToServing3D: tossing3d-canonical's shared values verbatim except the cost file, which prices the rack's two human skills (human_batch_return, human_tool_recovery) at 5 each instead of Tossing3D's two cube resets. Tossing3D's layout/evaluation-layout have no rack equivalent and are not set. Step protocol only: give --practice-step-budget. Expectimax callers pass --pomdp-search-depth 6 themselves.",
+  "method": "pomdp",
+  "shared": {
+    "pomdp_observation_probability_weight": 0.0,
+    "pomdp_linear_cost_lambda": 3e-4,
+    "practice_cost_config": "racktoserving3d_tick_priced_costs.json",
+    "pomdp_inference_engine": "grid",
+    "pomdp_num_particles": 1024,
+    "ees_reset_gate": false,
+    "goal_pursuit_horizon": 0,
+    "goal_pursuit_interval": 1,
+    "practice_reset_policy": "never",
+    "defer_rendering": true
+  },
+  "environments": {
+    "racktoserving3d": {
+      "max_steps_per_interaction": 20
+    }
+  }
+}

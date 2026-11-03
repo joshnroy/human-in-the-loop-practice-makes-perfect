@@ -45,7 +45,9 @@ SKILL_IDS = {
 # before the plate's outer near edge the final sweep's blade edge ends. Starting
 # bounds from the driven-blade grid (2026-11-03), not calibrated values. Speed is a
 # constant, not a parameter.
-GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (-0.03, 0.045), (0.04, 0.12))
+# delta capped at 0.04 (Josh, 2026-11-03): from the +-0.85 side stances the deepest
+# stop that lifts cleanly on the arm is 0.5 cm from c (delta = 0.04); 0 cm failed.
+GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (-0.03, 0.04), (0.04, 0.12))
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)
