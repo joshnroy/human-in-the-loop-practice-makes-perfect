@@ -29,6 +29,8 @@ from .transit import ArmTransit, geom_half_extents, segment_samples
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
 APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
+# Hand yaws about world z a placement may set the held food down with, from the grasp's.
+PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
 # How much a pad-fixture contact present when a lift starts may shrink (measured-state
 # jitter) and still count as the same contact the lift is leaving.
 DEPARTURE_TOLERANCE = 1e-4
@@ -268,27 +270,36 @@ class _FoodMotion(RackScraper):
     def circulation_routes(
         self, *, start: np.ndarray, target: np.ndarray
     ) -> list[list[np.ndarray]]:
-        """Routes around either side of the counter, each ending head-on into the stance.
+        """Routes around either side of the counter that leave and enter stances head-on.
 
-        The base leaves sideways past the counter, turns to the stance heading, then
-        drives to an entry point ``APPROACH_BACKOFFS`` behind the stance along that
-        heading and straight in. With no back-off the last leg slides along the
+        The base backs out from its start along its own heading, drives sideways past
+        the counter, turns to the stance heading, then drives to an entry point behind
+        the stance along that heading and straight in. Each back-off is one of
+        ``APPROACH_BACKOFFS``, smallest total first. With none, a leg slides along the
         counter's edge at the stance's own distance from it, which clips a corner leg
         whenever the stance is yawed off the edge's normal.
         """
         counter = self.food.backend.support(name="counter")
-        heading = np.array([np.cos(target[2]), np.sin(target[2])])
+        leaving = np.array([np.cos(start[2]), np.sin(start[2])])
+        arriving = np.array([np.cos(target[2]), np.sin(target[2])])
+        pairs = sorted(
+            ((out, back) for out in APPROACH_BACKOFFS for back in APPROACH_BACKOFFS),
+            key=lambda pair: (pair[0] + pair[1], pair[0]),
+        )
         routes = []
-        for backoff in APPROACH_BACKOFFS:
-            entry = np.r_[target[:2] - backoff * heading, target[2]]
+        for out, back in pairs:
+            exit_ = np.r_[start[:2] - out * leaving, start[2]]
+            entry = np.r_[target[:2] - back * arriving, target[2]]
             for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
                 route = [
-                    np.array([start[0], outside, start[2]]),
+                    *([exit_] if out > 0 else []),
+                    np.array([exit_[0], outside, start[2]]),
                     np.array([entry[0], outside, start[2]]),
                     np.array([entry[0], outside, target[2]]),
                     entry,
+                    *([target] if back > 0 else []),
                 ]
-                routes.append([*route, target] if backoff > 0 else route)
+                routes.append(route)
         return routes
 
     def plan_base(self, *, target: np.ndarray, arm: np.ndarray) -> list[np.ndarray]:
@@ -402,6 +413,48 @@ class RackFoodController:
             for offset in (0.0, -0.12, 0.12)
         ]
 
+    @staticmethod
+    def _edge_distance(
+        *, centre: np.ndarray, approach: np.ndarray, lower: np.ndarray, upper: np.ndarray
+    ) -> float:
+        """How far the base side of `approach` runs from `centre` to the counter edge.
+
+        A vertical approach has no base side; it ranks last rather than failing.
+        """
+        length = float(np.linalg.norm(approach[:2]))
+        if length < 1e-6:
+            return float("inf")
+        direction = -approach[:2] / length
+        return min(
+            max(0.0, (boundary - centre[axis]) / direction[axis])
+            for axis, boundary in enumerate(np.where(direction > 0, upper, lower))
+            if abs(direction[axis]) > 1e-6
+        )
+
+    def _placement_turns(self, *, rotation: np.ndarray, centre: np.ndarray) -> list[np.ndarray]:
+        """The held hand yawed about world z, nearest counter edge first.
+
+        The grasp fixes the hand's lean and the food's pose in the hand, not the
+        direction the robot must stand to set it down: food picked from behind the
+        counter would otherwise have to be placed from behind it too.
+        """
+        counter = self.backend.support(name="counter")
+        lower = np.array([counter.x_min, counter.y_min])
+        upper = np.array([counter.x_max, counter.y_max])
+        turns = [
+            Rotation.from_euler("z", degrees, degrees=True).as_matrix()
+            for degrees in PLACEMENT_TURNS_DEG
+        ]
+        return sorted(
+            turns,
+            key=lambda turn: round(
+                self._edge_distance(
+                    centre=centre, approach=turn @ rotation[:, 2], lower=lower, upper=upper
+                ),
+                6,
+            ),
+        )
+
     def _grasp_candidates(self, *, name: str) -> list[np.ndarray]:
         centre = self._pose(name=name)[:3, 3]
         counter = self.backend.support(name="counter")
@@ -419,15 +472,12 @@ class RackFoodController:
                 )
                 standoff = 0.033 if lean == 30.0 else 0.031
                 grasp[:3, 3] = centre - standoff * grasp[:3, 2]
-                direction = -grasp[:2, 2] / np.linalg.norm(grasp[:2, 2])
-                distances = [
-                    max(0.0, (boundary - centre[axis]) / direction[axis])
-                    for axis, boundary in enumerate(np.where(direction > 0, upper, lower))
-                    if abs(direction[axis]) > 1e-6
-                ]
+                distance = self._edge_distance(
+                    centre=centre, approach=grasp[:3, 2], lower=lower, upper=upper
+                )
                 flipped = grasp.copy()
                 flipped[:3, :2] *= -1
-                candidates.extend([(min(distances), grasp), (min(distances), flipped)])
+                candidates.extend([(distance, grasp), (distance, flipped)])
         candidates.sort(key=lambda candidate: round(candidate[0], 6))
         return [pose for _, pose in candidates]
 
@@ -582,8 +632,12 @@ class RackFoodController:
             deadline = monotonic() + 20.0
             failure = "no reachable placement"
             selected = None
-            for centre in self._placement_candidates(name=name, destination=destination):
-                down = Frames.pose(rotation=here[:3, :3], position=centre + offset)
+            for centre, turn in (
+                (spot, turn)
+                for spot in self._placement_candidates(name=name, destination=destination)
+                for turn in self._placement_turns(rotation=here[:3, :3], centre=spot)
+            ):
+                down = Frames.pose(rotation=turn @ here[:3, :3], position=centre + turn @ offset)
                 pre = self.shelf.cube_pre(grasp=down)
                 for base in self._base_candidates(centre=centre, approach=down[:3, 2]):
                     if monotonic() >= deadline:

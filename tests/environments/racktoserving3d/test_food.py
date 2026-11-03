@@ -25,6 +25,7 @@ def food():
         held=Mock(return_value=False),
         location=Mock(return_value="OnTray"),
         food_available=Mock(return_value=True),
+        support=Mock(return_value=SimpleNamespace(x_min=0.98, x_max=1.7, y_min=-0.5, y_max=0.5)),
         core=Mock(
             return_value=SimpleNamespace(
                 get_object=Mock(
@@ -544,11 +545,14 @@ class _BackLegs:
         return motion
 
     @staticmethod
-    def assert_route_clear(*, route: list[np.ndarray]) -> None:
-        np.testing.assert_allclose(route[-1], _BackLegs.STANCE)
-        for begin, end in zip([np.zeros(3), *route[:-1]], route, strict=True):
-            for base in segment_samples(start=begin, target=end):
-                assert _BackLegs.clear(base=base), (begin, end, base)
+    def assert_route_clear(
+        *, route: list[np.ndarray], start: np.ndarray | None = None, end: np.ndarray | None = None
+    ) -> None:
+        start = np.zeros(3) if start is None else start
+        np.testing.assert_allclose(route[-1], _BackLegs.STANCE if end is None else end)
+        for begin, finish in zip([start, *route[:-1]], route, strict=True):
+            for base in segment_samples(start=begin, target=finish):
+                assert _BackLegs.clear(base=base), (begin, finish, base)
 
 
 def test_food_circulation_reaches_a_yawed_stance_behind_the_counter_legs():
@@ -571,6 +575,15 @@ def test_food_base_preflight_finds_the_route_the_circulation_drives():
     motion = _BackLegs.motion()
     route = motion.plan_base(target=_BackLegs.STANCE.copy(), arm=np.zeros(7))
     _BackLegs.assert_route_clear(route=route)
+
+
+def test_food_base_preflight_leaves_a_yawed_stance_behind_the_counter_head_on():
+    # The reverse trip: carrying food from that stance to a plate stance in front.
+    motion = _BackLegs.motion()
+    motion.shelf.data.qpos = _BackLegs.STANCE.copy()
+    front = np.array([0.73, 0.0, 0.0])
+    route = motion.plan_base(target=front.copy(), arm=np.zeros(7))
+    _BackLegs.assert_route_clear(route=route, start=_BackLegs.STANCE, end=front)
 
 
 def test_pick_rejects_a_stance_with_no_base_route_before_moving(*, food):
@@ -607,6 +620,38 @@ def test_fresh_place_helper_rejects_blocked_base_route_before_moving(*, food):
     assert food.motion.plan_base.call_count == 2
     food._approach.assert_called_once()
     np.testing.assert_allclose(food._approach.call_args.kwargs["base"], reachable)
+
+
+def test_place_turns_a_grasp_taken_from_behind_the_counter_to_reach_the_plate(*, food):
+    # Seed 0 food 4: picked from behind the counter, the hand approaches at 136 deg.
+    # Keeping that hand yaw puts every plate stance inside the counter's footprint.
+    behind = Rotation.from_euler("ZY", [136, 135], degrees=True).as_matrix()
+    food.shelf.site_pose = Mock(
+        return_value=Frames.pose(rotation=behind, position=[1.585, -0.04, 0.96])
+    )
+    food.shelf.grip = 0.8
+    food.backend.held.side_effect = [True, True, False]
+    food.backend.location.return_value = "OnTray"
+    food.backend.body_geoms = Mock(return_value={0})
+    food.backend.support = Mock(
+        return_value=SimpleNamespace(x_min=0.98, x_max=1.7, y_min=-0.5, y_max=0.5)
+    )
+    food._placement_candidates = Mock(return_value=[np.array([1.23, 0, 0.94])])
+
+    def stance_clear(*, pose, base, seed=None):
+        if 0.98 - 0.25 < base[0] < 1.7 + 0.25 and -0.5 - 0.25 < base[1] < 0.5 + 0.25:
+            raise SkillFailed("Scraper motion would collide: cupboard_1_counter")
+        return np.zeros(7)
+
+    food._checked_arm = Mock(side_effect=stance_clear)
+    food.motion.check_arm_segment = Mock()
+    food.motion.plan_base = Mock(side_effect=lambda *, target, arm: [target])
+    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
+    food.place(name="cube_0", destination="box_0")
+    base = food._approach.call_args.kwargs["base"]
+    assert base[0] < 0.98 - 0.25 or abs(base[1]) > 0.5 + 0.25
+    lowered = food._lower_food.call_args.kwargs["rotation"]
+    np.testing.assert_allclose(lowered[2], behind[2], atol=1e-9)  # same lean, new yaw
 
 
 def test_all_blocked_placement_routes_retain_food_without_robot_motion(*, food):
