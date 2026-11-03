@@ -54,6 +54,16 @@ then `sbatch DIR/array.sbatch DIR/manifest.json`. `--stage dry` keeps every flag
 shrinks practice to one 1,600-tick block between two three-task evaluations; it sizes
 `--time` and `--mem`.
 
+A Della job evaluates every test task of a checkpoint at once: `della` defaults
+`--evaluation-workers` to the stage's task count (9 overnight, 3 otherwise), which
+passes `--evaluation-workers N --evaluation-task-rng per-task` and a 4 h per-task
+timeout to every run, and sizes the job as `--cpus-per-task N+1` (one for practice)
+with `--mem` from `KitchenLaunch.della_memory`. A checkpoint then takes its slowest
+task rather than the sum of its tasks. `per-task` reseeds each task's RNGs from the
+snapshot and the task, so its numbers are not comparable task-for-task with a `shared`
+evaluation of the same snapshot. Local manifests keep `--evaluation-workers 1` (shared)
+unless asked, so six runs still fit `agents.slice`.
+
 The launch gate checks method construction, a native witness for each count,
 a continuous failed-pour/recovery/retry cycle, and completion/readability of all
 six pilots. Pilot failure/STOP rates are scientific outcomes. Exceptions, incorrect

@@ -52,6 +52,10 @@ class KitchenEnvironment(FrozenPourEnvironment):
     def objects(self) -> O:
         return O(count=3, payload_kind="potsticker")
 
+    def forget_pick_refusals(self) -> None:
+        """Start a held-out task as a fresh instance would: no refusal remembered."""
+        self._pick_refusals.clear()
+
     def reset_to_seed(self, *, seed: int, requested: int) -> FrozenPourState:
         if self._started:
             raise ValueError(

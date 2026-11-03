@@ -312,3 +312,73 @@ def test_run_honours_the_manifest_seed_list(*, tmp_path, monkeypatch):
     assert [(r.output_dir.parts[-3], r.seed) for r in observed] == [("expectimax", 2)]
     with pytest.raises(ValueError, match="between 1 and 9"):
         KitchenLaunch.run(manifest=path, max_workers=1, task=10)
+
+
+# --- parallel evaluation ----------------------------------------------------------------
+
+
+def test_local_runs_evaluate_one_task_at_a_time_unless_asked():
+    for stage in ("pilot", "overnight", "dry"):
+        for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+            args = Cli.parse_args(argv=run.command[3:])
+            assert args.evaluation_workers == 1
+            assert args.evaluation_task_rng == "shared"
+            assert args.evaluation_task_timeout_seconds is None
+
+
+def test_parallel_evaluation_flags_take_per_task_rngs_and_a_timeout():
+    runs = KitchenLaunch.runs(stage="overnight", results_root=Path("/unused"), evaluation_workers=9)
+    for run in runs:
+        args = Cli.parse_args(argv=run.command[3:])
+        assert args.evaluation_workers == 9
+        assert args.evaluation_task_rng == "per-task"
+        assert args.evaluation_task_timeout_seconds == 4 * 3600
+
+
+def test_della_overnight_evaluates_all_nine_tasks_at_once(*, tmp_path, monkeypatch):
+    manifest, script = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="overnight", seeds=(0, 1, 2)
+    )
+    assert manifest["evaluation_workers"] == 9
+    for row in manifest["runs"]:
+        assert row["resolved_args"]["evaluation_workers"] == 9
+        assert row["resolved_args"]["evaluation_task_rng"] == "per-task"
+    assert "#SBATCH --cpus-per-task=10" in script
+    assert f"#SBATCH --mem={KitchenLaunch.della_memory(evaluation_workers=9)}" in script
+    assert "#SBATCH --time=12:00:00" in script
+
+
+@pytest.mark.parametrize("workers", [1, 3, 9])
+def test_della_memory_covers_practice_plus_every_evaluation_process(*, workers):
+    from scripts.kitchen_launch import DELLA_EVALUATION_PROCESS_GB, DELLA_PRACTICE_GB
+
+    gigabytes = int(KitchenLaunch.della_memory(evaluation_workers=workers).removesuffix("G"))
+    assert gigabytes >= 1.25 * (DELLA_PRACTICE_GB + workers * DELLA_EVALUATION_PROCESS_GB)
+
+
+def test_della_sizing_follows_an_explicit_worker_count(*, tmp_path, monkeypatch):
+    manifest, script = _della(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        stage="overnight",
+        seeds=(0,),
+        evaluation_workers=3,
+    )
+    assert manifest["evaluation_workers"] == 3
+    assert "#SBATCH --cpus-per-task=4" in script
+    assert f"#SBATCH --mem={KitchenLaunch.della_memory(evaluation_workers=3)}" in script
+
+
+def test_run_rebuilds_the_rows_with_the_manifests_worker_count(*, tmp_path, monkeypatch):
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
+    monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})
+    path = tmp_path / "manifest.json"
+    root = tmp_path / "results"
+    KitchenLaunch.write_manifest(path=path, stage="pilot", results_root=root, evaluation_workers=3)
+    observed = []
+    monkeypatch.setattr(
+        "scripts.kitchen_launch.SweepRunner.execute",
+        lambda **kwargs: observed.extend(kwargs["runs"]) or [],
+    )
+    assert KitchenLaunch.run(manifest=path, max_workers=1, task=1) == 0
+    assert "--evaluation-workers" in observed[0].command

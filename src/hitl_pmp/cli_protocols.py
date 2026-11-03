@@ -184,6 +184,13 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def isolate_evaluation_task(*, problem: Problem) -> None:
+        """Under `--evaluation-task-rng per-task`, before each held-out task: forget
+        whatever this evaluation environment instance remembers from earlier tasks, so the
+        task plays out exactly as it would in a fresh process."""
+        ...
+
+    @staticmethod
     def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
         """The wall-clock phases of the last robot skill or human reset, once, written
         to `skill_timing.jsonl` beside its event; None for a domain that times none."""
@@ -231,3 +238,9 @@ class SimulatedStepProtocolHooks:
     def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
         del problem
         return None
+
+    @staticmethod
+    def isolate_evaluation_task(*, problem: Problem) -> None:
+        """By default a domain keeps no memory between tasks beyond what a reset
+        replaces; a domain that does overrides this."""
+        del problem
