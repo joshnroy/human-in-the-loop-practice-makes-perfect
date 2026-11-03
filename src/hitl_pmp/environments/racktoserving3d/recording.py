@@ -32,10 +32,11 @@ MOVABLES = (*(food.name for food in Objects.food), "wiper_0", "box_0", "rack_0")
 class RackServingReplayRenderer(SweepOffShelf3DReplayRenderer):
     """Poses a drawing rack scene from recorded states -- no physics is stepped."""
 
-    # A free camera beyond the counter's far corner, looking down across the rack and
-    # the plate at the robot's start: (lookat x, y, z, distance, azimuth, elevation deg).
+    # A free camera beyond the counter's near-left corner, high enough that the robot
+    # stays in frame at every stance a skill drives it to (base x in [0, 2.3], y in
+    # [-1.3, 0] in a recorded run): (lookat x, y, z, distance, azimuth, elevation deg).
     # The shelf's `task_view` looks along the counter and leaves the robot out of frame.
-    CAMERA: ClassVar[tuple[float, ...]] = (1.0, 0.0, 0.75, 2.4, -140.0, -35.0)
+    CAMERA: ClassVar[tuple[float, ...]] = (1.2, -0.2, 0.7, 3.1, -110.0, -38.0)
 
     _backend: RackServingBackend | None = PrivateAttr(default=None)  # type: ignore[assignment]
     _camera: Any = PrivateAttr(default=None)
