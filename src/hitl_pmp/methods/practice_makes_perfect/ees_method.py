@@ -249,6 +249,18 @@ class EesMethod(Method):
     # EES's, or a subclass's -- still chooses every robot action; see
     # `always_ask_reset.py`.
     always_ask_reset: AlwaysAskReset | None = None
+    # Local extension, off by default (`--ees-preview-test-goals`): the test-task
+    # distribution's goals, told to EES before practice. At the first practice period
+    # each becomes a seen task from that period's initial abstract state, pinned so the
+    # recency window never evicts it, and every robot ground skill on its plan gets a
+    # competence model -- so under `practice_groundings="observed"` it is a practice
+    # candidate from the start, with the same prior any first execution would give it.
+    # Exists because a domain whose training tasks all share one goal (the kitchen's
+    # practice always delivers `requested_count`) otherwise never plans, and so never
+    # scores, the skills only the other test goals use. Each goal is held by name,
+    # `(predicate, object names)` per atom (see `named_goal`), because every field is
+    # pickled into the deployment snapshot and a domain's predicates need not pickle.
+    preview_test_goals: tuple[tuple[tuple[str, tuple[str, ...]], ...], ...] = ()
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -330,6 +342,10 @@ class EesMethod(Method):
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
+    # `preview_test_goals` as seen tasks, once registered; never windowed.
+    _preview_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr(
+        default_factory=list
+    )
     _seen_training_tasks: dict[int, Task] = PrivateAttr(default_factory=dict)
     _replanning_tasks: deque[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr(
         default_factory=lambda: deque(maxlen=5)
@@ -904,6 +920,46 @@ class EesMethod(Method):
                 init_atoms=self.abstract_state(state=task.initial_state), goal=task.goal.atoms
             )
 
+    @staticmethod
+    def named_goal(*, goal: frozenset[GroundAtom]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        return tuple(
+            sorted((atom.predicate.name, tuple(obj.name for obj in atom.objects)) for atom in goal)
+        )
+
+    def _register_preview_tasks(self, *, init_atoms: frozenset[GroundAtom]) -> None:
+        """Pin each `preview_test_goals` goal as a seen task from `init_atoms`, and give
+        every robot ground skill on its current plan a competence model (the prior's,
+        exactly what `competence_model` creates lazily on a first execution). Human
+        skills keep their own models and never become candidates."""
+        humans = set(self.skill_provider.human_cube_bin_reset_skills())
+        predicates = {predicate.name: predicate for predicate in self.predicates()}
+        objects = {obj.name: obj for obj in self.objects()}
+        for named in self.preview_test_goals:
+            goal = frozenset(
+                GroundAtom(
+                    predicate=predicates[name], objects=tuple(objects[o] for o in object_names)
+                )
+                for name, object_names in named
+            )
+            self._preview_tasks.append((init_atoms, goal))
+            try:
+                plan = self.plan_to(init_atoms=init_atoms, goal=goal, costs=self.skill_costs())
+            except PlanningFailure:
+                plan = []
+            for step in plan:
+                if step not in humans:
+                    self.competence_model(ground_skill=step)
+            self._write_ees_decision(
+                record={
+                    "event": "preview_task",
+                    "goal": sorted(
+                        (atom.predicate.name, tuple(obj.name for obj in atom.objects))
+                        for atom in goal
+                    ),
+                    "plan": [self._ees_target_description(ground_skill=s) for s in plan],
+                }
+            )
+
     def _record_replanning_task(
         self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
     ) -> None:
@@ -942,7 +998,8 @@ class EesMethod(Method):
             train_indices = train_indices[: self.planning_progress_max_tasks]
         else:
             train_indices = train_indices[-self.planning_progress_max_tasks :]
-        tasks = [(("train", index), self._seen_tasks[index]) for index in train_indices]
+        tasks = [(("preview", index), task) for index, task in enumerate(self._preview_tasks)]
+        tasks.extend((("train", index), self._seen_tasks[index]) for index in train_indices)
         tasks.extend((("replan", index), task) for index, task in enumerate(self._replanning_tasks))
         plans = []
         self._last_cache_refreshes = 0
@@ -991,8 +1048,8 @@ class EesMethod(Method):
         `planning_progress_max_tasks` by default, the first that many under
         `reproduce_predicators_seen_task_order`."""
         if self.reproduce_predicators_seen_task_order:
-            return self._seen_tasks[: self.planning_progress_max_tasks]
-        return self._seen_tasks[-self.planning_progress_max_tasks :]
+            return [*self._preview_tasks, *self._seen_tasks[: self.planning_progress_max_tasks]]
+        return [*self._preview_tasks, *self._seen_tasks[-self.planning_progress_max_tasks :]]
 
     # ------------------------------------------------- extrapolate + situate (score)
 
@@ -1017,7 +1074,8 @@ class EesMethod(Method):
         base_score = -sum(
             sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
         )
-        denominator = max(len(self._seen_tasks), 1) if self.use_ucb_bonus else 1
+        seen = len(self._preview_tasks) + len(self._seen_tasks)
+        denominator = max(seen, 1) if self.use_ucb_bonus else 1
         score = base_score / denominator
         bonus = 0.0
         if self.use_ucb_bonus:
@@ -1038,6 +1096,7 @@ class EesMethod(Method):
                 "ucb_bonus": bonus,
                 "score": score,
                 "seen_training_tasks": len(self._seen_tasks),
+                "preview_tasks": len(self._preview_tasks),
                 "replanning_tasks": len(self._replanning_tasks),
                 "successful_plans": len(plans),
                 "cache_refreshes": self._last_cache_refreshes,
@@ -1360,6 +1419,8 @@ class EesMethod(Method):
         if not self._uses_ees_selector():
             init_atoms = self.abstract_state(state=task.initial_state)
             self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
+        elif self.preview_test_goals and not self._preview_tasks:
+            self._register_preview_tasks(init_atoms=self.abstract_state(state=task.initial_state))
         # Starvation is per session: a new period re-randomizes movable geometry,
         # so last session's infeasible pools are no longer evidence.
         self.clear_starved_parameter_pools()

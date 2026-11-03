@@ -61,6 +61,7 @@ class KitchenCli:
         return DomainContext(
             env=problem.env,
             oracle=FrozenPourOracle(env=problem.env),
+            test_task_goals=problem.tasks.test_task_goals(),
             skill_provider=KitchenSkillProvider(
                 env=problem.env,
                 offer_human_reset=args.human_reset,

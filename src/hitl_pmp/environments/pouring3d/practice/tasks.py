@@ -39,6 +39,12 @@ class FrozenPourTasks(Tasks):
         self._test_index += 1
         return requested
 
+    def test_task_goals(self) -> tuple[Goal, ...]:
+        """One goal per scheduled requested count, in schedule order. Draws no test
+        task, so neither the test stream nor the schedule's position moves."""
+        assert self.requested_counts is not None
+        return tuple(self.goal(requested=requested) for requested in self.requested_counts)
+
     def model_post_init(self, __context: object) -> None:
         self._train = np.random.default_rng(self.seed)
         self._test = np.random.default_rng(self.seed + self.test_env_seed_offset)
