@@ -71,6 +71,7 @@ jobs:
               - 'tests/environments/tossing3d/**'
               - 'tests/environments/sweepoffshelf3d/**'
               - 'tests/environments/kitchen_recycling3d/**'
+              - 'tests/environments/racktoserving3d/**'
               - 'tests/environments/pouring3d/**'
               - 'configs/**'
               - 'benchmarks/**'
@@ -555,7 +556,7 @@ jobs:
       - name: Pytest — Tossing3D, SweepOffShelf3D, and Pouring3D (MuJoCo/OSMesa)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/pouring3d tests/environments/kitchen_recycling3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/pouring3d tests/environments/kitchen_recycling3d tests/environments/racktoserving3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
       # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.
