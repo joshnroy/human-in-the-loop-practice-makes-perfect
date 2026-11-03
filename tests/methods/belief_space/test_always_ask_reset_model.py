@@ -33,16 +33,15 @@ PRICE = 5.0
 # What every sampled start scene abstracts to (measured on 30 reset-start draws at
 # seeds 0-2, their train tasks and the canonical scene 125: one state).
 START = frozenset({
-    "BinAtSide(bin_0, cuboid_barrier, opposite_side)",
+    "BinOnOppositeSide(bin_0, cuboid_barrier)",
     "BinOnGround(bin_0)",
-    "CubeAtSide(cube_0, cuboid_barrier, robot_side)",
+    "CubeOnRobotSide(cube_0, cuboid_barrier)",
     "GraspClear(cube_0, bin_0)",
     "HandEmpty(robot)",
     "NotHolding(robot, cube_0)",
     "OnGround(cube_0)",
     "PickPlannable(robot, cube_0)",
     "PickupUnblocked(cube_0)",
-    "RobotAtSide(robot, cuboid_barrier, robot_side)",
 })
 
 # EXP-22c's belief-space settings, as the always-ask pilot ran them.
@@ -310,6 +309,10 @@ def test_the_unwrapped_planner_is_unchanged_with_legacy_open_applicability(
     Disable pouring and restore OpenGripper's old closed-empty/bin-on-ground
     preconditions: the snapshots predate deliberate held-cube opening. Retain the
     original values rather than freeze a different domain's sampled A* decision.
+
+    Re-pinned once when the human reset was split into two skills with separate
+    beliefs. Both decisions are unchanged; with the two resets mapped back onto one
+    shared belief the previous values reproduce exactly, so the shift is the split.
     """
     method = _method(solver=solver, wrapped=False, pouring=False)
     _start_session(method=method, monkeypatch=monkeypatch)
@@ -384,24 +387,25 @@ def test_held_cube_opening_is_available_without_inventing_a_reset_or_retrieval(
     )
 
 
-_HUMAN = "ask_for_reset_cube_bin_only(robot, cube_0, bin_0, cuboid_barrier, robot_side, "
+_SAME = "ResetCubeBinSameSide"
+_OPPOSITE = "ResetCubeBinOppositeSide"
 UNWRAPPED_PINNED: dict[str, tuple[str, dict[str, float]]] = {
     "expectimax": (
         TOSS_SKILL,
         {
             "STOP": 0.5677313363747786,
-            TOSS_SKILL: 0.5804767038664549,
-            _HUMAN + "robot_side)": 0.5773679034277341,
-            _HUMAN + "opposite_side)": 0.5763621794761442,
+            TOSS_SKILL: 0.5807424172737732,
+            _SAME: 0.5776336168350523,
+            _OPPOSITE: 0.5766936757169572,
         },
     ),
     "determinized_astar": (
-        "ask_for_reset_cube_bin_only",
+        "ResetCubeBinSameSide",
         {
             "STOP": 0.5677313363747786,
             TOSS_SKILL: 0.5448128406697347,
-            _HUMAN + "robot_side)": 0.6804955577713723,
-            _HUMAN + "opposite_side)": 0.5677253364050446,
+            _SAME: 0.700301724883326,
+            _OPPOSITE: 0.5677253364050446,
         },
     ),
 }

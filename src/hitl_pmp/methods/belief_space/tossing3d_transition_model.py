@@ -8,6 +8,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
 from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+from hitl_pmp.methods.belief_space.tossing3d_constants import FUNCTIONAL_PREDICATE_GROUPS
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     mean_competence,
@@ -120,7 +121,7 @@ def apply_success_effects(
 ) -> frozenset[GroundAtom]:
     add_effects, delete_effects, ignore_effects = effects[ground_skill]
     # An ignored predicate the operator re-asserts is a functional update: its old
-    # atoms are replaced by the added ones (the reset's sides, the toss's CubeAtSide).
+    # atoms are replaced by the added ones (the reset's sides, the toss's cube side).
     # One it does not re-assert is merely unknown -- the toss's GraspClear, which held
     # after 233/430 real successes -- and a deterministic forecast leaves it as it was
     # rather than claiming it false, which would make every imagined success end in a
@@ -133,6 +134,13 @@ def apply_success_effects(
     }
     expected_additions = set(add_effects) | conditional_additions
     replaced = set(ignore_effects) & {atom.predicate for atom in expected_additions}
+    reasserted = {atom.predicate.name for atom in expected_additions}
+    replaced.update(
+        predicate
+        for predicate in ignore_effects
+        for group in FUNCTIONAL_PREDICATE_GROUPS
+        if group & reasserted and getattr(predicate, "name", None) in group
+    )
     if ground_skill.skill.name == "OpenGripper":
         replaced.update(ignore_effects)
     replaced.update(

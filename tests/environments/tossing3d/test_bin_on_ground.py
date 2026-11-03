@@ -27,9 +27,7 @@ from hitl_pmp.environments.tossing3d.bin_on_ground import (
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
-    CUBE_AT_SIDE,
     GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
@@ -38,17 +36,23 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
-    ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import BIN_ON_GROUND_ATOM, INITIAL_ATOMS, state
+from .observations import BIN_ON_GROUND_ATOM, BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, state
 
 _TIPPED_FIXTURE = Path(__file__).parent / "fixtures" / "exp21_tipped_bin_state.json"
-_RESET_NAMES = {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}
+_HUMAN_RESETS = {"ResetCubeBinSameSide", "ResetCubeBinOppositeSide"}
+_RESET_NAMES = _HUMAN_RESETS | {"non_human_reset_cube_bin_only"}
+
+
+def _plan_name(*, ground) -> str:
+    """Either human reset solves these plans equally well; the planner's tie is not
+    under test, so both read as one step."""
+    return "HumanReset" if ground.skill.name in _HUMAN_RESETS else ground.skill.name
 
 
 def _bin(*, z: float, tilt_deg: float = 0.0, yaw_deg: float = 0.0) -> dict[str, float]:
@@ -202,9 +206,8 @@ def _pickable_atoms(*, provider: Tossing3DSkillProvider) -> frozenset[GroundAtom
         GroundAtom(predicate=HAND_EMPTY, objects=(robot,)),
         GroundAtom(predicate=ON_GROUND, objects=(cube,)),
         GroundAtom(predicate=NOT_HOLDING, objects=(robot, cube)),
-        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(robot, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
+        GroundAtom(predicate=CUBE_SIDE[Tossing3DSides.robot], objects=(cube, barrier)),
+        GroundAtom(predicate=BIN_SIDE[Tossing3DSides.opposite], objects=(bin_, barrier)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
         GroundAtom(predicate=PICK_PLANNABLE, objects=(robot, cube)),
         GroundAtom(predicate=PICKUP_UNBLOCKED, objects=(cube,)),
@@ -354,8 +357,8 @@ def test_ees_plans_through_the_reset_from_a_tipped_bin() -> None:
 
     plan = method.plan_to(init_atoms=tipped, goal=goal, costs={}, practicing=True)
 
-    assert [ground.skill.name for ground in plan] == [
-        "ask_for_reset_cube_bin_only",
+    assert [_plan_name(ground=ground) for ground in plan] == [
+        "HumanReset",
         "PickCube",
         "MoveToTossLocationAndToss",
     ]
@@ -403,8 +406,7 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
         pick_preconditions_but_bin = {atom.predicate.name for atom in atoms} >= {
             "HandEmpty",
             "OnGround",
-            "RobotAtSide",
-            "CubeAtSide",
+            "CubeOnRobotSide",
         }
         assert pick_preconditions_but_bin
         assert (
@@ -436,8 +438,8 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
         assert env.backend().check_goals()
         goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
         plan = ees.plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
-        assert [ground.skill.name for ground in plan] == [
-            "ask_for_reset_cube_bin_only",
+        assert [_plan_name(ground=ground) for ground in plan] == [
+            "HumanReset",
             "PickCube",
         ]
 

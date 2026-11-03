@@ -15,8 +15,7 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillPro
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.predicates import BIN_ON_OPPOSITE_SIDE
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import NO_FEASIBLE_TOSS_DIRECTION_REJECTION
@@ -190,7 +189,7 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
         objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     atoms = ground.preconditions | {
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite))
+        GroundAtom(predicate=BIN_ON_OPPOSITE_SIDE, objects=(env.bin, env.barrier))
     }
     state = Tossing3DState(
         data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
@@ -327,7 +326,7 @@ def test_pomdp_masks_starved_action_so_the_planner_chooses_again(*, monkeypatch,
         if ground.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
     )
     atoms = toss.preconditions | {
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite))
+        GroundAtom(predicate=BIN_ON_OPPOSITE_SIDE, objects=(env.bin, env.barrier))
     }
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     assert toss in method._pomdp_model.get_valid_actions(  # noqa: SLF001

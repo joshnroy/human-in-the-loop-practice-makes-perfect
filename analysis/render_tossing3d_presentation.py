@@ -59,9 +59,20 @@ SKILLS = (
     "PickCube",
     "MoveToTossLocationAndToss",
     "OpenGripper",
-    "ask_for_reset_cube_bin_only",
+    "ResetCubeBinSameSide",
+    "ResetCubeBinOppositeSide",
     "non_human_reset_cube_bin_only",
 )
+# Runs logged before the human reset was split into two skills bind the bin destination
+# as the reset's last object instead.
+LEGACY_RESET = "ask_for_reset_cube_bin_only"
+RESET_SKILLS = frozenset({
+    "ResetCubeBinSameSide",
+    "ResetCubeBinOppositeSide",
+    "non_human_reset_cube_bin_only",
+    LEGACY_RESET,
+})
+DESTINATION_LABELS = {"robot_side": "ROBOT SIDE", "opposite_side": "OPPOSITE SIDE"}
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -75,7 +86,9 @@ def _timestamp(value: str) -> float:
 def _short_skill(name: str) -> str:
     return {
         "MoveToTossLocationAndToss": "Toss",
-        "ask_for_reset_cube_bin_only": "Human reset",
+        "ResetCubeBinSameSide": "Human reset, same side",
+        "ResetCubeBinOppositeSide": "Human reset, opposite side",
+        LEGACY_RESET: "Human reset",
         "non_human_reset_cube_bin_only": "Automatic reset",
     }.get(name, name)
 
@@ -94,21 +107,26 @@ def reset_destination(decision: dict[str, Any] | None) -> str | None:
     if not isinstance(action, dict):
         return None
     skill = action.get("skill")
-    if not isinstance(skill, dict) or skill.get("name") not in {
-        "ask_for_reset_cube_bin_only",
-        "non_human_reset_cube_bin_only",
-    }:
+    if not isinstance(skill, dict) or skill.get("name") not in RESET_SKILLS:
         return None
+    name = skill.get("name")
+    if name == "ResetCubeBinSameSide":
+        return DESTINATION_LABELS["robot_side"]
+    if name == "ResetCubeBinOppositeSide":
+        return DESTINATION_LABELS["opposite_side"]
     objects = action.get("objects")
-    if not isinstance(objects, list) or not objects:
-        return None
-    destination = objects[-1]
-    if not isinstance(destination, dict):
-        return None
-    return {
-        "robot_side": "ROBOT SIDE",
-        "opposite_side": "OPPOSITE SIDE",
-    }.get(str(destination.get("name")))
+    if isinstance(objects, list) and objects and isinstance(objects[-1], dict):
+        legacy = DESTINATION_LABELS.get(str(objects[-1].get("name")))
+        if legacy is not None:
+            return legacy
+    # The automatic reset keeps one name for both destinations; its bin-side add
+    # effect says which.
+    added = str(skill.get("add_effects", ""))
+    if "'BinOnRobotSide'" in added or '"BinOnRobotSide"' in added:
+        return DESTINATION_LABELS["robot_side"]
+    if "'BinOnOppositeSide'" in added or '"BinOnOppositeSide"' in added:
+        return DESTINATION_LABELS["opposite_side"]
+    return None
 
 
 def _mean(decision: dict[str, Any] | None, *, field: str, skill: str) -> float | None:
@@ -238,14 +256,10 @@ def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
     if skill == "OpenGripper":
         return holds("ClosedEmpty")
     if skill == "PickCube":
-        return all(
-            holds(predicate) for predicate in ("HandEmpty", "OnGround", "RobotAtSide", "CubeAtSide")
-        )
+        return all(holds(predicate) for predicate in ("HandEmpty", "OnGround", "CubeOnRobotSide"))
     if skill == "MoveToTossLocationAndToss":
-        return holds("Holding") and holds("BinAtSide")
-    if skill in {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}:
-        return holds("RobotAtSide")
-    return False
+        return holds("Holding") and (holds("BinOnRobotSide") or holds("BinOnOppositeSide"))
+    return skill in RESET_SKILLS
 
 
 def _draw_bar(
@@ -392,11 +406,7 @@ def _compose(
     image.paste(scene, (0, SCENE_TOP))
     draw = ImageDraw.Draw(image)
 
-    destination = (
-        reset_destination(decision)
-        if current_skill in {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}
-        else None
-    )
+    destination = reset_destination(decision) if current_skill in RESET_SKILLS else None
     active_color = GREEN if destination else AMBER
     draw.rectangle((0, 0, WIDTH, TOP_HEIGHT - 1), fill="#10141a")
     draw.rectangle((0, 0, 108, TOP_HEIGHT - 1), fill=active_color)

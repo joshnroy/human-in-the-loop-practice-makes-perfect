@@ -26,10 +26,9 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.pick_plannable import KB_PICK_PLANNABLE, PickPlannableGate
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     GRASP_CLEAR,
     GRIPPER_CLOSED,
     HAND_EMPTY,
@@ -39,7 +38,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
-    ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
@@ -48,13 +46,14 @@ from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import INITIAL_ATOMS, state
+from .observations import BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, state
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = pytest.mark.xdist_group("test_pick_plannable")
 
 _FIXTURES = Path(__file__).parent / "fixtures"
-_RESET_NAMES = {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}
+_HUMAN_RESETS = {"ResetCubeBinSameSide", "ResetCubeBinOppositeSide"}
+_RESET_NAMES = _HUMAN_RESETS | {"non_human_reset_cube_bin_only"}
 _PICK_NAMES = {"PickCube", "PickCubeFromFloor", "PickCubeFromBin", "PickCubeFromRim"}
 _PLANNABLE_ATOM = (KB_PICK_PLANNABLE, ("robot", "cube_0"))
 _NEEDS_KINDER = pytest.mark.skipif(
@@ -98,6 +97,12 @@ _RESCUED_STATES = {
 }
 
 
+def _plan_name(*, ground) -> str:
+    """Either human reset solves these plans equally well; the planner's tie is not
+    under test, so both read as one step."""
+    return "HumanReset" if ground.skill.name in _HUMAN_RESETS else ground.skill.name
+
+
 def _plain(*, fixture: str) -> dict[str, list[float]]:
     return json.loads((_FIXTURES / fixture).read_text())
 
@@ -116,7 +121,7 @@ def test_a_cube_beyond_the_barriers_centre_plane_is_across_it() -> None:
 
 
 def test_a_cube_touching_the_barrier_from_the_robots_side_is_left_to_the_planner() -> None:
-    """The gate carries none of `CubeAtSide`'s footprint margin: next to the barrier the
+    """The gate carries none of `CubeOnRobotSide`'s footprint margin: next to the barrier the
     verdict is the dry run's, not a constant's."""
     barrier = {"x": 1.3}
     assert not PickPlannableGate.cube_across_barrier(
@@ -177,8 +182,7 @@ def test_pick_plannable_replaces_grasp_clear_in_the_pick() -> None:
         HAND_EMPTY,
         NOT_HOLDING,
         ON_GROUND,
-        ROBOT_AT_SIDE,
-        CUBE_AT_SIDE,
+        CUBE_ON_ROBOT_SIDE,
         BIN_ON_GROUND,
         PICK_PLANNABLE,
     }
@@ -248,9 +252,8 @@ def _pickable_atoms(*, provider: Tossing3DSkillProvider) -> frozenset[GroundAtom
         GroundAtom(predicate=HAND_EMPTY, objects=(robot,)),
         GroundAtom(predicate=ON_GROUND, objects=(cube,)),
         GroundAtom(predicate=NOT_HOLDING, objects=(robot, cube)),
-        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(robot, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=CUBE_SIDE[Tossing3DSides.robot], objects=(cube, barrier)),
+        GroundAtom(predicate=BIN_SIDE[Tossing3DSides.robot], objects=(bin_, barrier)),
         GroundAtom(predicate=PICKUP_UNBLOCKED, objects=(cube,)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(bin_,)),
     })
@@ -335,7 +338,7 @@ def test_an_imagined_reset_makes_the_pick_applicable() -> None:
     atoms = _pickable_atoms(provider=provider)
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     for reset in model.get_valid_actions(environment_state=search_state):
-        from hitl_pmp.methods.belief_space.tossing3d_constants import RESET_SKILL
+        from hitl_pmp.methods.belief_space.tossing3d_constants import HUMAN_RESET_SKILLS
         from hitl_pmp.methods.belief_space.tossing3d_observation_model import mean_competence
 
         branches = model.outcomes(
@@ -347,8 +350,8 @@ def test_an_imagined_reset_makes_the_pick_applicable() -> None:
         assert len(successful) == 1
         probability, next_state, after = successful[0]
         expected = (
-            mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL])
-            if reset.skill.name == RESET_SKILL
+            mean_competence(belief=method.pomdp_state.skill_beliefs[reset.skill.name])
+            if reset.skill.name in HUMAN_RESET_SKILLS
             else 1.0
         )
         assert probability == pytest.approx(expected)
@@ -412,8 +415,8 @@ def test_ees_plans_through_the_reset_when_the_pick_is_unplannable() -> None:
     atoms = _pickable_atoms(provider=provider)
 
     plan = method.plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
-    assert [ground.skill.name for ground in plan] == [
-        "ask_for_reset_cube_bin_only",
+    assert [_plan_name(ground=ground) for ground in plan] == [
+        "HumanReset",
         "PickCube",
         "MoveToTossLocationAndToss",
     ]
@@ -504,8 +507,8 @@ def test_a_known_stuck_state_offers_pouring_for_an_in_bin_refusal(
 
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = _ees_method(env=env).plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
-    recovery = "PourCubeOutOfBin" if pourable else "ask_for_reset_cube_bin_only"
-    assert [ground.skill.name for ground in plan] == [recovery, "PickCube"]
+    recovery = "PourCubeOutOfBin" if pourable else "HumanReset"
+    assert [_plan_name(ground=ground) for ground in plan] == [recovery, "PickCube"]
 
     # What the predicate predicts: the dispatched pick is refused before it moves.
     run = env.backend().run_pick_cube()

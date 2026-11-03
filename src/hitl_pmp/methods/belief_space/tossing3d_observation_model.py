@@ -147,9 +147,9 @@ def make_default_tossing3d_belief(
     names = [name for name, _ in domain.belief_sources]
     names.extend(additional_skill_names)
     if include_human_reset:
-        from .tossing3d_constants import RESET_SKILL
+        from .tossing3d_constants import RESET_OPPOSITE_SIDE_SKILL, RESET_SAME_SIDE_SKILL
 
-        names.append(RESET_SKILL)
+        names.extend((RESET_SAME_SIDE_SKILL, RESET_OPPOSITE_SIDE_SKILL))
     if domain.initial_competence_alpha is not None or domain.initial_competence_beta is not None:
         settings = inference_config or InferenceConfig()
         inference_config = settings.model_copy(

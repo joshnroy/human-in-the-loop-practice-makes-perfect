@@ -10,18 +10,21 @@ from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_OPPOSITE_SIDE,
+)
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    HUMAN_RESET_SKILLS,
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
     POUR_BIN_SKILL,
-    RESET_SKILL,
+    RESET_OPPOSITE_SIDE_SKILL,
+    RESET_SAME_SIDE_SKILL,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -128,7 +131,7 @@ def test_every_unobserved_skill_human_or_robot_is_priced_at_one_robot_step() -> 
     reset_keys = {
         str(ground)
         for ground in method._pomdp_model.ground_skills  # noqa: SLF001
-        if ground.skill.name == RESET_SKILL
+        if ground.skill.name in HUMAN_RESET_SKILLS
     }
     assert reset_keys and reset_keys <= set(forecasts)
 
@@ -311,10 +314,8 @@ def test_action_value_diagnostics_distinguish_parameterized_reset_destinations()
     method.select_skill_to_practice(true_atoms=pick.preconditions)
 
     keys = set(method.practice_action_values())
-    reset_keys = {key for key in keys if key.startswith(f"{RESET_SKILL}(")}
-    assert len(reset_keys) == 2
-    assert any("robot_side" in key for key in reset_keys)
-    assert any("opposite_side" in key for key in reset_keys)
+    # One grounding per reset skill now, so each is keyed by its bare skill name.
+    assert keys >= HUMAN_RESET_SKILLS
 
 
 def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() -> None:
@@ -323,23 +324,23 @@ def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() 
     applicable from the same real state."""
     method = _build(offer_non_human_reset=True)
     model = method._pomdp_model  # noqa: SLF001
-    # The model grounds over every possible atom, so the robot-side variable is also
-    # bound to the opposite side; those groundings are never applicable (RobotAtSide
-    # holds only for the robot's own side) and are not destinations.
-    resets = [
-        g
-        for g in model.ground_skills
-        if g.skill.name in RESET_SKILLS and g.objects[-2].name == "robot_side"
-    ]
-    assert sorted((g.skill.name, g.objects[-1].name) for g in resets) == sorted(
-        (name, side) for name in RESET_SKILLS for side in ("robot_side", "opposite_side")
-    )
+
+    def destination(*, ground: GroundSkill) -> str | None:
+        return method.skill_provider.movables_reset_destination(ground_skill=ground)
+
+    resets = [g for g in model.ground_skills if g.skill.name in RESET_SKILLS]
+    assert sorted((g.skill.name, destination(ground=g)) for g in resets) == sorted([
+        (RESET_SAME_SIDE_SKILL, "robot_side"),
+        (RESET_OPPOSITE_SIDE_SKILL, "opposite_side"),
+        (NON_HUMAN_RESET_SKILL, "robot_side"),
+        (NON_HUMAN_RESET_SKILL, "opposite_side"),
+    ])
     pick = _grounding(method=method, name=PICK_SKILL)
     state = make_tossing3d_search_state(
         state=method.pomdp_state, true_atoms=pick.preconditions | resets[0].preconditions
     )
     offered = {
-        (g.skill.name, g.objects[-1].name)
+        (g.skill.name, destination(ground=g))
         for g in model.get_valid_actions(environment_state=state)
         if g.skill.name in RESET_SKILLS
     }
@@ -394,17 +395,17 @@ def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
     assert values["MoveToTossLocationAndToss (belief mean)"] == mean_competence(
         belief=before.skill_beliefs[TOSS_SKILL]
     )
-    assert values["ask_for_reset_cube_bin_only (belief mean)"] == mean_competence(
-        belief=before.skill_beliefs[RESET_SKILL]
-    )
+    for name in HUMAN_RESET_SKILLS:
+        assert values[f"{name} (belief mean)"] == mean_competence(belief=before.skill_beliefs[name])
     assert "STOP" not in values
     rates = method.practice_skill_learning_rates()
     assert rates["PickCube (belief mean)"] == pytest.approx(0.04, abs=0.005)
     assert rates["OpenGripper (belief mean)"] == pytest.approx(0.04, abs=0.005)
     assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.04, abs=0.005)
-    assert rates["ask_for_reset_cube_bin_only (belief mean)"] == mean_learning_rate(
-        belief=before.skill_beliefs[RESET_SKILL]
-    )
+    for name in HUMAN_RESET_SKILLS:
+        assert rates[f"{name} (belief mean)"] == mean_learning_rate(
+            belief=before.skill_beliefs[name]
+        )
     assert method.pomdp_state == before
 
 
@@ -489,30 +490,33 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
             ),
         )
     )
-    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
 
     method.record_action_cost(ground_skill=reset)
-    after_dispatch = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    after_dispatch = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert after_dispatch == before
     reset_state = scenes.scene(atoms=reset.expected_add_effects(before_atoms=frozenset()))
     method.observe_help_granted(state=reset_state)
 
-    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert isinstance(before, BayesianSkillBelief)
     assert after == before.condition_execution(success=True, observed_cost=observed_cost)
     assert mean_competence(belief=after) > mean_competence(belief=before)
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
-    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
+    assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 1
 
 
 def test_practice_offers_only_the_human_reset() -> None:
     method = _build()
-    assert [skill.name for skill in method.human_skills()] == [RESET_SKILL]
+    assert [skill.name for skill in method.human_skills()] == [
+        RESET_SAME_SIDE_SKILL,
+        RESET_OPPOSITE_SIDE_SKILL,
+    ]
     assert NON_HUMAN_RESET_SKILL not in method.pomdp_state.skill_beliefs
     offered = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
-    assert RESET_SKILL in offered
+    assert offered >= HUMAN_RESET_SKILLS
     assert not any("non_human_reset" in name for name in offered)
 
 
@@ -535,7 +539,7 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief(
             ),
         )
     )
-    human_before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    human_before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     automatic_before = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
 
     method.record_action_cost(ground_skill=reset)
@@ -545,9 +549,9 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief(
 
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
     assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
-    assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
+    assert method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL] == human_before
     assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 1
-    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
+    assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 0
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
@@ -594,7 +598,8 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
         "PourCubeOutOfBin (belief mean)",
-        "ask_for_reset_cube_bin_only (belief mean)",
+        "ResetCubeBinSameSide (belief mean)",
+        "ResetCubeBinOppositeSide (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]
@@ -628,14 +633,14 @@ def test_end_cycle_logs_training_counts_without_learning_rate_observations(
 
 def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
     method = _build(offer_non_human_reset=True)
-    human = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    human = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
 
     assert isinstance(human, BayesianSkillBelief)
     assert isinstance(automatic, BayesianSkillBelief)
     assert human.signature() != automatic.signature()
     assert set(method.practice_skill_costs()) >= {
-        f"{RESET_SKILL} (belief mean)",
+        f"{RESET_SAME_SIDE_SKILL} (belief mean)",
         f"{NON_HUMAN_RESET_SKILL} (belief mean)",
     }
 
@@ -651,8 +656,8 @@ def test_a_granted_movables_reset_clears_the_starved_pool_record(
     toss = _grounding(method=method, name=TOSS_SKILL)
     atoms = toss.preconditions | {
         GroundAtom(
-            predicate=BIN_AT_SIDE,
-            objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+            predicate=BIN_ON_OPPOSITE_SIDE,
+            objects=(method.env.bin, method.env.barrier),
         )
     }
     method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
@@ -799,10 +804,11 @@ def test_practice_without_the_human_reset_drops_only_the_reset_belief(*, solver:
         pomdp_search_depth=2,
     )
     assert method.pomdp_domain == PracticeDomainWithoutSkills.drop(
-        domain=TOSSING3D_DOMAIN, skill_names=frozenset({RESET_SKILL})
+        domain=TOSSING3D_DOMAIN, skill_names=HUMAN_RESET_SKILLS
     )
-    assert RESET_SKILL not in dict(method.pomdp_domain.belief_sources)
-    assert RESET_SKILL not in method.pomdp_domain.failure_effect_skills
+    for name in HUMAN_RESET_SKILLS:
+        assert name not in dict(method.pomdp_domain.belief_sources)
+        assert name not in method.pomdp_domain.failure_effect_skills
 
 
 @pytest.mark.parametrize("name", ["decisions.jsonl", "decisions.jsonl.zst"])
@@ -852,7 +858,7 @@ class _SymbolicScenes:
         the reset promises from there."""
         self.method.env.current_state = self.scene(atoms=before_atoms)
         reset = self.method.skill_provider.human_cube_bin_reset_skills()[0]
-        assert reset.skill.name == RESET_SKILL
+        assert reset.skill.name == RESET_SAME_SIDE_SKILL
         self.method.record_action_cost(ground_skill=reset)
         return reset.expected_add_effects(before_atoms=before_atoms)
 
@@ -874,16 +880,20 @@ def test_a_human_reset_whose_promised_effects_hold_is_recorded_as_a_success(
     method = _build(human_reset_practice_cost=5.0)
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     method.decision_log = tmp_path / "decisions.jsonl"
-    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
+    opposite_before = method.pomdp_state.skill_beliefs[RESET_OPPOSITE_SIDE_SKILL]
     assert isinstance(before, BayesianSkillBelief)
     promised = scenes.dispatch_human_reset(before_atoms=frozenset())
 
     method.observe_help_granted(state=scenes.scene(atoms=promised))
 
-    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert after == before.condition_execution(success=True, observed_cost=5.0)
     assert mean_competence(belief=after) > mean_competence(belief=before)
-    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SKILL, True)
+    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SAME_SIDE_SKILL, True)
+    # Each destination is its own skill with its own belief: the other one is untouched.
+    assert method.pomdp_state.skill_beliefs[RESET_OPPOSITE_SIDE_SKILL] == opposite_before
+    assert method.pomdp_state.pending_examples.get(RESET_OPPOSITE_SIDE_SKILL, 0) == 0
 
 
 def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure(
@@ -894,17 +904,17 @@ def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure
     method = _build(human_reset_practice_cost=5.0)
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     method.decision_log = tmp_path / "decisions.jsonl"
-    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert isinstance(before, BayesianSkillBelief)
     promised = scenes.dispatch_human_reset(before_atoms=frozenset())
 
     method.observe_help_granted(state=scenes.scene(atoms=_without_pick_plannable(atoms=promised)))
 
-    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert after == before.condition_execution(success=False, observed_cost=5.0)
     assert mean_competence(belief=after) < mean_competence(belief=before)
-    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
-    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SKILL, False)
+    assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 1
+    assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SAME_SIDE_SKILL, False)
 
 
 def test_repeated_undelivered_resets_drive_the_reset_belief_down(
@@ -912,13 +922,15 @@ def test_repeated_undelivered_resets_drive_the_reset_belief_down(
 ) -> None:
     method = _build(human_reset_practice_cost=5.0)
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
-    trajectory = [mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL])]
+    trajectory = [mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL])]
     for _ in range(5):
         promised = scenes.dispatch_human_reset(before_atoms=frozenset())
         method.observe_help_granted(
             state=scenes.scene(atoms=_without_pick_plannable(atoms=promised))
         )
-        trajectory.append(mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SKILL]))
+        trajectory.append(
+            mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL])
+        )
     assert all(later < earlier for earlier, later in itertools.pairwise(trajectory))
 
 
@@ -931,10 +943,12 @@ def test_the_human_reset_is_an_inferred_skill_like_any_robot_skill() -> None:
         PracticeExampleSource,
     )
 
-    assert RESET_SKILL not in TOSSING3D_DOMAIN.deterministic_skills
-    assert (RESET_SKILL, PracticeExampleSource.OUTCOME) in TOSSING3D_DOMAIN.belief_sources
-    assert RESET_SKILL in TOSSING3D_DOMAIN.failure_effect_skills
-    assert TOSSING3D_DOMAIN.human_skill_names == {RESET_SKILL}
+    for name in HUMAN_RESET_SKILLS:
+        assert name not in TOSSING3D_DOMAIN.deterministic_skills
+        assert (name, PracticeExampleSource.OUTCOME) in TOSSING3D_DOMAIN.belief_sources
+        assert name in TOSSING3D_DOMAIN.failure_effect_skills
+        assert TOSSING3D_DOMAIN.belief_name(skill_name=name) == name
+    assert TOSSING3D_DOMAIN.human_skill_names == HUMAN_RESET_SKILLS
     assert TOSSING3D_DOMAIN.deterministic_skills == {NON_HUMAN_RESET_SKILL}
 
 
@@ -949,7 +963,7 @@ def test_an_undelivered_human_reset_teaches_the_failure_effect_model(
     method.observe_help_granted(state=scenes.scene(atoms=delivered))
 
     (record,) = method._pomdp_model.failure_effect_counts  # noqa: SLF001
-    assert record.ground_skill.skill.name == RESET_SKILL
+    assert record.ground_skill.skill.name == RESET_SAME_SIDE_SKILL
     assert record.add_effects == delivered
 
 

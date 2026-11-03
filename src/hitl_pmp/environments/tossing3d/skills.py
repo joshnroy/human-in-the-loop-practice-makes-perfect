@@ -84,12 +84,12 @@ allow -- a precondition weaker than reality yields plans that look valid and can
 execute. The spatial constraints follow the simulator dynamics; their symbolic
 encoding below is ours:
 
-1. **`PickCube` binds the robot and cube to one typed side.** The base cannot cross the
-   barrier, so a cube on the opposite side can never be grasped. This replaces the old,
-   redundant ``Reachable`` predicate with the same fact in relational form.
-2. **The toss copies the bin's side to the cube without binding a side parameter.**
-   Conditional effects read the bin's current side. ``CubeAtSide`` is functional,
-   so the old value is cleared before the observed destination side is added.
+1. **`PickCube` requires `CubeOnRobotSide`.** The base cannot cross the barrier, so a
+   cube on the opposite side can never be grasped. The side is a robot-relative
+   predicate, not a bound object: the robot is on its own side by definition.
+2. **The toss copies the bin's side to the cube.** Conditional effects read the bin's
+   current side. The cube's two side predicates are functional, so both are cleared
+   before the observed destination side is added.
    Same-side and opposite-side placement share one Toss practice target.
 
 And one add effect that is neither of those: **the toss adds `OnGround(?cube)`**, because
@@ -126,10 +126,12 @@ from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     GRASP_CLEAR,
     GRIPPER_CLOSED,
     HAND_EMPTY,
@@ -139,9 +141,10 @@ from .predicates import (
     ON_GROUND,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
-    ROBOT_AT_SIDE,
 )
-from .sides import Tossing3DSides
+
+# Both cube-side predicates are functional together: a relocation forgets both.
+CUBE_SIDES = frozenset({CUBE_ON_ROBOT_SIDE, CUBE_ON_OPPOSITE_SIDE})
 
 # Match upstream's candidate standoffs. Farther receivers require release poses
 # that remain on the robot's side of the barrier; keep the lower end for same-side
@@ -196,23 +199,20 @@ class Tossing3DSkills:
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
-    _side: ClassVar[Variable] = Variable(name="side", type=Tossing3DSides.type)
 
     PICK_CUBE: ClassVar[Skill] = Skill(
         name="PickCube",
         # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
         # barrier is unused by the controller and present so the operator can say the
-        # cube is still on this side of it. The bin comes last, appended after #346's
-        # side for the same reason the side was: BinOnGround has to name the bin, and
-        # appending preserves upstream's prefix order.
-        parameters=(_robot, _cube, _barrier, _side, _bin),
+        # cube is still on this side of it. The bin comes last because BinOnGround has
+        # to name it, and appending preserves upstream's prefix order.
+        parameters=(_robot, _cube, _barrier, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # The barrier is one-way: see this module's docstring, choice 1.
-            LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
-            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(_cube, _barrier)),
             # The controller's own planner finds a plan from here. A pick it would
             # refuse at dispatch moves nothing, so retrying it is a loop the planners
             # never leave; without this atom only the paid reset applies. It replaces
@@ -258,21 +258,19 @@ class Tossing3DSkills:
         }),
         conditional_add_effects=frozenset({
             ConditionalAddEffect(
-                constant_bindings=((_side, Tossing3DSides.robot),),
                 conditions=frozenset({
-                    LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side))
+                    LiftedAtom(predicate=BIN_ON_ROBOT_SIDE, variables=(_bin, _barrier))
                 }),
                 add_effects=frozenset({
-                    LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side))
+                    LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(_cube, _barrier))
                 }),
             ),
             ConditionalAddEffect(
-                constant_bindings=((_side, Tossing3DSides.opposite),),
                 conditions=frozenset({
-                    LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side))
+                    LiftedAtom(predicate=BIN_ON_OPPOSITE_SIDE, variables=(_bin, _barrier))
                 }),
                 add_effects=frozenset({
-                    LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side))
+                    LiftedAtom(predicate=CUBE_ON_OPPOSITE_SIDE, variables=(_cube, _barrier))
                 }),
             ),
         }),
@@ -281,14 +279,14 @@ class Tossing3DSkills:
             LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,)),
             LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
         }),
-        # GraspClear and PickPlannable join CubeAtSide as functional updates: whether
+        # GraspClear and PickPlannable join the cube side predicates as functional updates: whether
         # the landed cube can be picked is a fact of the physics, re-read from
         # observation rather than promised by the operator model. BinOnGround is
         # deliberately neither deleted nor ignored: a toss can tip the bin, but
         # modelling that would make every imagined post-toss plan require a reset, so
         # the planners assume the bin stays upright and replan from the observed state
         # when it does not.
-        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE}),
+        ignore_effects=CUBE_SIDES | {GRASP_CLEAR, PICK_PLANNABLE},
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
         practice_cost=1.0,
@@ -320,7 +318,7 @@ class Tossing3DSkills:
         conditional_ignore_effects=frozenset({
             ConditionalIgnoreEffect(
                 conditions=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
-                ignore_effects=frozenset({CUBE_AT_SIDE}),
+                ignore_effects=CUBE_SIDES,
             )
         }),
         conditional_add_effects=preserve_nonholding_geometry(
@@ -332,14 +330,13 @@ class Tossing3DSkills:
 
     POUR_BIN: ClassVar[Skill] = Skill(
         name="PourCubeOutOfBin",
-        parameters=(_robot, _cube, _bin, _barrier, _side),
+        parameters=(_robot, _cube, _bin, _barrier),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
-            LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
-            LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
+            LiftedAtom(predicate=BIN_ON_ROBOT_SIDE, variables=(_bin, _barrier)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
@@ -348,12 +345,12 @@ class Tossing3DSkills:
             LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
             LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
-            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(_cube, _barrier)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
         }),
-        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
+        ignore_effects=CUBE_SIDES | {GRASP_CLEAR},
         param_dim=0,
         practice_cost=1.0,
     )

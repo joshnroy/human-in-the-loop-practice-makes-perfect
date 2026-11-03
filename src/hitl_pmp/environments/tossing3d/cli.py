@@ -313,9 +313,9 @@ class Tossing3DCli:
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
         # Wired for the same reason tossingroom's own build_problem wires it:
-        # --method ees's ask_for_reset_cube_bin_only ground skill needs a real
+        # --method ees's human reset skills need a real
         # HumanOracle on the practice Problem, or PracticeLoop.run refuses up front the
-        # moment the provider makes that skill available. This function builds both
+        # moment the provider makes those skills available. This function builds both
         # the practice and evaluation Problem (called twice, see above), so both get one -- harmless
         # on the evaluation side, since no evaluation policy can ever raise a
         # human-help exception in the first place, and harmless for every other

@@ -4,10 +4,11 @@ The five manipulation predicates are KINDER's classifiers, not ours. Each is a l
 into the atom set upstream's own `Tossing3DStateAbstractor`
 (`kinder_models.dynamic3d.tossing.state_abstractions`) derived from the state being
 asked about. Nothing here re-implements a threshold, so nothing here can drift out of
-agreement with upstream. ``RobotAtSide``, ``CubeAtSide``, and ``BinAtSide`` are the
-small geometric vocabulary added here so PDDL can bind a reset destination. Their sides
-are robot-relative: ``robot_side`` denotes the robot's halfspace of the barrier and
-``opposite_side`` denotes the other one, independent of world-frame orientation.
+agreement with upstream. ``CubeOnRobotSide``, ``CubeOnOppositeSide``, ``BinOnRobotSide``
+and ``BinOnOppositeSide`` are the small geometric vocabulary added here. They are
+robot-relative: the robot's side is the robot's halfspace of the barrier and the opposite
+side is the other one, independent of world-frame orientation. No skill binds a side
+object; each states the side it needs through these predicates.
 
 That is the change this module records. It previously carried six classifiers of its own,
 three of them ported from upstream's `shelf` abstractions with thresholds copied across,
@@ -70,7 +71,7 @@ of ours. See `skills.py` for the ranges and `test_kinder_pin.py` for the asserti
 hold them to upstream's.
 """
 
-from hitl_pmp.core.problem.environment.types import Object, State
+from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .bin_on_ground import KB_BIN_ON_GROUND
@@ -262,38 +263,34 @@ def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
     raise ValueError(f"unknown Tossing3D side object {side.name!r}")
 
 
-ROBOT_AT_SIDE = Predicate(
-    name="RobotAtSide",
-    types=(
-        Tossing3DEnvironment.robot_type,
-        Tossing3DEnvironment.barrier_type,
-        Tossing3DSides.type,
-    ),
-    holds=lambda state, objects: objects[2] == Tossing3DSides.robot,
-)
+def _side_predicate(*, name: str, object_type: Type, side: Object) -> Predicate:
+    return Predicate(
+        name=name,
+        types=(object_type, Tossing3DEnvironment.barrier_type),
+        holds=lambda state, objects: _same_barrier_side(
+            state=state, x_object=objects[0], side=side
+        ),
+    )
 
-CUBE_AT_SIDE = Predicate(
-    name="CubeAtSide",
-    types=(
-        Tossing3DEnvironment.cube_type,
-        Tossing3DEnvironment.barrier_type,
-        Tossing3DSides.type,
-    ),
-    holds=lambda state, objects: _same_barrier_side(
-        state=state, x_object=objects[0], side=objects[2]
-    ),
-)
 
-BIN_AT_SIDE = Predicate(
-    name="BinAtSide",
-    types=(
-        Tossing3DEnvironment.bin_type,
-        Tossing3DEnvironment.barrier_type,
-        Tossing3DSides.type,
-    ),
-    holds=lambda state, objects: _same_barrier_side(
-        state=state, x_object=objects[0], side=objects[2]
-    ),
+# Robot-relative halfspaces of the barrier. Both sides of each object are named because
+# an object on or straddling the barrier is in neither, so "not on the robot's side"
+# does not mean "on the opposite side".
+CUBE_ON_ROBOT_SIDE = _side_predicate(
+    name="CubeOnRobotSide", object_type=Tossing3DEnvironment.cube_type, side=Tossing3DSides.robot
+)
+CUBE_ON_OPPOSITE_SIDE = _side_predicate(
+    name="CubeOnOppositeSide",
+    object_type=Tossing3DEnvironment.cube_type,
+    side=Tossing3DSides.opposite,
+)
+BIN_ON_ROBOT_SIDE = _side_predicate(
+    name="BinOnRobotSide", object_type=Tossing3DEnvironment.bin_type, side=Tossing3DSides.robot
+)
+BIN_ON_OPPOSITE_SIDE = _side_predicate(
+    name="BinOnOppositeSide",
+    object_type=Tossing3DEnvironment.bin_type,
+    side=Tossing3DSides.opposite,
 )
 
 

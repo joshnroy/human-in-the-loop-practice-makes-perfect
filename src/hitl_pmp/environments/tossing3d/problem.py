@@ -35,7 +35,7 @@ class Tossing3DProblem(Problem):
         standing convention and is deliberately small here: a generous horizon in a domain
         whose skills are stochastic quietly becomes a retry dial, and in *this* domain a
         retry is not even available -- after a toss the cube is on the opposite side,
-        `CubeAtSide(cube, barrier, robot_side)` is false, and no pick applies. So the
+        `CubeOnRobotSide(cube, barrier)` is false, and no pick applies. So the
         extra budget buys one recovery from a failed grasp and nothing more, which is
         the honest amount.
 

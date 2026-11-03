@@ -19,8 +19,8 @@ and one skill is one robot call (`real/contract.py`).
 | `BinOnGround(bin)` | upright and on the floor | a bin fit is present |
 | `PickPlannable(robot, cube)` | gate, else a planner dry run | gate, else `can_pick()` |
 
-The side atoms (`RobotAtSide`, `CubeAtSide`, `BinAtSide`) and the rest are the sim's own
-predicates over the flat state. Anything not seen is NaN, never a guess, and no
+The side atoms (`CubeOnRobotSide`, `BinOnRobotSide` and their opposites) and the rest
+are the sim's own predicates over the flat state. Anything not seen is NaN, never a guess, and no
 predicate holds of a NaN.
 
 ## One skill is one robot call, charged its average sim tick count

@@ -9,10 +9,12 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    HUMAN_RESET_SKILLS,
     NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    RESET_SKILL,
+    RESET_OPPOSITE_SIDE_SKILL,
+    RESET_SAME_SIDE_SKILL,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -55,10 +57,6 @@ def _atom(*, method: Tossing3DPomdpMethod, name: str) -> GroundAtom:
             objects=method.objects(), predicates=method.predicates()
         )
         if atom.predicate.name == name
-        and (
-            not name.endswith("AtSide")
-            or atom.objects[-1].name == ("opposite_side" if name == "BinAtSide" else "robot_side")
-        )
     )
 
 
@@ -67,8 +65,11 @@ def _reset(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
         skill
         for skill in method._pomdp_model.ground_skills  # noqa: SLF001
         if skill.skill.name == name
-        and skill.objects[-2].name == "robot_side"
-        and skill.objects[-1].name == "robot_side"
+        # Both automatic resets share one name; take the same-side one.
+        and (
+            name != NON_HUMAN_RESET_SKILL
+            or method.skill_provider.movables_reset_destination(ground_skill=skill) == "robot_side"
+        )
     )
 
 
@@ -109,7 +110,7 @@ def test_non_human_reset_success_remains_known_even_with_zero_performance_poster
 def test_human_reset_forecasts_success_and_failure_from_competence(*, competence: float) -> None:
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
-    reset = _reset(method=method, name=RESET_SKILL)
+    reset = _reset(method=method, name=RESET_SAME_SIDE_SKILL)
     belief = WeightedHypothesisBelief(
         hypotheses=(
             WeightedHypothesis(
@@ -119,7 +120,9 @@ def test_human_reset_forecasts_success_and_failure_from_competence(*, competence
         )
     )
     state = method.pomdp_state.model_copy(
-        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+        update={
+            "skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SAME_SIDE_SKILL: belief}
+        }
     )
     before = reset.preconditions | frozenset({_atom(method=method, name="Holding")})
     outcomes = model.outcomes(
@@ -136,16 +139,16 @@ def test_human_reset_forecasts_success_and_failure_from_competence(*, competence
             assert _atom(method=method, name="Holding") not in after
         else:
             assert competence < 1
-        assert next_state.pending_examples == {**state.pending_examples, RESET_SKILL: 1}
+        assert next_state.pending_examples == {**state.pending_examples, RESET_SAME_SIDE_SKILL: 1}
         assert next_state.accumulated_cost == pytest.approx(reset.evaluate_practice_cost())
     assert (outcomes[0][2] != before) == (competence > 0)
-    assert state.skill_beliefs[RESET_SKILL] == belief
+    assert state.skill_beliefs[RESET_SAME_SIDE_SKILL] == belief
 
 
 def test_human_reset_conditions_only_its_own_hypothetical_belief() -> None:
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
-    reset = _reset(method=method, name=RESET_SKILL)
+    reset = _reset(method=method, name=RESET_SAME_SIDE_SKILL)
     belief = WeightedHypothesisBelief(
         hypotheses=tuple(
             WeightedHypothesis(
@@ -155,7 +158,9 @@ def test_human_reset_conditions_only_its_own_hypothetical_belief() -> None:
         )
     )
     state = method.pomdp_state.model_copy(
-        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+        update={
+            "skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SAME_SIDE_SKILL: belief}
+        }
     )
     outcomes = model.outcomes(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=reset.preconditions),
@@ -164,20 +169,20 @@ def test_human_reset_conditions_only_its_own_hypothetical_belief() -> None:
     )
     assert [p for p, _, _ in outcomes] == pytest.approx([0.5, 0.5])
     assert [
-        mean_competence(belief=s.skill_beliefs[RESET_SKILL]) for _, s, _ in outcomes
+        mean_competence(belief=s.skill_beliefs[RESET_SAME_SIDE_SKILL]) for _, s, _ in outcomes
     ] == pytest.approx([0.68, 0.32])
     for _, next_state, _ in outcomes:
-        assert {k: v for k, v in next_state.skill_beliefs.items() if k != RESET_SKILL} == {
-            k: v for k, v in state.skill_beliefs.items() if k != RESET_SKILL
-        }
-    assert state.skill_beliefs[RESET_SKILL] == belief
+        assert {
+            k: v for k, v in next_state.skill_beliefs.items() if k != RESET_SAME_SIDE_SKILL
+        } == {k: v for k, v in state.skill_beliefs.items() if k != RESET_SAME_SIDE_SKILL}
+    assert state.skill_beliefs[RESET_SAME_SIDE_SKILL] == belief
 
 
 @pytest.mark.parametrize("learning_rate", [0.0, 0.1])
 def test_human_learning_changes_next_reset_forecast_after_refit(*, learning_rate: float) -> None:
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
-    reset = _reset(method=method, name=RESET_SKILL)
+    reset = _reset(method=method, name=RESET_SAME_SIDE_SKILL)
     belief = WeightedHypothesisBelief(
         hypotheses=(
             WeightedHypothesis(
@@ -187,7 +192,9 @@ def test_human_learning_changes_next_reset_forecast_after_refit(*, learning_rate
         )
     )
     state = method.pomdp_state.model_copy(
-        update={"skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SKILL: belief}}
+        update={
+            "skill_beliefs": {**method.pomdp_state.skill_beliefs, RESET_SAME_SIDE_SKILL: belief}
+        }
     )
     _, after, atoms = model.outcomes(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=reset.preconditions),
@@ -246,9 +253,8 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
             gripper,
             "OnGround",
             "NotHolding",
-            "RobotAtSide",
-            "CubeAtSide",
-            "BinAtSide",
+            "CubeOnRobotSide",
+            "BinOnOppositeSide",
             "GraspClear",
             "PickPlannable",
             "PickupUnblocked",
@@ -259,11 +265,7 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
         ready |= {_atom(method=method, name="GripperClosed")}
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
     self_loop = next(
-        reset
-        for reset in model.ground_skills
-        if reset.skill.name in RESET_SKILLS
-        and reset.objects[-2].name == "robot_side"
-        and reset.objects[-1].name == "opposite_side"
+        reset for reset in model.ground_skills if reset.skill.name == RESET_OPPOSITE_SIDE_SKILL
     )
     assert self_loop.preconditions <= ready
     assert (
@@ -274,10 +276,9 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
     )
     actions = model.get_valid_actions(environment_state=search_state)
     assert self_loop in actions
-    assert {reset.objects[-1].name for reset in actions if reset.skill.name in RESET_SKILLS} == {
-        "robot_side",
-        "opposite_side",
-    }
+    assert {
+        reset.skill.name for reset in actions if reset.skill.name in RESET_SKILLS
+    } == HUMAN_RESET_SKILLS
     assert {action.skill.name for action in actions if action.skill.name not in RESET_SKILLS} == {
         PICK_SKILL if gripper == "HandEmpty" else OPEN_GRIPPER_SKILL
     }
@@ -289,11 +290,9 @@ def test_reset_recoveries_remain_available(*, condition: str) -> None:
     names = {
         "unreachable": {"HandEmpty", "OnGround"},
         "in_bin": {"HandEmpty", "OnGround", "InBin"},
-        "holding": {"Holding", "CubeAtSide"},
+        "holding": {"Holding", "CubeOnRobotSide"},
     }[condition]
-    atoms = frozenset(
-        _atom(method=method, name=name) for name in (names | {"RobotAtSide", "BinAtSide"})
-    )
+    atoms = frozenset(_atom(method=method, name=name) for name in (names | {"BinOnOppositeSide"}))
     actions = method._pomdp_model.get_valid_actions(  # noqa: SLF001
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     )
@@ -310,7 +309,7 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
         linear_cost_lambda=cost_lambda,
     )
     pick = next(skill for skill in model.ground_skills if skill.skill.name == PICK_SKILL)
-    reset = _reset(method=method, name=sorted(RESET_SKILLS)[0])
+    reset = _reset(method=method, name=RESET_SAME_SIDE_SKILL)
     point = WeightedHypothesisBelief(
         hypotheses=(
             WeightedHypothesis(
@@ -373,9 +372,8 @@ def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() 
             "HandEmpty",
             "OnGround",
             "NotHolding",
-            "RobotAtSide",
-            "CubeAtSide",
-            "BinAtSide",
+            "CubeOnRobotSide",
+            "BinOnOppositeSide",
             "GraspClear",
             "PickPlannable",
             "BinOnGround",
@@ -397,9 +395,8 @@ def _ready_atoms(*, method: Tossing3DPomdpMethod) -> frozenset[GroundAtom]:
             "HandEmpty",
             "OnGround",
             "NotHolding",
-            "RobotAtSide",
-            "CubeAtSide",
-            "BinAtSide",
+            "CubeOnRobotSide",
+            "BinOnOppositeSide",
             "GraspClear",
             "PickPlannable",
             "PickupUnblocked",
@@ -423,9 +420,9 @@ def test_a_pick_after_a_reset_reuses_the_roots_draw_within_its_scope(*, scope: s
     actions = model.get_valid_actions(environment_state=root)
     pick = next(action for action in actions if action.skill.name == PICK_SKILL)
     resets = {
-        reset.objects[-1].name: reset
+        method.skill_provider.movables_reset_destination(ground_skill=reset): reset
         for reset in actions
-        if reset.skill.name == RESET_SKILL and reset.objects[-2].name == "robot_side"
+        if reset.skill.name in HUMAN_RESET_SKILLS
     }
 
     def after(*, reset: GroundSkill) -> Tossing3DSearchState:
@@ -496,7 +493,7 @@ def test_the_belief_key_is_the_search_key_without_the_accumulated_cost() -> None
     reset = next(
         action
         for action in model.get_valid_actions(environment_state=root)
-        if action.skill.name == RESET_SKILL and action.objects[-1].name == "opposite_side"
+        if action.skill.name == RESET_OPPOSITE_SIDE_SKILL
     )
     _, after_state, after_atoms = model.outcomes(
         environment_state=root, state=method.pomdp_state, action=reset

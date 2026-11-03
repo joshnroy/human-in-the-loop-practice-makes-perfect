@@ -39,7 +39,6 @@ from hitl_pmp.environments.sweepoffshelf3d.types import SweepOffShelf3DState
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import IN_BIN
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
@@ -112,7 +111,7 @@ def _tossing_domain(*, method: EesMethod, env: Tossing3DEnvironment) -> _Domain:
         ),
         plain=GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
-            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+            objects=(env.robot, env.cube, env.barrier, env.bin),
         ),
         partial_reset_applies=method.skill_provider.human_cube_bin_reset_skills()[0].preconditions,
         state=Tossing3DState(
@@ -686,13 +685,11 @@ def test_the_wrapper_drops_only_the_tossing3d_human_reset_belief(
         TOSSING3D_DOMAIN,
         PracticeDomainWithoutSkills,
     )
-    from hitl_pmp.methods.belief_space.tossing3d_constants import RESET_SKILL
+    from hitl_pmp.methods.belief_space.tossing3d_constants import HUMAN_RESET_SKILLS
 
     domain = _pomdp(solver=solver)(wrapped=wrapped)
     assert domain.method.pomdp_domain == (
-        PracticeDomainWithoutSkills.drop(
-            domain=TOSSING3D_DOMAIN, skill_names=frozenset({RESET_SKILL})
-        )
+        PracticeDomainWithoutSkills.drop(domain=TOSSING3D_DOMAIN, skill_names=HUMAN_RESET_SKILLS)
         if wrapped
         else TOSSING3D_DOMAIN
     )

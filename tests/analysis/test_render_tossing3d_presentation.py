@@ -10,7 +10,34 @@ from analysis.render_tossing3d_presentation import (
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 
-def test_reset_destination_reads_the_bound_side_object() -> None:
+@pytest.mark.parametrize(
+    ("name", "label"),
+    [("ResetCubeBinSameSide", "ROBOT SIDE"), ("ResetCubeBinOppositeSide", "OPPOSITE SIDE")],
+)
+def test_reset_destination_reads_the_reset_skill(*, name: str, label: str) -> None:
+    decision = {
+        "action": {
+            "skill": {"name": name},
+            "objects": [{"name": "robot"}, {"name": "cube_0"}, {"name": "bin_0"}],
+        }
+    }
+    assert reset_destination(decision) == label
+
+
+def test_reset_destination_reads_the_automatic_resets_bin_side_effect() -> None:
+    decision = {
+        "action": {
+            "skill": {
+                "name": "non_human_reset_cube_bin_only",
+                "add_effects": [{"predicate": {"name": "BinOnOppositeSide"}}],
+            },
+            "objects": [{"name": "robot"}, {"name": "bin_0"}],
+        }
+    }
+    assert reset_destination(decision) == "OPPOSITE SIDE"
+
+
+def test_reset_destination_reads_the_bound_side_object_of_a_legacy_log() -> None:
     decision = {
         "action": {
             "skill": {"name": "ask_for_reset_cube_bin_only"},

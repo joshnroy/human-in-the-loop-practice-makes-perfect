@@ -15,7 +15,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     BIN_ON_GROUND,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     GRIPPER_CLOSED,
     HAND_EMPTY,
     HOLDING,
@@ -23,10 +23,8 @@ from hitl_pmp.environments.tossing3d.predicates import (
     NOT_HOLDING,
     ON_GROUND,
     PICK_PLANNABLE,
-    ROBOT_AT_SIDE,
     Tossing3DAtoms,
 )
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills, preserve_nonholding_geometry
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
@@ -58,14 +56,12 @@ class SameSideSkills:
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
-    _side: ClassVar[Variable] = Variable(name="side", type=Tossing3DSides.type)
     _empty: ClassVar[LiftedAtom] = LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))
     _held: ClassVar[LiftedAtom] = LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))
     _floor: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_FLOOR, variables=(_cube, _bin))
     _inside: ClassVar[LiftedAtom] = LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin))
     _same_robot_side: ClassVar[frozenset[LiftedAtom]] = frozenset({
-        LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
-        LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+        LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(_cube, _barrier)),
     })
     _bin_on_ground: ClassVar[LiftedAtom] = LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,))
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=GRIPPER_CLOSED, variables=(_robot,))
@@ -80,7 +76,7 @@ class SameSideSkills:
 
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
-        parameters=(_robot, _cube, _bin, _barrier, _side),
+        parameters=(_robot, _cube, _bin, _barrier),
         preconditions=frozenset({_empty, _not_held, _rim, _bin_on_ground, _plannable})
         | _same_robot_side,
         add_effects=frozenset({_held, _closed}),
@@ -96,7 +92,7 @@ class SameSideSkills:
 
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
-        parameters=(_robot, _cube, _bin, _barrier, _side),
+        parameters=(_robot, _cube, _bin, _barrier),
         preconditions=frozenset({_empty, _not_held, _floor, _bin_on_ground, _plannable})
         | _same_robot_side,
         add_effects=frozenset({_held, _closed}),
@@ -111,7 +107,7 @@ class SameSideSkills:
     )
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
-        parameters=(_robot, _cube, _bin, _barrier, _side),
+        parameters=(_robot, _cube, _bin, _barrier),
         preconditions=frozenset({_empty, _not_held, _inside, _bin_on_ground, _plannable})
         | _same_robot_side,
         add_effects=frozenset({_held, _closed}),

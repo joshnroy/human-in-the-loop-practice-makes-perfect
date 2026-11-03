@@ -16,9 +16,7 @@ from hitl_pmp.environments.tossing3d.kinder_backend import (
 )
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
     GRASP_CLEAR,
     GRIPPER_CLOSED,
     HAND_EMPTY,
@@ -33,7 +31,7 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvide
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import HOLDING_ATOMS, INITIAL_ATOMS, state
+from .observations import BIN_SIDE, CUBE_SIDE, HOLDING_ATOMS, INITIAL_ATOMS, state
 from .test_toss_settling import _controller, _State
 
 
@@ -83,7 +81,7 @@ def test_open_applicability_and_forecast(*, layout, hand, upright):
     assert not skill.delete_effects & after
     if hand == "holding":
         forgotten = skill.expected_ignore_effects(before_atoms=before)
-        assert CUBE_AT_SIDE in forgotten
+        assert set(CUBE_SIDE.values()) <= forgotten
         assert not any(atom.predicate in forgotten for atom in after)
         assert not any(
             candidate.skill.name.startswith("Pick")
@@ -135,7 +133,7 @@ def test_drop_forgets_stale_sides_and_geometry_without_changing_skill_identity(*
     provider = Tossing3DSkillProvider(env=env)
     opening = _open(provider=provider)
     stale = frozenset({
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, side)),
+        GroundAtom(predicate=CUBE_SIDE[side], objects=(env.cube, env.barrier)),
         GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
@@ -158,32 +156,28 @@ def test_drop_forgets_stale_sides_and_geometry_without_changing_skill_identity(*
     assert opening.skill.param_dim == 0
 
 
-@pytest.mark.parametrize("name", ["MoveToTossLocationAndToss", "PourCubeOutOfBin"])
-def test_toss_and_pour_keep_existing_functional_side_transitions(*, name):
+# The toss lands the cube on the bin's side; the pour, whose bin must be on the
+# robot's side, empties it there. Each starts from the other side's stale fact.
+@pytest.mark.parametrize(
+    ("name", "bin_at", "previous_at"),
+    [
+        ("MoveToTossLocationAndToss", Tossing3DSides.opposite, Tossing3DSides.robot),
+        ("PourCubeOutOfBin", Tossing3DSides.robot, Tossing3DSides.opposite),
+    ],
+)
+def test_toss_and_pour_keep_existing_functional_side_transitions(*, name, bin_at, previous_at):
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
     lifted = next(skill for skill in provider.skills() if skill.name == name)
-    objects = {
-        "robot": env.robot,
-        "cube": env.cube,
-        "bin": env.bin,
-        "barrier": env.barrier,
-        "side": Tossing3DSides.opposite,
-    }
+    objects = {"robot": env.robot, "cube": env.cube, "bin": env.bin, "barrier": env.barrier}
     skill = GroundSkill(
         skill=lifted, objects=tuple(objects[variable.name] for variable in lifted.parameters)
     )
-    previous_side = GroundAtom(
-        predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.robot)
-    )
-    destination_side = GroundAtom(
-        predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.opposite)
-    )
+    previous_side = GroundAtom(predicate=CUBE_SIDE[previous_at], objects=(env.cube, env.barrier))
+    destination_side = GroundAtom(predicate=CUBE_SIDE[bin_at], objects=(env.cube, env.barrier))
     grasp_clear = GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin))
     pick_plannable = GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube))
-    bin_side = GroundAtom(
-        predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.opposite)
-    )
+    bin_side = GroundAtom(predicate=BIN_SIDE[bin_at], objects=(env.bin, env.barrier))
     before = skill.preconditions | {previous_side, bin_side, grasp_clear, pick_plannable}
     after = apply_success_effects(
         true_atoms=before,
@@ -278,7 +272,7 @@ def test_live_pick_release_or_reset_open(*, layout, reset_before_open, seed):
         observed = _abstract(provider=provider, observed=after)
         assert opening.add_effects <= observed
         assert not opening.delete_effects & observed
-        assert CUBE_AT_SIDE.holds(after, (env.cube, env.barrier, Tossing3DSides.robot))
+        assert CUBE_SIDE[Tossing3DSides.robot].holds(after, (env.cube, env.barrier))
         snapshot = env.backend().live_state()
         cube = snapshot.get_object_from_name(env.backend().cube_name)
         assert np.linalg.norm([snapshot.get(cube, f"v{axis}") for axis in "xyz"]) <= 0.01

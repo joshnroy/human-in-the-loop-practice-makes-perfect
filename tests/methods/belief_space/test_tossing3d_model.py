@@ -7,20 +7,22 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
-    CUBE_AT_SIDE,
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     HOLDING,
     NOT_HOLDING,
-    ROBOT_AT_SIDE,
 )
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    HUMAN_RESET_SKILLS,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     POUR_BIN_SKILL,
-    RESET_SKILL,
+    RESET_OPPOSITE_SIDE_SKILL,
+    RESET_SAME_SIDE_SKILL,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
@@ -66,9 +68,12 @@ def _domain_model(**kwargs: object) -> Tossing3DPracticeModel:
     skills = provider.skills()
     reset_cost = kwargs.pop("reset_cost", None)
     if reset_cost is not None:
-        reset = provider.human_cube_bin_reset_skill()
-        assert reset is not None
-        skills = (*skills, reset.skill.model_copy(update={"practice_cost": reset_cost}))
+        resets = provider.human_cube_bin_reset_skills()
+        assert resets
+        skills = (
+            *skills,
+            *(reset.skill.model_copy(update={"practice_cost": reset_cost}) for reset in resets),
+        )
     ground_skills = SkillGrounder.applicable_ground_skills(
         skills=skills,
         objects=provider.objects(),
@@ -118,15 +123,10 @@ def _search_state(
 ) -> Tossing3DSearchState:
     action = _ground_skill(model=model, name=action_name)
     env = Tossing3DEnvironment(scene_bg=False)
-    robot_side = GroundAtom(
-        predicate=ROBOT_AT_SIDE,
-        objects=(env.robot, env.barrier, Tossing3DSides.robot),
-    )
     invariants = {
-        robot_side,
         GroundAtom(
-            predicate=BIN_AT_SIDE,
-            objects=(env.bin, env.barrier, Tossing3DSides.opposite),
+            predicate=BIN_ON_OPPOSITE_SIDE,
+            objects=(env.bin, env.barrier),
         ),
     }
     if all(atom.predicate != HOLDING for atom in action.preconditions):
@@ -293,7 +293,9 @@ def test_unseen_toss_failure_retains_empirical_identity_prior() -> None:
     outcomes = _outcomes(model=model, state=state, name=TOSS_SKILL)
     assert len(outcomes) == 2
     assert outcomes[1][2] == before.true_atoms
-    assert any(atom.predicate == CUBE_AT_SIDE for atom in outcomes[0][2])
+    assert any(
+        atom.predicate in {CUBE_ON_ROBOT_SIDE, CUBE_ON_OPPOSITE_SIDE} for atom in outcomes[0][2]
+    )
     assert not any(atom.predicate == HOLDING for atom in outcomes[0][2])
 
 
@@ -583,7 +585,7 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
 def test_applicable_actions_include_same_destination_reset_self_loops() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
-    reset = _ground_skill(model=model, name=RESET_SKILL)
+    reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
     pick = _ground_skill(model=model, name=PICK_SKILL)
     ready = make_tossing3d_search_state(
         state=belief, true_atoms=pick.preconditions | reset.preconditions | reset.add_effects
@@ -591,10 +593,7 @@ def test_applicable_actions_include_same_destination_reset_self_loops() -> None:
     actions = model.get_valid_actions(environment_state=ready)
     assert pick in actions
     assert reset in actions
-    assert any(
-        action.skill.name == RESET_SKILL and action.objects[-1] != reset.objects[-1]
-        for action in actions
-    )
+    assert any(action.skill.name == RESET_OPPOSITE_SIDE_SKILL for action in actions)
 
 
 def test_search_state_serializes_ees_atoms_without_serializing_predicate_functions() -> None:
@@ -640,10 +639,10 @@ def test_human_reset_is_available_when_not_holding(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
-    reset = _ground_skill(model=model, name=RESET_SKILL)
-    assert {atom.predicate for atom in reset.preconditions} == {ROBOT_AT_SIDE}
+    reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
+    assert reset.preconditions == frozenset()
     assert reset.preconditions <= search_state.true_atoms
-    assert RESET_SKILL in {
+    assert RESET_SAME_SIDE_SKILL in {
         action.skill.name for action in model.get_valid_actions(environment_state=search_state)
     }  # The other destination changes the symbolic state.
 
@@ -652,7 +651,7 @@ def test_human_reset_remains_available_while_holding() -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
-    assert RESET_SKILL in {
+    assert RESET_SAME_SIDE_SKILL in {
         action.skill.name for action in model.get_valid_actions(environment_state=search_state)
     }
 
@@ -668,17 +667,19 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     } - {
         action.skill.name
         for action in without_reset.get_valid_actions(environment_state=without_state)
-    } == {RESET_SKILL}
+    } == HUMAN_RESET_SKILLS
 
 
 def test_human_reset_observation_updates_its_joint_belief_without_training_credit() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
-    reset = _ground_skill(model=model, name=RESET_SKILL)
+    reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
     assert reset.evaluate_practice_cost() == 0.25
-    success_only = condition_skill_belief(belief=state.skill_beliefs[RESET_SKILL], success=True)
+    success_only = condition_skill_belief(
+        belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL], success=True
+    )
     assert mean_competence(belief=success_only) > mean_competence(
-        belief=state.skill_beliefs[RESET_SKILL]
+        belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     )
     observed = model.observe_outcome(
         state=state,
@@ -687,27 +688,29 @@ def test_human_reset_observation_updates_its_joint_belief_without_training_credi
         was_random_exploration=False,
         observed_cost=0.25,
     )
-    assert observed.skill_beliefs[RESET_SKILL] != state.skill_beliefs[RESET_SKILL]
-    assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
-        mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
+    assert (
+        observed.skill_beliefs[RESET_SAME_SIDE_SKILL] != state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     )
-    assert observed.pending_examples.get(RESET_SKILL, 0) == 1
+    assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SAME_SIDE_SKILL]) - 0.25) < abs(
+        mean_cost(belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL]) - 0.25
+    )
+    assert observed.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 1
 
 
 def test_human_reset_transition_uses_posterior_competence() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
-    outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
-    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
+    outcomes = _outcomes(model=model, state=state, name=RESET_SAME_SIDE_SKILL)
+    competence = mean_competence(belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL])
     assert [outcome[0] for outcome in outcomes] == pytest.approx([competence, 1 - competence])
-    estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SKILL])
+    estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL])
     assert all(outcome[1].accumulated_cost == pytest.approx(estimated_cost) for outcome in outcomes)
     assert all(
-        outcome[1].pending_examples == {**state.pending_examples, RESET_SKILL: 1}
+        outcome[1].pending_examples == {**state.pending_examples, RESET_SAME_SIDE_SKILL: 1}
         for outcome in outcomes
     )
-    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SKILL]) > competence
-    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SKILL]) < competence
+    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SAME_SIDE_SKILL]) > competence
+    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SAME_SIDE_SKILL]) < competence
 
 
 @pytest.mark.parametrize("engine", ["grid", "particle"])
@@ -717,18 +720,18 @@ def test_human_reset_uses_bayesian_competence_without_mutating_prior(*, engine: 
         include_human_reset=True, model="local_trend", engine=engine, num_particles=32
     )
     original = state.model_dump_json()
-    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
-    outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
+    competence = mean_competence(belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL])
+    outcomes = _outcomes(model=model, state=state, name=RESET_SAME_SIDE_SKILL)
     assert [p for p, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
-    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SKILL]) > competence
-    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SKILL]) < competence
-    assert all(s.pending_examples[RESET_SKILL] == 1 for _, s, _ in outcomes)
+    assert mean_competence(belief=outcomes[0][1].skill_beliefs[RESET_SAME_SIDE_SKILL]) > competence
+    assert mean_competence(belief=outcomes[1][1].skill_beliefs[RESET_SAME_SIDE_SKILL]) < competence
+    assert all(s.pending_examples[RESET_SAME_SIDE_SKILL] == 1 for _, s, _ in outcomes)
     assert state.model_dump_json() == original
 
 
 def test_human_reset_refit_preserves_performance_without_synthetic_learning() -> None:
     model = _domain_model(reset_cost=0.25)
-    reset = _ground_skill(model=model, name=RESET_SKILL)
+    reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
     observed = model.observe_outcome(
         state=make_default_tossing3d_belief(include_human_reset=True),
         ground_skill=reset,
@@ -737,9 +740,9 @@ def test_human_reset_refit_preserves_performance_without_synthetic_learning() ->
         observed_cost=0.25,
     )
     posterior = refit_belief_state(state=observed)
-    assert posterior.skill_beliefs[RESET_SKILL] == observed.skill_beliefs[RESET_SKILL].refit(
-        training_examples=1
-    ).advance_learning_rate(process_noise_std=0.0)
+    assert posterior.skill_beliefs[RESET_SAME_SIDE_SKILL] == observed.skill_beliefs[
+        RESET_SAME_SIDE_SKILL
+    ].refit(training_examples=1).advance_learning_rate(process_noise_std=0.0)
     assert posterior.pending_examples == {}
 
 
@@ -856,11 +859,10 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
     i.e. claim the landed cube is NOT pickable -- so after any imagined success only a
     reset could follow. In real practice `GraspClear` held after 233/430 toss
     successes. An ignored predicate the operator does not re-assert is left as it was;
-    one it re-asserts (`CubeAtSide` here, both side atoms for a reset) is still
+    one it re-asserts (the cube's side here, both side atoms for a reset) is still
     replaced, not duplicated. `PickPlannable` is what the pick requires now, and it is
     carried as present while the cube is held for exactly this forecast."""
     from hitl_pmp.environments.tossing3d.predicates import (
-        CUBE_AT_SIDE,
         GRASP_CLEAR,
         PICK_PLANNABLE,
         PICKUP_UNBLOCKED,
@@ -869,34 +871,21 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
 
     model = _domain_model(reset_cost=0.2)
     env = Tossing3DEnvironment(scene_bg=False)
-    pick = next(
-        g
-        for g in model.ground_skills
-        if g.skill.name == PICK_SKILL and g.objects[3] == Tossing3DSides.robot
-    )
+    pick = next(g for g in model.ground_skills if g.skill.name == PICK_SKILL)
     toss = next(ground for ground in model.ground_skills if ground.skill.name == TOSS_SKILL)
-    robot_side = GroundAtom(
-        predicate=ROBOT_AT_SIDE, objects=(env.robot, env.barrier, Tossing3DSides.robot)
-    )
-    held = (
-        toss.preconditions
-        | {robot_side}
-        | {
-            GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, Tossing3DSides.robot)),
-            GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
-            GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
-            GroundAtom(
-                predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.opposite)
-            ),
-        }
-    )
+    held = toss.preconditions | {
+        GroundAtom(predicate=BIN_ON_ROBOT_SIDE, objects=(env.bin, env.barrier)),
+        GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
+        GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
+        GroundAtom(predicate=CUBE_ON_OPPOSITE_SIDE, objects=(env.cube, env.barrier)),
+    }
     effects = {g: (g.add_effects, g.delete_effects, g.ignore_effects) for g in model.ground_skills}
     landed = apply_success_effects(true_atoms=held, ground_skill=toss, effects=effects)
     assert GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)) in landed
     assert GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)) in landed
     assert GroundAtom(predicate=PICKUP_UNBLOCKED, objects=(env.cube,)) in landed
-    assert {a for a in landed if a.predicate == CUBE_AT_SIDE} == {
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.robot))
+    assert {a for a in landed if a.predicate in {CUBE_ON_ROBOT_SIDE, CUBE_ON_OPPOSITE_SIDE}} == {
+        GroundAtom(predicate=CUBE_ON_ROBOT_SIDE, objects=(env.cube, env.barrier))
     }
     actions = model.get_valid_actions(
         environment_state=make_tossing3d_search_state(
@@ -905,7 +894,7 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
     )
     assert pick in actions
 
-    reset = _ground_skill(model=model, name=RESET_SKILL)
+    reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
     after_reset = apply_success_effects(
         true_atoms=landed | reset.preconditions, ground_skill=reset, effects=effects
     )

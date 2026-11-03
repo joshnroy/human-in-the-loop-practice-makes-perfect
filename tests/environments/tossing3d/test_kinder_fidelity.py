@@ -737,7 +737,6 @@ def test_human_reset_clears_recorded_rim_support() -> None:
     """The reset's symbolic effects agree with actual JSON-driven placement."""
     import json
 
-    from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
     from hitl_pmp.core.problem.tasks.types import GroundAtom
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
     from hitl_pmp.environments.tossing3d.recovery_skills import ON_BIN_RIM, ON_FLOOR
@@ -763,7 +762,8 @@ def test_human_reset_clears_recorded_rim_support() -> None:
             costs={},
             practicing=True,
         )
-        assert [step.skill.name for step in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+        assert len(plan) == 1
+        assert plan[0] in provider.human_cube_bin_reset_skills()
         assert env.reset_movables()
         after = method.abstract_state(state=env.get_current_state())
         assert reset.add_effects <= after

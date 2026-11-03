@@ -1,4 +1,4 @@
-"""`CubeAtSide(cube, barrier, robot_side)` is footprint contact; `PickPlannable` decides.
+"""`CubeOnRobotSide(cube, barrier)` is footprint contact; `PickPlannable` decides.
 
 `CubeAtSide` used to exclude a 6.25 cm grasp band on the robot's side of the barrier,
 fitted to an earlier pick that refused there (EXP-21 seed 0: "No collision-free cube
@@ -15,20 +15,27 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d import predicates
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE, HOLDING
+from hitl_pmp.environments.tossing3d.predicates import HOLDING
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import INITIAL_ATOMS, PICK_PLANNABLE_ATOM, state
+from .observations import BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, PICK_PLANNABLE_ATOM, state
 
 _BARRIER_X = 1.3
 _BARRIER_HALF = 0.03
 _CUBE_HALF = 0.025
-_RESET_NAMES = {"ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only"}
+_HUMAN_RESETS = {"ResetCubeBinSameSide", "ResetCubeBinOppositeSide"}
+_RESET_NAMES = _HUMAN_RESETS | {"non_human_reset_cube_bin_only"}
 # The re-scan's residual stalls sit at 4.50-4.96 cm; 5.5 cm is the brief's example of a
 # gap the old band excluded.
 _NEAR_GAPS = [0.0005, 0.024, 0.03, 0.045, 0.055, 0.06]
+
+
+def _plan_name(*, ground) -> str:
+    """Either human reset solves these plans equally well; the planner's tie is not
+    under test, so both read as one step."""
+    return "HumanReset" if ground.skill.name in _HUMAN_RESETS else ground.skill.name
 
 
 def _cube_x_at_gap(*, gap: float, robot_side: bool = True) -> float:
@@ -47,7 +54,7 @@ def _sides(*, cube_x: float) -> set[str]:
     return {
         side.name
         for side in Tossing3DSides.objects()
-        if CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, side))
+        if CUBE_SIDE[side].holds(scene, (env.cube, env.barrier))
     }
 
 
@@ -82,7 +89,7 @@ def test_straddling_is_still_neither_side() -> None:
 
 def test_bin_at_side_is_unchanged() -> None:
     env, scene = _scene(cube_x=0.6, bin_x=_BARRIER_X - _BARRIER_HALF - 0.01)
-    assert BIN_AT_SIDE.holds(scene, (env.bin, env.barrier, Tossing3DSides.robot))
+    assert BIN_SIDE[Tossing3DSides.robot].holds(scene, (env.bin, env.barrier))
 
 
 def test_near_the_barrier_the_dry_run_decides_the_pick() -> None:
@@ -132,8 +139,8 @@ def test_both_planners_follow_the_dry_run_near_the_barrier(*, plannable: bool) -
     )
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = ees.plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
-    expected = ["PickCube"] if plannable else ["ask_for_reset_cube_bin_only", "PickCube"]
-    assert [ground.skill.name for ground in plan] == expected
+    expected = ["PickCube"] if plannable else ["HumanReset", "PickCube"]
+    assert [_plan_name(ground=ground) for ground in plan] == expected
 
 
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KINDER")
@@ -156,7 +163,7 @@ def test_the_live_pick_holds_inside_the_old_band() -> None:
             plain["cube_0"][features.index("x")] = _cube_x_at_gap(gap=gap)
             plain["cube_0"][features.index("y")] = -0.615
             restored = env.restore_plain_snapshot(plain=plain)
-            robot_side = CUBE_AT_SIDE.holds(restored, (env.cube, env.barrier, Tossing3DSides.robot))
+            robot_side = CUBE_SIDE[Tossing3DSides.robot].holds(restored, (env.cube, env.barrier))
             after = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
             outcomes[gap] = (robot_side, HOLDING.holds(after, (env.robot, env.cube)))
         assert outcomes == {0.03: (True, True), 0.0625: (True, True)}
