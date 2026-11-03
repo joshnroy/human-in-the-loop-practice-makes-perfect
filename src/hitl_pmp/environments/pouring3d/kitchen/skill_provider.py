@@ -20,6 +20,10 @@ from .types import KitchenObjects as O
 class KitchenSkillProvider(FrozenPourSkillProvider):
     env: KitchenEnvironment
     human_reset_practice_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
+    # Approved 2026-11-02. The wrist (joint 6, about 121 deg) reaches a 95 deg tilt.
+    tilt_bounds: tuple[float, float] = (75.0, 95.0)
+    amplitude_bounds: tuple[float, float] = (0.0, 0.1)
+    duration_bounds: tuple[float, float] = (0.0, 60.0)
 
     @staticmethod
     @lru_cache(maxsize=1)
