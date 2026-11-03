@@ -49,6 +49,12 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_a_turn_in_this_grasp_still_reseats",
     "tests/environments/pouring3d/test_kitchen_position_settled.py::"
     "test_canonical_pours_are_settled_successes",
+    "tests/environments/pouring3d/test_kitchen_planned_carry.py::"
+    "test_the_carry_is_refused_whole_or_executed_upright_and_clear",
+    "tests/environments/pouring3d/test_kitchen_planned_carry.py::"
+    "test_the_planned_pour_starts_with_the_jug_levelled_like_the_scripted_start",
+    "tests/environments/pouring3d/test_kitchen_planned_placement.py::"
+    "test_the_return_is_refused_whole_or_executed_upright_clear_and_seated",
 })
 
 

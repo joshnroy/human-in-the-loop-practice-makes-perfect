@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from kitchen_clearance import Clearance
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 
@@ -22,7 +21,13 @@ FREE_PHASES = {"planned clear workspace"}
 EXECUTED_TILT_LIMIT_DEG = 15.0
 
 
+# ~13-16 min on a CI runner: pull requests skip it, main runs it.
+@pytest.mark.main_only
 def test_the_return_is_refused_whole_or_executed_upright_clear_and_seated(*, monkeypatch):
+    # Imported here, not at module level: kitchen_clearance imports mujoco, and the
+    # unit job collects every main_only file (test_main_only_marker) with no OSMesa.
+    from kitchen_clearance import Clearance
+
     from hitl_pmp.environments.pouring3d.kitchen.planning import parameterized_skills
 
     env = KitchenEnvironment(requested_count=1)
