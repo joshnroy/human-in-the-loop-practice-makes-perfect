@@ -15,6 +15,7 @@ from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerCont
 from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv, PotstickerScene
 
 from .config import KitchenGeometry
+from .settling import PayloadRestWindow
 
 
 class KitchenScene(PotstickerScene):
@@ -26,7 +27,54 @@ class KitchenScene(PotstickerScene):
         if not np.isfinite(skillet_mu) or skillet_mu < 0:
             raise ValueError("Invalid skillet friction")
         self.skillet_mu = skillet_mu
+        self.payload_rest = PayloadRestWindow()
         super().__init__(*args, **kwargs)
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
+        self.payload_rest.clear()
+        return super().reset(seed=seed, options=options)
+
+    def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
+        result = super().step(action)
+        # Observation only: recording reads qpos and never changes the trajectory.
+        self.record_payload_rest()
+        return result
+
+    def payload_positions(self) -> np.ndarray:
+        # qpos, not xpos: mj_step leaves derived poses at the preceding instant.
+        model, data = self._model_and_data()
+        return np.array([
+            data.qpos[adr : adr + 3]
+            for adr in (
+                int(model.jnt_qposadr[int(model.body_jntadr[model.body(name).id])])
+                for name in self.cube_names
+            )
+        ])
+
+    def record_payload_rest(self) -> None:
+        _, data = self._model_and_data()
+        self.payload_rest.record(time=float(data.time), positions=self.payload_positions())
+
+    # `cubes_settled` stays KinDER's speed rule: it gates construction, the human
+    # reset, `ready()` and the drop settle loop, and the controllers were validated
+    # on the start state that rule produces. Only outcomes are judged by position.
+    def payload_at_rest(self) -> bool:
+        """Outcome rest by position (`PayloadRestWindow`), immune to rocking in place."""
+        _, data = self._model_and_data()
+        return self.payload_rest.settled(time=float(data.time), positions=self.payload_positions())
+
+    def _check_goals(self) -> bool:
+        locations = self.cube_locations()
+        return (
+            locations.count("tray") == self.requested_count
+            and locations.count("pitcher") == len(self.cube_names) - self.requested_count
+            and self.payload_at_rest()
+        )
+
+    def physical_snapshot(self) -> dict[str, Any]:
+        result = super().physical_snapshot()
+        result["settled"] = self.payload_at_rest()
+        return result
 
     def _create_scene_xml(self) -> str:
         root = ET.fromstring(super()._create_scene_xml())
@@ -109,6 +157,9 @@ class KitchenController(PotstickerController):
     levelling_rounds: int = 3
     # Two pours delivered the requested count but were still moving at 20 s.
     pour_settle_seconds: float = 30.0
+
+    def outcome_settled(self) -> bool:
+        return bool(self.scene.payload_at_rest())
 
     @classmethod
     def build(

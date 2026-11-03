@@ -47,6 +47,8 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_a_sweep_right_after_a_fresh_pick_does_not_reseat",
     "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
     "test_a_turn_in_this_grasp_still_reseats",
+    "tests/environments/pouring3d/test_kitchen_position_settled.py::"
+    "test_canonical_pours_are_settled_successes",
 })
 
 

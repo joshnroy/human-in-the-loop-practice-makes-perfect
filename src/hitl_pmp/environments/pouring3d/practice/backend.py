@@ -160,7 +160,7 @@ class PourBackend:
         if (
             1 <= actual_count <= o.count
             and locations.count("pitcher") == o.count - actual_count
-            and c.scene.cubes_settled()
+            and c.outcome_settled()
             and c.held not in c.scene.cube_names
         ):
             request = f"request_{actual_count}"

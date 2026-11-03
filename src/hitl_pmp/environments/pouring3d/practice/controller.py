@@ -555,6 +555,10 @@ class PracticePourController(FeedbackPourController):
             and self.vessel_home(name="tray")
         )
 
+    def outcome_settled(self) -> bool:
+        """Whether a measured split is at rest; a subclass may judge it differently."""
+        return bool(self.scene.cubes_settled())
+
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
         position, rotation = self.body_pose(name=name)
         endpoints = np.array([p for a, b, _ in CookedShrimp.segments() for p in (a, b)])
