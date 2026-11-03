@@ -169,6 +169,13 @@ scripted closed-loop controller. Measured in MuJoCo on 2026-11-02: closest appro
 3.14 cm, jug tilt at most 11.5 deg (it hangs 3.6 deg in the compliant grasp), no
 dumpling lost.
 
+> **Staleness note (2026-11-03).** That measurement, and every kitchen pour outcome
+> recorded before the jug handle's torsional friction was raised from 0.005 to 0.02
+> (`KitchenScene.HANDLE_TORSIONAL_FRICTION`), was taken while the held jug crept
+> ~0.2 deg/s about the pad-to-pad axis: 12-15 deg of roll within one pour. Pour
+> outcomes depend on that roll, so those numbers are not evidence about the current
+> scene. They are left as recorded.
+
 **PlacePitcherAtHome** plans the return the same way, upright and before anything
 moves: tuck into the carry pose, base to the pick pose (from which the arm demonstrably
 reaches the handle at its seated height), arm to a hover with the jug upright 4 cm
