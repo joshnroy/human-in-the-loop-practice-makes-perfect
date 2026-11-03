@@ -13,6 +13,7 @@ from typing import Any
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.scene import (
     CORELLE_TYPE,
+    COUNTER_RGBA,
     COUNTER_TYPE,
     DUMPLING_TYPE,
     PLATE_TYPE,
@@ -92,7 +93,7 @@ def install_geometry() -> None:
                         )
                     ),
                     pos=f"0 0 {config.counter_height - config.counter_thickness / 2}",
-                    rgba="0.72 0.73 0.70 1",
+                    rgba=_values(values=COUNTER_RGBA),
                     friction=_values(values=config.counter_friction),
                 )
                 leg_height = config.counter_height - config.counter_thickness
