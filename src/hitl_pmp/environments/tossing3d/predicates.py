@@ -252,6 +252,21 @@ def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
         if "bb_x" in x_object.type.feature_names
         else 0.0
     )
+    flat = getattr(state, "flat_barrier", None)
+    if flat is not None:
+        # A flat edge (see `FlatBarrier`): the robot's side needs the whole footprint,
+        # and everything else is the opposite side. A footprint exactly touching the
+        # edge is off it; the epsilon keeps float arithmetic from flipping that.
+        if x_object == Tossing3DEnvironment.bin:
+            object_half_width = flat.bin_half_extent_x
+        on_robot_side = (
+            object_delta * robot_delta > 0.0 and abs(object_delta) >= object_half_width - 1e-9
+        )
+        if side == Tossing3DSides.robot:
+            return on_robot_side
+        if side == Tossing3DSides.opposite:
+            return not on_robot_side
+        raise ValueError(f"unknown Tossing3D side object {side.name!r}")
     clearance = barrier_half_width + object_half_width
     if abs(object_delta) <= clearance:
         return False

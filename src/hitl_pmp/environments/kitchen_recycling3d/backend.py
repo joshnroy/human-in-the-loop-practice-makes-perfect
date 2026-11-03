@@ -9,7 +9,7 @@ line), the kitchen's own pick controller, and where a human puts the cube and bi
 import json
 import os
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -20,6 +20,7 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend, TossSe
 from hitl_pmp.environments.tossing3d.skill_timing import SkillTiming
 from hitl_pmp.environments.tossing3d.types import Tossing3DObservation
 
+from .bin_geometry import TaperedBin, TaperedBinCollision
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
 from .placement import KitchenHumanPlacement
@@ -44,8 +45,13 @@ class KitchenKinderBackend(KinderBackend):
     kitchen_config: KitchenConfig = Field(default_factory=KitchenConfig)
     env_id: str = "KitchenRecycling3D-v0"
 
+    # Seeded cube spots a human reset tries before giving up on a pickable one.
+    RESET_CANDIDATES: ClassVar[int] = 50
+
     _scene_seed: int | None = PrivateAttr(default=None)
     _placements: int = PrivateAttr(default=0)
+    # Per human reset, how many unpickable seeded spots were rejected before one passed.
+    reset_rejections: list[int] = Field(default_factory=list)
 
     def drive_zone(self) -> tuple[float, float, float, float]:
         lower, upper = KitchenDriveZone.bounds(config=self.kitchen_config)
@@ -94,7 +100,22 @@ class KitchenKinderBackend(KinderBackend):
             return make(path=generated)
 
     def _build_pick_collision_sim(self, *, state: Any) -> Any:
-        sim = super()._build_pick_collision_sim(state=state)
+        """Tossing3D's planning scene with the kitchen's tapered bin, wall for wall the
+        boxes MuJoCo simulates, and the mat edge as a 16 mm line."""
+        from kinder_models.dynamic3d.utils import PyBulletSim
+        from pybullet_helpers.geometry import Pose
+
+        obj = state.get_object_from_name(self.bin_name)
+        sim = PyBulletSim(state)
+        TaperedBinCollision.add(
+            sim=sim,
+            name=self.bin_name,
+            pose=Pose(
+                tuple(state.get(obj, f) for f in ("x", "y", "z")),
+                tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+            ),
+            geometry=TaperedBin.of(config=self.kitchen_config),
+        )
         sim._bounding_boxes[self.barrier_name] = self.BARRIER_PLANNING_BOX  # noqa: SLF001
         return sim
 
@@ -178,6 +199,9 @@ class KitchenKinderBackend(KinderBackend):
 
         The robot side is the kitchen floor beside the robot (the clear spot nearest
         the fixed near position); the opposite side is the bin's target on the mats.
+        The cube goes to the first seeded spot where, with the bin already placed,
+        `PickPlannable` holds -- the same reach gate and pick dry run the planner reads
+        -- so a reset never hands the planner a cube it must reset again.
         """
         with SkillTiming.phase_of(timing=self._timing, name="reset_cube_and_bin"):
             side = OPPOSITE_SIDE if bin_region is None else str(bin_region["kitchen_side"])
@@ -202,9 +226,31 @@ class KitchenKinderBackend(KinderBackend):
         else:
             raise ValueError(f"unknown kitchen reset side {side!r}")
         spec = config.objects[0]
-        cube_xy = self._recovery_position(robot_xy=robot_xy, bin_xyz=bin_xyz)
-        cube_xyz = (*cube_xy, spec.dimensions[2] / 2 + 0.002)
-        for name, xyz in ((self.bin_name, bin_xyz), (self.cube_name, cube_xyz)):
+        for attempt, cube_xy in enumerate(
+            self._recovery_positions(robot_xy=robot_xy, bin_xyz=bin_xyz)
+        ):
+            cube_xyz = (*cube_xy, spec.dimensions[2] / 2 + 0.002)
+            self._write_placement(
+                state=state, placements=((self.bin_name, bin_xyz), (self.cube_name, cube_xyz))
+            )
+            if self._pick_plannable_here():
+                self.reset_rejections.append(attempt)
+                self._placements += 1
+                return self.observe()
+            if self._timing is not None:
+                self._timing.count(name="reset_cube_unpickable_rejected")
+            if attempt + 1 >= self.RESET_CANDIDATES:
+                break
+        raise ValueError(
+            f"No {side} reset placement among {self.RESET_CANDIDATES} seeded candidates "
+            "where the pick dry run succeeds"
+        )
+
+    def _write_placement(
+        self, *, state: Any, placements: Sequence[tuple[str, Sequence[float]]]
+    ) -> None:
+        state = state.copy()
+        for name, xyz in placements:
             obj = state.get_object_from_name(name)
             for feature, value in zip(
                 ("x", "y", "z", "qx", "qy", "qz", "qw"), (*xyz, 0, 0, 0, 1), strict=True
@@ -213,17 +259,27 @@ class KitchenKinderBackend(KinderBackend):
             for feature in state.type_features[obj.type]:
                 if feature in ("vx", "vy", "vz", "wx", "wy", "wz"):
                     state.set(obj, feature, 0.0)
-        self._placements += 1
         self._object_centric().set_state(state)
         self._state = state
         self._settle(seconds=self.PLACEMENT_SETTLE_S)
-        return self.observe()
 
-    def _recovery_position(
+    def _pick_plannable_here(self) -> bool:
+        """`PickPlannable` exactly as the abstraction will evaluate it on the settled
+        placement: the drive-zone reach gate, then the kitchen pick's dry run."""
+        live = self._require_state()
+        features = {
+            obj.name: {name: float(live.get(obj, name)) for name in live.type_features[obj.type]}
+            for obj in live
+        }
+        if self.pick_known_unplannable(features=features):
+            return False
+        return self.pick_cube_plan_failure(state=live) is None
+
+    def _recovery_positions(
         self, *, robot_xy: np.ndarray, bin_xyz: Sequence[float]
-    ) -> tuple[float, float]:
-        """A seeded kitchen-floor spot clear of the robot and the bin, drawn the way the
-        scene scatters its start positions."""
+    ) -> Iterator[tuple[float, float]]:
+        """Seeded kitchen-floor spots clear of the robot and the bin, drawn the way the
+        scene scatters its start positions, in a fixed order per seed and reset."""
         config = self.kitchen_config
         spec = config.objects[0]
         base = (self._scene_seed or 0) + 100000 + self._placements * 1000
@@ -241,8 +297,7 @@ class KitchenKinderBackend(KinderBackend):
                 bin_pose=(bin_xyz, (0.0, 0.0, 0.0, 1.0)),
             ):
                 continue
-            return float(xy[0]), float(xy[1])
-        raise ValueError("No clear reachable recovery position")
+            yield float(xy[0]), float(xy[1])
 
     def _settle(self, *, seconds: float) -> None:
         """Hold the robot still while a placement settles, stepping the raw scene so the

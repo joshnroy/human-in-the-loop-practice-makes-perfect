@@ -17,6 +17,20 @@
 > calibration, settled-in-bin scoring, `NeedsRecovery`/`Pickable` and the three human
 > skills describe the environment before this change.
 
+> **Superseded in part (2026-11-03): the bin is the real blue recycling bin, scored by
+> its whole interior, and the mat edge is a flat line.** The bin is the Rubbermaid
+> FG295673BLUE deskside recycling bin from prpl-tidybot `conf/toss_cycles.yaml` at
+> `0cad3efea`: rim 0.365 x 0.26 m, height 0.384 m, 5 mm walls tapering to a
+> 0.29 x 0.19 m base (the taper is a ceiling-camera fit, not yet pinned exactly). MuJoCo
+> and the PyBullet planning scene build the same tilted boxes (`bin_geometry.py`). A cube
+> is `InBin` when its centre is inside the inner walls at its height and below the rim;
+> KINDER's `blocks_goal_region` is sized to the interior and the bin adds the taper. The
+> real robot's scorer keeps a 5 cm `in_bin_margin` this one does not. An object is on the
+> robot's side only when its whole footprint is off the mats; otherwise it is on the mat
+> side (`Tossing3DState.flat_barrier`). A human reset places the cube only where
+> `PickPlannable`'s dry run succeeds against the placed bin. The "Red bin" row below
+> describes the old Sterilite dishpan.
+
 This is **not** a change to the cube benchmark, its launch configurations, or its results.
 Implementation starts from `d079f94b92b442d3eb5473081fae275ce163ac35` in a separate worktree.
 Launch receipts, rather than this document, establish whether jobs have been submitted.
