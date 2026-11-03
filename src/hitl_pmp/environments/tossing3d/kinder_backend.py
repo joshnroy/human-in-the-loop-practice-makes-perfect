@@ -111,6 +111,7 @@ from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObse
 from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
 from .skill_timing import SkillTiming
 from .types import (
+    DRIVE_ZONE_TOLERANCE_M,
     AbstractAtom,
     ControllerRun,
     PlanarCollisionBox,
@@ -662,7 +663,9 @@ class KinderBackend(BaseModel):
         return self.observe()
 
     @staticmethod
-    def toss_feasibility_geometry(*, snapshot: Any) -> TossFeasibilityGeometry | None:
+    def toss_feasibility_geometry(
+        *, snapshot: Any, drive_zone: tuple[float, float, float, float] | None = None
+    ) -> TossFeasibilityGeometry | None:
         """Read the base planner's geometry from the supplied state, never the live env.
 
         This adapter mirrors the collision-object selection in pinned KINDER's
@@ -702,6 +705,7 @@ class KinderBackend(BaseModel):
                     obj.name == "cube_0"
                     or obj.is_instance(MujocoDrawerObjectType)
                     or obj.name not in geoms
+                    or (drive_zone is not None and obj.name == KinderBackend.barrier_name)
                 ):
                     continue
                 geom = geoms[obj.name]
@@ -724,12 +728,19 @@ class KinderBackend(BaseModel):
                 obstacles=tuple(obstacles),
                 sampling_x_bounds=WORLD_X_BOUNDS,
                 sampling_y_bounds=WORLD_Y_BOUNDS,
+                drive_zone=drive_zone,
             )
         except (ImportError, AttributeError, KeyError, TypeError, ValueError, NotImplementedError):
             return None
 
     @staticmethod
-    def toss_base_plan_failure(*, snapshot: Any, distance: float, rotation: float) -> str | None:
+    def toss_base_plan_failure(
+        *,
+        snapshot: Any,
+        distance: float,
+        rotation: float,
+        drive_zone: tuple[float, float, float, float] | None = None,
+    ) -> str | None:
         """Ask pinned KINDER's own base planner for a path to a toss stand.
 
         Mirrors `MoveToTossLocationAndTossController._plan_base_motion` exactly -- the
@@ -753,13 +764,30 @@ class KinderBackend(BaseModel):
         target = get_target_robot_pose_from_parameters(
             bin_pose, controller_params[0], controller_params[1]
         )
+        x_bounds, y_bounds = WORLD_X_BOUNDS, WORLD_Y_BOUNDS
+        outside: Callable[[Any], bool] | None = None
+        if drive_zone is not None:
+            # As a drive-zone scene's own toss controller plans: sampled in the zone,
+            # and any pose outside it a collision.
+            zone = drive_zone
+            x_bounds, y_bounds = (zone[0], zone[2]), (zone[1], zone[3])
+
+            def outside(pose: Any) -> bool:  # noqa: PLR0917 (upstream callback)
+                slack = DRIVE_ZONE_TOLERANCE_M
+                return not (
+                    zone[0] - slack <= pose.x <= zone[2] + slack
+                    and zone[1] - slack <= pose.y <= zone[3] + slack
+                )
+
         plan = run_base_motion_planning(
             state=snapshot,
             target_base_pose=target,
-            x_bounds=WORLD_X_BOUNDS,
-            y_bounds=WORLD_Y_BOUNDS,
+            x_bounds=x_bounds,
+            y_bounds=y_bounds,
             seed=0,
-            disable_collision_objects=[KinderBackend.cube_name],
+            disable_collision_objects=[KinderBackend.cube_name]
+            + ([] if drive_zone is None else [KinderBackend.barrier_name]),
+            body_collision_fn=outside,
         )
         return None if plan is not None else "base_motion_plan_failed"
 
@@ -1156,16 +1184,12 @@ class KinderBackend(BaseModel):
 
         if BinOnGroundGeometry.holds(bin_=features[self.bin_name]):
             atoms |= frozenset({(KB_BIN_ON_GROUND, (self.bin_name,))})
-        from .pick_plannable import KB_PICK_PLANNABLE, PickPlannableGate
+        from .pick_plannable import KB_PICK_PLANNABLE
 
         # See `pick_plannable.py` for the three cases and why each is what it is.
         if ("Holding", (self.robot_atom_name, self.cube_name)) in atoms:
             plannable = True
-        elif PickPlannableGate.cube_across_barrier(
-            robot_x=features[kinder_robot]["pos_base_x"],
-            cube=features[self.cube_name],
-            barrier=features[self.barrier_name],
-        ):
+        elif self.pick_known_unplannable(features=features):
             if self._timing is not None:
                 self._timing.count(name="pick_plan_gate_skip")
             plannable = False
@@ -1174,6 +1198,23 @@ class KinderBackend(BaseModel):
         if plannable:
             atoms |= frozenset({(KB_PICK_PLANNABLE, (self.robot_atom_name, self.cube_name))})
         return atoms
+
+    def pick_known_unplannable(self, *, features: Mapping[str, Mapping[str, float]]) -> bool:
+        """Whether PickPlannable is known false without the dry run: here, the cube is
+        across the barrier. A scene whose pick reach differs overrides this."""
+        from .pick_plannable import PickPlannableGate
+
+        return PickPlannableGate.cube_across_barrier(
+            robot_x=features[self.robot_name]["pos_base_x"],
+            cube=features[self.cube_name],
+            barrier=features[self.barrier_name],
+        )
+
+    def base_stand_allowed(self, *, xy: Sequence[float]) -> bool:
+        """Whether the base may stand at `xy`, beyond collisions. A scene with a
+        no-drive zone overrides this."""
+        del xy
+        return True
 
     def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
         """Return auditable geometric evidence used by upstream predicates."""
@@ -2173,6 +2214,8 @@ class BinPourController:
         for face in range(4):
             heading = self.bin_yaw + face * np.pi / 2
             stand = self.original_position[:2] - 0.76 * np.array([np.cos(heading), np.sin(heading)])
+            if not b.base_stand_allowed(xy=stand):
+                continue
             for turn in (-np.pi / 2, np.pi / 2):
                 clearance = self._sweep_clearance(state=state, stand=stand, turn=turn)
                 if clearance > 0.02:

@@ -11,8 +11,30 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 from .domain import KitchenConfig
-from .predicates import bin_position_retrievable
-from .types import NEAR_BIN_POSITION
+
+# Where a human puts the bin when it is brought beside the robot, before any clearance
+# shift: on the kitchen floor, north of the robot's start.
+NEAR_BIN_POSITION = (0.65, 1.4, 0.0)
+
+
+def bin_position_retrievable(
+    *, config: KitchenConfig, position: tuple[float, ...], tolerance: float = 0.0
+) -> bool:
+    """A conservative reach certificate for every possible contained item centre.
+
+    The bin-origin sphere encloses its whole volume at any orientation; its distance to
+    the allowed robot-centre rectangle plus that radius bounds the reach test.
+    """
+    lower = np.array(config.kitchen_bounds[:2]) + config.robot_radius
+    upper = np.array(config.kitchen_bounds[2:]) - config.robot_radius
+    if np.any(lower > upper):
+        return False
+    center = np.array(position[:2])
+    nearest = np.clip(center, lower, upper)
+    radius = np.linalg.norm(np.array(config.bin_outside) * [0.5, 0.5, 1.0])
+    return bool(
+        np.linalg.norm(center - nearest) + radius + tolerance <= config.direct_placement_reach
+    )
 
 
 class KitchenHumanPlacement:
@@ -31,7 +53,7 @@ class KitchenHumanPlacement:
         """The fixed near spot when it is clear, else the closest clear spot to it.
 
         A shifted spot must still satisfy the same reach certificate the symbolic
-        RelocateBinNear effect assumes, and stay entirely on the kitchen floor so the
+        ResetCubeBinSameSide placement assumes, and stay entirely on the kitchen floor so the
         context stays near. `furniture` rows are (x, y, size_x, size_y)."""
         half = np.array(config.bin_outside[:2]) / 2
         margin = KitchenHumanPlacement.MARGIN

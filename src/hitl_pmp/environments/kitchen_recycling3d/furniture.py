@@ -242,9 +242,33 @@ def add_lab_furniture(*, xml: str) -> str:
     return ET.tostring(root, encoding="unicode")
 
 
+def add_mats(*, xml: str, bounds: Any) -> str:
+    """The Sprout mats as a flat visual: they mark the no-drive line and collide with
+    nothing, so they must not be a scene object the planners would see."""
+    root = ET.fromstring(xml)
+    world = root.find("worldbody")
+    assert world is not None
+    left, bottom, right, top = bounds
+    ET.SubElement(
+        world,
+        "geom",
+        name="sprout_mats",
+        type="box",
+        pos=f"{(left + right) / 2} {(bottom + top) / 2} 0.0006",
+        size=f"{(right - left) / 2} {(top - bottom) / 2} 0.0005",
+        rgba="0.45 0.55 0.58 1",
+        contype="0",
+        conaffinity="0",
+        group="1",
+    )
+    return ET.tostring(root, encoding="unicode")
+
+
 class RecyclingObjectCentricEnv(envs.ObjectCentricTidyBot3DEnv):
     def _create_scene_xml(self) -> str:
-        return add_lab_furniture(xml=super()._create_scene_xml())
+        xml = add_lab_furniture(xml=super()._create_scene_xml())
+        bounds = self.task_config.get("kitchen_mats")
+        return xml if bounds is None else add_mats(xml=xml, bounds=bounds)
 
 
 class RecyclingEnv(envs.TidyBot3DEnv):

@@ -87,8 +87,8 @@ class RecyclingTossController(MoveToTossLocationAndTossController):
 class RecyclingPickController(PickCubeController):
     """Keep collision-checked pick/retrace; replace cube poses and attachment geometry."""
 
-    def configure(self, *, episode: Any, spec: Any, calibration: Any) -> None:
-        self.episode = episode
+    def configure(self, *, config: Any, spec: Any, calibration: Any) -> None:
+        self.kitchen_config = config
         self.spec = spec
         self.calibration = calibration
         self.grasp_transform = Pose(
@@ -163,18 +163,17 @@ class RecyclingPickController(PickCubeController):
             self.TARGET_DISTANCE,
             self.TARGET_ROTATION,
         )
-        footprints = []
-        for spec in self.episode.config.objects:
-            observation = self.episode.observations[spec.name]
-            lower, upper = projected_bounds(
-                spec=spec, rotation=Rotation.from_quat(observation.quaternion)
-            )
-            center = np.asarray(observation.position[:2]) + (lower[:2] + upper[:2]) / 2
-            extent = upper[:2] - lower[:2] + 0.02
-            from_center = cast(Any, Rectangle.from_center)
-            footprints.append(from_center(*center, *extent, rotation_about_center=0.0))
+        lower, upper = projected_bounds(
+            spec=self.spec,
+            rotation=Rotation.from_quat([state.get(target, k) for k in ("qx", "qy", "qz", "qw")]),
+        )
+        center = np.array([state.get(target, "x"), state.get(target, "y")])
+        center = center + (lower[:2] + upper[:2]) / 2
+        extent = upper[:2] - lower[:2] + 0.02
+        from_center = cast(Any, Rectangle.from_center)
+        footprints = [from_center(*center, *extent, rotation_about_center=0.0)]
 
-        config = self.episode.config
+        config = self.kitchen_config
 
         def collides(*args: Any) -> Any:
             (pose,) = args

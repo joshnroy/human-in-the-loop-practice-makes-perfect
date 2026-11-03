@@ -124,7 +124,17 @@ class Tossing3DToss:
             # it may not drive to when the toss is executed.
             return parameters.standoff_bounds
         geometry = (
-            None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
+            None
+            if snapshot is None
+            else KinderBackend.toss_feasibility_geometry(
+                snapshot=snapshot,
+                # Only when set: a scene without a zone makes exactly the old call.
+                **(
+                    {}
+                    if (zone := getattr(state, "drive_zone", None)) is None
+                    else {"drive_zone": zone}
+                ),
+            )
         )
         if geometry is None:
             # A hand-built state carries no collider geometry; only the analytic

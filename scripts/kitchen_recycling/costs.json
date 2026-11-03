@@ -3,57 +3,17 @@
     "value": 0.01
   },
   "human_skills": {
-    "recover:cube_control": {
+    "ResetCubeBinSameSide": {
       "cost": {
-        "value": 12
+        "value": 5
       },
       "duration": {
         "value": 1
       }
     },
-    "Recover_cube_control_near": {
+    "ResetCubeBinOppositeSide": {
       "cost": {
-        "value": 12
-      },
-      "duration": {
-        "value": 1
-      }
-    },
-    "Recover_cube_control_far": {
-      "cost": {
-        "value": 12
-      },
-      "duration": {
-        "value": 1
-      }
-    },
-    "relocate_bin_near": {
-      "cost": {
-        "value": 12
-      },
-      "duration": {
-        "value": 1
-      }
-    },
-    "restore_bin_target": {
-      "cost": {
-        "value": 12
-      },
-      "duration": {
-        "value": 1
-      }
-    },
-    "RelocateBinNear": {
-      "cost": {
-        "value": 12
-      },
-      "duration": {
-        "value": 1
-      }
-    },
-    "RestoreBinTarget": {
-      "cost": {
-        "value": 12
+        "value": 5
       },
       "duration": {
         "value": 1

@@ -27,6 +27,16 @@ READINESS = (
 )
 
 
+# Tossing3D's two human resets, as the kitchen charges them, each at Tossing3D's 5.
+HUMAN_RESET_COSTS = {"ResetCubeBinSameSide": 5, "ResetCubeBinOppositeSide": 5}
+
+
+def check_costs(*, costs: dict) -> None:
+    priced = {name: entry["cost"]["value"] for name, entry in costs.get("human_skills", {}).items()}
+    if priced != HUMAN_RESET_COSTS:
+        raise ValueError(f"Cost file must price exactly the two human resets at 5: {priced}")
+
+
 def read(*, path: Path):
     return json.loads(path.read_text())
 
@@ -108,7 +118,13 @@ def verify(*, launch: Path, full: bool) -> dict:
         }:
             raise ValueError("Explicit main smoke authorization for this package is required")
     from hitl_pmp.cli import Cli
+    from hitl_pmp.environments.kitchen_recycling3d.step_protocol import (
+        KitchenRecyclingStepProtocol,
+    )
     from hitl_pmp.environments.kitchen_recycling3d.tasks import KitchenRecyclingTasks
+
+    if set(KitchenRecyclingStepProtocol.human_skill_names().values()) != set(HUMAN_RESET_COSTS):
+        raise ValueError("The kitchen's reset charge names drifted from the cost contract")
 
     if KitchenRecyclingTasks.model_fields["test_env_seed_offset"].default != 10000:
         raise ValueError("Held-out task seed offset drifted from the canonical 10000")
@@ -123,6 +139,9 @@ def verify(*, launch: Path, full: bool) -> dict:
             raise ValueError("Full-horizon runs require --no-early-stop")
         if parsed.scene_bg is not False:
             raise ValueError("Pilots and full runs must use --no-scene-bg")
+        check_costs(costs=read(path=REPO / parsed.practice_cost_config))
+        if parsed.human_reset_practice_cost != 5.0:
+            raise ValueError("The planner's human reset cost must match the cost file's 5")
         config = read(path=REPO / parsed.kitchen_config)
         if config.get("scatter_objects") is not True:
             raise ValueError("Full experiment config must enable seeded kitchen scatter")

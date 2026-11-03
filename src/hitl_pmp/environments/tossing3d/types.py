@@ -117,6 +117,11 @@ class TossParameterSet(BaseModel):
         )
 
 
+# How far past a drive zone's edge a stand still counts as inside it: the controller
+# casts its parameters to float32, which moves a stand on the edge by ~1e-7 m.
+DRIVE_ZONE_TOLERANCE_M = 1e-6
+
+
 class TossFeasibilityGeometry(BaseModel):
     """Geometry from one explicit state for a conservative toss-parameter check."""
 
@@ -129,6 +134,10 @@ class TossFeasibilityGeometry(BaseModel):
     obstacles: tuple[PlanarCollisionBox, ...]
     sampling_x_bounds: tuple[float, float]
     sampling_y_bounds: tuple[float, float]
+    # (x_min, y_min, x_max, y_max) the robot's centre may be planned into, or None for
+    # no rule beyond the colliders. Set only by a scene with a no-drive zone (the
+    # kitchen's mats); None leaves every Tossing3D check exactly as it was.
+    drive_zone: tuple[float, float, float, float] | None = None
 
 
 class FixedTossDirection(BaseModel, abc.ABC):
@@ -167,6 +176,10 @@ class Tossing3DState(State):
 
     # What upstream's `Tossing3DStateAbstractor` said held, for this state.
     abstract_atoms: frozenset[AbstractAtom] | None = None
+
+    # The scene's no-drive rule, carried so toss planning can read it off the state;
+    # see `TossFeasibilityGeometry.drive_zone`.
+    drive_zone: tuple[float, float, float, float] | None = None
 
 
 # The observed pickup-infeasibility marker the environment injects into a state's

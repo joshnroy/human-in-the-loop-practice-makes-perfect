@@ -1,16 +1,19 @@
 """The one kitchen drive rule every skill plans against.
 
-`RecyclingEpisode.check_drive` enforces the rule while driving: the robot's footprint
-(radius `robot_radius`) stays on the kitchen floor. Planning uses the same rule plus the
-base controller's waypoint tolerance, so a planned pose cannot be tracked into a
-violation. A skill parameter or reach claim that needs a pose outside this zone is not
-a hard practice case; it is impossible, and was measured as such on Della v3.
+The robot's footprint (radius `robot_radius`) stays on the kitchen floor: the mats are
+the no-drive line. Planning adds the base controller's waypoint tolerance, so a planned
+pose cannot be tracked into a violation. Tossing3D's toss planning reads this zone off
+the state (`Tossing3DState.drive_zone`). A skill parameter or reach claim that needs a
+pose outside this zone is not a hard practice case; it is impossible, and was measured
+as such on Della v3.
 """
 
 from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
+
+from hitl_pmp.environments.tossing3d.types import DRIVE_ZONE_TOLERANCE_M
 
 from .domain import KitchenConfig
 
@@ -35,7 +38,8 @@ class KitchenDriveZone:
     def allows(*, config: KitchenConfig, position: npt.ArrayLike) -> bool:
         lower, upper = KitchenDriveZone.bounds(config=config)
         centre = np.asarray(position, dtype=float)[:2]
-        return bool(np.all(centre >= lower - 1e-9) and np.all(centre <= upper + 1e-9))
+        tolerance = DRIVE_ZONE_TOLERANCE_M
+        return bool(np.all(centre >= lower - tolerance) and np.all(centre <= upper + tolerance))
 
     @staticmethod
     def pick_reachable(*, config: KitchenConfig, position: npt.ArrayLike) -> bool:

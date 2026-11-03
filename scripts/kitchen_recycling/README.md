@@ -19,10 +19,16 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   is forced. A run ending below its counted-step horizon is not a completed run.
 - `--no-scene-bg --defer-rendering` for both pilots and full runs. Mandatory
   physical kitchen/desk/chair assets are still packaged; video is separate.
-- Robot ticks cost 0.01; every offered human action costs 12 with duration 1;
-  planner linear objective lambda is 0.0003. `costs.json` prices only selected-cube
-  recovery and bin relocation/restoration, using both destination and lifted-skill
-  names. No bottle/can object identities remain in the launch costs.
+- Robot ticks cost 0.01; each of the two human resets costs 5 with duration 1;
+  planner linear objective lambda is 0.0003. `costs.json` prices exactly
+  `ResetCubeBinSameSide` and `ResetCubeBinOppositeSide`, the names the kitchen charges
+  Tossing3D's two resets under, and the planner's `--human-reset-practice-cost`
+  defaults to the same 5; `worker.py` checks both. There is no `Recover_*`,
+  `RelocateBinNear` or `RestoreBinTarget`, and no bottle/can object identity.
+- **The environment is Tossing3D re-flavoured** (#637): Tossing3D's skills, operators,
+  predicates, samplers, bounds and reset costs on the kitchen scene; one belief per
+  skill, no near/far copies; goal `InBin` by KINDER's classifier. The practice domain
+  for expectimax and Curtis is `TOSSING3D_DOMAIN`, with one belief per reset.
 
 ## Canonical method provenance
 
@@ -76,7 +82,11 @@ code, configs, these launch scripts, all tests and kitchen docs. It exports exac
 canonical dependency commits, **not** dirty original-root source or whichever
 gitlinks happen to be in this worktree:
 
-- kindergarden: `490831fa54a40c4b2b4570d45bb08e3dd63c24ef`
+- kindergarden: `490831fa54a40c4b2b4570d45bb08e3dd63c24ef`. The branch's gitlink is
+  `c85dbbc5`, which is `490831fa` plus PitcherPour3D only (`pitcher_pour3d.py`, two
+  PitcherPour3D task JSONs, its test, and six registration lines in
+  `kinder/__init__.py`); every file the kitchen scene loads is byte-identical between
+  the two, per GitHub's compare of `490831fa...c85dbbc5`.
 - kinder-baselines: `032b42634a015c7f710667b3a791836fa839f6ff`
 - Pin basis: `pr-publish-20261027`, HEAD `2724868a657dbadf3bad5948a01598a23fc75111`.
 

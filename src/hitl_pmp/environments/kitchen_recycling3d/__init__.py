@@ -1,5 +1,1 @@
-"""Opt-in kitchen recycling; never changes the Tossing3D cube benchmark."""
-
-from .domain import KitchenConfig, RecyclingEpisode
-
-__all__ = ["KitchenConfig", "RecyclingEpisode"]
+"""Single-cube kitchen recycling: Tossing3D's skills on the kitchen scene."""
