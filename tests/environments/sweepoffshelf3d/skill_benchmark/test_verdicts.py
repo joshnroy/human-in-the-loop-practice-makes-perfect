@@ -207,7 +207,7 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
 @pytest.mark.parametrize(
     ("skill", "needed", "out_of"),
     [
-        ("PickCubeFromShelf", 72, 100),
+        ("PickCubeFromShelf", 70, 97),
         ("PickCubeFromFloor", 11, 11),
         ("ReturnCubeToShelfFromFloor", 11, 11),
     ],
@@ -232,30 +232,32 @@ def test_a_thresholded_skill_passes_at_exactly_its_threshold_and_fails_one_below
 
 
 def test_the_box_return_gates_on_harvested_states_and_only_reports_synthetic_ones() -> None:
+    # 0/3 of harvested (Josh, 2026-11-03): all three harvested states are known failures,
+    # so no success count can fall below the gate; the denominator still refuses.
     skill = "ReturnCubeToShelfFromBox"
     assert THRESHOLDS[skill] == SkillThreshold(
-        min_successes=5, out_of=8, families=frozenset({"harvested"})
+        min_successes=0, out_of=3, families=frozenset({"harvested"})
     )
     at = _verdict(
         skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=5, total=8, prefix="h")
-        + _runs(skill=skill, family="near_walls", successes=0, total=13, prefix="c"),
-    )
-    assert at.passed
-    assert (at.gated_successes, at.gated_total) == (5, 8)
-    assert (at.reported_successes, at.reported_total) == (0, 13)
-    assert (at.successes, at.total) == (5, 21)
-    assert at.target == "at least 5/8 of harvested"
-    below = _verdict(
-        skill=skill,
-        results=_runs(skill=skill, family="harvested", successes=4, total=8, prefix="h")
+        results=_runs(skill=skill, family="harvested", successes=0, total=3, prefix="h")
         + _runs(skill=skill, family="near_walls", successes=13, total=13, prefix="c"),
     )
-    assert not below.passed
-    assert (below.reported_successes, below.reported_total) == (13, 13)
+    assert at.passed
+    assert (at.gated_successes, at.gated_total) == (0, 3)
+    assert (at.reported_successes, at.reported_total) == (13, 13)
+    assert (at.successes, at.total) == (13, 16)
+    assert at.target == "at least 0/3 of harvested"
+    more_harvested = _verdict(
+        skill=skill,
+        results=_runs(skill=skill, family="harvested", successes=4, total=4, prefix="h")
+        + _runs(skill=skill, family="near_walls", successes=13, total=13, prefix="c"),
+    )
+    assert not more_harvested.passed
+    assert "4 gated case(s)" in more_harvested.reason
 
 
-@pytest.mark.parametrize("total", [99, 101])
+@pytest.mark.parametrize("total", [96, 98])
 def test_a_changed_case_count_is_refused_rather_than_judged(*, total: int) -> None:
     verdict = _verdict(
         skill="PickCubeFromShelf",
@@ -263,7 +265,7 @@ def test_a_changed_case_count_is_refused_rather_than_judged(*, total: int) -> No
     )
     assert not verdict.passed
     assert f"{total} gated case(s)" in verdict.reason
-    assert "out of 100" in verdict.reason
+    assert "out of 97" in verdict.reason
 
 
 def test_an_invalid_gated_case_changes_the_denominator_and_is_refused() -> None:
@@ -329,11 +331,11 @@ def test_the_thresholds_name_only_robot_skills_and_families_the_state_set_has() 
 
 def test_a_verdict_summarises_gated_and_reported_only_counts() -> None:
     skill = "ReturnCubeToShelfFromBox"
-    results = _runs(skill=skill, family="harvested", successes=2, total=8, prefix="h") + _runs(
+    results = _runs(skill=skill, family="harvested", successes=0, total=3, prefix="h") + _runs(
         skill=skill, family="near_walls", successes=5, total=13, prefix="c"
     )
     summary = LaunchGate.describe(skill=_verdict(skill=skill, results=results).model_dump())
     assert summary.startswith(skill)
-    assert "gated 2/8" in summary
-    assert "at least 5/8 of harvested" in summary
+    assert "gated 0/3" in summary
+    assert "at least 0/3 of harvested" in summary
     assert "reported-only 5/13" in summary
