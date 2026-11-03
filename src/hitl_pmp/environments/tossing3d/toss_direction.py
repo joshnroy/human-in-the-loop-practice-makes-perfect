@@ -159,7 +159,9 @@ class TossStandoffBand:
         *, geometry: TossFeasibilityGeometry, parameters: TossParameterSet
     ) -> tuple[float, float]:
         floor, ceiling = WideLongRangeTossProposal.far_standoff_bounds(
-            bin_x=geometry.bin_pose[0], parameters=parameters
+            bin_x=geometry.bin_pose[0],
+            parameters=parameters,
+            **({} if geometry.drive_zone is None else {"stand_x_limit": geometry.drive_zone[2]}),
         )
 
         def feasible(*, standoff: float) -> bool:
@@ -308,12 +310,18 @@ class TossDirectionSelector:
     planner_seconds: ClassVar[float] = 0.0
 
     @staticmethod
-    def base_plan_failure(*, snapshot: Any, distance: float, rotation: float) -> str | None:
+    def base_plan_failure(
+        *,
+        snapshot: Any,
+        distance: float,
+        rotation: float,
+        drive_zone: tuple[float, float, float, float] | None = None,
+    ) -> str | None:
         """The one swappable feasibility check: `None` if the real base motion planner
         finds a path to this stand, else a reason. Replace this function to change what
         "plannable" means; nothing else in the rule depends on how it is decided."""
         return KinderBackend.toss_base_plan_failure(
-            snapshot=snapshot, distance=distance, rotation=rotation
+            snapshot=snapshot, distance=distance, rotation=rotation, drive_zone=drive_zone
         )
 
     @staticmethod
@@ -322,7 +330,11 @@ class TossDirectionSelector:
         since then no direction can be chosen at all."""
         snapshot = getattr(state, "object_centric", None)
         geometry = (
-            None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
+            None
+            if snapshot is None
+            else KinderBackend.toss_feasibility_geometry(
+                snapshot=snapshot, drive_zone=getattr(state, "drive_zone", None)
+            )
         )
         if geometry is None:
             raise ValueError(
@@ -439,6 +451,7 @@ class TossDirectionSelector:
             snapshot=snapshot,
             distance=rounded_standoff,
             rotation=TossDirectionSelector.rotation(direction_deg=direction),
+            **({} if geometry.drive_zone is None else {"drive_zone": geometry.drive_zone}),
         )
         TossDirectionSelector.planner_calls += 1
         TossDirectionSelector.planner_seconds += time.perf_counter() - started

@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from .types import PlanarCollisionBox, TossFeasibilityGeometry
+from .types import DRIVE_ZONE_TOLERANCE_M, PlanarCollisionBox, TossFeasibilityGeometry
 
 # Ambiguous grazing contacts remain the controller's decision. A rejection needs
 # strict overlap or strict separation, not a floating-point boundary coincidence.
@@ -72,6 +72,12 @@ class TossParameterFeasibility:
             height=geometry.robot_size[1],
             yaw=float(collision_pose[2]),
         )
+        zone = geometry.drive_zone
+        if zone is not None and not (
+            zone[0] - DRIVE_ZONE_TOLERANCE_M <= target[0] <= zone[2] + DRIVE_ZONE_TOLERANCE_M
+            and zone[1] - DRIVE_ZONE_TOLERANCE_M <= target[1] <= zone[3] + DRIVE_ZONE_TOLERANCE_M
+        ):
+            return "outside_drive_zone"
         for obstacle in geometry.obstacles:
             if TossParameterFeasibility._strictly_overlap(first=robot, second=obstacle):
                 return f"target_collision:{obstacle.name}"

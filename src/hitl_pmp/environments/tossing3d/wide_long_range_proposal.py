@@ -92,7 +92,10 @@ class WideLongRangeTossProposal:
 
     @staticmethod
     def far_standoff_bounds(
-        *, bin_x: float, parameters: TossParameterSet = SIM_TOSS_PARAMETERS
+        *,
+        bin_x: float,
+        parameters: TossParameterSet = SIM_TOSS_PARAMETERS,
+        stand_x_limit: float = FAR_STAND_X_LIMIT_M,
     ) -> tuple[float, float]:
         """The standoff band a bin across the barrier can actually be thrown at from.
 
@@ -105,7 +108,7 @@ class WideLongRangeTossProposal:
         Sim geometry only: `FAR_STAND_X_LIMIT_M` was measured in the sim's room. A real
         bin's band comes from the four-direction scan instead (see `toss.py`)."""
         return (
-            max(parameters.standoff_bounds[0], bin_x - FAR_STAND_X_LIMIT_M),
+            max(parameters.standoff_bounds[0], bin_x - stand_x_limit),
             parameters.standoff_bounds[1],
         )
 
