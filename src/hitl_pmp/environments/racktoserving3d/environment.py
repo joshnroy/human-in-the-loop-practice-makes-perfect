@@ -87,8 +87,8 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         backend = self.backend()
         start_control_steps = backend.control_steps()
         try:
-            if values.shape != (4,) or not np.isfinite(values).all():
-                raise SkillFailed("action must have four finite entries")
+            if values.shape != (5,) or not np.isfinite(values).all():
+                raise SkillFailed("action must have five finite entries")
             skill_id, food_index = values[:2]
             if skill_id != int(skill_id) or food_index != int(food_index):
                 raise SkillFailed("skill and food indices must be integers")
@@ -97,8 +97,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             name = Objects.food[int(food_index)].name
             if skill_id == SKILL_IDS["PickScraper"]:
                 controllers.pick_scraper()
-            elif skill_id == SKILL_IDS["SweepRack"]:
-                controllers.sweep(dy=values[2], phi=values[3])
+            elif skill_id == SKILL_IDS["GatherAndSweep"]:
+                controllers.gather_and_sweep(
+                    delta=float(values[2]), d=float(values[3]), phi=float(values[4])
+                )
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
             elif skill_id == SKILL_IDS["PickFood"]:
@@ -120,6 +122,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             controllers.shelf.ticks = self._last_controller_steps
         self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
         return self.current_state
+
+    def noop_action(self) -> Action:
+        """[skill ID, food index, delta, d, phi]; -1 is the no-op skill ID."""
+        return np.array([-1.0, 0.0, 0.0, 0.0, 0.0])
 
     def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
         """Adopt measured state and grasp bookkeeping without issuing another control step."""

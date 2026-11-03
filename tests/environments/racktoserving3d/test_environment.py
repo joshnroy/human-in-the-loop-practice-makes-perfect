@@ -91,3 +91,38 @@ def test_near_tray_without_physical_support_is_not_delivered(*, monkeypatch):
         lambda self, **kwargs: {"box_0"},
     )
     assert backend.location(name="cube_0") == "OnTray"
+
+
+def _dispatching_env(*, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    env = RackServingEnvironment(config=RackServingConfig())
+    backend = RackServingBackend(config=env.config)
+    env._backend = backend
+    controllers = SimpleNamespace(
+        shelf=SimpleNamespace(ticks=0), gather_and_sweep=Mock(), wait_until_ready=Mock()
+    )
+    env._rack_controllers = controllers
+    monkeypatch.setattr(RackServingEnvironment, "_bookkeeping", lambda self: (0, 0))
+    monkeypatch.setattr(RackServingEnvironment, "_observed_state", lambda self, **kwargs: None)
+    monkeypatch.setattr(RackServingBackend, "control_steps", lambda self: 0)
+    monkeypatch.setattr(RackServingEnvironment, "get_current_state", lambda self: None)
+    return env, controllers
+
+
+def test_gather_and_sweep_action_carries_delta_depth_and_plow_angle(*, monkeypatch):
+    env, controllers = _dispatching_env(monkeypatch=monkeypatch)
+    env.take_action(action=np.array([1, 0, 0.01, 0.12, -5.0]))
+    controllers.gather_and_sweep.assert_called_once_with(delta=0.01, d=0.12, phi=-5.0)
+    assert env._last_skill_error is None
+
+
+def test_actions_are_five_wide_and_the_no_op_matches(*, monkeypatch):
+    env, controllers = _dispatching_env(monkeypatch=monkeypatch)
+    env.take_action(action=np.array([1, 0, 0.0, 0.0]))
+    assert "five finite entries" in env._last_skill_error
+    controllers.gather_and_sweep.assert_not_called()
+    assert env.noop_action().shape == (5,)
+    env.take_action(action=env.noop_action())
+    assert env._last_skill_error is None

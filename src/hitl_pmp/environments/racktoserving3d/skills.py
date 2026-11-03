@@ -37,18 +37,19 @@ from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY, RackServingLedge
 
 SKILL_IDS = {
     "PickScraper": 0,
-    "SweepRack": 1,
+    "GatherAndSweep": 1,
     "ReturnScraper": 2,
     "PickFood": 3,
     "PlaceFoodOnTray": 4,
     "ReturnFoodToRack": 5,
     "Wait": 6,
 }
-# SweepRack(dy, phi): dy is the blade centre's lateral start offset from the rack
-# centre line (m), bounded by the default rack's half width so the blade centre
-# never starts off the rack; phi is the plow angle (deg), the blade's yaw relative
-# to its fixed travel toward the plate. Speed is a constant, not a parameter.
-SWEEP_BOUNDS = ((-0.1875, 0.1875), (-40.0, 40.0))
+# GatherAndSweep(delta, d, phi): delta (m) is how far past the line y = c (the plate
+# centre's y) each gather stroke's blade edge stops; d (m) is how far past the plate's
+# near edge the sweep's blade edge ends; phi (deg) is the sweep blade's yaw relative
+# to its fixed travel toward the plate. The ranges are starting guesses for parameter
+# validation, not calibrated values. Speed is a constant, not a parameter.
+GATHER_AND_SWEEP_BOUNDS = ((-0.02, 0.03), (0.05, 0.25), (-15.0, 15.0))
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)
@@ -87,7 +88,7 @@ _CHAIN = frozenset(
 
 
 class RackServing3DSkills:
-    SWEEP_BOUNDS: ClassVar[tuple[tuple[float, float], tuple[float, float]]] = SWEEP_BOUNDS
+    GATHER_AND_SWEEP_BOUNDS: ClassVar[tuple[tuple[float, float], ...]] = GATHER_AND_SWEEP_BOUNDS
 
     PICK_SCRAPER: ClassVar[Skill] = Skill(
         name="PickScraper",
@@ -98,8 +99,8 @@ class RackServing3DSkills:
         param_dim=0,
         practice_cost=1.0,
     )
-    SWEEP_RACK: ClassVar[Skill] = Skill(
-        name="SweepRack",
+    GATHER_AND_SWEEP: ClassVar[Skill] = Skill(
+        name="GatherAndSweep",
         parameters=(_ROBOT, _SCRAPER, _RACK, _TRAY, *_SLOTS),
         preconditions=frozenset({_HELD_SCRAPER, _READY, _ANY_ON, *_CHAIN}),
         add_effects=frozenset({_ANY_OFF}),
@@ -114,7 +115,7 @@ class RackServing3DSkills:
             )
             for food in _SLOTS
         ),
-        param_dim=2,
+        param_dim=3,
         practice_cost=1.0,
     )
     RETURN_SCRAPER: ClassVar[Skill] = Skill(
@@ -228,7 +229,7 @@ class RackServing3DSkills:
         skills = RackServing3DSkills
         return (
             skills.PICK_SCRAPER,
-            skills.SWEEP_RACK,
+            skills.GATHER_AND_SWEEP,
             skills.RETURN_SCRAPER,
             skills.PICK_FOOD,
             skills.PLACE_FOOD_ON_TRAY,

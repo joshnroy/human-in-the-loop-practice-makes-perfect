@@ -338,6 +338,18 @@ def test_yawed_corelle_support_follows_the_well_centre(*, monkeypatch):
     assert plate.radius == pytest.approx(CORELLE.corelle_well_radius)
 
 
+def test_corelle_near_edge_is_the_live_rim_outer_edge_not_the_scoring_circle(*, monkeypatch):
+    backend = _corelle_backend(monkeypatch=monkeypatch)
+    assert backend.serving_near_edge_x() == pytest.approx(
+        CORELLE_CENTRE[0] + CORELLE.corelle_diameter / 2
+    )
+
+
+def test_other_targets_near_edge_is_their_live_footprint_max_x(*, monkeypatch):
+    backend = _plate_backend(monkeypatch=monkeypatch)
+    assert backend.serving_near_edge_x() == pytest.approx(1.2325 + 0.13)
+
+
 def test_tilted_corelle_support_shrinks_conservatively(*, monkeypatch):
     plate = _corelle_backend(monkeypatch=monkeypatch, tilt=10).support(name="box_0")
     assert plate.radius == pytest.approx(CORELLE.corelle_well_radius * np.cos(np.deg2rad(10)))

@@ -113,32 +113,82 @@ def test_release_lifts_without_dragging_food_back_then_waits():
     controller.shelf.hold.assert_called_once_with(count=40, label="food_settle")
 
 
-@pytest.mark.parametrize("phi", [-30.0, 0.0, 15.0, 40.0])
-def test_plow_rotation_yaws_the_blade_line_like_the_planned_stroke(*, phi):
-    from hitl_pmp.environments.racktoserving3d.stroke import plan_stroke
+GEOMETRY = {
+    "food_corners": np.array([[[1.5, 0.0, 0.94]]]),
+    "rack_back": 1.6275,
+    "rack_front": 1.3725,
+    "rack_y_min": -0.1875,
+    "rack_y_max": 0.1875,
+    "rack_top": 0.925,
+    "plate_center_x": 1.2323,
+    "plate_center_y": 0.0,
+    "plate_radius": 0.1302,
+    "blade_width": 0.25,
+}
 
-    rotation = RackControllers.push_rotation(phi=phi)
-    plan = plan_stroke(
-        food_corners=np.array([[[1.5, 0.0, 0.94]]]),
-        rack_back=1.6275,
-        rack_front=1.3725,
-        rack_center_y=0.0,
-        rack_top=0.925,
-        dy=0.0,
-        phi_deg=phi,
-        blade_width=0.25,
-        tray_back=1.3625,
+
+@pytest.mark.parametrize("phi", [-15.0, 0.0, 15.0])
+def test_plow_rotation_yaws_the_blade_line_like_the_planned_sweep(*, phi):
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    rotation = RackControllers.stroke_rotation(
+        stroke=GatherAndSweepPlanner.sweep(d=0.1, phi_deg=phi, **GEOMETRY)
     )
+    plan = GatherAndSweepPlanner.sweep(d=0.1, phi_deg=phi, **GEOMETRY)
     np.testing.assert_allclose(rotation[:, 0], plan.axis, atol=1e-12)
+    np.testing.assert_allclose(rotation, RackControllers.push_rotation(phi=phi), atol=1e-12)
     lean = rotation[:, 2]
     assert lean[:2] @ plan.axis[:2] == pytest.approx(0, abs=1e-12)
     assert lean[0] > 0 and lean[2] > 0
 
 
+def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    sweep = GatherAndSweepPlanner.sweep(d=0.1, phi_deg=0.0, **GEOMETRY)
+    sweep_lean = RackControllers.stroke_rotation(stroke=sweep)[:, 2]
+    for stroke in GatherAndSweepPlanner.gather(delta=0.0, **GEOMETRY):
+        rotation = RackControllers.stroke_rotation(stroke=stroke)
+        np.testing.assert_allclose(np.abs(rotation[:, 0]), [1.0, 0.0, 0.0], atol=1e-12)
+        lean = rotation[:, 2]
+        # Same lean as the sweep, measured relative to each stroke's own travel.
+        assert lean @ stroke.direction == pytest.approx(sweep_lean @ sweep.direction)
+        assert lean[2] == pytest.approx(sweep_lean[2])
+
+
 @pytest.mark.parametrize(
-    ("dy", "phi"), [(0.19, 0.0), (-0.19, 0.0), (0.0, 41.0), (0.0, -41.0), (float("nan"), 0.0)]
+    ("delta", "d", "phi"),
+    [
+        (0.031, 0.1, 0.0),
+        (-0.021, 0.1, 0.0),
+        (0.0, 0.049, 0.0),
+        (0.0, 0.251, 0.0),
+        (0.0, 0.1, 15.1),
+        (0.0, 0.1, -15.1),
+        (float("nan"), 0.1, 0.0),
+    ],
 )
-def test_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(*, dy, phi):
+def test_gather_and_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(
+    *, delta, d, phi
+):
     controller = RackControllers.__new__(RackControllers)
-    with pytest.raises(SkillFailed, match="SweepRack requires"):
-        controller.sweep(dy=dy, phi=phi)
+    with pytest.raises(SkillFailed, match="GatherAndSweep requires"):
+        controller.gather_and_sweep(delta=delta, d=d, phi=phi)
+
+
+@pytest.mark.parametrize("side", [1, -1])
+def test_gather_base_placement_is_one_mirrored_side_stance_outside_the_counter(*, side):
+    from hitl_pmp.environments.racktoserving3d.controllers import GatherBasePlacement
+
+    config = RackServingConfig()
+    placement = GatherBasePlacement()
+    base = placement.base(side=side, config=config)
+    route = placement.route(side=side, config=config, start=np.array([0.5, 0.0, 0.0]))
+    # The robot stands beside the counter on the side the stroke starts from.
+    assert side * base[1] > config.counter_width / 2
+    assert config.counter_x_min <= base[0] <= config.counter_x_max
+    np.testing.assert_allclose(route[-1], base)
+    lane = side * (config.counter_width / 2 + placement.lane_clearance)
+    assert all(abs(waypoint[1] - lane) < 1e-9 for waypoint in route[1:-1])
+    mirrored = placement.base(side=-side, config=config)
+    np.testing.assert_allclose(mirrored[:2], [base[0], -base[1]])
