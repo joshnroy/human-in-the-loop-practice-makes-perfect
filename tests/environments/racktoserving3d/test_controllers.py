@@ -114,7 +114,6 @@ def test_release_lifts_without_dragging_food_back_then_waits():
 
 
 GEOMETRY = {
-    "food_corners": np.array([[[1.5, 0.0, 0.94]]]),
     "rack_back": 1.6275,
     "rack_front": 1.3725,
     "rack_y_min": -0.1875,
@@ -125,70 +124,104 @@ GEOMETRY = {
     "plate_radius": 0.1302,
     "blade_width": 0.25,
 }
+FOOD = np.array([[[1.5, 0.0, 0.94]]])
 
 
-@pytest.mark.parametrize("phi", [-15.0, 0.0, 15.0])
-def test_plow_rotation_yaws_the_blade_line_like_the_planned_sweep(*, phi):
+def test_squeeze_and_sweep_hold_the_blade_like_the_old_straight_sweep():
     from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
 
-    rotation = RackControllers.stroke_rotation(
-        stroke=GatherAndSweepPlanner.sweep(d=0.1, phi_deg=phi, **GEOMETRY)
-    )
-    plan = GatherAndSweepPlanner.sweep(d=0.1, phi_deg=phi, **GEOMETRY)
-    np.testing.assert_allclose(rotation[:, 0], plan.axis, atol=1e-12)
-    np.testing.assert_allclose(rotation, RackControllers.push_rotation(phi=phi), atol=1e-12)
-    lean = rotation[:, 2]
-    assert lean[:2] @ plan.axis[:2] == pytest.approx(0, abs=1e-12)
-    assert lean[0] > 0 and lean[2] > 0
+    sweep = GatherAndSweepPlanner.sweep(d=0.1, plate_clear_z=0.921, **GEOMETRY)
+    for stroke in (*GatherAndSweepPlanner.squeeze(s=0.07, **GEOMETRY), sweep):
+        rotation = RackControllers.stroke_rotation(stroke=stroke)
+        np.testing.assert_allclose(rotation, RackControllers.push_rotation(phi=0), atol=1e-12)
+        lean = rotation[:, 2]
+        assert lean[0] > 0 and lean[2] > 0
 
 
 def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
     from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
 
-    sweep = GatherAndSweepPlanner.sweep(d=0.1, phi_deg=0.0, **GEOMETRY)
+    sweep = GatherAndSweepPlanner.sweep(d=0.1, plate_clear_z=0.921, **GEOMETRY)
     sweep_lean = RackControllers.stroke_rotation(stroke=sweep)[:, 2]
-    for stroke in GatherAndSweepPlanner.gather(delta=0.0, **GEOMETRY):
+    for stroke in GatherAndSweepPlanner.gather(
+        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
+    ):
         rotation = RackControllers.stroke_rotation(stroke=stroke)
         np.testing.assert_allclose(np.abs(rotation[:, 0]), [1.0, 0.0, 0.0], atol=1e-12)
         lean = rotation[:, 2]
-        # Same lean as the sweep, measured relative to each stroke's own travel.
         assert lean @ stroke.direction == pytest.approx(sweep_lean @ sweep.direction)
         assert lean[2] == pytest.approx(sweep_lean[2])
 
 
 @pytest.mark.parametrize(
-    ("delta", "d", "phi"),
+    ("s", "delta", "d"),
     [
-        (0.031, 0.1, 0.0),
-        (-0.021, 0.1, 0.0),
-        (0.0, 0.049, 0.0),
-        (0.0, 0.251, 0.0),
-        (0.0, 0.1, 15.1),
-        (0.0, 0.1, -15.1),
-        (float("nan"), 0.1, 0.0),
+        (0.029, 0.0, 0.1),
+        (0.141, 0.0, 0.1),
+        (0.07, -0.031, 0.1),
+        (0.07, 0.046, 0.1),
+        (0.07, 0.0, 0.039),
+        (0.07, 0.0, 0.121),
+        (float("nan"), 0.0, 0.1),
     ],
 )
 def test_gather_and_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(
-    *, delta, d, phi
+    *, s, delta, d
 ):
     controller = RackControllers.__new__(RackControllers)
     with pytest.raises(SkillFailed, match="GatherAndSweep requires"):
-        controller.gather_and_sweep(delta=delta, d=d, phi=phi)
+        controller.gather_and_sweep(s=s, delta=delta, d=d)
 
 
 @pytest.mark.parametrize("side", [1, -1])
-def test_gather_base_placement_is_one_mirrored_side_stance_outside_the_counter(*, side):
-    from hitl_pmp.environments.racktoserving3d.controllers import GatherBasePlacement
+def test_side_stances_are_the_real_arm_validated_mirrored_poses(*, side):
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
 
     config = RackServingConfig()
-    placement = GatherBasePlacement()
-    base = placement.base(side=side, config=config)
-    route = placement.route(side=side, config=config, start=np.array([0.5, 0.0, 0.0]))
-    # The robot stands beside the counter on the side the stroke starts from.
-    assert side * base[1] > config.counter_width / 2
-    assert config.counter_x_min <= base[0] <= config.counter_x_max
-    np.testing.assert_allclose(route[-1], base)
-    lane = side * (config.counter_width / 2 + placement.lane_clearance)
-    assert all(abs(waypoint[1] - lane) < 1e-9 for waypoint in route[1:-1])
-    mirrored = placement.base(side=-side, config=config)
-    np.testing.assert_allclose(mirrored[:2], [base[0], -base[1]])
+    stances = StrokeStances()
+    np.testing.assert_allclose(
+        stances.side_base(side=side, config=config), [1.5, side * 0.85, -side * np.pi / 2]
+    )
+    lane = side * (config.counter_width / 2 + stances.lane_clearance)
+    assert lane == pytest.approx(side * 1.0)
+
+
+def test_rear_stance_is_the_validated_sweep_pose_shifted_with_the_stroke():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+    np.testing.assert_allclose(stances.rear_base(y=0.0, config=config), [2.05, -0.15, np.pi - 0.30])
+    np.testing.assert_allclose(
+        stances.rear_base(y=0.0625, config=config), [2.05, -0.0875, np.pi - 0.30]
+    )
+
+
+def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+
+    def outside(*, point):
+        return (
+            abs(point[1]) > config.counter_width / 2
+            or point[0] > config.counter_x_max
+            or point[0] < config.counter_x_min
+        )
+
+    rear = stances.rear_base(y=-0.0625, config=config)
+    plus = stances.side_base(side=1, config=config)
+    minus = stances.side_base(side=-1, config=config)
+    for start, route, goal in (
+        (rear, stances.rear_to_side(side=1, start=rear, config=config), plus),
+        (plus, stances.side_to_side(side=-1, config=config), minus),
+        (minus, stances.side_to_rear(side=-1, config=config), None),
+    ):
+        assert all(outside(point=point) for point in route)
+        if goal is not None:
+            np.testing.assert_allclose(route[-1], goal)
+        else:
+            assert route[-1][0] > config.counter_x_max
+            assert route[-1][2] == pytest.approx(np.pi)
+        del start

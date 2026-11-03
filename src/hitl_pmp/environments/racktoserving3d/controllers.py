@@ -19,65 +19,84 @@ from .stroke import GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
 
-class GatherBasePlacement(BaseModel):
-    """Where the robot stands for each gather stroke, and how it gets there and back.
+class StrokeStances(BaseModel):
+    """Where the robot stands for each GatherAndSweep stroke, and the base routes between.
 
-    PROVISIONAL, and the only place gather base poses live. Chosen by a static reach
-    probe (IK plus scratch collision checks along the stroke, 2026-11-03): from the
-    counter's rear none of 147 base poses tried reached the first gather waypoint,
-    while a stance beside the counter on the stroke's own side did. That probe's
-    executed strokes still failed a tool-clearance check near y = c, so these numbers
-    await the dedicated reach probe and are not a validated placement.
+    The side stances (rack centre x, +/-0.85, facing the counter) and the rear stance
+    (counter rear + 0.35, stroke y - 0.15, pi - 0.30) are the poses the 2026-11-03
+    real-arm gather probe drove the arm from; ``rear_base`` is also the old SweepRack
+    stance. Lanes run 0.5 m outside the counter's long sides and 0.65 m behind it.
     """
 
     model_config = ConfigDict(frozen=True)
     side_offset: float = 0.35
-    lane_clearance: float = 0.80
-    front_clearance: float = 0.40
-    heading_offset: float = -0.30
+    lane_clearance: float = 0.50
+    rear_clearance: float = 0.65
+    rear_offset: float = 0.35
+    rear_y_offset: float = -0.15
+    rear_heading: float = np.pi - 0.30
 
-    def base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
+    def side_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
         return np.array([
             config.rack_center_x,
             side * (config.counter_width / 2 + self.side_offset),
-            -side * np.pi / 2 + self.heading_offset,
+            -side * np.pi / 2,
+        ])
+
+    def rear_base(self, *, y: float, config: RackServingConfig) -> np.ndarray:
+        return np.array([
+            config.counter_x_max + self.rear_offset,
+            y + self.rear_y_offset,
+            self.rear_heading,
         ])
 
     def lane(self, *, side: int, config: RackServingConfig) -> float:
         return side * (config.counter_width / 2 + self.lane_clearance)
 
-    def route(self, *, side: int, config: RackServingConfig, start: np.ndarray) -> list[np.ndarray]:
-        """Out along the start's own lane, round the front, down this side's lane, in."""
-        base = self.base(side=side, config=config)
-        lane = self.lane(side=side, config=config)
-        front_x = config.counter_x_min - self.front_clearance
-        route: list[np.ndarray] = []
-        if abs(start[1]) > config.counter_width / 2:
-            own = self.lane(side=int(np.sign(start[1])), config=config)
-            route += [np.array([start[0], own, start[2]]), np.array([front_x, own, start[2]])]
-        route += [
-            np.array([front_x, lane, start[2]]),
-            np.array([front_x, lane, base[2]]),
+    def rear_x(self, *, config: RackServingConfig) -> float:
+        return config.counter_x_max + self.rear_clearance
+
+    def rear_to_side(
+        self, *, side: int, start: np.ndarray, config: RackServingConfig
+    ) -> list[np.ndarray]:
+        """From a rear stance: back to the rear lane, along it, turn, down the side lane."""
+        lane, rear_x = self.lane(side=side, config=config), self.rear_x(config=config)
+        base = self.side_base(side=side, config=config)
+        return [
+            np.array([rear_x, start[1], start[2]]),
+            np.array([rear_x, lane, start[2]]),
+            np.array([rear_x, lane, base[2]]),
             np.array([base[0], lane, base[2]]),
             base,
         ]
-        return route
 
-    def to_rear(self, *, side: int, config: RackServingConfig) -> list[np.ndarray]:
-        """From a side stance, down that lane to the rear, facing the counter."""
-        lane = self.lane(side=side, config=config)
-        rear_x = config.counter_x_max + 0.60
-        heading = self.base(side=side, config=config)[2]
+    def side_to_side(self, *, side: int, config: RackServingConfig) -> list[np.ndarray]:
+        """From the other side stance round the rear to ``side``'s stance (probe route)."""
+        here, there = self.lane(side=-side, config=config), self.lane(side=side, config=config)
+        rear_x, heading = self.rear_x(config=config), side * np.pi / 2
+        base = self.side_base(side=side, config=config)
+        return [
+            np.array([config.rack_center_x, here, -heading]),
+            np.array([rear_x, here, -heading]),
+            np.array([rear_x, there, -heading]),
+            np.array([rear_x, there, heading]),
+            np.array([base[0], there, heading]),
+            base,
+        ]
+
+    def side_to_rear(self, *, side: int, config: RackServingConfig) -> list[np.ndarray]:
+        """From a side stance out to its lane, to the rear lane, and turn to face the rack."""
+        lane, rear_x = self.lane(side=side, config=config), self.rear_x(config=config)
+        heading = self.side_base(side=side, config=config)[2]
         return [
             np.array([config.rack_center_x, lane, heading]),
             np.array([rear_x, lane, heading]),
             np.array([rear_x, lane, np.pi]),
-            np.array([rear_x, config.rack_center_y, np.pi]),
         ]
 
 
 class RackControllers:
-    gather_placement: ClassVar[GatherBasePlacement] = GatherBasePlacement()
+    stances: ClassVar[StrokeStances] = StrokeStances()
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
@@ -225,94 +244,112 @@ class RackControllers:
                 if self.backend.ledger.ready:
                     break
 
-    def gather_and_sweep(self, *, delta: float, d: float, phi: float) -> None:
-        """Gather from +y then -y toward y = c, then push the gathered line onto the plate."""
+    def gather_and_sweep(self, *, s: float, delta: float, d: float) -> None:
+        """Squeeze toward the plate in two passes, gather from +y then -y, then sweep."""
         bounds = GATHER_AND_SWEEP_BOUNDS
-        values = (delta, d, phi)
+        values = (s, delta, d)
         if not np.isfinite(values).all() or any(
             not low <= value <= high for value, (low, high) in zip(values, bounds, strict=True)
         ):
-            (delta_low, delta_high), (d_low, d_high), (phi_low, phi_high) = bounds
+            (s_low, s_high), (delta_low, delta_high), (d_low, d_high) = bounds
             raise SkillFailed(
-                f"GatherAndSweep requires delta [{delta_low},{delta_high}] m,"
-                f" d [{d_low},{d_high}] m and phi [{phi_low},{phi_high}] deg"
+                f"GatherAndSweep requires s [{s_low},{s_high}] m,"
+                f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
             )
         self.backend.sync_clock()
         if not self.backend.ledger.ready:
             raise SkillFailed("food is not elapsed-time ready; wait first")
         backend, shelf, tool = self.backend, self.shelf, self.tool
-        names = [name for name in backend.cube_names if backend.location(name=name) == "OnRack"]
-        if not names:
+        config = backend.config
+        if not self.on_rack():
             raise SkillFailed("no food is physically on the rack")
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
         if rack.top_z < tray.top_z or tray.x_max > rack.x_min:
             raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
         geometry = self.stroke_geometry()
-        gather = GatherAndSweepPlanner.gather(
-            food_corners=np.stack([backend.corners(name=name) for name in names]),
-            delta=delta,
-            **geometry,
-        )
+        squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
         self.metrics = {
             "measured_gap_m": rack.x_min - tray.x_max,
             "rack_top_m": rack.top_z,
             "tray_top_m": tray.top_z,
-            "gather_edges": [[stroke.start.tolist(), stroke.end.tolist()] for stroke in gather],
-            "max_rack_displacement_m": 0.0,
+            "s_m": s,
             "delta_m": delta,
             "d_m": d,
-            "phi_deg": phi,
             "speed_m_s": SWEEP_SPEED_M_S,
+            "max_rack_displacement_m": 0.0,
+            "strokes": [],
         }
         rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
-        placement = self.gather_placement
+        stances = self.stances
         with self.feedback():
+            for index, stroke in enumerate(squeeze):
+                self.push_stroke(
+                    stroke=stroke,
+                    base=stances.rear_base(y=float(stroke.start[1]), config=config),
+                    travel=self.to_rear if index == 0 else lambda: None,
+                    rack_pose=rack_pose,
+                    label=f"squeeze_{'plus' if index == 0 else 'minus'}_y",
+                )
+            names = self.on_rack() or list(backend.cube_names)
+            gather = GatherAndSweepPlanner.gather(
+                food_corners=np.stack([backend.corners(name=name) for name in names]),
+                delta=delta,
+                food_width=config.dumpling_width,
+                **geometry,
+            )
             for side, stroke in zip((1, -1), gather, strict=True):
 
                 def to_side(*, side: int = side) -> None:
-                    route = placement.route(
-                        side=side, config=backend.config, start=shelf.data.qpos[shelf.ba].copy()
+                    here = shelf.data.qpos[shelf.ba].copy()
+                    route = (
+                        stances.rear_to_side(side=side, start=here, config=config)
+                        if side > 0
+                        else stances.side_to_side(side=side, config=config)
                     )
                     for index, waypoint in enumerate(route[:-1]):
                         tool.move_base(target=waypoint, label=f"gather_route_{index}")
 
                 self.push_stroke(
                     stroke=stroke,
-                    base=placement.base(side=side, config=backend.config),
+                    base=stances.side_base(side=side, config=config),
                     travel=to_side,
                     rack_pose=rack_pose,
                     label=f"gather_{'plus' if side > 0 else 'minus'}_y",
                 )
-            sweep = GatherAndSweepPlanner.sweep(
-                food_corners=np.stack([backend.corners(name=name) for name in backend.cube_names]),
-                d=d,
-                phi_deg=phi,
-                **geometry,
-            )
-            self.metrics["sweep_edges"] = [sweep.start.tolist(), sweep.end.tolist()]
+            sweep = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
 
-            def to_rear() -> None:
-                y = float(shelf.data.qpos[shelf.ba[1]])
-                if abs(y) > backend.config.counter_width / 2:
-                    side = 1 if y > 0 else -1
-                    for index, waypoint in enumerate(
-                        placement.to_rear(side=side, config=backend.config)
-                    ):
-                        tool.move_base(target=waypoint, label=f"sweep_route_{index}")
-                elif shelf.data.qpos[shelf.ba[0]] < backend.config.counter_x_max:
-                    self.around_counter(to_rear=True)
+            def side_to_rear() -> None:
+                for index, waypoint in enumerate(stances.side_to_rear(side=-1, config=config)):
+                    tool.move_base(target=waypoint, label=f"sweep_route_{index}")
 
             self.push_stroke(
                 stroke=sweep,
-                base=np.array([
-                    backend.config.counter_x_max + 0.35,
-                    sweep.start[1] - 0.15,
-                    np.pi - 0.30,
-                ]),
-                travel=to_rear,
+                base=stances.rear_base(y=float(sweep.start[1]), config=config),
+                travel=side_to_rear,
                 rack_pose=rack_pose,
                 label="sweep",
             )
+
+    def on_rack(self) -> list[str]:
+        backend = self.backend
+        return [name for name in backend.cube_names if backend.location(name=name) == "OnRack"]
+
+    def to_rear(self) -> None:
+        """From wherever the base is to behind the counter, facing the rack."""
+        config, shelf = self.backend.config, self.shelf
+        y = float(shelf.data.qpos[shelf.ba[1]])
+        if abs(y) > config.counter_width / 2:
+            side = 1 if y > 0 else -1
+            for index, waypoint in enumerate(self.stances.side_to_rear(side=side, config=config)):
+                self.tool.move_base(target=waypoint, label=f"to_rear_{index}")
+        elif shelf.data.qpos[shelf.ba[0]] < config.counter_x_max:
+            self.around_counter(to_rear=True)
+
+    def plate_clear_z(self) -> float:
+        """Sweep floor over the plate: 2 mm above its rim (or its top for flat targets)."""
+        config, tray = self.backend.config, self.backend.support(name="box_0")
+        top = config.corelle_rim_top_z if config.serving_target == "corelle_plate" else tray.top_z
+        return float(max(top, tray.top_z) + 0.002)
 
     def stroke_geometry(self) -> dict[str, float]:
         """Live rack and plate geometry; the plate radius is its outer, not scoring, edge."""
@@ -403,7 +440,7 @@ class RackControllers:
             if distance - actual < 0.015:
                 distance = min(stroke.length, distance + speed * 0.1)
             desired_body = body.copy()
-            desired_body[:3, 3] += distance * stroke.direction
+            desired_body[:3, 3] += stroke.point(distance=distance) - stroke.start
             waypoint = self.hand_for_tool(body=desired_body)
             shelf.base_target = base.copy()
             arm = tool.ik(
@@ -414,6 +451,15 @@ class RackControllers:
                 break
         else:
             raise SkillFailed(f"{label} stalled; preserving the observed physical state")
+        edge = tool.blade_edge().mean(axis=0)
+        self.metrics.setdefault("strokes", []).append({
+            "label": label,
+            "start": stroke.start.round(4).tolist(),
+            "planned_end": stroke.end.round(4).tolist(),
+            "blade_end": edge.round(4).tolist(),
+            "blade_end_error_m": float(np.linalg.norm(edge - stroke.end)),
+            "base": base.round(4).tolist(),
+        })
         self.release_swept_food()
 
     def release_swept_food(self) -> None:

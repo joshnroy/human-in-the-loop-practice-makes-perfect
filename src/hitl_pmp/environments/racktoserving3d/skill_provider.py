@@ -74,7 +74,7 @@ class RackServingSkillProvider(SkillProvider):
 
 
 class RackServingActions:
-    """Encode [robot skill ID, food index, gather delta m, sweep depth d m, plow phi deg]."""
+    """Encode [robot skill ID, food index, squeeze s m, gather delta m, sweep depth d m]."""
 
     @staticmethod
     def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
@@ -92,7 +92,7 @@ class RackServingActions:
                 not lower <= value <= upper
                 for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
             ):
-                raise ValueError("GatherAndSweep delta/d/phi are outside the declared bounds")
+                raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
             continuous = params
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
@@ -108,8 +108,9 @@ class RackServingOracle(OraclePolicyProvider):
     """
 
     env: RackServingEnvironment
-    # Mid-range starting guesses (delta, d, phi), not a calibrated success claim.
-    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.005, 0.15, 0.0])
+    # (s, delta, d): the driven-blade grid's best single setting (5/20 layouts fully
+    # served, 2026-11-03), not a calibrated success claim.
+    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.07, 0.015, 0.10])
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
         def holds(*, name: str, objects: tuple[Object, ...] = ()) -> bool:

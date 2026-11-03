@@ -24,12 +24,14 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--human-layout", action="store_true")
     parser.add_argument(
-        "--delta", type=float, default=0.005, help="GatherAndSweep gather overshoot past y=c, m"
+        "--s", type=float, default=0.07, help="GatherAndSweep squeeze stop behind rack front, m"
     )
     parser.add_argument(
-        "--d", type=float, default=0.15, help="GatherAndSweep sweep end past plate near edge, m"
+        "--delta", type=float, default=0.015, help="GatherAndSweep gather stop = food width - delta"
     )
-    parser.add_argument("--phi", type=float, default=0.0, help="GatherAndSweep plow angle, deg")
+    parser.add_argument(
+        "--d", type=float, default=0.10, help="GatherAndSweep sweep end before plate near edge, m"
+    )
     parser.add_argument(
         "--serving-target",
         choices=get_args(RackServingConfig.model_fields["serving_target"].annotation),
@@ -165,9 +167,9 @@ def main():
             draw = ImageDraw.Draw(canvas)
             draw.text(
                 (12, 5),
-                f"RACK → {serving_name} | GatherAndSweep(delta={args.delta:+.3f} m,"
-                f" d={args.d:.3f} m,"
-                f" phi={args.phi:+.0f}°)"
+                f"RACK → {serving_name} | GatherAndSweep(s={args.s:.3f} m,"
+                f" delta={args.delta:+.3f} m,"
+                f" d={args.d:.3f} m)"
                 f" | {args.caption}"[:120],
                 font=font,
                 fill="white",
@@ -260,7 +262,7 @@ def main():
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
         initial = NativeTrial.snapshot(env=env)
         report["initial"] = initial
-        report["sweep_parameters"] = {"delta_m": args.delta, "d_m": args.d, "phi_deg": args.phi}
+        report["sweep_parameters"] = {"s_m": args.s, "delta_m": args.delta, "d_m": args.d}
         report["measured_geometry"] = {
             "rack": rack.model_dump(),
             "tray": tray.model_dump(),
@@ -271,7 +273,7 @@ def main():
             nonlocal label
             label = name
             before = backend.ledger.elapsed_seconds
-            env.take_action(action=np.array([SKILL_IDS[name], index, args.delta, args.d, args.phi]))
+            env.take_action(action=np.array([SKILL_IDS[name], index, args.s, args.delta, args.d]))
             row = {
                 "skill": name,
                 "food_index": index,

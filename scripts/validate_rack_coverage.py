@@ -1,9 +1,9 @@
 """Bounded, serial existential rack coverage with durable per-attempt evidence.
 
 Example: scripts/with_env.sh python scripts/validate_rack_coverage.py --dry-run
-    --output artifacts/rack-coverage-plan --seeds 0 1 --params 0 0.15 0 --params 0.01 0.10 10
+    --output artifacts/rack-coverage-plan --seeds 0 1 --params 0.07 0.015 0.10
 
-A parameter set is GatherAndSweep(delta metres, d metres, phi degrees).
+A parameter set is GatherAndSweep(s metres, delta metres, d metres).
 
 Default is dry-run. Native execution requires --run --physical-witness-confirmed;
 that flag attests main has cleared physical validity, it does not establish it.
@@ -35,8 +35,8 @@ class Coverage:
     @staticmethod
     def params_entry(*, params: tuple[float, ...]) -> dict[str, float]:
         """One GatherAndSweep parameter set as its manifest entry."""
-        delta, d, phi = params
-        return {"delta_m": float(delta), "d_m": float(d), "phi_deg": float(phi)}
+        s, delta, d = params
+        return {"s_m": float(s), "delta_m": float(delta), "d_m": float(d)}
 
     @staticmethod
     def write(*, path: Path, payload: dict[str, Any]) -> None:
@@ -351,8 +351,8 @@ class NativeTrial:
 
     @staticmethod
     def resolve_params(*, params: dict[str, Any]) -> tuple[float, float, float]:
-        """The fixed (delta, d, phi) of one GatherAndSweep parameter set."""
-        return float(params["delta_m"]), float(params["d_m"]), float(params["phi_deg"])
+        """The fixed (s, delta, d) of one GatherAndSweep parameter set."""
+        return float(params["s_m"]), float(params["delta_m"]), float(params["d_m"])
 
     @staticmethod
     def physical_category(*, location: str | None, supports: frozenset[str], settled: bool) -> str:
@@ -483,14 +483,14 @@ class NativeTrial:
                 left=reference, right=result["initial"]
             ):
                 raise RuntimeError("initial state differs across param_sets")
-            delta, d, phi = NativeTrial.resolve_params(params=request["params"])
-            result["resolved_params"] = {"delta_m": delta, "d_m": d, "phi_deg": phi}
+            s, delta, d = NativeTrial.resolve_params(params=request["params"])
+            result["resolved_params"] = {"s_m": s, "delta_m": delta, "d_m": d}
             measure()
             for skill in ("Wait", "PickScraper", "GatherAndSweep", "ReturnScraper"):
                 phase_start = env.backend().control_steps()
                 result["phase"] = skill
                 persist()
-                action = np.array([SKILL_IDS[skill], 0, delta, d, phi])
+                action = np.array([SKILL_IDS[skill], 0, s, delta, d])
                 env.take_action(action=action)
                 error = env.last_skill_error()
                 if error:
@@ -570,7 +570,7 @@ def build_manifest(
 ) -> dict[str, Any]:
     """Describe requested trials and limits without importing a simulator.
 
-    Parameter sets are GatherAndSweep(delta m, d m, phi deg); speed is the skill's constant.
+    Parameter sets are GatherAndSweep(s m, delta m, d m); speed is the skill's constant.
     """
     from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
     from hitl_pmp.environments.racktoserving3d.skills import (
@@ -583,7 +583,7 @@ def build_manifest(
     seeds = [0, 1, 2] if seeds is None else seeds
     layouts = ["fixed", "human_batch_return"] if layouts is None else layouts
     param_sets = (
-        [(0.005, 0.15, 0.0), (0.005, 0.15, -10.0), (0.005, 0.15, 10.0)]
+        [(0.07, 0.015, 0.10), (0.04, 0.0, 0.08), (0.10, 0.03, 0.06)]
         if param_sets is None
         else param_sets
     )
@@ -599,10 +599,10 @@ def build_manifest(
         or not all(low <= value <= high for value, (low, high) in zip(params, bounds, strict=True))
         for params in param_sets
     ):
-        (delta_low, delta_high), (d_low, d_high), (phi_low, phi_high) = bounds
+        (s_low, s_high), (delta_low, delta_high), (d_low, d_high) = bounds
         raise ValueError(
-            f"param_sets require finite delta [{delta_low},{delta_high}] m,"
-            f" d [{d_low},{d_high}] m and phi [{phi_low},{phi_high}] deg"
+            f"param_sets require finite s [{s_low},{s_high}] m,"
+            f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
         )
     if type(max_trials) is not int or not 1 <= max_trials <= 1000:
         raise ValueError("max_trials must be an integer in [1,1000]")
@@ -684,7 +684,7 @@ def build_manifest(
             "Log actual setup cost, food poses, support contacts, measured locations and config.",
             "Compare measured starting states across parameter sets; flag mismatches and"
             " duplicate layouts.",
-            "Use actual Wait, PickScraper, GatherAndSweep(delta,d,phi), ReturnScraper controllers.",
+            "Use actual Wait, PickScraper, GatherAndSweep(s,delta,d), ReturnScraper controllers.",
             "Record each food's physical outcome separately from controller errors.",
             "Verify physical task success and scraper home; do not infer success from no error.",
             "Test the constant baseline first; existential mode stops at each state's success.",
