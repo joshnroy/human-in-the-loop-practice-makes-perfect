@@ -1,7 +1,7 @@
 """`--env kitchen_recycling3d`: Tossing3D's skills, predicates and samplers on the kitchen.
 
-The provider is `Tossing3DSkillProvider` itself, so the planner sees exactly Tossing3D's
-skill table; only the scene behind it differs.
+The provider is `Tossing3DSkillProvider`'s skill table exactly (see `skill_provider.py`);
+only the scene behind it differs.
 """
 
 import argparse
@@ -12,16 +12,14 @@ from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
-from hitl_pmp.environments.tossing3d.skill_provider import (
-    Tossing3DOracle,
-    Tossing3DSkillProvider,
-)
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
 from .domain import KitchenConfig
 from .environment import KitchenRecycling3DEnvironment
 from .problem import KitchenRecyclingProblem
+from .skill_provider import KitchenRecyclingSkillProvider
 from .tasks import KitchenRecyclingTasks
 
 # A human reset, in robot-action equivalents: Tossing3D's.
@@ -105,7 +103,7 @@ class KitchenRecyclingCli:
     ) -> DomainContext:
         return DomainContext(
             env=problem.env,
-            skill_provider=Tossing3DSkillProvider(
+            skill_provider=KitchenRecyclingSkillProvider(
                 env=problem.env,
                 human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,

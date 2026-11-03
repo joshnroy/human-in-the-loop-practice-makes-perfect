@@ -96,3 +96,25 @@ def test_cost_file_prices_both_resets_at_five():
     names = set(KitchenRecyclingStepProtocol.human_skill_names().values())
     assert names == set(human)
     assert {human[name]["cost"]["value"] for name in names} == {5}
+
+
+def test_practice_charges_resets_under_the_cost_file_names():
+    import argparse
+
+    from hitl_pmp.core.problem.problem import Problem
+
+    args = argparse.Namespace(
+        kitchen_config=EXPERIMENT_CONFIG,
+        scene_bg=False,
+        seed=0,
+        test_env_seed_offset=10000,
+        human_reset=True,
+        human_reset_practice_cost=5.0,
+        oracle_throw_standoff=1.55,
+    )
+    problem = KitchenRecyclingCli.build_problem(args=args)
+    assert isinstance(problem, Problem)
+    provider = KitchenRecyclingCli.practice_context(args=args, problem=problem).skill_provider
+    charged = {provider.human_skill_name(ground_skill=g) for g in provider.movables_reset_skills()}
+    human = json.loads(COSTS.read_text())["human_skills"]
+    assert charged == set(KitchenRecyclingStepProtocol.human_skill_names().values()) == set(human)

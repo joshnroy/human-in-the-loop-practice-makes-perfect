@@ -8,6 +8,7 @@ the field that moved.
 from hitl_pmp.core.method.types import Skill
 from hitl_pmp.environments.kitchen_recycling3d.domain import KitchenConfig
 from hitl_pmp.environments.kitchen_recycling3d.environment import KitchenRecycling3DEnvironment
+from hitl_pmp.environments.kitchen_recycling3d.skill_provider import KitchenRecyclingSkillProvider
 from hitl_pmp.environments.kitchen_recycling3d.step_protocol import KitchenRecyclingStepProtocol
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -45,7 +46,8 @@ def row(*, skill: Skill) -> dict:
 
 def providers() -> tuple[Tossing3DSkillProvider, Tossing3DSkillProvider]:
     kitchen = KitchenRecycling3DEnvironment(kitchen_config=SINGLE_CUBE)
-    return Tossing3DSkillProvider(env=Tossing3DEnvironment()), Tossing3DSkillProvider(env=kitchen)
+    tossing = Tossing3DSkillProvider(env=Tossing3DEnvironment())
+    return tossing, KitchenRecyclingSkillProvider(env=kitchen)
 
 
 def test_robot_skills_match_tossing3d_field_by_field():

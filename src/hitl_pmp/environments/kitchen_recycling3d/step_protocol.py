@@ -6,19 +6,14 @@ from pathlib import Path
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.tossing3d.recording import Tossing3DRecording
-from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
-from .backend import OPPOSITE_SIDE, ROBOT_SIDE
 from .cli import KitchenRecyclingCli
 from .environment import KitchenRecycling3DEnvironment
 from .problem import KitchenRecyclingProblem
-
-# The names a human reset is charged and logged under (the practice cost file's keys).
-SAME_SIDE_RESET = "ResetCubeBinSameSide"
-OPPOSITE_SIDE_RESET = "ResetCubeBinOppositeSide"
+from .skill_provider import RESET_NAMES, KitchenRecyclingSkillProvider
 
 
 class KitchenRecyclingStepProtocol(Tossing3DStepProtocol):
@@ -41,9 +36,9 @@ class KitchenRecyclingStepProtocol(Tossing3DStepProtocol):
         return KitchenRecyclingCli.practice_context(args=args, problem=problem)
 
     @staticmethod
-    def evaluation_skill_provider(*, problem: Problem) -> Tossing3DSkillProvider:
+    def evaluation_skill_provider(*, problem: Problem) -> KitchenRecyclingSkillProvider:
         env = KitchenRecyclingStepProtocol.kitchen_env(problem=problem)
-        return Tossing3DSkillProvider(env=env, offer_human_reset=False)
+        return KitchenRecyclingSkillProvider(env=env, offer_human_reset=False)
 
     @staticmethod
     def attach_recording(
@@ -72,4 +67,4 @@ class KitchenRecyclingStepProtocol(Tossing3DStepProtocol):
 
     @staticmethod
     def human_skill_names() -> dict[str, str]:
-        return {ROBOT_SIDE: SAME_SIDE_RESET, OPPOSITE_SIDE: OPPOSITE_SIDE_RESET}
+        return dict(RESET_NAMES)
