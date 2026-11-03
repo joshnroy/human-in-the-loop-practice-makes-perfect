@@ -18,7 +18,6 @@ from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_SPEED_M_S
 from .stroke import GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
-
 RELEASE_RETREAT = 0.03
 
 
@@ -350,10 +349,15 @@ class RackControllers:
             self.around_counter(to_rear=True)
 
     def plate_clear_z(self) -> float:
-        """Sweep floor over the plate: 2 mm above its rim (or its top for flat targets)."""
+        """Sweep floor over the plate: 5 mm above its rim (or its top for flat targets).
+
+        5 mm, not 2: IK accepts 2 deg of blade roll, which drops one end 4.4 mm, and
+        a 2 mm floor let the blade clip the rim mid-sweep in 4/10 real-arm layouts at
+        d = 0.10 (2026-11-03).
+        """
         config, tray = self.backend.config, self.backend.support(name="box_0")
         top = config.corelle_rim_top_z if config.serving_target == "corelle_plate" else tray.top_z
-        return float(max(top, tray.top_z) + 0.002)
+        return float(max(top, tray.top_z) + 0.005)
 
     def stroke_geometry(self) -> dict[str, float]:
         """Live rack and plate geometry; the plate radius is its outer, not scoring, edge."""
