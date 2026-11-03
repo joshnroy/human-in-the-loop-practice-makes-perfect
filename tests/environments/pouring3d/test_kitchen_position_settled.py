@@ -1,21 +1,23 @@
 """Kitchen pours are judged settled by position; legacy pouring keeps KinDER's rule."""
 
+import importlib.util
+
 import numpy as np
 import pytest
 
-pytest.importorskip("kinder")
-
-from hitl_pmp.environments.pouring3d.kitchen.environment import HUMAN_RESET, KitchenEnvironment
-from hitl_pmp.environments.pouring3d.kitchen.native import KitchenScene
-from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
-
-pytestmark = pytest.mark.xdist_group("kitchen_position_settled")
+# Imported inside each test: collecting this file (as tests/test_main_only_marker.py does
+# on every CI job) must not import KinDER's OpenGL stack.
+pytestmark = [
+    pytest.mark.xdist_group("kitchen_position_settled"),
+    pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KinDER"),
+]
 
 
 def test_only_the_kitchen_scene_overrides_kinders_rule():
     from kinder.envs.dynamic3d.pitcher_pour3d import ObjectCentricPitcherPour3DEnv
 
     from hitl_pmp.environments.pouring3d.five_frozen import FiveFrozenShrimpScene
+    from hitl_pmp.environments.pouring3d.kitchen.native import KitchenScene
     from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerScene
     from hitl_pmp.environments.pouring3d.practice.native import PracticeThreeScene
 
@@ -27,6 +29,11 @@ def test_only_the_kitchen_scene_overrides_kinders_rule():
 
 def test_episode_start_and_human_reset_wait_until_rest_is_observed():
     import mujoco
+
+    from hitl_pmp.environments.pouring3d.kitchen.environment import (
+        HUMAN_RESET,
+        KitchenEnvironment,
+    )
 
     env = KitchenEnvironment(requested_count=1)
     try:
@@ -53,6 +60,9 @@ def test_episode_start_and_human_reset_wait_until_rest_is_observed():
 
 
 def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dict:
+    from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
+    from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
+
     env = KitchenEnvironment(requested_count=requested)
     try:
         provider = KitchenSkillProvider(env=env)
