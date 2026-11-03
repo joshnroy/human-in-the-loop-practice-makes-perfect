@@ -15,6 +15,7 @@ from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerCont
 from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv, PotstickerScene
 
 from .config import KitchenGeometry
+from .settling import PayloadRestWindow
 
 
 class KitchenScene(PotstickerScene):
@@ -22,11 +23,52 @@ class KitchenScene(PotstickerScene):
     # coefficient for every skillet contact and the dumplings' own elsewhere.
     SKILLET_PRIORITY: ClassVar[int] = 3
 
+    # Rest is judged over a 2 s window, so construction must hold still for at least
+    # that long; the margin covers a piece still landing from its seeded pose.
+    RESET_SETTLE_TICKS: ClassVar[int] = 60
+
     def __init__(self, *args: Any, skillet_mu: float = 0.4, **kwargs: Any) -> None:
         if not np.isfinite(skillet_mu) or skillet_mu < 0:
             raise ValueError("Invalid skillet friction")
         self.skillet_mu = skillet_mu
+        self.payload_rest = PayloadRestWindow()
         super().__init__(*args, **kwargs)
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
+        self.payload_rest.clear()
+        return super().reset(seed=seed, options=options)
+
+    def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
+        result = super().step(action)
+        self.record_payload_rest()
+        return result
+
+    def hold_still(self) -> None:
+        super().hold_still()
+        self.record_payload_rest()
+
+    def payload_positions(self) -> np.ndarray:
+        # qpos, not xpos: mj_step leaves derived poses at the preceding instant.
+        model, data = self._model_and_data()
+        return np.array([
+            data.qpos[adr : adr + 3]
+            for adr in (
+                int(model.jnt_qposadr[int(model.body_jntadr[model.body(name).id])])
+                for name in self.cube_names
+            )
+        ])
+
+    def record_payload_rest(self) -> None:
+        _, data = self._model_and_data()
+        self.payload_rest.record(time=float(data.time), positions=self.payload_positions())
+
+    def cubes_settled(self) -> bool:
+        """Position-based rest (`PayloadRestWindow`), replacing KinDER's speed rule."""
+        return bool(self.pieces_at_rest().all())
+
+    def pieces_at_rest(self) -> np.ndarray:
+        _, data = self._model_and_data()
+        return self.payload_rest.resting(time=float(data.time), positions=self.payload_positions())
 
     def _create_scene_xml(self) -> str:
         root = ET.fromstring(super()._create_scene_xml())

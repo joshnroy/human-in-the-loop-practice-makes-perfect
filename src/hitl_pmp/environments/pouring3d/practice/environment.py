@@ -242,6 +242,7 @@ class FrozenPourEnvironment(Environment):
         ):
             return False
         c.scene.respawn_payload_in_pitcher()
+        self.after_human_respawn()
         self._steps += 1
         self.last_info = {
             "skill": RESET_NAME,
@@ -253,6 +254,9 @@ class FrozenPourEnvironment(Environment):
         }
         self.current_state = self.observe()
         return bool(self.last_info["success"])
+
+    def after_human_respawn(self) -> None:
+        """Hook between the human's placement and judging it ready; none by default."""
 
     def cost_observation(self) -> Any:
         return {

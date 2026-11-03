@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import mujoco
 import numpy as np
@@ -80,17 +80,27 @@ class FrozenPotsticker(Cuboid):
 
 
 class PotstickerScene(ObjectCentricPitcherPour3DEnv):
+    # Control ticks the reset may wait, beyond the base scene's one second, for rest.
+    RESET_SETTLE_TICKS: ClassVar[int] = 30
+
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
         _, info = super().reset(seed=seed, options=options)
         # Stacked pieces occasionally need more than the base scene's one second.
         # Wait with native dynamics; do not zero residual velocity to manufacture rest.
-        for _ in range(30):
-            if self.cubes_settled():
-                break
-            assert self.action_space.shape is not None
-            self._robot_env.step(np.zeros(self.action_space.shape))
+        self.wait_for_rest(ticks=self.RESET_SETTLE_TICKS)
         self._current_state = self._get_object_centric_state()
         return self._get_current_state(), info
+
+    def wait_for_rest(self, *, ticks: int) -> bool:
+        for _ in range(ticks):
+            if self.cubes_settled():
+                return True
+            self.hold_still()
+        return self.cubes_settled()
+
+    def hold_still(self) -> None:
+        assert self.action_space.shape is not None
+        self._robot_env.step(np.zeros(self.action_space.shape))
 
     def __init__(
         self,
