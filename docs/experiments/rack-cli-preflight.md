@@ -25,9 +25,9 @@ No geometry, controller, algorithm, or Algorithm 3 change is part of this plan.
 
 ## Rack model contract
 
-The domain infers seven robot skills (`PickScraper`, `SweepRack`, `ReturnScraper`,
+The domain infers seven robot skills (`PickScraper`, `GatherAndSweep`, `ReturnScraper`,
 `PickFood`, `PlaceFoodOnTray`, `ReturnFoodToRack`, `Wait`) and the two offered human
-skills (`human_batch_return`, `human_tool_recovery`). Only `SweepRack` receives
+skills (`human_batch_return`, `human_tool_recovery`). Only `GatherAndSweep(s, delta, d)` receives
 sampler examples; the others receive outcome examples. Wait is not assumed
 infallible. Human skills use the provider's configured interruption cost, charged
 on success and failure; they preserve readiness and are excluded from deployment.

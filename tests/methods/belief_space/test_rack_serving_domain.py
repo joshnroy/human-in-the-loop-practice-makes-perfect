@@ -24,6 +24,7 @@ from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
 from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN, TOSSING3D_DOMAIN
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_HUMAN_SKILLS,
+    RACK_NUM_FOOD,
     RACK_ROBOT_SKILLS,
     RACK_SERVING_DOMAIN,
     RackServingDeployment,
@@ -310,3 +311,14 @@ def test_cli_builds_real_rack_method_with_configured_readiness_without_running(
     assert not RACK_SERVING_DOMAIN.initially_ready
     assert Tossing3DPomdpCli.DOMAINS["SweepOffShelf3DCli"] is SWEEP_OFF_SHELF_DOMAIN
     assert Tossing3DPomdpCli.DOMAINS["Tossing3DCli"] is TOSSING3D_DOMAIN
+
+
+def test_no_wait_in_the_planner_domain_and_a_fresh_episode_can_sweep_at_once():
+    assert "Wait" not in RACK_ROBOT_SKILLS
+    moves = RackServingDeployment.transitions()
+    start = (RACK_NUM_FOOD, "empty", True)
+    assert start in moves
+    assert all(len(state) == 3 for state in moves)
+    assert all(skill != "Wait" for options in moves.values() for skill, _ in options)
+    holding = dict(moves[(RACK_NUM_FOOD, "scraper", False)])
+    assert holding["GatherAndSweep"] == (0, "scraper", False)

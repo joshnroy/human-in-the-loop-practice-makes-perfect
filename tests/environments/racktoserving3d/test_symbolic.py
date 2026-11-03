@@ -268,3 +268,17 @@ def test_human_actions_do_not_apply_when_nothing_needs_returning():
 def test_missing_measured_abstraction_is_rejected():
     with pytest.raises(ValueError, match="measured"):
         RackServing3DAtoms.holds(state=State(data={}), name="Ready", objects=())
+
+
+def test_food_starts_ready_so_there_is_no_wait_skill_or_readiness_atom():
+    assert "Wait" not in SKILL_IDS
+    assert "Wait" not in {skill.name for skill in Skills.robot_skills()}
+    names = {predicate.name for predicate in RackServing3DPredicates.all()}
+    assert not names & {"Ready", "Waiting"}
+    assert {atom.predicate.name for atom in RackServing3DPredicates.goal_atoms()} == {"OnTray"}
+    for skill in (*Skills.robot_skills(), *Skills.human_skills()):
+        mentioned = {
+            atom.predicate.name
+            for atom in (*skill.preconditions, *skill.add_effects, *skill.delete_effects)
+        }
+        assert not mentioned & {"Ready", "Waiting"}, skill.name
