@@ -24,7 +24,7 @@ class FakeContacts:
         self.geom2 = pairs[:, 1].astype(np.int32)
         self.dist = dist.astype(float)
 
-    def __getitem__(self, index: slice) -> list[SimpleNamespace]:
+    def __getitem__(self, index: slice) -> list[SimpleNamespace]:  # noqa: PLR0917
         return [
             SimpleNamespace(geom1=g1, geom2=g2, dist=d)
             for g1, g2, d in zip(self.geom1, self.geom2, self.dist, strict=True)
@@ -75,18 +75,18 @@ def test_pads_hold_wiper_needs_both_sides_and_ignores_non_wiper_contacts():
     shelf = fake_shelf(rng=np.random.default_rng(0), ncon=0)
     shelf.model.geom_bodyid[20] = 7
 
-    def set_pairs(pairs):
+    def set_pairs(*, pairs):
         array = np.array(pairs, dtype=int).reshape(-1, 2)
         shelf.data.contact = FakeContacts(pairs=array, dist=np.zeros(len(array)))
         shelf.data.ncon = len(array)
 
-    set_pairs([])
+    set_pairs(pairs=[])
     assert not ShelfSkills.pads_hold_wiper(shelf)
-    set_pairs([(10, 0)])
+    set_pairs(pairs=[(10, 0)])
     assert not ShelfSkills.pads_hold_wiper(shelf)
-    set_pairs([(10, 0), (1, 13)])
+    set_pairs(pairs=[(10, 0), (1, 13)])
     assert ShelfSkills.pads_hold_wiper(shelf)
-    set_pairs([(10, 0), (13, 20)])
+    set_pairs(pairs=[(10, 0), (13, 20)])
     assert not ShelfSkills.pads_hold_wiper(shelf)
 
 

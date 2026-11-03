@@ -36,6 +36,24 @@ def geom_half_extents(*, model: Any, geom: int) -> np.ndarray:
     return np.full(3, model.geom_rbound[geom])
 
 
+def geoms_half_extents(*, model: Any, geoms: np.ndarray) -> np.ndarray:
+    """`geom_half_extents` for many geoms at once, value for value."""
+    kind = np.asarray(model.geom_type)[geoms].astype(int)[:, None]
+    size = np.asarray(model.geom_size, dtype=float)[geoms]
+    radius = size[:, :1]
+    rbound = np.asarray(model.geom_rbound, dtype=float)[geoms][:, None]
+    return np.select(
+        [kind == 6, kind == 2, kind == 3, kind == 5],
+        [
+            size,
+            np.repeat(radius, 3, axis=1),
+            np.column_stack([radius, radius, size[:, 1] + size[:, 0]]),
+            np.column_stack([radius, radius, size[:, 1]]),
+        ],
+        default=np.repeat(rbound, 3, axis=1),
+    )
+
+
 def segment_samples(*, start: np.ndarray, target: np.ndarray) -> list[np.ndarray]:
     """Sample straight and axis-clipped paths, including unwrapped headings."""
     start, target = np.asarray(start, dtype=float), np.asarray(target, dtype=float)

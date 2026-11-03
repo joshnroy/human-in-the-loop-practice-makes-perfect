@@ -556,14 +556,14 @@ class ShelfSkills:
         b = np.asarray(d.contact.geom2[:ncon])
         dist = np.asarray(d.contact.dist[:ncon], dtype=float)
 
-        def member(geoms: Any) -> tuple[np.ndarray, np.ndarray]:
+        def member(*, geoms: Any) -> tuple[np.ndarray, np.ndarray]:
             ids = np.fromiter(geoms, dtype=int, count=len(geoms))
             return np.isin(a, ids), np.isin(b, ids)
 
-        robot_a, robot_b = member(self.robot_geoms)
-        fixed_a, fixed_b = member(self.cupboard_geoms | self.box_geoms)
-        wiper_a, wiper_b = member(set(self.wiper_geoms))
-        pad_a, pad_b = member(self.pad_geoms)
+        robot_a, robot_b = member(geoms=self.robot_geoms)
+        fixed_a, fixed_b = member(geoms=self.cupboard_geoms | self.box_geoms)
+        wiper_a, wiper_b = member(geoms=set(self.wiper_geoms))
+        pad_a, pad_b = member(geoms=self.pad_geoms)
         # `max(0.0, x)` is `x if x > 0.0 else 0.0`, NaN included; np.where keeps that.
         depth = np.where(-dist > 0.0, -dist, 0.0)
         self_depth = depth - 0.001

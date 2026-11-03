@@ -434,3 +434,125 @@ def test_servo_torque_hook_is_bounded_read_only_and_restored():
         assert servo.clipped_torque_count == 7
         raise RuntimeError("test")
     assert robot._update_ctrl is original
+
+
+def reference_tool_clear(*, tool, pose, data=None):
+    """`RackScraper.tool_clear` as it was: every obstacle tested one at a time."""
+    from hitl_pmp.environments.racktoserving3d.tool import SUPPORT_ALLOWANCE
+
+    if not np.isfinite(pose).all():
+        return False
+    data = tool.data if data is None else data
+    shelf, model = tool.shelf, tool.model
+    for geom in (tool.head_geom, tool.handle_geom):
+        center = pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3]
+        rotation = pose[:3, :3] @ tool.geom_rotation(geom=geom)
+        size = model.geom_size[geom]
+        bottom = float(center[2] - np.abs(rotation[2]) @ size)
+        for obstacle in shelf.cupboard_geoms | shelf.box_geoms:
+            if not (model.geom_contype[obstacle] or model.geom_conaffinity[obstacle]):
+                continue
+            kind = int(model.geom_type[obstacle])
+            other_center = data.geom_xpos[obstacle]
+            other_rotation = data.geom_xmat[obstacle].reshape(3, 3)
+            other_size = geom_half_extents(model=model, geom=obstacle)
+            if np.any(
+                np.abs(other_center - center)
+                > np.abs(rotation) @ size + np.abs(other_rotation) @ other_size
+            ):
+                continue
+            overlap = box_overlap(
+                center=center,
+                rotation=rotation,
+                size=size,
+                other_center=other_center,
+                other_rotation=other_rotation,
+                other_size=other_size,
+            )
+            if overlap <= 1e-9:
+                continue
+            support_top = float(other_center[2] + np.abs(other_rotation[2]) @ other_size)
+            support = (
+                obstacle in shelf.cupboard_geoms
+                and (
+                    (kind == 6 and abs(other_rotation[2, 2]) >= np.cos(np.deg2rad(2)))
+                    or (kind in (3, 5) and abs(other_rotation[2, 2]) <= np.sin(np.deg2rad(2)))
+                    or kind == 2
+                )
+                and min(abs(support_top - tool.home_top), abs(support_top - tool.top)) <= 0.003
+                and bottom >= support_top - SUPPORT_ALLOWANCE
+            )
+            if not support:
+                return False
+    return True
+
+
+def cluttered_shelf(*, rng):
+    """FakeShelf's scraper amid many random rack wires, slabs, posts and meshes."""
+    shelf = FakeShelf()
+    count = 60
+    kinds = rng.choice([2, 3, 5, 6, 7], size=count)
+    sizes = np.column_stack([
+        rng.uniform(0.001, 0.05, count),
+        rng.uniform(0.001, 0.2, count),
+        rng.uniform(0.001, 0.05, count),
+    ])
+    rotations = Rotation.random(count, random_state=int(rng.integers(1 << 30))).as_matrix()
+    level = rng.random(count) < 0.5
+    rotations[level & (kinds == 6)] = np.eye(3)
+    rotations[level & np.isin(kinds, (3, 5))] = Rotation.from_euler(
+        "x", 90, degrees=True
+    ).as_matrix()
+    centers = np.column_stack([
+        rng.uniform(1.3, 1.7, count),
+        rng.uniform(-0.2, 0.2, count),
+        rng.uniform(0.88, 1.05, count),
+    ])
+    model, data = shelf.model, shelf.data
+    model.geom_type = np.r_[model.geom_type, kinds]
+    model.geom_size = np.r_[model.geom_size, sizes]
+    model.geom_pos = np.r_[model.geom_pos, np.zeros((count, 3))]
+    model.geom_quat = np.r_[model.geom_quat, np.tile([1.0, 0, 0, 0], (count, 1))]
+    model.geom_contype = np.r_[model.geom_contype, (rng.random(count) < 0.9).astype(int)]
+    model.geom_conaffinity = np.r_[model.geom_conaffinity, np.zeros(count, dtype=int)]
+    model.geom_rbound = np.r_[model.geom_rbound, rng.uniform(0.005, 0.1, count)]
+    model.ngeom += count
+    data.geom_xpos = np.r_[data.geom_xpos, centers]
+    data.geom_xmat = np.r_[data.geom_xmat, rotations.reshape(count, 9)]
+    ids = list(range(6, 6 + count))
+    shelf.cupboard_geoms = {2, 3, 5, *ids[: count * 3 // 4]}
+    shelf.box_geoms = set(ids[count * 3 // 4 :])
+    return shelf
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_tool_clear_matches_the_per_obstacle_reference(*, seed):
+    rng = np.random.default_rng(seed)
+    shelf = cluttered_shelf(rng=rng)
+    tool = RackScraper(shelf=shelf)
+    outcomes = []
+    for _ in range(80):
+        pose = np.eye(4)
+        pose[:3, :3] = tool.sweep_body_rotation(yaw_deg=float(rng.uniform(-90, 90)))
+        pose[:3, 3] = [rng.uniform(1.2, 1.8), rng.uniform(-0.3, 0.3), 0]
+        pose[2, 3] += rng.uniform(0.85, 1.1) - tool.capsule_bottom(pose=pose)
+        expected = reference_tool_clear(tool=tool, pose=pose)
+        assert tool.tool_clear(pose=pose) == expected
+        outcomes.append(expected)
+    assert any(outcomes) and not all(outcomes)
+
+
+def test_tool_clear_matches_the_reference_on_the_shipped_fixtures():
+    """The hand-built support cases above, swept finely through their boundaries."""
+    for cupboard in ({3}, {5}, {2, 3, 5}):
+        shelf = FakeShelf()
+        shelf.cupboard_geoms = set(cupboard)
+        tool = RackScraper(shelf=shelf)
+        for yaw in (-90, 0, 35):
+            for x in np.linspace(1.3, 1.7, 9):
+                for lift in np.linspace(-0.01, 0.01, 41):
+                    pose = np.eye(4)
+                    pose[:3, :3] = tool.sweep_body_rotation(yaw_deg=yaw)
+                    pose[:3, 3] = [x, 0, 0]
+                    pose[2, 3] += tool.top + lift - tool.capsule_bottom(pose=pose)
+                    assert tool.tool_clear(pose=pose) == reference_tool_clear(tool=tool, pose=pose)

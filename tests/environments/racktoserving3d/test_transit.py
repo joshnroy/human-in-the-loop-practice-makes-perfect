@@ -8,6 +8,8 @@ from hitl_pmp.environments.racktoserving3d.transit import (
     TRANSIT_MARGIN,
     ArmTransit,
     EmptyHandTransit,
+    geom_half_extents,
+    geoms_half_extents,
 )
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
@@ -230,3 +232,17 @@ def test_empty_hand_plan_matches_the_reference_routes(*, seed, monkeypatch):
             assert len(route) == len(expected)
             for got, want in zip(route, expected, strict=True):
                 np.testing.assert_array_equal(got, want)
+
+
+def test_batched_half_extents_equal_the_per_geom_bounds():
+    rng = np.random.default_rng(0)
+    count = 200
+    model = SimpleNamespace(
+        geom_type=rng.choice([0, 2, 3, 5, 6, 7], size=count),
+        geom_size=rng.uniform(0.0, 0.3, (count, 3)),
+        geom_rbound=rng.uniform(0.0, 0.5, count),
+    )
+    geoms = rng.permutation(count)[:150]
+    batched = geoms_half_extents(model=model, geoms=geoms)
+    for row, geom in enumerate(geoms):
+        np.testing.assert_array_equal(batched[row], geom_half_extents(model=model, geom=geom))
