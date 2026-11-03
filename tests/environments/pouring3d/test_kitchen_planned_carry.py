@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from kitchen_clearance import Clearance
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 
@@ -25,6 +24,10 @@ EXECUTED_TILT_LIMIT_DEG = 15.0
 # ~12 min on a CI runner, and the next test ~16: pull requests skip both, main runs them.
 @pytest.mark.main_only
 def test_the_carry_is_refused_whole_or_executed_upright_and_clear(*, monkeypatch):
+    # Imported here, not at module level: kitchen_clearance imports mujoco, and the
+    # unit job collects every main_only file (test_main_only_marker) with no OSMesa.
+    from kitchen_clearance import Clearance
+
     from hitl_pmp.environments.pouring3d.kitchen.planning.parameterized_skills import (
         KitchenMotionPlanner,
     )
