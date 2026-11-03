@@ -46,6 +46,9 @@ def scoring_scene(*, monkeypatch):
         "support",
         lambda self, *, name: SupportRegion(x_min=-1, x_max=1, y_min=-1, y_max=1, top_z=1),
     )
+    # A reset also lays the food out (`test_layout.py`); these tests score a fixed scene.
+    monkeypatch.setattr(RackServingBackend, "food_placements", lambda self, *, names: {})
+    monkeypatch.setattr(RackServingBackend, "_commit", lambda self, *, placements: None)
     backend = RackServingBackend(ledger=RackServingLedger(elapsed_seconds=300))
     backend._tool_home = lambda: True
     return SimpleNamespace(

@@ -17,6 +17,7 @@ from hitl_pmp.environments.sweepoffshelf3d.backend import TASK_ID, SweepOffShelf
 
 from .config import RackServingConfig
 from .geometry import install_geometry
+from .layout import RackLayout
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom, RackServing3DAtoms
 from .scene import build_scene
@@ -34,6 +35,7 @@ from .semantics import (
 )
 
 FOOTPRINT_SAMPLES = 64
+MAX_RETURN_LAYOUTS = 300
 
 
 class RackServingBackend(SweepOffShelf3DBackend):
@@ -103,6 +105,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
         core.box_interior = self.box_interior
         core.cube_in_box = lambda name: self.settled_on_tray(name=name)
         self._tool_home = None
+        # Every episode starts from its own seed's draw of the shared rack layout.
+        self._commit(placements=self.food_placements(names=list(self.cube_names)))
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
@@ -432,29 +436,48 @@ class RackServingBackend(SweepOffShelf3DBackend):
         self._commit(placements=self.food_placements(names=list(self.cube_names)))
 
     def food_placements(self, *, names: list[str]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """Place `names` on the rack as one draw of the shared layout distribution,
+        conditioned on every other dumpling's current centre; a layout that collides
+        with anything else in the scene is redrawn whole."""
         import mujoco
 
         model, scratch, addresses, _ = self._scratch(names=names)
-        region = self.support(name="rack_0")
+        rack = self.support(name="rack_0")
         support = self.body_geoms(name="rack_0")
-        placed: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        for name in names:
-            body = model.body(name).id
-            for _ in range(300):
-                position = np.array([
-                    self._rng.uniform(region.x_min + 0.055, region.x_max - 0.055),
-                    self._rng.uniform(-0.075, 0.075) + self.config.rack_center_y,
-                    region.top_z + self.config.dumpling_height / 2 + 0.002,
-                ])
-                quaternion = np.array([1.0, 0, 0, 0])
+        others = [self.food_centre(name=other) for other in self.cube_names if other not in names]
+        height = rack.top_z + self.config.dumpling_height / 2 + 0.002
+        for _ in range(MAX_RETURN_LAYOUTS):
+            layout = RackLayout.sample(rng=self._rng, rack=rack, count=len(names), others=others)
+            placed = {
+                name: (np.array([x, y, height]), RackLayout.quaternion(yaw=yaw))
+                for name, (x, y, yaw) in zip(names, layout, strict=True)
+            }
+            for name, (position, quaternion) in placed.items():
                 scratch.qpos[addresses[name] : addresses[name] + 7] = np.r_[position, quaternion]
-                mujoco.mj_forward(model, scratch)
-                if not self._blocked(model=model, data=scratch, body=body, support=support):
-                    placed[name] = (position, quaternion)
-                    break
-            else:
-                raise RuntimeError("no collision-free food return placement")
-        return placed
+            mujoco.mj_forward(model, scratch)
+            if not any(
+                self._blocked(model=model, data=scratch, body=model.body(name).id, support=support)
+                for name in names
+            ):
+                return placed
+        raise RuntimeError("no collision-free food return placement")
+
+    def rack_put_back_draws(self, *, name: str, count: int) -> list[tuple[float, float]]:
+        """`count` independent draws of where the robot puts `name` back: the shared
+        layout distribution conditioned on every other dumpling's current centre,
+        tried in order until one is reachable."""
+        rack = self.support(name="rack_0")
+        others = [self.food_centre(name=other) for other in self.cube_names if other != name]
+        draws = []
+        for _ in range(count):
+            ((x, y, _),) = RackLayout.sample(rng=self._rng, rack=rack, count=1, others=others)
+            draws.append((x, y))
+        return draws
+
+    def food_centre(self, *, name: str) -> tuple[float, float]:
+        corners = self.corners(name=name)
+        centre = (corners.min(axis=0) + corners.max(axis=0)) / 2
+        return float(centre[0]), float(centre[1])
 
     def close(self) -> None:
         super().close()
