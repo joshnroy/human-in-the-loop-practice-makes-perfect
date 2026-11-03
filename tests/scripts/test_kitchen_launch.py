@@ -48,6 +48,7 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         if args.method == "ees":
             assert args.ees_score_human_skills
             assert args.practice_groundings == "observed"
+            assert args.ees_preview_test_goals
             assert args.record_ees_decisions
             assert not args.reproduce_predicators_skip_perfect
             assert args.reproduce_predicators_random_when_stranded
@@ -167,6 +168,11 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
         }
         if args.method == "ees":
             assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
+            assert [next(iter(goal)).objects[0].name for goal in method.preview_test_goals] == [
+                "request_1",
+                "request_2",
+                "request_3",
+            ]
         else:
             assert method.pomdp_solver == args.pomdp_solver
             assert method.pomdp_search_depth == (
@@ -176,6 +182,7 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
             assert method.pomdp_domain.human_skill_names == {"human_bulk_pour_back"}
             assert "PickShrimpFromSurface" in dict(method.pomdp_domain.belief_sources)
             assert method.ees_decision_log is None
+            assert method.preview_test_goals == ()
 
     monkeypatch.setattr(KitchenCli, "run_method", staticmethod(capture))
     for run in KitchenLaunch.runs(stage="pilot", results_root=tmp_path):

@@ -220,6 +220,15 @@ class EesCli:
             "unless it passed this flag.",
         )
         parser.add_argument(
+            "--ees-preview-test-goals",
+            action="store_true",
+            help="EES only: before practice, register each goal of the domain's test-task "
+            "distribution as a pinned seen task and make every robot skill on its plan a "
+            "practice candidate, so planning-progress scoring weighs every test goal from "
+            "the start rather than only the training tasks' goals. Requires a domain that "
+            "enumerates its test goals (DomainContext.test_task_goals).",
+        )
+        parser.add_argument(
             "--always-ask-reset",
             action="store_true",
             help="Wrap the planner (EES, or --method pomdp with either solver) so the "
@@ -286,7 +295,13 @@ class EesCli:
         that is EES with a different practice-target choice (`DpCli`)."""
         if args.record_ees_decisions and args.output_dir is None:
             raise ValueError("--record-ees-decisions requires --output-dir")
+        preview = getattr(args, "ees_preview_test_goals", False)
+        if preview and not ctx.test_task_goals:
+            raise ValueError(f"--ees-preview-test-goals: --env {args.env} enumerates no test goals")
         return dict(
+            preview_test_goals=(
+                tuple(goal.atoms for goal in ctx.test_task_goals) if preview else ()
+            ),
             env=ctx.env,
             skill_provider=ctx.skill_provider,
             seed=args.seed,
@@ -502,6 +517,8 @@ class Tossing3DPomdpCli(EesCli):
             )
         if args.practice_groundings != "observed":
             raise ValueError("--practice-groundings applies only to --method ees or dp")
+        if getattr(args, "ees_preview_test_goals", False):
+            raise ValueError("--ees-preview-test-goals applies only to --method ees")
         defaults = (
             EesMethod.model_fields["prior_alpha"].default,
             EesMethod.model_fields["prior_beta"].default,
@@ -747,6 +764,8 @@ class DpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if getattr(args, "ees_preview_test_goals", False):
+            raise ValueError("--ees-preview-test-goals applies only to --method ees")
         if args.dp_prior_calibration is not None:
             calibration = DpPriorCalibration.load(path=args.dp_prior_calibration)
             if (calibration.environment, calibration.layout, calibration.variant) != (

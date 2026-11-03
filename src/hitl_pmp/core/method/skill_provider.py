@@ -209,3 +209,7 @@ class DomainContext(BaseModel):
     env: Environment
     skill_provider: SkillProvider
     oracle: OraclePolicyProvider
+    # The goals of the domain's test-task distribution, in the practice problem's own
+    # vocabulary, for a method told them before practice (`--ees-preview-test-goals`).
+    # Empty for a domain that does not enumerate them.
+    test_task_goals: tuple[Goal, ...] = ()

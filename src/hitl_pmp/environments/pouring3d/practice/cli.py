@@ -94,6 +94,7 @@ class FrozenPourCli:
         return DomainContext(
             env=problem.env,
             oracle=FrozenPourOracle(env=problem.env),
+            test_task_goals=problem.tasks.test_task_goals(),
             skill_provider=FrozenPourSkillProvider(
                 env=problem.env,
                 human_reset_practice_cost=args.human_reset_practice_cost,
