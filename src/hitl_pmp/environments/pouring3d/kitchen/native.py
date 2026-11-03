@@ -22,6 +22,10 @@ class KitchenScene(PotstickerScene):
     # Above the dumplings' priority 2 and the jug's 1, so MuJoCo takes the skillet's
     # coefficient for every skillet contact and the dumplings' own elsewhere.
     SKILLET_PRIORITY: ClassVar[int] = 3
+    # KinDER's 0.005 m let the held jug creep ~0.2 deg/s about the pad-to-pad axis under
+    # its own gravity torque, until two pours left it too rolled to place upright.
+    HANDLE_TORSIONAL_FRICTION: ClassVar[float] = 0.02
+    HANDLE_GEOMS: ClassVar[tuple[str, ...]] = ("pitcher_handle_upper", "pitcher_handle_grip")
 
     def __init__(self, *args: Any, skillet_mu: float = 0.4, **kwargs: Any) -> None:
         if not np.isfinite(skillet_mu) or skillet_mu < 0:
@@ -83,6 +87,11 @@ class KitchenScene(PotstickerScene):
         for geom in tray.iter("geom"):
             geom.set("priority", str(self.SKILLET_PRIORITY))
             geom.set("friction", f"{self.skillet_mu} 0.005 0.0001")
+        for name in self.HANDLE_GEOMS:
+            handle = root.find(f".//geom[@name='{name}']")
+            assert handle is not None
+            sliding, _, rolling = handle.attrib["friction"].split()
+            handle.set("friction", f"{sliding} {self.HANDLE_TORSIONAL_FRICTION} {rolling}")
         size = root.find("size")
         if size is None:
             size = ET.SubElement(root, "size")
