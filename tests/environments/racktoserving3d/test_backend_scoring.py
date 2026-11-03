@@ -148,7 +148,7 @@ def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, 
         scene.held.add(Objects.scraper.name)
         scene.supports[name] = {"rack_0"}
         ground = GroundSkill(
-            skill=Skills.SWEEP_RACK,
+            skill=Skills.GATHER_AND_SWEEP,
             objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
         )
     else:

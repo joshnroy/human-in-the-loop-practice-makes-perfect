@@ -24,7 +24,7 @@ from hitl_pmp.environments.racktoserving3d.predicates import (
     RackServing3DPredicates,
 )
 from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger
-from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS, SWEEP_BOUNDS
+from hitl_pmp.environments.racktoserving3d.skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
 from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -95,10 +95,13 @@ def test_object_names_features_and_scene_exclusion():
 
 def test_robot_ids_bounds_and_human_separation():
     assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(7))
-    assert SWEEP_BOUNDS == ((-0.1875, 0.1875), (-40.0, 40.0))
-    assert Skills.SWEEP_RACK.param_dim == 2
+    assert GATHER_AND_SWEEP_BOUNDS == ((-0.02, 0.03), (0.05, 0.25), (-15.0, 15.0))
+    assert Skills.GATHER_AND_SWEEP.name == "GatherAndSweep"
+    assert Skills.GATHER_AND_SWEEP.param_dim == 3
+    assert "SweepRack" not in SKILL_IDS
+    assert SKILL_IDS["GatherAndSweep"] == 1
     assert all(
-        skill.param_dim == 0 for skill in Skills.robot_skills() if skill != Skills.SWEEP_RACK
+        skill.param_dim == 0 for skill in Skills.robot_skills() if skill != Skills.GATHER_AND_SWEEP
     )
     assert not {skill.name for skill in Skills.human_skills()} & set(SKILL_IDS)
     assert Skills.human_skills(mode="deployment") == ()
@@ -191,7 +194,7 @@ def test_robot_can_pick_and_return_from_each_supported_destination(*, source):
 @pytest.mark.parametrize("count", [1, 3, 5])
 def test_sweep_promises_only_food_measured_on_rack(*, count):
     atoms = _start(rack_count=count, elsewhere="SpilledCounter", held_scraper=True)
-    (sweep,) = _groundings(skill=Skills.SWEEP_RACK, atoms=atoms)
+    (sweep,) = _groundings(skill=Skills.GATHER_AND_SWEEP, atoms=atoms)
     promised = sweep.expected_add_effects(before_atoms=atoms)
     assert {atom for atom in promised if atom.predicate == ON_TRAY} == {
         _atom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food[:count]
@@ -202,8 +205,12 @@ def test_sweep_promises_only_food_measured_on_rack(*, count):
 
 
 def test_empty_or_unready_rack_cannot_be_swept():
-    assert not _groundings(skill=Skills.SWEEP_RACK, atoms=_start(rack_count=0, held_scraper=True))
-    assert not _groundings(skill=Skills.SWEEP_RACK, atoms=_start(elapsed=299, held_scraper=True))
+    assert not _groundings(
+        skill=Skills.GATHER_AND_SWEEP, atoms=_start(rack_count=0, held_scraper=True)
+    )
+    assert not _groundings(
+        skill=Skills.GATHER_AND_SWEEP, atoms=_start(elapsed=299, held_scraper=True)
+    )
 
 
 def test_batch_return_preserves_ready_and_held_scraper():

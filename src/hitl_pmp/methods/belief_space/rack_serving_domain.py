@@ -21,7 +21,7 @@ from .types.skill_belief import SkillBelief
 RACK_NUM_FOOD = 5
 RACK_ROBOT_SKILLS = (
     "PickScraper",
-    "SweepRack",
+    "GatherAndSweep",
     "ReturnScraper",
     "PickFood",
     "PlaceFoodOnTray",
@@ -65,7 +65,7 @@ class RackServingDeployment:
                         if hand == "scraper":
                             options.append(("ReturnScraper", (on_rack, "empty", True, ready)))
                             if ready and on_rack:
-                                options.append(("SweepRack", (0, "scraper", False, True)))
+                                options.append(("GatherAndSweep", (0, "scraper", False, True)))
                         if hand == "empty" and ready:
                             if on_rack:
                                 options.append(("PickFood", (on_rack - 1, "food", home, True)))
@@ -123,11 +123,13 @@ class RackServingPracticeDomain(PracticeDomain):
     default_search_depth: int = 3
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
-    sampler_skill: str = "SweepRack"
+    sampler_skill: str = "GatherAndSweep"
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (
             name,
-            PracticeExampleSource.SAMPLER if name == "SweepRack" else PracticeExampleSource.OUTCOME,
+            PracticeExampleSource.SAMPLER
+            if name == "GatherAndSweep"
+            else PracticeExampleSource.OUTCOME,
         )
         for name in (*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS)
     )

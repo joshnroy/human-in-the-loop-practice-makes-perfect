@@ -241,6 +241,16 @@ class RackServingBackend(SweepOffShelf3DBackend):
             top_z=float(data.geom_xpos[well][2] + rotation[2, 2] * half_height),
         )
 
+    def serving_near_edge_x(self) -> float:
+        """World x of the serving object's edge nearest the rack, where a sweep's d is measured.
+
+        For the Corelle plate it is the rim's outer edge on the live well centre line;
+        otherwise the live footprint's maximum x.
+        """
+        if self.config.serving_target == "corelle_plate":
+            return self.corelle_support().center_x + self.config.corelle_diameter / 2
+        return float(self.corners(name="box_0")[:, 0].max())
+
     def platter_support(self) -> RectangularSupport:
         """Live inner rectangle of the platter's lip, at the top of its floor slab.
 

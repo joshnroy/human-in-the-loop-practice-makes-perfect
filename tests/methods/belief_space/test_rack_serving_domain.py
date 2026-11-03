@@ -87,7 +87,7 @@ def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
     assert set(RACK_ROBOT_SKILLS) == {skill.name for skill in Skills.robot_skills()}
     assert set(RACK_HUMAN_SKILLS) == {skill.name for skill in Skills.human_skills()}
     assert RACK_SERVING_DOMAIN.deployment_horizon == EPISODE_HORIZON == 2 * NUM_FOOD + 3
-    assert RACK_SERVING_DOMAIN.sampler_skill == Skills.SWEEP_RACK.name
+    assert RACK_SERVING_DOMAIN.sampler_skill == Skills.GATHER_AND_SWEEP.name
     assert RACK_SERVING_DOMAIN.human_skill_names == frozenset(RACK_HUMAN_SKILLS)
     assert RACK_SERVING_DOMAIN.failure_effect_skills == frozenset((
         *RACK_ROBOT_SKILLS,
@@ -99,16 +99,18 @@ def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
     for name, source in RACK_SERVING_DOMAIN.belief_sources:
         assert RACK_SERVING_DOMAIN.belief_name(skill_name=name) == name
         assert source == (
-            PracticeExampleSource.SAMPLER if name == "SweepRack" else PracticeExampleSource.OUTCOME
+            PracticeExampleSource.SAMPLER
+            if name == "GatherAndSweep"
+            else PracticeExampleSource.OUTCOME
         )
 
 
 def test_wait_is_required_unless_the_episode_starts_ready():
-    assert _value(horizon=3, Wait=1, PickScraper=1, SweepRack=1) == 1
-    assert _value(horizon=2, Wait=1, PickScraper=1, SweepRack=1) == 0
-    assert _value(horizon=13, Wait=0, PickScraper=1, SweepRack=1) == 0
-    assert _value(horizon=2, initially_ready=True, PickScraper=1, SweepRack=1) == 1
-    assert _value(horizon=1, initially_ready=True, PickScraper=1, SweepRack=1) == 0
+    assert _value(horizon=3, Wait=1, PickScraper=1, GatherAndSweep=1) == 1
+    assert _value(horizon=2, Wait=1, PickScraper=1, GatherAndSweep=1) == 0
+    assert _value(horizon=13, Wait=0, PickScraper=1, GatherAndSweep=1) == 0
+    assert _value(horizon=2, initially_ready=True, PickScraper=1, GatherAndSweep=1) == 1
+    assert _value(horizon=1, initially_ready=True, PickScraper=1, GatherAndSweep=1) == 0
 
 
 def test_pick_place_is_an_independent_deployment_route_with_no_scraper_or_human():
@@ -125,13 +127,13 @@ def test_no_skill_or_return_to_rack_alone_can_deliver_food():
 
 
 def test_retries_and_alternative_routes_are_valued_without_forcing_a_sweep():
-    assert _value(horizon=4, initially_ready=True, PickScraper=1, SweepRack=0.5) == pytest.approx(
-        1 - 0.5**3
-    )
-    sweep = _value(horizon=13, Wait=1, PickScraper=0.9, SweepRack=0.5)
+    assert _value(
+        horizon=4, initially_ready=True, PickScraper=1, GatherAndSweep=0.5
+    ) == pytest.approx(1 - 0.5**3)
+    sweep = _value(horizon=13, Wait=1, PickScraper=0.9, GatherAndSweep=0.5)
     carry = _value(horizon=13, Wait=1, PickFood=0.95, PlaceFoodOnTray=0.95)
     both = _value(
-        horizon=13, Wait=1, PickScraper=0.9, SweepRack=0.5, PickFood=0.95, PlaceFoodOnTray=0.95
+        horizon=13, Wait=1, PickScraper=0.9, GatherAndSweep=0.5, PickFood=0.95, PlaceFoodOnTray=0.95
     )
     assert both >= max(sweep, carry) - 1e-12
 
@@ -152,7 +154,7 @@ def test_deployment_transitions_include_rack_recovery_but_never_human_actions():
 def test_value_interfaces_agree_and_never_read_human_beliefs():
     domain = RACK_SERVING_DOMAIN.model_copy(update={"deployment_horizon": 3})
     competence = {
-        name: float(name in {"Wait", "PickScraper", "SweepRack"}) for name in RACK_ROBOT_SKILLS
+        name: float(name in {"Wait", "PickScraper", "GatherAndSweep"}) for name in RACK_ROBOT_SKILLS
     }
     beliefs = {
         name: Mock(sample=Mock(return_value=np.array([[value, 0.0]] * 4)))
@@ -244,7 +246,7 @@ def test_real_method_builds_from_rack_skills_and_filters_humans(*, solver, mode,
     )
     humans = set(RACK_HUMAN_SKILLS) if mode == "training" and offer_human else set()
     assert set(method.pomdp_state.skill_beliefs) == set(RACK_ROBOT_SKILLS) | humans
-    assert set(method.pomdp_state.sampler_training) == {"SweepRack"}
+    assert set(method.pomdp_state.sampler_training) == {"GatherAndSweep"}
     actions = method._pomdp_model.ground_skills
     assert {action.skill.name for action in actions} == set(RACK_ROBOT_SKILLS) | humans
     assert all(

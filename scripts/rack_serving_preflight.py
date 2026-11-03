@@ -23,13 +23,13 @@ def main():
     parser.add_argument("--surface", choices=("wire", "concept"), default="wire")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--human-layout", action="store_true")
-    parser.add_argument("--dy", type=float, default=0.0, help="SweepRack lateral offset, m")
-    parser.add_argument("--phi", type=float, default=0.0, help="SweepRack plow angle, deg")
     parser.add_argument(
-        "--pile-centred",
-        action="store_true",
-        help="dy = measured y-centroid of food on the rack (clipped), as in the coverage grid",
+        "--delta", type=float, default=0.005, help="GatherAndSweep gather overshoot past y=c, m"
     )
+    parser.add_argument(
+        "--d", type=float, default=0.15, help="GatherAndSweep sweep end past plate near edge, m"
+    )
+    parser.add_argument("--phi", type=float, default=0.0, help="GatherAndSweep plow angle, deg")
     parser.add_argument(
         "--serving-target",
         choices=get_args(RackServingConfig.model_fields["serving_target"].annotation),
@@ -84,7 +84,6 @@ def main():
         "experiment_relaunched": False,
     }
     renderer = writer = trace = None
-    dy = args.dy
     serving_name = {
         "corelle_plate": "CORELLE PLATE",
         "round_plate": "ROUND PLATE",
@@ -166,7 +165,9 @@ def main():
             draw = ImageDraw.Draw(canvas)
             draw.text(
                 (12, 5),
-                f"RACK → {serving_name} | SweepRack(dy={dy:+.3f} m, phi={args.phi:+.0f}°)"
+                f"RACK → {serving_name} | GatherAndSweep(delta={args.delta:+.3f} m,"
+                f" d={args.d:.3f} m,"
+                f" phi={args.phi:+.0f}°)"
                 f" | {args.caption}"[:120],
                 font=font,
                 fill="white",
@@ -259,13 +260,7 @@ def main():
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
         initial = NativeTrial.snapshot(env=env)
         report["initial"] = initial
-        if args.pile_centred:
-            dy, _ = NativeTrial.resolve_pair(
-                pair={"dy_m": None, "phi_deg": args.phi, "dy_source": "pile_centroid"},
-                initial=initial,
-                config=config.model_dump(mode="json"),
-            )
-        report["sweep_parameters"] = {"dy_m": dy, "phi_deg": args.phi}
+        report["sweep_parameters"] = {"delta_m": args.delta, "d_m": args.d, "phi_deg": args.phi}
         report["measured_geometry"] = {
             "rack": rack.model_dump(),
             "tray": tray.model_dump(),
@@ -276,7 +271,7 @@ def main():
             nonlocal label
             label = name
             before = backend.ledger.elapsed_seconds
-            env.take_action(action=np.array([SKILL_IDS[name], index, dy, args.phi]))
+            env.take_action(action=np.array([SKILL_IDS[name], index, args.delta, args.d, args.phi]))
             row = {
                 "skill": name,
                 "food_index": index,
@@ -305,7 +300,7 @@ def main():
 
         if not args.setup_only:
             if not backend.ledger.ready:
-                action(name="SweepRack")
+                action(name="GatherAndSweep")
                 report["early_sweep_rejected"] = "ready" in (env.last_skill_error() or "")
             action(name="Wait")
             if args.individual or args.reset_probe:
@@ -318,7 +313,7 @@ def main():
                 action(name="PickScraper")
                 if backend.held(name="wiper_0"):
                     if not args.return_only:
-                        action(name="SweepRack")
+                        action(name="GatherAndSweep")
                     report["sweep_metrics"] = env.rack_controllers().metrics
                     if not args.sweep_only:
                         action(name="ReturnScraper")

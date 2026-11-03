@@ -1,5 +1,7 @@
 """Robot action encoding and explicitly separate, training-only human offerings."""
 
+from typing import ClassVar
+
 import numpy as np
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
@@ -11,7 +13,7 @@ from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
 from .predicates import RackServing3DAtoms, RackServing3DPredicates
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
-from .skills import SKILL_IDS, SWEEP_BOUNDS
+from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
 from .skills import RackServing3DSkills as Skills
 
 
@@ -32,9 +34,9 @@ class RackServingSkillProvider(SkillProvider):
         return Objects.all_objects()
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill != Skills.SWEEP_RACK:
+        if ground_skill.skill != Skills.GATHER_AND_SWEEP:
             return np.zeros(0)
-        return np.array([rng.uniform(lower, upper) for lower, upper in SWEEP_BOUNDS])
+        return np.array([rng.uniform(lower, upper) for lower, upper in GATHER_AND_SWEEP_BOUNDS])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -72,7 +74,7 @@ class RackServingSkillProvider(SkillProvider):
 
 
 class RackServingActions:
-    """Encode [robot skill ID, food index, sweep dy metres, sweep plow phi degrees]."""
+    """Encode [robot skill ID, food index, gather delta m, sweep depth d m, plow phi deg]."""
 
     @staticmethod
     def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
@@ -84,18 +86,18 @@ class RackServingActions:
         params = np.asarray(params, dtype=float)
         if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
             raise ValueError(f"{skill.name} requires {skill.param_dim} finite parameters")
-        dy, phi = 0.0, 0.0
-        if skill == Skills.SWEEP_RACK:
+        continuous = np.zeros(3)
+        if skill == Skills.GATHER_AND_SWEEP:
             if any(
                 not lower <= value <= upper
-                for value, (lower, upper) in zip(params, SWEEP_BOUNDS, strict=True)
+                for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
             ):
-                raise ValueError("sweep dy/phi are outside the declared bounds")
-            dy, phi = (float(value) for value in params)
+                raise ValueError("GatherAndSweep delta/d/phi are outside the declared bounds")
+            continuous = params
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
             food_index = Objects.food.index(ground_skill.objects[1])
-        return np.array([SKILL_IDS[skill.name], food_index, dy, phi], dtype=float)
+        return np.array([SKILL_IDS[skill.name], food_index, *continuous], dtype=float)
 
 
 class RackServingOracle(OraclePolicyProvider):
@@ -106,6 +108,8 @@ class RackServingOracle(OraclePolicyProvider):
     """
 
     env: RackServingEnvironment
+    # Mid-range starting guesses (delta, d, phi), not a calibrated success claim.
+    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.005, 0.15, 0.0])
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
         def holds(*, name: str, objects: tuple[Object, ...] = ()) -> bool:
@@ -134,10 +138,10 @@ class RackServingOracle(OraclePolicyProvider):
             )
         elif on_rack and holding_scraper:
             ground = GroundSkill(
-                skill=Skills.SWEEP_RACK,
+                skill=Skills.GATHER_AND_SWEEP,
                 objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
             )
-            params = np.array([0.0, 0.0])
+            params = RackServingOracle.NOMINAL_GATHER_AND_SWEEP
         elif holding_scraper:
             ground = GroundSkill(
                 skill=Skills.RETURN_SCRAPER, objects=(Objects.robot, Objects.scraper)
