@@ -293,3 +293,87 @@ def test_platter_location_tests_the_food_footprint_against_the_lip(
         lambda self, *, name: platter if name == "box_0" else rack,
     )
     assert food.location(name="cube_0") == expected
+
+
+CORELLE = RackServingConfig(serving_target="corelle_plate")
+CORELLE_CENTRE = (1.2323, 0.0)
+
+
+def _corelle_backend(*, monkeypatch, yaw=0.0, tilt=0.0):
+    """The well cylinder plus one rim box, as live geoms: the support reads only the well."""
+    rotation = Rotation.from_euler("zx", [yaw, tilt], degrees=True).as_matrix()
+    names = ("box_0_well", "box_0_rim_0")
+    half_glass = CORELLE.corelle_glass_thickness / 2
+    local = {
+        "box_0_well": ((0, 0, CORELLE.corelle_foot_height + half_glass), (0.095, half_glass, 0)),
+        "box_0_rim_0": ((0.113, 0, 0.012), (0.018, 0.008, half_glass)),
+    }
+    origin = np.array([*CORELLE_CENTRE, 0.9])
+    model = SimpleNamespace(
+        geom_type=np.array([5, 6]),
+        geom_size=np.array([local[name][1] for name in names]),
+        geom=lambda name: SimpleNamespace(id=names.index(name)),
+    )
+    data = SimpleNamespace(
+        geom_xmat=np.array([rotation.reshape(-1)] * 2),
+        geom_xpos=np.array([origin + rotation @ np.array(local[name][0]) for name in names]),
+    )
+    monkeypatch.setattr(RackServingBackend, "model", lambda self: model)
+    monkeypatch.setattr(RackServingBackend, "data", lambda self: data)
+    monkeypatch.setattr(RackServingBackend, "body_geoms", lambda self, **kwargs: {0, 1})
+    return RackServingBackend(config=CORELLE)
+
+
+def test_corelle_support_is_the_rim_inner_edge_at_well_height(*, monkeypatch):
+    plate = _corelle_backend(monkeypatch=monkeypatch).support(name="box_0")
+    assert isinstance(plate, CircularSupport)
+    assert (plate.center_x, plate.center_y) == pytest.approx(CORELLE_CENTRE)
+    assert plate.radius == pytest.approx(CORELLE.corelle_well_radius)
+    assert plate.top_z == pytest.approx(CORELLE.tray_top_z)
+
+
+def test_yawed_corelle_support_follows_the_well_centre(*, monkeypatch):
+    plate = _corelle_backend(monkeypatch=monkeypatch, yaw=35).support(name="box_0")
+    assert (plate.center_x, plate.center_y) == pytest.approx(CORELLE_CENTRE)
+    assert plate.radius == pytest.approx(CORELLE.corelle_well_radius)
+
+
+def test_tilted_corelle_support_shrinks_conservatively(*, monkeypatch):
+    plate = _corelle_backend(monkeypatch=monkeypatch, tilt=10).support(name="box_0")
+    assert plate.radius == pytest.approx(CORELLE.corelle_well_radius * np.cos(np.deg2rad(10)))
+
+
+@pytest.mark.parametrize(
+    ("food_x", "food_bottom", "expected"),
+    [
+        (CORELLE_CENTRE[0], 0.907, "OnTray"),
+        (CORELLE_CENTRE[0] + 0.095 - 0.0155, 0.907, "OnTray"),
+        # Footprint straddles the rim's inner edge.
+        (CORELLE_CENTRE[0] + 0.095 - 0.010, 0.909, None),
+        # Resting on the rim, well outside its inner edge.
+        (CORELLE_CENTRE[0] + 0.113, 0.913, None),
+        # Footprint inside but lifted to rim-top height (e.g. stacked): not on the well.
+        (CORELLE_CENTRE[0], 0.919, None),
+    ],
+)
+def test_corelle_location_scores_only_food_on_the_well_inside_the_rim(
+    *, monkeypatch, food_x, food_bottom, expected
+):
+    plate = _corelle_backend(monkeypatch=monkeypatch).support(name="box_0")
+    food = _backend(
+        monkeypatch=monkeypatch,
+        kind=4,
+        size=np.array([0.015, 0.0225, 0.0125]),
+        rotation=np.eye(3),
+        center=np.array([food_x, 0.0, food_bottom + 0.0125]),
+        config=CORELLE,
+    )
+    rack = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, top_z=0.925)
+    monkeypatch.setattr(RackServingBackend, "held", lambda self, **kwargs: False)
+    monkeypatch.setattr(RackServingBackend, "supporting_bodies", lambda self, **kwargs: {"box_0"})
+    monkeypatch.setattr(
+        RackServingBackend,
+        "support",
+        lambda self, *, name: plate if name == "box_0" else rack,
+    )
+    assert food.location(name="cube_0") == expected

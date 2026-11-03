@@ -15,14 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
 Friction = tuple[Nonnegative, Nonnegative, Nonnegative]
+INCH = 0.0254
 
 
 class RackServingConfig(BaseModel):
     """Frozen SI-unit configuration; front/exit is the negative world-x side.
 
     Rack and serving-object poses use bottom-center body origins. Dumpling
-    poses use their geometric centers. The serving object (``box_0``) is a round
-    plate by default, the original rectangular slate, or a wide platter with a
+    poses use their geometric centers. The serving object (``box_0``) is, by
+    default, a model of a Corelle Winter Frost White 10-1/4 in dinner plate (a
+    flat well, a low rim rising to 3/4 in at the edge, and a foot ring); or a
+    flat round plate, the original rectangular slate, or a wide platter with a
     low continuous lip, selected by ``serving_target``; its position is derived
     to preserve ``gap`` in front of the rack's exit edge, centred on the rack's
     centre line. Neither the rack nor the serving object is fixed or assumed
@@ -56,7 +59,9 @@ class RackServingConfig(BaseModel):
     concept_pitch: Positive = 0.025
     concept_thickness: Positive = 0.003
 
-    serving_target: Literal["round_plate", "slate", "lipped_platter"] = "round_plate"
+    serving_target: Literal["corelle_plate", "round_plate", "slate", "lipped_platter"] = (
+        "corelle_plate"
+    )
     plate_radius: Positive = 0.13
     tray_width: Positive = Field(default=0.375, description="slate only")
     tray_depth: Positive = Field(default=0.30, description="slate only")
@@ -69,6 +74,35 @@ class RackServingConfig(BaseModel):
     )
     platter_lip_wall: Positive = Field(default=0.008, description="lipped_platter only")
     platter_mass: Positive = Field(default=1.5, description="lipped_platter only")
+    corelle_diameter: Positive = Field(
+        default=10.25 * INCH, description="corelle_plate only; published 10-1/4 in (KC35285)"
+    )
+    corelle_height: Positive = Field(
+        default=0.75 * INCH,
+        description="corelle_plate only; published 3/4 in overall, foot to rim top",
+    )
+    corelle_well_radius: Positive = Field(
+        default=0.095,
+        description="corelle_plate only; UNVERIFIED estimate of the rim's inner edge radius",
+    )
+    corelle_glass_thickness: Positive = Field(
+        default=0.003, description="corelle_plate only; UNVERIFIED Vitrelle glass thickness"
+    )
+    corelle_foot_height: Positive = Field(
+        default=0.004, description="corelle_plate only; UNVERIFIED foot-ring height"
+    )
+    corelle_foot_radius: Positive = Field(
+        default=0.080, description="corelle_plate only; UNVERIFIED foot-ring outer radius"
+    )
+    corelle_foot_width: Positive = Field(
+        default=0.006, description="corelle_plate only; UNVERIFIED foot-ring radial width"
+    )
+    corelle_mass: Positive = Field(
+        default=0.40, description="corelle_plate only; UNVERIFIED mass estimate"
+    )
+    corelle_rim_segments: int = Field(
+        default=48, ge=12, description="corelle_plate only; convex boxes approximating the rim"
+    )
     tray_friction: Friction = (0.6, 0.005, 0.003)
     counter_x_min: float = 0.98
     counter_x_max: float = 1.70
@@ -112,6 +146,8 @@ class RackServingConfig(BaseModel):
         """World-x extent of the serving object's footprint."""
         if self.serving_target == "lipped_platter":
             return self.platter_depth
+        if self.serving_target == "corelle_plate":
+            return self.corelle_diameter
         return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_depth
 
     @property
@@ -119,18 +155,28 @@ class RackServingConfig(BaseModel):
         """World-y extent of the serving object's footprint."""
         if self.serving_target == "lipped_platter":
             return self.platter_width
+        if self.serving_target == "corelle_plate":
+            return self.corelle_diameter
         return 2 * self.plate_radius if self.serving_target == "round_plate" else self.tray_width
 
     @property
     def serving_thickness(self) -> float:
-        """Height of the surface food rests on: the platter floor, not its lip."""
+        """Height of the surface food rests on: the platter floor or plate well, not a rim."""
         if self.serving_target == "lipped_platter":
             return self.platter_base_thickness
+        if self.serving_target == "corelle_plate":
+            return self.corelle_foot_height + self.corelle_glass_thickness
         return self.tray_thickness
 
     @property
     def serving_mass(self) -> float:
-        return self.platter_mass if self.serving_target == "lipped_platter" else self.tray_mass
+        return {"lipped_platter": self.platter_mass, "corelle_plate": self.corelle_mass}.get(
+            self.serving_target, self.tray_mass
+        )
+
+    @property
+    def corelle_rim_top_z(self) -> float:
+        return self.counter_height + self.corelle_height
 
     @property
     def platter_lip_top_z(self) -> float:
@@ -186,6 +232,18 @@ class RackServingConfig(BaseModel):
                 raise ValueError("Platter lip must stay below the rack top")
             if 2 * self.platter_lip_wall >= min(self.platter_depth, self.platter_width):
                 raise ValueError("Platter lip must leave an interior")
+        if self.serving_target == "corelle_plate":
+            if self.corelle_rim_top_z >= self.rack_top_z:
+                raise ValueError("Plate rim must stay below the rack top")
+            if not (
+                self.corelle_foot_width
+                < self.corelle_foot_radius
+                < self.corelle_well_radius
+                < self.corelle_diameter / 2
+            ):
+                raise ValueError("Plate must nest foot ring inside well inside rim")
+            if self.corelle_foot_height + self.corelle_glass_thickness >= self.corelle_height:
+                raise ValueError("Plate well must sit below the rim top")
         if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
             raise ValueError("Rack and tray must fit on the counter in x")
         if (

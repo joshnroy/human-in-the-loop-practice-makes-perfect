@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from typing import get_args
 
 import imageio.v2 as imageio
 import numpy as np
@@ -29,7 +30,11 @@ def main():
         action="store_true",
         help="dy = measured y-centroid of food on the rack (clipped), as in the coverage grid",
     )
-    parser.add_argument("--serving-target", choices=("round_plate", "slate"), default="round_plate")
+    parser.add_argument(
+        "--serving-target",
+        choices=get_args(RackServingConfig.model_fields["serving_target"].annotation),
+        default=RackServingConfig.model_fields["serving_target"].default,
+    )
     parser.add_argument("--caption", default="", help="case label burned into every frame")
     parser.add_argument(
         "--settle-steps", type=int, default=20, help="post-return settle, as the coverage grid"
@@ -80,7 +85,12 @@ def main():
     }
     renderer = writer = trace = None
     dy = args.dy
-    serving_name = "ROUND PLATE" if args.serving_target == "round_plate" else "SLATE TRAY"
+    serving_name = {
+        "corelle_plate": "CORELLE PLATE",
+        "round_plate": "ROUND PLATE",
+        "slate": "SLATE TRAY",
+        "lipped_platter": "LIPPED PLATTER",
+    }[args.serving_target]
     tick = 0
     label = "Initial scene"
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 17)
