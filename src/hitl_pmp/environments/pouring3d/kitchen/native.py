@@ -237,6 +237,15 @@ class KitchenController(PotstickerController):
         )
         self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
 
+    def level_hand_rotation(self) -> Rotation:
+        """The hand orientation that, with the current grasp, holds the jug upright at
+        its current heading: the carry pose's orientation."""
+        _, jug = self.body_pose(name="pitcher")
+        _, hand = self.hand_pose()
+        axis = jug.apply([1.0, 0.0, 0.0])
+        level = Rotation.from_euler("z", float(np.arctan2(axis[1], axis[0])))
+        return level * (jug.inv() * hand)
+
     def follow_base_path(self, *, path: list[np.ndarray], phase: str) -> None:
         """Drive the base through every waypoint, the arm held where it is."""
         self.phase = phase
@@ -327,17 +336,84 @@ class KitchenController(PotstickerController):
         )
 
     def place_pitcher(self) -> None:
+        """Plan the upright return to a hover above home (PyBullet) and follow it; seat
+        and release as scripted contact; then plan and follow the withdrawal."""
+        from .planning.parameterized_skills import (
+            ClearWorkspaceController,
+            PlacePitcherController,
+        )
+        from .planning.utils import KitchenPyBulletSim
+
+        if self.held != "pitcher":
+            raise ValueError("Placement requires holding pitcher")
+        # Measure the current compliant grasp before positioning the vessel.
+        position, rotation = self.body_pose(name="pitcher")
+        hand, orientation = self.hand_pose()
+        self.hand_offset = rotation.inv().apply(hand - position)
+        self.rotation_offset = rotation.inv() * orientation
+        locations = self.scene.cube_locations()
+        riders = tuple(
+            name
+            for name, at in zip(self.scene.cube_names, locations, strict=True)
+            if at == "pitcher"
+        )
+        sim = KitchenPyBulletSim.from_controller(controller=self)
         try:
-            super().place_pitcher()
+            planner = PlacePitcherController(sim=sim)
+            planner.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base=self.data.qpos[self.base_q].copy(),
+                base_target=self.base_home.copy(),
+                hand_rotation=self.level_hand_rotation(),
+                hand_offset=self.hand_offset,
+                rotation_offset=self.rotation_offset,
+                home=self.home.copy(),
+                riders=riders,
+            )
+        finally:
+            sim.close()
+        self.follow_arm_path(path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=1)
+        self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
+        self.follow_arm_path(
+            path=planner.plans[planner.MOVE_ARM_TO_HOVER], phase=planner.MOVE_ARM_TO_HOVER, grip=1
+        )
+        try:
+            self.move_pitcher(
+                phase="lower pitcher to floor",
+                position=self.home + [0, 0, self.placement_clearance],
+                rotation=Rotation.identity(),
+                seconds=4,
+            )
         except ValueError as exc:
-            if (
-                not str(exc).startswith("IK infeasible in seat pitcher on table")
-                or not self.can_release_pitcher_over_home()
-            ):
+            if not self.can_release_pitcher_over_home():
                 raise
-            # Release only from a measured low, upright pose above support;
-            # normal physics and the inherited landing checks determine success.
-            self.release_pitcher_over_home()
+            # Release only from a measured low, upright pose above support; normal
+            # physics and the landing checks determine success.
+            self.events.append({"event": "seat fallback", "error": str(exc)})
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        self.base_target = self.data.qpos[self.base_q].copy()
+        self.held = None
+        self.pause(phase="release pitcher", seconds=2, grip=0)
+        hand, orientation = self.hand_pose()
+        self.move(
+            phase="withdraw gripper",
+            position=hand + [0, 0, 0.25],
+            rotation=orientation,
+            seconds=3,
+            grip=0,
+        )
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            clear = ClearWorkspaceController(sim=sim)
+            clear.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base_target=self.base_home + [-0.35, 0, 0],
+            )
+        finally:
+            sim.close()
+        self.follow_base_path(path=clear.plans[clear.BASE_MOTION], phase=clear.BASE_MOTION)
 
     def active_obstacle_pairs(self) -> list[tuple[int, int]]:
         pairs = super().active_obstacle_pairs()
@@ -410,7 +486,6 @@ class KitchenController(PotstickerController):
             for name, at in zip(self.scene.cube_names, locations, strict=True)
             if at == "pitcher"
         )
-        _, hand_rotation = self.hand_pose()
         sim = KitchenPyBulletSim.from_controller(controller=self)
         try:
             planner = CarryToPourController(sim=sim)
@@ -419,7 +494,7 @@ class KitchenController(PotstickerController):
                 arm=self.data.qpos[self.arm_q].copy(),
                 base=self.data.qpos[self.base_q].copy(),
                 base_target=np.array([center[0] - self.pour_base_offset, center[1], 0.0]),
-                hand_rotation=hand_rotation,
+                hand_rotation=self.level_hand_rotation(),
                 start=center,
                 start_rotation=self.pour_orientation(angle=0) * self.rotation_offset,
                 riders=riders,
