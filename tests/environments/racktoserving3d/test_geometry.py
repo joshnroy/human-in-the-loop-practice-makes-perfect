@@ -391,3 +391,18 @@ def test_corelle_plate_compiles_to_a_well_a_rising_rim_and_a_foot_ring(*, regist
     )
     assert config.corelle_rim_top_z < rack_top
     assert config.rack_front_x - (centre[0] + outer) == pytest.approx(config.gap, abs=1e-6)
+
+
+def test_counter_compiles_wooden_so_the_white_plate_stands_out(*, registry: Any) -> None:
+    config = RackServingConfig()
+    model, _ = _compiled_scene(registry=registry, config=config)
+    counter = model.body("cupboard_1").id
+    geoms = np.flatnonzero(model.geom_bodyid == counter)
+    top = model.geom("cupboard_1_counter").id
+    np.testing.assert_allclose(model.geom_rgba[top], [0.60, 0.40, 0.23, 1.0], atol=1e-6)
+    # No visible counter geom is left near-white.
+    assert not any(
+        model.geom_rgba[geom][:3].min() > 0.6 and model.geom_rgba[geom][3] > 0 for geom in geoms
+    )
+    plate = model.geom("box_0_well").id
+    assert model.geom_rgba[plate][:3].min() > model.geom_rgba[top][:3].max()

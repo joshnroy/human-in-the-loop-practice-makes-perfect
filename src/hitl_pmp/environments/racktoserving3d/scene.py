@@ -18,6 +18,8 @@ PLATTER_TYPE = "rack_serving_lipped_platter"
 CORELLE_TYPE = "rack_serving_corelle_plate"
 SCRAPER_TYPE = "rack_serving_scraper"
 DUMPLING_TYPE = "rack_serving_dumpling"
+# A wooden counter top: the near-white Corelle plate is hard to see on a pale one.
+COUNTER_RGBA = (0.60, 0.40, 0.23, 1.0)
 
 
 def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
