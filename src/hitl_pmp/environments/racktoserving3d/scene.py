@@ -15,6 +15,7 @@ RACK_TYPE = "rack_serving_rack"
 TRAY_TYPE = "rack_serving_slate"
 PLATE_TYPE = "rack_serving_round_plate"
 PLATTER_TYPE = "rack_serving_lipped_platter"
+CORELLE_TYPE = "rack_serving_corelle_plate"
 SCRAPER_TYPE = "rack_serving_scraper"
 DUMPLING_TYPE = "rack_serving_dumpling"
 
@@ -111,11 +112,24 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
         "yaw_ranges": [[0, 0]],
     }
     serving_type, serving_noun, serving_rgba = {
+        "corelle_plate": (CORELLE_TYPE, "Corelle 10-1/4 in dinner plate", [0.97, 0.97, 0.96, 1]),
         "round_plate": (PLATE_TYPE, "flat round serving plate", [0.93, 0.92, 0.88, 1]),
         "slate": (TRAY_TYPE, "flat slate serving tray", [0.16, 0.18, 0.19, 1]),
         "lipped_platter": (PLATTER_TYPE, "lipped serving platter", [0.86, 0.84, 0.78, 1]),
     }[config.serving_target]
-    lipped = config.serving_target == "lipped_platter"
+    profile: dict[str, Any] = {}
+    if config.serving_target == "lipped_platter":
+        profile = {
+            "base_thickness": config.platter_base_thickness,
+            "lip_height": config.platter_lip_height,
+            "lip_wall": config.platter_lip_wall,
+        }
+    elif config.serving_target == "corelle_plate":
+        profile = {
+            key: getattr(config, key)
+            for key in RackServingConfig.model_fields
+            if key.startswith("corelle_") and key != "corelle_mass"
+        }
     return {
         "description": (
             f"Movable cooling rack to movable {serving_noun}; rigid dumpling proxies. "
@@ -160,15 +174,7 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
                     "friction": list(config.tray_friction),
                     "contact_dimension": config.support_contact_dimension,
                     "rgba": serving_rgba,
-                    **(
-                        {
-                            "base_thickness": config.platter_base_thickness,
-                            "lip_height": config.platter_lip_height,
-                            "lip_wall": config.platter_lip_wall,
-                        }
-                        if lipped
-                        else {}
-                    ),
+                    **profile,
                 }
             },
             SCRAPER_TYPE: {

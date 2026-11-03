@@ -10,9 +10,9 @@ import pytest
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.geometry import install_geometry
 from hitl_pmp.environments.racktoserving3d.scene import (
+    CORELLE_TYPE,
     COUNTER_TYPE,
     DUMPLING_TYPE,
-    PLATE_TYPE,
     RACK_TYPE,
     SCRAPER_TYPE,
     build_scene,
@@ -210,7 +210,7 @@ def test_scene_initial_poses_pass_native_sampler(*, registry: Any) -> None:
             assert pose["position"] == pytest.approx(
                 scene["regions"][regions[name]]["ranges"][0][:3]
             )
-            assert kind in {RACK_TYPE, PLATE_TYPE, SCRAPER_TYPE, DUMPLING_TYPE}
+            assert kind in {RACK_TYPE, CORELLE_TYPE, SCRAPER_TYPE, DUMPLING_TYPE}
 
 
 def test_custom_mass_and_friction_reach_native_geometry(*, registry: Any) -> None:
@@ -316,3 +316,78 @@ def test_lipped_platter_compiles_with_a_continuous_lip_below_the_rack_top(*, reg
     assert 2 * left[0] == pytest.approx(0.30) and 2 * right[0] == pytest.approx(0.30)
     assert 2 * front[1] + 0.0 >= 0.45 - 2 * 0.008 - 1e-9
     assert 2 * back[1] >= 0.45 - 2 * 0.008 - 1e-9
+
+
+def _box_top_face(*, model: Any, data: Any, geom: int) -> np.ndarray:
+    """World points of a box geom's local +z face corners."""
+    rotation = data.geom_xmat[geom].reshape(3, 3)
+    size = model.geom_size[geom]
+    return np.array([
+        data.geom_xpos[geom] + rotation @ (np.array([sx, sy, 1]) * size)
+        for sx in (-1, 1)
+        for sy in (-1, 1)
+    ])
+
+
+def test_corelle_plate_compiles_to_a_well_a_rising_rim_and_a_foot_ring(*, registry: Any) -> None:
+    import mujoco
+
+    config = RackServingConfig(serving_target="corelle_plate")
+    model, data = _compiled_scene(registry=registry, config=config)
+    plate = model.body("box_0").id
+    assert model.body_mass[plate] == pytest.approx(config.corelle_mass)
+    assert int(model.jnt_type[model.body_jntadr[plate]]) == int(mujoco.mjtJoint.mjJNT_FREE)
+    geoms = [int(geom) for geom in np.flatnonzero(model.geom_bodyid == plate)]
+    names = [model.geom(geom).name for geom in geoms]
+    rims = [g for g, n in zip(geoms, names, strict=True) if n.startswith("box_0_rim_")]
+    feet = [g for g, n in zip(geoms, names, strict=True) if n.startswith("box_0_foot_")]
+    assert len(rims) == config.corelle_rim_segments
+    assert len(feet) >= 12
+    assert set(names) == {"box_0_well"} | {model.geom(g).name for g in rims + feet}
+    assert all(model.geom_friction[g] == pytest.approx(config.tray_friction) for g in geoms)
+    assert all(int(model.geom_condim[g]) == 6 for g in geoms)
+
+    centre = np.array([config.tray_center_x, config.tray_center_y])
+    well = model.geom("box_0_well").id
+    assert int(model.geom_type[well]) == int(mujoco.mjtGeom.mjGEOM_CYLINDER)
+    assert model.geom_size[well][0] == pytest.approx(config.corelle_well_radius)
+    assert 2 * model.geom_size[well][1] == pytest.approx(config.corelle_glass_thickness)
+    assert data.geom_xpos[well][:2] == pytest.approx(centre)
+    well_top = data.geom_xpos[well][2] + model.geom_size[well][1]
+    assert well_top == pytest.approx(config.tray_top_z)
+    assert data.geom_xpos[well][2] - model.geom_size[well][1] == pytest.approx(
+        config.counter_height + config.corelle_foot_height
+    )
+
+    outer = config.corelle_diameter / 2
+    for rim in rims:
+        top = _box_top_face(model=model, data=data, geom=rim)
+        radial = np.linalg.norm(top[:, :2] - centre, axis=1)
+        inner_edge, outer_edge = top[radial < radial.mean()], top[radial > radial.mean()]
+        # The rim's top face rises from the well's top to the published height at the edge.
+        assert inner_edge[:, 2] == pytest.approx(well_top, abs=1e-6)
+        assert outer_edge[:, 2] == pytest.approx(config.corelle_rim_top_z, abs=1e-6)
+        assert np.linalg.norm(inner_edge[:, :2] - centre, axis=1) == pytest.approx(
+            config.corelle_well_radius, abs=0.002
+        )
+        assert np.linalg.norm(outer_edge[:, :2] - centre, axis=1).max() <= outer + 1e-3
+    rim_points = np.concatenate([_box_top_face(model=model, data=data, geom=rim) for rim in rims])
+    assert np.linalg.norm(rim_points[:, :2] - centre, axis=1).max() == pytest.approx(
+        outer, abs=1e-3
+    )
+    for foot in feet:
+        assert data.geom_xpos[foot][2] - model.geom_size[foot][2] == pytest.approx(
+            config.counter_height
+        )
+        assert data.geom_xpos[foot][2] + model.geom_size[foot][2] == pytest.approx(
+            config.counter_height + config.corelle_foot_height
+        )
+        assert np.linalg.norm(data.geom_xpos[foot][:2] - centre) < config.corelle_well_radius
+    rack_geoms = [int(g) for g in np.flatnonzero(model.geom_bodyid == model.body("rack_0").id)]
+    rack_top = max(
+        float(data.geom_xpos[g][2] + model.geom_size[g][0])
+        for g in rack_geoms
+        if int(model.geom_type[g]) == int(mujoco.mjtGeom.mjGEOM_CAPSULE)
+    )
+    assert config.corelle_rim_top_z < rack_top
+    assert config.rack_front_x - (centre[0] + outer) == pytest.approx(config.gap, abs=1e-6)

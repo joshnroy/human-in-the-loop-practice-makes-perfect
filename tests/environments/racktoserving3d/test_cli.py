@@ -198,7 +198,7 @@ def test_train_test_and_human_reset_rng_streams_are_independent(*, monkeypatch):
     assert train_one == train_two
 
 
-@pytest.mark.parametrize("target", ["round_plate", "slate", "lipped_platter"])
+@pytest.mark.parametrize("target", ["round_plate", "slate", "lipped_platter", "corelle_plate"])
 def test_cli_selects_the_serving_target(*, target):
     args = _parse(argv=("--serving-target", target, "--plate-radius", "0.12"))
     problem = RackServingCli.build_problem(args=args, mode="training")

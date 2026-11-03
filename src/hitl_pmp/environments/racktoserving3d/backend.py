@@ -181,6 +181,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
             return self.plate_support()
         if name == "box_0" and self.config.serving_target == "lipped_platter":
             return self.platter_support()
+        if name == "box_0" and self.config.serving_target == "corelle_plate":
+            return self.corelle_support()
         if name == "counter":
             config = self.config
             return SupportRegion(
@@ -213,6 +215,24 @@ class RackServingBackend(SweepOffShelf3DBackend):
             center_y=float(data.geom_xpos[geom][1]),
             radius=float(model.geom_size[geom][0] * abs(rotation[2, 2])),
             top_z=float(self.corners(name="box_0")[:, 2].max()),
+        )
+
+    def corelle_support(self) -> CircularSupport:
+        """Live circle of the rim's inner edge, at the top face of the plate's well.
+
+        Only the well cylinder is read: food scores inside the rim's inner edge and
+        resting on the well, never on the rim. A tilted well's shadow is an ellipse
+        whose minor semi-axis is radius * |cos tilt|, which keeps containment strict.
+        """
+        model, data = self.model(), self.data()
+        well = model.geom("box_0_well").id
+        rotation = data.geom_xmat[well].reshape(3, 3)
+        radius, half_height = model.geom_size[well][:2]
+        return CircularSupport(
+            center_x=float(data.geom_xpos[well][0]),
+            center_y=float(data.geom_xpos[well][1]),
+            radius=float(radius * abs(rotation[2, 2])),
+            top_z=float(data.geom_xpos[well][2] + rotation[2, 2] * half_height),
         )
 
     def platter_support(self) -> RectangularSupport:

@@ -12,6 +12,7 @@ from typing import Any
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.scene import (
+    CORELLE_TYPE,
     COUNTER_TYPE,
     DUMPLING_TYPE,
     PLATE_TYPE,
@@ -357,6 +358,109 @@ def install_geometry() -> None:
                 return _bottom_bounds(position=pos, options={"size": [half_x, half_y, height / 2]})
 
         register_object(name=PLATTER_TYPE)(LippedPlatter)
+
+    if CORELLE_TYPE not in REGISTERED_OBJECTS:
+
+        class CorellePlate(Cuboid):
+            """Bottom-origin model of a Corelle 10-1/4 in dinner plate, from convex pieces.
+
+            MuJoCo collides only convex geoms, so the concave dish is a flat well
+            cylinder, a ring of tilted boxes whose top faces rise from the well's
+            top at its edge to the published overall height at the outer edge,
+            and a ring of foot boxes under the well. Mass is split by volume.
+            """
+
+            def _create_xml_element(self) -> ET.Element:
+                options = self.options
+                outer = options["corelle_diameter"] / 2
+                well = options["corelle_well_radius"]
+                glass = options["corelle_glass_thickness"]
+                foot_height = options["corelle_foot_height"]
+                foot_outer = options["corelle_foot_radius"]
+                foot_width = options["corelle_foot_width"]
+                rim_count = int(options["corelle_rim_segments"])
+                well_top = foot_height + glass
+                self.length = self.width = 2 * outer
+                self.height = options["corelle_height"]
+                self.wall_thickness = 0.0
+                self.fixed = False
+                body = ET.Element("body", name=self.name)
+                ET.SubElement(body, "freejoint", name=self.joint_name)
+                parts: list[tuple[str, str, tuple[float, ...], tuple[float, ...], float]] = [
+                    ("well", "cylinder", (0, 0, foot_height + glass / 2), (well, glass / 2), 0.0)
+                ]
+                run, rise = outer - well, options["corelle_height"] - well_top
+                slope = math.atan2(rise, run)
+                half_slant = math.hypot(run, rise) / 2
+                half_tangent = outer * math.tan(math.pi / rim_count)
+                radial = (well + outer) / 2 + glass / 2 * math.sin(slope)
+                height = (well_top + options["corelle_height"]) / 2 - glass / 2 * math.cos(slope)
+                for index in range(rim_count):
+                    yaw = 2 * math.pi * index / rim_count
+                    parts.append((
+                        f"rim_{index}",
+                        "box",
+                        (radial * math.cos(yaw), radial * math.sin(yaw), height),
+                        (half_slant, half_tangent, glass / 2),
+                        yaw,
+                    ))
+                foot_count = max(12, rim_count // 2)
+                foot_radius = foot_outer - foot_width / 2
+                for index in range(foot_count):
+                    yaw = 2 * math.pi * index / foot_count
+                    parts.append((
+                        f"foot_{index}",
+                        "box",
+                        (foot_radius * math.cos(yaw), foot_radius * math.sin(yaw), foot_height / 2),
+                        (
+                            foot_width / 2,
+                            foot_outer * math.tan(math.pi / foot_count),
+                            foot_height / 2,
+                        ),
+                        yaw,
+                    ))
+
+                def volume(*, kind: str, size: tuple[float, ...]) -> float:
+                    return (
+                        2 * math.pi * size[0] ** 2 * size[1]
+                        if kind == "cylinder"
+                        else 8 * math.prod(size)
+                    )
+
+                total = sum(volume(kind=kind, size=size) for _, kind, _, size, _ in parts)
+                for name, kind, position, size, yaw in parts:
+                    # Yaw about z, then pitch the rim's radial axis up its slope.
+                    pitch = slope if name.startswith("rim_") else 0.0
+                    quaternion = (
+                        math.cos(yaw / 2) * math.cos(pitch / 2),
+                        math.sin(yaw / 2) * math.sin(pitch / 2),
+                        -math.cos(yaw / 2) * math.sin(pitch / 2),
+                        math.sin(yaw / 2) * math.cos(pitch / 2),
+                    )
+                    ET.SubElement(
+                        body,
+                        "geom",
+                        name=f"{self.name}_{name}",
+                        type=kind,
+                        pos=_values(values=position),
+                        quat=_values(values=quaternion),
+                        size=_values(values=size),
+                        mass=str(options["mass"] * volume(kind=kind, size=size) / total),
+                        friction=_values(values=options["friction"]),
+                        condim=str(options["contact_dimension"]),
+                        rgba=_values(values=options["rgba"]),
+                    )
+                return body
+
+            @staticmethod
+            def get_bounding_box_from_config(  # noqa: PLR0917 -- KINDER calls positionally
+                pos: Any, object_config: dict[str, Any]
+            ) -> list[float]:
+                outer = object_config["corelle_diameter"] / 2
+                height = object_config["corelle_height"]
+                return _bottom_bounds(position=pos, options={"size": [outer, outer, height / 2]})
+
+        register_object(name=CORELLE_TYPE)(CorellePlate)
 
     if DUMPLING_TYPE not in REGISTERED_OBJECTS:
 
