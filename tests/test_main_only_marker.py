@@ -51,6 +51,10 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_canonical_pours_are_settled_successes",
     "tests/environments/racktoserving3d/test_native_control_step_cutoff.py::"
     "test_native_wait_stops_after_three_control_steps_and_adopts_without_moving",
+    "tests/environments/pouring3d/test_kitchen_grip_slip.py::"
+    "test_the_held_jug_does_not_creep_in_the_hand_over_a_minute_upright",
+    "tests/environments/pouring3d/test_kitchen_grip_slip.py::"
+    "test_two_pours_without_setting_down_still_leave_an_upright_place",
 })
 
 
