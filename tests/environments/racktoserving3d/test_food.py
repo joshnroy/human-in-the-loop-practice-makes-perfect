@@ -58,6 +58,7 @@ def food():
         move_base=Mock(),
         plan_base=Mock(),
         check_arm_clearance=Mock(),
+        departing_from_contacts=Mock(side_effect=nullcontext),
     )
     helper._plan_pick = Mock(return_value=(pose.copy(), pose.copy(), np.array([0.7, 0, 0])))
     helper._approach = Mock()
@@ -191,6 +192,99 @@ def test_successful_pick_requires_contact_after_lift(*, food):
         food.pick(name="cube_0")
     assert food.motion.line.call_args.kwargs["label"] == "food_lift"
     assert food.controllers.held_food is None
+
+
+def test_pick_lifts_departing_from_the_contacts_the_grasp_closed_onto(*, food):
+    food.backend.held.side_effect = [False, False, False, True, True]
+    inside = []
+    food.motion.departing_from_contacts = Mock(
+        side_effect=lambda: _Recording(log=inside, label="departing")
+    )
+    food.motion.line = Mock(side_effect=lambda **kwargs: inside.append(kwargs["label"]))
+    food.pick(name="cube_0")
+    assert inside == ["food_approach", "enter departing", "food_lift", "exit departing"]
+
+
+class _Recording:
+    def __init__(self, *, log: list, label: str) -> None:
+        self.log, self.label = log, label
+
+    def __enter__(self) -> None:
+        self.log.append(f"enter {self.label}")
+
+    def __exit__(self, *exc: object) -> None:
+        self.log.append(f"exit {self.label}")
+
+
+class _PadOnWire:
+    """Pad geom 1 resting on rack wire 10 when a lift starts; 2 is a non-pad link."""
+
+    PAD, LINK, WIRE, OTHER_WIRE = 1, 2, 10, 11
+
+    @staticmethod
+    def motion(*, contacts: list[tuple[int, int, float]]) -> _FoodMotion:
+        motion = _FoodMotion.__new__(_FoodMotion)
+        scratch = SimpleNamespace(
+            contact=[SimpleNamespace(geom1=a, geom2=b, dist=d) for a, b, d in contacts],
+            ncon=len(contacts),
+        )
+        motion.shelf = SimpleNamespace(
+            ik_data=scratch,
+            robot_geoms={_PadOnWire.PAD, _PadOnWire.LINK},
+            pad_geoms={_PadOnWire.PAD},
+            cupboard_geoms=set(),
+            box_geoms={_PadOnWire.WIRE, _PadOnWire.OTHER_WIRE},
+            wiper_geoms=[],
+        )
+        motion.food = SimpleNamespace(
+            backend=SimpleNamespace(cube_names=(), body_geoms=Mock(return_value=set())),
+            carried=None,
+            target_geoms=set(),
+        )
+        motion.departing = {}
+        return motion
+
+    @staticmethod
+    def check(*, motion: _FoodMotion) -> None:
+        with patch.object(
+            RackScraper,
+            "check_configuration",
+            side_effect=SkillFailed("Scraper motion would collide"),
+        ):
+            motion.check_configuration(base=np.zeros(3), arm=np.zeros(7), holding=False)
+
+
+def test_pad_fixture_contacts_record_only_pads_against_fixtures():
+    motion = _PadOnWire.motion(
+        contacts=[(10, 1, -1e-5), (1, 10, -2e-5), (2, 10, -1e-5), (1, 2, -1e-3)]
+    )
+    assert motion.pad_fixture_contacts() == {(1, 10): -2e-5}
+
+
+@pytest.mark.parametrize(
+    "now,passes",
+    [
+        ([(1, 10, -1e-5)], True),  # the start contact, receding
+        ([(1, 10, 0.002)], True),  # within margin, further away
+        ([(1, 10, -5e-4)], False),  # the start contact, deepening
+        ([(1, 11, -1e-5)], False),  # a new pad-fixture contact
+        ([(1, 10, -1e-5), (2, 11, -1e-5)], False),  # plus a new arm contact
+    ],
+)
+def test_lift_tolerates_only_start_contacts_that_do_not_deepen(*, now, passes):
+    motion = _PadOnWire.motion(contacts=now)
+    motion.departing = {(1, 10): -2e-5}
+    if passes:
+        _PadOnWire.check(motion=motion)
+    else:
+        with pytest.raises(SkillFailed, match="would collide"):
+            _PadOnWire.check(motion=motion)
+
+
+def test_without_a_departure_every_fixture_contact_still_fails():
+    motion = _PadOnWire.motion(contacts=[(1, 10, -1e-5)])
+    with pytest.raises(SkillFailed, match="would collide"):
+        _PadOnWire.check(motion=motion)
 
 
 def test_pick_does_not_repurpose_scraper_transform(*, food):
