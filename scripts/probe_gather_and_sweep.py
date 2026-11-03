@@ -2,8 +2,9 @@
 
 Layouts come from the same RNG as the driven-blade grid (rng 20261103, five foods
 uniform on the rack with 3 cm margins, yaw +/-45 deg, centres >= 5 cm apart);
-``--layout -1`` keeps the environment's own seed-0 layout. Writes report.json (per
-stroke reach and blade-end error from the controller's metrics, served count) and,
+``--layout -1`` keeps the environment's own reset layout for ``--seed``. Writes
+report.json (per stroke reach and blade-end error from the controller's metrics,
+served count) and,
 unless --no-video, a 2x full-motion video: 15 Hz capture written at 30 fps.
 Probe only; never launches learning.
 """
@@ -96,6 +97,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--layout", type=int, default=-1)
+    parser.add_argument(
+        "--seed", type=int, default=0, help="env reset seed (its own layout when --layout -1)"
+    )
     parser.add_argument("--s", type=float, required=True)
     parser.add_argument("--delta", type=float, required=True)
     parser.add_argument("--d", type=float, required=True)
@@ -119,7 +123,7 @@ def main():
         (args.output / "report.json").write_text(json.dumps(report, indent=1) + "\n")
 
     try:
-        env.reset_to_seed(seed=0)
+        env.reset_to_seed(seed=args.seed)
         backend = env.backend()
         model, data = backend.model(), backend.data()
         if args.layout >= 0:
@@ -160,6 +164,8 @@ def main():
             )
         last_frame = [-1.0]
 
+        where = f"layout {args.layout}" if args.layout >= 0 else f"env seed {args.seed}"
+
         def frame(*, repeat=1, force=False):
             if writer is None:
                 return
@@ -176,7 +182,7 @@ def main():
             draw.text(
                 (8, 4),
                 f"GatherAndSweep(s={args.s:.3f}, delta={args.delta:+.3f}, d={args.d:.3f})"
-                f" | layout {args.layout} | real arm, 2x speed",
+                f" | {where} | real arm, 2x",
                 font=font,
                 fill="white",
             )
