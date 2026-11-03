@@ -1,0 +1,165 @@
+{
+  "variant": "kitchen-recycling-v1",
+  "scatter_objects": false,
+  "mat_product": "existing Sprout mats; SKU unverified",
+  "mat_bounds": [
+    1.15,
+    -2.5,
+    3.6,
+    2.5
+  ],
+  "kitchen_bounds": [
+    -1.5,
+    -2.5,
+    1.15,
+    2.5
+  ],
+  "layout_measured": false,
+  "crossing_difficulty_demonstrated": false,
+  "robot_radius": 0.4,
+  "direct_placement_reach": 0.85,
+  "bin_outside": [
+    0.381,
+    0.32385,
+    0.1651
+  ],
+  "bin_position": [
+    2.05,
+    0.0,
+    0.0
+  ],
+  "simulation_wall": 0.006,
+  "simulation_bin_mass": 0.4,
+  "measured_bin_opening": null,
+  "measured_bin_rim": null,
+  "measured_bin_mass": null,
+  "interruption_cost": 10.0,
+  "relocation_cost": 2.0,
+  "restoration_cost": 2.0,
+  "near_distance": 0.5,
+  "objects": [
+    {
+      "name": "cube_control",
+      "kind": "cube",
+      "dimensions": [
+        0.05,
+        0.05,
+        0.05
+      ],
+      "simulation_mass": 0.1,
+      "measured_mass": null,
+      "dimensions_verified": false,
+      "rigidity_verified": false
+    },
+    {
+      "name": "gatorade_20oz",
+      "kind": "bottle",
+      "dimensions": [
+        0.073,
+        0.073,
+        0.195
+      ],
+      "simulation_mass": 0.035,
+      "measured_mass": null,
+      "dimensions_verified": false,
+      "rigidity_verified": false
+    },
+    {
+      "name": "food_can",
+      "kind": "can",
+      "dimensions": [
+        0.07,
+        0.07,
+        0.1
+      ],
+      "simulation_mass": 0.04,
+      "measured_mass": null,
+      "dimensions_verified": false,
+      "rigidity_verified": false
+    }
+  ],
+  "required_objects": [
+    "gatorade_20oz",
+    "food_can"
+  ],
+  "calibrations": {
+    "cube_control/near": {
+      "grasp_offset": 0.045,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": 0.0,
+      "toss_speed_deg_s": 150.0,
+      "release_ms": 720.0,
+      "hardware_validated": false
+    },
+    "cube_control/far": {
+      "grasp_offset": 0.045,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": 0.4,
+      "toss_speed_deg_s": 150.0,
+      "release_ms": 720.0,
+      "hardware_validated": false
+    },
+    "gatorade_20oz/near": {
+      "grasp_offset": 0.02,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": 0.0,
+      "toss_speed_deg_s": 190.0,
+      "release_ms": 640.0,
+      "hardware_validated": false
+    },
+    "gatorade_20oz/far": {
+      "grasp_offset": 0.02,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": 0.0,
+      "toss_speed_deg_s": 190.0,
+      "release_ms": 640.0,
+      "hardware_validated": false
+    },
+    "food_can/near": {
+      "grasp_offset": 0.045,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": 0.0,
+      "toss_speed_deg_s": 170.0,
+      "release_ms": 720.0,
+      "hardware_validated": false
+    },
+    "food_can/far": {
+      "grasp_offset": 0.045,
+      "minimum_lift": 0.07,
+      "holding_duration": 0.15,
+      "maximum_linear_speed": 0.025,
+      "maximum_angular_speed": 0.15,
+      "settle_duration": 0.6,
+      "toss_standoff": 1.5,
+      "toss_azimuth": -0.4,
+      "toss_speed_deg_s": 170.0,
+      "release_ms": 640.0,
+      "hardware_validated": false
+    }
+  }
+}

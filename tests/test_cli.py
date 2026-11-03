@@ -73,6 +73,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
     name would slip past the per-name assertions above."""
     assert set(ENVIRONMENTS) == {
         "ballring",
+        "kitchen_recycling3d",
         "lightswitch",
         "pouring3d",
         # Not a fork: the kitchen lifecycle (deployment, cooking, human reset) on pouring3d.

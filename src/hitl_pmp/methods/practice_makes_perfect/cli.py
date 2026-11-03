@@ -1,10 +1,13 @@
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, get_args
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.practice_costs import SkillStepCosts
+from hitl_pmp.methods.belief_space.kitchen_recycling_domain import KitchenRecyclingPracticeDomain
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -326,10 +329,13 @@ class Tossing3DPomdpCli(EesCli):
 
     # The practice domain for each supported environment CLI, by class name: a
     # method-CLI never imports an environment.
-    DOMAINS: dict[str, PracticeDomain] = {
+    DOMAINS: dict[str, PracticeDomain | Callable[[SkillProvider], PracticeDomain]] = {
         "Tossing3DCli": TOSSING3D_DOMAIN,
         "Tossing3DRealCli": TOSSING3D_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
+        "KitchenRecyclingCli": lambda provider: KitchenRecyclingPracticeDomain.for_provider(
+            provider=provider
+        ),
     }
 
     @staticmethod
@@ -542,11 +548,13 @@ class Tossing3DPomdpCli(EesCli):
         if domain is None:
             raise ValueError(
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
-                "and pouring3d_kitchen"
+                "pouring3d_kitchen and kitchen_recycling3d"
             )
         if args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
-            args.pomdp_search_depth = domain.default_search_depth
+            args.pomdp_search_depth = (
+                domain.default_search_depth if isinstance(domain, PracticeDomain) else 3
+            )
         # Preserve replayable simulator states, but do not render or encode frames in
         # the training process. POMDP runs reconstruct their diagnostic videos from
         # the state and decision logs after the experiment finishes.
@@ -611,7 +619,9 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 pomdp_skill_step_costs=skill_step_costs,
-                pomdp_domain=domain,
+                pomdp_domain=(
+                    domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                ),
                 decision_log=(
                     args.output_dir
                     / (
