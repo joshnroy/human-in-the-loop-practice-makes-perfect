@@ -38,7 +38,7 @@ def test_cli_defaults_match_config_with_step_protocol_registered():
         if field != "mode":
             assert getattr(args, field) == getattr(defaults, field)
     assert args.surface_kind == "wire"
-    assert args.cooling_seconds == 300
+    assert args.cooling_seconds == 0
     assert args.initial_elapsed_seconds == 0
     assert args.wait_seconds == 30
     assert args.human_interruption_cost == 5

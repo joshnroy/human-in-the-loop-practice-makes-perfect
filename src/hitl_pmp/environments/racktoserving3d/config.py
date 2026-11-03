@@ -41,7 +41,9 @@ class RackServingConfig(BaseModel):
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
     tray_thickness: Positive = 0.012
     gap: Nonnegative = 0.010
-    cooling_seconds: Nonnegative = 300
+    # Josh, 2026-11-03: the dumplings need not cool, so food is ready from the start
+    # and Wait is a no-op on a fresh episode. Kept configurable, not removed.
+    cooling_seconds: Nonnegative = 0
     initial_elapsed_seconds: Nonnegative = 0
     wait_seconds: Positive = 30
     human_interruption_cost: Positive = 5

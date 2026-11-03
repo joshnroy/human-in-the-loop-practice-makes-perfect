@@ -255,3 +255,14 @@ def test_release_levels_and_backs_off_a_rolled_blade_before_rising():
     assert first[1, 3] - rolled[1, 3] == pytest.approx(-0.03, abs=0.01)
     assert last[1, 3] == pytest.approx(first[1, 3])
     assert last[2, 3] == pytest.approx(first[2, 3] + 0.06)
+
+
+def test_sweep_clears_the_plate_rim_by_more_than_an_ik_accepted_blade_roll():
+    controller = RackControllers.__new__(RackControllers)
+    config = RackServingConfig()
+    controller.backend = SimpleNamespace(
+        config=config, support=Mock(return_value=SimpleNamespace(top_z=0.907))
+    )
+    # 2 deg of accepted IK rotation error drops one end of the 25 cm blade 4.4 mm.
+    roll_drop = 0.125 * np.sin(np.deg2rad(2.0))
+    assert controller.plate_clear_z() - config.corelle_rim_top_z > roll_drop

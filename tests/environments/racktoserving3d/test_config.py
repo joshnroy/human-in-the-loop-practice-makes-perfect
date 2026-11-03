@@ -14,7 +14,7 @@ def test_default_layout_and_semantics() -> None:
     assert config.surface_kind == "wire"
     assert config.mode == "training"
     assert (config.cooling_seconds, config.initial_elapsed_seconds, config.wait_seconds) == (
-        300,
+        0,
         0,
         30,
     )
