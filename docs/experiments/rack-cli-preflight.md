@@ -17,7 +17,8 @@ No geometry, controller, algorithm, or Algorithm 3 change is part of this plan.
   `particle`, `grid`. Competence model choices: `global_curve`, `local_trend`.
   The pending commands use existing Model B (`local_trend`) with grid inference
   (25 x 16) and 1024 cost particles. Parser acceptance is not a physical pass.
-- Exact expectimax uses `--pomdp-search-depth 1` for this diagnostic only.
+- Exact expectimax uses `--pomdp-search-depth 1` for this diagnostic only;
+  determinized A* refuses a search depth.
   Determinized A* ignores that depth argument: its limits here are 32 queue pops
   per decision and four remaining action slots per session. No approximation or
   modification is added to either implementation.
@@ -121,7 +122,6 @@ STEP_FLAGS=(
 
 POMDP_FLAGS=(
   --method pomdp
-  --pomdp-search-depth 1
   --pomdp-max-search-iterations 32
   --pomdp-competence-model local_trend
   --pomdp-inference-engine grid
@@ -164,7 +164,8 @@ not a rack physics certificate.
 ```bash
 run_preflight ees-step "${STEP_FLAGS[@]}" --method ees
 run_preflight curtis-step "${STEP_FLAGS[@]}" "${POMDP_FLAGS[@]}" --pomdp-solver determinized_astar
-run_preflight expectimax-step "${STEP_FLAGS[@]}" "${POMDP_FLAGS[@]}" --pomdp-solver expectimax
+run_preflight expectimax-step "${STEP_FLAGS[@]}" "${POMDP_FLAGS[@]}" --pomdp-solver expectimax \
+  --pomdp-search-depth 1
 ```
 
 For a literal one-cycle smoke **instead of** the corresponding step-budget run:
@@ -172,7 +173,8 @@ For a literal one-cycle smoke **instead of** the corresponding step-budget run:
 ```bash
 run_preflight ees-cycle --num-cycles 1 --method ees
 run_preflight curtis-cycle --num-cycles 1 "${POMDP_FLAGS[@]}" --pomdp-solver determinized_astar
-run_preflight expectimax-cycle --num-cycles 1 "${POMDP_FLAGS[@]}" --pomdp-solver expectimax
+run_preflight expectimax-cycle --num-cycles 1 "${POMDP_FLAGS[@]}" --pomdp-solver expectimax \
+  --pomdp-search-depth 1
 ```
 
 The one-cycle versions use the ordinary runner and can evaluate before and after
