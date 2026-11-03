@@ -10,6 +10,10 @@ from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironme
 pytestmark = pytest.mark.xdist_group("kitchen_pybullet_scene")
 
 PLANNING_MARGIN_M = 0.015
+# How much more optimistic PyBullet may be than MuJoCo out of contact. With the camera
+# bracelet the measured worst case was 2.07 mm over 5000 sampled configurations
+# (2026-11-03); with upstream's no-vision bracelet it was 12.8 mm.
+MODEL_GAP_M = 0.003
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +65,51 @@ def test_the_planning_robot_has_mujocos_kinematics(*, kitchen):
         np.testing.assert_allclose(sim.get_ee_pose().position, d.site_xpos[c.site], atol=1e-4)
 
 
+def test_the_planning_robot_wears_mujocos_camera_bracelet(*, kitchen):
+    """KINDER's MuJoCo TidyBot and the real one carry `bracelet_with_vision_link`, ~3 cm
+    bigger than upstream PyBullet's no-vision bracelet. At sampled configurations the
+    PyBullet bracelet's collision hull lies on MuJoCo's mesh and encloses its volume."""
+    from pathlib import Path
+
+    import pybullet as p
+    from scipy.spatial import ConvexHull, cKDTree
+    from scipy.spatial.transform import Rotation
+    from spatialmath import SE2
+
+    _, c, sim = kitchen
+    m = c.model
+    d = mujoco.MjData(m)
+    d.qpos[:] = c.data.qpos
+    client, robot = sim.physics_client_id, sim.robot.robot_id
+    link = sim.robot.link_from_name("bracelet_link")
+    (shape,) = p.getCollisionShapeData(robot, link, physicsClientId=client)
+    assert Path(shape[4].decode()).name == "bracelet_with_vision_link.STL"
+    (geom,) = (
+        g
+        for g in Mujoco.geoms(model=m, names=["robot_bracelet_link"])
+        if int(m.geom_bodyid[g]) == m.body("robot_bracelet_link").id
+    )
+    mesh = int(m.geom_dataid[geom])
+    start, count = int(m.mesh_vertadr[mesh]), int(m.mesh_vertnum[mesh])
+    _, local = p.getMeshData(robot, link, physicsClientId=client)
+    rng = np.random.default_rng(1)
+    for _ in range(5):
+        base = (*rng.uniform([-0.5, -1.2], [0.5, 1.0]), rng.uniform(-np.pi, np.pi))
+        q = rng.uniform(np.maximum(c.lower, -np.pi), np.minimum(c.upper, np.pi))
+        d.qpos[c.base_q], d.qpos[c.arm_q] = base, q
+        mujoco.mj_kinematics(m, d)
+        sim.set_robot_base(SE2(*base))
+        sim.robot.set_joints([*q, *sim.robot.get_joint_positions()[7:]])
+        rotation = d.geom_xmat[geom].reshape(3, 3)
+        mujoco_points = m.mesh_vert[start : start + count] @ rotation.T + d.geom_xpos[geom]
+        # getMeshData's vertices are in the link's inertial frame.
+        com, orientation = p.getLinkState(robot, link, physicsClientId=client)[:2]
+        pybullet_points = np.array(local) @ Rotation.from_quat(orientation).as_matrix().T + com
+        assert cKDTree(mujoco_points).query(pybullet_points)[0].max() < 1e-4
+        volumes = ConvexHull(pybullet_points).volume, ConvexHull(mujoco_points).volume
+        assert volumes[0] == pytest.approx(volumes[1], rel=0.01)
+
+
 def test_mirrored_objects_take_their_mujoco_poses(*, kitchen):
     _, c, sim = kitchen
     sim.set_state(c.scene._get_object_centric_state())
@@ -109,9 +158,9 @@ def test_planning_with_the_margin_never_lets_mujoco_penetrate(*, kitchen):
     """Robot arm and gripper near every obstacle, at sampled base poses and arm
     configurations: wherever PyBullet reports at least the planning margin, MuJoCo
     reports no penetration; and out of contact, PyBullet is never more optimistic than
-    MuJoCo by the margin. (Penetration depths are not compared: both models call those
-    collisions, and they differ by centimetres where the two bracelet/coupling meshes
-    differ, measured 2026-11-02.)"""
+    MuJoCo by more than the model gap. (Penetration depths are not compared: both models
+    call those collisions, and they differ by centimetres where the two gripper meshes
+    differ.)"""
     _, c, sim = kitchen
     m = c.model
     d = mujoco.MjData(m)
@@ -140,4 +189,4 @@ def test_planning_with_the_margin_never_lets_mujoco_penetrate(*, kitchen):
     assert mujoco_[cleared].min() > 0, np.sort(mujoco_[cleared])[:5]
     apart = (pybullet > 0) & (mujoco_ > 0)
     gaps = pybullet[apart] - mujoco_[apart]
-    assert gaps.max() < PLANNING_MARGIN_M, np.sort(gaps)[-5:]
+    assert gaps.max() < MODEL_GAP_M, np.sort(gaps)[-5:]

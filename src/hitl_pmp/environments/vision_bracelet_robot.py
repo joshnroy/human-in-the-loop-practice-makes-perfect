@@ -1,10 +1,15 @@
-"""The kitchen's PyBullet planning robot: upstream's Kinova Gen3 with the camera bracelet.
+"""The kitchens' PyBullet planning robot: upstream's Kinova Gen3 with the camera bracelet.
+
+Shared by both kitchen domains, `kitchen_recycling3d` and `pouring3d.kitchen`, which
+plan in PyBullet and execute on KINDER's MuJoCo TidyBot. Tossing3D keeps upstream's
+stock robot.
 
 `PyBulletSim` loads pybullet_helpers' `gen3_7dof.urdf`, whose bracelet link is
 `bracelet_no_vision_link`. KINDER's MuJoCo TidyBot and the real robot carry
 `bracelet_with_vision_link`, which reaches ~3 cm further. In Della v7 that gap let the
-pick plan hover paths that cleared the bin's robot-facing rim by 2.8 mm in PyBullet and
-pushed the bracelet 3-4 mm into it in MuJoCo, so the pick aborted on contact.
+recycling pick plan hover paths that cleared the bin's robot-facing rim by 2.8 mm in
+PyBullet and pushed the bracelet 3-4 mm into it in MuJoCo, so the pick aborted on
+contact.
 
 The URDF here is that same file with only the bracelet's two mesh references swapped
 (pybullet_helpers' own `gen3_7dof_vision.urdf` is a different robot: other links, a
