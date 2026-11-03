@@ -188,7 +188,11 @@ class FrozenPourEnvironment(Environment):
                 self.last_info["success"] = c.held == c.scene.cube_names[index]
             elif skill == "DropShrimpIntoPitcher":
                 c.drop_shrimp(index=index)
-                self.last_info["success"] = True
+                # Judged where the skill ends: a dumpling inside the jug at release can
+                # still leave it while the gripper withdraws or the pieces settle.
+                self.last_info["success"] = c.held is None and bool(
+                    c.scene.cube_in_vessel(c.scene.cube_names[index], "pitcher")
+                )
             else:
                 c.pause(phase="wait", seconds=1)
                 self.last_info["success"] = True
