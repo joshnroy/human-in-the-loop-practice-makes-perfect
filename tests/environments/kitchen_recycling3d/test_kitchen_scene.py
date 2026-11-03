@@ -8,11 +8,12 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.environments.kitchen_recycling3d.bin_geometry import TaperedBin
 from hitl_pmp.environments.kitchen_recycling3d.controllers import RecyclingPickController
 from hitl_pmp.environments.kitchen_recycling3d.domain import KitchenConfig
 from hitl_pmp.environments.kitchen_recycling3d.environment import KitchenRecycling3DEnvironment
 from hitl_pmp.environments.kitchen_recycling3d.placement import NEAR_BIN_POSITION
-from hitl_pmp.environments.tossing3d.predicates import IN_BIN, PICK_PLANNABLE
+from hitl_pmp.environments.tossing3d.predicates import HOLDING, IN_BIN, PICK_PLANNABLE
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
@@ -189,3 +190,40 @@ def test_every_reset_leaves_the_cube_pickable(*, env, seed):
 
 class Tossing3DEnvironmentIds:
     pick = float(KitchenRecycling3DEnvironment.pick_cube_id)
+
+
+HOVER_ABORT = json.loads((Path(__file__).parent / "fixtures/curtis2_hover_abort.json").read_text())
+
+
+def test_the_pick_planning_scenes_bin_carries_every_panel(*, env):
+    import pybullet as p
+
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    sim = backend._build_pick_collision_sim(state=backend.live_state())
+    try:
+        panels = TaperedBin.of(config=env.kitchen_config).panels()
+        bodies = {
+            "bin": (sim.named_collision_bodies()[env.bin.name], len(panels)),
+            "walls": (sim._bin_walls[env.bin.name], sum(panel.wall for panel in panels)),
+        }
+        client = sim.physics_client_id
+        for name, (body, expected) in bodies.items():
+            links = range(-1, p.getNumJoints(body, physicsClientId=client))
+            shapes = sum(
+                len(p.getCollisionShapeData(body, link, physicsClientId=client)) for link in links
+            )
+            assert shapes == expected, name
+    finally:
+        sim.close()
+
+
+def test_the_recorded_hover_abort_beside_the_kitchen_facing_wall_now_lifts_the_cube(*, env):
+    """Curtis seed 2, step 14,087 (Della v6): the cube 6 cm outside the bin's -y wall.
+    The planning bin had lost that wall's top strip, so the hover plan ran the arm into
+    the rim and MuJoCo held it there until the step limit."""
+    env.reset_to_seed(seed=SEED)
+    env.restore_plain_snapshot(plain=HOVER_ABORT, dtype=np.float64)
+    after = env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0]))
+    assert env.last_skill_error() is None, env.last_skill_error()
+    assert HOLDING.holds(after, (env.robot, env.cube))

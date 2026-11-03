@@ -332,6 +332,9 @@ class PlanningScene:
         half_extents: list[list[float]],
         positions: list[list[float]],
     ) -> int:
+        # PyBullet keeps 16 shapes of a compound and silently drops the rest.
+        if len(positions) > 16:
+            raise ValueError(f"{len(positions)} shapes exceed PyBullet's 16-shape compound")
         shape = self._p.createCollisionShapeArray(
             shapeTypes=[self._p.GEOM_BOX] * len(positions),
             halfExtents=half_extents,
