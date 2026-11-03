@@ -21,7 +21,13 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
     WiperLost,
 )
 
-from .transit import ArmTransit, EmptyHandTransit, geom_half_extents, segment_samples
+from .transit import (
+    ArmTransit,
+    EmptyHandTransit,
+    geom_half_extents,
+    geoms_half_extents,
+    segment_samples,
+)
 
 BODY_REST = (
     Rotation.from_euler("y", -90, degrees=True).as_matrix()
@@ -749,12 +755,32 @@ class RackScraper(TableWiper):
             return False
         data = self.data if data is None else data
         shelf, model = self.shelf, self.model
+        obstacles = list(shelf.cupboard_geoms | shelf.box_geoms)
+        ids = np.array(obstacles, dtype=int)
+        if ids.size:
+            # All obstacles' world-axis reach at once, for a broad-phase reject that
+            # only ever keeps a superset of what the per-obstacle reject below keeps.
+            other_reach = np.einsum(
+                "nij,nj->ni",
+                np.abs(np.asarray(data.geom_xmat)[ids].reshape(-1, 3, 3)),
+                geoms_half_extents(model=model, geoms=ids),
+            )
+            other_centers = np.asarray(data.geom_xpos)[ids]
         for geom in (self.head_geom, self.handle_geom):
             center = pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3]
             rotation = pose[:3, :3] @ self.geom_rotation(geom=geom)
             size = model.geom_size[geom]
             bottom = float(center[2] - np.abs(rotation[2]) @ size)
-            for obstacle in shelf.cupboard_geoms | shelf.box_geoms:
+            if ids.size:
+                reach = np.abs(rotation) @ size + other_reach
+                slack = 1e-9 * np.maximum(1.0, np.abs(reach))
+                apart = np.any(np.abs(other_centers - center) > reach + slack, axis=1)
+                candidates = [
+                    o for o, far in zip(obstacles, apart.tolist(), strict=True) if not far
+                ]
+            else:
+                candidates = []
+            for obstacle in candidates:
                 if not (model.geom_contype[obstacle] or model.geom_conaffinity[obstacle]):
                     continue
                 kind = int(model.geom_type[obstacle])
