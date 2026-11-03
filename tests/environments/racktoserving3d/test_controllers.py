@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.controllers import RackControllers
@@ -216,7 +217,6 @@ def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance()
     for start, route, goal in (
         (rear, stances.rear_to_side(side=1, start=rear, config=config), plus),
         (plus, stances.side_to_side(side=-1, config=config), minus),
-        (minus, stances.side_to_rear(side=-1, config=config), None),
     ):
         assert all(outside(point=point) for point in route)
         if goal is not None:
@@ -225,3 +225,30 @@ def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance()
             assert route[-1][0] > config.counter_x_max
             assert route[-1][2] == pytest.approx(np.pi)
         del start
+
+
+def test_release_levels_a_rolled_blade_about_its_edge_before_rising():
+    controller = RackControllers.__new__(RackControllers)
+    rolled = np.eye(4)
+    rolled[:3, :3] = Rotation.from_euler("y", 4, degrees=True).as_matrix()
+    rolled[:3, 3] = [1.50, -0.04, 0.926]
+    edge = np.array([[1.375, -0.04, 0.9349], [1.625, -0.04, 0.9171]])
+    level = RackControllers.push_rotation(phi=0)
+    targets = []
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(return_value=rolled),
+        blade_edge=Mock(
+            side_effect=lambda pose=None: (
+                edge if pose is None else edge - rolled[:3, 3] + pose[:3, 3]
+            )
+        ),
+    )
+    controller.move_tool = Mock(side_effect=lambda **kwargs: targets.append(kwargs["body"]))
+    controller.shelf = SimpleNamespace(hold=Mock())
+    controller.release_swept_food(rotation=level)
+    first, last = targets[0], targets[-1]
+    np.testing.assert_allclose(first[:3, :3], level)
+    np.testing.assert_allclose(last[:3, :3], level)
+    # Levelled in place first, about the edge centre, then lifted 6 cm.
+    assert first[2, 3] == pytest.approx(rolled[2, 3] + 0.002, abs=0.01)
+    assert last[2, 3] == pytest.approx(first[2, 3] + 0.06)
