@@ -45,7 +45,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
     _pick_watch: dict[str, Any] | None = PrivateAttr(default=None)
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=float),
-        high=np.array([9, 2, 3, 130, 0.025, 60], dtype=float),
+        high=np.array([9, 2, 3, 130, 0.1, 60], dtype=float),
         dtype=np.float64,
     )
 

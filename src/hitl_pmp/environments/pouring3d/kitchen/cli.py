@@ -29,6 +29,9 @@ class KitchenCli:
             human_reset_practice_cost=5,
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
+            pour_tilt_bounds=KitchenSkillProvider.model_fields["tilt_bounds"].default,
+            pour_amplitude_bounds=KitchenSkillProvider.model_fields["amplitude_bounds"].default,
+            pour_duration_bounds=KitchenSkillProvider.model_fields["duration_bounds"].default,
         )
 
     @staticmethod

@@ -30,6 +30,8 @@ class PotstickerController(PracticePourController):
     station_pour_base_offset: ClassVar[float] = 0.60
     mode: Literal["tilt_hold", "angular", "lateral", "feedback", "joint_lateral"] = "feedback"
     joint_pour_active: bool = False
+    # A joint pour's outcome is judged this long (s) after the jug is back upright.
+    pour_settle_seconds: float = 20.0
     joint_payload_mass: float = 0.0
     joint_payload_com: np.ndarray = Field(default_factory=lambda: np.zeros(3))
     recovery_approach_clearance: float = 0.16
@@ -618,7 +620,9 @@ class PotstickerController(PracticePourController):
             self.pause(phase="settle potstickers in pan", seconds=2)
             if self.joint_pour_active:
                 # Fixed observation window; food state never changes the action.
-                self.pause(phase="wait for potstickers to settle", seconds=18)
+                self.pause(
+                    phase="wait for potstickers to settle", seconds=self.pour_settle_seconds - 2
+                )
             else:
                 for _ in range(18):
                     if self.scene.cubes_settled():

@@ -18,7 +18,7 @@ class FeedbackPourParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tilt_degrees: float = Field(default=102, ge=60, le=130, allow_inf_nan=False)
-    amplitude_m: float = Field(default=0.01, ge=0, le=0.025, allow_inf_nan=False)
+    amplitude_m: float = Field(default=0.01, ge=0, le=0.1, allow_inf_nan=False)
     duration_seconds: float = Field(default=6, ge=0, le=20, allow_inf_nan=False)
 
 

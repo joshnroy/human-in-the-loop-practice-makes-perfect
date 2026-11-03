@@ -30,7 +30,7 @@ class FrozenPourSkillProvider(SkillProvider):
     def validate_bounds(self) -> "FrozenPourSkillProvider":
         for bounds, limits in zip(
             (self.tilt_bounds, self.amplitude_bounds, self.duration_bounds),
-            ((60, 130), (0, 0.025), (0, 60)),
+            ((60, 130), (0, 0.1), (0, 60)),
             strict=True,
         ):
             if (

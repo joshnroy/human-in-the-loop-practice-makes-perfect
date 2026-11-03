@@ -42,9 +42,22 @@ def test_the_carry_is_refused_whole_or_executed_upright_and_clear(*, monkeypatch
     assert c.held == "pitcher"
     monkeypatch.undo()
 
+    from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
+
+    waits: list[tuple[str, float]] = []
+    pause = KitchenController.pause
+
+    def recorded(self, *, phase: str, seconds: float, grip: float | None = None) -> None:  # noqa: PLR0917
+        waits.append((phase, seconds))
+        pause(self, phase=phase, seconds=seconds, grip=grip)
+
+    monkeypatch.setattr(KitchenController, "pause", recorded)
     seen = Clearance.record(env=env)
     env.take_action(action=POUR1)
     assert env.last_info["error"] is None, env.last_info
+    # The outcome is judged 30 s after the jug is back upright (approved 2026-11-02).
+    settle = {"settle potstickers in pan", "wait for potstickers to settle"}
+    assert sum(seconds for phase, seconds in waits if phase in settle) == 30
     assert {row[0] for row in seen} >= CARRY_PHASES
     Clearance.check(seen=seen)
     carry = [row for row in seen if row[0] in CARRY_PHASES]
