@@ -127,7 +127,13 @@ class Tossing3DToss:
             None
             if snapshot is None
             else KinderBackend.toss_feasibility_geometry(
-                snapshot=snapshot, drive_zone=getattr(state, "drive_zone", None)
+                snapshot=snapshot,
+                # Only when set: a scene without a zone makes exactly the old call.
+                **(
+                    {}
+                    if (zone := getattr(state, "drive_zone", None)) is None
+                    else {"drive_zone": zone}
+                ),
             )
         )
         if geometry is None:
