@@ -99,7 +99,9 @@ def _record_one_skill(*, tmp_path: Path, record_motion: str) -> tuple[Path, int]
         )
         problem.hard_reset()
         writer.begin_segment(phase=Phase.EVALUATION, checkpoint=0, task_index=0)
-        problem.take_action(action=np.array([float(SKILL_IDS["PickScraper"]), 0.0, 0.0, 0.0]))
+        problem.take_action(
+            action=np.array([float(SKILL_IDS["PickScraper"]), 0.0, 0.0, 0.0, 0.0])
+        )
         steps = problem.env.last_controller_steps()
         writer.robot_action(
             label="PickScraper(robot, wiper_0)", start_step=0, end_step=steps, success=True
