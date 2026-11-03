@@ -2,9 +2,9 @@
 
 No physics is stepped: every frame is a recorded object-centric state restored into a
 drawing scene, so the video shows what the run executed, not a re-simulation of it.
-Practice plays at 5x, each human skill is a one-second labelled pause, and the final
-evaluation checkpoint (or `--checkpoint N`) plays at 1x with each task's number and
-outcome::
+Practice plays at 5x (or `--practice-speedup N`), each human skill is a one-second
+labelled pause, and the final evaluation checkpoint (or `--checkpoint N`) plays at 1x
+with each task's number and outcome::
 
     scripts/with_env.sh python analysis/render_recording.py \\
         --run <run-dir> --output <run-dir>/replay.mp4
@@ -86,6 +86,12 @@ class RecordingVideo:
             return SweepOffShelf3DReplayRenderer(
                 scene=header.scene, scene_bg=True if realistic_background else None
             )
+        if header.environment == "racktoserving3d":
+            from hitl_pmp.environments.racktoserving3d.recording import RackServingReplayRenderer
+
+            return RackServingReplayRenderer(
+                scene=header.scene, scene_bg=True if realistic_background else None
+            )
         raise NotImplementedError(f"no replay renderer exists yet for {header.environment!r}")
 
     @staticmethod
@@ -96,6 +102,7 @@ class RecordingVideo:
         checkpoint: int | None,
         full_agentic: bool,
         renderer_factory: Callable[[RecordingHeader], ReplayRenderer],
+        practice_speedup: int = RecordingReplayer.model_fields["practice_speedup"].default,
     ) -> list[ReplaySummary]:
         summaries = []
         video: VideoStream | None = None
@@ -115,7 +122,7 @@ class RecordingVideo:
                 if video is None:
                     video = VideoStream(output_path=output, fps=fps)
                 summaries.append(
-                    RecordingReplayer(renderer=renderer).play(
+                    RecordingReplayer(renderer=renderer, practice_speedup=practice_speedup).play(
                         header=header, entries=entries, video=video
                     )
                 )
@@ -134,6 +141,12 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=int, default=None)
     parser.add_argument("--full-agentic", action="store_true")
     parser.add_argument(
+        "--practice-speedup",
+        type=int,
+        default=RecordingReplayer.model_fields["practice_speedup"].default,
+        help="Practice plays this many times faster than real time; evaluation plays at 1x.",
+    )
+    parser.add_argument(
         "--plain-background",
         action="store_true",
         help="Keep the run's own scene; the lab2 room is the default.",
@@ -144,6 +157,7 @@ def main() -> None:
         output=args.output,
         checkpoint=args.checkpoint,
         full_agentic=args.full_agentic,
+        practice_speedup=args.practice_speedup,
         renderer_factory=lambda header: RecordingVideo.default_renderer(
             header=header, realistic_background=not args.plain_background
         ),
