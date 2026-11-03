@@ -288,6 +288,83 @@ def test_without_a_departure_every_fixture_contact_still_fails():
         _PadOnWire.check(motion=motion)
 
 
+def test_pick_regrasps_food_that_moved_before_the_gripper_closes(*, food):
+    food.backend.held.side_effect = [False, False, False, True, True]
+    events = []
+    moved, replanned_pre = np.eye(4), np.eye(4)
+    moved[:3, 3], replanned_pre[:3, 3] = [1.2, 0.01, 0.93], [1.2, 0.01, 1.0]
+    food._replan_grasp = Mock(side_effect=[(moved, replanned_pre), None])
+    food.motion.line = Mock(side_effect=lambda **kwargs: events.append(kwargs["label"]))
+    food.shelf.hold = Mock(side_effect=lambda *, count, label: events.append(label))
+    food.pick(name="cube_0")
+    assert events == [
+        "food_open",
+        "food_approach",
+        "food_regrasp_retreat",
+        "food_regrasp_pre",
+        "food_regrasp",
+        "food_close",
+        "food_lift",
+    ]
+    second = food._replan_grasp.call_args_list[1].kwargs
+    np.testing.assert_allclose(second["grasp"], moved)
+
+
+class _Regrasp:
+    """Food planned at yaw 0, observed at the grasp pose at some later yaw."""
+
+    @staticmethod
+    def pose(*, yaw_deg: float, x: float = 1.2) -> np.ndarray:
+        rotation = Rotation.from_euler("z", yaw_deg, degrees=True).as_matrix()
+        return Frames.pose(rotation=rotation, position=[x, 0, 0.93])
+
+    @staticmethod
+    def setup(*, food, observed: np.ndarray) -> list[np.ndarray]:
+        food._pose = Mock(return_value=observed)
+        food.motion.rotation_error = RackScraper.rotation_error
+        far, near = _Regrasp.pose(yaw_deg=90), _Regrasp.pose(yaw_deg=10)
+        food._grasp_candidates = Mock(return_value=[far, near])
+        food.shelf.cube_pre = lambda *, grasp: grasp.copy()
+        food._check_descent = Mock()
+        return [far, near]
+
+
+def test_regrasp_keeps_the_grasp_when_the_food_has_not_moved(*, food):
+    _Regrasp.setup(food=food, observed=_Regrasp.pose(yaw_deg=1.0, x=1.201))
+    replanned = food._replan_grasp(
+        name="cube_0",
+        grasp=_Regrasp.pose(yaw_deg=0),
+        base=np.zeros(3),
+        planned=_Regrasp.pose(yaw_deg=0),
+    )
+    assert replanned is None
+    food._grasp_candidates.assert_not_called()
+
+
+def test_regrasp_follows_a_rotated_food_with_the_nearest_reachable_yaw(*, food):
+    far, near = _Regrasp.setup(food=food, observed=_Regrasp.pose(yaw_deg=13.0))
+    grasp, pre = food._replan_grasp(
+        name="cube_0",
+        grasp=_Regrasp.pose(yaw_deg=0),
+        base=np.zeros(3),
+        planned=_Regrasp.pose(yaw_deg=0),
+    )
+    np.testing.assert_allclose(grasp, near)
+    assert food._check_descent.call_args.kwargs["base"].tolist() == [0, 0, 0]
+
+
+def test_regrasp_skips_a_yaw_unreachable_from_the_current_stance(*, food):
+    far, near = _Regrasp.setup(food=food, observed=_Regrasp.pose(yaw_deg=13.0))
+    food._check_descent = Mock(side_effect=[SkillFailed("arm hits counter"), None])
+    grasp, _ = food._replan_grasp(
+        name="cube_0",
+        grasp=_Regrasp.pose(yaw_deg=0),
+        base=np.zeros(3),
+        planned=_Regrasp.pose(yaw_deg=0),
+    )
+    np.testing.assert_allclose(grasp, far)
+
+
 def test_pick_does_not_repurpose_scraper_transform(*, food):
     food.backend.held.side_effect = [False, False, False, True, True]
     food.pick(name="cube_0")
