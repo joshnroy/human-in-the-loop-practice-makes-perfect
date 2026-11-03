@@ -139,3 +139,34 @@ def test_the_video_runs_at_the_fastest_sources_rate(
     )
     assert rates == [12]
     assert len(summaries) == 2
+
+
+@pytest.mark.parametrize(("speedup", "shown"), [(1, 8), (8, 3)])
+def test_practice_plays_at_the_speedup_asked_for(
+    *, tmp_path: Path, speedup: int, shown: int
+) -> None:
+    """Practice shows every `speedup`-th tick, and always an action's last."""
+    state = {"cube": [0.0]}
+    writer = RunRecordWriter(
+        output_path=tmp_path / "recording.jsonl",
+        header=RecordingHeader(environment="toy"),
+        state_provider=lambda: dict(state),
+    )
+    writer.begin_segment(phase=Phase.PRACTICE)
+    writer.record_skill(name="Push", objects=(), params=(), controller={})
+    for tick in range(1, 8):
+        state["cube"] = [float(tick)]
+        writer.record_tick(state=state)
+    writer.robot_action(label="Push()", start_step=0, end_step=7, success=True)
+    writer.end_segment()
+    writer.close()
+    (summary,) = RecordingVideo.render(
+        run=tmp_path,
+        output=tmp_path / "out.mp4",
+        checkpoint=None,
+        full_agentic=False,
+        renderer_factory=lambda header: _Blank(),
+        practice_speedup=speedup,
+    )
+    # The segment's starting state, then the push's seven ticks at the speedup.
+    assert summary.ticks_shown == shown

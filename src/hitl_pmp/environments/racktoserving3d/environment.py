@@ -86,6 +86,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         controllers.shelf.ticks = 0
         backend = self.backend()
         start_control_steps = backend.control_steps()
+        self._open_motion_skill(action=values)
         try:
             if values.shape != (4,) or not np.isfinite(values).all():
                 raise SkillFailed("action must have four finite entries")
@@ -185,3 +186,13 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         self, *, before: Callable[[], None] | None = None, after: Callable[[], None] | None = None
     ) -> None:
         self.backend().set_step_observers(before=before, after=after)
+
+    def _open_motion_skill(self, *, action: np.ndarray) -> None:
+        """As the shelf's `_begin_motion`, named from this domain's own skill IDs, so the
+        motion ticks that follow belong to this action rather than the previous one."""
+        self._motion_steps = 0
+        if self._motion_sink is None or not action.size or not np.isfinite(action.flat[0]):
+            return
+        name = {index: skill for skill, index in SKILL_IDS.items()}.get(int(action.flat[0]))
+        if name is not None:
+            self._motion_sink.record_skill(name=name, objects=(), params=(), controller={})

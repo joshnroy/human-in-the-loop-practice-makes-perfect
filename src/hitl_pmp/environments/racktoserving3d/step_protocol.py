@@ -1,6 +1,7 @@
 """Rack-serving integration with the existing control-step practice runner."""
 
 import argparse
+import functools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
@@ -17,6 +19,7 @@ from .cli import RackServingCli
 from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
 from .problem import RackServingProblem
+from .recording import RackServingReplayRenderer
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skill_provider import RackServingSkillProvider
 
@@ -58,25 +61,43 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
     def attach_recording(
         *, args: argparse.Namespace, problem: Problem, output_path: Path
     ) -> RunRecordWriter:
-        """Record live action-boundary states, not buffered per-control-step states."""
+        """Live action-boundary states; with `env.motion_recording` (`--record-motion`)
+        also every stride-th control step, as `RackServingBackend.motion_state`, and the
+        header's `scene.motion` says so -- what `RackServingReplayRenderer` plays."""
         env = RackServingStepProtocol.env(problem=problem)
-        return RunRecordWriter(
+        scene: dict[str, Any] = {
+            **env.config.model_dump(mode="json"),
+            "scene_bg": env.scene_bg,
+            "canonical_seed": env.canonical_seed,
+            "skill_step_limit": env.skill_step_limit,
+            "test_env_seed_offset": args.test_env_seed_offset,
+        }
+        state: Callable[[], dict[str, list[float]]] = functools.partial(
+            RackServingStepProtocol.live_state, env=env
+        )
+        if env.motion_recording:
+            # Every state in a motion recording has one shape, boundaries included.
+            state = env.backend().motion_state
+            scene["motion"] = {
+                "fps": RackServingReplayRenderer.MOTION_FPS,
+                "stride": RackServingReplayRenderer.motion_stride(),
+                "control_frequency": SweepOffShelf3DBackend.CONTROL_FREQUENCY,
+                "robot_joints": list(SweepOffShelf3DBackend.ROBOT_JOINTS),
+            }
+        writer = RunRecordWriter(
             output_path=output_path,
             header=RecordingHeader(
                 environment="racktoserving3d",
                 method=args.method,
                 run_seed=args.seed,
-                scene={
-                    **env.config.model_dump(mode="json"),
-                    "scene_bg": env.scene_bg,
-                    "canonical_seed": env.canonical_seed,
-                    "skill_step_limit": env.skill_step_limit,
-                    "test_env_seed_offset": args.test_env_seed_offset,
-                },
+                scene=scene,
             ),
-            state_provider=lambda: RackServingStepProtocol.live_state(env=env),
+            state_provider=state,
             task_seed_provider=lambda task: RackServingStepProtocol.task_seed(task=task),
         )
+        if env.motion_recording:
+            env.attach_motion_sink(sink=writer, stride=scene["motion"]["stride"])
+        return writer
 
     @staticmethod
     def live_state(*, env: RackServingEnvironment) -> dict[str, list[float]]:

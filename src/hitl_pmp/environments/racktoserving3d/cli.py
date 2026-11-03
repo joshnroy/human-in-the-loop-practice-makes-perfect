@@ -7,6 +7,7 @@ from typing import Literal, get_args, get_origin
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
+from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
@@ -36,6 +37,15 @@ class RackServingCli:
         parser.add_argument("--skill-step-limit", type=int, default=12000)
         parser.add_argument("--test-env-seed-offset", type=int, default=10000)
         parser.add_argument("--human-reset", action=argparse.BooleanOptionalAction, default=True)
+        parser.add_argument(
+            "--record-motion",
+            choices=list(SweepOffShelf3DCli.MOTION_SCOPES),
+            default="off",
+            help="Step protocol only: stream every control step's state, arm joints and "
+            "every free body included, into the run recording so render_recording.py can "
+            "draw full motion. 'evaluation' records evaluation episodes; 'all' also records "
+            "practice. A pure observer: results are unchanged.",
+        )
         parser.set_defaults(defer_rendering=True)
 
     @staticmethod
@@ -46,11 +56,15 @@ class RackServingCli:
             name: mode if name == "mode" else getattr(args, name)
             for name in RackServingConfig.model_fields
         })
+        practice, evaluation = SweepOffShelf3DCli.MOTION_SCOPES[
+            getattr(args, "record_motion", "off")
+        ]
         env = RackServingEnvironment(
             config=config,
             canonical_seed=args.canonical_seed,
             scene_bg=args.scene_bg,
             skill_step_limit=args.skill_step_limit,
+            motion_recording=practice if mode == "training" else evaluation,
         )
         tasks = RackServingTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
@@ -77,6 +91,11 @@ class RackServingCli:
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
+        if getattr(args, "record_motion", "off") != "off":
+            raise ValueError(
+                "--record-motion needs the step protocol (--practice-step-budget): only it "
+                "writes a run recording"
+            )
         with ExitStack() as resources:
             practice = RackServingCli.build_problem(args=args, mode="training")
             resources.callback(practice.env.close)

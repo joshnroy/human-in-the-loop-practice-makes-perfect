@@ -484,3 +484,12 @@ class RackServingBackend(SweepOffShelf3DBackend):
         if self._scene_file is not None:
             self._scene_file.unlink(missing_ok=True)
             self._scene_file = None
+
+    def motion_state(self) -> dict[str, list[float]]:
+        """The shelf's motion state plus the rack's free-joint pose: unlike the shelf's
+        cupboard, the rack is a movable body a sweep or a pick can push."""
+        model, data = self.model(), self.data()
+        out = super().motion_state()
+        address = model.jnt_qposadr[model.joint("rack_0_joint").id]
+        out["rack_0"] += [float(v) for v in data.qpos[address : address + 7]]
+        return out
