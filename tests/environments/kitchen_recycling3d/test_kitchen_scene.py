@@ -1,6 +1,7 @@
 """Tossing3D's skills driving the live kitchen scene."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
@@ -65,11 +66,19 @@ def test_pick_plannable_is_the_kitchen_pick_controllers_verdict(*, env):
     assert PICK_PLANNABLE.holds(state, (env.robot, env.cube))
 
 
-def test_a_known_throw_lands_in_the_bin_by_kinders_classifier(*, env):
+@pytest.mark.parametrize(
+    ("destination", "params"),
+    # Measured against the 0.384 m tapered bin; the old 0.165 m bin's known throw,
+    # (1.6, 180, 650), no longer clears the rim.
+    [(None, (1.34, 160.0, 750.0)), ("robot_side", (1.25, 260.0, 650.0))],
+)
+def test_a_known_throw_lands_in_the_bin_by_kinders_classifier(*, env, destination, params):
     env.reset_to_seed(seed=SEED)
+    if destination is not None:
+        env.reset_movables(destination=destination)
     held = env.take_action(action=np.array([Tossing3DEnvironmentIds.pick, 0, 0, 0, 0.0]))
     assert env.last_skill_error() is None
-    params = np.array([1.6, 180.0, 650.0])
+    params = np.array(params)
     landed = env.take_action(action=Tossing3DToss.compute_action(params=params, state=held))
     assert IN_BIN.holds(landed, (env.cube, env.bin))
     assert env.is_solved()
@@ -90,6 +99,92 @@ def test_opposite_side_reset_restores_the_bin_target_on_the_mats(*, env):
     state = env.get_current_state()
     assert np.allclose(state.data[env.bin][:2], (2.05, 0.0), atol=0.02)
     assert state.data[env.cube][0] < 1.15
+
+
+RECORDED = json.loads((Path(__file__).parent / "fixtures/curtis0_double_reset.json").read_text())
+RECORDED_CUBE = (RECORDED["cube_0"]["x"], RECORDED["cube_0"]["y"])
+
+
+def place(*, env: KitchenRecycling3DEnvironment, objects: dict[str, dict[str, float]]) -> None:
+    """Write recorded or chosen features into the live scene and let it settle."""
+    backend = env.kinder_backend()
+    state = backend.live_state().copy()
+    for name, features in objects.items():
+        obj = state.get_object_from_name(name)
+        for feature in state.type_features[obj.type]:
+            if feature in features:
+                state.set(obj, feature, float(features[feature]))
+            elif feature in ("vx", "vy", "vz", "wx", "wy", "wz"):
+                state.set(obj, feature, 0.0)
+    backend._object_centric().set_state(state)
+    backend._state = state
+    backend._settle(seconds=backend.PLACEMENT_SETTLE_S)
+
+
+def cube_at(*, x: float, y: float, z: float = 0.03) -> dict[str, dict[str, float]]:
+    quaternion = {"qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0}
+    return {"cube_0": {"x": x, "y": y, "z": z, **quaternion}}
+
+
+def test_cubes_anywhere_inside_the_tapered_bin_score(*, env):
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    bin_x, bin_y = 2.05, 0.0
+    # Centre, 12 cm off-centre (outside the old +-0.10 m box), and against each sloped
+    # wall and corner at the floor.
+    for dx, dy in ((0, 0), (0.12, 0), (-0.12, 0), (0.115, 0.065), (0, 0.068), (-0.11, -0.065)):
+        place(env=env, objects=cube_at(x=bin_x + dx, y=bin_y + dy, z=0.04))
+        state = env._observed_state(seed=SEED, steps_taken=0)
+        cube = state.data[env.cube]
+        assert backend.check_goals(), (dx, dy, cube[:3])
+        assert IN_BIN.holds(state, (env.cube, env.bin)), (dx, dy, cube[:3])
+
+
+def test_a_cube_beside_the_bin_under_its_rim_never_scores(*, env):
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    # Against the outside of the narrow base: inside the rim's footprint, outside the bin.
+    for dx, dy in ((0.175, 0.0), (-0.175, 0.0), (0.0, 0.125), (0.0, -0.125)):
+        place(env=env, objects=cube_at(x=2.05 + dx, y=dy, z=0.026))
+        state = env._observed_state(seed=SEED, steps_taken=0)
+        assert not backend.check_goals(), (dx, dy, state.data[env.cube][:3])
+        assert not IN_BIN.holds(state, (env.cube, env.bin))
+
+
+def test_the_recorded_double_reset_spot_is_refused_by_the_pick_dry_run(*, env):
+    env.reset_to_seed(seed=SEED)
+    place(env=env, objects={"robot": RECORDED["robot"], "bin_0": RECORDED["bin_0"]})
+    place(env=env, objects=cube_at(x=RECORDED_CUBE[0], y=RECORDED_CUBE[1], z=0.026))
+    assert not env.kinder_backend()._pick_plannable_here()
+
+
+def test_a_reset_never_leaves_the_cube_where_the_pick_dry_run_refuses(*, env, monkeypatch):
+    """Curtis seed 0, step 49,948: the first seeded spot is refused, so the next is
+    taken, and the reset ends with PickPlannable true."""
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    place(env=env, objects={"robot": RECORDED["robot"]})
+    seeded = type(backend)._recovery_positions
+
+    def recorded_first(*args, **kwargs):
+        yield RECORDED_CUBE
+        yield from seeded(*args, **kwargs)
+
+    monkeypatch.setattr(type(backend), "_recovery_positions", recorded_first)
+    env.reset_movables(destination="robot_side")
+    state = env.get_current_state()
+    assert backend.reset_rejections[-1] >= 1
+    assert not np.allclose(state.data[env.cube][:2], RECORDED_CUBE, atol=0.01)
+    assert PICK_PLANNABLE.holds(state, (env.robot, env.cube))
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 5])
+def test_every_reset_leaves_the_cube_pickable(*, env, seed):
+    env.reset_to_seed(seed=seed)
+    for destination in ("robot_side", "opposite_side", "robot_side"):
+        env.reset_movables(destination=destination)
+        state = env.get_current_state()
+        assert PICK_PLANNABLE.holds(state, (env.robot, env.cube)), (seed, destination)
 
 
 class Tossing3DEnvironmentIds:

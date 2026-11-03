@@ -42,7 +42,12 @@ def env():
 
 
 def restore_refusal(*, env: KitchenRecycling3DEnvironment):
-    return env.restore_plain_snapshot(plain=json.loads(REFUSED.read_text()))
+    """The recorded state, with the cube moved 4.6 cm toward the bin's centre line: it
+    rested 9.6 cm off it inside the old, wider bin, which is inside the tapered bin's
+    wall."""
+    plain = json.loads(REFUSED.read_text())
+    plain["cube_0"][1] = plain["bin_0"][1] + 0.05
+    return env.restore_plain_snapshot(plain=plain)
 
 
 def test_the_pour_approach_plans_from_beside_the_mat_line_inside_the_drive_zone(*, env):

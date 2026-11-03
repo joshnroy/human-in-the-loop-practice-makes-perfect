@@ -7,7 +7,10 @@ from typing import Any, cast
 
 import numpy as np
 
+from .bin_geometry import TaperedBin
 from .domain import BOTTLE_CAP_HEIGHT, BOTTLE_CAP_RADIUS_FACTOR, KitchenConfig
+
+GOAL_REGION = "blocks_goal_region"
 
 
 def internal_name(*, index: int) -> str:
@@ -19,7 +22,72 @@ def register_simulation_objects() -> None:
     """Register new names only, leaving every original object class untouched."""
     from kinder.envs.dynamic3d.objects.base import register_fixture, register_object
     from kinder.envs.dynamic3d.objects.fixtures import FixedCuboid
-    from kinder.envs.dynamic3d.objects.primitive_objects import Cuboid
+    from kinder.envs.dynamic3d.objects.primitive_objects import Bin, Cuboid
+
+    @register_object(name="kitchen_tapered_bin")
+    class KitchenTaperedBin(Bin):
+        """KINDER's bin with sloped walls (`TaperedBin`), scored by its interior.
+
+        The goal region keeps KINDER's mechanism -- a box on the bin, sized from its
+        geometry -- and adds the taper: beside the narrow base, under the rim, is
+        inside the box and outside the bin."""
+
+        def geometry(self) -> TaperedBin:
+            return TaperedBin(
+                length=self.length,
+                width=self.width,
+                height=self.height,
+                wall=self.wall_thickness,
+                base_length=float(self.options["base_length"]),
+                base_width=float(self.options["base_width"]),
+            )
+
+        def _create_xml_element(self) -> ET.Element:
+            body = ET.Element("body", name=self.name)
+            if self.fixed:
+                body.set("mocap", "true")
+            else:
+                ET.SubElement(body, "freejoint", name=self.joint_name)
+            panels = self.geometry().panels()
+            for index, panel in enumerate(panels):
+                x, y, z, w = panel.quaternion_xyzw
+                geom = ET.SubElement(
+                    body,
+                    "geom",
+                    name=f"{self.name}_panel_{index}",
+                    type="box",
+                    size=" ".join(map(str, panel.half_extents)),
+                    pos=" ".join(map(str, panel.position)),
+                    quat=f"{w} {x} {y} {z}",
+                    rgba=self.rgba,
+                    mass=str(float(self.mass) / len(panels)),
+                )
+                if self.solref is not None:
+                    geom.set("solref", " ".join(map(str, self.solref)))
+                if self.solimp is not None:
+                    geom.set("solimp", " ".join(map(str, self.solimp)))
+                if self.solref is not None or self.solimp is not None:
+                    geom.set("priority", "1")
+            return body
+
+        def check_in_region(self, *args: Any, **kwargs: Any) -> bool:
+            position, region_name, *rest = args
+            env = rest[0] if rest else kwargs.get("env")
+            if not super().check_in_region(position, region_name, env):
+                return False
+            if region_name != GOAL_REGION:
+                return True
+            original = self.env
+            self.env = env if env is not None else self.env
+            try:
+                origin, wxyz = self._read_pose()
+            finally:
+                self.env = original
+            return self.geometry().contains(
+                point=position,
+                bin_position=origin,
+                bin_quaternion_xyzw=(wxyz[1], wxyz[2], wxyz[3], wxyz[0]),
+            )
 
     @register_object(name="kitchen_recycling_proxy")
     class RecyclingProxy(Cuboid):
@@ -111,9 +179,9 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
             "ranges": [[left, 0, 0.001, left, 0, 0.001]],
             "yaw_ranges": [[0, 0]],
         },
-        "blocks_goal_region": {
+        GOAL_REGION: {
             "target": "bin_0",
-            "ranges": [[-0.1, -0.1, 0.01, 0.1, 0.1, 0.14]],
+            "ranges": [list(TaperedBin.of(config=config).interior_box())],
             "yaw_ranges": [[0, 0]],
             "rgba": [0, 0, 0, 0],
         },
@@ -156,14 +224,16 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
         "regions": regions,
         "objects": {
             "kitchen_recycling_proxy": objects,
-            "bin": {
+            "kitchen_tapered_bin": {
                 "bin_0": {
                     "length": config.bin_outside[0],
                     "width": config.bin_outside[1],
                     "height": config.bin_outside[2],
                     "wall_thickness": config.simulation_wall,
+                    "base_length": config.bin_base[0],
+                    "base_width": config.bin_base[1],
                     "mass": config.simulation_bin_mass,
-                    "rgba": [0.8, 0.025, 0.035, 1],
+                    "rgba": [0.05, 0.3, 0.75, 1],
                     "fixed": False,
                     "solref": [0.001, 1],
                     "solimp": [0.99, 0.99, 0.001],
@@ -191,7 +261,7 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
         # would sit in every planner's obstacle set.
         "kitchen_mats": [left, bottom, right, top],
         "goal_state": [
-            ["on", internal_name(index=index), "blocks_goal_region"]
+            ["on", internal_name(index=index), GOAL_REGION]
             for index, spec in enumerate(config.objects)
             if spec.name in config.required_objects
         ],

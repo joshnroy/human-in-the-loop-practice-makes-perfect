@@ -76,9 +76,15 @@ class KitchenConfig(FrozenModel):
     crossing_difficulty_demonstrated: bool = False
     robot_radius: float = Field(default=0.40, gt=0)
     direct_placement_reach: float = Field(default=0.85, gt=0)
-    bin_outside: tuple[float, float, float] = (0.381, 0.32385, 0.1651)
+    # The real blue Rubbermaid FG295673BLUE deskside recycling bin, from prpl-tidybot
+    # 0cad3efea `conf/toss_cycles.yaml` `bin:`: rim footprint (length along the bin's own
+    # x) and rim height from the spec sheet, wall 5 mm. The walls taper to `bin_base`,
+    # fitted in the ceiling camera (IoU 0.915) and not yet pinned exactly. That config
+    # gives no mass, so the simulated mass stays the kitchen's.
+    bin_outside: tuple[float, float, float] = (0.365, 0.26, 0.384)
+    bin_base: tuple[float, float] = (0.29, 0.19)
     bin_position: tuple[float, float, float] = (2.05, 0.0, 0.0)
-    simulation_wall: float = Field(default=0.006, gt=0)
+    simulation_wall: float = Field(default=0.005, gt=0)
     simulation_bin_mass: float = Field(default=0.4, gt=0)
     measured_bin_opening: tuple[float, float] | None = None
     measured_bin_rim: float | None = Field(default=None, gt=0)

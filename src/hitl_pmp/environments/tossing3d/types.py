@@ -158,6 +158,20 @@ class FixedTossDirection(BaseModel, abc.ABC):
         raise NotImplementedError
 
 
+class FlatBarrier(BaseModel):
+    """A barrier that is a flat edge on the floor (the kitchen's mat edge), not a wall.
+
+    An object is on the robot's side only when its whole footprint is, and on the
+    opposite side otherwise, so the two sides are complementary: nothing straddles a
+    line no object can rest on. The bin's footprint is not a state feature (its box
+    features carry the scored region), so the scene supplies its half-extent along x.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    bin_half_extent_x: float
+
+
 class Tossing3DState(State):
     """A `core.State` that also carries the KINDER state it was translated from, and
     the abstract atoms upstream's own abstractor derived from that KINDER state.
@@ -180,6 +194,10 @@ class Tossing3DState(State):
     # The scene's no-drive rule, carried so toss planning can read it off the state;
     # see `TossFeasibilityGeometry.drive_zone`.
     drive_zone: tuple[float, float, float, float] | None = None
+
+    # Set by a scene whose barrier is a flat line on the floor rather than a wall; see
+    # `FlatBarrier`. None keeps the open-halfspace sides.
+    flat_barrier: FlatBarrier | None = None
 
 
 # The observed pickup-infeasibility marker the environment injects into a state's
