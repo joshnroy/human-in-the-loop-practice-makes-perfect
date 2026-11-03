@@ -3,12 +3,14 @@
 from functools import cached_property
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
+from .drive_zone import KitchenDriveZone
 from .environment import KitchenRecyclingEnvironment
 from .predicates import HAND_EMPTY, HOLDING, IN_BIN, PICKABLE, KitchenRecyclingPredicates
 from .skills import KitchenRecyclingSkills
@@ -69,9 +71,41 @@ class KitchenRecyclingSkillProvider(SkillProvider):
         raise ValueError("Skill identity does not match its bound object")
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
+        opcode, _, _ = self._robot_signature(ground_skill=ground_skill)
+        if opcode != 1:
+            return np.zeros(0)
+        lower, upper = self._toss_box(ground_skill=ground_skill)
+        return rng.uniform(lower, upper)
+
+    def sample_params_at_state(
+        self, *, ground_skill: GroundSkill, rng: np.random.Generator, state: State
+    ) -> np.ndarray:
+        """Draw the toss standoff only from poses the kitchen drive rule allows.
+
+        The support depends on where the bin is, so it is set here before drawing."""
         opcode, item_index, context = self._robot_signature(ground_skill=ground_skill)
         if opcode != 1:
             return np.zeros(0)
+        lower, upper = self._toss_box(ground_skill=ground_skill)
+        calibration = self.env.config.calibration(
+            name=self._objects.items[item_index].name, context=context
+        )
+        bin_ = self._objects.bin
+        quaternion = [state.get(obj=bin_, feature_name=key) for key in ("qx", "qy", "qz", "qw")]
+        yaw = float(Rotation.from_quat(quaternion).as_euler("xyz")[2])
+        band = KitchenDriveZone.standoff_range(
+            config=self.env.config,
+            bin_xy=(state.get(obj=bin_, feature_name="x"), state.get(obj=bin_, feature_name="y")),
+            azimuth=yaw + calibration.toss_azimuth,
+            lower=float(lower[0]),
+            upper=float(upper[0]),
+        )
+        if band is not None:
+            lower[0], upper[0] = band
+        return rng.uniform(lower, upper)
+
+    def _toss_box(self, *, ground_skill: GroundSkill) -> tuple[np.ndarray, np.ndarray]:
+        _, item_index, context = self._robot_signature(ground_skill=ground_skill)
         calibration = self.env.config.calibration(
             name=self._objects.items[item_index].name, context=context
         )
@@ -85,7 +119,7 @@ class KitchenRecyclingSkillProvider(SkillProvider):
             calibration.toss_speed_deg_s + 70.0,
             min(1000.0, calibration.release_ms + 250.0),
         ])
-        return rng.uniform(lower, upper)
+        return lower, upper
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
