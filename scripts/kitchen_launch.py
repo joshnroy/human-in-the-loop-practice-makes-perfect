@@ -74,7 +74,7 @@ class KitchenLaunch:
             ]  # fmt: skip
         planner = [
             *common, "--pomdp-competence-model", "local_trend",
-            "--pomdp-linear-cost-lambda", "0.0003", "--pomdp-search-depth", "6",
+            "--pomdp-linear-cost-lambda", "0.0003",
             "--pomdp-inference-engine", "grid", "--pomdp-num-particles", "1024",
             "--pomdp-observation-probability-weight", "0.01" if arm == "curtis" else "0",
             "--pomdp-solver", "determinized_astar" if arm == "curtis" else "expectimax",
@@ -84,6 +84,9 @@ class KitchenLaunch:
                 "--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "all",
                 "--pomdp-draw-scope", "node", "--pomdp-max-search-iterations", "100",
             ]  # fmt: skip
+        else:
+            # Expectimax only: Curtis is bounded by its iterations, never a depth.
+            planner += ["--pomdp-search-depth", "6"]
         return planner
 
     @staticmethod

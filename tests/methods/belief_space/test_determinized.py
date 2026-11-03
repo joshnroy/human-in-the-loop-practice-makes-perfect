@@ -110,7 +110,6 @@ def test_best_first_returns_first_action_on_best_discovered_path() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
     )
@@ -129,7 +128,6 @@ def test_samples_one_weighted_outcome_per_action_reproducibly() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=0,
         num_samples=1,
     )
 
@@ -148,7 +146,6 @@ def test_observation_probability_penalizes_an_unlikely_determinization() -> None
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
     )
@@ -179,7 +176,6 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
         trace=trace,
@@ -211,7 +207,6 @@ def test_merged_node_is_evaluated_once() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
         trace=trace,
@@ -229,7 +224,6 @@ def test_nonpositive_iteration_budget_is_rejected() -> None:
         belief_state=BeliefState(value=0.2),
         model=model,
         num_samples=1,
-        horizon=0,
     )
     for max_iterations in (0, -1):
         planner = DeterminizedAStarPlanner(max_iterations=max_iterations, seed=0)
@@ -249,7 +243,6 @@ def test_one_iteration_expands_only_the_root() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
         trace=trace,
@@ -279,31 +272,6 @@ def test_generic_heuristic_adds_no_domain_knowledge() -> None:
     )
 
 
-def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
-    model = Model(
-        transitions={
-            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
-            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
-        },
-        beliefs={HIGH: BeliefState(value=0.6), GOAL: BeliefState(value=0.9)},
-    )
-    planner = DeterminizedAStarPlanner[EnvironmentState, BeliefState, BaseModel, Action](
-        max_iterations=3, seed=0
-    )
-
-    value, action = planner.solve(
-        environment_state=ROOT,
-        summed_cost=0.0,
-        belief_state=BeliefState(value=0.2),
-        horizon=0,
-        model=model,  # type: ignore[arg-type]
-        num_samples=1,
-    )
-
-    assert value == pytest.approx(0.9)
-    assert action == RIGHT
-
-
 @pytest.mark.parametrize("remaining_actions", [0, 1, 2])
 def test_real_action_budget_limits_paths_and_stops_at_zero(*, remaining_actions: int) -> None:
     model = Model(
@@ -318,7 +286,6 @@ def test_real_action_budget_limits_paths_and_stops_at_zero(*, remaining_actions:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=99,
         remaining_actions=remaining_actions,
         model=model,
         num_samples=1,
@@ -360,7 +327,6 @@ def test_same_state_with_a_remaining_action_is_not_closed_by_a_terminal_visit() 
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         remaining_actions=2,
         model=model,
         num_samples=1,
@@ -376,7 +342,6 @@ def test_negative_remaining_action_budget_is_rejected() -> None:
             environment_state=ROOT,
             summed_cost=0.0,
             belief_state=BeliefState(value=0.2),
-            horizon=0,
             remaining_actions=-1,
             model=Model(),
             num_samples=1,
@@ -421,7 +386,6 @@ def test_cheaper_closed_path_propagates_without_resampling(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=3,
         remaining_actions=remaining_actions,
         model=model,
         num_samples=1,
@@ -476,7 +440,6 @@ def test_cheaper_queued_path_discards_the_stale_entry() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=3,
         remaining_actions=3,
         model=model,
         num_samples=1,
@@ -528,7 +491,6 @@ def test_first_expansion_keeps_model_sample_and_value_call_order() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
     )
@@ -605,7 +567,6 @@ def _reroll_choices(*, draw_scope: str) -> set[object]:
             environment_state=ROOT,
             summed_cost=0.0,
             belief_state=BeliefState(value=0.5),
-            horizon=0,
             model=_reroll_model(),
             num_samples=1,
         )[1]
@@ -635,7 +596,6 @@ def test_shared_draws_are_traced() -> None:
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.5),
-        horizon=0,
         model=_reroll_model(),
         num_samples=1,
         trace=trace,
@@ -693,7 +653,6 @@ def _solve(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.5),
-        horizon=0,
         model=model,
         num_samples=1,
         trace=trace,
@@ -798,3 +757,73 @@ def test_curtis_nodes_are_beliefs_so_routes_of_different_cost_merge() -> None:
 def test_curtis_refuses_shared_draws() -> None:
     with pytest.raises(AssertionError):
         DeterminizedAStarPlanner(max_iterations=1, seed=0, variant="curtis", draw_scope="skill")
+
+
+CHAIN_LENGTH = 18
+STEP = Action(name="step")
+
+
+def _chain_model() -> BeliefKeyedModel:
+    """A corridor whose only rewarding belief is CHAIN_LENGTH steps deep -- deeper than
+    any domain's default expectimax depth. Every intermediate belief is worse than the
+    root's, so a depth cutoff anywhere short of the end would STOP."""
+    states = [EnvironmentState(name=f"chain_{index}") for index in range(CHAIN_LENGTH + 1)]
+    return BeliefKeyedModel(
+        transitions={
+            (states[index], STEP): [(states[index + 1], 0.0, 1.0)] for index in range(CHAIN_LENGTH)
+        },
+        beliefs={
+            **{state: BeliefState(value=0.0) for state in states[1:-1]},
+            states[-1]: BeliefState(value=1.0),
+        },
+    )
+
+
+def _solve_chain(*, variant: str, iterations: int) -> tuple[float, object, dict]:
+    trace = SearchTrace()
+    value, action = DeterminizedAStarPlanner(
+        max_iterations=iterations, seed=0, observation_probability_weight=0.0, variant=variant
+    ).solve(
+        environment_state=EnvironmentState(name="chain_0"),
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=_chain_model(),  # type: ignore[arg-type]
+        num_samples=1,
+        trace=trace,
+    )
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    return value, action, summary
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_search_reaches_a_plan_deeper_than_any_default_depth(*, variant: str) -> None:
+    value, action, summary = _solve_chain(variant=variant, iterations=10 * CHAIN_LENGTH)
+
+    assert (value, action) == (pytest.approx(1.0), STEP)
+    assert summary["selected_path_depth"] == CHAIN_LENGTH
+    assert summary["max_depth_reached"] >= CHAIN_LENGTH
+    assert summary["termination_reason"] == "frontier_exhausted"
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_too_few_iterations_stop_at_the_iteration_budget_not_a_depth(*, variant: str) -> None:
+    value, action, summary = _solve_chain(variant=variant, iterations=5)
+
+    assert (value, action) == (pytest.approx(0.2), STOP_ACTION)
+    assert summary["max_depth_reached"] < CHAIN_LENGTH
+    assert summary["termination_reason"] == "iteration_budget"
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+@pytest.mark.parametrize("horizon", [0, 6])
+def test_the_planner_refuses_a_search_depth(*, variant: str, horizon: int) -> None:
+    planner = DeterminizedAStarPlanner(max_iterations=10, seed=0, variant=variant)
+    with pytest.raises(ValueError, match="no search depth"):
+        planner.solve(
+            environment_state=ROOT,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=0.2),
+            horizon=horizon,
+            model=BeliefKeyedModel(),  # type: ignore[arg-type]
+            num_samples=1,
+        )

@@ -95,7 +95,6 @@ def test_a_roundoff_cheaper_path_does_not_change_the_decision(*, ulp_heavier) ->
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
-        horizon=0,
         model=model,
         num_samples=1,
     )

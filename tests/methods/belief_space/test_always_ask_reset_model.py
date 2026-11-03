@@ -56,7 +56,6 @@ EXP22C: dict[str, object] = {
     "pomdp_max_search_iterations": 100,
     "pomdp_num_samples": 100,
     "pomdp_observation_probability_weight": 0.0,
-    "pomdp_search_depth": 6,
     "exploration_epsilon": 0.5,
 }
 
@@ -74,6 +73,8 @@ def _method(
         skill_provider=Tossing3DSkillProvider(env=env),
         seed=seed,
         pomdp_solver=solver,
+        # Expectimax's depth; determinized A* is bounded by its iterations alone.
+        pomdp_search_depth=6 if solver == "expectimax" else None,
         always_ask_reset=AlwaysAskReset(cost=price) if wrapped else None,
         **EXP22C,  # type: ignore[arg-type]
     )

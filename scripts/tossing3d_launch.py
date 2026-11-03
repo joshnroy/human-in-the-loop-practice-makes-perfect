@@ -15,9 +15,10 @@ The plan (Josh, 2026-10-19 to 2026-10-22):
   observation weight 0.01, and an always-ask variant of each
   (`--always-ask-reset`). Seeds 0-5: six, so a paired exact sign test can reach
   p = 0.031.
-- The planner arms are `--preset tossing3d-canonical` (Model B, expectimax depth 6,
-  observation weight 0, lambda 3e-4, 0.01 per control tick, human reset 5), with
-  `--pomdp-solver determinized_astar` for A*.
+- The planner arms are `--preset tossing3d-canonical` (Model B, observation weight 0,
+  lambda 3e-4, 0.01 per control tick, human reset 5), with `--pomdp-search-depth 6`
+  for expectimax and `--pomdp-solver determinized_astar` (no depth: it is bounded by
+  its iterations) for A*.
 - EES takes EXP-22c's flags (the preset is the pomdp method's only), less the
   cycle-mode ones the step protocol replaces, and prices a human reset at 5 in its own
   plan-cost units. It runs without skip_perfect, the shelf's labelled deviation (a skill
@@ -136,7 +137,7 @@ class Tossing3DLaunch:
             Tossing3DArm(
                 name="expectimax",
                 method="pomdp",
-                flags=[*PLANNER, "--pomdp-solver", "expectimax"],
+                flags=[*PLANNER, "--pomdp-solver", "expectimax", "--pomdp-search-depth", "6"],
                 always_ask=False,
             ),
             Tossing3DArm(

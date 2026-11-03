@@ -9,9 +9,9 @@ from scripts.tossing3d_competence_2x2 import execute_experiments, experiment_com
 
 
 @pytest.mark.parametrize("search_iterations", [100, 1000])
-@pytest.mark.parametrize("solver,depth", [("determinized_astar", 3), ("expectimax", 6)])
+@pytest.mark.parametrize("solver,depth", [("determinized_astar", None), ("expectimax", 6)])
 def test_four_commands_parse_with_only_model_and_engine_varying(
-    *, tmp_path: Path, search_iterations: int, solver: str, depth: int
+    *, tmp_path: Path, search_iterations: int, solver: str, depth: int | None
 ) -> None:
     commands = experiment_commands(
         results_root=tmp_path,
@@ -46,6 +46,18 @@ def test_four_commands_parse_with_only_model_and_engine_varying(
             del config[key]
         configurations.append(config)
     assert all(config == configurations[0] for config in configurations)
+
+
+def test_a_search_depth_is_refused_for_determinized_astar(*, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="no search depth"):
+        experiment_commands(
+            results_root=tmp_path,
+            num_seeds=1,
+            num_cycles=10,
+            python="python",
+            solver="determinized_astar",
+            search_depth=3,
+        )
 
 
 def test_sweep_executor_records_all_arms_when_one_child_fails(

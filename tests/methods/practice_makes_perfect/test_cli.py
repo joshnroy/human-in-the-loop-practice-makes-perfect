@@ -459,6 +459,51 @@ def test_the_pomdp_search_depth_defaults_to_the_domains(
     assert seen == [expected]
 
 
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+@pytest.mark.parametrize("env_name", ["tossing3d", "sweepoffshelf3d"])
+def test_determinized_astar_resolves_no_search_depth(
+    *, env_name: str, variant: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Iteration-bounded search has no depth, so config_snapshot.json records None."""
+    from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+
+    seen: list[int | None] = []
+
+    def _run_method(*, args: argparse.Namespace, **_kwargs: object) -> None:
+        seen.append(args.pomdp_search_depth)
+
+    env_cli = {"tossing3d": Tossing3DCli, "sweepoffshelf3d": SweepOffShelf3DCli}[env_name]
+    monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
+    Cli.main(
+        argv=[
+            "--env",
+            env_name,
+            "--method",
+            "pomdp",
+            *_weight(method="pomdp"),
+            "--pomdp-solver",
+            "determinized_astar",
+            "--pomdp-determinized-variant",
+            variant,
+        ]  # fmt: skip
+    )
+    assert seen == [None]
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_determinized_astar_rejects_a_search_depth(*, variant: str) -> None:
+    """The flag would otherwise be parsed, recorded and silently ignored."""
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([
+        "--pomdp-solver", "determinized_astar", "--pomdp-determinized-variant", variant,
+        "--pomdp-search-depth", "6",
+    ])  # fmt: skip
+    with pytest.raises(ValueError, match="pomdp-search-depth"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
+
+
 @pytest.mark.parametrize(
     ("method", "extra"),
     [

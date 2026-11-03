@@ -49,9 +49,9 @@ EES: `--method ees --practice-groundings all
 Competence is never shared across groundings; "expanded" means all groundings.
 
 Ours: `--method pomdp --pomdp-inference-engine grid --pomdp-num-particles 1024
---pomdp-search-depth 6 --pomdp-linear-cost-lambda 0.0003
---practice-groundings observed`.
-Expectimax uses `--pomdp-solver expectimax --pomdp-observation-probability-weight 0`.
+--pomdp-linear-cost-lambda 0.0003 --practice-groundings observed`.
+Expectimax uses `--pomdp-solver expectimax --pomdp-search-depth 6
+--pomdp-observation-probability-weight 0`.
 Curtis uses `--pomdp-solver determinized_astar --pomdp-determinized-variant curtis
 --pomdp-num-rollouts all --pomdp-observation-probability-weight 0.01
 --pomdp-max-search-iterations 100 --pomdp-draw-scope node`.

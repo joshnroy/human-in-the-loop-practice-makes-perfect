@@ -318,3 +318,25 @@ def test_worker_preserves_quoted_manifest_arguments_without_a_shell(*, monkeypat
     assert record["manifest_sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
     assert record["manifest_row"] == manifest.read_text().strip()
     assert record["physics_record"] == "physics.json"
+
+
+@pytest.mark.parametrize("name", [n for n in ARMS if not n.startswith("ees")])
+def test_every_planner_arm_builds_its_method_with_its_solvers_depth(
+    *, name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Built through the real entry point, not just parsed: expectimax searches the
+    canonical depth 6, and determinized A* gets no depth at all (it would refuse one)."""
+    from hitl_pmp.launch_gate import LaunchGate
+    from hitl_pmp.step_protocol import StepPracticeRunner
+
+    built: list[object] = []
+    monkeypatch.setattr(LaunchGate, "enforce", staticmethod(lambda **_: None))
+    monkeypatch.setattr(
+        StepPracticeRunner, "run", staticmethod(lambda **kwargs: built.append(kwargs["method"]))
+    )
+    arm = Tossing3DLaunch.arms()[name]
+    Cli.main(argv=Tossing3DLaunch.cli_argv(arm=arm, size=FULL, seed=0, output_dir=tmp_path))
+    (method,) = built
+    expectimax = name.startswith("expectimax")
+    assert method.pomdp_solver == ("expectimax" if expectimax else "determinized_astar")  # type: ignore[attr-defined]
+    assert method.pomdp_search_depth == (6 if expectimax else None)  # type: ignore[attr-defined]

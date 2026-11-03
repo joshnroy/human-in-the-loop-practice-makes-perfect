@@ -81,8 +81,8 @@ class DeterminizedAStarPlanner(
         environment_state: EnvironmentStateT,
         summed_cost: float,
         belief_state: BeliefStateT,
-        horizon: int,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        horizon: int | None = None,
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
         remaining_actions: int | None = None,
@@ -100,10 +100,15 @@ class DeterminizedAStarPlanner(
         master-seeded model. Optional ``remaining_actions`` separately limits plans
         to the real practice session's remaining action slots. Without it, the
         iteration limit bounds cyclic search without imposing a depth cutoff.
+        ``horizon`` must be None: there is no search depth to set.
         """
-        # ``horizon`` belongs to the shared interface for exact expectimax. It
-        # deliberately does not bound this iteration-budgeted planner.
-        del horizon
+        # ``horizon`` belongs to the shared interface for exact expectimax. This
+        # planner has no depth to bound, so a caller passing one is configured wrongly.
+        if horizon is not None:
+            raise ValueError(
+                f"determinized_astar takes no search depth (got {horizon}); it is bounded "
+                "only by max_iterations and remaining_actions"
+            )
         assert remaining_actions is None or remaining_actions >= 0, (
             "remaining_actions must be non-negative"
         )

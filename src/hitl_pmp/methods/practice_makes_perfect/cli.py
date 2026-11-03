@@ -360,7 +360,8 @@ class Tossing3DPomdpCli(EesCli):
             type=int,
             default=None,
             help="Exact belief-space expectimax depth in future skill executions "
-            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D).",
+            "(default: the domain's -- 3 for Tossing3D, 7 for SweepOffShelf3D). Expectimax "
+            "only: determinized_astar refuses it.",
         )
         parser.add_argument(
             "--pomdp-solver",
@@ -510,6 +511,12 @@ class Tossing3DPomdpCli(EesCli):
                 "--ees-prior-alpha/--ees-prior-beta are EES flags: --method pomdp takes its "
                 "competence priors from its practice domain"
             )
+        if args.pomdp_solver == "determinized_astar" and args.pomdp_search_depth is not None:
+            raise ValueError(
+                "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
+                "determinized_astar is bounded by --pomdp-max-search-iterations and the "
+                "session's remaining actions, never a search depth"
+            )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:
             kitchen = env_cli.__name__ == "KitchenCli"
@@ -548,8 +555,9 @@ class Tossing3DPomdpCli(EesCli):
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
                 "pouring3d_kitchen and kitchen_recycling3d"
             )
-        if args.pomdp_search_depth is None:
+        if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
+            # Determinized A* searches no depth, so its snapshot records None.
             args.pomdp_search_depth = (
                 domain.default_search_depth if isinstance(domain, PracticeDomain) else 3
             )
