@@ -272,6 +272,26 @@ def test_dry_stage_keeps_the_protocol_but_shrinks_practice():
         assert args.evaluation_control_steps == 7500
 
 
+def test_a_started_sibling_task_does_not_block_a_later_array_task(*, tmp_path, monkeypatch):
+    """Della starts array tasks at different times; a sibling's live run is not ours."""
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
+    monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})
+    path = tmp_path / "manifest.json"
+    root = tmp_path / "results"
+    KitchenLaunch.write_manifest(path=path, stage="pilot", results_root=root)
+    runs = KitchenLaunch.runs(stage="pilot", results_root=root)
+    (runs[2].output_dir / "snapshots").mkdir(parents=True)
+    observed = []
+    monkeypatch.setattr(
+        "scripts.kitchen_launch.SweepRunner.execute",
+        lambda **kwargs: observed.extend(kwargs["runs"]) or [],
+    )
+    assert KitchenLaunch.run(manifest=path, max_workers=1, task=1) == 0
+    assert observed == [runs[0]]
+    with pytest.raises(FileExistsError):
+        KitchenLaunch.run(manifest=path, max_workers=1, task=3)
+
+
 def test_run_honours_the_manifest_seed_list(*, tmp_path, monkeypatch):
     monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
     monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})

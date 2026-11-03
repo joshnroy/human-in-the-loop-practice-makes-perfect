@@ -116,11 +116,12 @@ class KitchenLaunch:
         ]
 
     @staticmethod
-    def rows(*, runs: list[SweepRun]) -> list[dict]:
+    def rows(*, runs: list[SweepRun], validate: bool = True) -> list[dict]:
         rows = []
         for run in runs:
             args = Cli.parse_args(argv=run.command[3:])
-            StepProtocolValidation.check(args=args)
+            if validate:
+                StepProtocolValidation.check(args=args)
             rows.append({
                 "arm": run.output_dir.parts[-3],
                 "method": run.method,
@@ -275,13 +276,16 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             results_root=Path(data["results_root"]),
             seeds=tuple(data.get("seeds", SEEDS)),
         )
-        if KitchenLaunch.rows(runs=runs) != data["runs"]:
+        # Array siblings may already be running, so their outputs exist; only the
+        # rows this worker will execute must still be fresh (validated below).
+        if KitchenLaunch.rows(runs=runs, validate=False) != data["runs"]:
             raise RuntimeError("Launch commands or resolved defaults differ from the manifest")
         rows = data["runs"]
         if task is not None:
             if not 1 <= task <= len(runs):
                 raise ValueError(f"Task index must be between 1 and {len(runs)}")
             runs, rows = [runs[task - 1]], [rows[task - 1]]
+        KitchenLaunch.rows(runs=runs)
         for run in runs:
             if run.output_dir.exists():
                 raise FileExistsError(f"Refusing to overwrite prior run: {run.output_dir}")
