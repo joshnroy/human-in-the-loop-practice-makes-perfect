@@ -214,9 +214,10 @@ def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance()
     rear = stances.rear_base(y=-0.0625, config=config)
     plus = stances.side_base(side=1, config=config)
     minus = stances.side_base(side=-1, config=config)
-    for start, route, goal in (
-        (rear, stances.rear_to_side(side=1, start=rear, config=config), plus),
-        (plus, stances.side_to_side(side=-1, config=config), minus),
+    for route, goal in (
+        (stances.rear_to_side(side=1, start=rear, config=config), plus),
+        (stances.side_to_side(side=-1, config=config), minus),
+        (stances.side_to_rear(side=-1, config=config), None),
     ):
         assert all(outside(point=point) for point in route)
         if goal is not None:
@@ -224,7 +225,7 @@ def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance()
         else:
             assert route[-1][0] > config.counter_x_max
             assert route[-1][2] == pytest.approx(np.pi)
-        del start
+    assert stances.side_exit == "rear_lane"
 
 
 def test_release_levels_and_backs_off_a_rolled_blade_before_rising():
