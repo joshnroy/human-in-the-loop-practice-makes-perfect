@@ -69,7 +69,7 @@ class KitchenLaunch:
             return [
                 *common,
                 "--ees-score-human-skills",
-                "--competence-sharing", "grounded", "--practice-groundings", "observed",
+                "--practice-groundings", "observed",
                 "--record-ees-decisions",
             ]  # fmt: skip
         planner = [

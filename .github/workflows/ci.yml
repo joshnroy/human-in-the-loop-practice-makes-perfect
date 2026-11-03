@@ -490,7 +490,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
-          key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+          key: mimiclabs-scenes-lab3-desk-v1-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
       - name: Cache pytest cache
         uses: actions/cache@v4
         with:
@@ -499,10 +499,12 @@ jobs:
           restore-keys: |
             pytest-${{ runner.os }}-tossing3d-${{ matrix.shard }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
-      # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
-      # rate-limits CI runners. Only lab2 is used (tests/test_ci_caches.py).
-      - name: Fetch MimicLabs lab2 scene assets from the release mirror
+      # On a miss, fill from this repo's checksummed mirrors of the lab2 scene (~22 MB,
+      # every file lab2.xml loads) and of the four lab3 desk meshes the kitchen scene
+      # builds its desk from (~8 MB packed), never KINDER's ~2 GB Google Drive download,
+      # which rate-limits CI runners (tests/test_ci_caches.py). The cache key names the
+      # lab3 desk mirror, so a cache filled before it existed misses once and refills.
+      - name: Fetch MimicLabs lab2 scene and lab3 desk assets from the release mirrors
         if: steps.cache-assets.outputs.cache-hit != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -510,6 +512,9 @@ jobs:
           gh release download mimiclabs-lab2-v1 -p mimiclabs-lab2-v1.tar.gz -D "$RUNNER_TEMP"
           echo "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0  $RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
+          gh release download mimiclabs-lab3-desk-v1 -p mimiclabs-lab3-desk-v1.tar.gz -D "$RUNNER_TEMP"
+          echo "0a5b70d4e96931b529c1c50a40b7a8506e032f469d46bb6f209fd3a7e59e0a78  $RUNNER_TEMP/mimiclabs-lab3-desk-v1.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mimiclabs-lab3-desk-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
       - name: Verify KINDER resolves under reference/
         run: |
           python - <<'PY'
@@ -627,7 +632,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
-          key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+          key: mimiclabs-scenes-lab3-desk-v1-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
       - name: Cache pytest cache
         uses: actions/cache@v4
         with:
@@ -636,10 +641,12 @@ jobs:
           restore-keys: |
             pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      # On a miss, fill from this repo's checksummed mirror of the lab2 scene (~22 MB,
-      # every file lab2.xml loads), never KINDER's ~2 GB Google Drive download, which
-      # rate-limits CI runners. Only lab2 is used (tests/test_ci_caches.py).
-      - name: Fetch MimicLabs lab2 scene assets from the release mirror
+      # On a miss, fill from this repo's checksummed mirrors of the lab2 scene (~22 MB,
+      # every file lab2.xml loads) and of the four lab3 desk meshes the kitchen scene
+      # builds its desk from (~8 MB packed), never KINDER's ~2 GB Google Drive download,
+      # which rate-limits CI runners (tests/test_ci_caches.py). The cache key names the
+      # lab3 desk mirror, so a cache filled before it existed misses once and refills.
+      - name: Fetch MimicLabs lab2 scene and lab3 desk assets from the release mirrors
         if: steps.cache-assets.outputs.cache-hit != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -647,6 +654,9 @@ jobs:
           gh release download mimiclabs-lab2-v1 -p mimiclabs-lab2-v1.tar.gz -D "$RUNNER_TEMP"
           echo "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0  $RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/mimiclabs-lab2-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
+          gh release download mimiclabs-lab3-desk-v1 -p mimiclabs-lab3-desk-v1.tar.gz -D "$RUNNER_TEMP"
+          echo "0a5b70d4e96931b529c1c50a40b7a8506e032f469d46bb6f209fd3a7e59e0a78  $RUNNER_TEMP/mimiclabs-lab3-desk-v1.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mimiclabs-lab3-desk-v1.tar.gz" -C reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
       - name: Verify KINDER resolves under reference/
         run: |
           python - <<'PY'

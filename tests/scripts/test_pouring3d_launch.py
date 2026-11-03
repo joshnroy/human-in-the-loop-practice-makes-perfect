@@ -45,7 +45,6 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert costs.human_skills["reset_shrimp"].duration.value == 1
         if args.method == "ees":
             assert args.ees_score_human_skills
-            assert args.competence_sharing == "grounded"
             assert args.practice_groundings == "observed"
             assert args.record_ees_decisions
             assert not args.reproduce_predicators_skip_perfect
@@ -155,7 +154,6 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
         built.append(method)
         assert method.goal_pursuit_horizon == 0
         assert method.reproduce_predicators_explore_target_only
-        assert method.competence_sharing == "grounded"
         assert method.practice_groundings == "observed"
         assert {skill.name for skill in method.skills() if skill.name.startswith("Pour")} == {
             "Pour1",

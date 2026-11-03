@@ -146,16 +146,15 @@ def test_ees_toss_setup_does_not_require_a_bin_relocation(*, bin_side):
     )
 
 
-@pytest.mark.parametrize("sharing", ["grounded", "parent"])
-def test_toss_evidence_and_exploration_counts_follow_one_identity(*, sharing):
+def test_toss_evidence_and_exploration_counts_follow_one_identity():
     env, provider, toss, _ = _scene(bin_side=Tossing3DSides.robot, cube_side=Tossing3DSides.robot)
-    method = EesMethod(env=env, skill_provider=provider, seed=0, competence_sharing=sharing)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
     for bin_side, success in zip(Tossing3DSides.objects(), [True, False], strict=True):
         _, _, target, before = _scene(bin_side=bin_side, cube_side=Tossing3DSides.robot)
         assert target.preconditions <= before
         method.observe_outcome(ground_skill=target, success=success, was_random_exploration=False)
-        assert method.forecast_competence_model(ground_skill=target) is (
-            method.forecast_competence_model(ground_skill=toss)
+        assert method.competence_model(ground_skill=target) is (
+            method.competence_model(ground_skill=toss)
         )
     assert method.practice_target_num_tries(ground_skill=toss) == 2
     assert method.practice_candidates() == [toss]

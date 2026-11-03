@@ -55,6 +55,10 @@ def test_every_python_job_restores_pip_and_saves_it_only_from_main() -> None:
 
 MIRROR_TAG = "mimiclabs-lab2-v1"
 MIRROR_SHA256 = "f1185bfde2a1ff09fff3b1f7372de0fe8ec61ce27546cdfca47c77524110d4a0"
+# The kitchen scene's desk is lab3's four `scene2_table_*.obj` meshes, which the lab2
+# mirror does not carry; 64 kitchen tests fail on a missing `.obj` without them.
+DESK_MIRROR_TAG = "mimiclabs-lab3-desk-v1"
+DESK_MIRROR_SHA256 = "0a5b70d4e96931b529c1c50a40b7a8506e032f469d46bb6f209fd3a7e59e0a78"
 
 
 def test_no_ci_step_downloads_mimiclabs_from_google_drive() -> None:
@@ -72,6 +76,9 @@ def test_a_mimiclabs_cache_miss_fills_from_the_checksummed_lab2_mirror() -> None
         (fill,) = [step for step in steps if MIRROR_TAG in str(step.get("run", ""))]
         assert fill["if"] == "steps.cache-assets.outputs.cache-hit != 'true'"
         assert f"{MIRROR_SHA256}  " in fill["run"] and "sha256sum -c" in fill["run"]
+        assert DESK_MIRROR_TAG in fill["run"]
+        assert f"{DESK_MIRROR_SHA256}  " in fill["run"]
+        assert fill["run"].count("sha256sum -c") == 2
         filled += 1
     assert filled == 2  # The Tossing3D and scripts jobs, the two that build MimicLabs scenes.
 
@@ -93,3 +100,16 @@ def test_every_apt_install_reuses_cached_archives_keyed_on_the_runner_image() ->
         assert steps.index(cache) < steps.index(install), name
         assert "steps.runner-image.outputs.image" in cache["with"]["key"], name
     assert jobs == 2  # The Tossing3D and scripts jobs, the two that render through OSMesa.
+
+
+def test_the_mimiclabs_cache_key_names_the_lab3_desk_mirror() -> None:
+    """A cache saved before the desk mirror existed holds lab2 only; a key that did not
+    change would restore it and skip the fill, and every kitchen scene test would fail."""
+    keys = [
+        step["with"]["key"]
+        for job in CiSteps.jobs().values()
+        for step in job.get("steps", [])
+        if step.get("id") == "cache-assets"
+    ]
+    assert len(keys) == 2
+    assert all(DESK_MIRROR_TAG.removeprefix("mimiclabs-") in key for key in keys)

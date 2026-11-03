@@ -4,12 +4,8 @@
 [Vats et al., Deliberate Practice, §§5.1–5.3](https://arxiv.org/html/2608.13415v1).
 It is not an unmodified reproduction of the paper's controller-learning experiments.
 
-The [current fidelity plan](experiments/tossing3d-dp-fidelity-plan.md) separates
-paper requirements from local protocol choices. Parent sharing is a transfer
-ablation, not a requirement of the paper. DP's deployment graph already admits
-untried relevant skills even with `--practice-groundings observed`.
-Statistical sharing does not authorize executing another grounding: that legacy
-adaptation now requires `--dp-allow-grounding-substitution` explicitly.
+DP's deployment graph already admits untried relevant skills even with
+`--practice-groundings observed`. DP always practices the grounding it allocated.
 
 ## Objective and curriculum
 
@@ -172,8 +168,7 @@ do not call either arm an exact reproduction. A new stopping rule, forced budget
 spending, confidence-based mastery threshold, or negative-rate clamp is not justified
 as a paper-fidelity fix. Confirm the authors' protocol before a canonical comparison.
 
-The seed-0 diagnostics retain all four grounded/shared by episodes-once/cost-period
-arms, the 2,000 budget ceilings, and the 160,000 counted-step ceiling. Fresh output
+The seed-0 diagnostics retain both episodes-once and cost-period arms, the 2,000 budget ceilings, and the 160,000 counted-step ceiling. Fresh output
 directories preserve historical runs. Allocation logs identify the recurrence,
 protocol status, remaining budget and completion reason: `budget_spent`,
 `zero_allocation`, or `once_curriculum_consumed`. Early endpoints are reported, not

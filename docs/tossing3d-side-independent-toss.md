@@ -36,8 +36,7 @@ Grounding-keyed competence, learning-rate predictions, exploration counts, and
 targeted-practice bookkeeping therefore follow that single identity together.
 This does not introduce cross-grounding target substitution or choose the nearest
 setup as a new EES heuristic. EES's expanded-practice and perfect-skill settings
-remain independent experimental axes. Parent pooling can still affect other
-groundings or skills, but no longer distinguishes these two Toss placements.
+remain independent experimental axes.
 
 Do not resume old grounding-keyed checkpoints or combine pre-change and
 post-change runs into a single mean. Historical reports retain their original
