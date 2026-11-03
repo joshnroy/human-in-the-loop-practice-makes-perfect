@@ -94,12 +94,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         c = self.controller()
         on = c.scene.cooking_observed()
         state.data[O.hob] = np.array([float(on), float(not on)])
-        # The shared backend's per-piece Settled is KinDER's speed rule; the kitchen
-        # judges rest by position, so Settled agrees with the scene's cubes_settled.
-        atoms = {a for a in state.abstract_atoms if a[0] != "Settled"}
-        for name, resting in zip(c.scene.cube_names, c.scene.pieces_at_rest(), strict=True):
-            if resting and name != c.held:
-                atoms.add(("Settled", (name,)))
+        atoms = set(state.abstract_atoms)
         atoms.add(("HobOn" if on else "HobOff", ("hob",)))
         if not on:
             atoms.add(("ColdIngredients", ()))
@@ -242,12 +237,6 @@ class KitchenEnvironment(FrozenPourEnvironment):
             interruption_cost=self.human_interruption_cost,
         )
         return result
-
-    def after_human_respawn(self) -> None:
-        # Rest is measured over a window, so the placed pieces must be watched at
-        # rest under native dynamics before the scene can be judged ready.
-        scene = self.controller().scene
-        scene.wait_for_rest(ticks=scene.RESET_SETTLE_TICKS)
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""

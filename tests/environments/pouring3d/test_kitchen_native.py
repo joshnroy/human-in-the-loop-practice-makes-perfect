@@ -50,8 +50,12 @@ def test_partial_spill_failure_and_costed_human_reset_preserve_robot_and_vessels
         piece.set_pose(pan + [0, 0, 0.009], [1, 0, 0, 0])
         piece.set_velocity([0.0] * 3, [0.0] * 3)
         mujoco.mj_forward(c.model, c.data)
-        # Rest is judged by position over a window: watch the placed piece at rest.
-        assert c.scene.wait_for_rest(ticks=c.scene.RESET_SETTLE_TICKS)
+        # A split is judged settled by position over a window: watch the placed piece
+        # come to rest (it tumbles about 2 cm first) before reading SplitCorrect.
+        for _ in range(12):
+            c.pause(phase="observe rest", seconds=1.0)
+            if c.outcome_settled():
+                break
         atoms = env.observe().abstract_atoms
         assert ("InTray", ("potsticker_0", "tray")) in atoms
         assert ("SplitCorrect", ("request_1",)) in atoms
@@ -68,16 +72,15 @@ def test_partial_spill_failure_and_costed_human_reset_preserve_robot_and_vessels
         assert env.human_interventions == 1
         assert env.interruption_cost_total == 7
         assert c.scene.cube_locations() == ["pitcher"] * 3
-        # Bulk food reset leaves the robot and both vessels untouched; the native
-        # hold while rest is observed may move them by micrometres, never more.
+        # Bulk food reset leaves the robot and both vessels untouched.
         for name in ("pitcher", "tray"):
             body = c.model.body(name).id
             address = c.model.jnt_qposadr[c.model.body_jntadr[body]]
-            np.testing.assert_allclose(
-                before[address : address + 7], c.data.qpos[address : address + 7], atol=1e-4
+            np.testing.assert_array_equal(
+                before[address : address + 7], c.data.qpos[address : address + 7]
             )
-        np.testing.assert_allclose(before[c.arm_q], c.data.qpos[c.arm_q], atol=1e-4)
-        np.testing.assert_allclose(before[c.base_q], c.data.qpos[c.base_q], atol=1e-4)
+        np.testing.assert_array_equal(before[c.arm_q], c.data.qpos[c.arm_q])
+        np.testing.assert_array_equal(before[c.base_q], c.data.qpos[c.base_q])
         with pytest.raises(ValueError, match="No free"):
             env.hard_reset()
         with pytest.raises(ValueError, match="No free"):

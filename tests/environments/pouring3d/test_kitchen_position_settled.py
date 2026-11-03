@@ -13,7 +13,7 @@ pytestmark = [
 ]
 
 
-def test_only_the_kitchen_scene_overrides_kinders_rule():
+def test_gates_keep_kinders_rule_and_only_kitchen_outcomes_use_position():
     from kinder.envs.dynamic3d.pitcher_pour3d import ObjectCentricPitcherPour3DEnv
 
     from hitl_pmp.environments.pouring3d.five_frozen import FiveFrozenShrimpScene
@@ -21,40 +21,47 @@ def test_only_the_kitchen_scene_overrides_kinders_rule():
     from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerScene
     from hitl_pmp.environments.pouring3d.practice.native import PracticeThreeScene
 
-    kinder_rule = ObjectCentricPitcherPour3DEnv.cubes_settled
+    kinder_rule = ObjectCentricPitcherPour3DEnv.physical_snapshot
+    for scene in (PotstickerScene, PracticeThreeScene, FiveFrozenShrimpScene, KitchenScene):
+        assert scene.cubes_settled is ObjectCentricPitcherPour3DEnv.cubes_settled
     for legacy in (PotstickerScene, PracticeThreeScene, FiveFrozenShrimpScene):
-        assert legacy.cubes_settled is kinder_rule
-    assert KitchenScene.cubes_settled is not kinder_rule
+        assert not hasattr(legacy, "payload_at_rest")
+    assert KitchenScene.physical_snapshot is not kinder_rule
 
 
-def test_episode_start_and_human_reset_wait_until_rest_is_observed():
+def test_construction_is_unchanged_and_an_unobserved_outcome_is_not_settled():
     import mujoco
 
-    from hitl_pmp.environments.pouring3d.kitchen.environment import (
-        HUMAN_RESET,
-        KitchenEnvironment,
-    )
+    from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 
     env = KitchenEnvironment(requested_count=1)
     try:
         c = env.controller()
-        # Construction holds still until a full window of rest has been recorded.
-        assert c.scene.cubes_settled()
+        # The start state the controllers were validated on: the base second of
+        # settling only, gated by KinDER's speed rule, no extra hold.
+        assert c.data.time == pytest.approx(1.0)
         assert c.ready()
-        atoms = env.observe().abstract_atoms
-        assert {("Settled", (n,)) for n in c.scene.cube_names} <= atoms
-        # A teleport without stepping is movement the history has not seen settle.
+        # No history yet, so no outcome can be called settled.
+        assert not c.scene.payload_at_rest()
+        assert not c.scene.physical_snapshot()["settled"]
+        c.pause(phase="observe rest", seconds=2.1)
+        assert c.scene.payload_at_rest()
+        assert c.scene.physical_snapshot()["settled"]
+        # A teleport the history did not see counts as movement.
         piece = c.scene.get_object(c.scene.cube_names[0])
         pan = c.data.xpos[c.model.body("tray").id].copy()
         piece.set_pose(pan + [0, 0, 0.009], [1, 0, 0, 0])
         piece.set_velocity([0.0] * 3, [0.0] * 3)
         mujoco.mj_forward(c.model, c.data)
-        assert not c.scene.cubes_settled()
-        assert ("Settled", (c.scene.cube_names[0],)) not in env.observe().abstract_atoms
-        before = c.data.time
-        assert env.reset_movables(destination=HUMAN_RESET)
-        assert c.data.time - before >= c.scene.payload_rest.window_seconds
-        assert c.scene.cubes_settled()
+        assert not c.outcome_settled()
+        assert ("SplitCorrect", ("request_1",)) not in env.observe().abstract_atoms
+        # Placed flat on the pan it tumbles about 2 cm and comes to rest after ~7 s.
+        for _ in range(12):
+            c.pause(phase="observe rest", seconds=1.0)
+            if c.outcome_settled():
+                break
+        assert c.outcome_settled()
+        assert ("SplitCorrect", ("request_1",)) in env.observe().abstract_atoms
     finally:
         env.close()
 
