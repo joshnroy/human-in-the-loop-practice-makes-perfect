@@ -8,6 +8,7 @@ from typing import Any, cast
 import numpy as np
 from bilevel_planning.trajectory_samplers.trajectory_sampler import TrajectorySamplingFailure
 from kinder_models.dynamic3d.tossing.parameterized_skills import (
+    MoveToTargetGroundController,
     MoveToTossLocationAndTossController,
     PickCubeController,
     PickCubeGraspCandidate,
@@ -82,6 +83,53 @@ class RecyclingTossController(MoveToTossLocationAndTossController):
         if plan is None:
             raise TrajectorySamplingFailure("Base motion planning failed")
         return plan
+
+
+class RecyclingMoveToTargetController(MoveToTargetGroundController):
+    """KINDER's move-to-target, the pour's base approach, planned inside the drive zone.
+
+    Upstream plans over world bounds and sizes the mat-edge barrier, a fixture with no
+    compiled collider here, as its legacy 0.61 x 0.26 m box. The drive-zone toss parks
+    the robot inside that box, so every approach was refused from its start pose.
+    """
+
+    def configure(
+        self, *, config: Any, barrier_box: tuple[str, tuple[float, float, float]]
+    ) -> None:
+        self.config = config
+        self.barrier_box = barrier_box
+
+    def reset(self, *args: Any, **kwargs: Any) -> None:
+        x, params = args
+        self._last_state = x
+        self._current_params = np.asarray(params, dtype=np.float32)
+        target_distance, target_rot = self._current_params
+        target_pose = get_target_robot_pose_from_parameters(
+            get_overhead_object_se2_pose(x, self.objects[1]), target_distance, target_rot
+        )
+        config = self.config
+
+        def outside(*args: Any) -> bool:
+            (pose,) = args
+            return not KitchenDriveZone.allows(config=config, position=(pose.x, pose.y))
+
+        lower, upper = KitchenDriveZone.bounds(config=config)
+        name, box = self.barrier_box
+        plan = run_base_motion_planning(
+            state=x,
+            target_base_pose=target_pose,
+            x_bounds=(float(lower[0]), float(upper[0])),
+            y_bounds=(float(lower[1]), float(upper[1])),
+            seed=0,
+            extend_xy_magnitude=kwargs.get("extend_xy_magnitude", 0.025),
+            extend_rot_magnitude=kwargs.get("extend_rot_magnitude", np.pi / 8),
+            disable_collision_objects=kwargs.get("disable_collision_objects"),
+            bounding_boxes={name: box},
+            body_collision_fn=outside,
+        )
+        if plan is None:
+            raise ValueError("Base motion planning failed")
+        self._current_base_motion_plan = plan
 
 
 class RecyclingPickController(PickCubeController):

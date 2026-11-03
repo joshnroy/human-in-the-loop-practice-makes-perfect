@@ -107,8 +107,13 @@ class KitchenKinderBackend(KinderBackend):
         state: Any,
         pybullet_sim: Any = None,
     ) -> Any:
-        """Tossing3D's grounding, with the kitchen's pick and drive-zone toss."""
-        from .controllers import RecyclingPickController, RecyclingTossController
+        """Tossing3D's grounding, with the kitchen's pick and its drive-zone toss and
+        pour approach."""
+        from .controllers import (
+            RecyclingMoveToTargetController,
+            RecyclingPickController,
+            RecyclingTossController,
+        )
 
         action_dim = int(self._raw_env.action_space.shape[0])
         if module == "tossing" and key == "pick_cube":
@@ -136,6 +141,16 @@ class KitchenKinderBackend(KinderBackend):
             vars(toss)["ACTION_DIM"] = action_dim
             toss.configure(config=self.kitchen_config)
             return TossSettlingController(backend=self, controller=toss)
+        if module == "tossing" and key == "move_to_target":
+            move = RecyclingMoveToTargetController(
+                tuple(state.get_object_from_name(name) for name in object_names)
+            )
+            vars(move)["ACTION_DIM"] = action_dim
+            move.configure(
+                config=self.kitchen_config,
+                barrier_box=(self.barrier_name, self.BARRIER_PLANNING_BOX),
+            )
+            return move
         return super()._ground_controller(
             module=module,
             key=key,
