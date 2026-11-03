@@ -22,6 +22,8 @@ FREE_PHASES = {"planned clear workspace"}
 EXECUTED_TILT_LIMIT_DEG = 15.0
 
 
+# ~13-16 min on a CI runner: pull requests skip it, main runs it.
+@pytest.mark.main_only
 def test_the_return_is_refused_whole_or_executed_upright_clear_and_seated(*, monkeypatch):
     from hitl_pmp.environments.pouring3d.kitchen.planning import parameterized_skills
 

@@ -422,12 +422,14 @@ jobs:
     # disjoint, duration-balanced share; an `xdist_group` never straddles two shards
     # (tests/ci_shard.py, tests/test_ci_shard.py). The matrix length must equal
     # `--shard-count` below. `fail-fast: false` so one failing shard still lets the others
-    # report every failure, as the single job did. The aggregate `test` check sees one
+    # report every failure, as the single job did. Five shards since the kitchen
+    # planned-motion tests: ~30 min of pull-request test time each, two workers apiece.
+    # The aggregate `test` check sees one
     # `needs.test-tossing3d.result`, which is `success` only if every shard passed.
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4]
     env: *kinder_env
     steps:
       # The mirror sometimes serves these ~17 MB at ~46 kB/s (9/49 installs took 5.7-8.8
@@ -555,7 +557,7 @@ jobs:
       - name: Pytest — Tossing3D, SweepOffShelf3D, and Pouring3D (MuJoCo/OSMesa)
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem:/ {print $2}') GiB"
-          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 4 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/pouring3d tests/environments/kitchen_recycling3d --ignore=tests/environments/tossing3d/real
+          pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" --shard-count 5 --shard-index ${{ matrix.shard }} --junitxml="$RUNNER_TEMP/junit-tossing3d.xml" tests/environments/tossing3d tests/environments/sweepoffshelf3d tests/environments/pouring3d tests/environments/kitchen_recycling3d --ignore=tests/environments/tossing3d/real
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
       # The input to `python -m tests.ci_shard junit*.xml`, which rebalances the shards.

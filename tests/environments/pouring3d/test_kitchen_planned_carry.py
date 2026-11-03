@@ -22,6 +22,8 @@ CARRY_PHASES = {
 EXECUTED_TILT_LIMIT_DEG = 15.0
 
 
+# ~12 min on a CI runner, and the next test ~16: pull requests skip both, main runs them.
+@pytest.mark.main_only
 def test_the_carry_is_refused_whole_or_executed_upright_and_clear(*, monkeypatch):
     from hitl_pmp.environments.pouring3d.kitchen.planning.parameterized_skills import (
         KitchenMotionPlanner,
@@ -145,6 +147,7 @@ class PourStart:
 JUG_TILT_TOLERANCE_DEG = 3.0
 
 
+@pytest.mark.main_only
 def test_the_planned_pour_starts_with_the_jug_levelled_like_the_scripted_start(*, monkeypatch):
     scripted = PourStart.capture(monkeypatch=monkeypatch, scripted=True)
     planned = PourStart.capture(monkeypatch=monkeypatch, scripted=False)
