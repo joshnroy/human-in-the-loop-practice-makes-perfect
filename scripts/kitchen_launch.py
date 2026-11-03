@@ -39,7 +39,7 @@ class KitchenLaunch:
             "--payload-count", "3", "--requested-counts", "1", "2", "3",
             "--receiving-vessel", "skillet",
             "--pour-layout", "stations",
-            "--surface-mu", "0.4", "--canonical-seed", "0",
+            "--surface-mu", "0.1", "--canonical-seed", "0",
             "--pour-tilt-bounds", "87", "95",
             "--pour-amplitude-bounds", "0", "0.025",
             "--pour-duration-bounds", "0", "30",

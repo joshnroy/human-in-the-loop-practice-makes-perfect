@@ -18,8 +18,23 @@ from .config import KitchenGeometry
 
 
 class KitchenScene(PotstickerScene):
+    # Above the dumplings' priority 2 and the jug's 1, so MuJoCo takes the skillet's
+    # coefficient for every skillet contact and the dumplings' own elsewhere.
+    SKILLET_PRIORITY: ClassVar[int] = 3
+
+    def __init__(self, *args: Any, skillet_mu: float = 0.4, **kwargs: Any) -> None:
+        if not np.isfinite(skillet_mu) or skillet_mu < 0:
+            raise ValueError("Invalid skillet friction")
+        self.skillet_mu = skillet_mu
+        super().__init__(*args, **kwargs)
+
     def _create_scene_xml(self) -> str:
         root = ET.fromstring(super()._create_scene_xml())
+        tray = root.find(".//body[@name='tray']")
+        assert tray is not None
+        for geom in tray.iter("geom"):
+            geom.set("priority", str(self.SKILLET_PRIORITY))
+            geom.set("friction", f"{self.skillet_mu} 0.005 0.0001")
         size = root.find("size")
         if size is None:
             size = ET.SubElement(root, "size")
@@ -96,6 +111,7 @@ class KitchenController(PotstickerController):
         seed: int,
         scene_bg: bool,
         surface_mu: float,
+        skillet_mu: float = 0.4,
     ) -> Any:
         # The file exists through construction/reset, and never replaces an asset
         # in the benchmark checkout. Geometry is also serialized in recordings.
@@ -107,6 +123,7 @@ class KitchenController(PotstickerController):
                 payload_count=3,
                 requested_count=requested,
                 surface_mu=surface_mu,
+                skillet_mu=skillet_mu,
                 scene_bg=scene_bg,
                 render_mode="rgb_array",
             )

@@ -66,6 +66,7 @@ class KitchenStepProtocol(FrozenPourStepProtocol):
                     "geometry": env.geometry.model_dump(),
                     "requested_count": env.requested_count,
                     "surface_mu": env.surface_mu,
+                    "skillet_mu": env.skillet_mu,
                     "scene_bg": env.scene_bg,
                     "deployment": env.deployment,
                     "human_interruption_cost": env.human_interruption_cost,
