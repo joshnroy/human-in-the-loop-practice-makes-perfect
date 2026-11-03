@@ -7,7 +7,6 @@ from typing import Any, get_args
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.practice_costs import SkillStepCosts
-from hitl_pmp.methods.belief_space.kitchen_recycling_domain import KitchenRecyclingPracticeDomain
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -333,9 +332,8 @@ class Tossing3DPomdpCli(EesCli):
         "Tossing3DCli": TOSSING3D_DOMAIN,
         "Tossing3DRealCli": TOSSING3D_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
-        "KitchenRecyclingCli": lambda provider: KitchenRecyclingPracticeDomain.for_provider(
-            provider=provider
-        ),
+        # The kitchen is Tossing3D re-flavoured: the same skills, so the same domain.
+        "KitchenRecyclingCli": TOSSING3D_DOMAIN,
     }
 
     @staticmethod

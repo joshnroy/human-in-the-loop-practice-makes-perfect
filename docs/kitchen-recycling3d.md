@@ -1,5 +1,22 @@
 # Kitchen recycling: isolated Tossing3D simulation variant
 
+> **Superseded in part (2026-11-02): the kitchen is now a re-flavour of Tossing3D.**
+> `KitchenRecycling3DEnvironment` is a `Tossing3DEnvironment` on the kitchen scene, and
+> its provider is `Tossing3DSkillProvider` itself. The planner sees exactly Tossing3D's
+> skills, operators, predicates, samplers, bounds and costs:
+> `PickCube`, `MoveToTossLocationAndToss`, `OpenGripper`, `PourCubeOutOfBin` and the two
+> human resets, each priced at 5. There is one belief per skill and no near/far copies.
+> The goal is `InBin` only, decided by KINDER's classifier on the bin's
+> `blocks_goal_region`. What stays kitchen: the floor, the mats as the no-drive line
+> (the barrier is the mat edge, x = 1.15), the bin target on the mats, the furniture, the
+> kitchen pick controller (`RecyclingPickController`), and the human placements. A
+> same-side reset puts the bin beside the robot on the kitchen floor and an opposite-side
+> reset puts it back on its target; both put the cube on the kitchen floor. The drive zone
+> reaches Tossing3D's toss planning through `Tossing3DState.drive_zone`. Only a single
+> object is supported. The sections below that describe contexts, per-context
+> calibration, settled-in-bin scoring, `NeedsRecovery`/`Pickable` and the three human
+> skills describe the environment before this change.
+
 This is **not** a change to the cube benchmark, its launch configurations, or its results.
 Implementation starts from `d079f94b92b442d3eb5473081fae275ce163ac35` in a separate worktree.
 Launch receipts, rather than this document, establish whether jobs have been submitted.

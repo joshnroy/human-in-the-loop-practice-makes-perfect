@@ -106,26 +106,12 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
             "ranges": [[*config.bin_position, *config.bin_position]],
             "yaw_ranges": [[0, 0]],
         },
-        "mat_start": {
-            "target": "ground",
-            "ranges": [
-                [
-                    (left + right) / 2,
-                    (bottom + top) / 2,
-                    0.0006,
-                    (left + right) / 2,
-                    (bottom + top) / 2,
-                    0.0006,
-                ]
-            ],
-            "yaw_ranges": [[0, 0]],
-        },
         "boundary_start": {
             "target": "ground",
             "ranges": [[left, 0, 0.001, left, 0, 0.001]],
             "yaw_ranges": [[0, 0]],
         },
-        "bin_goal": {
+        "blocks_goal_region": {
             "target": "bin_0",
             "ranges": [[-0.1, -0.1, 0.01, 0.1, 0.1, 0.14]],
             "yaw_ranges": [[0, 0]],
@@ -137,7 +123,6 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
         ["on", "robot", "robot_start"],
         ["on", "bin_0", "bin_start"],
         ["on", "cuboid_barrier", "boundary_start"],
-        ["on", "sprout_mats", "mat_start"],
     ]
     colors = {
         "cube": [0.15, 0.7, 0.25, 1],
@@ -187,10 +172,6 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
         },
         "fixtures": {
             "kitchenmatvisual": {
-                "sprout_mats": {
-                    "size": [(right - left) / 2, (top - bottom) / 2, 0.0005],
-                    "rgba": [0.45, 0.55, 0.58, 1],
-                },
                 "cuboid_barrier": {
                     "size": [0.008, (top - bottom) / 2, 0.0005],
                     "rgba": [0.95, 0.55, 0.08, 1],
@@ -206,8 +187,11 @@ def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
             }
         },
         "initial_state": initial,
+        # Drawn into the scene XML as a visual only (`furniture.py`): an object here
+        # would sit in every planner's obstacle set.
+        "kitchen_mats": [left, bottom, right, top],
         "goal_state": [
-            ["on", internal_name(index=index), "bin_goal"]
+            ["on", internal_name(index=index), "blocks_goal_region"]
             for index, spec in enumerate(config.objects)
             if spec.name in config.required_objects
         ],
