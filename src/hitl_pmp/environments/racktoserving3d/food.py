@@ -12,6 +12,8 @@ and the observed food extent govern holding and placement; rack-wire and fixture
 collision failures are retained rather than weakening clearance guards.
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from functools import cached_property
 from time import monotonic
 from typing import Any, ClassVar
@@ -27,6 +29,9 @@ from .transit import ArmTransit, geom_half_extents, segment_samples
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
 APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
+# How much a pad-fixture contact present when a lift starts may shrink (measured-state
+# jitter) and still count as the same contact the lift is leaving.
+DEPARTURE_TOLERANCE = 1e-4
 
 
 class _FoodMotion(RackScraper):
@@ -34,10 +39,15 @@ class _FoodMotion(RackScraper):
 
     def __init__(self, *, food: "RackFoodController") -> None:
         self.food = food
+        self.departing: dict[tuple[int, int], float] = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
     def check_configuration(self, *, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
-        super().check_configuration(base=base, arm=arm, holding=False)
+        try:
+            super().check_configuration(base=base, arm=arm, holding=False)
+        except SkillFailed:
+            if not self.departing or self._undeparted_cost() > 0:
+                raise
         shelf, backend = self.shelf, self.food.backend
         scratch = shelf.ik_data
         carried = self.food.carried
@@ -99,6 +109,68 @@ class _FoodMotion(RackScraper):
                         f"Carried food would collide with {shelf.model.geom(obstacle).name}: "
                         f"overlap={overlap:.4f}, bottom={bottom:.4f}, top={top:.4f}"
                     )
+
+    def pad_fixture_contacts(self) -> dict[tuple[int, int], float]:
+        """Closest distance of each (pad, fixture) pair among scratch data's contacts."""
+        shelf = self.shelf
+        scratch = shelf.ik_data
+        fixed = shelf.cupboard_geoms | shelf.box_geoms
+        pairs: dict[tuple[int, int], float] = {}
+        for contact in scratch.contact[: scratch.ncon]:
+            for robot, other in (
+                (int(contact.geom1), int(contact.geom2)),
+                (int(contact.geom2), int(contact.geom1)),
+            ):
+                if robot in shelf.pad_geoms and other in fixed:
+                    pairs[robot, other] = min(pairs.get((robot, other), np.inf), contact.dist)
+        return pairs
+
+    def _undeparted_cost(self) -> float:
+        """``collision_cost`` of scratch data's contacts, less the departing ones.
+
+        A departing contact is a (pad, fixture) pair recorded when the lift began
+        whose distance has not shrunk by more than ``DEPARTURE_TOLERANCE``. Every
+        other term counts exactly as ``ShelfSkills.collision_cost`` counts it.
+        """
+        shelf = self.shelf
+        scratch = shelf.ik_data
+        fixed = shelf.cupboard_geoms | shelf.box_geoms
+        wiper = set(shelf.wiper_geoms)
+        robot = shelf.robot_geoms
+        cost = 0.0
+        for contact in scratch.contact[: scratch.ncon]:
+            a, b = int(contact.geom1), int(contact.geom2)
+            depth = max(0.0, -contact.dist)
+            pair = (a, b) if a in robot else (b, a)
+            start = self.departing.get(pair)
+            if start is not None and contact.dist >= start - DEPARTURE_TOLERANCE:
+                continue
+            if a in robot and b in robot:
+                cost += max(0.0, depth - 0.001)
+            elif (a in robot and b in fixed) or (b in robot and a in fixed):
+                cost += depth + 0.001
+            elif (a in robot and b in wiper and a not in shelf.pad_geoms) or (
+                b in robot and a in wiper and b not in shelf.pad_geoms
+            ):
+                cost += depth
+        return cost
+
+    @contextmanager
+    def departing_from_contacts(self) -> Generator[None, None, None]:
+        """Within this scope, pad-fixture contacts present now may persist, not deepen.
+
+        A closed grasp on the wire rack can leave a pad resting on a wire. The lift
+        moves away from that contact, but the unconditioned check rejects the lift's
+        own starting configuration.
+        """
+        shelf = self.shelf
+        shelf.site_at(base=shelf.data.qpos[shelf.ba].copy(), arm=shelf.data.qpos[shelf.qa].copy())
+        shelf.mujoco.mj_collision(shelf.model, shelf.ik_data)
+        self.departing = self.pad_fixture_contacts()
+        try:
+            yield
+        finally:
+            self.departing = {}
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:
@@ -437,14 +509,15 @@ class RackFoodController:
             shelf.hold(count=30, label="food_close")
             self._require_held(name=name)
             self.controllers.held_food = shelf.held_cube = self.carried = name
-            self.motion.line(
-                position=pre[:3, 3],
-                rotation=pre[:3, :3],
-                label="food_lift",
-                holding=False,
-                step=0.005,
-                steps_per=5,
-            )
+            with self.motion.departing_from_contacts():
+                self.motion.line(
+                    position=pre[:3, 3],
+                    rotation=pre[:3, :3],
+                    label="food_lift",
+                    holding=False,
+                    step=0.005,
+                    steps_per=5,
+                )
             self._require_held(name=name)
 
     @staticmethod
