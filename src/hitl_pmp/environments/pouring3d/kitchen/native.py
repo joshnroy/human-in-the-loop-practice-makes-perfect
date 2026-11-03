@@ -98,6 +98,10 @@ class KitchenController(PotstickerController):
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
+    # Execution speeds of planned motions, within what the motors are measured to track.
+    planned_joint_speed: float = 0.20
+    planned_base_speed: float = 0.15
+    planned_base_turn_speed: float = 0.30
     # A loaded motion within this of a continuous joint's IK bound fails loudly.
     held_bound_margin: ClassVar[float] = np.deg2rad(20.0)
 
@@ -196,9 +200,86 @@ class KitchenController(PotstickerController):
         raise ValueError("Arm did not track the unwinding motion")
 
     def pick_pitcher(self) -> None:
-        if self.held is None:
-            self.unwind_continuous_joints()
-        super().pick_pitcher()
+        """Plan the base and the arm to a hover above the handle (PyBullet), follow
+        both, then descend, grasp and lift as scripted contact motions."""
+        from .planning.parameterized_skills import PickPitcherController
+        from .planning.utils import KitchenPyBulletSim
+
+        if self.held is not None:
+            raise ValueError("Pitcher pick requires an empty hand")
+        self.unwind_continuous_joints()
+        if not self.ready():
+            raise ValueError("Pitcher pick requires a ready scene")
+        self.shrimp_recovery_active = False
+        origin, _ = self.body_pose(name="pitcher")
+        handle, upright, down = self.pitcher_grasp_pose()
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            planner = PickPitcherController(sim=sim)
+            planner.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base=self.data.qpos[self.base_q].copy(),
+                base_target=self.base_home.copy(),
+                hover=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
+                rotation=upright,
+            )
+        finally:
+            sim.close()
+        self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
+        self.follow_arm_path(
+            path=planner.plans[planner.MOVE_ARM_TO_HOVER],
+            phase=planner.MOVE_ARM_TO_HOVER,
+            grip=self.pitcher_open_grip,
+        )
+        self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
+
+    def follow_base_path(self, *, path: list[np.ndarray], phase: str) -> None:
+        """Drive the base through every waypoint, the arm held where it is."""
+        self.phase = phase
+        hold = self.data.qpos[self.arm_q].copy()
+        for start, end in zip(path[:-1], path[1:], strict=True):
+            delta = end - start
+            delta[2] = np.arctan2(np.sin(delta[2]), np.cos(delta[2]))
+            seconds = max(
+                float(np.linalg.norm(delta[:2])) / self.planned_base_speed,
+                abs(float(delta[2])) / self.planned_base_turn_speed,
+            )
+            count = max(1, int(np.ceil(seconds * self.frequency)))
+            for index in range(1, count + 1):
+                self.base_target = start + delta * (index / count)
+                self.motor_step(target_q=hold, grip=self.grip)
+        for _ in range(round(5 * self.frequency)):
+            if np.linalg.norm(self.data.qpos[self.base_q][:2] - path[-1][:2]) < 0.01:
+                break
+            self.motor_step(target_q=hold, grip=self.grip)
+        else:
+            raise ValueError(f"Base did not track the planned path in {phase}")
+        self.last_q = hold
+
+    def follow_arm_path(self, *, path: list[np.ndarray], phase: str, grip: float) -> None:
+        """Drive the arm along each straight joint segment of a checked plan.
+
+        Continuous joints go the short way round, as upstream's follower does.
+        """
+        self.phase = phase
+        continuous = self.lower == -12
+        current = self.data.qpos[self.arm_q].copy()
+        for waypoint in path[1:]:
+            delta = np.asarray(waypoint, dtype=float) - current
+            delta[continuous] = np.arctan2(np.sin(delta[continuous]), np.cos(delta[continuous]))
+            count = max(
+                1, int(np.ceil(np.max(np.abs(delta)) / self.planned_joint_speed * self.frequency))
+            )
+            for index in range(1, count + 1):
+                self.last_q = current + delta * (index / count)
+                self.motor_step(target_q=self.last_q, grip=grip)
+            current = current + delta
+        for _ in range(round(10 * self.frequency)):
+            if np.max(np.abs(current - self.data.qpos[self.arm_q])) < 0.01:
+                return
+            self.motor_step(target_q=current, grip=grip)
+        raise ValueError(f"Arm did not track the planned path in {phase}")
 
     def pick_shrimp(self, *, index: int, location: str) -> None:
         if self.held is None:

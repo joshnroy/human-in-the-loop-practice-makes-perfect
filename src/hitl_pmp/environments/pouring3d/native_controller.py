@@ -359,6 +359,12 @@ class NativePouringController(BaseModel):
             seconds=8,
             grip=self.pitcher_open_grip,
         )
+        self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
+
+    def grasp_and_lift_pitcher(
+        self, *, handle: np.ndarray, down: Rotation, origin: np.ndarray
+    ) -> None:
+        """From the hover above the handle: descend, close on it, and lift the jug."""
         self.move(
             phase="descend to pitcher handle",
             position=handle,
