@@ -10,6 +10,7 @@ from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.food import RackFoodController, _FoodMotion
 from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
+from hitl_pmp.environments.racktoserving3d.transit import segment_samples
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
 
@@ -404,6 +405,95 @@ def test_food_base_does_not_retry_execution_failures():
     ):
         motion.move_base(target=np.zeros(3), label="test")
     drive.assert_called_once()
+
+
+class _BackLegs:
+    """The counter's back legs against a 0.26 m base disc, its top against a 0.20 m body.
+
+    A stance behind the counter, yawed as PR 1's layouts now yaw it: seed 0's
+    food 0 put the base at (1.937, -0.275) facing 148 degrees. The stance itself
+    is clear, but a slide along y at its own x passes within a disc of a leg.
+    """
+
+    LEGS = (np.array([1.675, -0.475]), np.array([1.675, 0.475]))
+    TOP = (np.array([0.98, -0.5]), np.array([1.7, 0.5]))
+    STANCE = np.array([1.937, -0.275, 2.586])
+
+    @staticmethod
+    def clear(*, base: np.ndarray) -> bool:
+        xy = base[:2]
+        top = np.linalg.norm(
+            np.maximum(np.maximum(_BackLegs.TOP[0] - xy, xy - _BackLegs.TOP[1]), 0)
+        )
+        return top >= 0.20 and all(
+            np.linalg.norm(np.maximum(np.abs(xy - leg) - 0.025, 0)) >= 0.26
+            for leg in _BackLegs.LEGS
+        )
+
+    @staticmethod
+    def check(*, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
+        if not _BackLegs.clear(base=base):
+            raise SkillFailed(f"robot base vs cupboard_1_leg at {base}")
+
+    @staticmethod
+    def motion() -> _FoodMotion:
+        motion = _FoodMotion.__new__(_FoodMotion)
+        motion.shelf = SimpleNamespace(
+            data=SimpleNamespace(qpos=np.zeros(3)), ba=np.arange(3), arm_reference=np.zeros(7)
+        )
+        motion.food = SimpleNamespace(
+            backend=SimpleNamespace(
+                support=Mock(return_value=SimpleNamespace(y_min=-0.5, y_max=0.5))
+            )
+        )
+        motion.check_configuration = Mock(side_effect=_BackLegs.check)
+        return motion
+
+    @staticmethod
+    def assert_route_clear(*, route: list[np.ndarray]) -> None:
+        np.testing.assert_allclose(route[-1], _BackLegs.STANCE)
+        for begin, end in zip([np.zeros(3), *route[:-1]], route, strict=True):
+            for base in segment_samples(start=begin, target=end):
+                assert _BackLegs.clear(base=base), (begin, end, base)
+
+
+def test_food_circulation_reaches_a_yawed_stance_behind_the_counter_legs():
+    assert _BackLegs.clear(base=_BackLegs.STANCE)
+    motion = _BackLegs.motion()
+    driven = []
+
+    def drive(*, target, label):
+        if not driven:
+            driven.append(None)
+            raise SkillFailed(f"{label}: no safe base transit: blocked")
+        driven.append(target.copy())
+
+    with patch.object(RackScraper, "move_base", side_effect=drive):
+        motion.move_base(target=_BackLegs.STANCE.copy(), label="food_base")
+    _BackLegs.assert_route_clear(route=driven[1:])
+
+
+def test_food_base_preflight_finds_the_route_the_circulation_drives():
+    motion = _BackLegs.motion()
+    route = motion.plan_base(target=_BackLegs.STANCE.copy(), arm=np.zeros(7))
+    _BackLegs.assert_route_clear(route=route)
+
+
+def test_pick_rejects_a_stance_with_no_base_route_before_moving(*, food):
+    blocked, reachable = np.array([1.94, -0.27, 2.6]), np.array([0.9, 0.1, 0])
+    grasp = Frames.pose(rotation=np.eye(3), position=[1.575, 0.09, 0.94])
+    food._pose = Mock(return_value=grasp)
+    food.backend.body_geoms = Mock(return_value={0})
+    food._grasp_candidates = Mock(return_value=[grasp])
+    food._base_candidates = Mock(return_value=[blocked, reachable])
+    food._checked_arm = Mock(return_value=np.zeros(7))
+    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
+    food.motion.check_arm_segment = Mock()
+    food.motion.plan_base = Mock(side_effect=[SkillFailed("counter leg blocks route"), [reachable]])
+    _, _, base = RackFoodController._plan_pick(food, name="cube_0")
+    np.testing.assert_allclose(base, reachable)
+    assert food.motion.plan_base.call_count == 2
+    np.testing.assert_allclose(food.motion.plan_base.call_args_list[0].kwargs["target"], blocked)
 
 
 def test_fresh_place_helper_rejects_blocked_base_route_before_moving(*, food):

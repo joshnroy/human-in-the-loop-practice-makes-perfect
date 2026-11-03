@@ -25,6 +25,9 @@ from .semantics import CircularSupport
 from .tool import RackScraper, box_overlap
 from .transit import ArmTransit, geom_half_extents, segment_samples
 
+# How far behind a stance, along its own heading, a counter circulation may enter it.
+APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
+
 
 class _FoodMotion(RackScraper):
     """Reuse guarded scraper routes, adding food collisions and live grasp checks."""
@@ -177,14 +180,7 @@ class _FoodMotion(RackScraper):
         shelf = self.shelf
         start = shelf.data.qpos[shelf.ba].copy()
         arm = shelf.arm_reference.copy()
-        counter = self.food.backend.support(name="counter")
-        for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
-            route = [
-                np.array([start[0], outside, start[2]]),
-                np.array([target[0], outside, start[2]]),
-                np.array([target[0], outside, target[2]]),
-                target,
-            ]
+        for route in self.circulation_routes(start=start, target=target):
             try:
                 for begin, end in zip([start, *route[:-1]], route, strict=True):
                     for base in segment_samples(start=begin, target=end):
@@ -197,12 +193,37 @@ class _FoodMotion(RackScraper):
             return
         raise SkillFailed(f"{label}: no safe food circulation: {failure}")
 
+    def circulation_routes(
+        self, *, start: np.ndarray, target: np.ndarray
+    ) -> list[list[np.ndarray]]:
+        """Routes around either side of the counter, each ending head-on into the stance.
+
+        The base leaves sideways past the counter, turns to the stance heading, then
+        drives to an entry point ``APPROACH_BACKOFFS`` behind the stance along that
+        heading and straight in. With no back-off the last leg slides along the
+        counter's edge at the stance's own distance from it, which clips a corner leg
+        whenever the stance is yawed off the edge's normal.
+        """
+        counter = self.food.backend.support(name="counter")
+        heading = np.array([np.cos(target[2]), np.sin(target[2])])
+        routes = []
+        for backoff in APPROACH_BACKOFFS:
+            entry = np.r_[target[:2] - backoff * heading, target[2]]
+            for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
+                route = [
+                    np.array([start[0], outside, start[2]]),
+                    np.array([entry[0], outside, start[2]]),
+                    np.array([entry[0], outside, target[2]]),
+                    entry,
+                ]
+                routes.append([*route, target] if backoff > 0 else route)
+        return routes
+
     def plan_base(self, *, target: np.ndarray, arm: np.ndarray) -> list[np.ndarray]:
         """Preflight a staged arm's complete base route before selecting its stance."""
         shelf = self.shelf
         start = shelf.data.qpos[shelf.ba].copy()
         outside_x = min(start[0], target[0]) - 0.10
-        counter = self.food.backend.support(name="counter")
         candidates = [
             [target],
             [np.array([start[0], target[1], start[2]]), target],
@@ -213,15 +234,7 @@ class _FoodMotion(RackScraper):
                 target,
             ],
         ]
-        candidates.extend(
-            [
-                np.array([start[0], outside, start[2]]),
-                np.array([target[0], outside, start[2]]),
-                np.array([target[0], outside, target[2]]),
-                target,
-            ]
-            for outside in (counter.y_min - 0.8, counter.y_max + 0.8)
-        )
+        candidates.extend(self.circulation_routes(start=start, target=target))
         failure = "no candidate base route"
         for route in candidates:
             try:
@@ -357,7 +370,7 @@ class RackFoodController:
                 if monotonic() >= deadline:
                     raise SkillFailed(f"No collision-free food grasp within budget: {failure}")
                 try:
-                    arm = self._checked_arm(pose=pre, base=base)
+                    staged = arm = self._checked_arm(pose=pre, base=base)
                     for pose in Frames.line(start=pre, end=grasp, step=0.01):
                         following = self._checked_arm(pose=pose, base=base, seed=arm)
                         self.motion.check_arm_segment(
@@ -367,6 +380,7 @@ class RackFoodController:
                             holding=False,
                         )
                         arm = following
+                    self.motion.plan_base(target=base, arm=staged)
                 except SkillFailed as exc:
                     failure = str(exc)
                     continue
