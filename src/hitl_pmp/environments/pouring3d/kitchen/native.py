@@ -104,6 +104,9 @@ class KitchenController(PotstickerController):
     planned_base_turn_speed: float = 0.30
     # A loaded motion within this of a continuous joint's IK bound fails loudly.
     held_bound_margin: ClassVar[float] = np.deg2rad(20.0)
+    LEVEL_JUG: ClassVar[str] = "level jug at pour start"
+    # Rounds of the closed-loop levelling at the pour start (re-measure, re-aim).
+    levelling_rounds: int = 3
 
     @classmethod
     def build(
@@ -347,6 +350,7 @@ class KitchenController(PotstickerController):
         if self.phase in {
             "position base for pour",
             "transport pour pivot above tray",
+            "level jug at pour start",
             "feedback tilt pitcher",
             "feedback horizontal sideways wiggle",
             "feedback return upright",
@@ -365,6 +369,7 @@ class KitchenController(PotstickerController):
         if self.held == "pitcher" and self.phase in {
             "fold and raise pitcher for transport",
             "position base for pour",
+            "level jug at pour start",
             "transport pour pivot above tray",
             "return base for placement",
         }:
@@ -427,7 +432,29 @@ class KitchenController(PotstickerController):
             path=planner.plans[planner.MOVE_ARM_TO_POUR], phase=planner.MOVE_ARM_TO_POUR, grip=1
         )
         self.posture_goal = self.pour_posture
+        self.level_jug_at_pour_start(center=center)
         return center
+
+    def level_jug_at_pour_start(self, *, center: np.ndarray) -> None:
+        """Close the loop on the jug's observed pose at the pour start, as the scripted
+        carry does: re-measure the grasp, then turn the hand so the jug stands at the
+        pour's upright orientation. The planner carries the jug as rigid; the compliant
+        grasp leaves it hanging several degrees off, which this removes."""
+        upright = self.pour_orientation(angle=0)
+        for _ in range(self.levelling_rounds):
+            jug, jug_rotation = self.body_pose(name="pitcher")
+            hand, hand_rotation = self.hand_pose()
+            if (jug_rotation * upright.inv()).magnitude() < np.deg2rad(1.0):
+                return
+            self.hand_offset = jug_rotation.inv().apply(hand - jug)
+            self.rotation_offset = jug_rotation.inv() * hand_rotation
+            self.move(
+                phase=self.LEVEL_JUG,
+                position=center,
+                rotation=upright * self.rotation_offset,
+                seconds=3,
+                grip=1,
+            )
 
     def move_base(self, *, target: np.ndarray, phase: str, seconds: float) -> None:
         """Preflight the carried arm along the base path, before issuing motors."""
