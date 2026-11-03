@@ -22,7 +22,11 @@ TOWARD_PLATE = np.array([-1.0, 0.0, 0.0])
 BEHIND_RACK = 0.03
 APPROACH_CLEARANCE = 0.035
 SIDE_MARGIN = 0.03
-EDGE_LIFT = 0.001
+# Blade-edge height above the rack top. 3 mm, not 1: the arm's IK accepts up to 2 deg
+# of rotation error, which drops one end of the 25 cm blade 4.4 mm, and the held-tool
+# fixture check allows 3 mm of support overlap, so a 1 mm glide could be planned and
+# then rejected mid-push (real-arm gathers, layouts 1-2, 2026-11-03).
+EDGE_LIFT = 0.003
 DESCENT_START_BEFORE_FRONT = 0.005
 DESCENT_SLOPE = 0.6
 
