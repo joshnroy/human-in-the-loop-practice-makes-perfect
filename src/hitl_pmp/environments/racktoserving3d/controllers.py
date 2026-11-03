@@ -84,16 +84,6 @@ class StrokeStances(BaseModel):
             base,
         ]
 
-    def side_to_rear(self, *, side: int, config: RackServingConfig) -> list[np.ndarray]:
-        """From a side stance out to its lane, to the rear lane, and turn to face the rack."""
-        lane, rear_x = self.lane(side=side, config=config), self.rear_x(config=config)
-        heading = self.side_base(side=side, config=config)[2]
-        return [
-            np.array([config.rack_center_x, lane, heading]),
-            np.array([rear_x, lane, heading]),
-            np.array([rear_x, lane, np.pi]),
-        ]
-
 
 class RackControllers:
     stances: ClassVar[StrokeStances] = StrokeStances()
@@ -318,14 +308,10 @@ class RackControllers:
                 )
             sweep = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
 
-            def side_to_rear() -> None:
-                for index, waypoint in enumerate(stances.side_to_rear(side=-1, config=config)):
-                    tool.move_base(target=waypoint, label=f"sweep_route_{index}")
-
             self.push_stroke(
                 stroke=sweep,
                 base=stances.rear_base(y=float(sweep.start[1]), config=config),
-                travel=side_to_rear,
+                travel=self.to_rear,
                 rack_pose=rack_pose,
                 label="sweep",
             )
@@ -335,14 +321,13 @@ class RackControllers:
         return [name for name in backend.cube_names if backend.location(name=name) == "OnRack"]
 
     def to_rear(self) -> None:
-        """From wherever the base is to behind the counter, facing the rack."""
-        config, shelf = self.backend.config, self.shelf
-        y = float(shelf.data.qpos[shelf.ba[1]])
-        if abs(y) > config.counter_width / 2:
-            side = 1 if y > 0 else -1
-            for index, waypoint in enumerate(self.stances.side_to_rear(side=side, config=config)):
-                self.tool.move_base(target=waypoint, label=f"to_rear_{index}")
-        elif shelf.data.qpos[shelf.ba[0]] < config.counter_x_max:
+        """Round the counter's front and -y side to behind it, facing the rack.
+
+        The same circulation the old SweepRack used; from the -y side stance it is
+        the route the real-arm probe drove, while a direct lane-to-rear transit
+        from that stance failed a held-tool clearance check (2026-11-03).
+        """
+        if self.shelf.data.qpos[self.shelf.ba[0]] < self.backend.config.counter_x_max:
             self.around_counter(to_rear=True)
 
     def plate_clear_z(self) -> float:
@@ -460,11 +445,25 @@ class RackControllers:
             "blade_end_error_m": float(np.linalg.norm(edge - stroke.end)),
             "base": base.round(4).tolist(),
         })
-        self.release_swept_food()
+        self.release_swept_food(rotation=body[:3, :3])
 
-    def release_swept_food(self) -> None:
-        """Clear vertically before settling; do not drag supported food toward the rack."""
-        lifted_body = self.tool.wiper_pose().copy()
+    def release_swept_food(self, *, rotation: np.ndarray | None = None) -> None:
+        """Clear vertically before settling; do not drag supported food toward the rack.
+
+        With ``rotation`` (the stroke's planned, level blade), the blade is first turned
+        back to it in place about its edge centre, 2 mm up, then lifted. A blade rolled
+        about its length at a deep reach would otherwise rise with its low end dragging
+        through the rack wires (2026-11-03, side gathers stopping 3 cm from c).
+        """
+        tool = self.tool
+        lifted_body = tool.wiper_pose().copy()
+        if rotation is not None:
+            edge = tool.blade_edge().mean(axis=0) + [0.0, 0.0, 0.002]
+            level = np.eye(4)
+            level[:3, :3] = rotation
+            level[:3, 3] = edge - tool.blade_edge(pose=level).mean(axis=0)
+            self.move_tool(body=level, label="sweep_level")
+            lifted_body = level.copy()
         lifted_body[2, 3] += 0.06
         self.move_tool(body=lifted_body, label="sweep_lift")
         self.shelf.hold(count=40, label="food_settle")

@@ -19,12 +19,12 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
 
 VIEW = 432
 CAPTURE_HZ = 15
-WOOD = [0.60, 0.40, 0.23, 1.0]
 
 
 class Layouts:
@@ -46,6 +46,50 @@ class Layouts:
         return centres, yaws
 
 
+class ClearanceDiagnosis:
+    @staticmethod
+    def explain(*, tool, pose, data) -> dict:
+        """Which fixture geoms a rejected scraper pose overlaps, and by how much."""
+        from hitl_pmp.environments.racktoserving3d.tool import box_overlap
+        from hitl_pmp.environments.racktoserving3d.transit import geom_half_extents
+
+        data = tool.data if data is None else data
+        shelf, model = tool.shelf, tool.model
+        hits = []
+        for geom in (tool.head_geom, tool.handle_geom):
+            center = pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3]
+            rotation = pose[:3, :3] @ tool.geom_rotation(geom=geom)
+            size = model.geom_size[geom]
+            bottom = float(center[2] - np.abs(rotation[2]) @ size)
+            for obstacle in shelf.cupboard_geoms | shelf.box_geoms:
+                other_center = data.geom_xpos[obstacle]
+                other_rotation = data.geom_xmat[obstacle].reshape(3, 3)
+                other_size = geom_half_extents(model=model, geom=obstacle)
+                overlap = box_overlap(
+                    center=center,
+                    rotation=rotation,
+                    size=size,
+                    other_center=other_center,
+                    other_rotation=other_rotation,
+                    other_size=other_size,
+                )
+                if overlap > 1e-9:
+                    hits.append({
+                        "tool_geom": "head" if geom == tool.head_geom else "handle",
+                        "obstacle": model.geom(obstacle).name
+                        or f"{model.body(model.geom_bodyid[obstacle]).name}/{obstacle}",
+                        "overlap": float(overlap),
+                        "tool_bottom": bottom,
+                        "obstacle_top": float(
+                            other_center[2] + np.abs(other_rotation[2]) @ other_size
+                        ),
+                    })
+        return {
+            "blade_edge": tool.blade_edge(pose=pose).mean(axis=0).round(4).tolist(),
+            "hits": hits,
+        }
+
+
 def main():
     import mujoco
 
@@ -56,7 +100,9 @@ def main():
     parser.add_argument("--delta", type=float, required=True)
     parser.add_argument("--d", type=float, required=True)
     parser.add_argument("--no-video", action="store_true")
-    parser.add_argument("--wood-counter", action="store_true", help="recolour the counter top")
+    parser.add_argument(
+        "--side-offset", type=float, default=None, help="override StrokeStances.side_offset"
+    )
     args = parser.parse_args()
     if args.output.exists():
         parser.error("use a new output directory")
@@ -75,10 +121,6 @@ def main():
         env.reset_to_seed(seed=0)
         backend = env.backend()
         model, data = backend.model(), backend.data()
-        if args.wood_counter:
-            for geom in backend.body_geoms(name="cupboard_1"):
-                if model.geom_rgba[geom][0] > 0.6:
-                    model.geom_rgba[geom] = WOOD
         if args.layout >= 0:
             rack = backend.support(name="rack_0")
             centres, yaws = Layouts.centres(
@@ -158,6 +200,32 @@ def main():
             frame()
 
         controllers = env.rack_controllers()
+        if args.side_offset is not None:
+            controllers.stances = StrokeStances(side_offset=args.side_offset)
+        motions: list[str] = []
+        for method in ("step", "line", "transit", "move_base"):
+            original = getattr(controllers.tool, method)
+
+            def traced(*, _original=original, _method=method, **kwargs):
+                motions.append(f"{_method}:{kwargs.get('label')}")
+                del motions[:-30]
+                return _original(**kwargs)
+
+            setattr(controllers.tool, method, traced)
+        report["last_motions"] = motions
+        report["clearance_failures"] = clearance_failures = []
+        tool_clear = controllers.tool.tool_clear
+
+        def traced_clear(*, pose, data=None):
+            clear = tool_clear(pose=pose, data=data)
+            if not clear:
+                clearance_failures.append(
+                    ClearanceDiagnosis.explain(tool=controllers.tool, pose=pose, data=data)
+                )
+                del clearance_failures[:-3]
+            return clear
+
+        controllers.tool.tool_clear = traced_clear
         frame(repeat=10, force=True)
         backend.set_tick_observer(observer=on_tick)
 
