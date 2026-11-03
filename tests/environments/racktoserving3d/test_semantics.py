@@ -14,6 +14,7 @@ from hitl_pmp.environments.racktoserving3d.semantics import (
     RackServingLedger,
     RectangularSupport,
     SupportRegion,
+    WellSupport,
     classify_food,
 )
 
@@ -279,3 +280,71 @@ def test_classify_food_scores_on_the_platter_only_inside_the_lip():
 def test_platter_rejects_nonpositive_extent():
     with pytest.raises(ValidationError):
         RectangularSupport(center_x=0, center_y=0, yaw=0, half_x=0.0, half_y=0.1, top_z=1)
+
+
+def _well(*, radius=0.095, top_z=1.0):
+    return WellSupport(center_x=0.0, center_y=0.0, radius=radius, top_z=top_z)
+
+
+def _lying_dumpling(*, radial, bottom_z=1.0):
+    """A 4.5x3x2.5 cm dumpling on its side (~98 deg about its long axis), long axis
+    radial, so its shadow reaches 2.25 cm either side of its centre."""
+    return FoodMeasurement(
+        position=(0.0, radial, bottom_z + 0.0150),
+        half_extents=(0.0125, 0.0225, 0.0150),
+        footprint=(
+            (-0.0125, radial - 0.0225),
+            (0.0125, radial - 0.0225),
+            (0.0125, radial + 0.0225),
+            (-0.0125, radial + 0.0225),
+        ),
+    )
+
+
+def test_well_serves_food_whose_centre_is_inside_even_when_it_leans_on_the_rim():
+    food = _lying_dumpling(radial=0.077)
+    assert not _well().contains_xy(points=food.horizontal_points())
+    assert _well().supports(food=food, tolerance=0.009)
+
+
+def test_well_still_requires_the_centre_inside_and_the_floor_underneath():
+    assert not _well().supports(food=_lying_dumpling(radial=0.097), tolerance=0.009)
+    # On the rim top: centre inside the well's edge, bottom well above its floor.
+    assert not _well().supports(food=_lying_dumpling(radial=0.08, bottom_z=1.012), tolerance=0.009)
+
+
+def test_round_slab_plate_keeps_whole_footprint_containment():
+    food = _lying_dumpling(radial=0.077)
+    assert not _plate(radius=0.095).supports(food=food, tolerance=0.009)
+
+
+def _classify_on(*, tray, food, contacts):
+    return classify_food(
+        food=food,
+        rack=_region(x_min=0.5, x_max=0.9),
+        tray=tray,
+        counter=_region(x_min=-2, x_max=2),
+        support_contacts=contacts,
+        support_tolerance=0.009,
+    )
+
+
+def test_food_stacked_on_served_food_over_the_well_is_served():
+    stacked = _lying_dumpling(radial=0.03, bottom_z=1.025)
+    contacts = frozenset({"served_food"})
+    assert _classify_on(tray=_well(), food=stacked, contacts=contacts) == "OnTray"
+
+
+def test_stacking_serves_only_over_the_well_and_only_on_the_well_target():
+    contacts = frozenset({"served_food"})
+    outside = _lying_dumpling(radial=0.11, bottom_z=1.025)
+    assert _classify_on(tray=_well(), food=outside, contacts=contacts) is None
+    inside = _lying_dumpling(radial=0.03, bottom_z=1.025)
+    for tray in (_plate(), _region()):
+        assert _classify_on(tray=tray, food=inside, contacts=contacts) is None
+
+
+def test_food_resting_on_the_counter_beside_the_well_is_not_served():
+    food = _lying_dumpling(radial=0.12, bottom_z=1.0)
+    contacts = frozenset({"counter", "tray"})
+    assert _classify_on(tray=_well(), food=food, contacts=contacts) == "SpilledCounter"

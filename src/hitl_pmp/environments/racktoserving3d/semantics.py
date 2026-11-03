@@ -82,6 +82,11 @@ class SupportRegion(BaseModel):
             and abs(centre_z - half_z - self.top_z) <= tolerance
         )
 
+    def supports_stacked(self, *, food: FoodMeasurement) -> bool:
+        """Only a plate's well serves food stacked on other served food."""
+        del food
+        return False
+
     def contains_xy(self, *, points: Iterable[Sequence[float]], margin: float = 0.0) -> bool:
         return all(
             self.x_min + margin <= x <= self.x_max - margin
@@ -127,6 +132,31 @@ class CircularSupport(BaseModel):
         return self.contains_xy(points=food.horizontal_points()) and food.rests_on(
             top_z=self.top_z, tolerance=tolerance
         )
+
+    def supports_stacked(self, *, food: FoodMeasurement) -> bool:
+        del food
+        return False
+
+
+class WellSupport(CircularSupport):
+    """A plate's well: the circle is the rim's inner edge, ``top_z`` the well's floor.
+
+    Food is served when its centre lies over the well and it rests on the floor,
+    even if part of it leans on or reaches over the rim; or when its centre lies
+    over the well and it rests on other served food. Food on the rim top (lifted
+    off the floor) or with its centre outside the inner edge is not served.
+    """
+
+    def _centre_inside(self, *, food: FoodMeasurement) -> bool:
+        return self.contains_xy(points=(food.position[:2],))
+
+    def supports(self, *, food: FoodMeasurement, tolerance: float) -> bool:
+        return self._centre_inside(food=food) and food.rests_on(
+            top_z=self.top_z, tolerance=tolerance
+        )
+
+    def supports_stacked(self, *, food: FoodMeasurement) -> bool:
+        return self._centre_inside(food=food)
 
 
 class RectangularSupport(BaseModel):
@@ -181,8 +211,13 @@ class RectangularSupport(BaseModel):
             top_z=self.top_z, tolerance=tolerance
         )
 
+    def supports_stacked(self, *, food: FoodMeasurement) -> bool:
+        del food
+        return False
 
-ServingRegion = SupportRegion | CircularSupport | RectangularSupport
+
+ServingRegion = SupportRegion | CircularSupport | WellSupport | RectangularSupport
+SupportContact = Literal["rack", "tray", "counter", "floor", "served_food"]
 
 
 class _GeometryTolerance(BaseModel):
@@ -196,7 +231,7 @@ def classify_food(
     rack: ServingRegion,
     tray: ServingRegion,
     counter: ServingRegion,
-    support_contacts: frozenset[Literal["rack", "tray", "counter", "floor"]],
+    support_contacts: frozenset[SupportContact],
     floor_z: float = 0.0,
     support_tolerance: float = 0.005,
 ) -> FoodLocation | None:
@@ -205,6 +240,8 @@ def classify_food(
     Geometry is supplied from the live scene, not nominal config coordinates.
     An unsupported proxy (including one in flight) has no location predicate;
     failure to reach a destination alone is not evidence of a floor spill.
+    ``served_food`` means the food rests on other food that is itself OnTray,
+    which serves it only where the tray's ``supports_stacked`` allows.
     """
     tolerance = _GeometryTolerance(value=support_tolerance, floor_z=floor_z)
     if food.held:
@@ -214,6 +251,8 @@ def classify_food(
         (rack, "rack", "OnRack"),
         (counter, "counter", "SpilledCounter"),
     )
+    if "served_food" in support_contacts and tray.supports_stacked(food=food):
+        return "OnTray"
     for region, contact, location in candidates:
         if contact in support_contacts and region.supports(food=food, tolerance=tolerance.value):
             return location

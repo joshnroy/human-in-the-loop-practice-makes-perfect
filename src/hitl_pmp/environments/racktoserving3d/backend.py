@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Callable
 from itertools import product
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from pydantic import Field, PrivateAttr
@@ -27,7 +27,9 @@ from .semantics import (
     RackServingLedger,
     RectangularSupport,
     ServingRegion,
+    SupportContact,
     SupportRegion,
+    WellSupport,
     classify_food,
 )
 
@@ -228,7 +230,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
         well = model.geom("box_0_well").id
         rotation = data.geom_xmat[well].reshape(3, 3)
         radius, half_height = model.geom_size[well][:2]
-        return CircularSupport(
+        return WellSupport(
             center_x=float(data.geom_xpos[well][0]),
             center_y=float(data.geom_xpos[well][1]),
             radius=float(radius * abs(rotation[2, 2])),
@@ -275,11 +277,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
                         supports.add("floor")
         return supports
 
-    def location(self, *, name: str) -> FoodLocation | None:
+    def location(
+        self, *, name: str, _visiting: frozenset[str] = frozenset()
+    ) -> FoodLocation | None:
         """Raw support/grasp category, independent of velocity or readiness.
 
         Raw OnTray includes sliding/rolling contact; delivery scoring uses
         settled_on_tray instead. Unsupported food is not relabeled as spilled.
+        Food resting on other food counts as resting on served food when that
+        food is itself raw OnTray; `_visiting` breaks mutual-support cycles.
         """
         corners = self.corners(name=name)
         lower, upper = corners.min(axis=0), corners.max(axis=0)
@@ -295,7 +301,12 @@ class RackServingBackend(SweepOffShelf3DBackend):
             ),
         )
         supports = self.supporting_bodies(name=name)
-        contact_names: dict[str, Literal["rack", "tray", "counter", "floor"]] = {
+        visiting = _visiting | {name}
+        on_served_food = any(
+            self.location(name=other, _visiting=visiting) == "OnTray"
+            for other in sorted(supports & set(self.cube_names) - visiting)
+        )
+        contact_names: dict[str, SupportContact] = {
             "rack_0": "rack",
             "box_0": "tray",
             "cupboard_1": "counter",
@@ -310,12 +321,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
             counter=self.support(name="counter"),
             support_contacts=frozenset(
                 contact_names[name] for name in supports if name in contact_names
-            ),
+            )
+            | ({"served_food"} if on_served_food else set()),
             support_tolerance=0.009,
         )
         if location == "HoldingFood" or location is None:
             return location
         expected = {"OnRack": "rack_0", "OnTray": "box_0", "SpilledCounter": "cupboard_1"}
+        if location == "OnTray" and on_served_food and isinstance(tray, WellSupport):
+            return location
         if location in expected and expected[location] not in supports:
             return None
         if location == "SpilledFloor" and not supports:
