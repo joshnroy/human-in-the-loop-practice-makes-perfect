@@ -557,8 +557,9 @@ class ShelfSkills:
         dist = np.asarray(d.contact.dist[:ncon], dtype=float)
 
         def member(*, geoms: Any) -> tuple[np.ndarray, np.ndarray]:
-            ids = np.fromiter(geoms, dtype=int, count=len(geoms))
-            return np.isin(a, ids), np.isin(b, ids)
+            mask = np.zeros(int(self.model.ngeom), dtype=bool)
+            mask[np.fromiter(geoms, dtype=int, count=len(geoms))] = True
+            return mask[a], mask[b]
 
         robot_a, robot_b = member(geoms=self.robot_geoms)
         fixed_a, fixed_b = member(geoms=self.cupboard_geoms | self.box_geoms)
