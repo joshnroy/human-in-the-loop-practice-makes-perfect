@@ -38,16 +38,17 @@ def test_missing_measurements_stay_unknown_and_proxies_are_configurable():
         KitchenGeometry(water_depth_proxy_m=0.2)
 
 
-def test_pan_sits_on_a_desk_height_hob_while_the_jug_counter_is_unchanged():
+def test_pan_and_jug_stand_on_the_same_desk_height():
     geometry = KitchenGeometry()
     assert geometry.hob_height_m == pytest.approx(0.74)
-    assert geometry.counter_height_m == pytest.approx(0.84)
+    assert geometry.counter_height_m == pytest.approx(0.74)
     config = geometry.scene_config()
     assert config["fixtures"]["pourstovetop"]["stovetop"]["height"] == pytest.approx(0.74)
     pan_region = config["regions"]["tray_home"]["ranges"][0]
     assert pan_region[2] == pan_region[5] == pytest.approx(0.7405)
     jug_region = config["regions"]["pitcher_home"]["ranges"][0]
-    assert jug_region[2] == jug_region[5] == pytest.approx(0.8405)
+    assert jug_region[2] == jug_region[5] == pytest.approx(0.7405)
+    assert config["fixtures"]["table"]["prep_table"]["height"] == pytest.approx(0.74)
 
 
 def test_kitchen_skillet_carries_dough_on_cast_iron_friction_and_dumplings_stay_low():

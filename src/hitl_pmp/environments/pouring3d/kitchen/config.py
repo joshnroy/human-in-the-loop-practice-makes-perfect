@@ -25,9 +25,10 @@ class KitchenGeometry(BaseModel):
     measured_jug_dimensions_m: tuple[float, float, float] | None = None
     measured_jug_handle_clearance_m: float | None = None
     measured_jug_mass_kg: float | None = None
-    counter_height_m: float = Field(default=0.84, ge=0.70, le=1.0)
-    # The pan sits directly on a fixed-height desk (~29 in, unmeasured) standing in
-    # for the stove. At the previous 0.84 m the dumpling pickup was often out of reach.
+    # The real setup stands the pan and the jug on the same 29 in desk (0.7366 m,
+    # kept at 0.74 m), the pan's part standing in for the stove. At the previous
+    # 0.84 m the dumpling pickup was often out of reach.
+    counter_height_m: float = Field(default=0.74, ge=0.70, le=1.0)
     hob_height_m: float = Field(default=0.74, ge=0.70, le=1.0)
     pan_height_proxy_m: float = Field(default=0.0508, gt=0)
     pan_bottom_radius_proxy_m: float = Field(default=0.105, gt=0)

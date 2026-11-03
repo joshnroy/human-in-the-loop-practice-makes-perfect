@@ -41,11 +41,11 @@ there is no implemented pan-grasp/dump skill.
 The jug candidate is the approximately 1 L [Norpro 3037, listed in Norpro's catalog](https://www.norpro.com/wp-content/uploads/2023/08/2023-Norpro50thYrCatalogDigitalw1.pdf).
 `KitchenGeometry` retains missing measured inner pan dimensions, jug dimensions,
 handle clearance, and jug mass as `null`. Separately named `*_proxy_*` fields are
-explicit simulation assumptions, not product measurements. The default jug counter
-height is 0.84 m. The pan's hob is 0.74 m: the real setup stands the skillet directly
-on a fixed-height desk (about 29 in, not measured) in place of a stove, and at the
-earlier 0.84 m hob the dumpling pickup was often out of the arm's reach. Recordings
-made before this change embed their own 0.84 m hob and replay at it. A
+explicit simulation assumptions, not product measurements. The jug counter and the
+pan's hob are both 0.74 m: the real setup stands the skillet and the jug on the same
+29 in desk (0.7366 m, kept at 0.74 m), the skillet's part in place of a stove.
+At the earlier 0.84 m the dumpling pickup was often out of the arm's reach. Recordings
+made before these changes embed their own 0.84 m heights and replay at them. A
 `--kitchen-geometry` JSON file can override these fields;
 the complete configuration is embedded in recordings.
 
@@ -100,8 +100,9 @@ loaded transport waypoints. Ingredients and
 partial outcomes are not snapped into desired bins after robot actions.
 
 Before PickPitcher and before every ingredient pick, and only with an empty hand,
-each continuous arm joint (1, 3, 5, 7) wound `k = round((q - q_neutral) / 360 deg)`
-whole turns from its episode-initial angle is rotated back by `k` turns along a
+each continuous arm joint (1, 3, 5, 7) at least a full turn from its episode-initial
+angle (`|q - q_neutral| >= 360 deg`, so a joint near +-180 deg never flips) is rotated
+back by `k = round((q - q_neutral) / 360 deg)` whole turns along a
 collision-checked joint path (same hand pose; joints 2, 4, 6 untouched; no home
 posture). IK resolves each continuous joint to the equivalent nearest its previous
 angle, so without this pick/place cycles ratchet joint 1 towards the +-688 deg IK
