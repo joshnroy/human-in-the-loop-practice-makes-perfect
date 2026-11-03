@@ -223,12 +223,29 @@ def test_placement_avoids_occupied_footprints(*, food):
             else np.array([occupied - half_size, occupied + half_size])
         )
     )
-    candidates = food._placement_candidates(name="cube_0", destination="rack_0")
+    candidates = food._placement_candidates(name="cube_0", destination="box_0")
     assert len(candidates) == 14
     for target in candidates:
         assert target[0] - half_size[0] >= 1.37 + 0.02 - 1e-9
         assert target[0] + half_size[0] <= 1.63 - 0.02 + 1e-9
         assert np.any(np.abs(target - occupied) > 2 * half_size + 0.005)
+
+
+def test_rack_put_back_tries_the_shared_layout_draws_in_order(*, food):
+    rack = SupportRegion(x_min=1.37, x_max=1.63, y_min=-0.1875, y_max=0.1875, top_z=0.925)
+    food.backend.support = Mock(return_value=rack)
+    half_size = np.array([0.015, 0.0225, 0.0125])
+    centre = np.array([1.2, 0, 0.925])  # the fixture's live pose
+    food.backend.corners = Mock(return_value=np.array([centre - half_size, centre + half_size]))
+    draws = [(1.45, -0.1), (1.52, 0.08), (1.41, 0.13)]
+    food.backend.rack_put_back_draws = Mock(return_value=draws)
+    candidates = food._placement_candidates(name="cube_0", destination="rack_0")
+    food.backend.rack_put_back_draws.assert_called_once_with(
+        name="cube_0", count=food.RACK_PUT_BACK_DRAWS
+    )
+    assert len(candidates) == len(draws)
+    for target, (x, y) in zip(candidates, draws, strict=True):
+        np.testing.assert_allclose(target, [x, y, rack.top_z + half_size[2] + 0.003])
 
 
 def test_no_free_placement_retains_grasp(*, food):

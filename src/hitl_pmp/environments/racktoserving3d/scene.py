@@ -70,6 +70,8 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
             ),
         ],
     ]
+    # KINDER needs somewhere to spawn the food; every reset then replaces this
+    # placeholder with its seed's draw of the shared rack layout (`layout.py`).
     dumplings = {}
     for index, (depth_fraction, width_fraction) in enumerate((
         (-0.22, -0.25),

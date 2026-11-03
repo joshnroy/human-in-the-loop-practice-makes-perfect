@@ -14,7 +14,7 @@ collision failures are retained rather than weakening clearance guards.
 
 from functools import cached_property
 from time import monotonic
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -238,6 +238,10 @@ class _FoodMotion(RackScraper):
 class RackFoodController:
     """Bounded angled grasp search on the existing full-height counter scene."""
 
+    # How many draws of the shared rack layout a put-back tries, in order, before it
+    # fails: the first reachable one is used.
+    RACK_PUT_BACK_DRAWS: ClassVar[int] = 15
+
     def __init__(self, *, controllers: Any) -> None:
         self.controllers = controllers
         self.backend = controllers.backend
@@ -439,6 +443,14 @@ class RackFoodController:
         corners = self.backend.corners(name=name)
         centre = self._pose(name=name)[:3, 3]
         lower, upper = corners.min(axis=0) - centre, corners.max(axis=0) - centre
+        if destination == "rack_0":
+            # The same layout distribution as every reset and the person's return.
+            return [
+                np.array([x, y, region.top_z - lower[2] + 0.003])
+                for x, y in self.backend.rack_put_back_draws(
+                    name=name, count=self.RACK_PUT_BACK_DRAWS
+                )
+            ]
         xs = (region.x_min - lower[0] + 0.02, region.x_max - upper[0] - 0.02)
         ys = (region.y_min - lower[1] + 0.02, region.y_max - upper[1] - 0.02)
         if xs[0] > xs[1] or ys[0] > ys[1]:
