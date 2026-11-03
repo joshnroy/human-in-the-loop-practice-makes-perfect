@@ -400,6 +400,15 @@ class Cli:
                 parser=parser, env=known_args.env, method=known_args.method
             )
         args = parser.parse_args(argv)
+        # An environment may name the expectimax depth its runs default to (the real
+        # robot's canonical 6). Expectimax only: determinized A* refuses any depth.
+        environment_depth = getattr(ENVIRONMENTS.get(args.env), "EXPECTIMAX_SEARCH_DEPTH", None)
+        if (
+            environment_depth is not None
+            and getattr(args, "pomdp_solver", None) == "expectimax"
+            and args.pomdp_search_depth is None
+        ):
+            args.pomdp_search_depth = environment_depth
         if args.evaluate_only and args.resume is not None:
             parser.error("--evaluate-only measures a fresh run's policy; it cannot --resume")
         if args.preset is not None and args.practice_step_budget is None and not args.evaluate_only:

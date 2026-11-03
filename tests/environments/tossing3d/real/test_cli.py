@@ -183,3 +183,33 @@ def test_measuring_every_cycle_is_off_by_default_on_the_real_domain() -> None:
         argv=[*FAKE_RUN, "--practice-step-budget", "100", "--output-dir", "unused"]
     )
     assert args.measure_every_cycles is None
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ([], 6),
+        (["--pomdp-search-depth", "4"], 4),
+        (["--pomdp-solver", "determinized_astar"], None),
+    ],
+)
+def test_the_real_robot_searches_the_canonical_depth_only_with_expectimax(
+    *, extra: list[str], expected: int | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The canonical preset carries no depth; the real domain's expectimax runs at 6
+    unless told otherwise, and determinized A* takes none."""
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(
+        StepPracticeRunner, "run", staticmethod(lambda **kwargs: seen.update(kwargs))
+    )
+    Cli.main(
+        argv=[
+            *FAKE_RUN,
+            *extra,
+            "--practice-step-budget",
+            "100",
+            "--output-dir",
+            str(tmp_path / "run"),
+        ]  # fmt: skip
+    )
+    assert seen["method"].pomdp_search_depth == expected

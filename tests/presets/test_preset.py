@@ -20,7 +20,6 @@ SIM_ARGV = [*PRESET_ONLY, "--practice-step-budget", "1000"]
 CANONICAL_SHARED = {
     "pomdp_observation_probability_weight": 0.0,
     "pomdp_linear_cost_lambda": 3e-4,
-    "pomdp_search_depth": 6,
     "pomdp_inference_engine": "grid",
     "pomdp_num_particles": 1024,
     "ees_reset_gate": False,
@@ -45,6 +44,12 @@ def test_the_canonical_preset_resolves_to_exactly_these_values() -> None:
     for key, value in {**CANONICAL_SHARED, **CANONICAL_TOSSING3D}.items():
         assert args[key] == value, key
     assert args["preset"] == "tossing3d-canonical"
+
+
+def test_the_canonical_preset_sets_no_search_depth() -> None:
+    """A preset's values are defaults for every solver, and determinized A* refuses a
+    depth: each expectimax caller passes its own `--pomdp-search-depth`."""
+    assert parse(argv=SIM_ARGV).pomdp_search_depth is None
 
 
 def test_the_canonical_preset_sets_no_value_beyond_those_listed() -> None:

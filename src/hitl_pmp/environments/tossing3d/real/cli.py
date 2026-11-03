@@ -1,8 +1,8 @@
 """`--env tossing3d_real`: the Tossing3D practice loop on the real TidyBot.
 
     python -m hitl_pmp.cli --env tossing3d_real --method pomdp \\
-        --preset tossing3d-canonical --robot real --robot-host <nuc> \\
-        --practice-step-budget 6000 --num-test-tasks 3 --output-dir <dir>
+        --preset tossing3d-canonical --pomdp-search-depth 6 --robot real \\
+        --robot-host <nuc> --practice-step-budget 6000 --num-test-tasks 3 --output-dir <dir>
 
 The same domain, methods, preset (observation weight 0) and step protocol as
 `--env tossing3d`. What changes is the backend -- the robot behind the skill server, or
@@ -24,6 +24,7 @@ dies in cycle 0 resumes without redoing it. `--no-initial-measurement` skips ste
 import argparse
 from collections.abc import Callable
 from pathlib import Path
+from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
@@ -45,6 +46,11 @@ END_ONLY_MEASUREMENT_INTERVAL = 10**9
 
 class Tossing3DRealCli:
     """A static-method container, never instantiated."""
+
+    # The canonical arm's expectimax depth. The preset cannot carry it (determinized A*
+    # refuses a depth), so a real run that names none still searches 6, not the
+    # domain default of 3. `Cli.parse_args` applies it, to expectimax only.
+    EXPECTIMAX_SEARCH_DEPTH: ClassVar[int] = 6
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
