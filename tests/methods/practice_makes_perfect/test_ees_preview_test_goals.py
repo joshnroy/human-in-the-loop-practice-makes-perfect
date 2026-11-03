@@ -52,7 +52,9 @@ def test_preview_registers_all_three_goals_and_pours_before_the_first_decision(*
     method = EesMethod(
         env=env,
         skill_provider=provider,
-        preview_test_goals=tuple(goal.atoms for goal in tasks.test_task_goals()),
+        preview_test_goals=tuple(
+            EesMethod.named_goal(goal=goal.atoms) for goal in tasks.test_task_goals()
+        ),
     )
     method.get_practice_policy(task=tasks.sample_train_task_in_place())
     goals = [goal for _init, goal in method.planning_progress_tasks()]
@@ -73,7 +75,9 @@ def test_preview_tasks_survive_recency_eviction(*, world):
         env=env,
         skill_provider=provider,
         planning_progress_max_tasks=2,
-        preview_test_goals=tuple(goal.atoms for goal in tasks.test_task_goals()),
+        preview_test_goals=tuple(
+            EesMethod.named_goal(goal=goal.atoms) for goal in tasks.test_task_goals()
+        ),
     )
     task = tasks.sample_train_task_in_place()
     method.get_practice_policy(task=task)
@@ -136,8 +140,20 @@ def test_cli_flag_passes_the_kitchen_test_goals_to_ees(*, flag, expected, monkey
     (method,) = built
     assert len(method.preview_test_goals) == expected
     if expected:
-        assert _requests(goals=method.preview_test_goals) == [
+        assert [goal[0][1][0] for goal in method.preview_test_goals] == [
             "request_1",
             "request_2",
             "request_3",
         ]
+
+
+def test_preview_goals_survive_the_deployment_snapshot(*, world):
+    from hitl_pmp.step_protocol import DeploymentSnapshot
+
+    env, tasks, provider = world
+    goals = tuple(EesMethod.named_goal(goal=goal.atoms) for goal in tasks.test_task_goals())
+    method = EesMethod(env=env, skill_provider=provider, preview_test_goals=goals)
+    method.get_practice_policy(task=tasks.sample_train_task_in_place())
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(raw=raw, env=env, provider=provider)
+    assert restored.preview_test_goals == goals

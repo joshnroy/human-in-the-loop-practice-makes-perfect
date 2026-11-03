@@ -300,7 +300,9 @@ class EesCli:
             raise ValueError(f"--ees-preview-test-goals: --env {args.env} enumerates no test goals")
         return dict(
             preview_test_goals=(
-                tuple(goal.atoms for goal in ctx.test_task_goals) if preview else ()
+                tuple(EesMethod.named_goal(goal=goal.atoms) for goal in ctx.test_task_goals)
+                if preview
+                else ()
             ),
             env=ctx.env,
             skill_provider=ctx.skill_provider,

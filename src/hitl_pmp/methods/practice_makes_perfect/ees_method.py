@@ -257,8 +257,10 @@ class EesMethod(Method):
     # candidate from the start, with the same prior any first execution would give it.
     # Exists because a domain whose training tasks all share one goal (the kitchen's
     # practice always delivers `requested_count`) otherwise never plans, and so never
-    # scores, the skills only the other test goals use.
-    preview_test_goals: tuple[frozenset[GroundAtom], ...] = ()
+    # scores, the skills only the other test goals use. Each goal is held by name,
+    # `(predicate, object names)` per atom (see `named_goal`), because every field is
+    # pickled into the deployment snapshot and a domain's predicates need not pickle.
+    preview_test_goals: tuple[tuple[tuple[str, tuple[str, ...]], ...], ...] = ()
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -918,13 +920,27 @@ class EesMethod(Method):
                 init_atoms=self.abstract_state(state=task.initial_state), goal=task.goal.atoms
             )
 
+    @staticmethod
+    def named_goal(*, goal: frozenset[GroundAtom]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        return tuple(
+            sorted((atom.predicate.name, tuple(obj.name for obj in atom.objects)) for atom in goal)
+        )
+
     def _register_preview_tasks(self, *, init_atoms: frozenset[GroundAtom]) -> None:
         """Pin each `preview_test_goals` goal as a seen task from `init_atoms`, and give
         every robot ground skill on its current plan a competence model (the prior's,
         exactly what `competence_model` creates lazily on a first execution). Human
         skills keep their own models and never become candidates."""
         humans = set(self.skill_provider.human_cube_bin_reset_skills())
-        for goal in self.preview_test_goals:
+        predicates = {predicate.name: predicate for predicate in self.predicates()}
+        objects = {obj.name: obj for obj in self.objects()}
+        for named in self.preview_test_goals:
+            goal = frozenset(
+                GroundAtom(
+                    predicate=predicates[name], objects=tuple(objects[o] for o in object_names)
+                )
+                for name, object_names in named
+            )
             self._preview_tasks.append((init_atoms, goal))
             try:
                 plan = self.plan_to(init_atoms=init_atoms, goal=goal, costs=self.skill_costs())

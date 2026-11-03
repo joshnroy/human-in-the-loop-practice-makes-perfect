@@ -168,7 +168,7 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
         }
         if args.method == "ees":
             assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
-            assert [next(iter(goal)).objects[0].name for goal in method.preview_test_goals] == [
+            assert [goal[0][1][0] for goal in method.preview_test_goals] == [
                 "request_1",
                 "request_2",
                 "request_3",
