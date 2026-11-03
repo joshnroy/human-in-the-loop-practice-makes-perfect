@@ -25,7 +25,7 @@ COMMON = shlex.split(
     "--reproduce-predicators-seen-task-order --no-reproduce-predicators-skip-perfect"
 )
 PLANNER = shlex.split(
-    "--pomdp-linear-cost-lambda 0.0003 --pomdp-search-depth 6 "
+    "--pomdp-linear-cost-lambda 0.0003 "
     "--pomdp-inference-engine grid --pomdp-num-particles 1024 "
     "--practice-groundings observed "
     "--pomdp-num-rollouts all --pomdp-max-search-iterations 100 --pomdp-draw-scope node"
@@ -58,7 +58,12 @@ def argv(*, arm: str, seed: int, cost_file: str, kitchen_config: str) -> list[st
         "expectimax" if arm == "expectimax" else "determinized_astar",
         "--pomdp-observation-probability-weight",
         "0" if arm == "expectimax" else "0.01",
-        *([] if arm == "expectimax" else ["--pomdp-determinized-variant", "curtis"]),
+        # Expectimax's depth; Curtis is bounded by its iterations and refuses one.
+        *(
+            ["--pomdp-search-depth", "6"]
+            if arm == "expectimax"
+            else ["--pomdp-determinized-variant", "curtis"]
+        ),
     ]
 
 
