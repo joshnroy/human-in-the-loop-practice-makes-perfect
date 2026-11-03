@@ -31,6 +31,10 @@ from .transit import ArmTransit, geom_half_extents, segment_samples
 APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
 # Hand yaws about world z a placement may set the held food down with, from the grasp's.
 PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
+# How far food may have moved since its grasp was planned and still be closed on.
+REGRASP_POSITION_TOLERANCE = 0.002
+REGRASP_ANGLE_TOLERANCE_DEG = 3.0
+REGRASP_ATTEMPTS = 2
 # How much a pad-fixture contact present when a lift starts may shrink (measured-state
 # jitter) and still count as the same contact the lift is leaving.
 DEPARTURE_TOLERANCE = 1e-4
@@ -492,22 +496,54 @@ class RackFoodController:
                 if monotonic() >= deadline:
                     raise SkillFailed(f"No collision-free food grasp within budget: {failure}")
                 try:
-                    staged = arm = self._checked_arm(pose=pre, base=base)
-                    for pose in Frames.line(start=pre, end=grasp, step=0.01):
-                        following = self._checked_arm(pose=pose, base=base, seed=arm)
-                        self.motion.check_arm_segment(
-                            start=arm,
-                            target=following,
-                            base=base,
-                            holding=False,
-                        )
-                        arm = following
+                    staged = self._check_descent(grasp=grasp, pre=pre, base=base)
                     self.motion.plan_base(target=base, arm=staged)
                 except SkillFailed as exc:
                     failure = str(exc)
                     continue
                 return grasp, pre, base
         raise SkillFailed(f"No collision-free food grasp: {failure}")
+
+    def _check_descent(self, *, grasp: np.ndarray, pre: np.ndarray, base: np.ndarray) -> np.ndarray:
+        """Check the pre-grasp and the straight descent at `base`; return the staged arm."""
+        staged = arm = self._checked_arm(pose=pre, base=base)
+        for pose in Frames.line(start=pre, end=grasp, step=0.01):
+            following = self._checked_arm(pose=pose, base=base, seed=arm)
+            self.motion.check_arm_segment(start=arm, target=following, base=base, holding=False)
+            arm = following
+        return staged
+
+    def _replan_grasp(
+        self, *, name: str, grasp: np.ndarray, base: np.ndarray, planned: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """A new grasp and pre-grasp if the food moved since `planned`, else None.
+
+        The open pads can push the food during the descent. A pinch planned for its
+        old yaw then closes off the food's axes and the food rotates out while lifting.
+        The replanned grasp keeps the stance and is the reachable candidate for the
+        observed pose with the hand rotation nearest the current one.
+        """
+        now = self._pose(name=name)
+        moved = float(np.linalg.norm(now[:3, 3] - planned[:3, 3]))
+        turned = RackScraper.rotation_error(actual=planned[:3, :3], target=now[:3, :3])
+        if moved <= REGRASP_POSITION_TOLERANCE and turned <= REGRASP_ANGLE_TOLERANCE_DEG:
+            return None
+        candidates = sorted(
+            self._grasp_candidates(name=name),
+            key=lambda candidate: RackScraper.rotation_error(
+                actual=grasp[:3, :3], target=candidate[:3, :3]
+            ),
+        )
+        failure = "no candidate"
+        for candidate in candidates:
+            pre = self.shelf.cube_pre(grasp=candidate)
+            try:
+                self._check_descent(grasp=candidate, pre=pre, base=base)
+            except SkillFailed as exc:
+                failure = str(exc)
+                continue
+            return candidate, pre
+        raise SkillFailed(f"Food moved before closing; no regrasp from this stance: {failure}")
 
     def _approach(self, *, pose: np.ndarray, base: np.ndarray, label: str) -> None:
         arm = self._checked_arm(pose=pose, base=base)
@@ -545,6 +581,7 @@ class RackFoodController:
         self.carried = None
         with self.controllers.feedback():
             grasp, pre, base = self._plan_pick(name=name)
+            planned = self._pose(name=name)
             shelf.grip = 0.0
             shelf.hold(count=10, label="food_open")
             self._approach(pose=pre, base=base, label="food")
@@ -555,6 +592,24 @@ class RackFoodController:
                 holding=False,
                 step=0.005,
             )
+            for _ in range(REGRASP_ATTEMPTS):
+                replanned = self._replan_grasp(name=name, grasp=grasp, base=base, planned=planned)
+                if replanned is None:
+                    break
+                planned = self._pose(name=name)
+                for label, pose in (
+                    ("food_regrasp_retreat", pre),
+                    ("food_regrasp_pre", replanned[1]),
+                    ("food_regrasp", replanned[0]),
+                ):
+                    self.motion.line(
+                        position=pose[:3, 3],
+                        rotation=pose[:3, :3],
+                        label=label,
+                        holding=False,
+                        step=0.005,
+                    )
+                grasp, pre = replanned
             shelf.grip = backend.config.food_grip_command
             shelf.hold(count=30, label="food_close")
             self._require_held(name=name)
