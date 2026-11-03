@@ -135,6 +135,25 @@ memory across sessions; a fresh evaluation environment starts empty. An ingredie
 robot cannot pick therefore leaves the costed human reset as the planner's route. See
 `kitchen/pick_plannable.py`.
 
+## Motion planning scene
+
+Planned motions are searched in PyBullet and executed in MuJoCo, the Tossing3D split
+(`kitchen/planning/`, laid out like `kinder_models.dynamic3d` for a later port).
+`KitchenPyBulletSim` extends upstream's `PyBulletSim`: it reads the arm mount from
+MuJoCo (upstream's hard-coded mount is 5 mm off for this model) and mirrors every
+contact geom of the counter, stove, jug, skillet and dumplings as the same primitive
+or the convex hull of the same mesh vertices. The robot stays upstream's Kinova Gen3
+with Robotiq gripper. `test_kitchen_pybullet_scene.py` bounds the gap: link frames
+agree to 0.1 mm; mirrored object distances to about 1 mm; and over 1200 sampled arm
+configurations near every obstacle, wherever PyBullet clears the 1.5 cm planning
+margin MuJoCo is not in contact. Out of contact PyBullet is at most about 1 cm more
+optimistic than MuJoCo, all of it at the bracelet/gripper coupling, whose meshes differ.
+
+`mj_geomDistance` (MuJoCo 3.3.7) sometimes returns 0 for mesh pairs centimetres apart,
+with witness points on neither geom; the parity test recomputes those from vertices.
+The scripted controller's clearance checks use the same call, so some of their
+rejections may be spurious.
+
 ## Validation and video reproduction
 
 Offline and native boundary tests:
