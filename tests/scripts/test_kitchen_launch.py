@@ -52,7 +52,10 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
             assert not args.reproduce_predicators_skip_perfect
             assert args.reproduce_predicators_random_when_stranded
         else:
-            assert args.pomdp_search_depth == 6
+            # Curtis is bounded by its iteration budget, never a search depth.
+            assert args.pomdp_search_depth == (
+                None if args.pomdp_solver == "determinized_astar" else 6
+            )
             assert args.pomdp_num_particles == 1024
             assert args.pomdp_competence_model == "local_trend"
             if run.output_dir.parts[-3] == "curtis":
@@ -166,7 +169,9 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
             assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
         else:
             assert method.pomdp_solver == args.pomdp_solver
-            assert method.pomdp_search_depth == 6
+            assert method.pomdp_search_depth == (
+                None if args.pomdp_solver == "determinized_astar" else 6
+            )
             assert method.pomdp_domain.sampler_skills == {"Pour1", "Pour2", "Pour3"}
             assert method.pomdp_domain.human_skill_names == {"human_bulk_pour_back"}
             assert "PickShrimpFromSurface" in dict(method.pomdp_domain.belief_sources)

@@ -23,9 +23,15 @@ def experiment_commands(
     python: str,
     max_search_iterations: int = 100,
     solver: str = "determinized_astar",
-    search_depth: int = 3,
+    search_depth: int | None = None,
 ) -> list[tuple[str, list[str]]]:
-    """Pair task seeds and hold simulator, planner, costs and budgets fixed."""
+    """Pair task seeds and hold simulator, planner, costs and budgets fixed.
+
+    ``search_depth`` is expectimax's; None takes the domain default. Determinized A* is
+    bounded by its iterations alone and refuses a depth."""
+    if solver == "determinized_astar" and search_depth is not None:
+        raise ValueError("determinized_astar takes no search depth")
+    depth = [] if search_depth is None else ["--pomdp-search-depth", str(search_depth)]
     runs = []
     for model in MODELS:
         for engine in ENGINES:
@@ -61,8 +67,7 @@ def experiment_commands(
                     "0.0003",
                     "--pomdp-solver",
                     solver,
-                    "--pomdp-search-depth",
-                    str(search_depth),
+                    *depth,
                     "--pomdp-max-search-iterations",
                     str(max_search_iterations),
                     "--pomdp-observation-probability-weight",
@@ -143,12 +148,13 @@ def main() -> None:
     parser.add_argument(
         "--solver", choices=("determinized_astar", "expectimax"), default="determinized_astar"
     )
-    parser.add_argument("--search-depth", type=int, default=3)
+    # Expectimax only (default: the domain's); determinized A* refuses a depth.
+    parser.add_argument("--search-depth", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if min(args.num_seeds, args.num_cycles, args.max_workers, args.max_search_iterations) < 1:
         parser.error("seeds, cycles, workers and search iterations must be positive")
-    if args.search_depth < 0:
+    if args.search_depth is not None and args.search_depth < 0:
         parser.error("search depth must be non-negative")
     root = args.results_root.resolve()
     runs = experiment_commands(

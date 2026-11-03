@@ -772,26 +772,29 @@ class Tossing3DPomdpMethod(EesMethod):
         ] = self._pomdp_model
         planner = self.pomdp_planner
         assert planner is not None
-        horizon = self.search_depth
-        if self._remaining_practice_actions is not None:
-            horizon = min(horizon, self._remaining_practice_actions)
+        horizon = None
+        if not isinstance(planner, DeterminizedAStarPlanner):
+            horizon = self.search_depth
+            if self._remaining_practice_actions is not None:
+                horizon = min(horizon, self._remaining_practice_actions)
         search_started_at = time.perf_counter()
         try:
             search_state = make_tossing3d_search_state(
                 state=self._pomdp_state, true_atoms=true_atoms
             )
             if isinstance(planner, DeterminizedAStarPlanner):
+                # Bounded by iterations and the session's remaining actions, never a depth.
                 value, action = planner.solve(
                     environment_state=search_state,
                     belief_state=self._pomdp_state,
                     summed_cost=self._pomdp_state.accumulated_cost,
-                    horizon=horizon,
                     model=model,
                     trace=trace,
                     num_samples=self.pomdp_num_samples,
                     remaining_actions=self._remaining_practice_actions,
                 )
             else:
+                assert horizon is not None
                 value, action = planner.solve(
                     environment_state=search_state,
                     belief_state=self._pomdp_state,
@@ -837,7 +840,7 @@ class Tossing3DPomdpMethod(EesMethod):
             if action == STOP_ACTION
             else action.model_dump(mode="json", fallback=str),
             value=value,
-            horizon=horizon if planner.name == "expectimax" else None,
+            horizon=horizon,
             remaining_practice_actions=self._remaining_practice_actions,
             solver=planner.name,
             max_search_iterations=(

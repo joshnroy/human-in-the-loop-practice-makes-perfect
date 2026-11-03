@@ -112,7 +112,9 @@ class BenchmarkModel:
         return environment_state, summed_cost, belief_state, horizon
 
 
-def _run(*, planner: Any, horizon: int, model: BenchmarkModel | None = None) -> dict[str, Any]:
+def _run(
+    *, planner: Any, horizon: int | None, model: BenchmarkModel | None = None
+) -> dict[str, Any]:
     trace = SearchTrace()
     value, action = planner.solve(
         environment_state=BenchmarkState(),
@@ -177,7 +179,8 @@ def benchmark(
                         BenchmarkTheta,
                         BenchmarkAction,
                     ](max_iterations=iterations, seed=repeat),
-                    horizon=reference_horizon,
+                    # Iteration-bounded: determinized A* takes no search depth.
+                    horizon=None,
                 )
                 for repeat in range(repeats)
             ],

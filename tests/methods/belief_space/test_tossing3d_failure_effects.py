@@ -232,7 +232,6 @@ def test_success_and_hypothetical_search_do_not_train_failure_effects() -> None:
         environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
         summed_cost=state.accumulated_cost,
         belief_state=state,
-        horizon=0,
         remaining_actions=3,
         model=model,
         num_samples=1,
