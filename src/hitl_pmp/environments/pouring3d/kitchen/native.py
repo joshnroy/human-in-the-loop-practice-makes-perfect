@@ -107,6 +107,8 @@ class KitchenController(PotstickerController):
     LEVEL_JUG: ClassVar[str] = "level jug at pour start"
     # Rounds of the closed-loop levelling at the pour start (re-measure, re-aim).
     levelling_rounds: int = 3
+    # Two pours delivered the requested count but were still moving at 20 s.
+    pour_settle_seconds: float = 30.0
 
     @classmethod
     def build(

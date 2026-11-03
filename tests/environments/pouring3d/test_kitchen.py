@@ -157,3 +157,33 @@ def test_kitchen_recording_uses_its_own_lazy_renderer():
     )
     assert isinstance(renderer, KitchenReplayRenderer)
     assert renderer._controller is None
+
+
+def test_pour_sampling_admits_the_approved_bounds_and_no_further():
+    from pydantic import ValidationError
+
+    from hitl_pmp.environments.pouring3d.feedback_controller import FeedbackPourParameters
+    from hitl_pmp.environments.pouring3d.frozen_native import ExtendedFeedbackPourParameters
+    from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerParameters
+
+    # Approved 2026-11-02: tilt 75-95 deg, wiggle 0-100 mm, feeding 0-60 s.
+    assert KitchenEnvironment.action_space.high[4] == pytest.approx(0.1)
+    assert KitchenEnvironment.action_space.high[5] == 60
+    for parameters in (FeedbackPourParameters, ExtendedFeedbackPourParameters):
+        assert parameters(tilt_degrees=95, amplitude_m=0.1, duration_seconds=10).amplitude_m == 0.1
+        with pytest.raises(ValidationError):
+            parameters(tilt_degrees=95, amplitude_m=0.101, duration_seconds=10)
+    assert PotstickerParameters(amplitude_m=0.1).amplitude_m == 0.1
+    env = KitchenEnvironment(requested_count=1)
+    provider = KitchenSkillProvider(env=env)
+    assert provider.tilt_bounds == (75, 95)
+    assert provider.amplitude_bounds == (0, 0.1)
+    assert provider.duration_bounds == (0, 60)
+    parser = argparse.ArgumentParser()
+    KitchenCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    assert list(args.pour_tilt_bounds) == [75, 95]
+    assert list(args.pour_amplitude_bounds) == [0, 0.1]
+    assert list(args.pour_duration_bounds) == [0, 60]
+    with pytest.raises(ValidationError):
+        KitchenSkillProvider(env=env, amplitude_bounds=(0, 0.11))
