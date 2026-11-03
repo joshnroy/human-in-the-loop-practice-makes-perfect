@@ -154,43 +154,75 @@ class TaperedBin(BaseModel):
 class TaperedBinCollision:
     """The tapered bin in a pinned-KINDER `PyBulletSim`, registered exactly where
     `PyBulletSim.add_bin` registers its straight-walled bin, so every planner query
-    that sees a bin (collision sets, `set_state`, `bin_wall_clearance`) sees this one."""
+    that sees a bin (collision sets, `set_state`, `bin_wall_clearance`) sees this one.
+
+    PyBullet keeps at most `COMPOUND_LIMIT` shapes of one compound collision shape and
+    drops the rest without a word, and the bin is 1 + 4 x `TaperedBin.STRIPS` = 17
+    panels: as one compound it lost the -y wall's top strip, so the planner saw no rim
+    on the side facing the kitchen. A body therefore carries its panels in compounds of
+    at most `COMPOUND_LIMIT`, the first on its base and the rest on fixed links. It stays
+    one body id, so moving its base moves every panel, and a whole-body query (a
+    collision set, `getClosestPoints`) sees all of them."""
+
+    COMPOUND_LIMIT: ClassVar[int] = 16
 
     @staticmethod
     def add(*, sim: Any, name: str, pose: Any, geometry: TaperedBin) -> int:
-        import pybullet as p
         from kinder_models.dynamic3d.utils import _PARKED_POSITION
 
         if name in sim._bins:  # noqa: SLF001
             raise ValueError(f"Bin {name} is already in the collision model")
         client = sim._physics_client_id  # noqa: SLF001
-
-        def body(*, panels: tuple[BinPanel, ...], position: Any, orientation: Any) -> int:
-            shape = p.createCollisionShapeArray(
-                shapeTypes=[p.GEOM_BOX] * len(panels),
-                halfExtents=[list(panel.half_extents) for panel in panels],
-                collisionFramePositions=[list(panel.position) for panel in panels],
-                collisionFrameOrientations=[list(panel.quaternion_xyzw) for panel in panels],
-                physicsClientId=client,
-            )
-            return int(
-                p.createMultiBody(
-                    baseMass=0,
-                    baseCollisionShapeIndex=shape,
-                    basePosition=position,
-                    baseOrientation=orientation,
-                    physicsClientId=client,
-                )
-            )
-
         panels = geometry.panels()
-        bin_body = body(panels=panels, position=pose.position, orientation=pose.orientation)
+        bin_body = TaperedBinCollision.body(
+            client=client, panels=panels, position=pose.position, orientation=pose.orientation
+        )
         sim._bounding_boxes[name] = (geometry.length, geometry.width, geometry.height)  # noqa: SLF001
         sim._bins[name] = bin_body  # noqa: SLF001
-        sim._bin_walls[name] = body(  # noqa: SLF001
+        sim._bin_walls[name] = TaperedBinCollision.body(  # noqa: SLF001
+            client=client,
             panels=tuple(panel for panel in panels if panel.wall),
             position=_PARKED_POSITION,
             orientation=(0.0, 0.0, 0.0, 1.0),
         )
         sim._bin_poses[name] = pose  # noqa: SLF001
         return bin_body
+
+    @staticmethod
+    def body(*, client: int, panels: tuple[BinPanel, ...], position: Any, orientation: Any) -> int:
+        """One static body carrying every panel, whatever their number."""
+        import pybullet as p
+
+        limit = TaperedBinCollision.COMPOUND_LIMIT
+        shapes = []
+        for first in range(0, len(panels), limit):
+            group = panels[first : first + limit]
+            shapes.append(
+                p.createCollisionShapeArray(
+                    shapeTypes=[p.GEOM_BOX] * len(group),
+                    halfExtents=[list(panel.half_extents) for panel in group],
+                    collisionFramePositions=[list(panel.position) for panel in group],
+                    collisionFrameOrientations=[list(panel.quaternion_xyzw) for panel in group],
+                    physicsClientId=client,
+                )
+            )
+        links = shapes[1:]
+        return int(
+            p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=shapes[0],
+                basePosition=position,
+                baseOrientation=orientation,
+                linkMasses=[0.0] * len(links),
+                linkCollisionShapeIndices=links,
+                linkVisualShapeIndices=[-1] * len(links),
+                linkPositions=[[0.0, 0.0, 0.0]] * len(links),
+                linkOrientations=[[0.0, 0.0, 0.0, 1.0]] * len(links),
+                linkInertialFramePositions=[[0.0, 0.0, 0.0]] * len(links),
+                linkInertialFrameOrientations=[[0.0, 0.0, 0.0, 1.0]] * len(links),
+                linkParentIndices=[0] * len(links),
+                linkJointTypes=[p.JOINT_FIXED] * len(links),
+                linkJointAxis=[[0.0, 0.0, 1.0]] * len(links),
+                physicsClientId=client,
+            )
+        )

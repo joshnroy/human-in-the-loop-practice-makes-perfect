@@ -209,3 +209,13 @@ def test_rgb_mode_never_creates_a_planning_world(*, inputs: dict[str, Any]) -> N
     inputs["observation"]["observation_mode"] = "rgb"
     with pytest.raises(ValueError, match="object-state"):
         PlanningScene(**inputs)
+
+
+def test_a_compound_past_pybullets_sixteen_shapes_is_refused_not_truncated(
+    *, inputs: dict[str, Any]
+) -> None:
+    with PlanningScene(**inputs) as scene:
+        features = {"x": 0.0, "y": 0.0, "z": 0.0, "qx": 0, "qy": 0, "qz": 0, "qw": 1}
+        boxes = [[0.01, 0.01, 0.01]] * 17
+        with pytest.raises(ValueError, match="16"):
+            scene._geometry(features=features, half_extents=boxes, positions=boxes)

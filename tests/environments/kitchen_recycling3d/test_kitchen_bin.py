@@ -1,8 +1,12 @@
 """The kitchen's tapered bin, scored by its whole interior, and the flat mat-edge sides."""
 
-import pytest
+import importlib.util
 
-from hitl_pmp.environments.kitchen_recycling3d.bin_geometry import TaperedBin
+import numpy as np
+import pytest
+from scipy.spatial.transform import Rotation
+
+from hitl_pmp.environments.kitchen_recycling3d.bin_geometry import TaperedBin, TaperedBinCollision
 from hitl_pmp.environments.kitchen_recycling3d.domain import KitchenConfig
 from hitl_pmp.environments.kitchen_recycling3d.environment import KitchenRecycling3DEnvironment
 from hitl_pmp.environments.kitchen_recycling3d.scene import scene_config
@@ -200,3 +204,71 @@ def test_kinders_own_bin_is_still_registered_as_bin():
 def test_a_config_whose_base_exceeds_its_rim_is_refused():
     with pytest.raises(ValueError, match="base"):
         TaperedBin.of(config=KitchenConfig(bin_base=(0.4, 0.19)))
+
+
+needs_pybullet = pytest.mark.skipif(
+    importlib.util.find_spec("pybullet") is None, reason="needs PyBullet"
+)
+
+
+@pytest.fixture
+def client():
+    import pybullet as p
+
+    cid = p.connect(p.DIRECT)
+    yield cid
+    p.disconnect(physicsClientId=cid)
+
+
+def shape_count(*, body: int, client: int) -> int:
+    import pybullet as p
+
+    links = range(-1, p.getNumJoints(body, physicsClientId=client))
+    return sum(len(p.getCollisionShapeData(body, link, physicsClientId=client)) for link in links)
+
+
+@needs_pybullet
+@pytest.mark.parametrize("count", [1, 5, 16, 17, 40])
+def test_a_planning_body_keeps_every_panel_past_pybullets_sixteen_shape_compound(*, client, count):
+    """PyBullet keeps at most 16 shapes of one compound and drops the rest silently."""
+    panels = bin_().panels()
+    panels = (panels * (count // len(panels) + 1))[:count]
+    body = TaperedBinCollision.body(
+        client=client, panels=panels, position=(0, 0, 0), orientation=(0, 0, 0, 1)
+    )
+    assert shape_count(body=body, client=client) == count
+
+
+@needs_pybullet
+@pytest.mark.parametrize(("position", "yaw"), [((0.0, 0.0, 0.0), 0.0), ((2.05, 0.4, 0.0), 0.7)])
+def test_a_probe_just_outside_every_wall_is_close_to_the_planning_bin_at_every_height(
+    *, client, position, yaw
+):
+    """The -y wall's top strip (z 0.288-0.384) was the 17th panel, and missing."""
+    import pybullet as p
+
+    geometry = bin_()
+    quaternion = Rotation.from_euler("z", yaw).as_quat()
+    body = TaperedBinCollision.body(
+        client=client,
+        panels=geometry.panels(),
+        position=(0, 0, 0),
+        orientation=(0, 0, 0, 1),
+    )
+    # Built at the origin, then moved: the bin's pose is set this way after a reset.
+    p.resetBasePositionAndOrientation(body, position, quaternion, physicsClientId=client)
+    sphere = p.createCollisionShape(p.GEOM_SPHERE, radius=0.005, physicsClientId=client)
+    probe = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=sphere, physicsClientId=client)
+    rotation = Rotation.from_quat(quaternion)
+    for axis in (0, 1):
+        for sign in (1.0, -1.0):
+            for z in (0.10, 0.25, 0.33, 0.38):
+                local = [0.0, 0.0, z]
+                local[axis] = sign * (geometry.outer_half(axis=axis, z=z) + 0.02)
+                world = rotation.apply(local) + np.asarray(position)
+                p.resetBasePositionAndOrientation(
+                    probe, world, (0, 0, 0, 1), physicsClientId=client
+                )
+                points = p.getClosestPoints(probe, body, 0.5, physicsClientId=client)
+                clearance = min((point[8] for point in points), default=np.inf)
+                assert clearance <= 0.025, (axis, sign, z, clearance)
