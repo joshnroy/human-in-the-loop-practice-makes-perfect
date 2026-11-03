@@ -2,6 +2,10 @@
 
 Use `check`, `manifest --out FILE --results-root DIR`, then `run --manifest FILE --go`.
 Run through scripts/with_env.sh in the frozen checkout. See docs/experiments/kitchen-pilots.md.
+
+`della --tag TAG --out DIR` writes the same manifest frozen for the Della checkout
+`<DELLA>/code/<HEAD sha>` plus `array.sbatch`, whose task N runs manifest row N; submit
+with `sbatch DIR/array.sbatch <manifest on Della>`. Nothing is copied or submitted here.
 """
 
 import argparse
@@ -9,6 +13,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -17,10 +22,14 @@ from hitl_pmp.step_protocol import StepProtocolValidation
 from scripts.run_sweep import SweepRun, SweepRunner
 
 REPO = Path(__file__).resolve().parents[1]
-COSTS = REPO / "configs/kitchen_pilot_costs.json"
-STAGES = {"pilot": 6400, "overnight": 25600}
+COSTS_PATH = "configs/kitchen_pilot_costs.json"
+COSTS = REPO / COSTS_PATH
+# stage -> (practice ticks, measurement interval, test tasks). `dry` sizes a Della launch:
+# one practice block between two full-length evaluations of one task per requested count.
+STAGES = {"pilot": (6400, 6400, 3), "overnight": (25600, 6400, 9), "dry": (1600, 1600, 3)}
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
+DELLA = "/scratch/gpfs/TSILVER/jr2860"
 DEPENDENCIES = {
     "kinder": "reference/kindergarden",
     "kinder_models": "reference/kinder-baselines",
@@ -31,7 +40,8 @@ class KitchenLaunch:
     """One fixed comparison, shared by manifest validation and execution."""
 
     @staticmethod
-    def flags(*, arm: str, stage: str, seed: int) -> list[str]:
+    def flags(*, arm: str, stage: str, seed: int, repo: Path = REPO) -> list[str]:
+        budget, interval, tasks = STAGES[stage]
         if arm not in ARMS:
             raise ValueError("Only EES, Curtis and expectimax are admitted; always-ask is pending")
         common = [
@@ -46,12 +56,13 @@ class KitchenLaunch:
             "--test-env-seed-offset", "10000",
             "--practice-reset-policy", "never",
             "--max-steps-per-interaction", "20",
-            "--practice-step-budget", str(STAGES[stage]),
-            "--measurement-interval-steps", "6400", "--initial-measurement",
-            "--num-test-tasks", "3" if stage == "pilot" else "9",
+            "--practice-step-budget", str(budget),
+            "--measurement-interval-steps", str(interval), "--initial-measurement",
+            "--num-test-tasks", str(tasks),
             "--evaluation-control-steps", "7500",
             "--skill-step-limit", "2500", "--stop-after-perfect-evaluations", "0",
-            "--practice-cost-config", str(COSTS), "--human-reset-practice-cost", "5",
+            "--practice-cost-config", str(repo / COSTS_PATH),
+            "--human-reset-practice-cost", "5",
             "--defer-rendering", "--record-motion", "all" if seed == 0 else "evaluation",
             "--exploration-epsilon", "0.5", "--sampler-max-train-iters", "10000",
             "--record-sampler-draws", "--no-ees-reset-gate", "--goal-pursuit-horizon", "0",
@@ -87,17 +98,19 @@ class KitchenLaunch:
         return planner
 
     @staticmethod
-    def runs(*, stage: str, results_root: Path) -> list[SweepRun]:
+    def runs(
+        *, stage: str, results_root: Path, seeds: tuple[int, ...] = SEEDS, repo: Path = REPO
+    ) -> list[SweepRun]:
         return [
             run
             for arm in ARMS
-            for seed in SEEDS
+            for seed in seeds
             for run in SweepRunner.plan(
                 env="pouring3d_kitchen",
                 methods=["ees" if arm == "ees" else "pomdp"],
                 seeds=[seed],
                 results_root=results_root / arm,
-                shared_args=KitchenLaunch.flags(arm=arm, stage=stage, seed=seed),
+                shared_args=KitchenLaunch.flags(arm=arm, stage=stage, seed=seed, repo=repo),
                 method_args={},
             )
         ]
@@ -150,23 +163,80 @@ class KitchenLaunch:
         return {"commit": KitchenLaunch.git(args=["rev-parse", "HEAD"]), **dependencies}
 
     @staticmethod
-    def write_manifest(*, path: Path, stage: str, results_root: Path) -> None:
+    def write_manifest(
+        *,
+        path: Path,
+        stage: str,
+        results_root: Path,
+        seeds: tuple[int, ...] = SEEDS,
+        repo: Path = REPO,
+    ) -> None:
         identity = KitchenLaunch.identity()
         root = results_root.resolve()
-        rows = KitchenLaunch.rows(runs=KitchenLaunch.runs(stage=stage, results_root=root))
+        runs = KitchenLaunch.runs(stage=stage, results_root=root, seeds=seeds, repo=repo)
         data = {
             "status": "planned",
             "identity": identity,
             "stage": stage,
+            "seeds": list(seeds),
             "results_root": str(root),
-            "working_directory": str(REPO),
+            "working_directory": str(repo),
             "cost_sha256": hashlib.sha256(COSTS.read_bytes()).hexdigest(),
             "cost_config": json.loads(COSTS.read_text()),
-            "runs": rows,
+            "runs": KitchenLaunch.rows(runs=runs),
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("x") as stream:
             stream.write(json.dumps(data, indent=2) + "\n")
+
+    @staticmethod
+    def della(
+        *,
+        out: Path,
+        tag: str,
+        stage: str,
+        seeds: tuple[int, ...],
+        time: str = "08:00:00",
+        mem: str = "16G",
+    ) -> Path:
+        """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della."""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tag):
+            raise ValueError("--tag must contain only letters, digits, underscores and hyphens")
+        sha = KitchenLaunch.identity()["commit"]
+        code = Path(f"{DELLA}/code/{sha}")
+        KitchenLaunch.write_manifest(
+            path=out / "manifest.json",
+            stage=stage,
+            results_root=Path(f"{DELLA}/results/{tag}"),
+            seeds=seeds,
+            repo=code,
+        )
+        sbatch = out / "array.sbatch"
+        sbatch.write_text(f"""#!/usr/bin/env bash
+#SBATCH --partition=cpu
+#SBATCH --cpus-per-task=2
+#SBATCH --mem={mem}
+#SBATCH --time={time}
+#SBATCH --array=1-{len(ARMS) * len(seeds)}
+#SBATCH --job-name={tag}
+#SBATCH --output={DELLA}/slurm-logs/%x-%A_%a.out
+set -euo pipefail
+export CONDA_SH=/usr/licensed/anaconda3/2026.7.1/etc/profile.d/conda.sh
+export HITL_PMP_CONDA_ENV={DELLA}/envs/hitl-pmp
+export FD_EXEC_PATH={DELLA}/downward
+export DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1
+export HITL_PMP_TMPDIR={DELLA}/tmp/$SLURM_ARRAY_JOB_ID/$SLURM_ARRAY_TASK_ID
+mkdir -p "$HITL_PMP_TMPDIR"
+export XDG_RUNTIME_DIR="$HITL_PMP_TMPDIR/xdg"
+mkdir -m 700 -p "$XDG_RUNTIME_DIR"
+export LD_PRELOAD="$HITL_PMP_CONDA_ENV/lib/libstdc++.so.6"
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1 BLIS_NUM_THREADS=1
+cd {code}
+exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
+  --manifest "$1" --task "$SLURM_ARRAY_TASK_ID" --go
+""")
+        return sbatch
 
     @staticmethod
     def native_check() -> dict:
@@ -200,13 +270,17 @@ class KitchenLaunch:
             raise RuntimeError("Launch identity differs from the frozen manifest")
         if hashlib.sha256(COSTS.read_bytes()).hexdigest() != data["cost_sha256"]:
             raise RuntimeError("Launch cost file differs from the frozen manifest")
-        runs = KitchenLaunch.runs(stage=data["stage"], results_root=Path(data["results_root"]))
+        runs = KitchenLaunch.runs(
+            stage=data["stage"],
+            results_root=Path(data["results_root"]),
+            seeds=tuple(data.get("seeds", SEEDS)),
+        )
         if KitchenLaunch.rows(runs=runs) != data["runs"]:
             raise RuntimeError("Launch commands or resolved defaults differ from the manifest")
         rows = data["runs"]
         if task is not None:
             if not 1 <= task <= len(runs):
-                raise ValueError("Task index must be between 1 and 6")
+                raise ValueError(f"Task index must be between 1 and {len(runs)}")
             runs, rows = [runs[task - 1]], [rows[task - 1]]
         for run in runs:
             if run.output_dir.exists():
@@ -238,7 +312,7 @@ class KitchenLaunch:
     @staticmethod
     def main() -> int:
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("mode", choices=("check", "manifest", "run"))
+        parser.add_argument("mode", choices=("check", "manifest", "della", "run"))
         parser.add_argument("--stage", choices=tuple(STAGES), default="pilot")
         parser.add_argument("--out", type=Path)
         parser.add_argument("--results-root", type=Path)
@@ -247,13 +321,19 @@ class KitchenLaunch:
         parser.add_argument("--native", action="store_true")
         parser.add_argument("--max-workers", type=int, choices=(1, 2, 3, 4, 5, 6), default=1)
         parser.add_argument("--go", action="store_true")
+        parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
+        parser.add_argument("--tag", help="della: job name and results directory")
+        parser.add_argument("--time", default="08:00:00", help="della: Slurm --time")
+        parser.add_argument("--mem", default="16G", help="della: Slurm --mem")
         args = parser.parse_args()
         if args.mode == "check":
             rows = KitchenLaunch.rows(
-                runs=KitchenLaunch.runs(stage=args.stage, results_root=Path("/unused"))
+                runs=KitchenLaunch.runs(
+                    stage=args.stage, results_root=Path("/unused"), seeds=tuple(args.seeds)
+                )
             )
             for row in rows:
-                print(f"ok {row['arm']} seed {row['seed']}: {STAGES[args.stage]} ticks")
+                print(f"ok {row['arm']} seed {row['seed']}: {STAGES[args.stage][0]} ticks")
             if args.native:
                 print(json.dumps(KitchenLaunch.native_check(), indent=2))
             return 0
@@ -264,6 +344,19 @@ class KitchenLaunch:
                 path=args.out, stage=args.stage, results_root=args.results_root
             )
             print(f"Planned six runs in {args.out}; nothing submitted")
+            return 0
+        if args.mode == "della":
+            if args.out is None or args.tag is None:
+                parser.error("della needs --out DIR and --tag TAG")
+            sbatch = KitchenLaunch.della(
+                out=args.out,
+                tag=args.tag,
+                stage=args.stage,
+                seeds=tuple(args.seeds),
+                time=args.time,
+                mem=args.mem,
+            )
+            print(f"Planned; nothing copied or submitted. sbatch {sbatch} <Della manifest>")
             return 0
         if args.manifest is None or not args.go:
             parser.error("run needs --manifest and --go")
