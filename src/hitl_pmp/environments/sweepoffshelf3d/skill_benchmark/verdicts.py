@@ -35,8 +35,13 @@ from .types import CaseResult, SkillThreshold, SkillVerdict
 # grasp and base generation is in progress; raise this back when it lands.
 THRESHOLDS: dict[str, SkillThreshold] = {
     S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=72, out_of=100),
-    S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
-    S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
+    # The pocket family (2026-10-24) is reported, not gated, until Josh sets its target.
+    S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(
+        min_successes=11, out_of=11, families=frozenset({"near_walls"})
+    ),
+    S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(
+        min_successes=11, out_of=11, families=frozenset({"near_walls"})
+    ),
     S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
         min_successes=5, out_of=8, families=frozenset({"harvested"})
     ),

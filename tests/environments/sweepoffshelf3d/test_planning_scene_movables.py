@@ -90,6 +90,22 @@ def test_the_resting_wiper_is_a_collider_in_the_planning_scene_inflated_6_mm(*, 
         np.testing.assert_allclose(high, centre + half, atol=0.003)
 
 
+def test_the_planning_scene_box_has_the_live_scenes_dimensions(*, env, monkeypatch):
+    """KINDER's PyBullet box is built from the scene's own box object: with the size
+    written into this package, a narrower box left every plan checked against walls
+    that were not there (the 2026-10-24 floor-pick diagnosis: a retract home refused
+    19 mm into the 50 cm box beside a 25 cm one)."""
+    env.reset_to_seed(seed=0)
+    kinder = _kinder(env=env)
+    box = env.backend().core()._objects_dict["box_0"]  # noqa: SLF001
+    monkeypatch.setattr(box, "width", 0.3)
+    monkeypatch.setattr(box, "length", 0.15)
+    sim = kinder.planning_sim()
+    low, high = _aabb(sim=sim, body=sim._bins["box_0"])  # noqa: SLF001
+    # PyBullet pads every AABB by its own small collision margin.
+    np.testing.assert_allclose((high - low)[:2], [0.15, 0.3], atol=0.006)
+
+
 def test_the_wiper_is_not_an_obstacle_to_the_skill_that_picks_it_up(*, env):
     env.reset_to_seed(seed=0)
     kinder = _kinder(env=env)
@@ -282,10 +298,22 @@ def test_a_box_return_beside_a_neighbour_keeps_its_off_centre_grasp(*, env, stat
 
 def test_a_one_centimetre_margin_took_that_off_centre_grasp_away(*, env, states, monkeypatch):
     """Why the margin is 6 mm, not 1 cm (Josh, 2026-10-22: "sure 6mm good"): at 1 cm the
-    grown handle refused the one grasp above, and the return planned none."""
+    grown handle refused the one grasp above, and the return planned none -- with the
+    floor and box picks' grasp search as it was then, which this pins."""
+    import hitl_pmp.environments.sweepoffshelf3d.floor_pick as floor_pick
     import hitl_pmp.environments.sweepoffshelf3d.kinder_skills as kinder_skills
 
     monkeypatch.setattr(kinder_skills, "WIPER_OBSTACLE_MARGIN", 0.01)
+    import kinder_models.dynamic3d.tossing.parameterized_skills as tossing
+
+    # Then: four faces at leans 0/15/30/45 deg, fully open, a 1 cm reserve -- no grid.
+    monkeypatch.setattr(tossing, "PICK_CUBE_GRASP_YAW_OFFSETS_DEGREES", (0,))
+    monkeypatch.setattr(tossing, "PICK_CUBE_GRASP_TILTS_DEGREES", (0.0,))
+    monkeypatch.setattr(tossing, "PICK_CUBE_NARROW_OPENING", 0.0)
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_LEANS_DEG", (15.0, 30.0, 45.0))
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_EXTRA_OPENINGS", ())
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_ROLLS_DEG", ())
+    monkeypatch.setattr(floor_pick, "FLOOR_PICK_OBSTACLE_CLEARANCE", 0.01)
     atoms = _return_from_box(
         env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19", cube="cube_1"
     )

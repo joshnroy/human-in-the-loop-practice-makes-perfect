@@ -205,30 +205,46 @@ def _verdict(*, skill: str, results: list[CaseResult]) -> SkillVerdict:
 
 
 @pytest.mark.parametrize(
-    ("skill", "needed", "out_of"),
+    ("skill", "needed", "out_of", "family"),
     [
-        ("PickCubeFromShelf", 72, 100),
-        ("PickCubeFromFloor", 11, 11),
-        ("ReturnCubeToShelfFromFloor", 11, 11),
+        ("PickCubeFromShelf", 72, 100, None),
+        ("PickCubeFromFloor", 11, 11, "near_walls"),
+        ("ReturnCubeToShelfFromFloor", 11, 11, "near_walls"),
     ],
 )
 def test_a_thresholded_skill_passes_at_exactly_its_threshold_and_fails_one_below(
-    *, skill: str, needed: int, out_of: int
+    *, skill: str, needed: int, out_of: int, family: str | None
 ) -> None:
-    assert THRESHOLDS[skill] == SkillThreshold(min_successes=needed, out_of=out_of)
+    families = None if family is None else frozenset({family})
+    assert THRESHOLDS[skill] == SkillThreshold(
+        min_successes=needed, out_of=out_of, families=families
+    )
     at = _verdict(
-        skill=skill, results=_runs(skill=skill, family="start", successes=needed, total=out_of)
+        skill=skill,
+        results=_runs(skill=skill, family=family or "start", successes=needed, total=out_of),
     )
     assert at.passed
     assert (at.gated_successes, at.gated_total) == (needed, out_of)
     assert (at.reported_successes, at.reported_total) == (0, 0)
-    assert at.target == f"at least {needed}/{out_of}"
+    assert at.target == f"at least {needed}/{out_of}" + (f" of {family}" if family else "")
     below = _verdict(
         skill=skill,
-        results=_runs(skill=skill, family="start", successes=needed - 1, total=out_of),
+        results=_runs(skill=skill, family=family or "start", successes=needed - 1, total=out_of),
     )
     assert not below.passed
     assert (below.gated_successes, below.gated_total) == (needed - 1, out_of)
+
+
+@pytest.mark.parametrize("skill", ["PickCubeFromFloor", "ReturnCubeToShelfFromFloor"])
+def test_the_pocket_family_is_reported_and_does_not_gate_the_floor_skills(*, skill: str) -> None:
+    results = [
+        *_runs(skill=skill, family="near_walls", successes=11, total=11),
+        *_runs(skill=skill, family="pocket", successes=6, total=16, prefix="p"),
+    ]
+    verdict = _verdict(skill=skill, results=results)
+    assert verdict.passed
+    assert (verdict.gated_successes, verdict.gated_total) == (11, 11)
+    assert (verdict.reported_successes, verdict.reported_total) == (6, 16)
 
 
 def test_the_box_return_gates_on_harvested_states_and_only_reports_synthetic_ones() -> None:

@@ -91,8 +91,8 @@ FINAL_STEP_LIMIT = 600
 BASE_STEP_LIMIT = 600
 FOLLOW_STEP_LIMIT = 60
 RETRACT_TOLERANCE = 0.05
-# The box's collision model in the planner: KINDER's own Bin primitive dimensions.
-BOX_DIMENSIONS = {"length": 0.25, "width": 0.5, "height": 0.2, "wall_thickness": 0.01}
+# The box's collision model in the planner: these attributes of the scene's own Bin.
+BOX_DIMENSION_KEYS = ("length", "width", "height", "wall_thickness")
 # Where the held cube is let go over the shelf, above the board: a short drop, not a
 # set-down, since the leaned wrist cannot reach lower without meeting the board above.
 SHELF_DROP_RISES = (0.06, 0.09, 0.12)
@@ -264,6 +264,9 @@ class FollowPlans:
     lift: Callable[[], None] | None = None
     # Set by the caller: the joint-error gain the retract plan is followed with.
     retract_gain: float = FOLLOW_GAIN
+    # Set by the caller: the gripper command held from the first step until the grip,
+    # a jaw only as open as the grasp needs; None keeps the gripper as it is.
+    approach_grip: float | None = None
 
     def _follow(
         self, *, key: str, plan: list[Any], final: float = FINAL_TOLERANCE
@@ -278,6 +281,8 @@ class FollowPlans:
             self._followers[key] = follower
         current = np.array(self._get_current_robot_arm_conf()[:7])  # type: ignore[attr-defined]
         grip = self._get_current_robot_gripper_pose()  # type: ignore[attr-defined]
+        if key == "approach" and self.approach_grip is not None:
+            grip = self.approach_grip
         return follower.action(current=current, grip=grip)
 
     @staticmethod
@@ -295,7 +300,11 @@ class FollowPlans:
             self._base_steps += 1
             if self._base_steps > BASE_STEP_LIMIT:
                 raise RuntimeError(f"the base did not reach its goal in {BASE_STEP_LIMIT} steps")
-            return super().step()  # type: ignore[misc]
+            action = super().step()  # type: ignore[misc]
+            if self.approach_grip is not None:
+                # Upstream reads any jaw past 0.2 as closed and would close it the rest.
+                action[-1] = self.approach_grip
+            return action
         pick = hasattr(self, "_pre_grasp")
         ready = "_pre_grasp" if pick else "_pre_place"
         if not getattr(self, ready):
@@ -695,7 +704,13 @@ class KinderSkills:
             tuple(x.get(box, k) for k in ("x", "y", "z")),
             tuple(x.get(box, k) for k in ("qx", "qy", "qz", "qw")),
         )
-        sim.add_bin(name=BOX, pose=pose, **BOX_DIMENSIONS)
+        # The scene's own box: a size written down here went stale when the box did.
+        scene_box = self.shelf.core._objects_dict[BOX]  # noqa: SLF001
+        sim.add_bin(
+            name=BOX,
+            pose=pose,
+            **{key: float(getattr(scene_box, key)) for key in BOX_DIMENSION_KEYS},
+        )
         if target != WIPER and not self.wiper_on_robot():
             self.add_wiper_obstacle(sim=sim)
         return sim
@@ -1775,15 +1790,24 @@ class KinderSkills:
             return None
         return self.wrapped(arm=conf)
 
-    def cube_between_pads(self, *, base: np.ndarray, arm: np.ndarray, cube: str) -> str | None:
-        """Another cube that lies where the pads close, at this base and arm: the jaws
-        would squeeze it with the target or shove it into it. Seen on human reset
-        layouts with cubes 3 cm apart, where the close knocked the target 9 cm along
-        the shelf and stacked it on its neighbour."""
+    def cube_between_pads(
+        self,
+        *,
+        base: np.ndarray,
+        arm: np.ndarray,
+        cube: str,
+        held: dict[int, float] | None = None,
+    ) -> str | None:
+        """Another cube that lies where the pads close, at this base and arm (and the jaw
+        as `held` shapes it, as in `ShelfSkills.ik`): the jaws would squeeze it with the
+        target or shove it into it. Seen on human reset layouts with cubes 3 cm apart,
+        where the close knocked the target 9 cm along the shelf and stacked it on its
+        neighbour."""
         shelf = self.shelf
         m, d = shelf.model, shelf.ik_data
-        half_gap = self.jaw_half_gap()
         d.qpos[:] = shelf.data.qpos
+        for address, value in (held or {}).items():
+            d.qpos[address] = value
         d.qpos[shelf.ba] = base
         d.qpos[shelf.qa] = arm
         shelf.mujoco.mj_kinematics(m, d)
@@ -1791,6 +1815,7 @@ class KinderSkills:
             rotation=d.site_xmat[shelf.site].reshape(3, 3), position=d.site_xpos[shelf.site]
         )
         to_site = np.linalg.inv(site)
+        half_gap = self.jaw_half_gap(d=d, to_site=to_site)
         half = O.cube_half_size
         corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
         for i in range(5):
@@ -1810,12 +1835,15 @@ class KinderSkills:
                 return other
         return None
 
-    def jaw_half_gap(self) -> float:
-        """Half the distance between the pads as they are now, across the closing axis."""
+    def jaw_half_gap(self, *, d: Any = None, to_site: np.ndarray | None = None) -> float:
+        """Half the distance between the pads across the closing axis: as they are now,
+        or in the scratch data `d` whose inverse pinch-site pose is `to_site`."""
         shelf = self.shelf
-        here = np.linalg.inv(shelf.site_pose())
+        if d is None:
+            d, to_site = shelf.data, np.linalg.inv(shelf.site_pose())
+        assert to_site is not None
         pads = [
-            np.mean([(here @ np.r_[shelf.data.geom_xpos[g], 1.0])[:3] for g in side], axis=0)
+            np.mean([(to_site @ np.r_[d.geom_xpos[g], 1.0])[:3] for g in side], axis=0)
             for side in shelf.pad_sides
         ]
         return 0.5 * abs(float(pads[0][0] - pads[1][0]))
