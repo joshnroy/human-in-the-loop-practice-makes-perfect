@@ -49,6 +49,8 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_a_turn_in_this_grasp_still_reseats",
     "tests/environments/pouring3d/test_kitchen_position_settled.py::"
     "test_canonical_pours_are_settled_successes",
+    "tests/environments/racktoserving3d/test_native_control_step_cutoff.py::"
+    "test_native_wait_stops_after_three_control_steps_and_adopts_without_moving",
 })
 
 

@@ -1,0 +1,187 @@
+"""Counter-height variant facade; original SweepOffShelf3D remains unchanged."""
+
+from collections.abc import Callable
+from typing import ClassVar
+
+import numpy as np
+from pydantic import Field, PrivateAttr
+
+from hitl_pmp.core.problem.environment.types import Action, Object, State
+from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
+from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SkillNote, SweepOffShelf3DState
+
+from .backend import RackServingBackend
+from .config import RackServingConfig
+from .controllers import RackControllers
+from .objects import RackServing3DObjects as Objects
+from .predicates import AbstractAtom
+from .skills import SKILL_IDS
+
+
+class RackServingEnvironment(SweepOffShelf3DEnvironment):
+    config: RackServingConfig = Field(default_factory=RackServingConfig)
+    scene_bg: bool = False
+    robot: ClassVar[Object] = Objects.robot
+    cubes: ClassVar[tuple[Object, ...]] = Objects.food
+    wiper: ClassVar[Object] = Objects.scraper
+    box: ClassVar[Object] = Objects.tray
+    scene: ClassVar[Object] = Objects.scene
+
+    _backend: RackServingBackend | None = PrivateAttr(default=None)
+    _rack_controllers: RackControllers | None = PrivateAttr(default=None)
+
+    def backend(self) -> RackServingBackend:
+        if self._backend is None:
+            self._backend = RackServingBackend(config=self.config, scene_bg=self.scene_bg)
+        return self._backend
+
+    def rack_controllers(self) -> RackControllers:
+        if self._rack_controllers is None:
+            raise RuntimeError("reset the rack environment before requesting controllers")
+        return self._rack_controllers
+
+    def reset_to_seed(self, *, seed: int) -> SweepOffShelf3DState:
+        backend = self.backend()
+        backend.reset(seed=seed)
+        self._rack_controllers = RackControllers(backend=backend, step_limit=self.skill_step_limit)
+        self.rack_controllers().initialize()
+        backend._time_origin = float(backend.data().time)
+        self._human_events = []
+        self.current_state = self._observed_state(seed=seed, steps_taken=0)
+        return self.current_state
+
+    def _observed_state(self, *, seed: int, steps_taken: int) -> SweepOffShelf3DState:
+        backend = self.backend()
+        atoms = backend.abstract_atoms()
+        features = backend.features()
+        data = {obj: features[obj.name] for obj in Objects.all_objects()}
+        data[Objects.scene] = np.array(
+            [seed, steps_taken, backend.ledger.elapsed_seconds, backend.ledger.human_cost],
+            dtype=float,
+        )
+        return SweepOffShelf3DState(data=data, abstract_atoms=atoms)
+
+    def _bookkeeping(self) -> tuple[int, int]:
+        state = self.get_current_state()
+        return (
+            int(state.get(obj=Objects.scene, feature_name="seed")),
+            int(state.get(obj=Objects.scene, feature_name="steps_taken")),
+        )
+
+    def set_state(self, *, state: State) -> None:
+        if state.get(obj=Objects.scene, feature_name="steps_taken") != 0:
+            raise ValueError("only episode-initial states may be restored")
+        self.reset_to_seed(seed=int(state.get(obj=Objects.scene, feature_name="seed")))
+
+    def take_action(self, *, action: Action) -> SweepOffShelf3DState:
+        seed, count = self._bookkeeping()
+        values = np.asarray(action, dtype=float)
+        self._last_skill_error = None
+        self._last_action = values.copy()
+        self._atoms_before = (
+            getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
+        )
+        controllers = self.rack_controllers()
+        controllers.shelf.ticks = 0
+        backend = self.backend()
+        start_control_steps = backend.control_steps()
+        try:
+            if values.shape != (4,) or not np.isfinite(values).all():
+                raise SkillFailed("action must have four finite entries")
+            skill_id, food_index = values[:2]
+            if skill_id != int(skill_id) or food_index != int(food_index):
+                raise SkillFailed("skill and food indices must be integers")
+            if not 0 <= food_index < len(Objects.food):
+                raise SkillFailed("food index outside the scene")
+            name = Objects.food[int(food_index)].name
+            if skill_id == SKILL_IDS["PickScraper"]:
+                controllers.pick_scraper()
+            elif skill_id == SKILL_IDS["SweepRack"]:
+                controllers.sweep(dy=values[2], phi=values[3])
+            elif skill_id == SKILL_IDS["ReturnScraper"]:
+                controllers.return_scraper()
+            elif skill_id == SKILL_IDS["PickFood"]:
+                controllers.pick_food(name=name)
+            elif skill_id == SKILL_IDS["PlaceFoodOnTray"]:
+                if not self.backend().ledger.ready:
+                    raise SkillFailed("food is not elapsed-time ready")
+                controllers.place_food(name=name, destination="box_0")
+            elif skill_id == SKILL_IDS["ReturnFoodToRack"]:
+                controllers.place_food(name=name, destination="rack_0")
+            elif skill_id == SKILL_IDS["Wait"]:
+                controllers.wait_until_ready()
+            elif skill_id != -1:
+                raise SkillFailed("unknown robot skill; human operations are not robot actions")
+        except (SkillFailed, ValueError) as error:
+            self._last_skill_error = str(error)
+        finally:
+            self._last_controller_steps = backend.control_steps() - start_control_steps
+            controllers.shelf.ticks = self._last_controller_steps
+        self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
+        return self.current_state
+
+    def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
+        """Adopt measured state and grasp bookkeeping without issuing another control step."""
+        seed, count = self._bookkeeping()
+        self._last_action = np.asarray(action, dtype=float).copy()
+        self._last_skill_error = f"interrupted: {reason}"
+        backend = self.backend()
+        controllers = self.rack_controllers()
+        shelf = controllers.shelf
+        backend.grip = shelf.grip
+        controllers.held_food = next(
+            (name for name in backend.cube_names if backend.held(name=name)), None
+        )
+        shelf.held_cube = controllers.held_food
+        shelf.in_hand = (
+            np.linalg.inv(shelf.site_pose()) @ controllers.tool.wiper_pose()
+            if backend.held(name=Objects.scraper.name)
+            else None
+        )
+        self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
+        return self.current_state
+
+    def reset_movables(self, *, destination: str | None = None) -> bool:
+        backend = self.backend()
+        seed, count = self._bookkeeping()
+        if destination not in ("human_batch_return", "human_tool_recovery"):
+            raise ValueError("unknown human intervention")
+        interventions = backend.ledger.human_interventions
+        moved: tuple[str, ...] = ()
+        try:
+            if destination == "human_batch_return":
+                backend.batch_return()
+                moved = backend.cube_names
+                self.rack_controllers().held_food = None
+                self.rack_controllers().shelf.held_cube = None
+            else:
+                backend.sync_clock()
+                backend.ledger = backend.ledger.charge_human(intervention="human_tool_recovery")
+                if any(backend.held(name=name) for name in backend.cube_names):
+                    raise RuntimeError("place held food before requesting human tool recovery")
+                self.rack_controllers().tool.initialize_rest()
+                backend.grip = self.rack_controllers().shelf.grip
+                moved = ("wiper_0",)
+        finally:
+            if backend.ledger.human_interventions > interventions:
+                self._human_events.append(
+                    HumanEvent(skill=destination, moved=moved, steps_taken=count)
+                )
+                self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
+        return True
+
+    def last_skill_attempt(
+        self,
+    ) -> (
+        tuple[np.ndarray, frozenset[AbstractAtom], frozenset[AbstractAtom], list[SkillNote]] | None
+    ):
+        if self._last_action is None:
+            return None
+        after = getattr(self.get_current_state(), "abstract_atoms", None) or frozenset()
+        return self._last_action, self._atoms_before, after, []
+
+    def set_control_step_observers(
+        self, *, before: Callable[[], None] | None = None, after: Callable[[], None] | None = None
+    ) -> None:
+        self.backend().set_step_observers(before=before, after=after)
