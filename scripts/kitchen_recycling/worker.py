@@ -32,9 +32,7 @@ HUMAN_RESET_COSTS = {"ResetCubeBinSameSide": 5, "ResetCubeBinOppositeSide": 5}
 
 
 def check_costs(*, costs: dict) -> None:
-    priced = {
-        name: entry["cost"]["value"] for name, entry in costs.get("human_skills", {}).items()
-    }
+    priced = {name: entry["cost"]["value"] for name, entry in costs.get("human_skills", {}).items()}
     if priced != HUMAN_RESET_COSTS:
         raise ValueError(f"Cost file must price exactly the two human resets at 5: {priced}")
 
