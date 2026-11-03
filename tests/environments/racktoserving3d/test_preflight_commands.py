@@ -34,6 +34,8 @@ def test_documented_preflight_arguments_parse_and_keep_intended_bounds(
         if solver is None
         else [*_flags(name="POMDP_FLAGS"), "--pomdp-solver", solver]
     )
+    if solver == "expectimax":
+        argv += ["--pomdp-search-depth", "1"]
     args = Cli.parse_args(argv=argv)
     assert args.env == "racktoserving3d"
     assert args.max_steps_per_interaction == 4
@@ -54,7 +56,7 @@ def test_documented_preflight_arguments_parse_and_keep_intended_bounds(
         assert args.num_cycles == 1
     if solver is not None:
         assert args.pomdp_solver == solver
-        assert args.pomdp_search_depth == 1
+        assert args.pomdp_search_depth == (1 if solver == "expectimax" else None)
         assert args.pomdp_max_search_iterations == 32
         assert args.pomdp_inference_engine == "grid"
         assert args.pomdp_competence_model == "local_trend"
@@ -71,6 +73,7 @@ def test_pomdp_commands_route_to_rack_without_launching(*, tmp_path, monkeypatch
             *_flags(name="POMDP_FLAGS"),
             "--pomdp-solver",
             solver,
+            *(["--pomdp-search-depth", "1"] if solver == "expectimax" else []),
             "--output-dir",
             str(tmp_path),
         ]

@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from hitl_pmp.cli_protocols import SimulatedStepProtocolHooks
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
@@ -20,7 +21,7 @@ from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skill_provider import RackServingSkillProvider
 
 
-class RackServingStepProtocol:
+class RackServingStepProtocol(SimulatedStepProtocolHooks):
     """A spawn-importable adapter; all dynamics remain in the rack environment."""
 
     @staticmethod

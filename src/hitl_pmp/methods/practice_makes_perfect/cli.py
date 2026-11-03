@@ -12,11 +12,11 @@ from hitl_pmp.methods.belief_space.practice_domain import (
     TOSSING3D_DOMAIN,
     PracticeDomain,
 )
-from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
     RackServingPracticeDomain,
 )
+from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
@@ -365,8 +365,8 @@ class Tossing3DPomdpCli(EesCli):
             type=int,
             default=None,
             help="Exact belief-space expectimax depth in future skill executions "
-            "(default: the domain's -- 3 for Tossing3D/RackServing3D, 7 for SweepOffShelf3D). Expectimax "
-            "only: determinized_astar refuses it.",
+            "(default: the domain's -- 3 for Tossing3D/RackServing3D, 7 for SweepOffShelf3D). "
+            "Expectimax only: determinized_astar refuses it.",
         )
         parser.add_argument(
             "--pomdp-solver",

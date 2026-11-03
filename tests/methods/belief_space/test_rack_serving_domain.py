@@ -301,7 +301,9 @@ def test_cli_builds_real_rack_method_with_configured_readiness_without_running(
     method = runner.call_args.kwargs["method"]
     assert method.pomdp_domain.initially_ready is ready
     assert method.pomdp_domain.deployment_horizon == EPISODE_HORIZON
-    assert args.pomdp_search_depth == RACK_SERVING_DOMAIN.default_search_depth
+    # Determinized A* searches no depth, so the snapshot records None for it.
+    expected_depth = RACK_SERVING_DOMAIN.default_search_depth if solver == "expectimax" else None
+    assert args.pomdp_search_depth == expected_depth
     assert method.env._backend is None
     assert not RACK_SERVING_DOMAIN.initially_ready
     assert Tossing3DPomdpCli.DOMAINS["SweepOffShelf3DCli"] is SWEEP_OFF_SHELF_DOMAIN
