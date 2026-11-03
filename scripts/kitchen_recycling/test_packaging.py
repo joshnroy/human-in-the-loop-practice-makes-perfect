@@ -84,6 +84,21 @@ class PackagingTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
             self.assertFalse((output / "authorization.json").exists())
 
+    def test_cost_contract_is_the_two_resets_at_five(self):
+        worker.check_costs(costs=json.loads((HERE / "costs.json").read_text()))
+        old = {
+            "human_skills": {
+                name: {"cost": {"value": 12}, "duration": {"value": 1}}
+                for name in ("Recover_cube_control_near", "RelocateBinNear", "RestoreBinTarget")
+            }
+        }
+        with self.assertRaisesRegex(ValueError, "human reset"):
+            worker.check_costs(costs=old)
+        repriced = json.loads((HERE / "costs.json").read_text())
+        repriced["human_skills"]["ResetCubeBinSameSide"]["cost"]["value"] = 12
+        with self.assertRaisesRegex(ValueError, "human reset"):
+            worker.check_costs(costs=repriced)
+
     def test_reject_old_experiment_tag(self):
         with tempfile.TemporaryDirectory() as directory:
             command = [
