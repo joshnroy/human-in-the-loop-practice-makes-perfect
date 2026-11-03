@@ -129,11 +129,13 @@ class KitchenMotionPlanner:
         what: str,
         margin: float = PLANNING_MARGIN_M,
         held: HeldObject | None = None,
+        reference: Any | None = None,
     ) -> list[np.ndarray]:
         """A checked joint path from `start` to a valid IK solution for the hand pose.
 
         Holding something, it is carried rigidly, checked against the scene, and kept
-        within `tilt_limit_deg` of vertical at every checked configuration.
+        within `tilt_limit_deg` of vertical at every checked configuration. The goal is
+        the valid solution closest to `reference` if given, else to `start`.
         """
         start_joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=start)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
@@ -163,7 +165,13 @@ class KitchenMotionPlanner:
 
         sim.robot.set_joints(start_joints)
         goal = KitchenMotionPlanner.goal(
-            sim=sim, position=position, rotation=rotation, valid=collides
+            sim=sim,
+            position=position,
+            rotation=rotation,
+            valid=collides,
+            reference=None
+            if reference is None
+            else KitchenMotionPlanner.with_fingers(sim=sim, arm=reference),
         )
         if goal is None:
             upright = " upright" if held is not None else ""
@@ -186,19 +194,28 @@ class KitchenMotionPlanner:
 
     @staticmethod
     def goal(
-        *, sim: KitchenPyBulletSim, position: np.ndarray, rotation: Rotation, valid: Any
+        *,
+        sim: KitchenPyBulletSim,
+        position: np.ndarray,
+        rotation: Rotation,
+        valid: Any,
+        reference: list[float] | None = None,
     ) -> list[float] | None:
-        """The IK solution closest to the robot's current joints that is collision-free
-        (and keeps any constraint); None if IKFast offers none.
+        """The IK solution closest to `reference` (default: the robot's current joints)
+        that is collision-free (and keeps any constraint); None if IKFast offers none.
 
         Upstream takes IKFast's closest solution outright. Near the stove that can be an
         elbow-down branch through the worktop when a clear one exists, so the candidates
         IKFast returns (sorted by closeness, a fixed sample budget) are tried in order.
+        Closeness is upstream's own measure (continuous joints the short way round),
+        taken from `reference` by posing the robot there for the sort.
         """
         px, py, pz = (float(v) for v in position)
         qx, qy, qz, qw = (float(v) for v in rotation.as_quat())
         target = Pose((px, py, pz), (qx, qy, qz, qw))
         current = list(sim.robot.get_joint_positions())
+        if reference is not None:
+            sim.robot.set_joints(list(reference))
         solutions = ikfast_closest_inverse_kinematics(
             sim.robot,
             world_from_target=target,
@@ -206,6 +223,7 @@ class KitchenMotionPlanner:
                 max_time=np.inf, max_attempts=IKFAST_MAX_ATTEMPTS
             ),
         )
+        sim.robot.set_joints(current)
         for solution in solutions:
             # The fingers keep their current opening.
             joints = [*(float(v) for v in solution[:7]), *current[7:]]
@@ -261,7 +279,14 @@ class KitchenMotionPlanner:
 class PickPitcherController:
     """The free-space part of PickPitcher: the base to the pick pose, then the arm to a
     hover above the handle. The descent, grasp and lift that follow are contact
-    motions and stay scripted (`grasp_and_lift_pitcher`)."""
+    motions and stay scripted (`grasp_and_lift_pitcher`).
+
+    The hover's IK solution is the one closest to `home` (the episode-initial arm), not
+    to the arm as it is. The grasp carries the hover's branch through the whole cycle,
+    and after dumpling drops the arm can sit nearer the mirror (shoulder-flipped)
+    branch: the same hand pose, but no upright carry path out of it. A fresh episode
+    starts at home, so its pick is unchanged.
+    """
 
     BASE_MOTION = "planned base to pitcher"
     MOVE_ARM_TO_HOVER = "planned arm to pitcher hover"
@@ -279,6 +304,7 @@ class PickPitcherController:
         base_target: np.ndarray,
         hover: np.ndarray,
         rotation: Rotation,
+        home: np.ndarray,
     ) -> None:
         sim = self.sim
         sim.set_state(x)
@@ -295,7 +321,12 @@ class PickPitcherController:
         self.plans = {
             self.BASE_MOTION: base_path,
             self.MOVE_ARM_TO_HOVER: KitchenMotionPlanner.plan_arm(
-                sim=sim, start=arm, position=hover, rotation=rotation, what="pitcher hover"
+                sim=sim,
+                start=arm,
+                position=hover,
+                rotation=rotation,
+                what="pitcher hover",
+                reference=home,
             ),
         }
 

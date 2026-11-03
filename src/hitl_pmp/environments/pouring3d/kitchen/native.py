@@ -279,6 +279,7 @@ class KitchenController(PotstickerController):
                 base_target=self.base_home.copy(),
                 hover=handle + [-self.pitcher_hover_backoff, 0, self.pitcher_approach_clearance],
                 rotation=upright,
+                home=self.arm_neutral_q.copy(),
             )
         finally:
             sim.close()
