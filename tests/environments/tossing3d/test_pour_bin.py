@@ -77,7 +77,7 @@ def test_belief_space_search_offers_pick_pour_and_paid_reset_together(*, layout)
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     )
     pick = "PickCubeFromBin" if layout == Tossing3DLayout.SAME_SIDE else "PickCube"
-    assert {pick, "PourCubeOutOfBin", "ask_for_reset_cube_bin_only"} <= {
+    assert {pick, "PourCubeOutOfBin", "ResetCubeBinSameSide", "ResetCubeBinOppositeSide"} <= {
         action.skill.name for action in actions
     }
 
@@ -103,9 +103,7 @@ def test_a_refused_in_bin_pick_can_be_planned_without_a_human(*, layout):
         "PickCubeFromFloor" if layout == Tossing3DLayout.SAME_SIDE else "PickCube",
     ]
     skill = next(s for s in provider.skills() if s.name == "PourCubeOutOfBin")
-    grounded = GroundSkill(
-        skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier, provider.objects()[-2])
-    )
+    grounded = GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
     assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) in grounded.delete_effects
     assert (
         GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)) in grounded.add_effects

@@ -13,6 +13,13 @@ offline test and a simulator-backed one are talking about the same scene.
 """
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
+)
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.types import Tossing3DObservation
 
 # The live `Region.bbox` of `blocks_goal_region`: the task JSON's [2.00, 2.05] x
@@ -179,3 +186,14 @@ def state(
         steps_taken=steps_taken,
         abstract_atoms=abstract_atoms,
     )
+
+
+# The side objects survive only as keys onto the robot-relative side predicates.
+CUBE_SIDE = {
+    Tossing3DSides.robot: CUBE_ON_ROBOT_SIDE,
+    Tossing3DSides.opposite: CUBE_ON_OPPOSITE_SIDE,
+}
+BIN_SIDE = {
+    Tossing3DSides.robot: BIN_ON_ROBOT_SIDE,
+    Tossing3DSides.opposite: BIN_ON_OPPOSITE_SIDE,
+}

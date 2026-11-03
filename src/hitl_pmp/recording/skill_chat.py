@@ -19,7 +19,8 @@ class SkillChatOverlay:
         ("PickCube", "PickCube"),
         ("MoveToTossLocationAndToss", "Toss"),
         ("OpenGripper", "OpenGripper"),
-        ("ask_for_reset_cube_bin_only", "Human Reset"),
+        ("ResetCubeBinSameSide", "Human Reset (same side)"),
+        ("ResetCubeBinOppositeSide", "Human Reset (opposite side)"),
     )
 
     @staticmethod

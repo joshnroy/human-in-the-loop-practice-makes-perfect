@@ -28,7 +28,8 @@ from .tossing3d_constants import (
     PICK_SKILL,
     PICK_SKILLS,
     POUR_BIN_SKILL,
-    RESET_SKILL,
+    RESET_OPPOSITE_SIDE_SKILL,
+    RESET_SAME_SIDE_SKILL,
     TOSS_SKILL,
 )
 from .tossing3d_deployment_model import (
@@ -117,24 +118,31 @@ class Tossing3DPracticeDomain(PracticeDomain):
         (PICK_SKILL, PracticeExampleSource.OUTCOME),
         (TOSS_SKILL, PracticeExampleSource.SAMPLER),
         (OPEN_GRIPPER_SKILL, PracticeExampleSource.OUTCOME),
-        # The human reset is a skill like any other: its promised effects are checked
-        # and its competence inferred, so a human whose resets fail is learned.
-        (RESET_SKILL, PracticeExampleSource.OUTCOME),
+        # The human resets are skills like any other: their promised effects are
+        # checked and their competence inferred, so a human whose resets fail is
+        # learned. Each destination is its own skill with its own belief; the
+        # same-side reset keeps the single historical reset's prior-seed slot.
+        (RESET_SAME_SIDE_SKILL, PracticeExampleSource.OUTCOME),
         # Append new skills so existing skill priors keep their historical seeds.
         (POUR_BIN_SKILL, PracticeExampleSource.OUTCOME),
+        (RESET_OPPOSITE_SIDE_SKILL, PracticeExampleSource.OUTCOME),
     )
     optional_skill_names: frozenset[str] = frozenset({POUR_BIN_SKILL})
     shared_beliefs: tuple[tuple[str, str], ...] = tuple(
         (name, PICK_SKILL) for name in sorted(PICK_SKILLS - {PICK_SKILL})
     )
     deterministic_skills: frozenset[str] = frozenset({NON_HUMAN_RESET_SKILL})
-    human_skill_names: frozenset[str] = frozenset({RESET_SKILL})
+    human_skill_names: frozenset[str] = frozenset({
+        RESET_SAME_SIDE_SKILL,
+        RESET_OPPOSITE_SIDE_SKILL,
+    })
     failure_effect_skills: frozenset[str] = frozenset({
         *PICK_SKILLS,
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
         POUR_BIN_SKILL,
-        RESET_SKILL,
+        RESET_SAME_SIDE_SKILL,
+        RESET_OPPOSITE_SIDE_SKILL,
     })
 
     def sample_thetas(

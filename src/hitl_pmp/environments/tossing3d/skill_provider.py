@@ -3,11 +3,7 @@
 import numpy as np
 from pydantic import Field
 
-from hitl_pmp.core.method.skill_provider import (
-    ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
-    OraclePolicyProvider,
-    SkillProvider,
-)
+from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import (
     ConditionalAddEffect,
     GroundSkill,
@@ -22,10 +18,12 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     GRASP_CLEAR,
     GRIPPER_CLOSED,
     HAND_EMPTY,
@@ -35,22 +33,29 @@ from .predicates import (
     ON_GROUND,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
-    ROBOT_AT_SIDE,
 )
 from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
-from .sides import Tossing3DSides
+from .sides import Tossing3DSide
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
-from .skills import Tossing3DSkills
+from .skills import CUBE_SIDES, Tossing3DSkills
 from .toss import Tossing3DToss
+
+RESET_CUBE_BIN_SAME_SIDE_NAME = "ResetCubeBinSameSide"
+RESET_CUBE_BIN_OPPOSITE_SIDE_NAME = "ResetCubeBinOppositeSide"
+# Off by default. Both automatic destinations keep the one historical name, so nothing
+# keyed on it changes for that arm.
+NON_HUMAN_RESET_NAME = "non_human_reset_cube_bin_only"
+BIN_SIDES = frozenset({BIN_ON_ROBOT_SIDE, BIN_ON_OPPOSITE_SIDE})
 
 
 class Tossing3DSkillProvider(SkillProvider):
     """Tossing3D's `SkillProvider`, mirroring `TossingRoomSkillProvider`.
 
-    `objects()` is a fixed six: upstream's task JSON names exactly one cube, one bin and
-    one barrier, plus the robot; two featureless symbolic side objects let STRIPS actions
-    bind a reset destination. There is no configuration that changes the physical cast --
-    `o2` would add a second cube, and this domain does not support it (see the README).
+    `objects()` is a fixed four: upstream's task JSON names exactly one cube, one bin and
+    one barrier, plus the robot. Sides are robot-relative predicates, not objects, and
+    the two reset destinations are two skills. There is no configuration that changes
+    the physical cast -- `o2` would add a second cube, and this domain does not support
+    it (see the README).
 
     The goal region is not a symbolic object. Its scored box remains in the `State`,
     carried on the bin (see `predicates.py`'s module docstring); it is not something a
@@ -104,9 +109,10 @@ class Tossing3DSkillProvider(SkillProvider):
                 CLOSED_EMPTY,
                 GRIPPER_CLOSED,
                 ON_BIN_RIM,
-                ROBOT_AT_SIDE,
-                CUBE_AT_SIDE,
-                BIN_AT_SIDE,
+                CUBE_ON_ROBOT_SIDE,
+                CUBE_ON_OPPOSITE_SIDE,
+                BIN_ON_ROBOT_SIDE,
+                BIN_ON_OPPOSITE_SIDE,
                 PICKUP_UNBLOCKED,
                 BIN_ON_GROUND,
                 PICK_PLANNABLE,
@@ -124,9 +130,10 @@ class Tossing3DSkillProvider(SkillProvider):
             HOLDING,
             NOT_HOLDING,
             ON_GROUND,
-            ROBOT_AT_SIDE,
-            CUBE_AT_SIDE,
-            BIN_AT_SIDE,
+            CUBE_ON_ROBOT_SIDE,
+            CUBE_ON_OPPOSITE_SIDE,
+            BIN_ON_ROBOT_SIDE,
+            BIN_ON_OPPOSITE_SIDE,
             # Observed state only since PickPlannable replaced it in the pick: no
             # skill conditions on it, the toss still forgets it and the resets still
             # add it.
@@ -142,12 +149,11 @@ class Tossing3DSkillProvider(SkillProvider):
             Tossing3DEnvironment.cube_type,
             Tossing3DEnvironment.bin_type,
             Tossing3DEnvironment.barrier_type,
-            Tossing3DSides.type,
         )
 
     def objects(self) -> tuple[Object, ...]:
         env = self.env
-        return (env.robot, env.cube, env.bin, env.barrier, *Tossing3DSides.objects())
+        return (env.robot, env.cube, env.bin, env.barrier)
 
     # The toss is routed to `Tossing3DToss` BEFORE any layout branch, so both layouts
     # reach the identical callables; only the parameterless skills differ by layout.
@@ -212,44 +218,38 @@ class Tossing3DSkillProvider(SkillProvider):
         return Tossing3DToss.action_annotations(action=action)
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
-        """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
-        to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
-        untouched. Effects: `OnGround` (or same-side `OnFloor`) and the selected
-        typed side facts become true, `InBin` becomes false; same-side `OnBinRim`
-        is cleared too. ``HandEmpty`` stays as it was.
+        """Tossing3D's same-side human reset: repositions `cube_0`/`bin_0` to fresh
+        ground poses via `KinderBackend.reset_cube_and_bin`, robot untouched.
+        Effects: `OnGround` (or same-side `OnFloor`) and the destination's side facts
+        become true, `InBin` becomes false; same-side `OnBinRim` is cleared too.
+        ``HandEmpty`` stays as it was.
 
-        The static precondition binds the robot-relative side object. This singular
-        API returns the robot-side grounding; planners use the plural API below, which
-        offers both destinations and lets the planner choose. `None` when
-        `offer_human_reset` is off."""
+        Planners use the plural API below, which offers both destinations as two
+        skills and lets the planner choose. `None` when `offer_human_reset` is off."""
         resets = self.human_cube_bin_reset_skills()
         return resets[0] if resets else None
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        """The reset groundings practice may choose, or none when `offer_human_reset`
+        """The reset skills practice may choose, or none when `offer_human_reset`
         is off."""
         return self._cube_bin_reset_groundings() if self.offer_human_reset else ()
 
     def _cube_bin_reset_groundings(self) -> tuple[GroundSkill, ...]:
-        """One lifted reset, grounded once for each typed bin destination.
+        """Two human reset skills, one per bin destination, same side first.
 
         The cube is always returned to the robot's side so practice can continue;
-        the final parameter is the bin side selected by the planner, robot side first.
-        Both groundings carry the same provider-owned cost, so nothing here prefers a
-        side: the choice is the planner's. Functional side
-        predicates are cleared through ``ignore_effects`` before the two selected
-        atoms are added. This is the one lifted STRIPS action; the two choices are
-        ordinary ground actions, not separately named skills. Holding is deleted
-        when a reset relocates the cube; a closed gripper is preserved through
-        the existing conditional ClosedEmpty effect.
+        the skill names where the bin goes. Both carry the same provider-owned cost,
+        so nothing here prefers a side: the choice is the planner's. The functional
+        side predicates are cleared through ``ignore_effects`` before the
+        destination's atoms are added. Holding is deleted when a reset relocates
+        the cube; a closed gripper is preserved through the conditional ClosedEmpty
+        effect.
         """
         env = self.env
         robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
         bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
         barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
-        robot_side = Variable(name="robot_side", type=Tossing3DSides.type)
-        bin_destination = Variable(name="bin_destination", type=Tossing3DSides.type)
         floor = (
             LiftedAtom(predicate=ON_FLOOR, variables=(cube, bin_))
             if env.layout == Tossing3DLayout.SAME_SIDE
@@ -262,75 +262,53 @@ class Tossing3DSkillProvider(SkillProvider):
         }
         if env.layout == Tossing3DLayout.SAME_SIDE:
             removed.add(LiftedAtom(predicate=ON_BIN_RIM, variables=(cube, bin_)))
-        skill = Skill(
-            name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
-            parameters=(
-                robot,
-                cube,
-                bin_,
-                barrier,
-                robot_side,
-                bin_destination,
-            ),
-            preconditions=frozenset({
-                LiftedAtom(
-                    predicate=ROBOT_AT_SIDE,
-                    variables=(robot, barrier, robot_side),
-                ),
-            }),
-            add_effects=frozenset({
-                floor,
-                LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube)),
-                # The reset's cube region (blocks_init_region, x in [0.5, 0.75]) sits
-                # >= 1.7 m from either bin destination region, so a reset cube clears
-                # the walls by construction.
-                LiftedAtom(predicate=GRASP_CLEAR, variables=(cube, bin_)),
-                # The reset puts the cube in its spawn strip, in the open and on the
-                # robot's side. This add effect is what lets a plan recover from a
-                # cube the pick controller cannot plan for by paying for the reset.
-                LiftedAtom(predicate=PICK_PLANNABLE, variables=(robot, cube)),
-                # Relocating the cube physically heals every observed refusal
-                # instance, so the reset may promise the channel clear.
-                LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(cube,)),
-                # The reset re-places the bin upright on the floor, which is what
-                # lets a plan recover from a tipped bin by paying for it.
-                LiftedAtom(predicate=BIN_ON_GROUND, variables=(bin_,)),
-                LiftedAtom(
-                    predicate=CUBE_AT_SIDE,
-                    variables=(cube, barrier, robot_side),
-                ),
-                LiftedAtom(
-                    predicate=BIN_AT_SIDE,
-                    variables=(bin_, barrier, bin_destination),
-                ),
-            }),
-            delete_effects=frozenset(removed),
-            conditional_add_effects=frozenset({
-                ConditionalAddEffect(
-                    conditions=frozenset({holding}),
-                    add_effects=frozenset({
-                        LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube)),
-                        LiftedAtom(predicate=GRIPPER_CLOSED, variables=(robot,)),
-                    }),
-                )
-            }),
-            ignore_effects=frozenset({CUBE_AT_SIDE, BIN_AT_SIDE}),
-            param_dim=0,
-            practice_cost=self.human_reset_practice_cost,
-        )
+        common = frozenset({
+            floor,
+            LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube)),
+            # The reset's cube region (blocks_init_region, x in [0.5, 0.75]) sits
+            # >= 1.7 m from either bin destination region, so a reset cube clears
+            # the walls by construction.
+            LiftedAtom(predicate=GRASP_CLEAR, variables=(cube, bin_)),
+            # The reset puts the cube in its spawn strip, in the open and on the
+            # robot's side. This add effect is what lets a plan recover from a
+            # cube the pick controller cannot plan for by paying for the reset.
+            LiftedAtom(predicate=PICK_PLANNABLE, variables=(robot, cube)),
+            # Relocating the cube physically heals every observed refusal
+            # instance, so the reset may promise the channel clear.
+            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(cube,)),
+            # The reset re-places the bin upright on the floor, which is what
+            # lets a plan recover from a tipped bin by paying for it.
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(bin_,)),
+            LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(cube, barrier)),
+        })
         return tuple(
             GroundSkill(
-                skill=skill,
-                objects=(
-                    env.robot,
-                    env.cube,
-                    env.bin,
-                    env.barrier,
-                    Tossing3DSides.robot,
-                    destination,
+                skill=Skill(
+                    name=name,
+                    parameters=(robot, cube, bin_, barrier),
+                    preconditions=frozenset(),
+                    add_effects=common
+                    | {LiftedAtom(predicate=bin_side, variables=(bin_, barrier))},
+                    delete_effects=frozenset(removed),
+                    conditional_add_effects=frozenset({
+                        ConditionalAddEffect(
+                            conditions=frozenset({holding}),
+                            add_effects=frozenset({
+                                LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube)),
+                                LiftedAtom(predicate=GRIPPER_CLOSED, variables=(robot,)),
+                            }),
+                        )
+                    }),
+                    ignore_effects=CUBE_SIDES | BIN_SIDES,
+                    param_dim=0,
+                    practice_cost=self.human_reset_practice_cost,
                 ),
+                objects=(env.robot, env.cube, env.bin, env.barrier),
             )
-            for destination in Tossing3DSides.objects()
+            for name, bin_side in (
+                (RESET_CUBE_BIN_SAME_SIDE_NAME, BIN_ON_ROBOT_SIDE),
+                (RESET_CUBE_BIN_OPPOSITE_SIDE_NAME, BIN_ON_OPPOSITE_SIDE),
+            )
         )
 
     def non_human_cube_bin_reset_skill(self) -> GroundSkill:
@@ -338,7 +316,7 @@ class Tossing3DSkillProvider(SkillProvider):
         return self.non_human_cube_bin_reset_skills()[0]
 
     def non_human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        """Automatic reset destinations share one belief, distinct from human reset."""
+        """The automatic counterparts of both human resets, with their own cost."""
         return tuple(
             self._automatic_reset(reset=reset) for reset in self._cube_bin_reset_groundings()
         )
@@ -348,7 +326,7 @@ class Tossing3DSkillProvider(SkillProvider):
             update={
                 "skill": reset.skill.model_copy(
                     update={
-                        "name": "non_human_reset_cube_bin_only",
+                        "name": NON_HUMAN_RESET_NAME,
                         "practice_cost": self.non_human_reset_practice_cost,
                     }
                 )
@@ -357,19 +335,28 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
         if ground_skill.skill.name not in {
-            ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
-            "non_human_reset_cube_bin_only",
+            RESET_CUBE_BIN_SAME_SIDE_NAME,
+            RESET_CUBE_BIN_OPPOSITE_SIDE_NAME,
+            NON_HUMAN_RESET_NAME,
         }:
             return None
-        destination = ground_skill.objects[-1]
-        Tossing3DSides.parse(name=destination.name)
-        return destination.name
+        # Read off the effect rather than the name: both automatic resets share one.
+        added = {atom.predicate for atom in ground_skill.skill.add_effects}
+        if BIN_ON_ROBOT_SIDE in added:
+            return Tossing3DSide.ROBOT.value
+        if BIN_ON_OPPOSITE_SIDE in added:
+            return Tossing3DSide.OPPOSITE.value
+        raise ValueError(f"reset {ground_skill.skill.name} adds no bin side")
 
     def human_skill_name(self, *, ground_skill: GroundSkill) -> str | None:
         destination = self.movables_reset_destination(ground_skill=ground_skill)
         if destination is None:
             return None
-        return "reset_cube_and_bin_near" if destination == "robot_side" else "reset_cube_far"
+        return (
+            "reset_cube_and_bin_near"
+            if destination == Tossing3DSide.ROBOT.value
+            else "reset_cube_far"
+        )
 
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
         automatic = self.non_human_cube_bin_reset_skills() if self.offer_non_human_reset else ()

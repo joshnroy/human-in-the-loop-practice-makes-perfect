@@ -8,15 +8,16 @@ from pydantic import ValidationError
 
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_OPPOSITE_SIDE,
+)
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief, smooth_history
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    RESET_SKILL,
+    RESET_SAME_SIDE_SKILL,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -139,8 +140,8 @@ def test_hypothetical_first_success_enables_refit_without_changing_current_sampl
     practice_model = method._pomdp_model  # noqa: SLF001
     toss = next(g for g in practice_model.ground_skills if g.skill.name == TOSS_SKILL)
     bin_side = GroundAtom(
-        predicate=BIN_AT_SIDE,
-        objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+        predicate=BIN_ON_OPPOSITE_SIDE,
+        objects=(method.env.bin, method.env.barrier),
     )
     search_state = make_tossing3d_search_state(
         state=state, true_atoms=toss.preconditions | {bin_side}
@@ -221,7 +222,7 @@ def test_fixed_controllers_condition_sf_and_cost_and_advance_their_clock(
     *, model: Model, engine: Engine
 ) -> None:
     method = _method(model=model, engine=engine)
-    for name in (PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SKILL):
+    for name in (PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SAME_SIDE_SKILL):
         ground = next(g for g in method._pomdp_model.ground_skills if g.skill.name == name)  # noqa: SLF001
         before = method.pomdp_state.skill_beliefs[name]
         method.observe_outcome(ground_skill=ground, success=True)
@@ -234,7 +235,7 @@ def test_fixed_controllers_condition_sf_and_cost_and_advance_their_clock(
         assert method.pomdp_state.pending_examples.get(name, 0) == 1
     before_refit = dict(method.pomdp_state.skill_beliefs)
     method.end_cycle()
-    for name in (PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SKILL):
+    for name in (PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SAME_SIDE_SKILL):
         before = before_refit[name]
         after = method.pomdp_state.skill_beliefs[name]
         assert isinstance(before, BayesianSkillBelief)

@@ -22,10 +22,13 @@ from hitl_pmp.environments.tossing3d.bin_placement import (
     BinPlacementViolationError,
 )
 
+from .observations import BIN_SIDE
+
 needs_kinder = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
     reason="KINDER is an optional extra",
 )
+
 
 SPAWN = ((0.5, -0.25, 0.75, 0.25),)  # Tossing3D-o1.json's blocks_init_region
 BIN_HALF = (0.15, 0.15)
@@ -310,7 +313,7 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
     completion. Scoring is not asserted -- that is competence, not feasibility."""
     from hitl_pmp.core.method.types import GroundSkill
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-    from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, HOLDING
+    from hitl_pmp.environments.tossing3d.predicates import HOLDING
     from hitl_pmp.environments.tossing3d.sides import (
         BIN_RESET_REGION_BY_SIDE,
         Tossing3DSide,
@@ -325,7 +328,7 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
         env.reset_to_seed(seed=seed)
         assert env.reset_movables(destination="opposite_side")
         placed = env.get_current_state()
-        assert BIN_AT_SIDE.holds(placed, (env.bin, env.barrier, Tossing3DSides.opposite))
+        assert BIN_SIDE[Tossing3DSides.opposite].holds(placed, (env.bin, env.barrier))
         bx = placed.get(obj=env.bin, feature_name="x")
         by = placed.get(obj=env.bin, feature_name="y")
         assert far[0] - 1e-3 <= bx <= far[2] + 1e-3

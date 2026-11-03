@@ -15,18 +15,13 @@ def build(**kwargs):
     )
 
 
-def picks(*, method):
-    """The side-bound PickCube gives two distinct groundings of one skill."""
-    skill = next(skill for skill in method.skills() if skill.name == "PickCube")
-    objects = {obj.name: obj for obj in method.objects()}
-    return tuple(
-        GroundSkill(
-            skill=skill,
-            objects=tuple(
-                objects[name] for name in ("robot", "cube_0", "cuboid_barrier", side, "bin_0")
-            ),
-        )
-        for side in ("robot_side", "opposite_side")
+def grounding(*, method, name):
+    """The one grounding of a skill: Tossing3D has one object of each type and no skill
+    binds a side, so every skill grounds exactly once."""
+    skill = next(skill for skill in method.skills() if skill.name == name)
+    by_type = {obj.type: obj for obj in method.objects()}
+    return GroundSkill(
+        skill=skill, objects=tuple(by_type[variable.type] for variable in skill.parameters)
     )
 
 
@@ -37,25 +32,29 @@ def observe(*, method, ground, outcomes):
 
 def test_each_grounding_keeps_its_own_competence_history():
     method = build()
-    near, far = picks(method=method)
-    observe(method=method, ground=near, outcomes=[True] * 8)
-    observe(method=method, ground=far, outcomes=[False] * 4)
+    pick = grounding(method=method, name="PickCube")
+    pour = grounding(method=method, name="PourCubeOutOfBin")
+    observe(method=method, ground=pick, outcomes=[True] * 8)
+    observe(method=method, ground=pour, outcomes=[False] * 4)
     assert method.practice_groundings == "observed"
-    assert method.competence_model(ground_skill=near).get_current_competence() != (
-        method.competence_model(ground_skill=far).get_current_competence()
+    assert method.competence_model(ground_skill=pick).get_current_competence() != (
+        method.competence_model(ground_skill=pour).get_current_competence()
     )
 
 
 def test_all_groundings_exposes_unseen_targets_without_changing_skills():
     original = build()
     flexible = build(practice_groundings="all")
-    near, far = picks(method=flexible)
     assert flexible.skills() == original.skills()
     assert flexible.skill_provider.human_cube_bin_reset_skills() == (
         original.skill_provider.human_cube_bin_reset_skills()
     )
     assert original.practice_candidates() == []
-    assert {near, far} <= set(flexible.practice_candidates())
+    # One candidate per skill: with no side object there is no never-runnable
+    # opposite-side PickCube or Pour grounding left to enumerate.
+    assert flexible.practice_candidates() == [
+        grounding(method=flexible, name=skill.name) for skill in flexible.skills()
+    ]
 
 
 def test_all_ees_groundings_keep_paramless_open_gripper():

@@ -18,7 +18,6 @@ from hitl_pmp.core.practice_costs import (
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.skill_provider import SweepOffShelf3DSkillProvider
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import (
     PARAMETERIZED_SKILL,
@@ -464,35 +463,35 @@ def _pick_setup(*, monkeypatch, groundings: str):
         skill.name: DpSkillPrior(alpha=0.4, beta=1.6, initial_learning_rate=0.2)
         for skill in method.skills()
     }
-    skill = next(skill for skill in provider.skills() if skill.name == "PickCube")
     bindings = {"robot": env.robot, "cube": env.cube, "bin": env.bin, "barrier": env.barrier}
-    grounds = [
+    # A setup grounding and a target grounding with different preconditions. These were
+    # once the robot-side and opposite-side groundings of PickCube; with no side object
+    # every Tossing3D skill grounds once, so the pair is two skills instead.
+    setup, target = (
         GroundSkill(
             skill=skill,
-            objects=tuple(
-                side if parameter.name == "side" else bindings[parameter.name]
-                for parameter in skill.parameters
-            ),
+            objects=tuple(bindings[parameter.name] for parameter in skill.parameters),
         )
-        for side in Tossing3DSides.objects()
-    ]
-    same, opposite = grounds
-    _observe(method=method, ground=same, outcomes=[True])
-    _observe(method=method, ground=opposite, outcomes=[False])
+        for name in ("OpenGripper", "PickCube")
+        for skill in provider.skills()
+        if skill.name == name
+    )
+    _observe(method=method, ground=setup, outcomes=[True])
+    _observe(method=method, ground=target, outcomes=[False])
     mdp = DpMdp(
         initial_probabilities={0: 1},
         terminal_rewards={1: 1},
-        transitions=[DpTransition(state=0, skill=opposite, successor=1)],
+        transitions=[DpTransition(state=0, skill=target, successor=1)],
     )
     monkeypatch.setattr(DpTaskModel, "build", staticmethod(lambda **kwargs: mdp))
-    return method, same, opposite
+    return method, setup, target
 
 
 def test_solver_log_records_candidates_and_physical_attempts(*, monkeypatch, tmp_path):
-    method, same, opposite = _pick_setup(monkeypatch=monkeypatch, groundings="all")
+    method, setup, target = _pick_setup(monkeypatch=monkeypatch, groundings="all")
     method.dp_solver_log = tmp_path / "solver.jsonl"
     method.choose_practice_target()
-    _execute(method=method, ground=opposite, cost=2)
+    _execute(method=method, ground=target, cost=2)
     method._write_solver_record(record={"event": "test_execution"})
     allocation, execution = [
         json.loads(line) for line in method.dp_solver_log.read_text().splitlines()
@@ -500,17 +499,15 @@ def test_solver_log_records_candidates_and_physical_attempts(*, monkeypatch, tmp
     assert allocation["completion_reason"] is None
     assert allocation["learning_rate_update"] == "per_retained_episode_closed_cycles"
     assert allocation["practice_groundings"] == "all"
-    rows = [row for row in allocation["groups"] if row["skill"] == same.skill.name]
-    assert {tuple(row["objects"]) for row in rows} >= {
-        tuple(obj.name for obj in same.objects),
-        tuple(obj.name for obj in opposite.objects),
+    assert {(row["skill"], tuple(row["objects"])) for row in allocation["groups"]} >= {
+        (ground.skill.name, tuple(obj.name for obj in ground.objects)) for ground in (setup, target)
     }
     assert execution["remaining_budget"] == pytest.approx(method.dp_budget - 1)
     assert execution["episodes"] == 1
     assert execution["executed_since_solve"] == [
         {
-            "skill": opposite.skill.name,
-            "objects": [obj.name for obj in opposite.objects],
+            "skill": target.skill.name,
+            "objects": [obj.name for obj in target.objects],
             "attempts": 1,
         }
     ]

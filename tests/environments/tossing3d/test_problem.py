@@ -15,10 +15,12 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
     GRASP_CLEAR,
     GRIPPER_CLOSED,
     HAND_EMPTY,
@@ -28,7 +30,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
-    ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
@@ -82,9 +83,10 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         GRIPPER_CLOSED,
         NOT_HOLDING,
         ON_GROUND,
-        ROBOT_AT_SIDE,
-        CUBE_AT_SIDE,
-        BIN_AT_SIDE,
+        CUBE_ON_ROBOT_SIDE,
+        CUBE_ON_OPPOSITE_SIDE,
+        BIN_ON_ROBOT_SIDE,
+        BIN_ON_OPPOSITE_SIDE,
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
         BIN_ON_GROUND,

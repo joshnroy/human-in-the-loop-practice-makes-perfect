@@ -17,9 +17,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     CLOSED_EMPTY,
-    CUBE_AT_SIDE,
     GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
@@ -34,6 +32,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_succe
 from hitl_pmp.methods.practice_makes_perfect.dp_allocator import DpAllocator
 from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTaskModel, DpTransition
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.environments.tossing3d.observations import BIN_SIDE, CUBE_SIDE
 
 
 def test_joint_allocation_can_abandon_the_currently_best_task_policy():
@@ -241,7 +240,6 @@ def test_tossing3d_empty_gripper_recovery_route_is_preserved(*, bin_side, pourin
         "cube": env.cube,
         "bin": env.bin,
         "barrier": env.barrier,
-        "side": Tossing3DSides.robot,
     }
     grounds = {}
     for skill in provider.skills():
@@ -259,7 +257,7 @@ def test_tossing3d_empty_gripper_recovery_route_is_preserved(*, bin_side, pourin
         for atom in ground.preconditions
         if atom.predicate not in {HAND_EMPTY, HOLDING}
     )
-    initial |= {GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, bin_side))}
+    initial |= {GroundAtom(predicate=BIN_SIDE[bin_side], objects=(env.bin, env.barrier))}
     goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
     mdp = DpTaskModel.build(
         tasks=[(initial, goal)],
@@ -286,7 +284,7 @@ def test_tossing3d_task_mdp_can_recover_an_unpickable_in_bin_cube_by_pouring():
     pour = next(skill for skill in provider.skills() if skill.name == "PourCubeOutOfBin")
     grounded = GroundSkill(
         skill=pour,
-        objects=(env.robot, env.cube, env.bin, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.cube, env.bin, env.barrier),
     )
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     mdp = DpTaskModel.build(
@@ -342,7 +340,7 @@ def test_open_gripper_graph_matches_common_model_for_held_and_closed_empty_hands
         objects=(env.robot, env.cube, env.bin),
     )
     geometry = frozenset({
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, side)),
+        GroundAtom(predicate=CUBE_SIDE[side], objects=(env.cube, env.barrier)),
         GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),

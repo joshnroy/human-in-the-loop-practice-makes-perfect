@@ -6,15 +6,12 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     BIN_ON_GROUND,
-    CUBE_AT_SIDE,
     GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
     PICK_PLANNABLE,
-    ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -24,6 +21,8 @@ from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpTaskModel
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
+
+from .observations import BIN_SIDE, CUBE_SIDE
 
 
 def _scene(*, bin_side, cube_side):
@@ -36,9 +35,8 @@ def _scene(*, bin_side, cube_side):
     before = frozenset({
         GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(env.bin,)),
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(env.bin, env.barrier, bin_side)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, cube_side)),
-        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(env.robot, env.barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=BIN_SIDE[bin_side], objects=(env.bin, env.barrier)),
+        GroundAtom(predicate=CUBE_SIDE[cube_side], objects=(env.cube, env.barrier)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
         GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
     })
@@ -74,12 +72,12 @@ def test_expectimax_success_replaces_old_side_and_preserves_pick_restriction(
         ground_skill=toss,
         effects={toss: (toss.add_effects, toss.delete_effects, toss.ignore_effects)},
     )
-    expected_side = GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, bin_side))
-    assert {atom for atom in after if atom.predicate == CUBE_AT_SIDE} == {expected_side}
+    expected_side = GroundAtom(predicate=CUBE_SIDE[bin_side], objects=(env.cube, env.barrier))
+    assert {atom for atom in after if atom.predicate in CUBE_SIDE.values()} == {expected_side}
     assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) in after
     assert GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube)) not in after
-    assert {atom for atom in after if atom.predicate == BIN_AT_SIDE} == {
-        atom for atom in before if atom.predicate == BIN_AT_SIDE
+    assert {atom for atom in after if atom.predicate in BIN_SIDE.values()} == {
+        atom for atom in before if atom.predicate in BIN_SIDE.values()
     }
     applicable_picks = SkillGrounder.applicable_ground_skills(
         skills=(Tossing3DSkills.PICK_CUBE,), objects=provider.objects(), true_atoms=after
@@ -99,7 +97,7 @@ def test_symbolic_planner_uses_same_toss_for_either_landing_side(*, bin_side):
     env, provider, toss, before = _scene(bin_side=bin_side, cube_side=other_side)
     goal = frozenset({
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, bin_side)),
+        GroundAtom(predicate=CUBE_SIDE[bin_side], objects=(env.cube, env.barrier)),
     })
     plan = FastDownwardPlanner.plan(
         skills=(toss.skill,),
@@ -118,7 +116,7 @@ def test_dp_success_copies_side_without_creating_distinct_toss_targets(*, bin_si
     env, provider, toss, before = _scene(bin_side=bin_side, cube_side=other_side)
     goal = frozenset({
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, bin_side)),
+        GroundAtom(predicate=CUBE_SIDE[bin_side], objects=(env.cube, env.barrier)),
     })
     mdp = DpTaskModel.build(
         tasks=[(before, goal)], skills=(toss.skill,), objects=provider.objects(), max_states=10
@@ -126,7 +124,7 @@ def test_dp_success_copies_side_without_creating_distinct_toss_targets(*, bin_si
     assert {edge.skill for edge in mdp.transitions} == {toss}
     assert mdp.solve(competences={toss: 0.7})[0] == pytest.approx(0.7)
     contradictory_goal = goal | {
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, other_side))
+        GroundAtom(predicate=CUBE_SIDE[other_side], objects=(env.cube, env.barrier))
     }
     impossible = DpTaskModel.build(
         tasks=[(before, contradictory_goal)],
@@ -169,7 +167,10 @@ def test_reset_destinations_still_control_the_same_toss_continuation():
     }
     continuations = {}
     resets = provider.human_cube_bin_reset_skills()
-    assert {reset.objects[-1] for reset in resets} == set(Tossing3DSides.objects())
+    assert {provider.movables_reset_destination(ground_skill=reset) for reset in resets} == {
+        "robot_side",
+        "opposite_side",
+    }
     for reset in resets:
         atoms = apply_success_effects(
             true_atoms=before,
@@ -194,9 +195,9 @@ def test_reset_destinations_still_control_the_same_toss_continuation():
             ground_skill=toss,
             effects={toss: (toss.add_effects, toss.delete_effects, toss.ignore_effects)},
         )
-        continuations[reset.objects[-1]] = bool(
+        continuations[provider.movables_reset_destination(ground_skill=reset)] = bool(
             SkillGrounder.applicable_ground_skills(
                 skills=(Tossing3DSkills.PICK_CUBE,), objects=provider.objects(), true_atoms=after
             )
         )
-    assert continuations == {Tossing3DSides.robot: True, Tossing3DSides.opposite: False}
+    assert continuations == {"robot_side": True, "opposite_side": False}

@@ -14,7 +14,6 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -36,7 +35,7 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     WideLongRangeTossProposal,
 )
 
-from .observations import state
+from .observations import BIN_SIDE, state
 
 
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
@@ -135,7 +134,7 @@ def test_the_direction_is_reported_as_its_own_annotation(*, fixed_direction) -> 
     }
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+        objects=(env.robot, env.cube, env.barrier, env.bin),
     )
     assert provider.action_annotations(ground_skill=pick, action=np.zeros(5)) == {}
 
@@ -220,10 +219,10 @@ def test_same_side_and_barrier_layouts_share_one_toss_implementation(*, fixed_di
             assert np.array_equal(drawn[0], other)
         scene = state(env=barrier_env)
         same_scene = state(env=same_env, bin_x=-2.0)
-        assert BIN_AT_SIDE.holds(
-            scene, (barrier_env.bin, barrier_env.barrier, Tossing3DSides.opposite)
+        assert BIN_SIDE[Tossing3DSides.opposite].holds(
+            scene, (barrier_env.bin, barrier_env.barrier)
         )
-        assert BIN_AT_SIDE.holds(same_scene, (same_env.bin, same_env.barrier, Tossing3DSides.robot))
+        assert BIN_SIDE[Tossing3DSides.robot].holds(same_scene, (same_env.bin, same_env.barrier))
         assert np.array_equal(
             barrier.compute_action(ground_skill=barrier_toss, params=drawn[0], state=scene),
             same_side.compute_action(ground_skill=same_toss, params=drawn[0], state=same_scene),

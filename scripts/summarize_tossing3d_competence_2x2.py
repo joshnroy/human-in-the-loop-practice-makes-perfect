@@ -16,7 +16,13 @@ from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 ARMS = ("global_curve-particle", "global_curve-grid", "local_trend-particle", "local_trend-grid")
 TOSS_SKILL = "MoveToTossLocationAndToss"
-RESET_SKILLS = ("ask_for_reset_cube_bin_only", "non_human_reset_cube_bin_only")
+# The legacy name is kept so runs logged before the reset split still summarize.
+RESET_SKILLS = (
+    "ResetCubeBinSameSide",
+    "ResetCubeBinOppositeSide",
+    "ask_for_reset_cube_bin_only",
+    "non_human_reset_cube_bin_only",
+)
 
 
 def read_json(*, path: Path) -> Any:

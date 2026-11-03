@@ -15,7 +15,6 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.state_log import (
@@ -69,7 +68,7 @@ def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
         assert episode is not None
         pick = GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
-            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+            objects=(env.robot, env.cube, env.barrier, env.bin),
         )
         episode._plan = [pick]
         labeled_action = policy(state)

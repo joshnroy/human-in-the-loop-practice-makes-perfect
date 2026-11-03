@@ -21,7 +21,6 @@ from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import (
     BIN_RESET_REGION_BY_SIDE,
@@ -45,7 +44,7 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import state
+from .observations import BIN_SIDE, state
 
 SUCCESS_WITNESSES = (
     (2.5, 360.0, 480.0),
@@ -85,6 +84,7 @@ ROBOT_SIDE_WITNESSES = (
     (2.5, 390.0, 450.0, True),
     (2.5, 115.0, 400.0, False),
 )
+
 # The probe's arrangement: reset_to_seed then a robot-side movables reset, both
 # deterministic per seed; 125 is the canonical practice seed and its arrangement
 # picks cleanly (bin near (-0.331, 0.965), cube on the spawn strip).
@@ -193,7 +193,7 @@ def test_both_bin_sides_draw_from_the_one_unified_proposal(*, no_kinder_import) 
     toss = _toss_ground_skill(env=env)
     for side, bin_x in ((Tossing3DSides.robot, -2.0), (Tossing3DSides.opposite, 2.0)):
         scene = state(env=env, bin_x=bin_x)
-        assert BIN_AT_SIDE.holds(scene, (env.bin, env.barrier, side))
+        assert BIN_SIDE[side].holds(scene, (env.bin, env.barrier))
         rng = np.random.default_rng(62)
         direct_rng = np.random.default_rng(62)
         for _ in range(10):
@@ -363,7 +363,7 @@ def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_impor
         )
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+        objects=(env.robot, env.cube, env.barrier, env.bin),
     )
     assert np.array_equal(
         provider.sample_params(ground_skill=pick, rng=rng),

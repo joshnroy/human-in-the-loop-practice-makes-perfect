@@ -18,7 +18,11 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle, Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
-from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, RESET_SKILL, TOSS_SKILL
+from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    PICK_SKILL,
+    RESET_SAME_SIDE_SKILL,
+    TOSS_SKILL,
+)
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import refit_belief_state
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -183,7 +187,7 @@ def test_cost_observations_dispatch_charges_and_objective_are_identical_across_a
             method.observe_outcome(
                 ground_skill=ground, success=success, was_random_exploration=random
             )
-        reset = _ground(method=method, name=RESET_SKILL)
+        reset = _ground(method=method, name=RESET_SAME_SIDE_SKILL)
         method.record_action_cost(ground_skill=reset)
         method.observe_help_granted(state=method.env.get_current_state())
         assert method.pomdp_state.accumulated_cost == 3.25

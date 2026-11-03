@@ -22,7 +22,6 @@ from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY, HOLDING
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
@@ -115,7 +114,7 @@ class Tossing3DDpPriors:
         method = EesMethod(env=env, skill_provider=provider, seed=seed)
         pick = GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
-            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+            objects=(env.robot, env.cube, env.barrier, env.bin),
         )
         recovery = GroundSkill(
             skill=Tossing3DSkills.OPEN_GRIPPER, objects=(env.robot, env.cube, env.bin)
@@ -298,7 +297,7 @@ class Tossing3DDpPriors:
         )
         pick = GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
-            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
+            objects=(env.robot, env.cube, env.barrier, env.bin),
         )
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,

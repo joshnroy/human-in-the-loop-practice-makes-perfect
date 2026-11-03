@@ -12,7 +12,7 @@ from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBeli
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    RESET_SKILL,
+    RESET_SAME_SIDE_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
@@ -20,7 +20,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossin
 from .test_notebook_equivalence import SKILLS, _notebook_run
 
 FIXED = (PICK_SKILL, OPEN_GRIPPER_SKILL)
-RESETS = (RESET_SKILL,)
+RESETS = (RESET_SAME_SIDE_SKILL,)
 
 
 def _method() -> Tossing3DPomdpMethod:
@@ -94,7 +94,7 @@ def test_fixed_controller_grid_belief_matches_the_notebook(
     np.testing.assert_allclose(filtered, expected["filtered"], rtol=0, atol=1e-9)
 
 
-@pytest.mark.parametrize("name", [*FIXED, RESET_SKILL])
+@pytest.mark.parametrize("name", [*FIXED, RESET_SAME_SIDE_SKILL])
 def test_search_advances_the_same_clock_it_will_observe(*, name: str) -> None:
     method = _method()
     model = method._pomdp_model  # noqa: SLF001

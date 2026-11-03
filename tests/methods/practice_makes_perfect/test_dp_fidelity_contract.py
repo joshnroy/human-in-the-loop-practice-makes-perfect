@@ -16,36 +16,36 @@ from .test_dp_method import _build, _execute, _ground, _pick_setup
 
 
 @pytest.mark.parametrize("groundings", ["observed", "all"])
-def test_default_executes_selected_side_and_binds_setup_cost_to_it(*, monkeypatch, groundings):
-    method, same, opposite = _pick_setup(monkeypatch=monkeypatch, groundings=groundings)
-    assert same.preconditions != opposite.preconditions
-    assert method.choose_practice_target() == [opposite, STOP_SKILL]
-    before = method.dp_remaining_allocation()[opposite]
-    monkeypatch.setattr(DpMethod, "plan_to", lambda self, **kwargs: [same])
+def test_default_executes_selected_grounding_and_binds_setup_cost_to_it(*, monkeypatch, groundings):
+    method, setup, target = _pick_setup(monkeypatch=monkeypatch, groundings=groundings)
+    assert setup.preconditions != target.preconditions
+    assert method.choose_practice_target() == [target, STOP_SKILL]
+    before = method.dp_remaining_allocation()[target]
+    monkeypatch.setattr(DpMethod, "plan_to", lambda self, **kwargs: [setup])
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=True, pursue_goal=False)
-    assert episode._practice_plan(true_atoms=same.preconditions) == [same, opposite]
-    assert method._dp_active_target == opposite
-    method.record_action_cost(ground_skill=same)
+    assert episode._practice_plan(true_atoms=setup.preconditions) == [setup, target]
+    assert method._dp_active_target == target
+    method.record_action_cost(ground_skill=setup)
     method.observe_execution_cost(cost=2, steps=1, complete=True)
     assert method.dp_episodes() == 0
-    assert method.dp_remaining_allocation()[opposite] == before
-    assert same not in method._dp_costs
-    method.record_action_cost(ground_skill=opposite)
+    assert method.dp_remaining_allocation()[target] == before
+    assert setup not in method._dp_costs
+    method.record_action_cost(ground_skill=target)
     method.observe_execution_cost(cost=3, steps=1, complete=True)
     assert method.dp_episodes() == 1
-    assert method.dp_remaining_allocation()[opposite] == before - 1
-    assert method._dp_executed_since_solve == {opposite: 1}
-    assert method.dp_expected_attempt_cost(ground_skill=opposite) == pytest.approx(5)
-    assert same not in method._dp_costs
+    assert method.dp_remaining_allocation()[target] == before - 1
+    assert method._dp_executed_since_solve == {target: 1}
+    assert method.dp_expected_attempt_cost(ground_skill=target) == pytest.approx(5)
+    assert setup not in method._dp_costs
 
 
 def test_solver_price_and_diagnostics_follow_each_groundings_own_costs(*, monkeypatch, tmp_path):
-    method, same, opposite = _pick_setup(monkeypatch=monkeypatch, groundings="all")
+    method, setup, target = _pick_setup(monkeypatch=monkeypatch, groundings="all")
     method.dp_budget_unit = "cost"
     method.dp_budget = 8
     method.dp_solver_log = tmp_path / "allocation.jsonl"
-    _execute(method=method, ground=same, cost=2)
-    _execute(method=method, ground=opposite, cost=8)
+    _execute(method=method, ground=setup, cost=2)
+    _execute(method=method, ground=target, cost=8)
     captured = []
     original = DpAllocator.allocate
 
@@ -54,20 +54,20 @@ def test_solver_price_and_diagnostics_follow_each_groundings_own_costs(*, monkey
         return original(**kwargs)
 
     monkeypatch.setattr(DpAllocator, "allocate", staticmethod(allocate))
-    assert method.choose_practice_target() == [opposite, STOP_SKILL]
-    assert captured[0]["costs"][opposite] == pytest.approx(8)
-    assert captured[0]["costs"][same] == pytest.approx(2)
+    assert method.choose_practice_target() == [target, STOP_SKILL]
+    assert captured[0]["costs"][target] == pytest.approx(8)
+    assert captured[0]["costs"][setup] == pytest.approx(2)
     assert captured[0].get("groups") is None
-    assert method.dp_allocation()[opposite] == 1
+    assert method.dp_allocation()[target] == 1
     allocation = json.loads(method.dp_solver_log.read_text())
-    target = next(
+    row = next(
         row
         for row in allocation["allocation"]
-        if row["objects"] == [obj.name for obj in opposite.objects]
+        if row["objects"] == [obj.name for obj in target.objects]
     )
-    assert target["attempt_price"] == pytest.approx(8)
-    assert method.dp_expected_attempt_cost(ground_skill=same) == pytest.approx(2)
-    assert method.dp_expected_attempt_cost(ground_skill=opposite) == pytest.approx(8)
+    assert row["attempt_price"] == pytest.approx(8)
+    assert method.dp_expected_attempt_cost(ground_skill=setup) == pytest.approx(2)
+    assert method.dp_expected_attempt_cost(ground_skill=target) == pytest.approx(8)
 
 
 def test_unseen_reachable_deployment_skill_is_eligible_with_observed_groundings(*, monkeypatch):

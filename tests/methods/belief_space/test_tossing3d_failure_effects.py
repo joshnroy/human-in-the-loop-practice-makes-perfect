@@ -9,8 +9,9 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_OPPOSITE_SIDE,
+)
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
@@ -49,8 +50,8 @@ def _skill(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 
 def _bin_side(*, method: Tossing3DPomdpMethod) -> GroundAtom:
     return GroundAtom(
-        predicate=BIN_AT_SIDE,
-        objects=(method.env.bin, method.env.barrier, Tossing3DSides.opposite),
+        predicate=BIN_ON_OPPOSITE_SIDE,
+        objects=(method.env.bin, method.env.barrier),
     )
 
 
@@ -181,7 +182,7 @@ def test_binary_failure_branches_share_the_original_belief_update(*, skill_name:
     skill = _skill(method=method, name=skill_name)
     before = skill.preconditions | {_bin_side(method=method)}
     # Failed attempts can change reachability while missing their success effects.
-    after = before ^ _atoms(method=method, names={"CubeAtSide"})
+    after = before ^ _atoms(method=method, names={"CubeOnRobotSide", "CubeOnOppositeSide"})
     initial_model = method._pomdp_model  # noqa: SLF001
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=before)
     baseline = initial_model.outcomes(

@@ -1746,7 +1746,7 @@ def test_tossing3d_practice_offers_no_non_human_reset(*, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(EesMethod, "_plan_or_raise", capture)
     method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
-    assert ASK_FOR_RESET_CUBE_BIN_ONLY_NAME in offered["skills"]
+    assert {"ResetCubeBinSameSide", "ResetCubeBinOppositeSide"} <= offered["skills"]
     assert not any("non_human_reset" in name for name in offered["skills"] | offered["costed"])
     assert not any(
         "non_human_reset" in reset.skill.name
@@ -1789,18 +1789,16 @@ def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
     a choice EES's own costs make rather than one the operator model forbids."""
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
     from hitl_pmp.environments.tossing3d.predicates import (
-        BIN_AT_SIDE,
         BIN_ON_GROUND,
-        CUBE_AT_SIDE,
+        BIN_ON_OPPOSITE_SIDE,
+        CUBE_ON_ROBOT_SIDE,
         GRASP_CLEAR,
         HAND_EMPTY,
         IN_BIN,
         NOT_HOLDING,
         ON_GROUND,
         PICK_PLANNABLE,
-        ROBOT_AT_SIDE,
     )
-    from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 
     env = Tossing3DEnvironment(scene_bg=False)
@@ -1810,9 +1808,8 @@ def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
         GroundAtom(predicate=HAND_EMPTY, objects=(robot,)),
         GroundAtom(predicate=ON_GROUND, objects=(cube,)),
         GroundAtom(predicate=NOT_HOLDING, objects=(robot, cube)),
-        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(robot, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
-        GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
+        GroundAtom(predicate=CUBE_ON_ROBOT_SIDE, objects=(cube, barrier)),
+        GroundAtom(predicate=BIN_ON_OPPOSITE_SIDE, objects=(bin_, barrier)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
         GroundAtom(predicate=PICK_PLANNABLE, objects=(robot, cube)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(bin_,)),

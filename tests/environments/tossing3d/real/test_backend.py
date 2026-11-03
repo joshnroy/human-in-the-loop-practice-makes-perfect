@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, CUBE_AT_SIDE
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_OPPOSITE_SIDE,
+    BIN_ON_ROBOT_SIDE,
+    CUBE_ON_OPPOSITE_SIDE,
+    CUBE_ON_ROBOT_SIDE,
+)
 from hitl_pmp.environments.tossing3d.real.backend import (
     PracticeScene,
     RealSkillStepCosts,
@@ -19,7 +24,7 @@ from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnviro
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME
 from hitl_pmp.environments.tossing3d.real.session_log import RealSessionLog
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSide, Tossing3DSides
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
@@ -37,12 +42,17 @@ def _env(*, written: list[str] | None = None) -> tuple[RealTossing3DEnvironment,
     return env, robot
 
 
-def _side(*, env: RealTossing3DEnvironment, predicate: object, obj: object) -> set[str]:
+def _side(*, env: RealTossing3DEnvironment, obj: object) -> set[str]:
     state = env.get_current_state()
+    robot, opposite = (
+        (CUBE_ON_ROBOT_SIDE, CUBE_ON_OPPOSITE_SIDE)
+        if obj == env.cube
+        else (BIN_ON_ROBOT_SIDE, BIN_ON_OPPOSITE_SIDE)
+    )
     return {
-        side.name
-        for side in Tossing3DSides.objects()
-        if predicate.holds(state=state, objects=(obj, env.barrier, side))  # type: ignore[attr-defined]
+        name
+        for name, predicate in (("robot_side", robot), ("opposite_side", opposite))
+        if predicate.holds(state=state, objects=(obj, env.barrier))
     }
 
 
@@ -54,8 +64,8 @@ def test_the_task_scene_is_the_cube_at_its_spot_and_the_bin_across_the_tape() ->
     assert state.get(obj=env.cube, feature_name="x") == pytest.approx(cube_xy[0])
     assert state.get(obj=env.barrier, feature_name="x") == pytest.approx(0.0, abs=1e-3)
     assert state.get(obj=env.barrier, feature_name="bb_x") == pytest.approx(0.05)
-    assert _side(env=env, predicate=CUBE_AT_SIDE, obj=env.cube) == {"robot_side"}
-    assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {"opposite_side"}
+    assert _side(env=env, obj=env.cube) == {"robot_side"}
+    assert _side(env=env, obj=env.bin) == {"opposite_side"}
     atoms = {name for name, _ in state.abstract_atoms or ()}
     assert {"HandEmpty", "OnGround", "MovableIsDownX", "BinOnGround", "PickPlannable"} <= atoms
     prompt = "\n".join(written)
@@ -97,8 +107,8 @@ def test_a_human_reset_prompts_for_the_named_spot_moves_no_robot_and_reobserves(
     assert "in place? [y/n]" in prompt
     assert not MOTION & {name for name, _ in robot.calls}
     assert robot.calls[0][0] == "observe"  # only after the person is done
-    assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {expected_side}
-    assert _side(env=env, predicate=CUBE_AT_SIDE, obj=env.cube) == {"robot_side"}
+    assert _side(env=env, obj=env.bin) == {expected_side}
+    assert _side(env=env, obj=env.cube) == {"robot_side"}
 
 
 def _toss_skill(*, env: RealTossing3DEnvironment) -> GroundSkill:
@@ -454,7 +464,7 @@ def test_restoring_practice_drives_home_opens_the_gripper_and_asks_for_the_scene
     state = env.get_current_state()
     cube_x, _ = ROOM_FRAME.to_domain(x=0.66, y=-0.98)
     assert state.get(obj=env.cube, feature_name="x") == pytest.approx(cube_x)
-    assert _side(env=env, predicate=BIN_AT_SIDE, obj=env.bin) == {"robot_side"}
+    assert _side(env=env, obj=env.bin) == {"robot_side"}
 
 
 def test_a_practice_scene_holding_the_cube_asks_for_it_on_the_floor_where_the_robot_was() -> None:
