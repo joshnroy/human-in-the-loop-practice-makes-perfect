@@ -7,6 +7,7 @@ their environments, policies and RNGs; they return measurements only to the logg
 """
 
 import argparse
+import functools
 import hashlib
 import io
 import json
@@ -17,8 +18,9 @@ import random
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import CancelledError, Future, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -235,6 +237,10 @@ class EvaluationClock(BaseModel):
         return "stopped: goal reached" if self.solved else "interrupted: evaluation step budget"
 
 
+class EvaluationTaskFailures(RuntimeError):
+    """Some of one evaluation's test tasks failed or timed out; the others finished."""
+
+
 class FreshProcessEvaluations(BaseModel):
     """Evaluations run one at a time, each in a freshly spawned process.
 
@@ -242,38 +248,92 @@ class FreshProcessEvaluations(BaseModel):
     the simulator fails to release, so memory grows with the number of measurements.
     `ProcessPoolExecutor(max_tasks_per_child=1)` would say this in one argument, but it
     needs Python 3.11 and this project runs 3.10, so a one-thread queue owns ordering
-    and each job gets its own single-use spawn pool."""
+    and each job gets its own single-use spawn pool.
+
+    `submit_parts` splits one evaluation into parts (its test tasks), each in its own
+    fresh process, up to `workers` at once; evaluations themselves stay one at a time.
+    `timeout_seconds` bounds every spawned process: one that exceeds it is terminated
+    and reported, never waited on."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    workers: int = Field(default=1, gt=0)
+    timeout_seconds: float | None = Field(default=None, gt=0)
     _queue: ThreadPoolExecutor = PrivateAttr(
         default_factory=lambda: ThreadPoolExecutor(max_workers=1)
     )
     _lock: Any = PrivateAttr(default_factory=threading.Lock)
-    _current: ProcessPoolExecutor | None = PrivateAttr(default=None)
+    _current: set[ProcessPoolExecutor] = PrivateAttr(default_factory=set)
     _closing: bool = PrivateAttr(default=False)
 
     def submit(self, *, fn: Callable[..., Any], **kwargs: Any) -> Future:
         return self._queue.submit(lambda: self._isolated(fn=fn, kwargs=kwargs))
 
+    def submit_parts(
+        self,
+        *,
+        fn: Callable[..., Any],
+        parts: list[dict[str, Any]],
+        combine: Callable[..., Any],
+        on_failure: Callable[..., None] | None = None,
+    ) -> Future:
+        """`fn(**part)` for every part, each in its own process, then
+        `combine(results=<in part order>, elapsed_seconds=...)`. If any part fails,
+        the rest still finish, `on_failure` is told why, and the future raises
+        `EvaluationTaskFailures` naming every failed part by its index."""
+        return self._queue.submit(
+            lambda: self._parts(fn=fn, parts=parts, combine=combine, on_failure=on_failure)
+        )
+
     def has_running_process(self) -> bool:
         with self._lock:
-            return self._current is not None
+            return bool(self._current)
 
     def finish(self) -> None:
         """Wait for every queued evaluation."""
         self._queue.shutdown(wait=True)
 
     def abort(self) -> None:
-        """Cancel queued evaluations and terminate the running one, without waiting."""
+        """Cancel queued evaluations and terminate the running ones, without waiting."""
         with self._lock:
             self._closing = True
-            current = self._current
+            current = list(self._current)
         self._queue.shutdown(wait=False, cancel_futures=True)
-        if current is not None:
-            # `_processes` becomes None if the job finished and shut its pool meanwhile.
-            for process in list((current._processes or {}).values()):
-                process.terminate()
-            current.shutdown(wait=False, cancel_futures=True)
+        for pool in current:
+            FreshProcessEvaluations._terminate(pool=pool)
+
+    @staticmethod
+    def _terminate(*, pool: ProcessPoolExecutor) -> None:
+        # `_processes` becomes None if the job finished and shut its pool meanwhile.
+        for process in list((pool._processes or {}).values()):
+            process.terminate()
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    def _parts(
+        self,
+        *,
+        fn: Callable[..., Any],
+        parts: list[dict[str, Any]],
+        combine: Callable[..., Any],
+        on_failure: Callable[..., None] | None,
+    ) -> Any:
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=self.workers) as runner:
+            futures = [
+                runner.submit(functools.partial(self._isolated, fn=fn, kwargs=part))
+                for part in parts
+            ]
+        results, failures = [], []
+        for index, future in enumerate(futures):
+            try:
+                results.append(future.result())
+            except BaseException as exc:  # noqa: BLE001 -- each is reported below
+                failures.append(f"task {index} failed: {exc!r}")
+        if failures:
+            message = f"{len(failures)} of {len(parts)} tasks failed: " + "; ".join(failures)
+            if on_failure is not None:
+                on_failure(message=message)
+            raise EvaluationTaskFailures(message)
+        return combine(results=results, elapsed_seconds=time.monotonic() - started)
 
     def _isolated(self, *, fn: Callable[..., Any], kwargs: dict[str, Any]) -> Any:
         # Submitted under the lock, so `abort` always sees a spawned worker to terminate.
@@ -284,13 +344,20 @@ class FreshProcessEvaluations(BaseModel):
                 max_workers=1, mp_context=multiprocessing.get_context("spawn")
             )
             inner = pool.submit(fn, **kwargs)
-            self._current = pool
+            self._current.add(pool)
+        timed_out = False
         try:
-            return inner.result()
+            return inner.result(timeout=self.timeout_seconds)
+        except FutureTimeoutError:
+            timed_out = True
+            FreshProcessEvaluations._terminate(pool=pool)
+            raise TimeoutError(
+                f"timed out after {self.timeout_seconds:g} s; its process was terminated"
+            ) from None
         finally:
             with self._lock:
-                self._current = None
-            pool.shutdown(wait=not self._closing, cancel_futures=True)
+                self._current.discard(pool)
+            pool.shutdown(wait=not (self._closing or timed_out), cancel_futures=True)
 
 
 class StepFiles:
@@ -503,11 +570,22 @@ class StepProtocolResume:
                 f"config_snapshot.json in {', '.join(differing)} ({details})"
             )
 
+    # Flags added after runs that may still be resumed were recorded: such a run was
+    # recorded under these values, so an absent key compares as its default.
+    ADDED_DEFAULTS: ClassVar[dict[str, str]] = {
+        "evaluation_workers": "1",
+        "evaluation_task_rng": "shared",
+        "evaluation_task_timeout_seconds": "None",
+    }
+
     @staticmethod
     def comparable(*, arguments: dict[str, str]) -> dict[str, str]:
         """The resolved flags a resume must repeat: all but `--resume` itself, and the
         output directory, which `prepare` has already matched as a path."""
-        return {k: v for k, v in arguments.items() if k not in {"resume", "output_dir"}}
+        return {
+            **StepProtocolResume.ADDED_DEFAULTS,
+            **{k: v for k, v in arguments.items() if k not in {"resume", "output_dir"}},
+        }
 
     @staticmethod
     def interrupted_events(*, events: Path, offset: int) -> tuple[int, list[dict[str, Any]]]:
@@ -557,6 +635,83 @@ class DeploymentSnapshot:
         return method
 
 
+class EvaluationTaskRng:
+    """`--evaluation-task-rng`: what a held-out task's randomness depends on.
+
+    `shared` (the default, and the only behaviour before the flag existed): one
+    deployment RNG restored from the snapshot is carried from task to task, so a task's
+    parameter draws depend on how many draws the tasks before it took, and whatever
+    the environment instance remembers is carried with it. `per-task`: before each
+    task, every RNG the evaluation draws from is reseeded from the snapshot's RNG state
+    and the task's index and seed, and every carried state is cleared, so a task's
+    outcome depends only on (snapshot, task) -- which is what lets tasks run in separate
+    processes (`--evaluation-workers`) and reproduce one process running them in order.
+    """
+
+    SHARED: ClassVar[str] = "shared"
+    PER_TASK: ClassVar[str] = "per-task"
+    CHOICES: ClassVar[tuple[str, str]] = (SHARED, PER_TASK)
+
+    @staticmethod
+    def of(*, args: argparse.Namespace) -> str:
+        return str(getattr(args, "evaluation_task_rng", EvaluationTaskRng.SHARED))
+
+    @staticmethod
+    def sequence(
+        *, snapshot_rng: Mapping[str, Any], task_index: int, task_seed: int
+    ) -> np.random.SeedSequence:
+        digest = hashlib.sha256(json.dumps(snapshot_rng, sort_keys=True).encode()).digest()
+        return np.random.SeedSequence(
+            entropy=[int.from_bytes(digest[:16], "big"), task_index, task_seed % 2**64]
+        )
+
+    @staticmethod
+    def isolate(
+        *,
+        raw: bytes,
+        task_index: int,
+        task_seed: int,
+        environment: type[StepProtocolEnvironment],
+        problem: Problem,
+    ) -> EesMethod:
+        """The deployment a task starts from under `per-task`: restored afresh from the
+        snapshot's bytes -- so nothing an earlier task did to the method (a sampler it
+        created, a pool it starved) survives -- with its own RNG and each sampler's
+        reseeded, and the process-global numpy, `random` and torch RNGs reseeded too; and
+        whatever the domain remembers between tasks forgotten (`isolate_evaluation_task`).
+        """
+        method = DeploymentSnapshot.restore(
+            raw=raw,
+            env=problem.env,
+            provider=environment.evaluation_skill_provider(problem=problem),
+        )
+        sequence = EvaluationTaskRng.sequence(
+            snapshot_rng=method._rng.bit_generator.state,
+            task_index=task_index,
+            task_seed=task_seed,
+        )
+        own, numpy_global, random_global, torch_global, samplers = sequence.spawn(5)
+        method._rng = np.random.default_rng(own)
+        np.random.seed(int(numpy_global.generate_state(1)[0]))  # noqa: NPY002
+        random.seed(int(random_global.generate_state(1, np.uint64)[0]))
+        torch.manual_seed(int(torch_global.generate_state(1, np.uint64)[0]))
+        names = sorted(method._samplers)
+        for name, child in zip(names, samplers.spawn(len(names)), strict=True):
+            sampler = method._samplers[name]
+            attributes = sorted(RngStates.capture(owner=sampler))
+            RngStates.restore(
+                owner=sampler,
+                states={
+                    attribute: np.random.default_rng(grandchild).bit_generator.state
+                    for attribute, grandchild in zip(
+                        attributes, child.spawn(len(attributes)), strict=True
+                    )
+                },
+            )
+        environment.isolate_evaluation_task(problem=problem)
+        return method
+
+
 class StepEvaluation:
     @staticmethod
     def run(
@@ -567,9 +722,15 @@ class StepEvaluation:
         environment: type[StepProtocolEnvironment],
         checkpoint: int | None = None,
         label: str = "(final)",
+        task_indices: list[int] | None = None,
     ) -> dict[str, Any]:
-        """`label` names the update measured, for the person watching (`after cycle 3`)."""
+        """`label` names the update measured, for the person watching (`after cycle 3`).
+
+        `task_indices` runs only those of the evaluation's test tasks (all of them are
+        still sampled, so each keeps its place in the sequence): a part of a parallel
+        evaluation (`TaskParallelEvaluation`)."""
         args = argparse.Namespace(**configuration)
+        per_task = EvaluationTaskRng.of(args=args) == EvaluationTaskRng.PER_TASK
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
         raw = Path(snapshot).read_bytes()
@@ -588,6 +749,8 @@ class StepEvaluation:
                 provider=environment.evaluation_skill_provider(problem=problem),
             )
             for index, task in enumerate(tasks):
+                if task_indices is not None and index not in task_indices:
+                    continue
 
                 def progress(*, task_number: int = index + 1) -> None:
                     environment.evaluation_progress(
@@ -599,8 +762,16 @@ class StepEvaluation:
                     )
 
                 progress()
-                state = problem.reset_to_task(task=task)
                 seed = environment.task_seed(task=task)
+                if per_task:
+                    method = EvaluationTaskRng.isolate(
+                        raw=raw,
+                        task_index=index,
+                        task_seed=seed,
+                        environment=environment,
+                        problem=problem,
+                    )
+                state = problem.reset_to_task(task=task)
                 writer.begin_segment(
                     phase=Phase.EVALUATION, checkpoint=checkpoint, task_index=index, task_seed=seed
                 )
@@ -686,6 +857,115 @@ class StepEvaluation:
             problem.env.close()
 
 
+class TaskParallelEvaluation:
+    """`--evaluation-workers N > 1`: one evaluation's test tasks, each in its own fresh
+    process (`evaluations/NNNN/tasks/II/`), up to N at once, merged back in task order
+    into the files one process running them in order writes. Needs
+    `--evaluation-task-rng per-task`, without which a task alone is not the same task.
+    """
+
+    TASKS_DIRECTORY: ClassVar[str] = "tasks"
+
+    @staticmethod
+    def submit(
+        *,
+        pool: FreshProcessEvaluations,
+        snapshot: str,
+        configuration: dict[str, Any],
+        output: str,
+        environment: type[StepProtocolEnvironment],
+        checkpoint: int | None,
+        label: str,
+    ) -> Future:
+        directory = Path(output)
+        parts = [
+            {
+                "snapshot": snapshot,
+                "configuration": configuration,
+                "output": str(directory / TaskParallelEvaluation.TASKS_DIRECTORY / f"{task:02d}"),
+                "environment": environment,
+                "checkpoint": checkpoint,
+                "label": label,
+                "task_indices": [task],
+            }
+            for task in range(int(configuration["num_test_tasks"]))
+        ]
+        directory.mkdir(parents=True, exist_ok=True)
+        return pool.submit_parts(
+            fn=StepEvaluation.run,
+            parts=parts,
+            combine=functools.partial(TaskParallelEvaluation.combine, directory=directory),
+            on_failure=functools.partial(
+                TaskParallelEvaluation.record_failure, directory=directory
+            ),
+        )
+
+    @staticmethod
+    def record_failure(*, message: str, directory: Path) -> None:
+        (directory / "failure.txt").write_text(
+            message + "\nEach failed task's own traceback is in tasks/II/failure.txt.\n"
+        )
+
+    @staticmethod
+    def combine(
+        *, directory: Path, results: list[dict[str, Any]], elapsed_seconds: float
+    ) -> dict[str, Any]:
+        """Write the evaluation's own `results.json`, `progress.json`, `actions.jsonl`
+        and `recording.jsonl` from its tasks', in task order."""
+        tasks = [task for part in results for task in part["tasks"]]
+        parts = sorted((directory / TaskParallelEvaluation.TASKS_DIRECTORY).iterdir())
+        with (directory / "actions.jsonl").open("w") as stream:
+            for part in parts:
+                actions = part / "actions.jsonl"
+                if actions.exists():
+                    stream.write(actions.read_text())
+        TaskParallelEvaluation.merge_recordings(
+            sources=[part / RECORDING_FILENAME for part in parts],
+            target=directory / RECORDING_FILENAME,
+        )
+        StepFiles.json(path=directory / "progress.json", value={"tasks": tasks})
+        hashes = {PolicyFileHash.read(record=part) for part in results}
+        if len(hashes) != 1:
+            raise RuntimeError(f"an evaluation's tasks read different snapshots: {hashes}")
+        result = {
+            "complete": True,
+            "tasks": tasks,
+            "num_solved": sum(t["solved"] for t in tasks),
+            "num_total": len(tasks),
+            PolicyFileHash.KEY: hashes.pop(),
+            "elapsed_seconds": elapsed_seconds,
+        }
+        StepFiles.json(path=directory / "results.json", value=result)
+        return result
+
+    @staticmethod
+    def merge_recordings(*, sources: list[Path], target: Path) -> None:
+        """One recording, as one process would have written it: the first header, then
+        every task's entries, with each task's action `seq` numbers continued from the
+        last task's. Lines are streamed: a motion recording runs to gigabytes."""
+        existing = [source for source in sources if source.exists()]
+        if not existing:
+            return
+        offset = 0
+        with target.open("w", encoding="utf-8") as stream:
+            for number, source in enumerate(existing):
+                highest = -1
+                with source.open(encoding="utf-8") as lines:
+                    for line in lines:
+                        entry = json.loads(line)
+                        if entry.get("kind") == "header":
+                            if number == 0:
+                                stream.write(line)
+                            continue
+                        seq = entry.get("seq")
+                        if isinstance(seq, int):
+                            highest = max(highest, seq)
+                            entry["seq"] = seq + offset
+                            line = json.dumps(entry, allow_nan=False) + "\n"
+                        stream.write(line)
+                offset += highest + 1
+
+
 class StepProtocolValidation:
     """Everything that can refuse a run, checked before anything is built or opened."""
 
@@ -723,6 +1003,13 @@ class StepProtocolValidation:
                 "The step protocol writes no --record-episode-traces file: it never runs "
                 "run_task_episode. Every evaluation action is in evaluations/NNNN/"
                 "actions.jsonl and recording.jsonl instead; drop the flag."
+            )
+        workers = getattr(args, "evaluation_workers", 1)
+        if workers > 1 and EvaluationTaskRng.of(args=args) != EvaluationTaskRng.PER_TASK:
+            raise ValueError(
+                f"--evaluation-workers {workers} needs --evaluation-task-rng per-task: under "
+                "'shared' a task's draws depend on the tasks before it, so tasks run apart "
+                "would not reproduce the evaluation"
             )
         cost_path = getattr(args, "practice_cost_config", None)
         if cost_path and args.human_skill_steps != 1:
@@ -762,6 +1049,11 @@ class StepProtocolEntry:
         if resuming:
             StepProtocolResume.prepare(args=args)
         StepProtocolValidation.check(args=args)
+        if getattr(args, "evaluation_workers", 1) > 1 and environment.evaluation_pool() is not None:
+            raise ValueError(
+                f"--evaluation-workers needs evaluations spawned beside practice, which "
+                f"--env {args.env} does not run"
+            )
         if environment.evaluation_pool() is None:
             # Evaluations spawned beside practice never disturb its scene, and cannot
             # promise to be finished when a checkpoint is taken.
@@ -1047,7 +1339,15 @@ class StepPracticeRunner:
         zero_step_limit = getattr(
             args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
         )
-        pool = evaluations if evaluations is not None else FreshProcessEvaluations()
+        evaluation_workers = getattr(args, "evaluation_workers", 1)
+        pool = (
+            evaluations
+            if evaluations is not None
+            else FreshProcessEvaluations(
+                workers=evaluation_workers,
+                timeout_seconds=getattr(args, "evaluation_task_timeout_seconds", None),
+            )
+        )
 
         def status() -> None:
             nonlocal early_stop
@@ -1100,17 +1400,19 @@ class StepPracticeRunner:
             }
             records.append(record)
             StepFiles.event(path=events, event="measurement", **record)
+            evaluation: dict[str, Any] = {
+                "snapshot": str(path),
+                "configuration": configuration,
+                "output": str(output / "evaluations" / f"{index:04d}"),
+                "environment": environment,
+                "checkpoint": index,
+                "label": label,
+            }
             futures.append((
                 record,
-                pool.submit(
-                    fn=StepEvaluation.run,
-                    snapshot=str(path),
-                    configuration=configuration,
-                    output=str(output / "evaluations" / f"{index:04d}"),
-                    environment=environment,
-                    checkpoint=index,
-                    label=label,
-                ),
+                TaskParallelEvaluation.submit(pool=pool, **evaluation)
+                if evaluation_workers > 1
+                else pool.submit(fn=StepEvaluation.run, **evaluation),
             ))
             StepFiles.json(path=output / "measurements.json", value=records)
             status()
@@ -1275,7 +1577,27 @@ class StepPracticeRunner:
                     "learning_session_action_limit": args.max_steps_per_interaction,
                     "learning_cycle_count_limit": None,
                     "original_num_cycles_flag_superseded_by_step_budget": args.num_cycles,
-                    "evaluation_process": "spawn, one fresh process per evaluation",
+                    "evaluation_process": (
+                        f"spawn, one fresh process per test task, up to {evaluation_workers} "
+                        "at once, one evaluation at a time"
+                        if evaluation_workers > 1
+                        else "spawn, one fresh process per evaluation"
+                    ),
+                    # Only a run that departs from the default says so: every other
+                    # run's record is unchanged.
+                    **(
+                        {
+                            "evaluation_workers": evaluation_workers,
+                            "evaluation_task_rng": EvaluationTaskRng.of(args=args),
+                            "evaluation_task_timeout_seconds": getattr(
+                                args, "evaluation_task_timeout_seconds", None
+                            ),
+                        }
+                        if evaluation_workers > 1
+                        or EvaluationTaskRng.of(args=args) != EvaluationTaskRng.SHARED
+                        or getattr(args, "evaluation_task_timeout_seconds", None) is not None
+                        else {}
+                    ),
                     "evaluation_x_axis": "practice_steps",
                     "evaluation_feedback": False,
                     "normalized_costs": accounting is not None,

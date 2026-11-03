@@ -6,12 +6,14 @@ Run through scripts/with_env.sh in the frozen checkout. See docs/experiments/kit
 `della --tag TAG --out DIR` writes the same manifest frozen for the Della checkout
 `<DELLA>/code/<HEAD sha>` plus `array.sbatch`, whose task N runs manifest row N; submit
 with `sbatch DIR/array.sbatch <manifest on Della>`. Nothing is copied or submitted here.
+Each Della run evaluates a checkpoint's test tasks in parallel (`--evaluation-workers`).
 """
 
 import argparse
 import hashlib
 import importlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -30,6 +32,19 @@ STAGES = {"pilot": (6400, 6400, 3), "overnight": (25600, 6400, 9), "dry": (1600,
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
+# A Della job evaluates every test task of a checkpoint at once (`--evaluation-workers`):
+# a checkpoint then takes its slowest task, not the sum of them. Local runs (`manifest`)
+# keep one task at a time unless asked, so six runs fit agni's shared agents.slice.
+DELLA_EVALUATION_WORKERS = {stage: tasks for stage, (_, _, tasks) in STAGES.items()}
+# One task's ceiling: the dry run's slowest, 72 min at the 7,500-step limit, about 3x over.
+EVALUATION_TASK_TIMEOUT_SECONDS = 4 * 3600
+# Resident memory, GiB: the practice process, and one evaluation process (one task).
+DELLA_PRACTICE_GB = 3.0
+DELLA_EVALUATION_PROCESS_GB = 2.0
+DELLA_MEMORY_HEADROOM = 1.25
+# Practice runs alongside the evaluations: 4-7 h for the overnight budget, then the last
+# checkpoint's evaluation, its slowest task (72 min at the limit), with headroom.
+DELLA_TIME = {"pilot": "06:00:00", "overnight": "12:00:00", "dry": "06:00:00"}
 DEPENDENCIES = {
     "kinder": "reference/kindergarden",
     "kinder_models": "reference/kinder-baselines",
@@ -40,7 +55,9 @@ class KitchenLaunch:
     """One fixed comparison, shared by manifest validation and execution."""
 
     @staticmethod
-    def flags(*, arm: str, stage: str, seed: int, repo: Path = REPO) -> list[str]:
+    def flags(
+        *, arm: str, stage: str, seed: int, repo: Path = REPO, evaluation_workers: int = 1
+    ) -> list[str]:
         budget, interval, tasks = STAGES[stage]
         if arm not in ARMS:
             raise ValueError("Only EES, Curtis and expectimax are admitted; always-ask is pending")
@@ -76,6 +93,12 @@ class KitchenLaunch:
             "--reproduce-predicators-seen-task-order",
             "--no-reproduce-predicators-skip-perfect",
         ]  # fmt: skip
+        if evaluation_workers > 1:
+            common += [
+                "--evaluation-workers", str(evaluation_workers),
+                "--evaluation-task-rng", "per-task",
+                "--evaluation-task-timeout-seconds", str(EVALUATION_TASK_TIMEOUT_SECONDS),
+            ]  # fmt: skip
         if arm == "ees":
             return [
                 *common,
@@ -102,7 +125,12 @@ class KitchenLaunch:
 
     @staticmethod
     def runs(
-        *, stage: str, results_root: Path, seeds: tuple[int, ...] = SEEDS, repo: Path = REPO
+        *,
+        stage: str,
+        results_root: Path,
+        seeds: tuple[int, ...] = SEEDS,
+        repo: Path = REPO,
+        evaluation_workers: int = 1,
     ) -> list[SweepRun]:
         return [
             run
@@ -113,7 +141,13 @@ class KitchenLaunch:
                 methods=["ees" if arm == "ees" else "pomdp"],
                 seeds=[seed],
                 results_root=results_root / arm,
-                shared_args=KitchenLaunch.flags(arm=arm, stage=stage, seed=seed, repo=repo),
+                shared_args=KitchenLaunch.flags(
+                    arm=arm,
+                    stage=stage,
+                    seed=seed,
+                    repo=repo,
+                    evaluation_workers=evaluation_workers,
+                ),
                 method_args={},
             )
         ]
@@ -174,15 +208,23 @@ class KitchenLaunch:
         results_root: Path,
         seeds: tuple[int, ...] = SEEDS,
         repo: Path = REPO,
+        evaluation_workers: int = 1,
     ) -> None:
         identity = KitchenLaunch.identity()
         root = results_root.resolve()
-        runs = KitchenLaunch.runs(stage=stage, results_root=root, seeds=seeds, repo=repo)
+        runs = KitchenLaunch.runs(
+            stage=stage,
+            results_root=root,
+            seeds=seeds,
+            repo=repo,
+            evaluation_workers=evaluation_workers,
+        )
         data = {
             "status": "planned",
             "identity": identity,
             "stage": stage,
             "seeds": list(seeds),
+            "evaluation_workers": evaluation_workers,
             "results_root": str(root),
             "working_directory": str(repo),
             "cost_sha256": hashlib.sha256(COSTS.read_bytes()).hexdigest(),
@@ -194,16 +236,33 @@ class KitchenLaunch:
             stream.write(json.dumps(data, indent=2) + "\n")
 
     @staticmethod
+    def della_memory(*, evaluation_workers: int) -> str:
+        """Slurm `--mem` for practice plus `evaluation_workers` evaluation processes."""
+        gigabytes = DELLA_MEMORY_HEADROOM * (
+            DELLA_PRACTICE_GB + evaluation_workers * DELLA_EVALUATION_PROCESS_GB
+        )
+        return f"{math.ceil(gigabytes)}G"
+
+    @staticmethod
     def della(
         *,
         out: Path,
         tag: str,
         stage: str,
         seeds: tuple[int, ...],
-        time: str = "08:00:00",
-        mem: str = "16G",
+        time: str | None = None,
+        mem: str | None = None,
+        evaluation_workers: int | None = None,
     ) -> Path:
-        """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della."""
+        """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della.
+
+        One CPU for practice and one per evaluation worker; memory and time sized from
+        them unless given."""
+        workers = (
+            DELLA_EVALUATION_WORKERS[stage] if evaluation_workers is None else evaluation_workers
+        )
+        time = DELLA_TIME[stage] if time is None else time
+        mem = KitchenLaunch.della_memory(evaluation_workers=workers) if mem is None else mem
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tag):
             raise ValueError("--tag must contain only letters, digits, underscores and hyphens")
         sha = KitchenLaunch.identity()["commit"]
@@ -214,11 +273,12 @@ class KitchenLaunch:
             results_root=Path(f"{DELLA}/results/{tag}"),
             seeds=seeds,
             repo=code,
+            evaluation_workers=workers,
         )
         sbatch = out / "array.sbatch"
         sbatch.write_text(f"""#!/usr/bin/env bash
 #SBATCH --partition=cpu
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task={workers + 1}
 #SBATCH --mem={mem}
 #SBATCH --time={time}
 #SBATCH --array=1-{len(ARMS) * len(seeds)}
@@ -278,6 +338,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             stage=data["stage"],
             results_root=Path(data["results_root"]),
             seeds=tuple(data.get("seeds", SEEDS)),
+            evaluation_workers=data.get("evaluation_workers", 1),
         )
         # Array siblings may already be running, so their outputs exist; only the
         # rows this worker will execute must still be fresh (validated below).
@@ -330,8 +391,14 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
         parser.add_argument("--go", action="store_true")
         parser.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
         parser.add_argument("--tag", help="della: job name and results directory")
-        parser.add_argument("--time", default="08:00:00", help="della: Slurm --time")
-        parser.add_argument("--mem", default="16G", help="della: Slurm --mem")
+        parser.add_argument("--time", help="della: Slurm --time (default: sized per stage)")
+        parser.add_argument("--mem", help="della: Slurm --mem (default: sized per worker)")
+        parser.add_argument(
+            "--evaluation-workers",
+            type=int,
+            help="Test tasks evaluated at once per run (default: 1 for manifest, every "
+            "task of the stage for della); more than 1 evaluates with per-task RNGs",
+        )
         args = parser.parse_args()
         if args.mode == "check":
             rows = KitchenLaunch.rows(
@@ -348,7 +415,10 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             if args.out is None or args.results_root is None:
                 parser.error("manifest needs --out and --results-root")
             KitchenLaunch.write_manifest(
-                path=args.out, stage=args.stage, results_root=args.results_root
+                path=args.out,
+                stage=args.stage,
+                results_root=args.results_root,
+                evaluation_workers=args.evaluation_workers or 1,
             )
             print(f"Planned six runs in {args.out}; nothing submitted")
             return 0
@@ -362,6 +432,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 seeds=tuple(args.seeds),
                 time=args.time,
                 mem=args.mem,
+                evaluation_workers=args.evaluation_workers,
             )
             print(f"Planned; nothing copied or submitted. sbatch {sbatch} <Della manifest>")
             return 0

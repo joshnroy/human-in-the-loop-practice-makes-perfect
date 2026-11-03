@@ -113,6 +113,13 @@ class Cli:
         return parsed
 
     @staticmethod
+    def parse_positive_float(*, value: str) -> float:
+        parsed = float(value)
+        if not parsed > 0 or parsed == float("inf"):
+            raise argparse.ArgumentTypeError(f"must be a finite number > 0, got {value}")
+        return parsed
+
+    @staticmethod
     def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
         LaunchGate.add_argument(parser=parser)
         parser.add_argument(
@@ -203,6 +210,30 @@ class Cli:
             "--evaluation-control-steps",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=500,
+        )
+        parser.add_argument(
+            "--evaluation-workers",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=1,
+            help="Step protocol: run each evaluation's test tasks in up to this many "
+            "concurrent processes (one fresh process per task), beside practice. 1 runs "
+            "them one after another in one process. More than 1 needs "
+            "--evaluation-task-rng per-task.",
+        )
+        parser.add_argument(
+            "--evaluation-task-rng",
+            choices=("shared", "per-task"),
+            default="shared",
+            help="Step protocol: 'shared' carries one deployment RNG from test task to "
+            "test task, so a task depends on the tasks before it; 'per-task' reseeds "
+            "every RNG from the snapshot and the task before each task.",
+        )
+        parser.add_argument(
+            "--evaluation-task-timeout-seconds",
+            type=lambda value: Cli.parse_positive_float(value=value),
+            default=None,
+            help="Step protocol: terminate and report an evaluation process (with "
+            "--evaluation-workers > 1, one task's) still running after this long.",
         )
         parser.add_argument(
             "--env",

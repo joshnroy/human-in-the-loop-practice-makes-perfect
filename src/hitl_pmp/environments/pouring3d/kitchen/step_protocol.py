@@ -36,6 +36,14 @@ class KitchenStepProtocol(FrozenPourStepProtocol):
         return KitchenSkillProvider(env=problem.env, offer_human_reset=False)
 
     @staticmethod
+    def isolate_evaluation_task(*, problem: Problem) -> None:
+        """Pick refusals outlive tasks on one instance (`pick_plannable.py`): one
+        recorded in an earlier task survives a reset that puts the dumpling back
+        within tolerance, which a task in a fresh process would never have seen."""
+        assert isinstance(problem.env, KitchenEnvironment)
+        problem.env.forget_pick_refusals()
+
+    @staticmethod
     def human_skill_names() -> dict[str, str]:
         return {HUMAN_RESET: HUMAN_RESET}
 
