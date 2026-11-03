@@ -101,12 +101,16 @@ class KitchenKinderBackend(KinderBackend):
 
     def _build_pick_collision_sim(self, *, state: Any) -> Any:
         """Tossing3D's planning scene with the kitchen's tapered bin, wall for wall the
-        boxes MuJoCo simulates, and the mat edge as a 16 mm line."""
-        from kinder_models.dynamic3d.utils import PyBulletSim
+        boxes MuJoCo simulates, the mat edge as a 16 mm line, and the robot wearing
+        MuJoCo's camera bracelet. Every kitchen controller that holds a robot plans in
+        this sim: the pick (and its contact monitor and PickPlannable dry run), the toss
+        and the open-gripper clearance; the base approach plans in 2-D only."""
         from pybullet_helpers.geometry import Pose
 
+        from .planning_robot import VisionBraceletPyBulletSim
+
         obj = state.get_object_from_name(self.bin_name)
-        sim = PyBulletSim(state)
+        sim = VisionBraceletPyBulletSim(state)
         TaperedBinCollision.add(
             sim=sim,
             name=self.bin_name,

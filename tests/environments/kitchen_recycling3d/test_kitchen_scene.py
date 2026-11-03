@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -227,3 +228,91 @@ def test_the_recorded_hover_abort_beside_the_kitchen_facing_wall_now_lifts_the_c
     after = env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0]))
     assert env.last_skill_error() is None, env.last_skill_error()
     assert HOLDING.holds(after, (env.robot, env.cube))
+
+
+class BraceletMesh:
+    """The bracelet link's collision mesh in a planning sim, by file and by size."""
+
+    VISION = "bracelet_with_vision_link.STL"
+    NO_VISION = "bracelet_no_vision_link.STL"
+
+    @staticmethod
+    def of(*, sim: Any) -> tuple[str, float]:
+        import pybullet as p
+
+        client, robot = sim.physics_client_id, sim.robot.robot_id
+        link = sim.robot.link_from_name("bracelet_link")
+        (shape,) = p.getCollisionShapeData(robot, link, physicsClientId=client)
+        low, high = p.getAABB(robot, link, physicsClientId=client)
+        return Path(shape[4].decode()).name, float(np.prod(np.subtract(high, low)))
+
+
+def test_the_kitchen_planning_robot_wears_the_vision_bracelet(*, env):
+    """KINDER's MuJoCo TidyBot and the real one carry the camera bracelet, which reaches
+    ~3 cm further than upstream PyBullet's no-vision one."""
+    from kinder_models.dynamic3d.utils import PyBulletSim
+
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    state = backend.live_state()
+    kitchen, upstream = backend._build_pick_collision_sim(state=state), PyBulletSim(state)
+    try:
+        for sim in (kitchen, upstream):
+            sim.set_state(state)
+        (vision, vision_volume), (plain, plain_volume) = (
+            BraceletMesh.of(sim=kitchen),
+            BraceletMesh.of(sim=upstream),
+        )
+        assert (vision, plain) == (BraceletMesh.VISION, BraceletMesh.NO_VISION)
+        assert vision_volume > plain_volume
+        # Only the mesh changes: the links the controllers address keep their indices.
+        frames = ("finger_tip", "tool_frame", "end_effector_link", "robotiq_arg2f_base_link")
+        for frame in (*frames, "bracelet_link"):
+            assert kitchen.robot.link_from_name(frame) == upstream.robot.link_from_name(frame)
+        assert kitchen.robot.arm_joint_names == upstream.robot.arm_joint_names
+        np.testing.assert_allclose(
+            kitchen.get_ee_pose().position, upstream.get_ee_pose().position, atol=1e-9
+        )
+    finally:
+        kitchen.close()
+        upstream.close()
+
+
+BRACELET_ABORT = json.loads(
+    (Path(__file__).parent / "fixtures/ees2_bracelet_hover_abort.json").read_text()
+)
+
+
+def test_the_recorded_bracelet_rim_abort_now_lifts_the_cube_without_touching_the_bin(
+    *, env, monkeypatch
+):
+    """EES seed 2, step 10,283 (Della v7): the cube just outside the bin's robot-facing
+    wall. PyBullet's no-vision bracelet cleared the rim by 2.8 mm on the hover path;
+    MuJoCo's vision bracelet ran 3-4 mm into it and the pick aborted on contact."""
+    import mujoco
+
+    env.reset_to_seed(seed=SEED)
+    env.restore_plain_snapshot(plain=BRACELET_ABORT, dtype=np.float64)
+    backend = env.kinder_backend()
+    sim = backend._object_centric()._robot_env.sim
+    model, data = sim.model.mj_model, sim.data.mj_data
+
+    def body(*, geom: int) -> str:
+        return mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[geom]) or ""
+
+    touches: list[str] = []
+    observe = RecyclingPickController.observe
+
+    def watched(*args: Any) -> None:
+        (self, *_) = args
+        for contact in data.contact[: data.ncon]:
+            pair = sorted((body(geom=contact.geom1), body(geom=contact.geom2)))
+            if any("robot" in b for b in pair) and any(b.startswith("bin") for b in pair):
+                touches.append(f"{self.current_phase.name}: {pair}")
+        observe(*args)
+
+    monkeypatch.setattr(RecyclingPickController, "observe", watched)
+    after = env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0]))
+    assert env.last_skill_error() is None, env.last_skill_error()
+    assert HOLDING.holds(after, (env.robot, env.cube))
+    assert not touches, touches[:5]
