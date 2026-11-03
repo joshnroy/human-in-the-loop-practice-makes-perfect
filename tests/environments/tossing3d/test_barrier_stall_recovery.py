@@ -110,3 +110,22 @@ def test_a_pick_from_the_stalled_state_escapes_instead_of_refusing(
     _pick(env=env)
     assert sum(env.last_controller_steps()) > 0
     assert _touching(env=env) is None
+
+
+def test_tossing3d_plans_with_upstreams_no_vision_bracelet(
+    *, live_env: Tossing3DEnvironment
+) -> None:
+    """The kitchen's planning robot wears the camera bracelet; Tossing3D's stays
+    upstream's, so its numbers are untouched."""
+    import pybullet as p
+
+    backend = live_env.backend()
+    sim = backend._build_pick_collision_sim(state=backend.live_state())  # noqa: SLF001
+    try:
+        link = sim.robot.link_from_name("bracelet_link")
+        (shape,) = p.getCollisionShapeData(
+            sim.robot.robot_id, link, physicsClientId=sim.physics_client_id
+        )
+        assert Path(shape[4].decode()).name == "bracelet_no_vision_link.STL"
+    finally:
+        sim.close()
