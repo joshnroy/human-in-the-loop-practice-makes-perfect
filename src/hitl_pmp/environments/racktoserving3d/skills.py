@@ -44,12 +44,13 @@ SKILL_IDS = {
     "ReturnFoodToRack": 5,
     "Wait": 6,
 }
-# GatherAndSweep(delta, d, phi): delta (m) is how far past the line y = c (the plate
-# centre's y) each gather stroke's blade edge stops; d (m) is how far past the plate's
-# near edge the sweep's blade edge ends; phi (deg) is the sweep blade's yaw relative
-# to its fixed travel toward the plate. The ranges are starting guesses for parameter
-# validation, not calibrated values. Speed is a constant, not a parameter.
-GATHER_AND_SWEEP_BOUNDS = ((-0.02, 0.03), (0.05, 0.25), (-15.0, 15.0))
+# GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
+# x-squeeze passes stop; delta (m) is subtracted from one food width to give how far
+# from the line y = c (the plate centre's y) each y gather stops; d (m) is how far
+# before the plate's outer near edge the final sweep's blade edge ends. Starting
+# bounds from the driven-blade grid (2026-11-03), not calibrated values. Speed is a
+# constant, not a parameter.
+GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (-0.03, 0.045), (0.04, 0.12))
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)

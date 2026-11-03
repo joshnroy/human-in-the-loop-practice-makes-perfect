@@ -111,10 +111,10 @@ def _dispatching_env(*, monkeypatch):
     return env, controllers
 
 
-def test_gather_and_sweep_action_carries_delta_depth_and_plow_angle(*, monkeypatch):
+def test_gather_and_sweep_action_carries_squeeze_gather_and_depth(*, monkeypatch):
     env, controllers = _dispatching_env(monkeypatch=monkeypatch)
-    env.take_action(action=np.array([1, 0, 0.01, 0.12, -5.0]))
-    controllers.gather_and_sweep.assert_called_once_with(delta=0.01, d=0.12, phi=-5.0)
+    env.take_action(action=np.array([1, 0, 0.07, 0.015, 0.10]))
+    controllers.gather_and_sweep.assert_called_once_with(s=0.07, delta=0.015, d=0.10)
     assert env._last_skill_error is None
 
 

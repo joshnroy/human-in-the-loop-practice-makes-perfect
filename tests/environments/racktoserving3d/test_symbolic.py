@@ -19,6 +19,7 @@ from hitl_pmp.environments.racktoserving3d.predicates import (
     ON_RACK,
     ON_TRAY,
     READY,
+    SPILLED_COUNTER,
     WAITING,
     RackServing3DAtoms,
     RackServing3DPredicates,
@@ -95,7 +96,7 @@ def test_object_names_features_and_scene_exclusion():
 
 def test_robot_ids_bounds_and_human_separation():
     assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(7))
-    assert GATHER_AND_SWEEP_BOUNDS == ((-0.02, 0.03), (0.05, 0.25), (-15.0, 15.0))
+    assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (-0.03, 0.045), (0.04, 0.12))
     assert Skills.GATHER_AND_SWEEP.name == "GatherAndSweep"
     assert Skills.GATHER_AND_SWEEP.param_dim == 3
     assert "SweepRack" not in SKILL_IDS
@@ -202,6 +203,19 @@ def test_sweep_promises_only_food_measured_on_rack(*, count):
     after = _apply(ground=sweep, atoms=atoms)
     assert _atom(predicate=ANY_FOOD_ON_RACK) not in after
     assert _atom(predicate=ANY_FOOD_OFF_RACK) in after
+
+
+def test_gather_and_sweep_succeeds_only_when_every_food_on_the_rack_is_served():
+    atoms = _start(rack_count=5, held_scraper=True)
+    (sweep,) = _groundings(skill=Skills.GATHER_AND_SWEEP, atoms=atoms)
+    promised = sweep.expected_add_effects(before_atoms=atoms)
+    served = _apply(ground=sweep, atoms=atoms)
+    assert promised <= served
+    for missed in Objects.food:
+        partial = (served - {_atom(predicate=ON_TRAY, objects=(missed, Objects.tray))}) | {
+            _atom(predicate=SPILLED_COUNTER, objects=(missed,))
+        }
+        assert not promised <= partial
 
 
 def test_empty_or_unready_rack_cannot_be_swept():

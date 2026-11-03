@@ -99,7 +99,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 controllers.pick_scraper()
             elif skill_id == SKILL_IDS["GatherAndSweep"]:
                 controllers.gather_and_sweep(
-                    delta=float(values[2]), d=float(values[3]), phi=float(values[4])
+                    s=float(values[2]), delta=float(values[3]), d=float(values[4])
                 )
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
@@ -124,7 +124,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         return self.current_state
 
     def noop_action(self) -> Action:
-        """[skill ID, food index, delta, d, phi]; -1 is the no-op skill ID."""
+        """[skill ID, food index, s, delta, d]; -1 is the no-op skill ID."""
         return np.array([-1.0, 0.0, 0.0, 0.0, 0.0])
 
     def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:

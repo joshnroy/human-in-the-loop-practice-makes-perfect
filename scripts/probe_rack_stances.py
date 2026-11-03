@@ -49,10 +49,7 @@ def main():
         if not backend.held(name="wiper_0"):
             return
         stroke = GatherAndSweepPlanner.sweep(
-            food_corners=np.stack([backend.corners(name=name) for name in backend.cube_names]),
-            d=0.15,
-            phi_deg=0,
-            **controller.stroke_geometry(),
+            d=0.10, plate_clear_z=controller.plate_clear_z(), **controller.stroke_geometry()
         )
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ tool.wiper_pose()
         body = np.eye(4)
