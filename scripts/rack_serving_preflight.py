@@ -44,7 +44,6 @@ def main():
     parser.add_argument("--scraper-tilt-degrees", type=float, default=45)
     parser.add_argument("--food-grip-command", type=float, default=0.8)
     parser.add_argument("--gripper-contact-dimension", type=int, choices=(3, 4, 6), default=4)
-    parser.add_argument("--cooling-seconds", type=float, default=5.0)
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument("--scene-bg", action="store_true", help="render the full KINDER background")
     parser.add_argument("--playback-speed", type=int, choices=(1, 5), default=1)
@@ -65,7 +64,6 @@ def main():
     config = RackServingConfig(
         surface_kind=args.surface,
         serving_target=args.serving_target,
-        cooling_seconds=args.cooling_seconds,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
         food_grip_command=args.food_grip_command,
         gripper_contact_dimension=args.gripper_contact_dimension,
@@ -192,9 +190,8 @@ def main():
             draw.text((12, 544), text[:133], font=font, fill="#fbbf24")
             draw.text(
                 (12, 570),
-                f"DEMO clock {backend.ledger.elapsed_seconds:.1f}s / {config.cooling_seconds:g}s"
-                f"; ready={backend.ledger.ready}"
-                f" | NOT temperature sensing | human cost {backend.ledger.human_cost:g}",
+                f"clock {backend.ledger.elapsed_seconds:.1f}s"
+                f" | human cost {backend.ledger.human_cost:g}",
                 font=font,
                 fill="white",
             )
@@ -301,10 +298,6 @@ def main():
             print(json.dumps(row), flush=True)
 
         if not args.setup_only:
-            if not backend.ledger.ready:
-                action(name="GatherAndSweep")
-                report["early_sweep_rejected"] = "ready" in (env.last_skill_error() or "")
-            action(name="Wait")
             if args.individual or args.reset_probe:
                 action(name="PickFood", index=0)
                 if backend.held(name="cube_0"):

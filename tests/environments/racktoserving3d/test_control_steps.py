@@ -256,7 +256,6 @@ def test_failed_human_attempt_keeps_charge_and_updates_observed_clock(
     assert backend.ledger.elapsed_seconds == 405
     assert backend.ledger.human_cost == 5
     assert backend.ledger.human_interventions == 1
-    assert backend.ledger.ready
     state = rack.env.get_current_state()
     assert state.get(obj=Objects.scene, feature_name="human_cost") == 5
     assert state.get(obj=Objects.scene, feature_name="elapsed_seconds") == 405

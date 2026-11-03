@@ -18,13 +18,10 @@ from hitl_pmp.environments.racktoserving3d.predicates import (
     HOLDING_SCRAPER,
     ON_RACK,
     ON_TRAY,
-    READY,
     SPILLED_COUNTER,
-    WAITING,
     RackServing3DAtoms,
     RackServing3DPredicates,
 )
-from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger
 from hitl_pmp.environments.racktoserving3d.skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
 from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -46,7 +43,7 @@ def _ground(*, names):
     )
 
 
-def _start(*, rack_count=5, elsewhere="OnTray", elapsed=300.0, held_scraper=False):
+def _start(*, rack_count=5, elsewhere="OnTray", held_scraper=False):
     names = {("OnRack", (food.name, Objects.rack.name)) for food in Objects.food[:rack_count]}
     names |= {
         (elsewhere, (food.name, Objects.tray.name) if elsewhere == "OnTray" else (food.name,))
@@ -56,11 +53,7 @@ def _start(*, rack_count=5, elsewhere="OnTray", elapsed=300.0, held_scraper=Fals
         names.add(("HoldingScraper", (Objects.robot.name, Objects.scraper.name)))
     else:
         names |= {("HandEmpty", (Objects.robot.name,)), ("ScraperHome", (Objects.scraper.name,))}
-    return _ground(
-        names=RackServing3DAtoms.with_summaries(
-            atoms=frozenset(names), ledger=RackServingLedger(elapsed_seconds=elapsed)
-        )
-    )
+    return _ground(names=RackServing3DAtoms.with_summaries(atoms=frozenset(names)))
 
 
 def _groundings(*, skill, atoms):
@@ -95,7 +88,7 @@ def test_object_names_features_and_scene_exclusion():
 
 
 def test_robot_ids_bounds_and_human_separation():
-    assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(7))
+    assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(6))
     assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (-0.03, 0.045), (0.04, 0.12))
     assert Skills.GATHER_AND_SWEEP.name == "GatherAndSweep"
     assert Skills.GATHER_AND_SWEEP.param_dim == 3
@@ -117,46 +110,24 @@ def test_human_skill_cost_validation(*, cost):
         Skills.human_skills(human_interruption_cost=cost)
 
 
-def test_goal_is_ready_and_delivery_not_sweep_history():
-    assert RackServing3DPredicates.goal_atoms() == frozenset({
-        _atom(predicate=READY),
-        *(_atom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food),
-    })
-    assert not RackServing3DPredicates.goal_atoms() <= _start(rack_count=0, elapsed=0)
-
-
-def test_wait_until_ready_supports_symbolic_plan_but_interrupted_chunk_is_not_ready():
-    atoms = _start(elapsed=0)
-    (wait,) = _groundings(skill=Skills.WAIT, atoms=atoms)
-    after = _apply(ground=wait, atoms=atoms)
-    assert _atom(predicate=READY) in after
-    assert _atom(predicate=WAITING) not in after
-    measured = RackServing3DAtoms.with_summaries(
-        atoms=frozenset({("Ready", ())}), ledger=RackServingLedger().wait()
+def test_goal_is_delivery_not_sweep_history():
+    assert RackServing3DPredicates.goal_atoms() == frozenset(
+        _atom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food
     )
-    assert ("Ready", ()) not in measured
-    assert ("Waiting", ()) in measured
-    assert not wait.expected_add_effects(before_atoms=atoms) <= _ground(names=measured)
+    assert RackServing3DPredicates.goal_atoms() <= _start(rack_count=0)
+    assert not RackServing3DPredicates.goal_atoms() <= _start(rack_count=1)
 
 
 @pytest.mark.parametrize("source", ["OnTray", "SpilledCounter", "SpilledFloor"])
-def test_pick_food_requires_ready_for_every_supported_source(*, source):
-    assert not _groundings(skill=Skills.PICK_FOOD, atoms=_start(elapsed=299.999))
-    assert not _groundings(
-        skill=Skills.PICK_FOOD, atoms=_start(rack_count=0, elsewhere=source, elapsed=299.999)
-    )
-    assert len(_groundings(skill=Skills.PICK_FOOD, atoms=_start(elapsed=300))) == len(Objects.food)
+def test_pick_food_applies_from_every_supported_source_at_once(*, source):
+    assert len(_groundings(skill=Skills.PICK_FOOD, atoms=_start())) == len(Objects.food)
     assert len(
-        _groundings(
-            skill=Skills.PICK_FOOD, atoms=_start(rack_count=0, elsewhere=source, elapsed=300)
-        )
+        _groundings(skill=Skills.PICK_FOOD, atoms=_start(rack_count=0, elsewhere=source))
     ) == len(Objects.food)
 
 
-def test_wait_then_autonomous_pick_place_solves_without_scraper_or_human():
-    atoms = _start(elapsed=0)
-    (wait,) = _groundings(skill=Skills.WAIT, atoms=atoms)
-    atoms = _apply(ground=wait, atoms=atoms)
+def test_autonomous_pick_place_solves_without_scraper_or_human():
+    atoms = _start()
     for food in Objects.food:
         pick = GroundSkill(
             skill=Skills.PICK_FOOD, objects=(Objects.robot, food, Objects.rack, Objects.tray)
@@ -218,20 +189,17 @@ def test_gather_and_sweep_succeeds_only_when_every_food_on_the_rack_is_served():
         assert not promised <= partial
 
 
-def test_empty_or_unready_rack_cannot_be_swept():
+def test_an_empty_rack_cannot_be_swept_and_a_fresh_one_can_at_once():
     assert not _groundings(
         skill=Skills.GATHER_AND_SWEEP, atoms=_start(rack_count=0, held_scraper=True)
     )
-    assert not _groundings(
-        skill=Skills.GATHER_AND_SWEEP, atoms=_start(elapsed=299, held_scraper=True)
-    )
+    assert _groundings(skill=Skills.GATHER_AND_SWEEP, atoms=_start(held_scraper=True))
 
 
-def test_batch_return_preserves_ready_and_held_scraper():
+def test_batch_return_preserves_the_held_scraper():
     atoms = _start(rack_count=2, held_scraper=True)
     (batch,) = _groundings(skill=Skills.HUMAN_BATCH_RETURN, atoms=atoms)
     after = _apply(ground=batch, atoms=atoms)
-    assert _atom(predicate=READY) in after
     assert _atom(predicate=HOLDING_SCRAPER, objects=(Objects.robot, Objects.scraper)) in after
     assert _atom(predicate=HAND_EMPTY, objects=(Objects.robot,)) not in after
     assert all(
@@ -248,11 +216,7 @@ def test_human_recovery_does_not_drop_held_food():
         for atom in atoms
         if atom.predicate.name != "ScraperHome"
     })
-    atoms = _ground(
-        names=RackServing3DAtoms.with_summaries(
-            atoms=names, ledger=RackServingLedger(elapsed_seconds=300)
-        )
-    )
+    atoms = _ground(names=RackServing3DAtoms.with_summaries(atoms=names))
     (recover,) = _groundings(skill=Skills.HUMAN_TOOL_RECOVERY, atoms=atoms)
     after = _apply(ground=recover, atoms=atoms)
     assert _atom(predicate=HOLDING_FOOD, objects=(Objects.robot, pick.objects[1])) in after

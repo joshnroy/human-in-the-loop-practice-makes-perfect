@@ -6,7 +6,6 @@ from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 
 from .objects import RackServing3DObjects as Objects
-from .semantics import RackServingLedger
 
 AbstractAtom = tuple[str, tuple[str, ...]]
 
@@ -33,18 +32,15 @@ class RackServing3DAtoms:
     def with_summaries(
         *,
         atoms: frozenset[AbstractAtom],
-        ledger: RackServingLedger,
         available_food: frozenset[str] | None = None,
     ) -> frozenset[AbstractAtom]:
-        """Refresh derived facts, including removing stale time/summary facts.
+        """Refresh derived facts, including removing stale summary facts.
 
         The backend supplies exclusive measured locations via ``classify_food``.
         FoodAvailable allows autonomous picking from any observed support surface,
         including the tray and spill locations, without forcing a sweep solution.
         """
         derived_names = {
-            "Ready",
-            "Waiting",
             "AnyFoodOnRack",
             "AnyFoodOffRack",
             "FoodAvailable",
@@ -76,7 +72,6 @@ class RackServing3DAtoms:
                 result.add(("FoodAvailable", (food.name,)))
         if ("ScraperHome", (Objects.scraper.name,)) not in result:
             result.add(("ScraperAway", (Objects.scraper.name,)))
-        result.add(("Ready" if ledger.ready else "Waiting", ()))
         return frozenset(result)
 
 
@@ -99,8 +94,6 @@ SCRAPER_ON_FLOOR = RackServing3DAtoms.predicate(
 FOOD_AVAILABLE = RackServing3DAtoms.predicate(name="FoodAvailable", types=(Objects.food_type,))
 ANY_FOOD_ON_RACK = RackServing3DAtoms.predicate(name="AnyFoodOnRack", types=())
 ANY_FOOD_OFF_RACK = RackServing3DAtoms.predicate(name="AnyFoodOffRack", types=())
-READY = RackServing3DAtoms.predicate(name="Ready", types=())
-WAITING = RackServing3DAtoms.predicate(name="Waiting", types=())
 _FOOD_CHAIN = frozenset(
     (first.name, second.name) for first, second in itertools.pairwise(Objects.food)
 )
@@ -123,8 +116,6 @@ DYNAMIC_PREDICATES = (
     FOOD_AVAILABLE,
     ANY_FOOD_ON_RACK,
     ANY_FOOD_OFF_RACK,
-    READY,
-    WAITING,
 )
 
 
@@ -143,6 +134,6 @@ class RackServing3DPredicates:
     @staticmethod
     def goal_atoms() -> frozenset[GroundAtom]:
         """Delivery is the goal, independently of how the robot accomplished it."""
-        return frozenset({GroundAtom(predicate=READY, objects=())}) | frozenset(
+        return frozenset(
             GroundAtom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food
         )

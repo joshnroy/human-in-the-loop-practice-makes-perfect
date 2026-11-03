@@ -107,13 +107,9 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             elif skill_id == SKILL_IDS["PickFood"]:
                 controllers.pick_food(name=name)
             elif skill_id == SKILL_IDS["PlaceFoodOnTray"]:
-                if not self.backend().ledger.ready:
-                    raise SkillFailed("food is not elapsed-time ready")
                 controllers.place_food(name=name, destination="box_0")
             elif skill_id == SKILL_IDS["ReturnFoodToRack"]:
                 controllers.place_food(name=name, destination="rack_0")
-            elif skill_id == SKILL_IDS["Wait"]:
-                controllers.wait_until_ready()
             elif skill_id != -1:
                 raise SkillFailed("unknown robot skill; human operations are not robot actions")
         except (SkillFailed, ValueError) as error:

@@ -130,14 +130,14 @@ def test_zero_velocity_without_unheld_tray_support_never_scores(*, scoring_scene
         assert any(atom[0] == location and name in atom[1] for atom in atoms)
 
 
-def test_readiness_is_separate_from_settled_delivery(*, scoring_scene):
+def test_settled_delivery_succeeds_at_once_with_no_readiness_gate(*, scoring_scene):
     backend = scoring_scene.backend
-    backend.ledger = RackServingLedger(elapsed_seconds=299)
+    backend.ledger = RackServingLedger(elapsed_seconds=0)
     atoms = backend.abstract_atoms()
     assert all(("OnTray", (food.name, Objects.tray.name)) in atoms for food in Objects.food)
-    assert ("Waiting", ()) in atoms
-    assert not backend.task_succeeded()
-    assert not RackServing3DPredicates.goal_atoms() <= _ground_atoms(atoms=atoms)
+    assert not any(atom[0] in {"Ready", "Waiting"} for atom in atoms)
+    assert backend.task_succeeded()
+    assert RackServing3DPredicates.goal_atoms() <= _ground_atoms(atoms=atoms)
 
 
 @pytest.mark.parametrize("skill", ["sweep", "place"])

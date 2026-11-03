@@ -131,9 +131,7 @@ class RackServingOracle(OraclePolicyProvider):
             food for food in Objects.food if holds(name="OnRack", objects=(food, Objects.rack))
         ]
         holding_scraper = holds(name="HoldingScraper", objects=(Objects.robot, Objects.scraper))
-        if holds(name="Waiting"):
-            ground = GroundSkill(skill=Skills.WAIT, objects=())
-        elif held_food is not None:
+        if held_food is not None:
             ground = GroundSkill(
                 skill=Skills.PLACE_FOOD_ON_TRAY, objects=(Objects.robot, held_food, Objects.tray)
             )

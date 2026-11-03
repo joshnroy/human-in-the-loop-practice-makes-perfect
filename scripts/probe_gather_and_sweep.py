@@ -108,7 +108,7 @@ def main():
     if args.output.exists():
         parser.error("use a new output directory")
     args.output.mkdir(parents=True)
-    config = RackServingConfig(cooling_seconds=0)
+    config = RackServingConfig()
     env = RackServingEnvironment(config=config, scene_bg=True, skill_step_limit=8000)
     report = {"args": {k: str(v) for k, v in vars(args).items()}, "phases": []}
     renderer = writer = None

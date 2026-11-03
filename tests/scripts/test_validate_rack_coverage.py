@@ -413,7 +413,7 @@ def test_native_adapter_uses_costed_layout_and_post_return_settled_verdict(
     assert result["actual_setup_cost"] == 5
     assert result["initial"]["qpos"] == [7]
     assert env.events[:2] == [("reset", 7), "human_batch_return"]
-    assert [event for event in env.events if isinstance(event, int)] == [6, 0, 1, 2]
+    assert [event for event in env.events if isinstance(event, int)] == [0, 1, 2]
     assert env.events.count("coverage_settling") == 20
     assert env.closed
 

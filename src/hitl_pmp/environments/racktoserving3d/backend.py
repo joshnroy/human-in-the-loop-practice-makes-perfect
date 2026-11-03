@@ -91,9 +91,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
         self._rng = np.random.default_rng(seed)
         self.ledger = RackServingLedger(
             mode=self.config.mode,
-            cooling_seconds=self.config.cooling_seconds,
-            elapsed_seconds=self.config.initial_elapsed_seconds,
-            wait_seconds=self.config.wait_seconds,
             human_interruption_cost=self.config.human_interruption_cost,
         )
         self._time_origin = float(self.data().time)
@@ -404,7 +401,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
             atoms.add(("HandEmpty", ("robot",)))
         return RackServing3DAtoms.with_summaries(
             atoms=frozenset(atoms),
-            ledger=self.ledger,
             available_food=frozenset(
                 name for name in self.cube_names if self.food_available(name=name)
             ),
@@ -417,9 +413,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
 
     def task_succeeded(self) -> bool:
         self.sync_clock()
-        return self.ledger.ready and all(
-            self.settled_on_tray(name=name) for name in self.cube_names
-        )
+        return all(self.settled_on_tray(name=name) for name in self.cube_names)
 
     def settled_on_tray(self, *, name: str) -> bool:
         """Unheld, supported delivery with finite low linear and angular speed.

@@ -17,7 +17,6 @@ from hitl_pmp.environments.racktoserving3d.predicates import (
     RackServing3DPredicates,
 )
 from hitl_pmp.environments.racktoserving3d.problem import EPISODE_HORIZON
-from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger
 from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
 from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
 from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
@@ -44,12 +43,11 @@ from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
 
 
-def _value(*, horizon, initially_ready=False, **competence):
+def _value(*, horizon, **competence):
     return float(
         RackServingDeployment.values(
             competences={name: np.array([competence.get(name, 0.0)]) for name in RACK_ROBOT_SKILLS},
             horizon=horizon,
-            initially_ready=initially_ready,
         )[0]
     )
 
@@ -64,15 +62,13 @@ def _belief():
     )
 
 
-def _atoms(*, ready=True, tool_home=True, food_on_rack=True):
+def _atoms(*, tool_home=True, food_on_rack=True):
     named = {("HandEmpty", (Objects.robot.name,))}
     named.add(("ScraperHome" if tool_home else "ScraperOnFloor", (Objects.scraper.name,)))
     location = "OnRack" if food_on_rack else "OnTray"
     support = Objects.rack if food_on_rack else Objects.tray
     named |= {(location, (food.name, support.name)) for food in Objects.food}
-    named = RackServing3DAtoms.with_summaries(
-        atoms=frozenset(named), ledger=RackServingLedger(elapsed_seconds=300 if ready else 0)
-    )
+    named = RackServing3DAtoms.with_summaries(atoms=frozenset(named))
     predicates = {predicate.name: predicate for predicate in RackServing3DPredicates.all()}
     objects = {obj.name: obj for obj in Objects.all_objects()}
     return (
@@ -87,7 +83,7 @@ def _atoms(*, ready=True, tool_home=True, food_on_rack=True):
 def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
     assert set(RACK_ROBOT_SKILLS) == {skill.name for skill in Skills.robot_skills()}
     assert set(RACK_HUMAN_SKILLS) == {skill.name for skill in Skills.human_skills()}
-    assert RACK_SERVING_DOMAIN.deployment_horizon == EPISODE_HORIZON == 2 * NUM_FOOD + 3
+    assert RACK_SERVING_DOMAIN.deployment_horizon == EPISODE_HORIZON == 2 * NUM_FOOD + 2
     assert RACK_SERVING_DOMAIN.sampler_skill == Skills.GATHER_AND_SWEEP.name
     assert RACK_SERVING_DOMAIN.human_skill_names == frozenset(RACK_HUMAN_SKILLS)
     assert RACK_SERVING_DOMAIN.failure_effect_skills == frozenset((
@@ -106,46 +102,38 @@ def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
         )
 
 
-def test_wait_is_required_unless_the_episode_starts_ready():
-    assert _value(horizon=3, Wait=1, PickScraper=1, GatherAndSweep=1) == 1
-    assert _value(horizon=2, Wait=1, PickScraper=1, GatherAndSweep=1) == 0
-    assert _value(horizon=13, Wait=0, PickScraper=1, GatherAndSweep=1) == 0
-    assert _value(horizon=2, initially_ready=True, PickScraper=1, GatherAndSweep=1) == 1
-    assert _value(horizon=1, initially_ready=True, PickScraper=1, GatherAndSweep=1) == 0
+def test_a_fresh_episode_can_sweep_without_waiting():
+    assert _value(horizon=2, PickScraper=1, GatherAndSweep=1) == 1
+    assert _value(horizon=1, PickScraper=1, GatherAndSweep=1) == 0
 
 
 def test_pick_place_is_an_independent_deployment_route_with_no_scraper_or_human():
-    assert _value(horizon=11, Wait=1, PickFood=1, PlaceFoodOnTray=1) == 1
-    assert _value(horizon=10, Wait=1, PickFood=1, PlaceFoodOnTray=1) == 0
-    assert _value(horizon=10, initially_ready=True, PickFood=1, PlaceFoodOnTray=1) == 1
-    assert _value(horizon=9, initially_ready=True, PickFood=1, PlaceFoodOnTray=1) == 0
+    assert _value(horizon=10, PickFood=1, PlaceFoodOnTray=1) == 1
+    assert _value(horizon=9, PickFood=1, PlaceFoodOnTray=1) == 0
 
 
 def test_no_skill_or_return_to_rack_alone_can_deliver_food():
-    assert _value(horizon=0, initially_ready=True) == 0
-    assert _value(horizon=13, Wait=1, PickFood=1, ReturnFoodToRack=1) == 0
-    assert _value(horizon=13, Wait=1, PickScraper=1, ReturnScraper=1) == 0
+    assert _value(horizon=0) == 0
+    assert _value(horizon=12, PickFood=1, ReturnFoodToRack=1) == 0
+    assert _value(horizon=12, PickScraper=1, ReturnScraper=1) == 0
 
 
 def test_retries_and_alternative_routes_are_valued_without_forcing_a_sweep():
-    assert _value(
-        horizon=4, initially_ready=True, PickScraper=1, GatherAndSweep=0.5
-    ) == pytest.approx(1 - 0.5**3)
-    sweep = _value(horizon=13, Wait=1, PickScraper=0.9, GatherAndSweep=0.5)
-    carry = _value(horizon=13, Wait=1, PickFood=0.95, PlaceFoodOnTray=0.95)
+    assert _value(horizon=4, PickScraper=1, GatherAndSweep=0.5) == pytest.approx(1 - 0.5**3)
+    sweep = _value(horizon=12, PickScraper=0.9, GatherAndSweep=0.5)
+    carry = _value(horizon=12, PickFood=0.95, PlaceFoodOnTray=0.95)
     both = _value(
-        horizon=13, Wait=1, PickScraper=0.9, GatherAndSweep=0.5, PickFood=0.95, PlaceFoodOnTray=0.95
+        horizon=12, PickScraper=0.9, GatherAndSweep=0.5, PickFood=0.95, PlaceFoodOnTray=0.95
     )
     assert both >= max(sweep, carry) - 1e-12
 
 
 def test_deployment_transitions_include_rack_recovery_but_never_human_actions():
     moves = RackServingDeployment.transitions()
-    assert ("Wait", (5, "empty", True, True)) in moves[(5, "empty", True, False)]
-    assert ("ReturnFoodToRack", (5, "empty", True, True)) in moves[(4, "food", True, True)]
-    assert ("ReturnScraper", (5, "empty", True, True)) in moves[(5, "scraper", False, True)]
-    assert ("PickFood", (4, "food", True, True)) in moves[(5, "empty", True, True)]
-    assert ("PickFood", (4, "food", True, True)) in moves[(4, "empty", True, True)]
+    assert ("ReturnFoodToRack", (5, "empty", True)) in moves[(4, "food", True)]
+    assert ("ReturnScraper", (5, "empty", True)) in moves[(5, "scraper", False)]
+    assert ("PickFood", (4, "food", True)) in moves[(5, "empty", True)]
+    assert ("PickFood", (4, "food", True)) in moves[(4, "empty", True)]
     assert all(successor in moves for options in moves.values() for _, successor in options)
     names = {name for options in moves.values() for name, _ in options}
     assert names == set(RACK_ROBOT_SKILLS)
@@ -153,9 +141,9 @@ def test_deployment_transitions_include_rack_recovery_but_never_human_actions():
 
 
 def test_value_interfaces_agree_and_never_read_human_beliefs():
-    domain = RACK_SERVING_DOMAIN.model_copy(update={"deployment_horizon": 3})
+    domain = RACK_SERVING_DOMAIN.model_copy(update={"deployment_horizon": 2})
     competence = {
-        name: float(name in {"Wait", "PickScraper", "GatherAndSweep"}) for name in RACK_ROBOT_SKILLS
+        name: float(name in {"PickScraper", "GatherAndSweep"}) for name in RACK_ROBOT_SKILLS
     }
     beliefs = {
         name: Mock(sample=Mock(return_value=np.array([[value, 0.0]] * 4)))
@@ -189,14 +177,11 @@ def test_expected_value_is_reproducible_and_ignores_human_competence():
 
 
 @pytest.mark.parametrize("index", [0, 1])
-@pytest.mark.parametrize("ready", [False, True])
-def test_human_forecasts_preserve_readiness_charge_failures_and_update_only_their_belief(
-    *, index, ready
-):
+def test_human_forecasts_charge_failures_and_update_only_their_belief(*, index):
     env = RackServingEnvironment(config=RackServingConfig(human_interruption_cost=7.5))
     action = RackServingSkillProvider(env=env).human_cube_bin_reset_skills()[index]
     assert action.evaluate_practice_cost() == 7.5
-    before = _atoms(ready=ready, tool_home=False, food_on_rack=False)
+    before = _atoms(tool_home=False, food_on_rack=False)
     assert action.preconditions <= before
     state = _belief().model_copy(update={"expected_execution_costs": {str(action): 7.5}})
     competence = state.skill_beliefs[action.skill.name].mean_competence()
@@ -211,11 +196,8 @@ def test_human_forecasts_preserve_readiness_charge_failures_and_update_only_thei
         domain=RACK_SERVING_DOMAIN,
     )
     assert [weight for weight, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
-    for _, successor, atoms in outcomes:
+    for _, successor, _ in outcomes:
         assert successor.accumulated_cost == 7.5
-        assert {atom for atom in atoms if atom.predicate.name in {"Ready", "Waiting"}} == {
-            atom for atom in before if atom.predicate.name in {"Ready", "Waiting"}
-        }
         for name in RACK_ROBOT_SKILLS:
             assert successor.skill_beliefs[name] == state.skill_beliefs[name]
     assert outcomes[1][2] == before
@@ -258,10 +240,7 @@ def test_real_method_builds_from_rack_skills_and_filters_humans(*, solver, mode,
 
 
 @pytest.mark.parametrize("solver", ["determinized_astar", "expectimax"])
-@pytest.mark.parametrize("elapsed,cooling,ready", [(0, 300, False), (300, 300, True), (0, 0, True)])
-def test_cli_builds_real_rack_method_with_configured_readiness_without_running(
-    *, tmp_path, monkeypatch, solver, elapsed, cooling, ready
-):
+def test_cli_builds_real_rack_method_without_running(*, tmp_path, monkeypatch, solver):
     args = Cli.parse_args(
         argv=[
             "--env",
@@ -277,10 +256,6 @@ def test_cli_builds_real_rack_method_with_configured_readiness_without_running(
             "--defer-rendering",
             "--output-dir",
             str(tmp_path),
-            "--initial-elapsed-seconds",
-            str(elapsed),
-            "--cooling-seconds",
-            str(cooling),
             "--pomdp-num-particles",
             "32",
             "--pomdp-inference-engine",
@@ -302,13 +277,11 @@ def test_cli_builds_real_rack_method_with_configured_readiness_without_running(
         environment=RackServingStepProtocol,
     )
     method = runner.call_args.kwargs["method"]
-    assert method.pomdp_domain.initially_ready is ready
     assert method.pomdp_domain.deployment_horizon == EPISODE_HORIZON
     # Determinized A* searches no depth, so the snapshot records None for it.
     expected_depth = RACK_SERVING_DOMAIN.default_search_depth if solver == "expectimax" else None
     assert args.pomdp_search_depth == expected_depth
     assert method.env._backend is None
-    assert not RACK_SERVING_DOMAIN.initially_ready
     assert Tossing3DPomdpCli.DOMAINS["SweepOffShelf3DCli"] is SWEEP_OFF_SHELF_DOMAIN
     assert Tossing3DPomdpCli.DOMAINS["Tossing3DCli"] is TOSSING3D_DOMAIN
 

@@ -235,18 +235,6 @@ class RackControllers:
                 return
         raise SkillFailed(f"{label}: measured scraper pose failed to converge")
 
-    def wait_until_ready(self) -> None:
-        with self.feedback():
-            self.backend.sync_clock()
-            remaining = max(
-                0, self.backend.ledger.cooling_seconds - self.backend.ledger.elapsed_seconds
-            )
-            for _ in range(int(np.ceil(remaining / 0.1)) + (remaining > 0)):
-                self.shelf.hold(count=1, label="wait_elapsed_time_not_temperature")
-                self.backend.sync_clock()
-                if self.backend.ledger.ready:
-                    break
-
     def gather_and_sweep(self, *, s: float, delta: float, d: float) -> None:
         """Squeeze toward the plate in two passes, gather from +y then -y, then sweep."""
         bounds = GATHER_AND_SWEEP_BOUNDS
@@ -259,9 +247,6 @@ class RackControllers:
                 f"GatherAndSweep requires s [{s_low},{s_high}] m,"
                 f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
             )
-        self.backend.sync_clock()
-        if not self.backend.ledger.ready:
-            raise SkillFailed("food is not elapsed-time ready; wait first")
         backend, shelf, tool = self.backend, self.shelf, self.tool
         config = backend.config
         if not self.on_rack():

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
-import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.core.problem.environment.types import Object, State
@@ -26,7 +25,6 @@ def _setup(*, monkeypatch, speed=0.0, elapsed=300.0):
     state = _ObservedState(
         data={},
         abstract_atoms=frozenset({
-            ("Ready", ()),
             *(("OnTray", (food.name, Objects.tray.name)) for food in Objects.food),
         }),
     )
@@ -81,13 +79,9 @@ def test_settled_delivery_stops_without_requiring_a_sweep(*, monkeypatch):
     policy.assert_not_called()
 
 
-@pytest.mark.parametrize("failure", ["not_ready", "off_tray"])
-def test_live_measurements_override_stale_symbolic_goal(*, monkeypatch, failure):
-    problem, task, _, locations = _setup(
-        monkeypatch=monkeypatch, elapsed=299.0 if failure == "not_ready" else 300.0
-    )
-    if failure == "off_tray":
-        locations[Objects.food[-1].name] = "SpilledCounter"
+def test_live_measurements_override_stale_symbolic_goal(*, monkeypatch):
+    problem, task, _, locations = _setup(monkeypatch=monkeypatch, elapsed=300.0)
+    locations[Objects.food[-1].name] = "SpilledCounter"
     policy = Mock(return_value=LabeledAction(action=np.array([-1, 0, 0, 0]), label="no-op"))
     success, _, _ = problem.run_task_episode(task=task, policy=policy)
     assert not success

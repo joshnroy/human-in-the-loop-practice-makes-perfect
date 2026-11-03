@@ -26,21 +26,20 @@ RACK_ROBOT_SKILLS = (
     "PickFood",
     "PlaceFoodOnTray",
     "ReturnFoodToRack",
-    "Wait",
 )
 RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
 RACK_EXPECTATION_SAMPLES = 4096
 RACK_EXPECTATION_SEED = 0
-RackDeploymentState = tuple[int, str, bool, bool]
+RackDeploymentState = tuple[int, str, bool]
 
 
 class RackServingDeployment:
-    """Value from five foods on the rack, with optional initial readiness.
+    """Value from five foods on the rack; food is ready from the start.
 
-    State is (rack count, hand contents, scraper home, ready). A held food is
+    State is (rack count, hand contents, scraper home). A held food is
     neither on rack nor on tray; all other food is on the tray. Return-to-rack
     and picking from the tray are legal, not forced recovery choices. The goal
-    is readiness and every food on the tray, not a home scraper, matching the
+    is every food on the tray, not a home scraper, matching the
     rack task rather than adding a new physical completion requirement.
     """
 
@@ -55,41 +54,31 @@ class RackServingDeployment:
                 for home in (True, False):
                     if hand == "scraper" and home:
                         continue
-                    for ready in (True, False):
-                        state = (on_rack, hand, home, ready)
-                        options: list[tuple[str, RackDeploymentState]] = []
-                        if not ready:
-                            options.append(("Wait", (on_rack, hand, home, True)))
-                        if hand == "empty" and home:
-                            options.append(("PickScraper", (on_rack, "scraper", False, ready)))
-                        if hand == "scraper":
-                            options.append(("ReturnScraper", (on_rack, "empty", True, ready)))
-                            if ready and on_rack:
-                                options.append(("GatherAndSweep", (0, "scraper", False, True)))
-                        if hand == "empty" and ready:
-                            if on_rack:
-                                options.append(("PickFood", (on_rack - 1, "food", home, True)))
-                            if on_rack < RACK_NUM_FOOD:
-                                options.append(("PickFood", (on_rack, "food", home, True)))
-                        if hand == "food":
-                            if ready:
-                                options.append(("PlaceFoodOnTray", (on_rack, "empty", home, True)))
-                            options.append((
-                                "ReturnFoodToRack",
-                                (on_rack + 1, "empty", home, ready),
-                            ))
-                        moves[state] = tuple(options)
+                    state = (on_rack, hand, home)
+                    options: list[tuple[str, RackDeploymentState]] = []
+                    if hand == "empty" and home:
+                        options.append(("PickScraper", (on_rack, "scraper", False)))
+                    if hand == "scraper":
+                        options.append(("ReturnScraper", (on_rack, "empty", True)))
+                        if on_rack:
+                            options.append(("GatherAndSweep", (0, "scraper", False)))
+                    if hand == "empty":
+                        if on_rack:
+                            options.append(("PickFood", (on_rack - 1, "food", home)))
+                        if on_rack < RACK_NUM_FOOD:
+                            options.append(("PickFood", (on_rack, "food", home)))
+                    if hand == "food":
+                        options.append(("PlaceFoodOnTray", (on_rack, "empty", home)))
+                        options.append(("ReturnFoodToRack", (on_rack + 1, "empty", home)))
+                    moves[state] = tuple(options)
         return moves
 
     @staticmethod
-    def values(
-        *, competences: dict[str, NDArray[np.float64]], horizon: int, initially_ready: bool
-    ) -> NDArray[np.float64]:
+    def values(*, competences: dict[str, NDArray[np.float64]], horizon: int) -> NDArray[np.float64]:
         moves = RackServingDeployment.transitions()
         size = len(next(iter(competences.values())))
         solved = {
-            state: np.full(size, float(state[3] and state[0] == 0 and state[1] != "food"))
-            for state in moves
+            state: np.full(size, float(state[0] == 0 and state[1] != "food")) for state in moves
         }
         value = dict(solved)
         for _ in range(horizon):
@@ -105,7 +94,7 @@ class RackServingDeployment:
                             competence * previous[successor] + (1.0 - competence) * previous[state],
                         )
                 value[state] = best
-        return value[(RACK_NUM_FOOD, "empty", True, initially_ready)]
+        return value[(RACK_NUM_FOOD, "empty", True)]
 
 
 class RackServingPracticeDomain(PracticeDomain):
@@ -113,13 +102,11 @@ class RackServingPracticeDomain(PracticeDomain):
 
     Beta(1, 3) and fixed-seed Monte Carlo expectation follow the existing shelf
     domain as explicit modeling assumptions, not measured rack competence.
-    Wait is inferred too: a cutoff can prevent its promised readiness effect.
     Human beliefs never enter deployment value and are dropped when not offered.
     No unverified symmetry or belief-merging reduction is enabled.
     """
 
-    deployment_horizon: int = 2 * RACK_NUM_FOOD + 3
-    initially_ready: bool = False
+    deployment_horizon: int = 2 * RACK_NUM_FOOD + 2
     default_search_depth: int = 3
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
@@ -149,7 +136,6 @@ class RackServingPracticeDomain(PracticeDomain):
                     name: np.array([theta[name].competence]) for name in RACK_ROBOT_SKILLS
                 },
                 horizon=self.deployment_horizon,
-                initially_ready=self.initially_ready,
             )[0]
         )
 
@@ -161,7 +147,6 @@ class RackServingPracticeDomain(PracticeDomain):
                 name: beliefs[name].sample(rng=rng, count=count)[:, 0] for name in RACK_ROBOT_SKILLS
             },
             horizon=self.deployment_horizon,
-            initially_ready=self.initially_ready,
         )
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:

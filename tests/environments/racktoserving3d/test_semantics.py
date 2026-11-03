@@ -64,33 +64,21 @@ def test_live_bounds_and_full_footprint_not_centre_only():
     assert not _region(top_z=0.8).supports(food=food, tolerance=0.005)
 
 
-@pytest.mark.parametrize("elapsed", [0.0, 299.0, math.nextafter(300.0, 0.0)])
-def test_cooling_before_boundary(*, elapsed):
-    assert not RackServingLedger(elapsed_seconds=elapsed).ready
-
-
-@pytest.mark.parametrize("elapsed", [300.0, math.nextafter(300.0, math.inf), 600.0])
-def test_cooling_at_and_after_boundary(*, elapsed):
-    assert RackServingLedger(elapsed_seconds=elapsed).ready
-
-
-def test_wait_chunks_and_physical_time_share_one_monotone_clock():
+def test_the_ledger_has_no_readiness_and_its_clock_is_monotone():
     initial = RackServingLedger(elapsed_seconds=240.0)
-    interrupted = initial.wait()
-    assert interrupted.elapsed_seconds == 270.0
-    assert not interrupted.ready
-    complete = interrupted.advance(seconds=30.0)
-    assert complete.ready
+    later = initial.advance(seconds=30.0)
+    assert later.elapsed_seconds == 270.0
     assert initial.elapsed_seconds == 240.0
+    assert not hasattr(initial, "ready")
+    assert "cooling_seconds" not in RackServingLedger.model_fields
 
 
 @pytest.mark.parametrize("intervention", [HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY])
 @pytest.mark.parametrize("elapsed", [35.0, 300.0, 900.0])
-def test_human_attempt_is_costed_without_restarting_cooling(*, intervention, elapsed):
+def test_human_attempt_is_costed_without_restarting_the_clock(*, intervention, elapsed):
     before = RackServingLedger(elapsed_seconds=elapsed, human_interruption_cost=7.5)
     after = before.charge_human(intervention=intervention)
     assert after.elapsed_seconds == elapsed
-    assert after.ready == before.ready
     assert after.human_cost == 7.5
     assert after.human_interventions == 1
     assert before.human_cost == 0.0

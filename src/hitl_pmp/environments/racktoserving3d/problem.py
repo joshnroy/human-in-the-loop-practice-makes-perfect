@@ -11,7 +11,7 @@ from .environment import RackServingEnvironment
 from .objects import NUM_FOOD
 from .tasks import RackServingTasks
 
-EPISODE_HORIZON = 2 * NUM_FOOD + 3
+EPISODE_HORIZON = 2 * NUM_FOOD + 2
 
 
 class RackServingProblem(Problem):
@@ -19,7 +19,7 @@ class RackServingProblem(Problem):
     tasks: RackServingTasks
 
     def max_episode_steps(self) -> int:
-        """Wait, five independent pick/place deliveries, and two spare skills."""
+        """Five independent pick/place deliveries and two spare skills."""
         return EPISODE_HORIZON
 
     def run_task_episode(

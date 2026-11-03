@@ -570,8 +570,6 @@ class RackFoodController:
         self._validate_name(name=name)
         backend, shelf = self.backend, self.shelf
         backend.sync_clock()
-        if not backend.ledger.ready:
-            raise SkillFailed("Food is not elapsed-time ready")
         if shelf.in_hand is not None or any(
             backend.held(name=other) for other in ("wiper_0", *backend.cube_names)
         ):

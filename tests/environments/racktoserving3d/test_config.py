@@ -13,10 +13,8 @@ def test_default_layout_and_semantics() -> None:
     config = RackServingConfig()
     assert config.surface_kind == "wire"
     assert config.mode == "training"
-    assert (config.cooling_seconds, config.initial_elapsed_seconds, config.wait_seconds) == (
-        0,
-        0,
-        30,
+    assert not {"cooling_seconds", "initial_elapsed_seconds", "wait_seconds"} & set(
+        RackServingConfig.model_fields
     )
     assert config.human_interruption_cost == 5
     assert config.rack_front_x == pytest.approx(1.3725)
@@ -42,9 +40,7 @@ def test_default_layout_and_semantics() -> None:
 
 
 def test_config_is_frozen_and_json_roundtrips() -> None:
-    config = RackServingConfig(
-        surface_kind="concept", mode="deployment", initial_elapsed_seconds=300
-    )
+    config = RackServingConfig(surface_kind="concept", mode="deployment", gap=0.02)
     assert RackServingConfig.model_validate_json(config.model_dump_json()) == config
     with pytest.raises(ValidationError):
         config.rack_mass = 2
@@ -70,9 +66,6 @@ def test_config_is_frozen_and_json_roundtrips() -> None:
         {"tray_thickness": -0.1},
         {"gap": -0.01},
         {"gap": 1},
-        {"cooling_seconds": -1},
-        {"initial_elapsed_seconds": -1},
-        {"wait_seconds": 0},
         {"human_interruption_cost": 0},
         {"human_interruption_cost": float("inf")},
         {"counter_x_max": 1.4},

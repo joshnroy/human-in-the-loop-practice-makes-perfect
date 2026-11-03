@@ -267,24 +267,18 @@ def classify_food(
 class RackServingLedger(BaseModel):
     """Immutable clock/cost state, constructed from scalar config values.
 
-    ``elapsed_seconds`` is initialized from ``initial_elapsed_seconds`` once, at
-    episode creation. Every physical action may advance it by measured duration.
-    Neither human operation resets it; readiness depends on this clock alone.
+    ``elapsed_seconds`` starts at zero at episode creation. Every physical action may
+    advance it by measured duration; neither human operation resets it. It is
+    accounting only: food is ready from the start, so nothing gates on it.
     """
 
     model_config = ConfigDict(frozen=True)
 
     mode: Literal["training", "deployment"] = "training"
-    cooling_seconds: float = Field(default=300.0, ge=0, allow_inf_nan=False)
     elapsed_seconds: float = Field(default=0.0, ge=0, allow_inf_nan=False)
-    wait_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
     human_interruption_cost: float = Field(default=5.0, gt=0, allow_inf_nan=False)
     human_cost: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     human_interventions: int = Field(default=0, ge=0, strict=True)
-
-    @property
-    def ready(self) -> bool:
-        return self.elapsed_seconds >= self.cooling_seconds
 
     def advance(self, *, seconds: float) -> RackServingLedger:
         duration = _Duration(seconds=seconds)
@@ -292,9 +286,6 @@ class RackServingLedger(BaseModel):
             **self.model_dump(),
             "elapsed_seconds": self.elapsed_seconds + duration.seconds,
         })
-
-    def wait(self) -> RackServingLedger:
-        return self.advance(seconds=self.wait_seconds)
 
     def charge_human(self, *, intervention: HumanIntervention) -> RackServingLedger:
         """Authorize and charge an attempt before the caller touches the scene."""

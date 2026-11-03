@@ -2,8 +2,8 @@
 
 The specified rack footprint is 0.375 m wide (world y) by 0.255 m deep
 (world x). Rack height and mass are UNVERIFIED configurable assumptions, not
-manufacturer specifications. All other hardware dimensions, masses, friction,
-and cooling times below are modeling assumptions requiring physical calibration.
+manufacturer specifications. All other hardware dimensions, masses and friction
+below are modeling assumptions requiring physical calibration.
 The dumpling is a rigid cooked-food proxy, not a deformable or thermal model.
 ``concept`` denotes an invented perforated platform, not the specified wire rack.
 """
@@ -41,11 +41,6 @@ class RackServingConfig(BaseModel):
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
     tray_thickness: Positive = 0.012
     gap: Nonnegative = 0.010
-    # Josh, 2026-11-03: the dumplings need not cool, so food is ready from the start
-    # and Wait is a no-op on a fresh episode. Kept configurable, not removed.
-    cooling_seconds: Nonnegative = 0
-    initial_elapsed_seconds: Nonnegative = 0
-    wait_seconds: Positive = 30
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375

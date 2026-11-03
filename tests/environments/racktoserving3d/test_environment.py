@@ -26,14 +26,13 @@ def test_deployment_rejects_human_before_any_physical_write(*, monkeypatch, dest
     assert backend.ledger == before
 
 
-def test_batch_return_is_charged_and_does_not_recool_food(*, monkeypatch):
+def test_batch_return_is_charged_and_does_not_restart_the_clock(*, monkeypatch):
     backend = RackServingBackend(ledger=RackServingLedger(elapsed_seconds=400))
     monkeypatch.setattr(RackServingBackend, "sync_clock", lambda self: None)
     monkeypatch.setattr(RackServingBackend, "food_placements", lambda self, **kwargs: {})
     monkeypatch.setattr(RackServingBackend, "_commit", lambda self, **kwargs: None)
     backend.batch_return()
     assert backend.ledger.elapsed_seconds == 400
-    assert backend.ledger.ready
     assert backend.ledger.human_cost == 5
     assert backend.ledger.human_interventions == 1
 

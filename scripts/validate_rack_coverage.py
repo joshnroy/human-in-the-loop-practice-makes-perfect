@@ -486,7 +486,7 @@ class NativeTrial:
             s, delta, d = NativeTrial.resolve_params(params=request["params"])
             result["resolved_params"] = {"s_m": s, "delta_m": delta, "d_m": d}
             measure()
-            for skill in ("Wait", "PickScraper", "GatherAndSweep", "ReturnScraper"):
+            for skill in ("PickScraper", "GatherAndSweep", "ReturnScraper"):
                 phase_start = env.backend().control_steps()
                 result["phase"] = skill
                 persist()
@@ -503,7 +503,7 @@ class NativeTrial:
                 if skill == "ReturnScraper":
                     result["return_completed"] = error is None
                 measure()
-                if error and skill in ("Wait", "PickScraper"):
+                if error and skill == "PickScraper":
                     break
             phase_start = env.backend().control_steps()
             result["phase"] = "settling"
@@ -632,9 +632,7 @@ def build_manifest(
             selected_states.append((layout, int(seed_text)))
         if not selected_states:
             raise ValueError("states cannot be empty")
-    config = RackServingConfig(
-        mode="training", cooling_seconds=5, scraper_tilt_degrees=scraper_tilt_degrees
-    )
+    config = RackServingConfig(mode="training", scraper_tilt_degrees=scraper_tilt_degrees)
     return {
         "schema_version": 2,
         "execution_implemented": True,
@@ -684,7 +682,7 @@ def build_manifest(
             "Log actual setup cost, food poses, support contacts, measured locations and config.",
             "Compare measured starting states across parameter sets; flag mismatches and"
             " duplicate layouts.",
-            "Use actual Wait, PickScraper, GatherAndSweep(s,delta,d), ReturnScraper controllers.",
+            "Use actual PickScraper, GatherAndSweep(s,delta,d), ReturnScraper controllers.",
             "Record each food's physical outcome separately from controller errors.",
             "Verify physical task success and scraper home; do not infer success from no error.",
             "Test the constant baseline first; existential mode stops at each state's success.",

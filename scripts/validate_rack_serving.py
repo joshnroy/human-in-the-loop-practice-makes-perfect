@@ -28,7 +28,6 @@ def main():
             config=RackServingConfig(
                 surface_kind=surface,
                 mode="deployment",
-                cooling_seconds=0.2,
             )
         )
         try:
@@ -59,12 +58,6 @@ def main():
                     and np.array_equal(before, data.qpos)
                     and ledger == backend.ledger,
                 )
-            env.take_action(action=np.array([6.0, 0, 0, 0]))
-            check(
-                name=f"{surface}: physical wait reaches configured elapsed-time threshold",
-                passed=backend.ledger.ready and env.last_skill_error() is None,
-                evidence={"elapsed_seconds": backend.ledger.elapsed_seconds},
-            )
             for label, position in (
                 ("OnTray", [backend.config.tray_center_x, 0, tray.top_z + 0.014]),
                 ("SpilledCounter", [1.2, 0.35, backend.config.counter_height + 0.014]),
@@ -100,7 +93,7 @@ def main():
             )
         finally:
             env.close()
-    env = RackServingEnvironment(config=RackServingConfig(initial_elapsed_seconds=400))
+    env = RackServingEnvironment(config=RackServingConfig())
     try:
         env.reset_to_seed(seed=1)
         backend = env.backend()
@@ -108,7 +101,7 @@ def main():
         for human in ("human_batch_return", "human_tool_recovery"):
             env.reset_movables(destination=human)
         check(
-            name="training: two explicit interventions charged, cooling not restarted",
+            name="training: two explicit interventions charged, clock not restarted",
             passed=backend.ledger.human_cost == 10 and backend.ledger.elapsed_seconds >= before,
             evidence=backend.ledger.model_dump(),
         )

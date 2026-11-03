@@ -1,9 +1,7 @@
 """Core Skill templates, independent of environment/config implementations.
 
 Pick/place delivery and pick/return recovery remain available without a scraper.
-Wait means wait UNTIL ready, using configured-duration chunks internally and an
-exact final remainder. Its nominal Ready effect is verified against the measured
-clock, never written into the observation: an interrupted wait can fail its promise.
+Food is ready from the start (Josh, 2026-11-03): there is no cooling and no Wait.
 AnyFoodOnRack/AnyFoodOffRack are conservatively retained across single-food moves;
 the backend refreshes these summaries from measured locations after each action.
 """
@@ -25,13 +23,11 @@ from .predicates import (
     HOLDING_SCRAPER,
     ON_RACK,
     ON_TRAY,
-    READY,
     SCRAPER_AWAY,
     SCRAPER_HOME,
     SCRAPER_ON_FLOOR,
     SPILLED_COUNTER,
     SPILLED_FLOOR,
-    WAITING,
 )
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY, RackServingLedger
 
@@ -42,7 +38,6 @@ SKILL_IDS = {
     "PickFood": 3,
     "PlaceFoodOnTray": 4,
     "ReturnFoodToRack": 5,
-    "Wait": 6,
 }
 # GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
 # x-squeeze passes stop; delta (m) is subtracted from one food width to give how far
@@ -78,7 +73,6 @@ _HELD_FOOD = _atom(predicate=HOLDING_FOOD, variables=(_ROBOT, _FOOD))
 _HELD_SCRAPER = _atom(predicate=HOLDING_SCRAPER, variables=(_ROBOT, _SCRAPER))
 _HOME = _atom(predicate=SCRAPER_HOME, variables=(_SCRAPER,))
 _AWAY = _atom(predicate=SCRAPER_AWAY, variables=(_SCRAPER,))
-_READY = _atom(predicate=READY)
 _ANY_ON = _atom(predicate=ANY_FOOD_ON_RACK)
 _ANY_OFF = _atom(predicate=ANY_FOOD_OFF_RACK)
 _AVAILABLE = _atom(predicate=FOOD_AVAILABLE, variables=(_FOOD,))
@@ -103,7 +97,7 @@ class RackServing3DSkills:
     GATHER_AND_SWEEP: ClassVar[Skill] = Skill(
         name="GatherAndSweep",
         parameters=(_ROBOT, _SCRAPER, _RACK, _TRAY, *_SLOTS),
-        preconditions=frozenset({_HELD_SCRAPER, _READY, _ANY_ON, *_CHAIN}),
+        preconditions=frozenset({_HELD_SCRAPER, _ANY_ON, *_CHAIN}),
         add_effects=frozenset({_ANY_OFF}),
         delete_effects=frozenset({
             _ANY_ON,
@@ -131,7 +125,7 @@ class RackServing3DSkills:
     PICK_FOOD: ClassVar[Skill] = Skill(
         name="PickFood",
         parameters=(_ROBOT, _FOOD, _RACK, _TRAY),
-        preconditions=frozenset({_EMPTY, _AVAILABLE, _READY}),
+        preconditions=frozenset({_EMPTY, _AVAILABLE}),
         add_effects=frozenset({_HELD_FOOD, _ANY_OFF}),
         delete_effects=frozenset({_EMPTY, _AVAILABLE, *_locations(food=_FOOD)}),
         param_dim=0,
@@ -140,7 +134,7 @@ class RackServing3DSkills:
     PLACE_FOOD_ON_TRAY: ClassVar[Skill] = Skill(
         name="PlaceFoodOnTray",
         parameters=(_ROBOT, _FOOD, _TRAY),
-        preconditions=frozenset({_HELD_FOOD, _READY}),
+        preconditions=frozenset({_HELD_FOOD}),
         add_effects=frozenset({
             _EMPTY,
             _AVAILABLE,
@@ -162,15 +156,6 @@ class RackServing3DSkills:
             _atom(predicate=ON_RACK, variables=(_FOOD, _RACK)),
         }),
         delete_effects=frozenset({_HELD_FOOD}),
-        param_dim=0,
-        practice_cost=1.0,
-    )
-    WAIT: ClassVar[Skill] = Skill(
-        name="Wait",
-        parameters=(),
-        preconditions=frozenset({_atom(predicate=WAITING)}),
-        add_effects=frozenset({_READY}),
-        delete_effects=frozenset({_atom(predicate=WAITING)}),
         param_dim=0,
         practice_cost=1.0,
     )
@@ -235,7 +220,6 @@ class RackServing3DSkills:
             skills.PICK_FOOD,
             skills.PLACE_FOOD_ON_TRAY,
             skills.RETURN_FOOD_TO_RACK,
-            skills.WAIT,
         )
 
     @staticmethod

@@ -34,7 +34,7 @@ def main():
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(rows, indent=2) + "\n")
 
-    env = RackServingEnvironment(config=RackServingConfig(cooling_seconds=0))
+    env = RackServingEnvironment(config=RackServingConfig())
     try:
         env.reset_to_seed(seed=0)
         tool = env.rack_controllers().tool

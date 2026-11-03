@@ -74,13 +74,6 @@ def test_rejects_nonfood_before_motion(*, food, name):
     food.controllers.feedback.assert_not_called()
 
 
-def test_not_ready_preserves_state(*, food):
-    food.backend.ledger.ready = False
-    with pytest.raises(SkillFailed, match="ready"):
-        food.pick(name="cube_0")
-    food.shelf.hold.assert_not_called()
-
-
 def test_occupied_hand_is_not_opened(*, food):
     food.backend.held.return_value = True
     food.shelf.grip = 1.0

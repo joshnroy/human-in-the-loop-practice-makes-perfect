@@ -66,10 +66,10 @@ def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index
         provider.compute_action(ground_skill=ground, params=params, state=State(data={})),
         [3, 3, 0, 0, 0],
     )
-    wait = GroundSkill(skill=Skills.WAIT, objects=())
-    assert provider.sample_params(ground_skill=wait, rng=rng).shape == (0,)
+    pick = GroundSkill(skill=Skills.PICK_SCRAPER, objects=(Objects.robot, Objects.scraper))
+    assert provider.sample_params(ground_skill=pick, rng=rng).shape == (0,)
     np.testing.assert_array_equal(
-        RackServingActions.encode(ground_skill=wait, params=np.zeros(0)), [6, 0, 0, 0, 0]
+        RackServingActions.encode(ground_skill=pick, params=np.zeros(0)), [0, 0, 0, 0, 0]
     )
 
 
