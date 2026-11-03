@@ -182,3 +182,133 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
         args = Cli.parse_args(argv=run.command[3:])
         METHODS[args.method].run(args=args, env_cli=KitchenCli)
     assert len(built) == 6
+
+
+DELLA_SHA = "a" * 40
+
+
+def _della(*, tmp_path, monkeypatch, **kwargs):
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": DELLA_SHA})
+    out = tmp_path / "della"
+    KitchenLaunch.della(out=out, tag="kp-test", **kwargs)
+    return json.loads((out / "manifest.json").read_text()), (out / "array.sbatch").read_text()
+
+
+def test_della_manifest_is_frozen_for_the_della_checkout(*, tmp_path, monkeypatch):
+    from scripts.kitchen_launch import DELLA
+
+    manifest, _ = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="overnight", seeds=(0, 1, 2)
+    )
+    code = f"{DELLA}/code/{DELLA_SHA}"
+    assert manifest["working_directory"] == code
+    assert manifest["results_root"] == f"{DELLA}/results/kp-test"
+    assert manifest["seeds"] == [0, 1, 2]
+    assert manifest["identity"] == {"commit": DELLA_SHA}
+    assert [(row["arm"], row["seed"]) for row in manifest["runs"]] == [
+        (arm, seed) for arm in ("ees", "curtis", "expectimax") for seed in (0, 1, 2)
+    ]
+    for row in manifest["runs"]:
+        method = "ees" if row["arm"] == "ees" else "pomdp"
+        assert row["output_dir"] == f"{DELLA}/results/kp-test/{row['arm']}/{method}/{row['seed']}"
+        cost = row["argv"][row["argv"].index("--practice-cost-config") + 1]
+        assert cost == f"{code}/configs/kitchen_pilot_costs.json"
+        assert row["resolved_args"]["practice_step_budget"] == 25600
+
+
+def test_della_rows_carry_no_path_from_the_submitting_checkout(*, tmp_path, monkeypatch):
+    """`run` recomputes the rows inside the Della checkout and demands equality."""
+    from scripts.kitchen_launch import REPO
+
+    manifest, _ = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="overnight", seeds=(0, 1, 2)
+    )
+    assert str(REPO) not in json.dumps(manifest["runs"])
+
+
+def test_della_sbatch_runs_one_manifest_row_per_array_task(*, tmp_path, monkeypatch):
+    from scripts.kitchen_launch import DELLA
+
+    _, script = _della(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        stage="overnight",
+        seeds=(0, 1, 2),
+        time="96:00:00",
+        mem="12G",
+    )
+    code = f"{DELLA}/code/{DELLA_SHA}"
+    assert "#SBATCH --partition=cpu" in script
+    assert "#SBATCH --array=1-9" in script
+    assert "#SBATCH --time=96:00:00" in script
+    assert "#SBATCH --mem=12G" in script
+    assert "#SBATCH --job-name=kp-test" in script
+    assert f"cd {code}" in script
+    assert f"export HITL_PMP_CONDA_ENV={DELLA}/envs/hitl-pmp" in script
+    assert f"export FD_EXEC_PATH={DELLA}/downward" in script
+    assert "export DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD=1" in script
+    assert 'export LD_PRELOAD="$HITL_PMP_CONDA_ENV/lib/libstdc++.so.6"' in script
+    assert 'export XDG_RUNTIME_DIR="$HITL_PMP_TMPDIR/xdg"' in script
+    assert "OPENBLAS_NUM_THREADS=1" in script
+    assert (
+        script
+        .replace(" \\\n  ", " ")
+        .rstrip()
+        .endswith(
+            f"{code}/scripts/with_env.sh python -m scripts.kitchen_launch run "
+            '--manifest "$1" --task "$SLURM_ARRAY_TASK_ID" --go'
+        )
+    )
+
+
+def test_della_refuses_a_tag_that_is_not_a_plain_name(*, tmp_path, monkeypatch):
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": DELLA_SHA})
+    with pytest.raises(ValueError, match="tag"):
+        KitchenLaunch.della(out=tmp_path, tag="../x", stage="overnight", seeds=(0,))
+
+
+def test_dry_stage_keeps_the_protocol_but_shrinks_practice():
+    for run in KitchenLaunch.runs(stage="dry", results_root=Path("/unused"), seeds=(0,)):
+        args = Cli.parse_args(argv=run.command[3:])
+        assert args.practice_step_budget == 1600
+        assert args.measurement_interval_steps == 1600
+        assert args.num_test_tasks == 3
+        assert args.initial_measurement
+        assert args.evaluation_control_steps == 7500
+
+
+def test_a_started_sibling_task_does_not_block_a_later_array_task(*, tmp_path, monkeypatch):
+    """Della starts array tasks at different times; a sibling's live run is not ours."""
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
+    monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})
+    path = tmp_path / "manifest.json"
+    root = tmp_path / "results"
+    KitchenLaunch.write_manifest(path=path, stage="pilot", results_root=root)
+    runs = KitchenLaunch.runs(stage="pilot", results_root=root)
+    (runs[2].output_dir / "snapshots").mkdir(parents=True)
+    observed = []
+    monkeypatch.setattr(
+        "scripts.kitchen_launch.SweepRunner.execute",
+        lambda **kwargs: observed.extend(kwargs["runs"]) or [],
+    )
+    assert KitchenLaunch.run(manifest=path, max_workers=1, task=1) == 0
+    assert observed == [runs[0]]
+    with pytest.raises(FileExistsError):
+        KitchenLaunch.run(manifest=path, max_workers=1, task=3)
+
+
+def test_run_honours_the_manifest_seed_list(*, tmp_path, monkeypatch):
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
+    monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})
+    path = tmp_path / "manifest.json"
+    root = tmp_path / "results"
+    KitchenLaunch.write_manifest(path=path, stage="pilot", results_root=root, seeds=(0, 1, 2))
+    observed = []
+    monkeypatch.setattr(
+        "scripts.kitchen_launch.SweepRunner.execute",
+        lambda **kwargs: observed.extend(kwargs["runs"]) or [],
+    )
+    assert KitchenLaunch.run(manifest=path, max_workers=1, task=9) == 0
+    assert [(r.output_dir.parts[-3], r.seed) for r in observed] == [("expectimax", 2)]
+    with pytest.raises(ValueError, match="between 1 and 9"):
+        KitchenLaunch.run(manifest=path, max_workers=1, task=10)

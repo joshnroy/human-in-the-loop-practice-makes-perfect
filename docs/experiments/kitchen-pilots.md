@@ -44,6 +44,16 @@ resolved CLI flags, costs, private dependency imports and native initial state.
 Existing output directories are never overwritten. Freeze local commits before
 creating manifests; never change code used by an active worker.
 
+On Della, `della --stage STAGE --seeds ... --tag TAG --out DIR --time T --mem M`
+writes the same manifest frozen for `<DELLA>/code/<HEAD sha>` (results under
+`<DELLA>/results/TAG`) and an `array.sbatch` whose task N runs manifest row N via
+`run --task N --go`, so every check above runs on the compute node. Stage the commit
+with real-git `reference/kindergarden` and `reference/kinder-baselines` checkouts
+(`identity` runs `git` in both) and the MimicLabs assets copied in, copy DIR to Della,
+then `sbatch DIR/array.sbatch DIR/manifest.json`. `--stage dry` keeps every flag but
+shrinks practice to one 1,600-tick block between two three-task evaluations; it sizes
+`--time` and `--mem`.
+
 The launch gate checks method construction, a native witness for each count,
 a continuous failed-pour/recovery/retry cycle, and completion/readability of all
 six pilots. Pilot failure/STOP rates are scientific outcomes. Exceptions, incorrect
