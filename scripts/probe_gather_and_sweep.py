@@ -100,6 +100,7 @@ def main():
     parser.add_argument("--delta", type=float, required=True)
     parser.add_argument("--d", type=float, required=True)
     parser.add_argument("--no-video", action="store_true")
+    parser.add_argument("--side-exit", choices=("front", "rear_lane"), default=None)
     parser.add_argument(
         "--side-offset", type=float, default=None, help="override StrokeStances.side_offset"
     )
@@ -197,11 +198,28 @@ def main():
             stroke_labels = [row["label"] for row in controllers.metrics.get("strokes", [])]
             if label.startswith("GatherAndSweep"):
                 label = f"GatherAndSweep: {len(stroke_labels)}/5 strokes done"
+            ticks[0] += 1
+            if ticks[0] % 5 == 0 and motions and motions[-1].endswith("_push"):
+                trace.append({
+                    "tick": ticks[0],
+                    "motion": motions[-1],
+                    "blade_edge": controllers.tool.blade_edge().mean(axis=0).round(4).tolist(),
+                    "base": data.qpos[controllers.shelf.ba].round(4).tolist(),
+                })
             frame()
 
+        ticks = [0]
+        trace: list[dict] = []
+        report["push_trace"] = trace
+
         controllers = env.rack_controllers()
-        if args.side_offset is not None:
-            controllers.stances = StrokeStances(side_offset=args.side_offset)
+        overrides = {
+            key: value
+            for key, value in (("side_offset", args.side_offset), ("side_exit", args.side_exit))
+            if value is not None
+        }
+        if overrides:
+            controllers.stances = StrokeStances(**overrides)
         motions: list[str] = []
         for method in ("step", "line", "transit", "move_base"):
             original = getattr(controllers.tool, method)

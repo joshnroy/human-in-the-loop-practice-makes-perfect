@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +17,9 @@ from .servo import SweepServo
 from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_SPEED_M_S
 from .stroke import GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
+
+
+RELEASE_RETREAT = 0.03
 
 
 class StrokeStances(BaseModel):
@@ -35,6 +38,7 @@ class StrokeStances(BaseModel):
     rear_offset: float = 0.35
     rear_y_offset: float = -0.15
     rear_heading: float = np.pi - 0.30
+    side_exit: Literal["front", "rear_lane"] = "rear_lane"
 
     def side_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
         return np.array([
@@ -82,6 +86,16 @@ class StrokeStances(BaseModel):
             np.array([rear_x, there, heading]),
             np.array([base[0], there, heading]),
             base,
+        ]
+
+    def side_to_rear(self, *, side: int, config: RackServingConfig) -> list[np.ndarray]:
+        """From a side stance out to its lane, to the rear lane, and turn to face the rack."""
+        lane, rear_x = self.lane(side=side, config=config), self.rear_x(config=config)
+        heading = self.side_base(side=side, config=config)[2]
+        return [
+            np.array([config.rack_center_x, lane, heading]),
+            np.array([rear_x, lane, heading]),
+            np.array([rear_x, lane, np.pi]),
         ]
 
 
@@ -321,13 +335,18 @@ class RackControllers:
         return [name for name in backend.cube_names if backend.location(name=name) == "OnRack"]
 
     def to_rear(self) -> None:
-        """Round the counter's front and -y side to behind it, facing the rack.
+        """From wherever the base is to behind the counter, facing the rack.
 
-        The same circulation the old SweepRack used; from the -y side stance it is
-        the route the real-arm probe drove, while a direct lane-to-rear transit
-        from that stance failed a held-tool clearance check (2026-11-03).
+        From a side stance, ``stances.side_exit`` picks the side lane to the rear, or
+        the old SweepRack's circulation round the counter's front.
         """
-        if self.shelf.data.qpos[self.shelf.ba[0]] < self.backend.config.counter_x_max:
+        config, shelf = self.backend.config, self.shelf
+        y = float(shelf.data.qpos[shelf.ba[1]])
+        if abs(y) > config.counter_width / 2 and self.stances.side_exit == "rear_lane":
+            side = 1 if y > 0 else -1
+            for index, waypoint in enumerate(self.stances.side_to_rear(side=side, config=config)):
+                self.tool.move_base(target=waypoint, label=f"to_rear_{index}")
+        elif shelf.data.qpos[shelf.ba[0]] < config.counter_x_max:
             self.around_counter(to_rear=True)
 
     def plate_clear_z(self) -> float:
@@ -445,20 +464,25 @@ class RackControllers:
             "blade_end_error_m": float(np.linalg.norm(edge - stroke.end)),
             "base": base.round(4).tolist(),
         })
-        self.release_swept_food(rotation=body[:3, :3])
+        self.release_swept_food(rotation=body[:3, :3], retreat=-RELEASE_RETREAT * stroke.direction)
 
-    def release_swept_food(self, *, rotation: np.ndarray | None = None) -> None:
+    def release_swept_food(
+        self, *, rotation: np.ndarray | None = None, retreat: np.ndarray | None = None
+    ) -> None:
         """Clear vertically before settling; do not drag supported food toward the rack.
 
         With ``rotation`` (the stroke's planned, level blade), the blade is first turned
-        back to it in place about its edge centre, 2 mm up, then lifted. A blade rolled
-        about its length at a deep reach would otherwise rise with its low end dragging
-        through the rack wires (2026-11-03, side gathers stopping 3 cm from c).
+        back to it about its edge centre, 2 mm up and moved by ``retreat`` (back
+        against the push, away from the food), then lifted. At a deep side-gather reach
+        the arm holds the blade rolled about its length, and lifting it there drags its
+        low end through the rack wires (2026-11-03, gathers stopping 3 cm from c).
         """
         tool = self.tool
         lifted_body = tool.wiper_pose().copy()
         if rotation is not None:
             edge = tool.blade_edge().mean(axis=0) + [0.0, 0.0, 0.002]
+            if retreat is not None:
+                edge = edge + retreat
             level = np.eye(4)
             level[:3, :3] = rotation
             level[:3, 3] = edge - tool.blade_edge(pose=level).mean(axis=0)

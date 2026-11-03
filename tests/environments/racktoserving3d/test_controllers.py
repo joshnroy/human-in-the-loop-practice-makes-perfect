@@ -227,7 +227,7 @@ def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance()
         del start
 
 
-def test_release_levels_a_rolled_blade_about_its_edge_before_rising():
+def test_release_levels_and_backs_off_a_rolled_blade_before_rising():
     controller = RackControllers.__new__(RackControllers)
     rolled = np.eye(4)
     rolled[:3, :3] = Rotation.from_euler("y", 4, degrees=True).as_matrix()
@@ -245,10 +245,12 @@ def test_release_levels_a_rolled_blade_about_its_edge_before_rising():
     )
     controller.move_tool = Mock(side_effect=lambda **kwargs: targets.append(kwargs["body"]))
     controller.shelf = SimpleNamespace(hold=Mock())
-    controller.release_swept_food(rotation=level)
+    controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
     first, last = targets[0], targets[-1]
     np.testing.assert_allclose(first[:3, :3], level)
     np.testing.assert_allclose(last[:3, :3], level)
-    # Levelled in place first, about the edge centre, then lifted 6 cm.
+    # Levelled and backed off 3 cm against the push, about the edge centre, then lifted.
     assert first[2, 3] == pytest.approx(rolled[2, 3] + 0.002, abs=0.01)
+    assert first[1, 3] - rolled[1, 3] == pytest.approx(-0.03, abs=0.01)
+    assert last[1, 3] == pytest.approx(first[1, 3])
     assert last[2, 3] == pytest.approx(first[2, 3] + 0.06)

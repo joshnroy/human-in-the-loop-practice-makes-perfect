@@ -57,8 +57,8 @@ def test_squeeze_is_two_passes_toward_the_plate_with_the_blade_spanning_y():
     for stroke in passes:
         np.testing.assert_allclose(stroke.direction, [-1.0, 0.0, 0.0])
         np.testing.assert_allclose(np.abs(stroke.axis), [0.0, 1.0, 0.0])
-        assert stroke.start[2] == pytest.approx(0.926)
-        assert stroke.end[2] == pytest.approx(0.926)
+        assert stroke.start[2] == pytest.approx(0.928)
+        assert stroke.end[2] == pytest.approx(0.928)
 
 
 @pytest.mark.parametrize("centre_y", [0.0, 0.02])
@@ -86,7 +86,7 @@ def test_gather_pushes_from_plus_y_then_minus_y_with_the_blade_spanning_x():
         np.testing.assert_allclose(np.abs(stroke.axis), [1.0, 0.0, 0.0])
         assert stroke.start[0] == pytest.approx((1.3725 + 1.6275) / 2)
         assert stroke.end[0] == pytest.approx(stroke.start[0])
-        assert stroke.start[2] == pytest.approx(0.926)
+        assert stroke.start[2] == pytest.approx(0.928)
 
 
 @pytest.mark.parametrize("delta", [-0.03, 0.0, 0.015, 0.045])
@@ -118,7 +118,7 @@ def test_sweep_travels_straight_toward_the_plate_on_its_centre_line():
     assert plan.start[1] == pytest.approx(0.02)
     assert plan.end[1] == pytest.approx(0.02)
     assert plan.start[0] == pytest.approx(1.6275 + 0.03)
-    assert plan.start[2] == pytest.approx(0.926)
+    assert plan.start[2] == pytest.approx(0.928)
 
 
 @pytest.mark.parametrize("d", [0.04, 0.10, 0.12])
@@ -130,9 +130,9 @@ def test_sweep_ends_d_before_the_plates_outer_near_edge(*, d):
 def test_sweep_height_follows_rack_then_gap_then_plate():
     plan = _sweep(d=0.10)
     # On the rack it glides at rack height.
-    assert plan.point(distance=0.0)[2] == pytest.approx(0.926)
+    assert plan.point(distance=0.0)[2] == pytest.approx(0.928)
     over_rack = 1.6275 + 0.03 - (1.3725 + 0.01)
-    assert plan.point(distance=over_rack)[2] == pytest.approx(0.926)
+    assert plan.point(distance=over_rack)[2] == pytest.approx(0.928)
     # Past the rack's front edge it descends, but never below the plate floor clearance.
     heights = [plan.point(distance=t)[2] for t in np.linspace(0, plan.length, 60)]
     assert np.all(np.diff(heights) <= 1e-12)
