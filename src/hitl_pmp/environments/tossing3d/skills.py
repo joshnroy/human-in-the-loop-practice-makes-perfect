@@ -346,6 +346,10 @@ class Tossing3DSkills:
             LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             LiftedAtom(predicate=CUBE_ON_ROBOT_SIDE, variables=(_cube, _barrier)),
+            # The dumped cube lands well clear of the walls (122/122 observed dumps).
+            # Left unasserted, an imagined dump kept a stale ~GraspClear whose unseen
+            # failure context made a later failed toss look free.
+            LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
