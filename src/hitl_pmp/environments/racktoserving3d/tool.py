@@ -38,6 +38,11 @@ PRE_GRASP = 0.10
 LIFT = 0.12
 PLACE_CLEARANCE = 0.002
 SCRAPER_RETURN_STANDOFF = 0.05
+# How far back from the configured base the pick stance may move, and in what steps.
+STANCE_MIN_X = 0.20
+STANCE_STEP = 0.05
+# Heights above the pre-grasp the pick's transit may aim for, highest first.
+PRE_HIGHS = (0.15, 0.08, 0.0)
 
 
 @contextmanager
@@ -80,6 +85,8 @@ class TableWiper:
         self.data = shelf.data
         self.rest_y = float(rest_y)
         self.base = np.array([0.60, self.rest_y, 0.0] if base is None else base, dtype=float)
+        self._stance: np.ndarray | None = None
+        self.pre_high = PRE_HIGHS[0]
         self.top = float(shelf.board[1])
         self.front = float(shelf.front_x)
         self.home_top = self.top if home_top is None else float(home_top)
@@ -197,6 +204,40 @@ class TableWiper:
                     supported = True
         return supported
 
+    def stance(self) -> np.ndarray:
+        """The pick and return base: the configured one if the arm reaches the handle from
+        it, else the nearest one behind it that does. A low counter puts the handle near
+        the arm's own mount, so the arm must stand back to reach it without collision,
+        and the transit point above the approach may have to come down with it."""
+        if self._stance is not None:
+            return self._stance.copy()
+        pose = self.rest_pose()
+        rotation = pose[:3, :3] @ self.hand_in_body
+        grasp = self.grasp_world(pose=pose)
+        pre = grasp - PRE_GRASP * rotation[:, 2]
+        self._stance, self.pre_high = self.base.copy(), PRE_HIGHS[0]
+        for pre_high in PRE_HIGHS:
+            for x in np.arange(self.base[0], STANCE_MIN_X - 1e-9, -STANCE_STEP):
+                base = np.array([x, self.base[1], self.base[2]])
+                waypoints = (pre + [0, 0, pre_high], pre, grasp)
+                if all(self._reaches(position=p, rotation=rotation, base=base) for p in waypoints):
+                    self._stance, self.pre_high = base, pre_high
+                    return self._stance.copy()
+        return self._stance.copy()
+
+    def _reaches(self, *, position: np.ndarray, rotation: np.ndarray, base: np.ndarray) -> bool:
+        try:
+            arm, penetration = self.shelf.ik(
+                position=position,
+                rotation=rotation,
+                base=base,
+                holding=False,
+            )
+        except SkillFailed:
+            return False
+        site = self.shelf.site_at(base=base, arm=arm)
+        return penetration <= 0 and float(np.linalg.norm(site[:3, 3] - position)) <= 0.002
+
     def pick(self) -> None:
         """Approach the live handle end-on, verify the grasp, lift and tilt 45 degrees."""
         shelf = self.shelf
@@ -204,16 +245,17 @@ class TableWiper:
             raise SkillFailed("PickWiper requires an empty gripper")
         try:
             shelf.grip = 0.0
+            stance = self.stance()
             if self.is_bench_scraper:
-                EmptyHandTransit(shelf=shelf).drive(target=self.base, label="pick_wiper_base")
+                EmptyHandTransit(shelf=shelf).drive(target=stance, label="pick_wiper_base")
             else:
-                shelf.move_base(target=self.base, label="pick_wiper_base")
+                shelf.move_base(target=stance, label="pick_wiper_base")
             pose = self.wiper_pose()
             rotation = pose[:3, :3] @ self.hand_in_body
             grasp = self.grasp_world(pose=pose)
             pre = grasp - PRE_GRASP * rotation[:, 2]
             self.transit(
-                position=pre + [0, 0, 0.15],
+                position=pre + [0, 0, self.pre_high],
                 rotation=rotation,
                 label="pick_wiper_pre_high",
                 holding=False,
@@ -298,7 +340,7 @@ class TableWiper:
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
         target_site = self.rest_pose() @ np.linalg.inv(shelf.in_hand)
         rotation, grasp = target_site[:3, :3], target_site[:3, 3]
-        return_base = self.base.copy()
+        return_base = self.stance()
         if self.is_bench_scraper:
             return_base[0] -= SCRAPER_RETURN_STANDOFF
         try:
