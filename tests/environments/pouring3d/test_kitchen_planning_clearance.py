@@ -195,3 +195,21 @@ def test_every_commanded_configuration_of_a_canonical_cycle_keeps_the_margin():
     assert all(w[0] >= PLANNING_MARGIN_M for w in worst.values()), worst
     assert all(e.distance >= PLANNING_MARGIN_M for e in ends.values()), ends
     env.close()
+
+
+def test_grasping_the_jug_never_counts_the_dumplings_riding_in_it():
+    """Four-cycle run, 2026-11-04: PickPitcher's lift was refused at 13.3 mm from a
+    dumpling inside the jug it was lifting. Riders move with the jug."""
+    env = KitchenEnvironment(requested_count=1)
+    c = env.controller()
+    guard = PlanningClearance.for_controller(controller=c)
+    assert c.scene.cube_locations() == ["pitcher"] * 3
+    for phase in ("descend to pitcher handle", "close fingers on pitcher handle"):
+        c.phase, c.held = phase, None
+        _, touchable = guard.exempt(controller=c)
+        assert set(c.scene.cube_names) <= touchable, phase
+    c.phase, c.held = "lift pitcher by handle", "pitcher"
+    ignored, _ = guard.exempt(controller=c)
+    assert set(c.scene.cube_names) <= ignored
+    guard.close()
+    env.close()
