@@ -14,8 +14,8 @@ from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
 
 from .config import KitchenGeometry
 from .pick_plannable import KitchenPickPlannable
+from .types import ClosedLoopPourParameters, PickRefusal
 from .types import KitchenObjects as O
-from .types import PickRefusal
 
 HUMAN_RESET = "human_bulk_pour_back"
 
@@ -43,14 +43,27 @@ class KitchenEnvironment(FrozenPourEnvironment):
     _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
     # While a dumpling pick runs: its dumpling, starting poses and any finger contact.
     _pick_watch: dict[str, Any] | None = PrivateAttr(default=None)
+    # [skill, dumpling index, requested count, Pour ramp rate (deg/s), 0, 0]. Slots 4-5
+    # held the open-loop pour's wiggle and duration; the closed-loop Pour fixes both.
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=float),
-        high=np.array([9, 2, 3, 130, 0.1, 60], dtype=float),
+        high=np.array([9, 2, 3, ClosedLoopPourParameters.LIMITS[1], 0, 0], dtype=float),
         dtype=np.float64,
     )
 
     def objects(self) -> O:
         return O(count=3, payload_kind="potsticker")
+
+    def run_pour(self, *, controller: Any, parameters: np.ndarray, requested: int) -> dict:
+        """The closed-loop Pour reads only its ramp rate, in native action slot 3."""
+        if np.any(parameters[1:] != 0):
+            raise ValueError(
+                "The kitchen Pour reads only its ramp rate (slot 3); slots 4 and 5 must be 0"
+            )
+        return controller.run_closed_loop_pour(
+            parameters=ClosedLoopPourParameters(ramp_rate_deg_s=parameters[0]),
+            requested_count=requested,
+        )
 
     def forget_pick_refusals(self) -> None:
         """Start a held-out task as a fresh instance would: no refusal remembered."""

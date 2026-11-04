@@ -17,9 +17,7 @@ def check(
     *,
     output: Path,
     case: str,
-    tilt: float,
-    amplitude: float,
-    duration: float,
+    ramp_rate: float,
     requested: int,
     initial_motion: Path | None = None,
 ) -> bool:
@@ -140,7 +138,7 @@ def check(
         if case not in {"recovery", "placement"}:
             if not run(name="PickPitcher"):
                 raise ValueError("Jug pickup failed")
-            run(name=f"Pour{requested}", params=(tilt, amplitude, duration))
+            run(name=f"Pour{requested}", params=(ramp_rate,))
             if not run(name="PlacePitcherAtHome"):
                 raise ValueError("Jug placement failed")
         elif initial_motion is None:
@@ -151,15 +149,14 @@ def check(
                 raise ValueError("Loaded placement failed or changed ingredient containment")
         elif case == "failure":
             locations = c.scene.cube_locations()
+            # The closed-loop Pour fails by overshooting (a fast ramp), not by under-pouring.
             if (
                 rows[1]["success"]
-                or locations.count("tray") >= requested
+                or locations.count("tray") == requested
                 or any(location not in {"pitcher", "tray"} for location in locations)
             ):
-                raise ValueError(
-                    "Expected an observed under-pour with the remaining ingredients retained"
-                )
-            rows.append({"check": "under-pour preserved without reset", "success": True})
+                raise ValueError("Expected an observed wrong count with every ingredient contained")
+            rows.append({"check": "wrong count preserved without reset", "success": True})
         elif case == "cycle":
             if rows[1]["success"] or c.scene.cube_locations().count("tray") == requested:
                 raise ValueError("Cycle must start with a failed pour")
@@ -179,7 +176,7 @@ def check(
                 raise ValueError("Robot recovery did not restore all ingredients")
             if not run(name="PickPitcher"):
                 raise ValueError("Post-recovery jug pickup failed")
-            if not run(name=f"Pour{requested}", params=(90.0, 0.015, 12.0)):
+            if not run(name=f"Pour{requested}", params=(1.0,)):
                 raise ValueError("Retry failed exact-count goal")
             if not run(name="PlacePitcherAtHome"):
                 raise ValueError("Post-retry jug placement failed")
@@ -241,7 +238,7 @@ def check(
             "initial_motion_fixture": str(initial_motion) if initial_motion else None,
             "parameters": None
             if case in {"recovery", "placement"}
-            else [tilt, amplitude, duration],
+            else {"ramp_rate_deg_s": ramp_rate},
             "requested": requested,
             "error": error,
             "rows": rows,
@@ -268,9 +265,9 @@ if __name__ == "__main__":
         default="deployment",
     )
     parser.add_argument("--initial-motion", type=Path)
-    parser.add_argument("--tilt", type=float, default=90)
-    parser.add_argument("--amplitude", type=float, default=0.015)
-    parser.add_argument("--duration", type=float, default=12)
+    parser.add_argument(
+        "--ramp-rate", type=float, default=1.0, help="Pour tilt ramp rate, deg/s (0.25-5)"
+    )
     parser.add_argument("--requested", type=int, default=3)
     args = parser.parse_args()
     raise SystemExit(0 if check(**vars(args)) else 1)

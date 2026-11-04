@@ -6,14 +6,16 @@ from typing import Any
 
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
-from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourOracle
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 from .config import KitchenGeometry
 from .environment import KitchenEnvironment
-from .skill_provider import KitchenSkillProvider
+from .skill_provider import KitchenPourOracle, KitchenSkillProvider
 from .tasks import KitchenProblem, KitchenTasks
+
+# The open-loop pour's flags: defined by the shared parser, meaningless to the kitchen.
+OPEN_LOOP_POUR_FLAGS = ("pour_tilt_bounds", "pour_amplitude_bounds", "pour_duration_bounds")
 
 
 class KitchenCli:
@@ -25,13 +27,18 @@ class KitchenCli:
             type=Path,
             help="KitchenGeometry JSON; unspecified real measurements stay null",
         )
+        parser.add_argument(
+            "--pour-ramp-rate-bounds",
+            type=float,
+            nargs=2,
+            default=list(KitchenSkillProvider.model_fields["ramp_rate_bounds"].default),
+            help="The closed-loop Pour's learned tilt ramp rate, deg/s; default %(default)s",
+        )
         parser.set_defaults(
             human_reset_practice_cost=5,
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
-            pour_tilt_bounds=KitchenSkillProvider.model_fields["tilt_bounds"].default,
-            pour_amplitude_bounds=KitchenSkillProvider.model_fields["amplitude_bounds"].default,
-            pour_duration_bounds=KitchenSkillProvider.model_fields["duration_bounds"].default,
+            **dict.fromkeys(OPEN_LOOP_POUR_FLAGS),
         )
 
     @staticmethod
@@ -58,17 +65,25 @@ class KitchenCli:
 
     @staticmethod
     def context(*, args: argparse.Namespace, problem: KitchenProblem) -> DomainContext:
+        stale = [
+            "--" + name.replace("_", "-")
+            for name in OPEN_LOOP_POUR_FLAGS
+            if getattr(args, name, None) is not None
+        ]
+        if stale:
+            raise ValueError(
+                "The kitchen Pour is closed-loop and learns only its tilt ramp rate; "
+                f"{', '.join(stale)} do not apply: use --pour-ramp-rate-bounds"
+            )
         return DomainContext(
             env=problem.env,
-            oracle=FrozenPourOracle(env=problem.env),
+            oracle=KitchenPourOracle(env=problem.env),
             test_task_goals=problem.tasks.test_task_goals(),
             skill_provider=KitchenSkillProvider(
                 env=problem.env,
                 offer_human_reset=args.human_reset,
                 human_reset_practice_cost=args.human_reset_practice_cost,
-                tilt_bounds=tuple(args.pour_tilt_bounds),
-                amplitude_bounds=tuple(args.pour_amplitude_bounds),
-                duration_bounds=tuple(args.pour_duration_bounds),
+                ramp_rate_bounds=tuple(args.pour_ramp_rate_bounds),
             ),
         )
 
