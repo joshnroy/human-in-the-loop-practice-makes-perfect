@@ -565,6 +565,35 @@ class PracticePourController(FeedbackPourController):
         midpoint = (endpoints.min(axis=0) + endpoints.max(axis=0)) / 2
         return position + rotation.apply(midpoint), rotation.apply([0, 1, 0])
 
+    def payload_grasp_yaw(self, *, point: np.ndarray, across: np.ndarray, location: str) -> float:
+        """The grasp's yaw: its closing axis along `across`, or, in a vessel whose wall
+        would not admit the open fingers there, whichever of four yaws fits best."""
+        yaw = np.arctan2(across[1], across[0])
+        yaw = (yaw + np.pi / 2) % np.pi - np.pi / 2
+        if location != "tray":
+            return float(yaw)
+        tray, orientation = self.body_pose(name="tray")
+        geometry = self.scene.get_object("tray")
+        clearance = np.array([geometry.length, geometry.width]) / 2 - geometry.wall_thickness
+        clearance -= np.abs(orientation.inv().apply(point - tray)[:2])
+
+        def margin(angle: float) -> float:  # noqa: PLR0917
+            if isinstance(geometry, CastIronSkillet):
+                corners = np.array([[x, y, 0] for x in (-0.06, 0.06) for y in (-0.02, 0.02)])
+                world = Rotation.from_euler("z", angle).apply(corners) + point
+                local = orientation.inv().apply(world - tray)
+                normals, offsets = geometry.cavity_planes()
+                return float(np.min(offsets - local @ normals.T))
+            footprint = np.array([
+                0.06 * abs(np.cos(angle)) + 0.02 * abs(np.sin(angle)),
+                0.06 * abs(np.sin(angle)) + 0.02 * abs(np.cos(angle)),
+            ])
+            return float(np.min(clearance - footprint))
+
+        if margin(yaw) < 0.005:
+            yaw = max((yaw, yaw + np.pi / 2, 0.0, np.pi / 2), key=margin)
+        return float(yaw)
+
     def payload_approach_feasible(
         self,
         *,
@@ -586,29 +615,7 @@ class PracticePourController(FeedbackPourController):
         # Enclose the entire curl before closing. Preclosing around one segment
         # brushes its neighbour and pushes the low-friction piece out of the grasp.
         point, across = self.payload_grasp_geometry(name=name)
-        yaw = np.arctan2(across[1], across[0])
-        yaw = (yaw + np.pi / 2) % np.pi - np.pi / 2
-        if location == "tray":
-            tray, orientation = self.body_pose(name="tray")
-            geometry = self.scene.get_object("tray")
-            clearance = np.array([geometry.length, geometry.width]) / 2 - geometry.wall_thickness
-            clearance -= np.abs(orientation.inv().apply(point - tray)[:2])
-
-            def margin(angle: float) -> float:  # noqa: PLR0917
-                if isinstance(geometry, CastIronSkillet):
-                    corners = np.array([[x, y, 0] for x in (-0.06, 0.06) for y in (-0.02, 0.02)])
-                    world = Rotation.from_euler("z", angle).apply(corners) + point
-                    local = orientation.inv().apply(world - tray)
-                    normals, offsets = geometry.cavity_planes()
-                    return float(np.min(offsets - local @ normals.T))
-                footprint = np.array([
-                    0.06 * abs(np.cos(angle)) + 0.02 * abs(np.sin(angle)),
-                    0.06 * abs(np.sin(angle)) + 0.02 * abs(np.cos(angle)),
-                ])
-                return float(np.min(clearance - footprint))
-
-            if margin(yaw) < 0.005:
-                yaw = max((yaw, yaw + np.pi / 2, 0.0, np.pi / 2), key=margin)
+        yaw = self.payload_grasp_yaw(point=point, across=across, location=location)
         down = Rotation.from_euler("z", yaw) * Rotation.from_euler("y", np.pi)
         elevated = "prep_table" in self.scene._fixtures_dict and location != "floor"
         if elevated:

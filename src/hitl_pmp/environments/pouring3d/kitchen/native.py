@@ -492,6 +492,30 @@ class KitchenController(PotstickerController):
             self.unwind_continuous_joints()
         super().pick_shrimp(index=index, location=location)
 
+    def payload_grasp_yaw(self, *, point: np.ndarray, across: np.ndarray, location: str) -> float:
+        """Close across the dumpling's measured width, pads on its long sides, always.
+
+        `across` is measured from the dumpling as it lies (`payload_grasp_geometry`).
+        The inherited fallback turns the grasp a quarter turn when the open fingers do
+        not fit beside the skillet wall, which puts the pads on the dumpling's two
+        tapered ends, 55 mm apart: it held through the lift and slipped out in the
+        carry (2026-11-04). Whether a long-side grasp clears the wall is left to the
+        collision-checked approach, which refuses rather than moves.
+        """
+        del point, location
+        yaw = np.arctan2(across[1], across[0])
+        return float((yaw + np.pi / 2) % np.pi - np.pi / 2)
+
+    def payload_retry_candidates(
+        self, *, original: tuple[float, float, float, float, float]
+    ) -> tuple[tuple[float, float, float, float, float], ...]:
+        """The inherited retries, but every one closing on the long sides: the last turns
+        the grasp 15 degrees, not 45, so both pads stay on the long faces."""
+        *inherited, (depth, opening, pitch, clearance, _) = super().payload_retry_candidates(
+            original=original
+        )
+        return (*inherited, (depth, opening, pitch, clearance, original[4] + 15.0))
+
     def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
         previous = self.last_q.copy()
         q = super().inverse_kinematics(position=position, rotation=rotation)
