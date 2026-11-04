@@ -37,8 +37,7 @@ def _squeeze(**overrides):
 def _gather(**overrides):
     arguments = {
         "food_corners": SEED0,
-        "delta": 0.0,
-        "food_width": 0.045,
+        "delta": 0.045,
         "blade_width": 0.25,
         **RACK,
         **PLATE,
@@ -89,12 +88,12 @@ def test_gather_pushes_from_plus_y_then_minus_y_with_the_blade_spanning_x():
         assert stroke.start[2] == pytest.approx(0.928)
 
 
-@pytest.mark.parametrize("delta", [-0.03, 0.0, 0.015, 0.045])
+@pytest.mark.parametrize("delta", [0.005, 0.030, 0.075])
 @pytest.mark.parametrize("centre_y", [0.0, 0.02])
-def test_each_gather_stops_one_food_width_minus_delta_from_the_centre_line(*, delta, centre_y):
+def test_each_gather_stops_delta_from_the_centre_line_whatever_the_food(*, delta, centre_y):
     first, second = _gather(delta=delta, plate_center_y=centre_y)
-    assert first.end[1] == pytest.approx(centre_y + 0.045 - delta)
-    assert second.end[1] == pytest.approx(centre_y - 0.045 + delta)
+    assert first.end[1] == pytest.approx(centre_y + delta)
+    assert second.end[1] == pytest.approx(centre_y - delta)
 
 
 def test_gather_starts_outside_the_rack_and_behind_every_food():
@@ -154,7 +153,8 @@ def test_straight_strokes_keep_constant_height():
         {"blade_width": 0.0},
         {"plate_center_y": 0.30},
         {"rack_y_min": 0.2},
-        {"food_width": 0.0},
+        {"delta": 0.0},
+        {"delta": -0.01},
     ],
 )
 def test_invalid_gather_geometry_rejected(*, overrides):

@@ -7,8 +7,8 @@ GatherAndSweep(s, delta, d) is five blade pushes over measured geometry:
      The blade is narrower than the rack, so there are two passes, centred on
      y = c +/- (rack width - blade width) / 2, where c is the plate centre's y.
 3-4. y gathers: the blade spans world x at the rack's depth centre and pushes from
-     just outside each long side toward y = c, stopping one food width minus
-     ``delta`` from it, +y side first.
+     just outside each long side toward y = c, stopping ``delta`` (an absolute
+     distance, whatever the food) from it, +y side first.
 5.   sweep: along y = c toward the plate, its height following rack, gap and plate,
      ending ``d`` before the plate's outer near edge.
 
@@ -107,7 +107,6 @@ class GatherAndSweepPlanner:
         *,
         food_corners: np.ndarray,
         delta: float,
-        food_width: float,
         rack_back: float,
         rack_front: float,
         rack_y_min: float,
@@ -122,7 +121,7 @@ class GatherAndSweepPlanner:
 
         The blade spans world x, centred on the rack's depth. Each stroke starts
         ``SIDE_MARGIN`` outside the rack edge, or further if food overhangs it, and
-        stops with the blade edge ``food_width - delta`` from y = c.
+        stops with the blade edge ``delta`` from y = c.
         """
         corners = GatherAndSweepPlanner._corners(food_corners=food_corners)
         GatherAndSweepPlanner._check_rack(
@@ -135,11 +134,11 @@ class GatherAndSweepPlanner:
             plate_center_y=plate_center_y,
             blade_width=blade_width,
         )
-        if not np.isfinite(food_width) or food_width <= 0:
-            raise ValueError("food width must be positive")
+        if not delta > 0:
+            raise ValueError("gather stop distance must be positive")
         x = (rack_front + rack_back) / 2
         z = rack_top + EDGE_LIFT
-        stop = food_width - delta
+        stop = delta
         strokes = []
         for side, rack_edge in ((1.0, rack_y_max), (-1.0, rack_y_min)):
             outermost_food = float(np.max(side * corners[:, :, 1]))

@@ -1,7 +1,7 @@
 """Bounded, serial existential rack coverage with durable per-attempt evidence.
 
 Example: scripts/with_env.sh python scripts/validate_rack_coverage.py --dry-run
-    --output artifacts/rack-coverage-plan --seeds 0 1 --params 0.07 0.015 0.10
+    --output artifacts/rack-coverage-plan --seeds 0 1 --params 0.07 0.030 0.10
 
 A parameter set is GatherAndSweep(s metres, delta metres, d metres).
 
@@ -583,7 +583,7 @@ def build_manifest(
     seeds = [0, 1, 2] if seeds is None else seeds
     layouts = ["fixed", "human_batch_return"] if layouts is None else layouts
     param_sets = (
-        [(0.07, 0.015, 0.10), (0.04, 0.0, 0.08), (0.10, 0.03, 0.06)]
+        [(0.07, 0.030, 0.10), (0.04, 0.045, 0.08), (0.10, 0.015, 0.06)]
         if param_sets is None
         else param_sets
     )
