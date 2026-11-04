@@ -7,7 +7,11 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
-from hitl_pmp.environments.racktoserving3d.food import RackFoodController, _FoodMotion
+from hitl_pmp.environments.racktoserving3d.food import (
+    FINGER_NEWTONS_PER_ACTUATOR_UNIT,
+    RackFoodController,
+    _FoodMotion,
+)
 from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
 from hitl_pmp.environments.racktoserving3d.transit import segment_samples
@@ -44,6 +48,13 @@ def food():
         held_cube=None,
         hold=Mock(),
         site_pose=Mock(return_value=pose),
+        model=SimpleNamespace(
+            nu=2,
+            actuator=lambda index: SimpleNamespace(
+                name=("robot_joint_7", "robot_fingers_actuator")[index]
+            ),
+            actuator_forcerange=np.array([[0.0, 0.0], [-5.0, 5.0]]),
+        ),
     )
     controllers = SimpleNamespace(
         backend=backend,
@@ -118,6 +129,54 @@ def test_food_closure_uses_configured_calibration_without_changing_grasp_semanti
         food.pick(name="cube_0")
     assert food.shelf.grip == 0.85
     assert food.controllers.held_food is None
+
+
+def _closing_limit(*, food) -> float:
+    return float(food.shelf.model.actuator_forcerange[1, 1])
+
+
+def test_pick_closes_force_limited_and_stays_limited_through_the_lift(*, food):
+    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food.backend.held.side_effect = [False, False, False, True, True]
+    seen = []
+    food.motion.line = Mock(
+        side_effect=lambda **kwargs: seen.append((kwargs["label"], _closing_limit(food=food)))
+    )
+    food.pick(name="cube_0")
+    limited = 20.0 / FINGER_NEWTONS_PER_ACTUATOR_UNIT
+    assert seen == [("food_approach", 5.0), ("food_lift", pytest.approx(limited))]
+    assert food.shelf.grip == food.backend.config.food_grip_command
+    assert _closing_limit(food=food) == pytest.approx(limited)
+    assert food.shelf.model.actuator_forcerange[1, 0] == -5.0  # opening untouched
+
+
+def test_losing_the_food_restores_the_grippers_own_force_limit(*, food):
+    food.backend.held.side_effect = [False, False, False, True, False]
+    with pytest.raises(SkillFailed, match="bilateral"):
+        food.pick(name="cube_0")
+    assert _closing_limit(food=food) == 5.0
+
+
+def test_release_restores_the_grippers_own_force_limit(*, food):
+    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food._limit_grip(newtons=20.0)
+    food.shelf.grip = 1.0
+    food.backend.held.side_effect = [True, True, False]
+    food.backend.location.return_value = "OnTray"
+    food.backend.body_geoms = Mock(return_value={0})
+    food._placement_candidates = Mock(return_value=[np.array([1.2, 0, 0.94])])
+    food._checked_arm = Mock(return_value=np.zeros(7))
+    food._base_candidates = Mock(return_value=[np.array([0.7, 0, 0])])
+    food.motion.check_arm_segment = Mock()
+    food.motion.plan_base = Mock(return_value=[np.array([0.7, 0, 0])])
+    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
+    released = []
+    food.shelf.hold = Mock(
+        side_effect=lambda *, count, label: released.append((label, _closing_limit(food=food)))
+    )
+    food.place(name="cube_0", destination="box_0")
+    assert released[0][0] == "food_release"
+    assert _closing_limit(food=food) == 5.0
 
 
 def test_unknown_place_destination_retains_food(*, food):
@@ -370,7 +429,7 @@ def test_pick_does_not_repurpose_scraper_transform(*, food):
     food.pick(name="cube_0")
     assert food.controllers.held_food == food.shelf.held_cube == "cube_0"
     assert food.shelf.in_hand is None
-    assert food.shelf.grip == 0.8
+    assert food.shelf.grip == food.backend.config.food_grip_command
     assert all(not call.kwargs["holding"] for call in food.motion.line.call_args_list)
 
 
