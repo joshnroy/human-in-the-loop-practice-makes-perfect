@@ -9,7 +9,8 @@ from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironme
 pytestmark = pytest.mark.xdist_group("kitchen_planned_carry")
 
 PICK_PITCHER = np.array([0, 0, 1, 0, 0, 0], dtype=float)
-POUR1 = np.array([1, 0, 1, 91, 0.01, 10], dtype=float)
+# Pour1 at the canonical 1 deg/s ramp: [Pour, unused, k, ramp rate, 0, 0].
+POUR1 = np.array([1, 0, 1, 1.0, 0, 0], dtype=float)
 CARRY_PHASES = {
     "planned tuck jug for carry",
     "planned carry jug to pour pose",
