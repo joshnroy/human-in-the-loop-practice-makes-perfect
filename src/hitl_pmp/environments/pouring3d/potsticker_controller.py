@@ -286,15 +286,15 @@ class PotstickerController(PracticePourController):
             self.recovery_approach_clearance,
             self.recovery_yaw_offset,
         )
-        depth, opening, pitch, clearance, yaw = original
-        candidates = (
-            (depth, opening, 0.0, clearance, yaw),
-            original,
-            (0.032, 0.0 if pitch > 45 else 0.4, 30.0 if pitch > 45 else 60.0, 0.10, yaw),
-            (depth, opening, pitch, clearance, yaw + 45.0),
-        )
+        candidates = self.payload_retry_candidates(original=original)
         try:
             for attempt, candidate in enumerate(candidates):
+                self.events.append({
+                    "event": "dumpling pick attempt",
+                    "attempt": attempt,
+                    "pitch_degrees": candidate[2],
+                    "yaw_offset_degrees": candidate[4],
+                })
                 (
                     self.recovery_finger_offset,
                     self.recovery_open_grip,
@@ -335,6 +335,18 @@ class PotstickerController(PracticePourController):
                 self.recovery_approach_clearance,
                 self.recovery_yaw_offset,
             ) = original
+
+    def payload_retry_candidates(
+        self, *, original: tuple[float, float, float, float, float]
+    ) -> tuple[tuple[float, float, float, float, float], ...]:
+        """(finger offset, opening, pitch deg, approach clearance, yaw offset deg) per try."""
+        depth, opening, pitch, clearance, yaw = original
+        return (
+            (depth, opening, 0.0, clearance, yaw),
+            original,
+            (0.032, 0.0 if pitch > 45 else 0.4, 30.0 if pitch > 45 else 60.0, 0.10, yaw),
+            (depth, opening, pitch, clearance, yaw + 45.0),
+        )
 
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
         from .potsticker_native import support_vertices
