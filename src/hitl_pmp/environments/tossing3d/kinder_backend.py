@@ -790,6 +790,9 @@ class KinderBackend(BaseModel):
                 disable_collision_objects=[KinderBackend.cube_name]
                 + ([] if drive_zone is None else [KinderBackend.barrier_name]),
                 body_collision_fn=outside,
+                # Smoothing runs only once a path is found and this check discards the path,
+                # so it cannot change the verdict. The controller still smooths what it drives.
+                smooth_amt=0,
             )
         return None if plan is not None else "base_motion_plan_failed"
 
