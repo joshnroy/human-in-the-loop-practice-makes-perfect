@@ -473,24 +473,32 @@ class RackControllers:
         arm: np.ndarray,
         label: str,
     ) -> tuple[float, float]:
-        """Hold the stroke's end until the measured blade edge is on it in every axis.
+        """Hold the stroke's end until the measured blade edge is on it along travel and z.
 
-        The push loop ends on progress along travel only, so a blade the food has shoved
-        along its own length (or lifted) stops off target: 5.1 cm on a shallow real-arm
-        gather (2026-11-03). This commands the end pose plus an accumulated correction
-        of the measured error, for at most ``SETTLE_STEPS`` steps, and never commands the
-        edge more than 2 mm below the planned end, so it cannot press into the rack.
-        Returns the edge error before and after, in metres; reaching the tolerance is
-        not required.
+        The push loop ends on progress along travel only, so a blade the food has held
+        back or lifted stops short. This commands the end pose plus an accumulated
+        correction of the measured error, for at most ``SETTLE_STEPS`` steps, and never
+        commands the edge more than 2 mm below the planned end, so it cannot press into
+        the rack. Error along the blade's own length is neither corrected nor waited
+        for: dragging the blade sideways rearranged the food and made the next gather
+        climb a dumpling, failing (0.10, 0.0, 0.08) on 7/7 real-arm layouts (2026-11-03).
+        Returns the full edge error before and after, in metres; reaching the tolerance
+        is not required.
         """
         tool, shelf = self.tool, self.shelf
-        before = after = float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
+        along = np.asarray(stroke.axis, dtype=float) / np.linalg.norm(stroke.axis)
+
+        def correctable() -> np.ndarray:
+            error = stroke.end - tool.blade_edge().mean(axis=0)
+            return error - (error @ along) * along
+
+        before = float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
         offset = np.zeros(3)
         end_offset = stroke.end - stroke.start
         for _ in range(self.SETTLE_STEPS):
-            if after < self.SETTLE_TOLERANCE:
+            error = correctable()
+            if np.linalg.norm(error) < self.SETTLE_TOLERANCE:
                 break
-            error = stroke.end - tool.blade_edge().mean(axis=0)
             offset = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
             offset[2] = max(offset[2], -0.002)
             desired = body.copy()
@@ -501,8 +509,7 @@ class RackControllers:
                 position=waypoint[:3, 3], rotation=waypoint[:3, :3], holding=True, seed=arm
             )
             tool.step(arm=arm, label=f"{label}_settle")
-            after = float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
-        return before, after
+        return before, float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
 
     def release_swept_food(
         self, *, rotation: np.ndarray | None = None, retreat: np.ndarray | None = None

@@ -297,8 +297,9 @@ def _settling_controller(*, lag):
     return controller, stroke, body, steps
 
 
-def test_stroke_end_settle_removes_a_steady_lag_in_every_axis():
-    lag = np.array([0.05, 0.0075, -0.001])
+def test_stroke_end_settle_removes_a_steady_lag_along_travel_and_in_height():
+    # The +y gather travels -y with the blade along x: travel is y, the blade's length x.
+    lag = np.array([0.0, 0.0075, 0.001])
     controller, stroke, body, steps = _settling_controller(lag=lag)
     before, after = controller.settle_stroke_end(
         stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
@@ -309,13 +310,27 @@ def test_stroke_end_settle_removes_a_steady_lag_in_every_axis():
     assert set(steps) == {"gather_settle"}
 
 
+def test_stroke_end_settle_never_corrects_along_the_blade():
+    # Dragging the blade along its own length rearranged the food and made the next
+    # gather climb a dumpling (real arm, 2026-11-03): that error is left alone.
+    lag = np.array([0.05, 0.0075, 0.0])
+    controller, stroke, body, _ = _settling_controller(lag=lag)
+    _, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
+    assert commanded
+    assert all(position[0] == pytest.approx(stroke.end[0]) for position in commanded)
+    assert after == pytest.approx(0.05, abs=0.005)
+
+
 def test_stroke_end_settle_does_nothing_when_already_on_target():
-    controller, stroke, body, steps = _settling_controller(lag=np.array([0.001, 0.0, 0.0]))
+    controller, stroke, body, steps = _settling_controller(lag=np.array([0.03, 0.001, 0.0]))
     before, after = controller.settle_stroke_end(
         stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
     )
     assert steps == []
-    assert before == after == pytest.approx(0.001)
+    assert before == after == pytest.approx(np.hypot(0.03, 0.001))
 
 
 def test_stroke_end_settle_never_presses_the_blade_down_into_the_rack():
