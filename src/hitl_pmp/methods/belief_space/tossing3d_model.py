@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Mapping
+from types import MappingProxyType
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -12,6 +13,7 @@ from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .belief_digest import BeliefDigest
+from .bounded_memo import BoundedMemo
 from .competence_inference import BayesianSkillBelief
 from .object_symmetry import InterchangeableObjects
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
@@ -22,6 +24,7 @@ from .tossing3d_observation_model import (
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
+    SkillEffects,
     estimated_action_cost,
     make_tossing3d_search_state,
     transition_outcomes,
@@ -32,6 +35,45 @@ from .types.failure_effects import FailureEffectCount
 from .types.forced_start_reset import ForcedStartReset
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
+
+
+class AtomMasks:
+    """Each relevant atom's bit, and the bitmask of every symbolic state seen so far.
+
+    A mask reads the state's atoms and this index only. The index is fixed at
+    construction and owned here, so each table is keyed by the atoms alone: two models
+    with different indexes never share a table. Only frozensets, being immutable and
+    caching their own hash, are memoised.
+    """
+
+    MAX_ENTRIES: ClassVar[int] = 65536
+
+    def __init__(self, *, indexes: dict[GroundAtom, int]) -> None:
+        self._indexes = dict(indexes)
+        self._masks: BoundedMemo[frozenset[GroundAtom], int] = BoundedMemo(
+            max_entries=AtomMasks.MAX_ENTRIES
+        )
+
+    @property
+    def indexes(self) -> Mapping[GroundAtom, int]:
+        return MappingProxyType(self._indexes)
+
+    def mask(self, *, atoms: Iterable[GroundAtom]) -> int:
+        if type(atoms) is not frozenset:
+            return self.compute(atoms=atoms)
+        mask = self._masks.get(key=atoms)
+        if mask is None:
+            mask = self.compute(atoms=atoms)
+            self._masks.put(key=atoms, value=mask)
+        return mask
+
+    def compute(self, *, atoms: Iterable[GroundAtom]) -> int:
+        mask = 0
+        for atom in atoms:
+            index = self._indexes.get(atom)
+            if index is not None:
+                mask |= 1 << index
+        return mask
 
 
 class Tossing3DPracticeModel(BaseModel):
@@ -78,12 +120,10 @@ class Tossing3DPracticeModel(BaseModel):
     _symmetry_cache: (
         tuple[object, object, object, object, frozenset[GroundAtom], InterchangeableObjects] | None
     ) = PrivateAttr(default=None)
-    _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
+    _atom_masks: AtomMasks = PrivateAttr(default_factory=lambda: AtomMasks(indexes={}))
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
-    _effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ] = PrivateAttr(default_factory=dict)
+    # Read-only, so the transition can memoise effects by this table's identity.
+    _effects: SkillEffects = PrivateAttr(default_factory=lambda: MappingProxyType({}))
     _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _domain: PracticeDomain = PrivateAttr()
@@ -112,7 +152,9 @@ class Tossing3DPracticeModel(BaseModel):
             },
             key=str,
         )
-        self._atom_indexes = {atom: index for index, atom in enumerate(relevant_atoms)}
+        self._atom_masks = AtomMasks(
+            indexes={atom: index for index, atom in enumerate(relevant_atoms)}
+        )
         self._dynamic_predicates = (
             frozenset(
                 atom.predicate.name
@@ -140,10 +182,10 @@ class Tossing3DPracticeModel(BaseModel):
         self._precondition_masks = tuple(
             self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills
         )
-        self._effects = {
+        self._effects = MappingProxyType({
             skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
             for skill in self.ground_skills
-        }
+        })
         self._skill_belief_models, self._skill_belief_models_by_name = make_skill_belief_models(
             ground_skills=self.ground_skills, domain=self.domain
         )
@@ -320,12 +362,7 @@ class Tossing3DPracticeModel(BaseModel):
         return symmetry
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
-        mask = 0
-        for atom in atoms:
-            index = self._atom_indexes.get(atom)
-            if index is not None:
-                mask |= 1 << index
-        return mask
+        return self._atom_masks.mask(atoms=atoms)
 
     @staticmethod
     def _belief_signature(*, belief: SkillBelief) -> bytes:
@@ -538,10 +575,17 @@ class Tossing3DPracticeModel(BaseModel):
 
     @staticmethod
     def transition_key(*, environment_state: Tossing3DSearchState, cost: float) -> object:
+        """Merges two outcomes exactly when their states are equal. Each belief enters
+        as its content key -- equal exactly when the beliefs are -- rather than hashed
+        and compared field by field through pydantic, which re-hashed every posterior
+        buffer at every transition."""
         state = environment_state.state
         return (
             environment_state.atoms,
-            tuple(sorted(state.skill_beliefs.items())),
+            tuple(
+                (name, BeliefDigest.content_key(belief=belief))
+                for name, belief in sorted(state.skill_beliefs.items())
+            ),
             tuple(sorted(state.pending_examples.items())),
             tuple(sorted(state.sampler_training.items())),
             state.accumulated_cost,

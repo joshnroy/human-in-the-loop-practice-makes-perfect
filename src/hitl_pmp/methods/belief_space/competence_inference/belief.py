@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import Self
@@ -38,6 +40,7 @@ class BayesianSkillBelief(SkillBelief):
     """
 
     model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
+    SIGNATURE_COVERS_EVERY_FIELD: ClassVar[bool] = True
 
     model_name: CompetenceModel
     engine: InferenceEngine

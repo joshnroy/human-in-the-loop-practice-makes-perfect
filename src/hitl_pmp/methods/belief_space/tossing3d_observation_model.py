@@ -1,6 +1,6 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.methods.belief_space.types.belief_state import (
@@ -16,8 +16,71 @@ from hitl_pmp.methods.belief_space.types.practice_example_source import Practice
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
+from .belief_digest import BeliefDigest
+from .bounded_memo import BoundedMemo
 from .competence_inference import BayesianSkillBelief, InferenceConfig, create_bayesian_prior
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+
+
+class SearchForecastCache:
+    """Memoised refits and S/F conditionings of competence posteriors.
+
+    Search forecasts the same few hundred (posterior, count) pairs over and over: J
+    refits every skill's belief at every node, and every node's children condition the
+    same parent belief. Both are pure functions of the belief and the count (or the
+    outcome), so each is keyed on the belief's digest -- which reads every field of a
+    `BayesianSkillBelief` -- and the count or outcome. The digest names the type, so no
+    other representation can collide with one. Only that exact type is cached: another
+    representation's signature need not read every field, and a subclass may add one.
+    A hit returns the very object computed on the miss: beliefs are frozen.
+    """
+
+    MAX_ENTRIES: ClassVar[int] = 16384
+    MAX_BYTES: ClassVar[int] = 256 * 1024 * 1024
+    _refits: ClassVar[BoundedMemo[tuple[bytes, int], BayesianSkillBelief]] = BoundedMemo(
+        max_entries=MAX_ENTRIES, max_bytes=MAX_BYTES
+    )
+    _conditioned: ClassVar[BoundedMemo[tuple[bytes, bool], BayesianSkillBelief]] = BoundedMemo(
+        max_entries=MAX_ENTRIES, max_bytes=MAX_BYTES
+    )
+
+    @staticmethod
+    def refit(*, belief: ConcreteSkillBelief, training_examples: int) -> ConcreteSkillBelief:
+        if type(belief) is not BayesianSkillBelief:
+            return belief.refit(training_examples=training_examples)
+        key = (BeliefDigest.of(belief=belief), training_examples)
+        refitted = SearchForecastCache._refits.get(key=key)
+        if refitted is None:
+            refitted = belief.refit(training_examples=training_examples)
+            SearchForecastCache._refits.put(
+                key=key, value=refitted, nbytes=SearchForecastCache._nbytes(belief=refitted)
+            )
+        return refitted
+
+    @staticmethod
+    def condition(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
+        if type(belief) is not BayesianSkillBelief:
+            return belief.condition_outcome(success=success)
+        key = (BeliefDigest.of(belief=belief), success)
+        conditioned = SearchForecastCache._conditioned.get(key=key)
+        if conditioned is None:
+            conditioned = belief.condition_outcome(success=success)
+            SearchForecastCache._conditioned.put(
+                key=key,
+                value=conditioned,
+                nbytes=SearchForecastCache._nbytes(belief=conditioned),
+            )
+        return conditioned
+
+    @staticmethod
+    def clear() -> None:
+        SearchForecastCache._refits.clear()
+        SearchForecastCache._conditioned.clear()
+
+    @staticmethod
+    def _nbytes(*, belief: BayesianSkillBelief) -> int:
+        # An upper bound: buffers a result shares with its input are counted again.
+        return len(belief.latent_values) + len(belief.state_weights) + len(belief.parent_indices)
 
 
 class SkillBeliefModel:
@@ -199,7 +262,7 @@ def mean_cost(*, belief: ParticleFilterBelief | BayesianSkillBelief) -> float:
 
 def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
-    return belief.condition_outcome(success=success)
+    return SearchForecastCache.condition(belief=belief, success=success)
 
 
 def refit_skill_belief(
@@ -231,7 +294,7 @@ def refit_belief_state(
             refitted = (
                 belief.advance_cycle(training_examples=count)
                 if advance_cycle
-                else belief.refit(training_examples=count)
+                else SearchForecastCache.refit(belief=belief, training_examples=count)
             )
         else:
             refitted = belief.refit(training_examples=count).advance_learning_rate(
