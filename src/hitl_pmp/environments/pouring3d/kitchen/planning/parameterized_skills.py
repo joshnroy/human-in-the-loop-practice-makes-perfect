@@ -245,10 +245,12 @@ class KitchenMotionPlanner:
         arm: Any,
         what: str,
         held: HeldObject | None = None,
+        ignore: tuple[str, ...] = (),
     ) -> list[np.ndarray]:
         """A base path to `target` (x, y, yaw), the arm (and anything held) carried as
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
-        scene."""
+        scene. `ignore` names objects with no 2-D footprint, such as one the hand
+        carries above the base."""
         joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         if held is not None:
@@ -269,6 +271,7 @@ class KitchenMotionPlanner:
             x_bounds=WORLD_X_BOUNDS,
             y_bounds=WORLD_Y_BOUNDS,
             seed=0,
+            disable_collision_objects=list(ignore) or None,
             body_collision_fn=body_collides,
         )
         if path is None:
