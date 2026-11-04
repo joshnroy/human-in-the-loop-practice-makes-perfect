@@ -22,6 +22,18 @@ class SweepServo:
     counts successful callback updates; ``clipped_torque_count`` counts individual
     joint commands clipped after adding preload, not clipping inside the original
     controller. Both counters accumulate across uses of this context manager.
+
+    While the scraper is held, the base's heading target is also ramped linearly
+    across each control period, from the heading the base had when the period began
+    to the period's commanded heading. The heading actuator otherwise receives the
+    whole step at the period's first physics tick and snaps to it within ~20 ms, and
+    that yaw jerk, not the turn itself, is what slides a scraper held by its handle's
+    end: each in-place turn of pi slid it 18 mm and turned it 8 deg in the pads
+    (under 1 um per control step holding still or translating), so after a few turns
+    the pads walked off the handle (rack-dry-ca2b306-20261104, 13/15 failed
+    evaluations). Ramped, the same turn slides it 0.4 mm and takes about a fifth
+    more control steps. Position targets are untouched: translating did not slip
+    the grasp. Food grasps (``in_hand`` is None) keep the step targets.
     """
 
     def __init__(
@@ -52,6 +64,9 @@ class SweepServo:
         self._head_body = 0
         self._head_offset = np.zeros(3)
         self._jacobian = np.zeros((3, shelf.model.nv))
+        self._base_from: np.ndarray | None = None
+        self._period_tick = 0
+        self._period_ticks: int | None = None
 
     @property
     def max_normal_force_n(self) -> float:
@@ -83,6 +98,7 @@ class SweepServo:
             self._head_offset = rotation.T @ (point - shelf.data.xpos[self._head_body])
         self._latched_tick = None
         self._target = None
+        self._base_from = None
         self._compute_arm_torques = self._robot._compute_arm_torques
         self._original_update = self._robot._update_ctrl
         self._robot._update_ctrl = lambda action: self._update_ctrl(action=action)
@@ -94,6 +110,13 @@ class SweepServo:
             self._original_update = None
             self._compute_arm_torques = None
 
+    def _ticks_per_period(self) -> int:
+        """Physics ticks in one control period, as ``MujocoEnv.step`` counts them."""
+        if self._period_ticks is None:
+            period = 1.0 / float(self._robot.control_frequency)
+            self._period_ticks = max(1, int(round(period / float(self._shelf.model.opt.timestep))))
+        return self._period_ticks
+
     def _update_ctrl(self, *, action: np.ndarray) -> None:
         shelf = self._shelf
         if self._control_update is not None:
@@ -103,6 +126,9 @@ class SweepServo:
             error = (shelf.arm_reference - current + np.pi) % (2 * np.pi) - np.pi
             self._target = current + np.clip(error, -0.1, 0.1)
             self._latched_tick = shelf.ticks
+            self._period_tick = 0
+            if self._wiper is not None:
+                self._base_from = np.asarray(shelf.data.qpos[shelf.ba], dtype=float).copy()
         assert self._compute_arm_torques is not None
         assert self._original_update is not None
         torques = np.array(self._compute_arm_torques(target_positions=self._target), copy=True)
@@ -119,6 +145,10 @@ class SweepServo:
         bounded = np.clip(torques, -limits, limits)
         forwarded = np.array(action, copy=True)
         forwarded[3:10] = bounded
+        self._period_tick += 1
+        if self._wiper is not None and shelf.in_hand is not None and self._base_from is not None:
+            fraction = min(1.0, self._period_tick / self._ticks_per_period())
+            forwarded[2] = self._base_from[2] + fraction * (forwarded[2] - self._base_from[2])
         self._original_update(forwarded)
         self.servo_updates += 1
         self.clipped_torque_count += int(np.count_nonzero(torques != bounded))
