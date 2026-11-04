@@ -66,7 +66,7 @@ def test_construction_is_unchanged_and_an_unobserved_outcome_is_not_settled():
         env.close()
 
 
-def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dict:
+def _pick_and_pour(*, requested: int, params: tuple[float, float]) -> dict:
     from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
     from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
 
@@ -87,11 +87,11 @@ def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dic
 @pytest.mark.parametrize(
     ("requested", "params"),
     [
-        # Measured at the 0.02 handle torsional friction: the creep-era settings these
-        # replace relied on the held jug rolling 12-15 deg during the pour.
-        (1, (86.15, 0.06, 30.0)),
-        (2, (86.90, 0.06, 30.0)),
-        (3, (87.50, 0.06, 30.0)),
+        # Wiggle amplitude (m), duration (s) at the fixed 86.0 deg tilt; measured at
+        # the 0.02 handle torsional friction, n=1 each on the canonical seed.
+        (1, (0.06, 45.0)),
+        (2, (0.07, 45.0)),
+        (3, (0.08, 45.0)),
     ],
 )
 def test_canonical_pours_are_settled_successes(*, requested, params):

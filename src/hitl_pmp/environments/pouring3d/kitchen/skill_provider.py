@@ -1,9 +1,10 @@
 """Ordinary skills and samplers; no kitchen-specific learning algorithm."""
 
 from functools import lru_cache
+from typing import Any, ClassVar
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Type
@@ -20,10 +21,18 @@ from .types import KitchenObjects as O
 class KitchenSkillProvider(FrozenPourSkillProvider):
     env: KitchenEnvironment
     human_reset_practice_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
-    # Approved 2026-11-02. The wrist (joint 6, about 121 deg) reaches a 95 deg tilt.
-    tilt_bounds: tuple[float, float] = (75.0, 95.0)
-    amplitude_bounds: tuple[float, float] = (0.0, 0.1)
+    # Not learned: the slide onset at surface mu 0.1 with this jug, measured 2026-11-04.
+    POUR_TILT_DEGREES: ClassVar[float] = 86.0
+    POUR_PARAM_DIM: ClassVar[int] = 2
+    tilt_bounds: tuple[float, float] = (POUR_TILT_DEGREES, POUR_TILT_DEGREES)
+    amplitude_bounds: tuple[float, float] = (0.04, 0.1)
     duration_bounds: tuple[float, float] = (0.0, 60.0)
+
+    @model_validator(mode="after")
+    def validate_fixed_tilt(self) -> "KitchenSkillProvider":
+        if self.tilt_bounds != (self.POUR_TILT_DEGREES,) * 2:
+            raise ValueError(f"Kitchen Pour tilt is fixed at {self.POUR_TILT_DEGREES} deg")
+        return self
 
     @staticmethod
     @lru_cache(maxsize=1)
@@ -42,7 +51,10 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             ignore = s.ignore_effects
             if s.name.startswith("Pour") or s.name == LEGACY_RESET:
                 ignore |= {plannable}
-            return s.model_copy(update={"preconditions": pre, "ignore_effects": ignore})
+            update: dict[str, Any] = {"preconditions": pre, "ignore_effects": ignore}
+            if s.name.startswith("Pour"):
+                update["param_dim"] = KitchenSkillProvider.POUR_PARAM_DIM
+            return s.model_copy(update=update)
 
         base = tuple(kitchen(s) for s in PourSkills.build(count=count))
         r, k = Variable(name="r", type=O.robot_type), Variable(name="k", type=O.request_type)
@@ -91,6 +103,14 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             for s in super().skills()
             if self.env.deployment or s.name not in {"ActivateCooking", "MoveAway"}
         )
+
+    def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
+        if not ground_skill.skill.name.startswith("Pour"):
+            return np.zeros(0)
+        return np.array([rng.uniform(*b) for b in (self.amplitude_bounds, self.duration_bounds)])
+
+    def native_pour_parameters(self, *, params: np.ndarray) -> np.ndarray:
+        return np.r_[self.POUR_TILT_DEGREES, params]
 
     def predicates(self) -> tuple[Predicate, ...]:
         return P.all()

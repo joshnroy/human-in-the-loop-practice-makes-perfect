@@ -80,7 +80,7 @@ rendered objects are dumplings.
 | Skill | Discrete objects / choice | Continuous learned parameters |
 | --- | --- | --- |
 | PickPitcher | Robot, jug, pan, ordered ingredient objects | None |
-| Pour1 / Pour2 / Pour3 | Separate skills; matching count token, robot, jug, pan, ingredients | Tilt (degrees), sideways amplitude (m), feeding duration (s) |
+| Pour1 / Pour2 / Pour3 | Separate skills; matching count token, robot, jug, pan, ingredients | Sideways wiggle amplitude in [0.04, 0.10] m, feeding duration in [0, 60] s; tilt fixed at 86.0 deg |
 | PlacePitcherAtHome | Robot, jug, count token | None |
 | PickShrimpFromTray / Floor / Surface | Robot, ingredient; pan for tray pickup | None |
 | DropShrimpIntoPitcher | Robot, ingredient, jug | None |
@@ -93,6 +93,21 @@ Pouring uses the existing `joint_lateral` controller: measured arm/joint trackin
 prescribed tilt, horizontal wiggle perpendicular to the pour direction, independent
 amplitude and duration. It does not predict future ingredient motion or stop at an
 oracle count. Requested count selects the skill and scores the observed result.
+
+**Tilt is fixed, not learned (decided 2026-11-04).** Every Pour tilts the jug to
+`KitchenSkillProvider.POUR_TILT_DEGREES` = 86.0 deg, the slide onset measured at
+surface mu 0.1 with this jug; the learned parameters are the wiggle amplitude and the
+feeding duration only, so each Pour skill has `param_dim` 2. The native action still
+carries a tilt slot, which the provider fills with the fixed value, so the
+environment's action format is unchanged. `--pour-tilt-bounds` is refused for this
+environment; the legacy `pouring3d` keeps its three learned parameters. At 86.0 deg
+on the canonical seed (n=1 per cell, 0.02 handle torsional friction), 50-60 mm for at
+least 30 s delivered 1, 70 mm for at least 30 s delivered 2, and 80 mm for at least
+30 s delivered 3; amplitudes of 40 mm or less delivered 0 at every duration. The
+canonical settings `test_canonical_pours_are_settled_successes` pins are Pour1
+(0.06 m, 45 s), Pour2 (0.07 m, 45 s) and Pour3 (0.08 m, 45 s). Pouring results
+recorded before this change sampled a different parameter space and are not
+comparable with later ones.
 Support motions retain native IK checks, add a sampled whole-base-path preflight
 including the carried jug, and check an ingredient lift continuation before grasping. Carrying/pouring use
 a larger IK clearance margin and wait on measured joint tracking before advancing

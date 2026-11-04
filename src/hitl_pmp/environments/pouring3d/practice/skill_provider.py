@@ -108,8 +108,12 @@ class FrozenPourSkillProvider(SkillProvider):
             SKILL_NAMES.index(native_name),
             shrimp,
             requested,
-            params if len(params) else np.zeros(3),
+            self.native_pour_parameters(params=params) if len(params) else np.zeros(3),
         ]
+
+    def native_pour_parameters(self, *, params: np.ndarray) -> np.ndarray:
+        """The native action's (tilt, amplitude, duration) for a Pour's learned params."""
+        return params
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State

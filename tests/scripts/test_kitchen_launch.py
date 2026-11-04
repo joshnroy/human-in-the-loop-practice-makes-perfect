@@ -36,8 +36,9 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.reproduce_predicators_explore_target_only
         assert not args.reproduce_predicators_double_observe
         assert args.surface_mu == 0.1
-        assert args.pour_tilt_bounds == [75, 95]
-        assert args.pour_amplitude_bounds == [0, 0.1]
+        # Tilt is fixed at the slide onset (2026-11-04); only wiggle and duration learn.
+        assert args.pour_tilt_bounds is None
+        assert args.pour_amplitude_bounds == [0.04, 0.1]
         assert args.pour_duration_bounds == [0, 60]
         costs = PracticeCosts.load(path=args.practice_cost_config)
         assert costs.robot_step.value == 0.01

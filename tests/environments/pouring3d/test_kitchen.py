@@ -92,8 +92,13 @@ def test_count_samplers_and_cold_practice_stay_ordinary():
     assert "ActivateCooking" not in {s.name for s in p.skills()}
     for k in range(1, 4):
         g = p.ground(name=f"Pour{k}")
-        action = p.encode(ground_skill=g, params=np.array([90, 0.015, 12]))
+        assert g.skill.param_dim == 2
+        action = p.encode(ground_skill=g, params=np.array([0.07, 45]))
         assert action[2] == k
+        # The native action still carries a tilt; the provider fills in the fixed one.
+        assert list(action[3:]) == [KitchenSkillProvider.POUR_TILT_DEGREES, 0.07, 45]
+        with pytest.raises(ValueError):
+            p.encode(ground_skill=g, params=np.array([86, 0.07, 45]))
         assert any(a.predicate.name == "ColdIngredients" for a in g.preconditions)
     e._started = True
     with pytest.raises(ValueError, match="no free reset"):
@@ -176,14 +181,46 @@ def test_pour_sampling_admits_the_approved_bounds_and_no_further():
     assert PotstickerParameters(amplitude_m=0.1).amplitude_m == 0.1
     env = KitchenEnvironment(requested_count=1)
     provider = KitchenSkillProvider(env=env)
-    assert provider.tilt_bounds == (75, 95)
-    assert provider.amplitude_bounds == (0, 0.1)
+    # Decided 2026-11-04: tilt is fixed at the measured slide onset, not learned.
+    assert KitchenSkillProvider.POUR_TILT_DEGREES == 86.0
+    assert provider.amplitude_bounds == (0.04, 0.1)
     assert provider.duration_bounds == (0, 60)
+    rng = np.random.default_rng(0)
+    for k in range(1, 4):
+        draws = np.array([
+            provider.sample_params(ground_skill=provider.ground(name=f"Pour{k}"), rng=rng)
+            for _ in range(200)
+        ])
+        assert draws.shape == (200, 2)
+        assert (draws[:, 0] >= 0.04).all() and (draws[:, 0] <= 0.1).all()
+        assert (draws[:, 1] >= 0).all() and (draws[:, 1] <= 60).all()
+    with pytest.raises(ValidationError, match="fixed"):
+        KitchenSkillProvider(env=env, tilt_bounds=(75, 95))
     parser = argparse.ArgumentParser()
     KitchenCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert list(args.pour_tilt_bounds) == [75, 95]
-    assert list(args.pour_amplitude_bounds) == [0, 0.1]
+    assert args.pour_tilt_bounds is None
+    assert list(args.pour_amplitude_bounds) == [0.04, 0.1]
     assert list(args.pour_duration_bounds) == [0, 60]
     with pytest.raises(ValidationError):
         KitchenSkillProvider(env=env, amplitude_bounds=(0, 0.11))
+
+
+def test_an_explicit_tilt_range_is_refused_for_the_kitchen():
+    from hitl_pmp.cli import Cli
+
+    argv = ["--env", "pouring3d_kitchen", "--method", "ees", "--pour-tilt-bounds", "75", "95"]
+    args = Cli.parse_args(argv=argv)
+    problem = KitchenCli.build_problem(args=args)
+    with pytest.raises(ValueError, match="fixed"):
+        KitchenCli.context(args=args, problem=problem)
+
+
+def test_legacy_pouring_keeps_its_three_learned_pour_parameters():
+    from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+
+    p = FrozenPourSkillProvider(env=FrozenPourEnvironment())
+    assert p.tilt_bounds == (87, 95)
+    g = p.ground(name="Pour2", request=2)
+    assert g.skill.param_dim == 3
+    assert list(p.encode(ground_skill=g, params=np.array([90, 0.01, 12]))[3:]) == [90, 0.01, 12]

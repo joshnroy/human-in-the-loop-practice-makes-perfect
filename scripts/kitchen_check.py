@@ -17,7 +17,6 @@ def check(
     *,
     output: Path,
     case: str,
-    tilt: float,
     amplitude: float,
     duration: float,
     requested: int,
@@ -140,7 +139,7 @@ def check(
         if case not in {"recovery", "placement"}:
             if not run(name="PickPitcher"):
                 raise ValueError("Jug pickup failed")
-            run(name=f"Pour{requested}", params=(tilt, amplitude, duration))
+            run(name=f"Pour{requested}", params=(amplitude, duration))
             if not run(name="PlacePitcherAtHome"):
                 raise ValueError("Jug placement failed")
         elif initial_motion is None:
@@ -241,7 +240,7 @@ def check(
             "initial_motion_fixture": str(initial_motion) if initial_motion else None,
             "parameters": None
             if case in {"recovery", "placement"}
-            else [tilt, amplitude, duration],
+            else [provider.POUR_TILT_DEGREES, amplitude, duration],
             "requested": requested,
             "error": error,
             "rows": rows,
@@ -268,9 +267,8 @@ if __name__ == "__main__":
         default="deployment",
     )
     parser.add_argument("--initial-motion", type=Path)
-    parser.add_argument("--tilt", type=float, default=90)
-    parser.add_argument("--amplitude", type=float, default=0.015)
-    parser.add_argument("--duration", type=float, default=12)
+    parser.add_argument("--amplitude", type=float, default=0.08)
+    parser.add_argument("--duration", type=float, default=45)
     parser.add_argument("--requested", type=int, default=3)
     args = parser.parse_args()
     raise SystemExit(0 if check(**vars(args)) else 1)

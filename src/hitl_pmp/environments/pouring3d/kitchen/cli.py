@@ -29,7 +29,8 @@ class KitchenCli:
             human_reset_practice_cost=5,
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
-            pour_tilt_bounds=KitchenSkillProvider.model_fields["tilt_bounds"].default,
+            # Pour tilt is fixed (KitchenSkillProvider.POUR_TILT_DEGREES), not a range.
+            pour_tilt_bounds=None,
             pour_amplitude_bounds=KitchenSkillProvider.model_fields["amplitude_bounds"].default,
             pour_duration_bounds=KitchenSkillProvider.model_fields["duration_bounds"].default,
         )
@@ -58,6 +59,11 @@ class KitchenCli:
 
     @staticmethod
     def context(*, args: argparse.Namespace, problem: KitchenProblem) -> DomainContext:
+        if args.pour_tilt_bounds is not None:
+            raise ValueError(
+                f"Kitchen Pour tilt is fixed at {KitchenSkillProvider.POUR_TILT_DEGREES} deg; "
+                "omit --pour-tilt-bounds"
+            )
         return DomainContext(
             env=problem.env,
             oracle=FrozenPourOracle(env=problem.env),
@@ -66,7 +72,6 @@ class KitchenCli:
                 env=problem.env,
                 offer_human_reset=args.human_reset,
                 human_reset_practice_cost=args.human_reset_practice_cost,
-                tilt_bounds=tuple(args.pour_tilt_bounds),
                 amplitude_bounds=tuple(args.pour_amplitude_bounds),
                 duration_bounds=tuple(args.pour_duration_bounds),
             ),
