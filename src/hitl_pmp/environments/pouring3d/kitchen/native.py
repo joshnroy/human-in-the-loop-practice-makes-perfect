@@ -177,6 +177,12 @@ class KitchenController(PotstickerController):
     POUR_WIGGLE_M: ClassVar[float] = 0.04
     # Fast return, so as little as possible leaves after the cutoff.
     POUR_RETURN_DEG_S: ClassVar[float] = 45.0
+    # The planning scene that holds every commanded configuration to the planning margin
+    # (`planning.clearance`); built on first use.
+    planning_clearance: Any = None
+    # MuJoCo IK clearances (m) tried, in order, when a solution leaves the margin in the
+    # planning scene: MuJoCo's robot model is not the planner's.
+    PLANNING_RESOLVE_CLEARANCES: ClassVar[tuple[float, ...]] = (0.025, 0.035)
 
     def outcome_settled(self) -> bool:
         return bool(self.scene.payload_at_rest())
@@ -378,7 +384,12 @@ class KitchenController(PotstickerController):
             if np.max(self.obstacle_residual(), initial=0) > 0.005:
                 self.events.append({"unwind_blocked": turns.tolist(), "fraction": float(u)})
                 return
-            if self.scratch.site_xpos[self.site, 2] < 0.25:
+            if self.scratch.site_xpos[self.site, 2] < 0.25 or (
+                self.planning_violation(
+                    base=self.data.qpos[self.base_q], arm=self.scratch.qpos[self.arm_q]
+                )
+                is not None
+            ):
                 self.events.append({"unwind_blocked": turns.tolist(), "fraction": float(u)})
                 return
         seconds = max(2.0, float(np.max(np.abs(goal - start))) / self.unwind_speed)
@@ -492,7 +503,48 @@ class KitchenController(PotstickerController):
             self.unwind_continuous_joints()
         super().pick_shrimp(index=index, location=location)
 
+    def planning_violation(self, *, base: np.ndarray, arm: np.ndarray) -> Any:
+        """The robot's closest approach in the planning scene if inside the margin."""
+        from .planning.clearance import PlanningClearance
+
+        if self.planning_clearance is None:
+            self.planning_clearance = PlanningClearance.for_controller(controller=self)
+        return self.planning_clearance.violation(controller=self, base=base, arm=arm)
+
+    def joint_path_violation(self, *, base: np.ndarray, start: np.ndarray, goal: np.ndarray) -> Any:
+        """The first planning-margin violation on the straight joint path, or None."""
+        steps = 1 + int(np.ceil(np.max(np.abs(goal - start)) / 0.02))
+        for u in np.linspace(0.0, 1.0, steps + 1)[1:]:
+            violation = self.planning_violation(base=base, arm=start + u * (goal - start))
+            if violation is not None:
+                return violation
+        return None
+
     def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
+        """Every IK target, scratch checks and commanded waypoints alike, keeps the
+        planning margin in the planning scene; a solution that does not is re-solved
+        with a wider MuJoCo clearance, and refused if none keeps it."""
+        previous, posture, clearance = self.last_q.copy(), self.posture, self.obstacle_clearance
+        q = self.checked_inverse_kinematics(position=position, rotation=rotation)
+        violation = self.planning_violation(base=self.base_target, arm=q)
+        try:
+            for wider in self.PLANNING_RESOLVE_CLEARANCES:
+                if violation is None:
+                    return q
+                self.last_q, self.posture, self.obstacle_clearance = previous.copy(), posture, wider
+                try:
+                    q = self.checked_inverse_kinematics(position=position, rotation=rotation)
+                except ValueError:
+                    break
+                violation = self.planning_violation(base=self.base_target, arm=q)
+            if violation is None:
+                return q
+        finally:
+            self.obstacle_clearance = clearance
+        self.last_q, self.posture = previous, posture
+        raise ValueError(f"Insufficient obstacle clearance in {self.phase}: {violation.describe()}")
+
+    def checked_inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
         previous = self.last_q.copy()
         q = super().inverse_kinematics(position=position, rotation=rotation)
         if self.held is not None:
@@ -792,6 +844,12 @@ class KitchenController(PotstickerController):
                     q = previous_q
                 self.scratch.qpos[self.arm_q] = q
                 self.scratch.qpos[self.base_q] = base
+                violation = self.planning_violation(base=base, arm=q)
+                if violation is not None:
+                    raise ValueError(
+                        f"Insufficient obstacle clearance in {phase}: base path, "
+                        f"{violation.describe()} at {u:.2f}"
+                    )
                 self.update_ik_scratch()
                 bound = np.linalg.norm(
                     self.scratch.geom_xpos[a] - self.scratch.geom_xpos[b], axis=1
@@ -825,6 +883,19 @@ class KitchenController(PotstickerController):
             # Prepare closer to the aisle; the smaller pan's far-side pieces
             # otherwise put the initial hover at the arm's reach limit.
             position = position + [-0.10, 0, 0]
+        if continuation is not None:
+            # The joint path to a prepared posture keeps the planning margin too.
+            start, base, then = (
+                self.data.qpos[self.arm_q].copy(),
+                self.base_target.copy(),
+                continuation,
+            )
+
+            def continuation(q: np.ndarray) -> bool:  # noqa: PLR0917 -- inherited callback
+                if self.joint_path_violation(base=base, start=start, goal=q) is not None:
+                    return False
+                return then(q)
+
         super().prepare_empty_arm(position=position, rotation=rotation, continuation=continuation)
 
     def payload_approach_feasible(
@@ -842,6 +913,24 @@ class KitchenController(PotstickerController):
             return False
         previous, old_base, phase = self.last_q.copy(), self.base_target.copy(), self.phase
         posture = self.posture
+        # The approach is executed as straight joint and base segments between its IK
+        # waypoints; those segments keep the planning margin, not only their ends.
+        arm_from, base_from = q.copy(), self.data.qpos[self.base_q].copy()
+        for base_to, arm_to, label, _ in self.payload_approach_plan:
+            self.phase = label
+            for u in np.linspace(0.0, 1.0, 5)[1:]:
+                if (
+                    self.planning_violation(
+                        base=base_from + u * (base_to - base_from),
+                        arm=arm_from + u * (arm_to - arm_from),
+                    )
+                    is not None
+                ):
+                    self.phase = phase
+                    self.payload_approach_plan.clear()
+                    return False
+            arm_from, base_from = arm_to, base_to
+        self.phase = phase
         try:
             # A reachable pinch alone is insufficient: require a continuation
             # through the lift before committing to the grasp branch.
