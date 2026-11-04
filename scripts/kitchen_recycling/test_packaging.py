@@ -61,7 +61,7 @@ def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
     return output
 
 
-def completed_run(*, practice_steps: int):
+def completed_run(*, practice_steps: int, endpoint: str = "practice_step_budget"):
     """A subprocess.run stand-in that leaves a completed run's files behind."""
 
     def run(*args, **kwargs):
@@ -74,7 +74,7 @@ def completed_run(*, practice_steps: int):
             json.dumps([{"complete": True, "practice_steps": practice_steps}])
         )
         (output / "step_events.jsonl").write_text(
-            json.dumps({"event": "practice_end", "reason": "practice_step_budget"}) + "\n"
+            json.dumps({"event": "practice_end", "reason": endpoint}) + "\n"
         )
 
     return run
@@ -264,6 +264,83 @@ class PackagingTests(unittest.TestCase):
                         worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
                     else:
                         with self.assertRaisesRegex(ValueError, "160000"):
+                            worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
+
+    def test_a_repeated_stop_limit_reaches_every_row(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(
+                directory=directory, extra=(*V9_STYLE_ARGS, "--repeated-stop-limit", "100")
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["repeated_stop_limit"], 100)
+            for row in manifest["runs"]:
+                argv = row["argv"]
+                self.assertIn("--no-early-stop", argv)
+                self.assertEqual(argv[argv.index("--repeated-stop-limit") + 1], "100")
+            self.assertEqual(
+                (output / "commands.txt").read_text().count("--repeated-stop-limit 100"), 9
+            )
+
+    def test_no_repeated_stop_limit_leaves_rows_without_the_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory, extra=V9_STYLE_ARGS)
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertNotIn("repeated_stop_limit", manifest)
+            for row in manifest["runs"]:
+                self.assertNotIn("--repeated-stop-limit", row["argv"])
+
+    def test_a_repeated_stop_limit_must_be_positive(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            prepared(directory=directory, extra=("--repeated-stop-limit", "0"))
+
+    def test_worker_checks_each_rows_repeated_stop_limit(self):
+        worker.check_repeated_stop_limit(
+            parsed=argparse.Namespace(repeated_stop_limit=None), manifest={}
+        )
+        worker.check_repeated_stop_limit(
+            parsed=argparse.Namespace(repeated_stop_limit=100),
+            manifest={"repeated_stop_limit": 100},
+        )
+        for limit, manifest in (
+            (100, {}),
+            (None, {"repeated_stop_limit": 100}),
+            (10, {"repeated_stop_limit": 100}),
+        ):
+            with self.subTest(limit=limit, manifest=manifest), self.assertRaises(ValueError):
+                worker.check_repeated_stop_limit(
+                    parsed=argparse.Namespace(repeated_stop_limit=limit), manifest=manifest
+                )
+
+    def test_a_repeated_stop_completes_a_run_only_under_a_limit(self):
+        limited = {**ITERATION, "repeated_stop_limit": 100}
+        for manifest, endpoint, steps, passes in (
+            (limited, "repeated_stop", 4100, True),
+            (limited, "practice_step_budget", 65000, True),
+            (ITERATION, "repeated_stop", 4100, False),
+            (limited, "repeated_zero_step", 4100, False),
+        ):
+            with (
+                self.subTest(manifest=manifest, endpoint=endpoint),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                launch = Path(directory) / "launch"
+                launch.mkdir()
+                for name in ("manifest.json", "snapshot.json", "runtime-lock.json"):
+                    (launch / name).write_text("{}")
+                row = {"arm": "expectimax", "seed": 0, "argv": []}
+                with patch.object(
+                    worker.subprocess,
+                    "run",
+                    side_effect=completed_run(practice_steps=steps, endpoint=endpoint),
+                ):
+                    if passes:
+                        receipt = worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
+                        self.assertEqual(receipt["endpoint"]["reason"], endpoint)
+                    else:
+                        with self.assertRaises(ValueError):
                             worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
 
     def test_a_reset_cost_sweep_expands_rows_per_cost(self):

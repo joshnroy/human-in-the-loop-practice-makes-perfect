@@ -576,6 +576,7 @@ class StepProtocolResume:
         "evaluation_workers": "1",
         "evaluation_task_rng": "shared",
         "evaluation_task_timeout_seconds": "None",
+        "repeated_stop_limit": "None",
     }
 
     @staticmethod
@@ -1339,6 +1340,11 @@ class StepPracticeRunner:
         zero_step_limit = getattr(
             args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
         )
+        # A given limit applies with or without --no-early-stop: a planner that STOPs
+        # forever otherwise spends the whole budget, one planning call per step.
+        stop_limit: int | None = getattr(args, "repeated_stop_limit", None) or (
+            None if no_early_stop else StepPracticeRunner.REPEATED_STOP_LIMIT
+        )
         evaluation_workers = getattr(args, "evaluation_workers", 1)
         pool = (
             evaluations
@@ -1606,9 +1612,7 @@ class StepPracticeRunner:
                     ),
                     "stop_on_no_practice_action": stop_on_no_practice_action,
                     "stop_skill_steps": 1,
-                    "repeated_stop_limit": (
-                        None if no_early_stop else StepPracticeRunner.REPEATED_STOP_LIMIT
-                    ),
+                    "repeated_stop_limit": stop_limit,
                     "repeated_zero_step_limit": None if no_early_stop else zero_step_limit,
                     "repeated_no_robot_action_limit": (
                         None if no_early_stop else StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
@@ -1931,7 +1935,7 @@ class StepPracticeRunner:
                 ):
                     endpoint = "practice_step_budget"
                     break
-                if not no_early_stop and stop_streak >= StepPracticeRunner.REPEATED_STOP_LIMIT:
+                if stop_limit is not None and stop_streak >= stop_limit:
                     endpoint = "repeated_stop"
                     break
                 # Human resets with no robot skill, STOP or not. A STOP-only session

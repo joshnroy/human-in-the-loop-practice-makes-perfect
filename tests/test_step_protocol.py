@@ -1068,6 +1068,141 @@ def test_a_session_with_an_action_resets_the_stop_streak(*, tmp_path):
     assert len(_stop_events(output=output)) == 20
 
 
+def _protocol(*, output) -> dict:
+    return json.loads((output / "step_protocol.json").read_text())
+
+
+def test_a_repeated_stop_limit_ends_a_no_early_stop_run(*, tmp_path):
+    """v10b at reset cost 10000: a planner that STOPs forever runs to the budget under
+    --no-early-stop, one planning call per step. The limit ends it as `repeated_stop`."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            no_early_stop=True,
+            repeated_stop_limit=3,
+        ),
+        method=_scripted_method(script=[InteractionComplete(planner_stop=True)] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    assert len(_stop_events(output=output)) == 3
+    assert _measured(output=output)[-1] == 3
+    assert _protocol(output=output)["repeated_stop_limit"] == 3
+    assert _protocol(output=output)["no_early_stop"] is True
+
+
+def test_no_early_stop_alone_records_no_repeated_stop_limit(*, tmp_path):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=30, interval=100, no_early_stop=True),
+        method=_scripted_method(script=[InteractionComplete(planner_stop=True)] * 40),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert len(_stop_events(output=output)) == 30
+    assert _protocol(output=output)["repeated_stop_limit"] is None
+
+
+@pytest.mark.parametrize("breaker", ["robot", "human"])
+def test_an_action_resets_a_repeated_stop_limit_streak(*, tmp_path, breaker):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    action = (
+        1 if breaker == "robot" else HumanCubeBinResetRequested(cost=1.0, destination="robot_side")
+    )
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            no_early_stop=True,
+            repeated_stop_limit=3,
+        ),
+        # Two STOP-only sessions, one session that acts and then stops, then three more.
+        method=_scripted_method(script=[stop, stop, action, stop] + [stop] * 10),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    assert len(_stop_events(output=output)) == 2 + 1 + 3
+
+
+@pytest.mark.parametrize("limit", [3, 15])
+def test_a_repeated_stop_limit_replaces_the_default_ten(*, tmp_path, limit):
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=1000, interval=100, repeated_stop_limit=limit),
+        method=_scripted_method(script=[InteractionComplete(planner_stop=True)] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_stop"
+    assert len(_stop_events(output=output)) == limit
+    assert _protocol(output=output)["repeated_stop_limit"] == limit
+
+
+@pytest.mark.parametrize("kind", ["zero", "human"])
+def test_a_repeated_stop_limit_leaves_the_other_early_stops_off(*, tmp_path, kind):
+    """Only the STOP streak comes back: no-progress and reset-only sessions still run to
+    the budget under --no-early-stop."""
+    output = tmp_path / "run"
+    action = {
+        "zero": 0,
+        "human": HumanCubeBinResetRequested(destination="robot_side", cost=1.0),
+    }[kind]
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=12,
+            interval=12,
+            max_steps_per_interaction=1,
+            no_early_stop=True,
+            repeated_zero_step_limit=1,
+            repeated_stop_limit=1,
+        ),
+        method=_scripted_method(script=[action] * 30),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert _protocol(output=output)["repeated_zero_step_limit"] is None
+    assert _protocol(output=output)["repeated_no_robot_action_limit"] is None
+
+
+def test_the_repeated_stop_limit_flag_defaults_to_none_and_must_be_positive():
+    from hitl_pmp.cli import Cli
+
+    assert (
+        Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"]).repeated_stop_limit is None
+    )
+    args = Cli.parse_args(
+        argv=["--env", "lightswitch", "--method", "ees", "--repeated-stop-limit", "100"]
+    )
+    assert args.repeated_stop_limit == 100
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "lightswitch", "--method", "ees", "--repeated-stop-limit", "0"]
+        )
+
+
 def test_sessions_of_human_resets_and_no_robot_skill_end_the_run(*, tmp_path):
     """t3-final determinized s4: after its arm froze, each session was human resets
     then a STOP, with no robot skill. Ten in a row end practice."""
@@ -1600,3 +1735,16 @@ def test_the_step_protocol_runs_dp(*, tmp_path, method, accepted):
         return
     with pytest.raises(ValueError, match="supports"):
         StepProtocolValidation.check(args=args)
+
+
+def test_a_run_recorded_before_the_repeated_stop_limit_existed_still_resumes():
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    before = {"seed": "0", "env": "tossing3d_real"}
+    now = {**before, "repeated_stop_limit": "None"}
+    assert StepProtocolResume.comparable(arguments=before) == StepProtocolResume.comparable(
+        arguments=now
+    )
+    assert StepProtocolResume.comparable(arguments=before) != StepProtocolResume.comparable(
+        arguments={**before, "repeated_stop_limit": "100"}
+    )
