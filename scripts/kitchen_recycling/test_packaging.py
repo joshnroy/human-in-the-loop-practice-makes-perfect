@@ -1,5 +1,7 @@
 """Offline packaging safety checks; no simulator, SSH or scheduler calls."""
 
+import argparse
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -16,6 +18,53 @@ spec.loader.exec_module(prepare)
 worker_spec = importlib.util.spec_from_file_location("kitchen_worker", HERE / "worker.py")
 worker = importlib.util.module_from_spec(worker_spec)
 worker_spec.loader.exec_module(worker)
+
+# prepare.py's default package, tag kitchen-recycling-unit-test, as it was before the
+# budget and evaluation-worker options existed (the package v5-v8 launched from).
+V8_STYLE_DIGESTS = {
+    "commands.txt": "d4ce2a3de8ea7aca9e1996c66a507a69b7f9e93ec0ff500bc3ea9eef811d0aa6",
+    "full.sbatch": "f2aaa6420590d9e6d93f148e7da1e76cbeb5d63c92e19601690b89cfa437562d",
+    "manifest.json": "6ad903d6c2681851141b45ab998b50e6b1bfc7abab2b3dc10c900d0575256fce",
+    "smoke.sbatch": "adeed680afc6462eb1f0a4ee8b35380dd49bd7f180ffe506876d4b5e4e72e5f8",
+}
+ITERATION = {"practice_step_budget": 65000, "evaluation_workers": 4}
+
+
+def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
+    output = Path(directory) / "launch"
+    subprocess.run(
+        [
+            sys.executable,
+            str(HERE / "prepare.py"),
+            "--out",
+            str(output),
+            "--tag",
+            "kitchen-recycling-unit-test",
+            *extra,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return output
+
+
+def completed_run(*, practice_steps: int):
+    """A subprocess.run stand-in that leaves a completed run's files behind."""
+
+    def run(*args, **kwargs):
+        (command,) = args
+        output = Path(command[command.index("--output-dir") + 1])
+        (output / "status.json").write_text(
+            json.dumps({"phase": "complete", "practice_steps": practice_steps})
+        )
+        (output / "step_evaluations.json").write_text(
+            json.dumps([{"complete": True, "practice_steps": practice_steps}])
+        )
+        (output / "step_events.jsonl").write_text(
+            json.dumps({"event": "practice_end", "reason": "practice_step_budget"}) + "\n"
+        )
+
+    return run
 
 
 class PackagingTests(unittest.TestCase):
@@ -83,6 +132,116 @@ class PackagingTests(unittest.TestCase):
             self.assertNotIn("dependency", (output / "full.sbatch").read_text())
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
             self.assertFalse((output / "authorization.json").exists())
+
+    def test_defaults_leave_a_v8_style_package_byte_identical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory)
+            for name, digest in V8_STYLE_DIGESTS.items():
+                with self.subTest(file=name):
+                    self.assertEqual(
+                        hashlib.sha256((output / name).read_bytes()).hexdigest(), digest
+                    )
+
+    def test_budget_and_evaluation_workers_reach_every_row(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(
+                directory=directory,
+                extra=(
+                    "--practice-step-budget",
+                    "65000",
+                    "--evaluation-workers",
+                    "4",
+                    "--cpus-per-task",
+                    "6",
+                    "--memory",
+                    "24G",
+                ),
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["practice_step_budget"], 65000)
+            self.assertEqual(manifest["evaluation_workers"], 4)
+            self.assertEqual(
+                manifest["budget_policy"], "65k counted steps; cost logged, not a hard cap"
+            )
+            self.assertEqual(manifest["resources"]["cpus"], 6)
+            self.assertEqual(manifest["resources"]["memory"], "24G")
+            self.assertEqual(worker.contract(manifest=manifest), (65000, 4))
+            for row in manifest["runs"]:
+                argv = row["argv"]
+                self.assertEqual(argv[argv.index("--practice-step-budget") + 1], "65000")
+                self.assertEqual(argv[argv.index("--evaluation-workers") + 1], "4")
+                self.assertEqual(argv[argv.index("--evaluation-task-rng") + 1], "per-task")
+                self.assertEqual(argv[argv.index("--measurement-interval-steps") + 1], "3200")
+                self.assertEqual(argv[argv.index("--num-test-tasks") + 1], "10")
+                self.assertNotIn("--ees-preview-test-goals", argv)
+            for phase in ("smoke", "full"):
+                script = (output / f"{phase}.sbatch").read_text()
+                self.assertIn("--cpus-per-task=6\n", script)
+                self.assertIn("--mem=24G\n", script)
+
+    def test_evaluation_workers_cannot_exceed_the_test_tasks(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            prepared(directory=directory, extra=("--evaluation-workers", "11"))
+
+    def test_worker_contract_defaults_to_v8(self):
+        self.assertEqual(worker.contract(manifest={"runs": []}), (160000, 1))
+
+    def test_worker_checks_each_row_against_the_manifest(self):
+        def parsed(*, budget=65000, workers=4, rng="per-task"):
+            return argparse.Namespace(
+                practice_step_budget=budget, evaluation_workers=workers, evaluation_task_rng=rng
+            )
+
+        worker.check_budget_and_workers(parsed=parsed(), manifest=ITERATION)
+        worker.check_budget_and_workers(
+            parsed=parsed(budget=160000, workers=1, rng="shared"), manifest={}
+        )
+        for bad, manifest in (
+            (parsed(), {}),
+            (parsed(budget=160000), ITERATION),
+            (parsed(workers=1), ITERATION),
+            (parsed(rng="shared"), ITERATION),
+        ):
+            with self.subTest(parsed=bad, manifest=manifest), self.assertRaises(ValueError):
+                worker.check_budget_and_workers(parsed=bad, manifest=manifest)
+
+    def test_smoke_evaluates_as_many_tasks_as_workers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launch = Path(directory) / "launch"
+            row = {"arm": "ees", "seed": 0, "argv": []}
+            for manifest, tasks in (({}, "1"), (ITERATION, "4")):
+                with self.subTest(tasks=tasks):
+                    with (
+                        patch.object(
+                            worker.subprocess, "run", side_effect=RuntimeError("intercepted")
+                        ) as run,
+                        self.assertRaisesRegex(RuntimeError, "intercepted"),
+                    ):
+                        worker.run(launch=launch, row=row, smoke=True, manifest=manifest)
+                    command = run.call_args.args[0]
+                    self.assertEqual(command[command.index("--num-test-tasks") + 1], tasks)
+                    (launch.parent / "smoke/ees/0/worker.log").unlink()
+                    (launch.parent / "smoke/ees/0").rmdir()
+
+    def test_full_run_must_reach_the_manifest_budget(self):
+        for manifest, steps, passes in ((ITERATION, 65000, True), ({}, 65000, False)):
+            with self.subTest(manifest=manifest), tempfile.TemporaryDirectory() as directory:
+                launch = Path(directory) / "launch"
+                launch.mkdir()
+                for name in ("manifest.json", "snapshot.json", "runtime-lock.json"):
+                    (launch / name).write_text("{}")
+                row = {"arm": "ees", "seed": 0, "argv": []}
+                with patch.object(
+                    worker.subprocess, "run", side_effect=completed_run(practice_steps=steps)
+                ):
+                    if passes:
+                        worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "160000"):
+                            worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
 
     def test_cost_contract_is_the_two_resets_at_five(self):
         worker.check_costs(costs=json.loads((HERE / "costs.json").read_text()))

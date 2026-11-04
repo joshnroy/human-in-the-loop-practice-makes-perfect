@@ -7,6 +7,11 @@ import shlex
 from pathlib import Path
 
 ARMS = ("ees", "expectimax", "curtis")
+# The full contract's budget, and one evaluation process per checkpoint. Left at these
+# defaults the package is byte-identical to the one v5-v8 launched from.
+PRACTICE_STEP_BUDGET = 160000
+EVALUATION_WORKERS = 1
+TEST_TASKS = 10
 COMMON = shlex.split(
     "--env kitchen_recycling3d --practice-step-budget 160000 "
     "--measurement-interval-steps 3200 --evaluation-control-steps 500 "
@@ -36,9 +41,27 @@ def digest(*, path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def argv(*, arm: str, seed: int, cost_file: str, kitchen_config: str) -> list[str]:
+def argv(
+    *,
+    arm: str,
+    seed: int,
+    cost_file: str,
+    kitchen_config: str,
+    practice_step_budget: int = PRACTICE_STEP_BUDGET,
+    evaluation_workers: int = EVALUATION_WORKERS,
+) -> list[str]:
+    common = list(COMMON)
+    common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
+    if evaluation_workers > 1:
+        # Tasks run apart reproduce one process running them only under per-task RNG.
+        common += [
+            "--evaluation-workers",
+            str(evaluation_workers),
+            "--evaluation-task-rng",
+            "per-task",
+        ]
     result = [
-        *COMMON,
+        *common,
         "--seed",
         str(seed),
         "--practice-cost-config",
@@ -76,7 +99,20 @@ def main() -> None:
     parser.add_argument(
         "--kitchen-config", default="scripts/kitchen_recycling/experiment-config.json"
     )
+    parser.add_argument("--practice-step-budget", type=int, default=PRACTICE_STEP_BUDGET)
+    parser.add_argument(
+        "--evaluation-workers",
+        type=int,
+        default=EVALUATION_WORKERS,
+        choices=range(1, TEST_TASKS + 1),
+        help="Each checkpoint's test tasks in up to this many concurrent processes "
+        "(with --evaluation-task-rng per-task); the smoke then evaluates this many tasks.",
+    )
+    parser.add_argument("--cpus-per-task", type=int, default=2)
+    parser.add_argument("--memory", default="16G")
     args = parser.parse_args()
+    if args.practice_step_budget <= 0 or args.practice_step_budget % 1000:
+        parser.error("--practice-step-budget must be a positive whole number of thousands")
     if not args.tag.startswith("kitchen-recycling-") or any(
         character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
         for character in args.tag
@@ -88,7 +124,12 @@ def main() -> None:
     for seed in range(3):
         for arm in ARMS:
             command = argv(
-                arm=arm, seed=seed, cost_file=args.cost_file, kitchen_config=args.kitchen_config
+                arm=arm,
+                seed=seed,
+                cost_file=args.cost_file,
+                kitchen_config=args.kitchen_config,
+                practice_step_budget=args.practice_step_budget,
+                evaluation_workers=args.evaluation_workers,
             )
             rows.append({"index": len(rows), "arm": arm, "seed": seed, "argv": command})
     manifest = {
@@ -96,13 +137,26 @@ def main() -> None:
         "tag": args.tag,
         "remote_root": root,
         "max_parallel": args.max_parallel,
-        "budget_policy": "160k counted steps; cost logged, not a hard cap",
+        "budget_policy": f"{args.practice_step_budget // 1000}k counted steps; "
+        "cost logged, not a hard cap",
+        # Recorded only when not the default, so a default manifest keeps v8's bytes;
+        # worker.contract reads an absent key as the default.
+        **(
+            {"practice_step_budget": args.practice_step_budget}
+            if args.practice_step_budget != PRACTICE_STEP_BUDGET
+            else {}
+        ),
+        **(
+            {"evaluation_workers": args.evaluation_workers}
+            if args.evaluation_workers != EVALUATION_WORKERS
+            else {}
+        ),
         "runs": rows,
         "resources": {
             "account": "tsilver",
             "partition": "cpu",
-            "cpus": 2,
-            "memory": "16G",
+            "cpus": args.cpus_per_task,
+            "memory": args.memory,
             "time": "48:00:00",
             "gpus": 0,
         },
@@ -129,7 +183,7 @@ def main() -> None:
         script = (
             "#!/usr/bin/env bash\n"
             "#SBATCH --account=tsilver\n#SBATCH --partition=cpu\n"
-            "#SBATCH --cpus-per-task=2\n#SBATCH --mem=16G\n"
+            f"#SBATCH --cpus-per-task={args.cpus_per_task}\n#SBATCH --mem={args.memory}\n"
             f"#SBATCH --time={'02:00:00' if phase == 'smoke' else '48:00:00'}\n"
             f"#SBATCH --job-name={args.tag}-{phase}\n{array}"
             f"#SBATCH --output={root}/logs/%x-%A_%a.out\n"
