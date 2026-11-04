@@ -18,12 +18,13 @@ from pydantic import Field, PrivateAttr
 
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend, TossSettlingController
 from hitl_pmp.environments.tossing3d.skill_timing import SkillTiming
-from hitl_pmp.environments.tossing3d.types import Tossing3DObservation
+from hitl_pmp.environments.tossing3d.types import ControllerRun, Tossing3DObservation
 
 from .bin_geometry import TaperedBin, TaperedBinCollision
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
 from .placement import KitchenHumanPlacement
+from .planning_scene import PlanningScenePool
 from .scene import initial_positions, register_simulation_objects, scene_config
 
 ROBOT_SIDE = "robot_side"
@@ -44,11 +45,16 @@ class KitchenKinderBackend(KinderBackend):
 
     kitchen_config: KitchenConfig = Field(default_factory=KitchenConfig)
     env_id: str = "KitchenRecycling3D-v0"
+    # The desk's and chairs' visual-only meshes (`furniture.VisualFurniture`). Only a
+    # scene that will never be rendered may go without them, so the default keeps them;
+    # rendering a scene built without them raises rather than drawing a bare room.
+    visual_furniture: bool = True
 
     # Seeded cube spots a human reset tries before giving up on a pickable one.
     RESET_CANDIDATES: ClassVar[int] = 50
 
     _scene_seed: int | None = PrivateAttr(default=None)
+    _planning_scenes: PlanningScenePool | None = PrivateAttr(default=None)
     _placements: int = PrivateAttr(default=0)
     # Per human reset, how many unpickable seeded spots were rejected before one passed.
     reset_rejections: list[int] = Field(default_factory=list)
@@ -74,7 +80,8 @@ class KitchenKinderBackend(KinderBackend):
         def make(*, path: Path) -> Any:
             spec = EnvSpec(
                 id=self.env_id,
-                entry_point="hitl_pmp.environments.kitchen_recycling3d.furniture:RecyclingEnv",
+                entry_point="hitl_pmp.environments.kitchen_recycling3d.furniture:"
+                + ("RecyclingEnv" if self.visual_furniture else "PhysicsOnlyRecyclingEnv"),
                 kwargs={
                     "task_config_path": str(path),
                     "scene_render_camera": "task_view",
@@ -104,24 +111,96 @@ class KitchenKinderBackend(KinderBackend):
         boxes MuJoCo simulates, the mat edge as a 16 mm line, and the robot wearing
         MuJoCo's camera bracelet. Every kitchen controller that holds a robot plans in
         this sim: the pick (and its contact monitor and PickPlannable dry run), the toss
-        and the open-gripper clearance; the base approach plans in 2-D only."""
-        from pybullet_helpers.geometry import Pose
+        and the open-gripper clearance; the base approach plans in 2-D only.
 
+        Always a new scene. The pick, its dry run and the toss take theirs from
+        `_pick_collision_sim`, which reuses one; the open-gripper clearance check adds
+        bodies to its scene, so it builds its own here."""
         from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletPyBulletSim
 
-        obj = state.get_object_from_name(self.bin_name)
         sim = VisionBraceletPyBulletSim(state)
+        self._furnish_planning_scene(sim, state)
+        return sim
+
+    def _furnish_planning_scene(self, sim: Any, state: Any) -> None:  # noqa: PLR0917
         TaperedBinCollision.add(
             sim=sim,
             name=self.bin_name,
-            pose=Pose(
-                tuple(state.get(obj, f) for f in ("x", "y", "z")),
-                tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
-            ),
+            pose=self._bin_pose(state=state),
             geometry=TaperedBin.of(config=self.kitchen_config),
         )
         sim._bounding_boxes[self.barrier_name] = self.BARRIER_PLANNING_BOX  # noqa: SLF001
-        return sim
+
+    def _bin_pose(self, *, state: Any) -> Any:
+        from pybullet_helpers.geometry import Pose
+
+        obj = state.get_object_from_name(self.bin_name)
+        return Pose(
+            tuple(state.get(obj, f) for f in ("x", "y", "z")),
+            tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+        )
+
+    def _pick_collision_sim(self, *, state: Any) -> Any:
+        """`_build_pick_collision_sim`'s scene, reused (`planning_scene.py`): handed
+        back exactly as a new one would be, so every plan is the one a new scene gives.
+        A use ends when its user closes the scene (the dry run) or when the skill that
+        took it returns (`run_controller`)."""
+        with SkillTiming.phase_of(timing=self._timing, name="pick_collision_sim"):
+            if self._planning_scenes is None:
+                self._planning_scenes = PlanningScenePool(
+                    furnish=self._furnish_planning_scene,
+                    bin_name=self.bin_name,
+                    pose_of=self._bin_pose,
+                )
+            return self._planning_scenes.checkout(state=state)
+
+    def run_controller(
+        self,
+        *,
+        module: str,
+        key: str,
+        object_names: Sequence[str],
+        params: np.ndarray | None,
+        limit: int,
+        pybullet_sim: Any = None,
+    ) -> ControllerRun:
+        """Tossing3D's, returning every planning scene the skill took once it is done."""
+        pool = self._planning_scenes
+        mark = [] if pool is None else list(pool.lent)
+        try:
+            return super().run_controller(
+                module=module,
+                key=key,
+                object_names=object_names,
+                params=params,
+                limit=limit,
+                pybullet_sim=pybullet_sim,
+            )
+        finally:
+            if self._planning_scenes is not None:
+                self._planning_scenes.release_since(mark=mark)
+
+    def close(self) -> None:
+        if self._planning_scenes is not None:
+            self._planning_scenes.dispose()
+            self._planning_scenes = None
+        super().close()
+
+    def render(self, *, follow_robot: bool = False) -> np.ndarray:
+        self._require_visual_furniture()
+        return super().render(follow_robot=follow_robot)
+
+    def set_substep_recording(self, *, enabled: bool) -> None:
+        if enabled:
+            self._require_visual_furniture()
+        super().set_substep_recording(enabled=enabled)
+
+    def _require_visual_furniture(self) -> None:
+        if not self.visual_furniture:
+            raise RuntimeError(
+                "This kitchen scene was built without its visual furniture "
+                "(visual_furniture=False) and must not be rendered; build one with it."
+            )
 
     def _ground_controller(
         self,

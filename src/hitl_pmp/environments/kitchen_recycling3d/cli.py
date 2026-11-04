@@ -91,6 +91,10 @@ class KitchenRecyclingCli:
             kitchen_config=KitchenRecyclingCli.config(args=args),
             scene_bg=args.scene_bg,
             skill_timing=getattr(args, "skill_timing", True),
+            # A run that defers rendering draws nothing in-process (its videos are
+            # replayed from recorded states, in a scene of their own), so its scenes go
+            # without the visual-only furniture meshes. Anything else keeps them.
+            visual_furniture=not getattr(args, "defer_rendering", False),
         )
         tasks = KitchenRecyclingTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
