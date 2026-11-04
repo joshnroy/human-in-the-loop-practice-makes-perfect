@@ -157,3 +157,57 @@ def test_preview_goals_survive_the_deployment_snapshot(*, world):
     raw = DeploymentSnapshot.encode(method=method)
     restored = DeploymentSnapshot.restore(raw=raw, env=env, provider=provider)
     assert restored.preview_test_goals == goals
+
+
+def _scored(*, method, monkeypatch, ground_skill):
+    """The task ids planning progress scores against, and the score's denominator."""
+    records = []
+    monkeypatch.setattr(
+        EesMethod, "_write_ees_decision", lambda self, *, record: records.append(record)
+    )
+    method.score_ground_skill(ground_skill=ground_skill)
+    (score,) = [r for r in records if r["event"] == "score"]
+    return sorted(method._task_plan_cache, key=str), score["normalization_denominator"]
+
+
+def _with_seen_deliver_one(*, method, tasks, preview):
+    task = tasks.sample_train_task_in_place()
+    method.get_practice_policy(task=task)
+    init = method.abstract_state(state=task.initial_state)
+    for _ in range(4):
+        method.record_seen_task(init_atoms=init, goal=task.goal.atoms)
+    assert len(method._seen_tasks) >= 4
+    assert len(method._preview_tasks) == (3 if preview else 0)
+
+
+def test_with_the_preview_on_scoring_ignores_the_seen_training_tasks(*, world, monkeypatch):
+    env, tasks, provider = world
+    method = EesMethod(
+        env=env,
+        skill_provider=provider,
+        preview_test_goals=tuple(
+            EesMethod.named_goal(goal=goal.atoms) for goal in tasks.test_task_goals()
+        ),
+    )
+    _with_seen_deliver_one(method=method, tasks=tasks, preview=True)
+    pour2 = next(g for g in method.practice_candidates() if g.skill.name == "Pour2")
+    ids, denominator = _scored(method=method, monkeypatch=monkeypatch, ground_skill=pour2)
+    assert all(kind in {"preview", "replan"} for kind, _ in ids), ids
+    replans = len(method._replanning_tasks)
+    assert denominator == 3 + replans
+    if not replans:
+        # Each test goal weighs once: Pour1, Pour2 and Pour3 each in one plan.
+        plans = method.planning_progress_plans()
+        pours = [s.skill.name for plan in plans for s in plan if s.skill.name.startswith("Pour")]
+        assert sorted(pours) == ["Pour1", "Pour2", "Pour3"]
+
+
+def test_with_the_preview_off_scoring_still_uses_the_seen_training_tasks(*, world, monkeypatch):
+    env, tasks, provider = world
+    method = EesMethod(env=env, skill_provider=provider)
+    _with_seen_deliver_one(method=method, tasks=tasks, preview=False)
+    ids, denominator = _scored(
+        method=method, monkeypatch=monkeypatch, ground_skill=provider.ground(name="Wait")
+    )
+    assert "train" in {kind for kind, _ in ids}
+    assert denominator == len(method._seen_tasks)
