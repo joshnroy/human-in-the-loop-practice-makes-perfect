@@ -1,11 +1,6 @@
 # Tossing env v10 + v10b: human-reset-cost sweep (seeds 0–2)
 
-> **PROVISIONAL — data as of 2026-11-04 15:32 EST.** At that time 51/54 runs had ended.
-> The three expectimax runs at reset cost 100 (v10b rows 1, 7 and 13) were still running,
-> at 61,803, 44,611 and 57,775 of 65,000 practice steps. Their rows, the cost-100
-> expectimax points and the cost-100 paired tests will be refreshed once those runs
-> finish, and this note will then say so. Every other number on this page is final for
-> its run.
+> **Final:** all 54 runs ended (48 at budget, 6 ended by repeated STOP), data as of 2026-11-04 16:18 EST.
 
 ## TL;DR
 
@@ -24,8 +19,9 @@
   (436–3,246 STOPs) and never resumed. Josh had them cancelled. They count as **ended by
   repeated STOP**, with the last evaluation (0–1 of 10) as the final score. That rule was
   applied post hoc.
-- **Recommendation:** v11 with #675 (search caches), `--repeated-stop-limit 100`
-  (#682), at least 6 seeds (ideally 10), and a solved metric fixed before launch.
+- **Recommendation:** v11 with `--repeated-stop-limit 100` (#682, merged), #675
+  (search caches) and #686 (mandatory equivalence guard) once they land, at least 6 seeds
+  (ideally 10), and a solved metric fixed before launch.
 
 ![Against human reset cost: solved, resets, dumps, STOPs and human cost paid, per seed and mean](2026-11-04-tossing-env-v10-reset-cost-sweep-summary.png)
 
@@ -48,6 +44,10 @@ the arms at any price? The arms are expectimax (ours), Curtis and EES.
     observed. Before the first reset to a destination, that forecast is
     1 step × the robot price 0.01 = 0.01, whatever the swept cost. **The planners learn
     the price by paying it.** Josh chose to keep this ("Keep, matches Tossing3D").
+    The "matches Tossing3D" premise was false for the committed 2026-10-08
+    original-Tossing3D sweep, whose planners knew the price up front (see caveats). The
+    learned price is kept on its own merits: asked on 2026-11-04 whether v11 should tell
+    the planners the reset price up front, Josh answered "no??? why would it do that?".
 - **v10** (Della array 16840531) launched all 54 rows. 12/54 failed at start-up:
   expectimax and Curtis at costs 100 and 10000, all three seeds. Each failed in 10–26 s
   on `POMDP cost observations must be at most 20.0`. The launch passed the swept cost
@@ -84,7 +84,9 @@ No prediction was registered about final solved.
   - costs 0, 5, 10, 20, 100 and 10000 on both resets;
   - 3 seeds, 65,000 steps, 4 evaluation workers, Della genoa, 12 GB per job;
   - rows ordered seed first, then cost, then arm.
-- He kept the learned reset price for the planners ("Keep, matches Tossing3D").
+- He kept the learned reset price for the planners ("Keep, matches Tossing3D"), and
+  later confirmed it is intended rather than inherited ("no??? why would it do that?",
+  to "should v11 tell the planners the reset price up front?").
 - He approved the v10b rerun ("sure, go for it.") and the audit fix ("Fix audit,
   resubmit").
 - At about 14:55 he had the six cost-10000 planner runs cancelled ("yep cool, do both
@@ -135,7 +137,7 @@ No prediction was registered about final solved.
 | 5 | 10.00, 9.00, 8.67 | 8.33, 5.00, 8.67 | 8.00, 7.67, 8.00 |
 | 10 | 7.67, 6.33, 8.00 | 8.33, 5.00, 6.67 | 8.00, 7.67, 8.00 |
 | 20 | 6.33, 7.67, 9.67 | 8.33, 5.67, 8.67 | 8.00, 7.67, 8.00 |
-| 100 | 7.33, 7.67, 8.00 (*running*) | 6.67, 8.33, 8.33 | 8.00, 7.67, 8.00 |
+| 100 | 7.67, 7.67, 9.00 | 6.67, 8.33, 8.33 | 8.00, 7.67, 8.00 |
 | 10000 | 0.50, 1.00, 1.00 (*ended by STOP*) | 0.50, 1.00, 0.50 (*ended by STOP*) | 8.00, 7.67, 8.00 |
 
 The table gives the mean of the last 3 evaluations, out of 10, for seeds 0, 1 and 2.
@@ -147,8 +149,8 @@ Paired Wilcoxon p on that metric:
   - expectimax vs EES p = 0.25, the floor;
   - expectimax vs Curtis p = 0.5, with 2/3 non-zero pairs;
   - Curtis vs EES p = 1.0.
-- **Cost 100 (provisional):** expectimax vs Curtis p = 0.75; the other two pairs
-  p = 1.0.
+- **Cost 100:** expectimax vs Curtis p = 0.75; expectimax vs EES p = 1.0, with 2/3
+  non-zero pairs; Curtis vs EES p = 1.0.
 - **Cost 10000:** both planners vs EES p = 0.25, the floor; expectimax vs Curtis
   p = 1.0.
 
@@ -167,7 +169,7 @@ Totals per seed, for seeds 0/1/2:
 | 5 | expectimax | 52/66/62 | 1/1/1 | 12/19/11 | 260/330/310 |
 | 10 | expectimax | 13/26/30 | 25/25/26 | 11/15/15 | 130/260/300 |
 | 20 | expectimax | 15/20/23 | 20/26/24 | 25/24/27 | 300/400/460 |
-| 100 | expectimax (*running*) | 15/28/17 | 16/8/26 | 182/248/181 | 1,500/2,800/1,700 |
+| 100 | expectimax | 16/29/20 | 17/14/30 | 196/261/211 | 1,600/2,900/2,000 |
 | 0 | Curtis | 61/56/60 | 0/0/0 | 12/14/12 | 0 |
 | 5 | Curtis | 61/65/69 | 0/0/0 | 12/14/11 | 305/325/345 |
 | 10 | Curtis | 48/65/82 | 1/0/0 | 12/14/15 | 480/650/820 |
@@ -184,7 +186,7 @@ Totals per seed, for seeds 0/1/2:
   for expectimax seed 0 at cost 0). EES uses the opposite side almost exclusively
   (6 same, 121 opposite for seed 0 at cost 5).
 - **Human cost paid.** At costs 5–100 the planners paid 0.10–0.62 times EES's human cost on the same seed:
-  - expectimax 130–2,800;
+  - expectimax 130–2,900;
   - Curtis 305–2,600;
   - EES 635–13,200.
 
@@ -222,9 +224,9 @@ that never resumed:
 
 STOPs are counted inclusively, so a streak from step 1,883 to 2,318 is 436 STOPs.
 
-**Cost 100 is different.** Expectimax chose STOP 181–248 times per run, in bursts: the
-longest so far are 22, 21 and 19 consecutive STOPs. Every burst so far has been followed
-by more practice. Curtis at cost 100 never went beyond 3 consecutive STOPs.
+**Cost 100 is different.** Expectimax chose STOP 196–261 times per run, in bursts: the
+longest are 22, 21 and 19 consecutive STOPs. Every burst was followed by more practice,
+and all three runs reached the 65,000-step budget. Curtis at cost 100 never went beyond 3 consecutive STOPs.
 
 ### All runs
 
@@ -269,9 +271,9 @@ averages those they have.
 | 20 | EES | 0 | budget | 65,000 | 6/10 (at 65,000) | 8.00/10 | 6 | 121 | 12 | 0 | 0 | 2,540 |
 | 20 | EES | 1 | budget | 65,000 | 10/10 (at 65,000) | 7.67/10 | 5 | 122 | 8 | 0 | 0 | 2,540 |
 | 20 | EES | 2 | budget | 65,000 | 8/10 (at 65,000) | 8.00/10 | 9 | 123 | 8 | 0 | 0 | 2,640 |
-| 100 | expectimax (ours) | 0 | running | 61,803 | 7/10 (at 60,800) | 7.33/10 | 14 | 1 | 16 | 182 | 22 | 1,500 |
-| 100 | expectimax (ours) | 1 | running | 44,611 | 7/10 (at 41,600) | 7.67/10 | 27 | 1 | 8 | 248 | 21 | 2,800 |
-| 100 | expectimax (ours) | 2 | running | 57,775 | 10/10 (at 54,400) | 8.00/10 | 16 | 1 | 26 | 181 | 19 | 1,700 |
+| 100 | expectimax (ours) | 0 | budget | 65,000 | 7/10 (at 65,000) | 7.67/10 | 15 | 1 | 17 | 196 | 22 | 1,600 |
+| 100 | expectimax (ours) | 1 | budget | 65,000 | 10/10 (at 65,000) | 7.67/10 | 28 | 1 | 14 | 261 | 21 | 2,900 |
+| 100 | expectimax (ours) | 2 | budget | 65,000 | 9/10 (at 65,000) | 9.00/10 | 19 | 1 | 30 | 211 | 19 | 2,000 |
 | 100 | Curtis | 0 | budget | 65,000 | 7/10 (at 65,000) | 6.67/10 | 25 | 1 | 26 | 16 | 1 | 2,600 |
 | 100 | Curtis | 1 | budget | 65,000 | 8/10 (at 65,000) | 8.33/10 | 22 | 1 | 23 | 15 | 1 | 2,300 |
 | 100 | Curtis | 2 | budget | 65,000 | 8/10 (at 65,000) | 8.33/10 | 22 | 1 | 26 | 12 | 3 | 2,300 |
@@ -312,16 +314,17 @@ averages those they have.
   0 and 5, and Curtis seed 1 at costs 5 and 10 (same evaluations and reset sequence).
   This is consistent with the planners not knowing the price before they first pay it,
   but it was not investigated.
-- **Expectimax STOP bursts at cost 100** (up to 22 in a row so far) are long enough that
-  a repeated-STOP limit of K would end those runs if K were at most 22. K = 100 is
-  proposed in #682.
-- **Comparability with the original Tossing3D cost sweep is open.** The committed
-  original-Tossing3D cost sweep is
-  [`2026-10-08-human-cost-sweep.md`](2026-10-08-human-cost-sweep.md). It ran on
-  2026-10-08, before #565 (merged 2026-10-23), which made the planners estimate human
-  costs from observed charges. If that is the sweep meant by "matches Tossing3D", its
-  planners knew the reset price up front, while v10's learn it. The two sweeps are then
-  not the same experiment. Not resolved here.
+- **Expectimax STOP bursts at cost 100** (up to 22 in a row) are long enough that a
+  repeated-STOP limit of K would end those runs if K were at most 22. #682 (merged) adds
+  the limit; K = 100 is the proposed value.
+- **v10 deliberately differs from the original Tossing3D cost sweep.** The committed
+  original-Tossing3D cost sweep,
+  [`2026-10-08-human-cost-sweep.md`](2026-10-08-human-cost-sweep.md), ran before #565
+  (merged 2026-10-23), which made the planners estimate human costs from observed
+  charges. Its planners knew the reset price up front; v10's learn it by paying it. That
+  is the intended design (Josh, 2026-11-04: "no??? why would it do that?", to "should
+  v11 tell the planners the reset price up front?"). The two sweeps are therefore not
+  the same experiment, and their numbers should not be compared as if they were.
 - **Search results are not bit-reproducible across CPU types.** This comes from #675's
   investigation. All of v10 and v10b ran on genoa, so the runs here are comparable with
   each other. A rerun on another CPU type may not reproduce them exactly.
@@ -334,14 +337,14 @@ averages those they have.
 
 Run v11 with:
 
-- **#675 (search caches)**, to cut wall-clock;
-- **`--repeated-stop-limit 100` (#682)**, so a STOP streak ends a run by rule rather than
-  by cancellation;
+- **`--repeated-stop-limit 100` (#682, merged)**, so a STOP streak ends a run by rule
+  rather than by cancellation;
+- **#675 (search caches)**, to cut wall-clock, once it lands (open draft);
+- **#686 (mandatory equivalence guard)**, which checks the smoke against a recorded
+  reference, once it lands (open draft);
 - **at least 6 seeds, ideally 10.** At n=6 the exact paired floor is 0.03125;
 - **a primary solved metric fixed before launch**: for example the mean of the last 3
   evaluations, or more tasks per evaluation.
 
-Before v11 it is also worth settling two things:
-
-- whether EES's indifference to price above 0 is intended;
-- which original-Tossing3D sweep v10 is meant to match.
+Before v11 it is also worth settling whether EES's indifference to the reset price
+above 0 is intended.

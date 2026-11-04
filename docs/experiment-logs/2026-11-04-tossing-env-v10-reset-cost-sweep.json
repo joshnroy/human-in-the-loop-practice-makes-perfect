@@ -7,7 +7,7 @@
   "10000/expectimax/1",
   "10000/expectimax/2"
  ],
- "data_as_of": "2026-11-04 15:32 EST",
+ "data_as_of": "2026-11-04 16:18 EST",
  "paired_wilcoxon": {
   "0/curtis-ees/human_cost": {
    "curtis": [
@@ -226,13 +226,13 @@
     2300.0
    ],
    "expectimax": [
-    1499.9999999999998,
-    2800.0,
-    1700.0
+    1599.9999999999998,
+    2900.0,
+    2000.0
    ],
    "n": 3,
    "n_nonzero": 3,
-   "p": 0.5
+   "p": 0.75
   },
   "100/expectimax-curtis/mean_last_3": {
    "curtis": [
@@ -241,9 +241,9 @@
     8.333333333333334
    ],
    "expectimax": [
-    7.333333333333333,
     7.666666666666667,
-    8.0
+    7.666666666666667,
+    9.0
    ],
    "n": 3,
    "n_nonzero": 3,
@@ -256,9 +256,9 @@
     13200.0
    ],
    "expectimax": [
-    1499.9999999999998,
-    2800.0,
-    1700.0
+    1599.9999999999998,
+    2900.0,
+    2000.0
    ],
    "n": 3,
    "n_nonzero": 3,
@@ -271,12 +271,12 @@
     8.0
    ],
    "expectimax": [
-    7.333333333333333,
     7.666666666666667,
-    8.0
+    7.666666666666667,
+    9.0
    ],
    "n": 3,
-   "n_nonzero": 1,
+   "n_nonzero": 2,
    "p": 1.0
   },
   "10000/curtis-ees/human_cost": {
@@ -13350,7 +13350,8 @@
     41364,
     46342,
     56591,
-    59769
+    59769,
+    62666
    ],
    "evaluations": [
     [
@@ -13452,10 +13453,20 @@
      60800,
      7,
      10
+    ],
+    [
+     64000,
+     9,
+     10
+    ],
+    [
+     65000,
+     7,
+     10
     ]
    ],
-   "phase": "running",
-   "practice_steps": 61803,
+   "phase": "complete",
+   "practice_steps": 65000,
    "resets": [
     [
      268,
@@ -13531,6 +13542,11 @@
      61123,
      "ResetCubeBinSameSide",
      99.99999999999977
+    ],
+    [
+     64868,
+     "ResetCubeBinSameSide",
+     100.0
     ]
    ],
    "stop_steps": [
@@ -13715,7 +13731,21 @@
     61119,
     61120,
     61121,
-    61122
+    61122,
+    64854,
+    64855,
+    64856,
+    64857,
+    64858,
+    64859,
+    64860,
+    64861,
+    64862,
+    64863,
+    64864,
+    64865,
+    64866,
+    64867
    ]
   },
   "100/expectimax/1": {
@@ -13727,7 +13757,13 @@
     26120,
     27787,
     32165,
-    42971
+    42971,
+    46713,
+    48867,
+    50513,
+    55510,
+    61525,
+    64758
    ],
    "evaluations": [
     [
@@ -13799,10 +13835,50 @@
      41600,
      7,
      10
+    ],
+    [
+     44800,
+     3,
+     10
+    ],
+    [
+     48000,
+     6,
+     10
+    ],
+    [
+     51200,
+     4,
+     10
+    ],
+    [
+     54400,
+     8,
+     10
+    ],
+    [
+     57600,
+     7,
+     10
+    ],
+    [
+     60800,
+     6,
+     10
+    ],
+    [
+     64000,
+     7,
+     10
+    ],
+    [
+     65000,
+     10,
+     10
     ]
    ],
-   "phase": "running",
-   "practice_steps": 44611,
+   "phase": "complete",
+   "practice_steps": 65000,
    "resets": [
     [
      273,
@@ -13941,6 +14017,11 @@
     ],
     [
      44400,
+     "ResetCubeBinSameSide",
+     100.0
+    ],
+    [
+     45959,
      "ResetCubeBinSameSide",
      100.0
     ]
@@ -14193,7 +14274,20 @@
     44396,
     44397,
     44398,
-    44399
+    44399,
+    45949,
+    45950,
+    45951,
+    45952,
+    45953,
+    45954,
+    45955,
+    45956,
+    45957,
+    45958,
+    48866,
+    57005,
+    63885
    ]
   },
   "100/expectimax/2": {
@@ -14223,7 +14317,11 @@
     50022,
     52204,
     53137,
-    54337
+    54337,
+    59289,
+    60578,
+    62804,
+    63915
    ],
    "evaluations": [
     [
@@ -14315,10 +14413,30 @@
      54400,
      10,
      10
+    ],
+    [
+     57600,
+     10,
+     10
+    ],
+    [
+     60800,
+     9,
+     10
+    ],
+    [
+     64000,
+     9,
+     10
+    ],
+    [
+     65000,
+     9,
+     10
     ]
    ],
-   "phase": "running",
-   "practice_steps": 57775,
+   "phase": "complete",
+   "practice_steps": 65000,
    "resets": [
     [
      273,
@@ -14402,6 +14520,21 @@
     ],
     [
      56728,
+     "ResetCubeBinSameSide",
+     100.0
+    ],
+    [
+     58918,
+     "ResetCubeBinSameSide",
+     100.0
+    ],
+    [
+     60230,
+     "ResetCubeBinSameSide",
+     100.0
+    ],
+    [
+     61637,
      "ResetCubeBinSameSide",
      100.0
     ]
@@ -14587,7 +14720,37 @@
     56724,
     56725,
     56726,
-    56727
+    56727,
+    58904,
+    58905,
+    58906,
+    58907,
+    58908,
+    58909,
+    58910,
+    58911,
+    58912,
+    58913,
+    58914,
+    58915,
+    58916,
+    58917,
+    60222,
+    60223,
+    60224,
+    60225,
+    60226,
+    60227,
+    60228,
+    60229,
+    61629,
+    61630,
+    61631,
+    61632,
+    61633,
+    61634,
+    61635,
+    61636
    ]
   },
   "10000/curtis/0": {
@@ -36949,52 +37112,52 @@
    "stops": 0
   },
   "100/expectimax/0": {
-   "dumps": 16,
-   "end": "running",
-   "evaluations": 20,
-   "final_stop_streak": 13,
-   "human_cost": 1499.9999999999998,
+   "dumps": 17,
+   "end": "budget",
+   "evaluations": 22,
+   "final_stop_streak": 14,
+   "human_cost": 1599.9999999999998,
    "last_solved": 7,
-   "last_step": 60800,
+   "last_step": 65000,
    "longest_stop_streak": 22,
-   "mean_last_3": 7.333333333333333,
+   "mean_last_3": 7.666666666666667,
    "num_total": 10,
-   "practice_steps": 61803,
+   "practice_steps": 65000,
    "resets_opposite": 1,
-   "resets_same": 14,
-   "stops": 182
+   "resets_same": 15,
+   "stops": 196
   },
   "100/expectimax/1": {
-   "dumps": 8,
-   "end": "running",
-   "evaluations": 14,
-   "final_stop_streak": 10,
-   "human_cost": 2800.0,
-   "last_solved": 7,
-   "last_step": 41600,
+   "dumps": 14,
+   "end": "budget",
+   "evaluations": 22,
+   "final_stop_streak": 1,
+   "human_cost": 2900.0,
+   "last_solved": 10,
+   "last_step": 65000,
    "longest_stop_streak": 21,
    "mean_last_3": 7.666666666666667,
    "num_total": 10,
-   "practice_steps": 44611,
+   "practice_steps": 65000,
    "resets_opposite": 1,
-   "resets_same": 27,
-   "stops": 248
+   "resets_same": 28,
+   "stops": 261
   },
   "100/expectimax/2": {
-   "dumps": 26,
-   "end": "running",
-   "evaluations": 18,
-   "final_stop_streak": 11,
-   "human_cost": 1700.0,
-   "last_solved": 10,
-   "last_step": 54400,
+   "dumps": 30,
+   "end": "budget",
+   "evaluations": 22,
+   "final_stop_streak": 8,
+   "human_cost": 2000.0,
+   "last_solved": 9,
+   "last_step": 65000,
    "longest_stop_streak": 19,
-   "mean_last_3": 8.0,
+   "mean_last_3": 9.0,
    "num_total": 10,
-   "practice_steps": 57775,
+   "practice_steps": 65000,
    "resets_opposite": 1,
-   "resets_same": 16,
-   "stops": 181
+   "resets_same": 19,
+   "stops": 211
   },
   "10000/curtis/0": {
    "dumps": 0,
