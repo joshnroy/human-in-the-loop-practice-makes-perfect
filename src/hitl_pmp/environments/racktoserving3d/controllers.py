@@ -39,6 +39,12 @@ class StrokeStances(BaseModel):
     rear_y_offset: float = -0.15
     rear_heading: float = np.pi - 0.30
     side_exit: Literal["front", "rear_lane"] = "rear_lane"
+    # "rear_corner" runs both y gathers from just behind the counter's rear corners,
+    # reached along the rear lane, instead of driving round to the side stances.
+    gather_stance: Literal["side", "rear_corner"] = "side"
+    corner_x_offset: float = 0.025
+    corner_y_offset: float = 0.30
+    corner_heading: float = 1.75
 
     def side_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
         return np.array([
@@ -53,6 +59,41 @@ class StrokeStances(BaseModel):
             y + self.rear_y_offset,
             self.rear_heading,
         ])
+
+    def corner_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
+        """Behind ``side``'s rear corner, facing back across the counter toward -side."""
+        return np.array([
+            config.counter_x_max + self.corner_x_offset,
+            side * (config.counter_width / 2 + self.corner_y_offset),
+            -side * self.corner_heading,
+        ])
+
+    def gather_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
+        if self.gather_stance == "rear_corner":
+            return self.corner_base(side=side, config=config)
+        return self.side_base(side=side, config=config)
+
+    def gather_route(
+        self, *, side: int, start: np.ndarray, config: RackServingConfig
+    ) -> list[np.ndarray]:
+        """Base waypoints from ``start`` (rear stance, or the other gather stance) to
+        ``side``'s gather stance; the last waypoint is the stance itself."""
+        if self.gather_stance == "rear_corner":
+            rear_x, base = self.rear_x(config=config), self.corner_base(side=side, config=config)
+            return [
+                np.array([rear_x, start[1], start[2]]),
+                np.array([rear_x, base[1], start[2]]),
+                np.array([rear_x, base[1], base[2]]),
+                base,
+            ]
+        if side > 0:
+            return self.rear_to_side(side=side, start=start, config=config)
+        return self.side_to_side(side=side, config=config)
+
+    def corner_to_rear(self, *, start: np.ndarray, config: RackServingConfig) -> list[np.ndarray]:
+        """From a rear-corner stance straight back to the rear lane, then face the rack."""
+        rear_x = self.rear_x(config=config)
+        return [np.array([rear_x, start[1], start[2]]), np.array([rear_x, start[1], np.pi])]
 
     def lane(self, *, side: int, config: RackServingConfig) -> float:
         return side * (config.counter_width / 2 + self.lane_clearance)
@@ -293,17 +334,13 @@ class RackControllers:
 
                 def to_side(*, side: int = side) -> None:
                     here = shelf.data.qpos[shelf.ba].copy()
-                    route = (
-                        stances.rear_to_side(side=side, start=here, config=config)
-                        if side > 0
-                        else stances.side_to_side(side=side, config=config)
-                    )
+                    route = stances.gather_route(side=side, start=here, config=config)
                     for index, waypoint in enumerate(route[:-1]):
                         tool.move_base(target=waypoint, label=f"gather_route_{index}")
 
                 self.push_stroke(
                     stroke=stroke,
-                    base=stances.side_base(side=side, config=config),
+                    base=stances.gather_base(side=side, config=config),
                     travel=to_side,
                     rack_pose=rack_pose,
                     label=f"gather_{'plus' if side > 0 else 'minus'}_y",
@@ -330,7 +367,13 @@ class RackControllers:
         """
         config, shelf = self.backend.config, self.shelf
         y = float(shelf.data.qpos[shelf.ba[1]])
-        if abs(y) > config.counter_width / 2 and self.stances.side_exit == "rear_lane":
+        here = shelf.data.qpos[shelf.ba].copy()
+        if abs(y) > config.counter_width / 2 and here[0] > config.counter_x_max:
+            for index, waypoint in enumerate(
+                self.stances.corner_to_rear(start=here, config=config)
+            ):
+                self.tool.move_base(target=waypoint, label=f"to_rear_{index}")
+        elif abs(y) > config.counter_width / 2 and self.stances.side_exit == "rear_lane":
             side = 1 if y > 0 else -1
             for index, waypoint in enumerate(self.stances.side_to_rear(side=side, config=config)):
                 self.tool.move_base(target=waypoint, label=f"to_rear_{index}")

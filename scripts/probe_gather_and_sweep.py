@@ -108,6 +108,10 @@ def main():
     parser.add_argument(
         "--side-offset", type=float, default=None, help="override StrokeStances.side_offset"
     )
+    parser.add_argument("--gather-stance", choices=("side", "rear_corner"), default=None)
+    parser.add_argument("--corner-heading", type=float, default=None)
+    parser.add_argument("--corner-x-offset", type=float, default=None)
+    parser.add_argument("--corner-y-offset", type=float, default=None)
     args = parser.parse_args()
     if args.output.exists():
         parser.error("use a new output directory")
@@ -205,6 +209,9 @@ def main():
             if label.startswith("GatherAndSweep"):
                 label = f"GatherAndSweep: {len(stroke_labels)}/5 strokes done"
             ticks[0] += 1
+            base_xy = data.qpos[controllers.shelf.ba[:2]].copy()
+            driven[0] += float(np.linalg.norm(base_xy - last_base[0]))
+            last_base[0] = base_xy
             if ticks[0] % 5 == 0 and motions and motions[-1].endswith("_push"):
                 trace.append({
                     "tick": ticks[0],
@@ -215,13 +222,22 @@ def main():
             frame()
 
         ticks = [0]
+        driven = [0.0]
+        last_base = [np.zeros(2)]
         trace: list[dict] = []
         report["push_trace"] = trace
 
         controllers = env.rack_controllers()
         overrides = {
             key: value
-            for key, value in (("side_offset", args.side_offset), ("side_exit", args.side_exit))
+            for key, value in (
+                ("side_offset", args.side_offset),
+                ("side_exit", args.side_exit),
+                ("gather_stance", args.gather_stance),
+                ("corner_heading", args.corner_heading),
+                ("corner_x_offset", args.corner_x_offset),
+                ("corner_y_offset", args.corner_y_offset),
+            )
             if value is not None
         }
         if overrides:
@@ -251,6 +267,7 @@ def main():
 
         controllers.tool.tool_clear = traced_clear
         frame(repeat=10, force=True)
+        last_base[0] = data.qpos[controllers.shelf.ba[:2]].copy()
         backend.set_tick_observer(observer=on_tick)
 
         def foods():
@@ -268,7 +285,7 @@ def main():
         report["initial_foods"] = foods()
         for skill in ("PickScraper", "GatherAndSweep"):
             label = skill
-            began, sim0 = time.monotonic(), float(data.time)
+            began, sim0, driven0 = time.monotonic(), float(data.time), driven[0]
             env.take_action(
                 action=np.array([SKILL_IDS[skill], 0, args.s, args.delta, args.d], dtype=float)
             )
@@ -278,6 +295,7 @@ def main():
                 "error": error,
                 "wall_seconds": round(time.monotonic() - began, 1),
                 "sim_seconds": round(float(data.time) - sim0, 2),
+                "base_driven_m": round(driven[0] - driven0, 3),
                 "foods": foods(),
                 "base": data.qpos[controllers.shelf.ba].round(4).tolist(),
                 "held_scraper": backend.held(name="wiper_0"),

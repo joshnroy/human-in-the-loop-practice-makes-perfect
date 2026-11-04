@@ -341,3 +341,69 @@ def test_stroke_end_settle_never_presses_the_blade_down_into_the_rack():
     )
     commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
     assert min(position[2] for position in commanded) >= stroke.end[2] - 0.002 - 1e-12
+
+
+@pytest.mark.parametrize("side", [1, -1])
+def test_rear_corner_gather_stances_are_mirrored_and_behind_the_counter(*, side):
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances(gather_stance="rear_corner")
+    base = stances.gather_base(side=side, config=config)
+    assert base[0] > config.counter_x_max
+    assert side * base[1] > config.counter_width / 2
+    np.testing.assert_allclose(base, stances.corner_base(side=side, config=config))
+    mirrored = stances.corner_base(side=-side, config=config)
+    np.testing.assert_allclose([mirrored[0], -mirrored[1], -mirrored[2]], base)
+    # The arm reaches toward the rack: the base faces back across the counter's rear
+    # edge and toward the far side, never along it.
+    assert np.cos(base[2]) < 0 and side * np.sin(base[2]) < 0
+
+
+def test_side_gather_stance_stays_the_default():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+    assert stances.gather_stance == "side"
+    np.testing.assert_allclose(
+        stances.gather_base(side=1, config=config), stances.side_base(side=1, config=config)
+    )
+
+
+def test_rear_corner_routes_never_pass_the_counters_rear_edge():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances(gather_stance="rear_corner")
+    rear = stances.rear_base(y=-0.0625, config=config)
+    plus = stances.corner_base(side=1, config=config)
+    minus = stances.corner_base(side=-1, config=config)
+    for start, side, goal in ((rear, 1, plus), (plus, -1, minus)):
+        route = stances.gather_route(side=side, start=start, config=config)
+        assert all(point[0] > config.counter_x_max for point in route)
+        np.testing.assert_allclose(route[-1], goal)
+    exit_route = stances.corner_to_rear(start=minus, config=config)
+    assert all(point[0] > config.counter_x_max for point in exit_route)
+    assert exit_route[-1][0] >= stances.rear_x(config=config)
+    assert exit_route[-1][2] == pytest.approx(np.pi)
+
+
+def test_side_gather_route_is_unchanged():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+    rear = stances.rear_base(y=-0.0625, config=config)
+    plus = stances.side_base(side=1, config=config)
+    for got, want in (
+        (
+            stances.gather_route(side=1, start=rear, config=config),
+            stances.rear_to_side(side=1, start=rear, config=config),
+        ),
+        (
+            stances.gather_route(side=-1, start=plus, config=config),
+            stances.side_to_side(side=-1, config=config),
+        ),
+    ):
+        np.testing.assert_allclose(np.array(got), np.array(want))
