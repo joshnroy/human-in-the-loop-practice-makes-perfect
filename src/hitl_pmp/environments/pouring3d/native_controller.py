@@ -53,6 +53,8 @@ class NativePouringController(BaseModel):
     lost_contacts: int = 0
     posture: float = 0.0
     posture_goal: float = 0.0
+    # Whole turns added to the joint-5 posture attractor; chosen per skill.
+    posture_turn: float = 0.0
     posture_weight: float = 0.015
     pitcher_approach_clearance: float = 0.25
     pitcher_open_grip: float = 0.0
@@ -129,6 +131,21 @@ class NativePouringController(BaseModel):
         else:
             mujoco.mj_forward(self.model, self.scratch)
 
+    def choose_posture_turn(self) -> None:
+        """At a skill's start, put the posture attractor on the turn nearest joint 5.
+
+        Joint 5 is continuous, so an arm wound by whole turns is the same arm; an
+        attractor on another turn would drag it back around. Fixed for the whole skill:
+        re-wrapping on every IK call flips the attractor to the next turn as soon as
+        the skill carries joint 5 past posture - pi, and the arm then winds on.
+        """
+        offset = float(self.data.qpos[self.arm_q[4]]) - self.posture
+        self.posture_turn = 2 * np.pi * round(offset / (2 * np.pi))
+
+    def posture_residual(self, *, angle: float) -> float:
+        """Plain offset from the attractor on this skill's turn; ``angle - posture`` at 0."""
+        return angle - self.posture - self.posture_turn
+
     def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
 
         self.posture += float(np.clip(self.posture_goal - self.posture, -0.02, 0.02))
@@ -143,7 +160,7 @@ class NativePouringController(BaseModel):
                 self.scratch.site_xpos[self.site] - position,
                 0.22 * (rotation * actual.inv()).as_rotvec(),
                 0.002 * (q - self.last_q),
-                self.posture_weight * (q[4] - self.posture),
+                self.posture_weight * self.posture_residual(angle=q[4]),
                 self.obstacle_residual(),
             ]
 

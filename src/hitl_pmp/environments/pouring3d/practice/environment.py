@@ -131,6 +131,7 @@ class FrozenPourEnvironment(Environment):
 
     def take_action(self, *, action: Action) -> State:
         c = self.controller()
+        c.choose_posture_turn()
         start = float(c.data.time)
         self._skill_start = c.steps
         self.last_info = {"action": np.asarray(action).tolist(), "error": None, "success": False}
