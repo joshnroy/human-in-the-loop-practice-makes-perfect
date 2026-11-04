@@ -67,17 +67,17 @@ def test_manifest_distinguishes_fixed_repeats_from_seeded_human_layouts():
         {"seeds": []},
         {"seeds": [-1]},
         {"layouts": ["unknown"]},
-        {"param_sets": [(0.07, 0.0, 0.13)]},
+        {"param_sets": [(0.07, 0.045, 0.13)]},
         {"param_sets": [(0, 0.26, 0)]},
         {"param_sets": [(0.07, 0.0)]},
-        {"param_sets": [(0.07, 0.041, 0.1)]},
-        {"param_sets": [(float("nan"), 0.0, 0.1)]},
+        {"param_sets": [(0.07, 0.076, 0.1)]},
+        {"param_sets": [(float("nan"), 0.045, 0.1)]},
         {"max_trials": 0},
         {"max_seconds": float("inf")},
         {"max_seconds": 43201},
         {"trial_seconds": 901},
         {"search_mode": "unknown"},
-        {"constant_params": (0.07, 0.0, 0.03)},
+        {"constant_params": (0.07, 0.045, 0.03)},
         {"scraper_tilt_degrees": float("nan")},
         {"states": ["fixed:-1"]},
         {"step_limit": 0},
@@ -105,7 +105,7 @@ def test_dry_run_writes_only_an_unexecuted_manifest(*, tmp_path):
                 "3",
                 "--params",
                 "0.05",
-                "0.01",
+                "0.035",
                 "0.1",
             ]
         )
@@ -113,7 +113,7 @@ def test_dry_run_writes_only_an_unexecuted_manifest(*, tmp_path):
     )
     assert [path.name for path in output.iterdir()] == ["manifest.json"]
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["param_sets"] == [{"s_m": 0.05, "delta_m": 0.01, "d_m": 0.1}]
+    assert manifest["param_sets"] == [{"s_m": 0.05, "delta_m": 0.035, "d_m": 0.1}]
     assert manifest["native_workers_started"] == 0
     assert all(state["status"] == "untested" for state in manifest["states"])
 
@@ -204,7 +204,7 @@ def test_existential_coverage_retains_failures_and_stops_each_state(*, tmp_path)
     manifest = build_manifest(
         seeds=[0, 1],
         layouts=["human_batch_return"],
-        param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)],
+        param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)],
     )
     stub = TrialStub()
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=stub.run)
@@ -220,7 +220,7 @@ def test_existential_coverage_retains_failures_and_stops_each_state(*, tmp_path)
 
 @pytest.mark.parametrize("kind", ["mismatch", "timeout", "invalid"])
 def test_partial_evidence_and_invalidating_issues_stop_run(*, tmp_path, kind):
-    manifest = build_manifest(seeds=[0, 1], param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)])
+    manifest = build_manifest(seeds=[0, 1], param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)])
     stub = TrialStub(**{kind: True})
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=stub.run)
     assert len(stub.calls) == (2 if kind == "mismatch" else 1)
@@ -231,7 +231,7 @@ def test_partial_evidence_and_invalidating_issues_stop_run(*, tmp_path, kind):
 
 def test_trial_budget_and_duplicate_layout_reporting(*, tmp_path):
     manifest = build_manifest(
-        seeds=[0, 1], layouts=["fixed"], param_sets=[(0.07, 0.0, 0.12)], max_trials=1
+        seeds=[0, 1], layouts=["fixed"], param_sets=[(0.07, 0.045, 0.12)], max_trials=1
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
     assert len(summary["attempts"]) == 1
@@ -248,7 +248,7 @@ def test_aggregation_does_not_trust_success_flag_alone(*, tmp_path, field):
         result[field] = False
         return result
 
-    manifest = build_manifest(seeds=[1], layouts=["fixed"], param_sets=[(0.07, 0.0, 0.10)])
+    manifest = build_manifest(seeds=[1], layouts=["fixed"], param_sets=[(0.07, 0.045, 0.10)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert not summary["claim"]["all_sampled_states_covered"]
 
@@ -257,7 +257,7 @@ def test_grid_reports_constant_baseline_and_per_state_oracle(*, tmp_path):
     manifest = build_manifest(
         seeds=[0, 1],
         layouts=["human_batch_return"],
-        param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)],
+        param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)],
         search_mode="grid",
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
@@ -273,7 +273,7 @@ def test_early_success_does_not_disprove_untested_common_params(*, tmp_path):
     manifest = build_manifest(
         seeds=[0, 1],
         layouts=["human_batch_return"],
-        param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)],
+        param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)],
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=TrialStub().run)
     assert summary["comparison"]["common_params_status"] == "inconclusive"
@@ -287,7 +287,7 @@ def test_common_setting_and_duplicate_layouts_are_reported(*, tmp_path):
         request["state"]["seed"] = 0
         return stub.run(request=request, output=output)
 
-    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], param_sets=[(0.07, 0.0, 0.12)])
+    manifest = build_manifest(seeds=[0, 1], layouts=["fixed"], param_sets=[(0.07, 0.045, 0.12)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["comparison"]["common_params_status"] == "witness_found"
     assert summary["comparison"]["measured_distinct_layouts"] == 1
@@ -295,8 +295,8 @@ def test_common_setting_and_duplicate_layouts_are_reported(*, tmp_path):
 
 
 def test_explicit_baseline_is_first_and_budgeted():
-    manifest = build_manifest(param_sets=[(0.05, 0.01, 0.12)], constant_params=(0.07, 0.015, 0.1))
-    assert manifest["param_sets"][0] == {"s_m": 0.07, "delta_m": 0.015, "d_m": 0.1}
+    manifest = build_manifest(param_sets=[(0.05, 0.035, 0.12)], constant_params=(0.07, 0.030, 0.1))
+    assert manifest["param_sets"][0] == {"s_m": 0.07, "delta_m": 0.030, "d_m": 0.1}
     assert len(manifest["param_sets"]) == 2
 
 
@@ -455,7 +455,7 @@ def test_source_drift_invalidates_previous_witnesses(*, tmp_path, monkeypatch):
         digest[0] = "after"
         return result
 
-    manifest = build_manifest(seeds=[1], layouts=["fixed"], param_sets=[(0.07, 0.0, 0.10)])
+    manifest = build_manifest(seeds=[1], layouts=["fixed"], param_sets=[(0.07, 0.045, 0.10)])
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["stop_reason"] == "invalidating_issue"
     assert summary["comparison"]["common_params_status"] == "invalidated"
@@ -471,7 +471,7 @@ def test_unstarted_states_and_control_cutoffs_remain_unresolved(*, tmp_path):
         return result
 
     manifest = build_manifest(
-        seeds=[0, 1], layouts=["human_batch_return"], param_sets=[(0.07, 0.0, 0.10)], max_trials=1
+        seeds=[0, 1], layouts=["human_batch_return"], param_sets=[(0.07, 0.045, 0.10)], max_trials=1
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)
     assert summary["comparison"]["constant_policy"]["tested"] == 0
@@ -531,7 +531,7 @@ def test_native_adapters_recreate_each_params_and_seeded_layout(*, tmp_path, mon
     manifest = build_manifest(
         seeds=[3, 7],
         layouts=["human_batch_return"],
-        param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)],
+        param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)],
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=runner)
     assert len(environments) == 4
@@ -611,7 +611,7 @@ def test_same_initial_detects_velocity_and_orientation_changes():
 
 def test_default_param_sets_are_squeeze_gather_and_sweep_depth():
     manifest = build_manifest()
-    assert {"s_m": 0.07, "delta_m": 0.015, "d_m": 0.1} in manifest["param_sets"]
+    assert {"s_m": 0.07, "delta_m": 0.030, "d_m": 0.1} in manifest["param_sets"]
     assert all(set(params) == {"s_m", "delta_m", "d_m"} for params in manifest["param_sets"])
     assert manifest["constant_params"] == manifest["param_sets"][0]
     with pytest.raises(ValueError):
@@ -619,7 +619,7 @@ def test_default_param_sets_are_squeeze_gather_and_sweep_depth():
 
 
 def test_native_adapter_sends_resolved_squeeze_gather_and_depth(*, tmp_path, monkeypatch):
-    manifest = build_manifest(seeds=[0], layouts=["fixed"], param_sets=[(0.05, 0.01, 0.1)])
+    manifest = build_manifest(seeds=[0], layouts=["fixed"], param_sets=[(0.05, 0.035, 0.1)])
     request = {
         "state": manifest["states"][0],
         "params": manifest["param_sets"][0],
@@ -638,8 +638,8 @@ def test_native_adapter_sends_resolved_squeeze_gather_and_depth(*, tmp_path, mon
     env.take_action = record
     monkeypatch.setattr(NativeTrial, "snapshot", FakeEnvironment.snapshot)
     result = NativeTrial.execute(request=request, output=tmp_path, env_factory=lambda **_: env)
-    assert [action[2:] for action in actions if action[0] == 1] == [[0.05, 0.01, 0.1]]
-    assert result["resolved_params"] == {"s_m": 0.05, "delta_m": 0.01, "d_m": 0.1}
+    assert [action[2:] for action in actions if action[0] == 1] == [[0.05, 0.035, 0.1]]
+    assert result["resolved_params"] == {"s_m": 0.05, "delta_m": 0.035, "d_m": 0.1}
 
 
 @pytest.mark.parametrize(
@@ -679,7 +679,7 @@ def test_grid_mode_keeps_running_after_an_unresolved_trial(*, tmp_path):
     manifest = build_manifest(
         seeds=[0, 1],
         layouts=["human_batch_return"],
-        param_sets=[(0.07, 0.0, 0.10), (0.07, 0.0, 0.12)],
+        param_sets=[(0.07, 0.045, 0.10), (0.07, 0.045, 0.12)],
         search_mode="grid",
     )
     summary = Coverage.run(manifest=manifest, output=tmp_path, trial_runner=run)

@@ -54,7 +54,7 @@ def test_gather_and_sweep_lifts_a_blade_left_lying_on_the_rack_off_it():
         assert controllers.tool.pads_hold_grip()
         assert controllers.tool.blade_edge()[:, 2].min() == pytest.approx(rack_top, abs=0.002)
         before = env.backend().control_steps()
-        env.take_action(action=np.array([1.0, 0.0, 0.10, -0.01, 0.06]))
+        env.take_action(action=np.array([1.0, 0.0, 0.10, 0.055, 0.06]))
         error = env._last_skill_error or ""
         assert "_raise" not in error, error
         assert env.backend().control_steps() - before > 20, error

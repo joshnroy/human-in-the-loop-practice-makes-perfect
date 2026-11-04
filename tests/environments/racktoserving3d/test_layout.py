@@ -27,7 +27,7 @@ def test_every_layout_keeps_margins_spacing_and_yaw(*, seed):
         assert RACK.y_min + 0.03 <= y <= RACK.y_max - 0.03
         assert -math.pi / 4 <= yaw <= math.pi / 4
     for (ax, ay, _), (bx, by, _) in itertools.combinations(layout, 2):
-        assert math.hypot(ax - bx, ay - by) >= 0.05
+        assert math.hypot(ax - bx, ay - by) >= 0.061
 
 
 def test_a_seed_fully_determines_the_layout_and_seeds_differ():
@@ -49,7 +49,7 @@ def test_one_put_back_is_conditioned_on_the_others_current_positions(*, seed):
     assert RACK.x_min + 0.03 <= x <= RACK.x_max - 0.03
     assert RACK.y_min + 0.03 <= y <= RACK.y_max - 0.03
     assert -math.pi / 4 <= yaw <= math.pi / 4
-    assert all(math.hypot(x - ox, y - oy) >= 0.05 for ox, oy in others)
+    assert all(math.hypot(x - ox, y - oy) >= 0.061 for ox, oy in others)
 
 
 def test_a_rack_with_no_room_left_raises_instead_of_looping():

@@ -291,7 +291,6 @@ class RackControllers:
             gather = GatherAndSweepPlanner.gather(
                 food_corners=np.stack([backend.corners(name=name) for name in names]),
                 delta=delta,
-                food_width=config.dumpling_width,
                 **geometry,
             )
             for side, stroke in zip((1, -1), gather, strict=True):
