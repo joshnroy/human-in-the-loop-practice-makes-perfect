@@ -52,7 +52,10 @@ class _FoodMotion(RackScraper):
         self.departing: dict[tuple[int, int], float] = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
-    def check_configuration(self, *, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
+    def check_configuration(
+        self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
+    ) -> None:
+        del inflate  # the food check carries no scraper
         try:
             super().check_configuration(base=base, arm=arm, holding=False)
         except SkillFailed:
