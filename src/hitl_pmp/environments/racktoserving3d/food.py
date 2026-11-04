@@ -50,6 +50,8 @@ ARM_REACH_M = 0.85
 PLAN_DEADLINE_S = 60.0
 # Holding food, the tuck before the base moves raises the hand by this.
 CARRY_RAISE_M = 0.10
+# A held-food skill starting in contact first rises this far before it plans.
+PLACE_ESCAPE_M = 0.04
 
 
 class CarriedGeom:
@@ -788,6 +790,18 @@ class RackFoodController:
             # failed with the food still held leaves one on the plate's rim). That
             # contact may persist, not deepen, until the hand is over the target.
             with self.motion.departing_from_contacts():
+                if self.motion.departing or self.motion.departing_food:
+                    # Leave the start contact first, straight up, as the lift does: the
+                    # planner keeps a margin from everything, so it cannot start there.
+                    here = shelf.site_pose()
+                    self.motion.line(
+                        position=here[:3, 3] + [0.0, 0.0, PLACE_ESCAPE_M],
+                        rotation=here[:3, :3],
+                        label="food_place_escape",
+                        holding=False,
+                        step=0.005,
+                        steps_per=5,
+                    )
                 plan, down, pre, centre = self._plan_place(name=name, destination=destination)
                 self._follow(plan=plan, pose=pre, label="food_place")
             self._lower_food(
