@@ -87,7 +87,7 @@ def test_partial_spill_failure_and_costed_human_reset_preserve_robot_and_vessels
         mujoco.mj_forward(c.model, c.data)
         assert ("NoSpills", ()) not in env.observe().abstract_atoms
         before = c.data.qpos.copy()
-        env.take_action(action=np.array([1, 0, 3, 90, 0.015, 12.0]))
+        env.take_action(action=np.array([1, 0, 3, 1.0, 0, 0]))
         assert not env.last_info["success"]
         np.testing.assert_array_equal(before, c.data.qpos)
         assert c.scene.cube_locations()[0] == "floor"

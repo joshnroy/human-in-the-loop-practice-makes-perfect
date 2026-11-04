@@ -103,7 +103,9 @@ outcome was all-or-nothing in its three parameters and sensitive to the seed:
    the approved wrist ceiling.
 4. **Cutoff**: stop the moment the requested count `k` has left the jug, read from the
    simulator's true dumpling locations with no delay (an idealised observation, not a
-   perception model).
+   perception model). The cutoff counts dumplings that have *left the jug*, not ones
+   that have landed in the pan: a dumpling that leaves and misses the skillet is a spill,
+   and the pour fails (Josh, 2026-11-04: a real failure mode, not damped away).
 5. Return upright at a fixed 45 deg/s (the wiggle fades over 0.3 s), close the loop on
    the jug's measured tilt until it is within 3 deg of upright, then wait the fixed 30 s
    settle. Success is exactly `k` in the pan, the rest in the jug, settled by position.
