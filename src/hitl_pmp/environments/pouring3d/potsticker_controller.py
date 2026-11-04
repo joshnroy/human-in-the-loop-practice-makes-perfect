@@ -337,7 +337,7 @@ class PotstickerController(PracticePourController):
             ) = original
 
     def payload_grasp_geometry(self, *, name: str) -> tuple[np.ndarray, np.ndarray]:
-        from .potsticker_native import support_vertices
+        from .potsticker_shape import support_vertices
 
         position, rotation = self.body_pose(name=name)
         vertices = rotation.apply(support_vertices()) + position
