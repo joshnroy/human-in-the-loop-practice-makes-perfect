@@ -14,7 +14,6 @@ from hitl_pmp.environments.racktoserving3d.food import (
 )
 from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
-from hitl_pmp.environments.racktoserving3d.transit import segment_samples
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
 
@@ -72,8 +71,15 @@ def food():
         check_arm_clearance=Mock(),
         departing_from_contacts=Mock(side_effect=nullcontext),
     )
-    helper._plan_pick = Mock(return_value=(pose.copy(), pose.copy(), np.array([0.7, 0, 0])))
-    helper._approach = Mock()
+    # The planner (PyBullet) and the planned-path followers stand in: these tests are
+    # about the scripted contact motions and the bookkeeping around them.
+    helper._plan_pick = Mock(
+        return_value=(SimpleNamespace(), pose.copy(), pose.copy(), np.array([0.7, 0, 0]))
+    )
+    helper._plan_place = Mock(
+        return_value=(SimpleNamespace(), pose.copy(), pose.copy(), np.array([1.2, 0, 0.925]))
+    )
+    helper._follow = Mock()
     helper._lower_food = Mock()
     return helper
 
@@ -98,7 +104,7 @@ def test_no_reachable_grasp_does_not_move(*, food):
     with pytest.raises(SkillFailed, match="collision-free"):
         food.pick(name="cube_0")
     food.shelf.hold.assert_not_called()
-    food._approach.assert_not_called()
+    food._follow.assert_not_called()
 
 
 def test_unsupported_food_is_not_moved_even_if_old_location_was_on_tray(*, food):
@@ -106,7 +112,7 @@ def test_unsupported_food_is_not_moved_even_if_old_location_was_on_tray(*, food)
     with pytest.raises(SkillFailed, match="pickable support"):
         food.pick(name="cube_0")
     food.shelf.hold.assert_not_called()
-    food._approach.assert_not_called()
+    food._follow.assert_not_called()
 
 
 def test_failed_contact_does_not_claim_or_lift_food(*, food):
@@ -159,9 +165,7 @@ def test_release_restores_the_grippers_own_force_limit(*, food):
     food.backend.body_geoms = Mock(return_value={0})
     food._placement_candidates = Mock(return_value=[np.array([1.2, 0, 0.94])])
     food._checked_arm = Mock(return_value=np.zeros(7))
-    food._base_candidates = Mock(return_value=[np.array([0.7, 0, 0])])
     food.motion.check_arm_segment = Mock()
-    food.motion.plan_base = Mock(return_value=[np.array([0.7, 0, 0])])
     food.shelf.cube_pre = lambda *, grasp: grasp.copy()
     released = []
     food.shelf.hold = Mock(
@@ -258,7 +262,16 @@ def test_pick_lifts_departing_from_the_contacts_the_grasp_closed_onto(*, food):
     )
     food.motion.line = Mock(side_effect=lambda **kwargs: inside.append(kwargs["label"]))
     food.pick(name="cube_0")
-    assert inside == ["food_approach", "enter departing", "food_lift", "exit departing"]
+    # The first scope covers planning and the planned reach (a pad may start on a
+    # fixture); the lift has its own, measured from the closed grasp.
+    assert inside == [
+        "enter departing",
+        "exit departing",
+        "food_approach",
+        "enter departing",
+        "food_lift",
+        "exit departing",
+    ]
 
 
 class _Recording:
@@ -480,18 +493,11 @@ def test_no_free_placement_retains_grasp(*, food):
     food.backend.held.return_value = True
     food.shelf.grip = 1.0
     food._placement_candidates = Mock(side_effect=SkillFailed("No unoccupied food placement"))
+    del food._plan_place  # the real one, which asks for the placements first
     with pytest.raises(SkillFailed, match="unoccupied"):
         food.place(name="cube_0", destination="rack_0")
     food.shelf.hold.assert_not_called()
     assert food.shelf.grip == 1.0
-
-
-@pytest.mark.parametrize(
-    "approach,expected", [([-1.0, 0, -1], [2.0, 0, np.pi]), ([0, 1.0, -1], [1.5, -0.5, np.pi / 2])]
-)
-def test_stances_face_approach_instead_of_always_front(*, food, approach, expected):
-    bases = food._base_candidates(centre=np.array([1.5, 0, 0.94]), approach=np.array(approach))
-    np.testing.assert_allclose(bases[0], expected)
 
 
 @pytest.mark.parametrize("gap,blocked", [(0.004, False), (-0.002, True)])
@@ -611,7 +617,6 @@ def test_place_verifies_release_and_observed_destination(*, food, destination, l
     food.backend.body_geoms = Mock(return_value={0})
     food._placement_candidates = Mock(return_value=[np.array([1.4, 0, 0.94])])
     food._checked_arm = Mock(return_value=np.zeros(7))
-    food._base_candidates = Mock(return_value=[np.array([0.8, 0, 0])])
     food.motion.check_arm_segment = Mock()
     food.shelf.cube_pre = lambda *, grasp: grasp.copy()
     food.place(name="cube_0", destination=destination)
@@ -629,7 +634,6 @@ def test_place_does_not_release_after_slip(*, food):
     food.backend.held.side_effect = [True, False]
     food._placement_candidates = Mock(return_value=[np.array([1.4, 0, 0.94])])
     food._checked_arm = Mock(return_value=np.zeros(7))
-    food._base_candidates = Mock(return_value=[np.array([0.8, 0, 0])])
     food.motion.check_arm_segment = Mock()
     food.shelf.cube_pre = lambda *, grasp: grasp.copy()
     with pytest.raises(SkillFailed, match="bilateral"):
@@ -658,236 +662,6 @@ def test_robot_skills_never_write_object_poses_or_scene_geometry():
         and node.attr in {"qpos", "qvel", "geom_size", "geom_contype", "geom_conaffinity"}
         for node in ast.walk(tree)
     )
-
-
-def test_food_base_detour_is_fully_checked_before_execution():
-    motion = _FoodMotion.__new__(_FoodMotion)
-    motion.shelf = SimpleNamespace(
-        data=SimpleNamespace(qpos=np.zeros(3)),
-        ba=np.arange(3),
-        arm_reference=np.zeros(7),
-    )
-    motion.food = SimpleNamespace(
-        backend=SimpleNamespace(
-            support=Mock(
-                return_value=SimpleNamespace(y_min=-0.5, y_max=0.5),
-            )
-        )
-    )
-    events = []
-    calls = []
-
-    def drive(*, target, label):
-        calls.append(target.copy())
-        if len(calls) == 1:
-            raise SkillFailed(f"{label}: no safe base transit: blocked")
-        events.append("drive")
-
-    motion.check_configuration = Mock(side_effect=lambda **kwargs: events.append("check"))
-    with patch.object(RackScraper, "move_base", side_effect=drive):
-        motion.move_base(target=np.array([2.0, 0, np.pi]), label="test")
-    assert len(calls) == 5
-    assert events[-4:] == ["drive"] * 4
-    assert all(event == "check" for event in events[:-4])
-    assert abs(calls[1][1]) > 0.5
-
-
-def test_food_base_does_not_retry_execution_failures():
-    motion = _FoodMotion.__new__(_FoodMotion)
-    with (
-        patch.object(RackScraper, "move_base", side_effect=SkillFailed("lost food")) as drive,
-        pytest.raises(SkillFailed, match="lost food"),
-    ):
-        motion.move_base(target=np.zeros(3), label="test")
-    drive.assert_called_once()
-
-
-class _BackLegs:
-    """The counter's back legs against a 0.26 m base disc, its top against a 0.20 m body.
-
-    A stance behind the counter, yawed as PR 1's layouts now yaw it: seed 0's
-    food 0 put the base at (1.937, -0.275) facing 148 degrees. The stance itself
-    is clear, but a slide along y at its own x passes within a disc of a leg.
-    """
-
-    LEGS = (np.array([1.675, -0.475]), np.array([1.675, 0.475]))
-    TOP = (np.array([0.98, -0.5]), np.array([1.7, 0.5]))
-    STANCE = np.array([1.937, -0.275, 2.586])
-
-    @staticmethod
-    def clear(*, base: np.ndarray) -> bool:
-        xy = base[:2]
-        top = np.linalg.norm(
-            np.maximum(np.maximum(_BackLegs.TOP[0] - xy, xy - _BackLegs.TOP[1]), 0)
-        )
-        return top >= 0.20 and all(
-            np.linalg.norm(np.maximum(np.abs(xy - leg) - 0.025, 0)) >= 0.26
-            for leg in _BackLegs.LEGS
-        )
-
-    @staticmethod
-    def check(*, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
-        if not _BackLegs.clear(base=base):
-            raise SkillFailed(f"robot base vs cupboard_1_leg at {base}")
-
-    @staticmethod
-    def motion() -> _FoodMotion:
-        motion = _FoodMotion.__new__(_FoodMotion)
-        motion.shelf = SimpleNamespace(
-            data=SimpleNamespace(qpos=np.zeros(3)), ba=np.arange(3), arm_reference=np.zeros(7)
-        )
-        motion.food = SimpleNamespace(
-            backend=SimpleNamespace(
-                support=Mock(return_value=SimpleNamespace(y_min=-0.5, y_max=0.5))
-            )
-        )
-        motion.check_configuration = Mock(side_effect=_BackLegs.check)
-        return motion
-
-    @staticmethod
-    def assert_route_clear(
-        *, route: list[np.ndarray], start: np.ndarray | None = None, end: np.ndarray | None = None
-    ) -> None:
-        start = np.zeros(3) if start is None else start
-        np.testing.assert_allclose(route[-1], _BackLegs.STANCE if end is None else end)
-        for begin, finish in zip([start, *route[:-1]], route, strict=True):
-            for base in segment_samples(start=begin, target=finish):
-                assert _BackLegs.clear(base=base), (begin, finish, base)
-
-
-def test_food_circulation_reaches_a_yawed_stance_behind_the_counter_legs():
-    assert _BackLegs.clear(base=_BackLegs.STANCE)
-    motion = _BackLegs.motion()
-    driven = []
-
-    def drive(*, target, label):
-        if not driven:
-            driven.append(None)
-            raise SkillFailed(f"{label}: no safe base transit: blocked")
-        driven.append(target.copy())
-
-    with patch.object(RackScraper, "move_base", side_effect=drive):
-        motion.move_base(target=_BackLegs.STANCE.copy(), label="food_base")
-    _BackLegs.assert_route_clear(route=driven[1:])
-
-
-def test_food_base_preflight_finds_the_route_the_circulation_drives():
-    motion = _BackLegs.motion()
-    route = motion.plan_base(target=_BackLegs.STANCE.copy(), arm=np.zeros(7))
-    _BackLegs.assert_route_clear(route=route)
-
-
-def test_food_base_preflight_leaves_a_yawed_stance_behind_the_counter_head_on():
-    # The reverse trip: carrying food from that stance to a plate stance in front.
-    motion = _BackLegs.motion()
-    motion.shelf.data.qpos = _BackLegs.STANCE.copy()
-    front = np.array([0.73, 0.0, 0.0])
-    route = motion.plan_base(target=front.copy(), arm=np.zeros(7))
-    _BackLegs.assert_route_clear(route=route, start=_BackLegs.STANCE, end=front)
-
-
-def test_pick_rejects_a_stance_with_no_base_route_before_moving(*, food):
-    blocked, reachable = np.array([1.94, -0.27, 2.6]), np.array([0.9, 0.1, 0])
-    grasp = Frames.pose(rotation=np.eye(3), position=[1.575, 0.09, 0.94])
-    food._pose = Mock(return_value=grasp)
-    food.backend.body_geoms = Mock(return_value={0})
-    food._grasp_candidates = Mock(return_value=[grasp])
-    food._base_candidates = Mock(return_value=[blocked, reachable])
-    food._checked_arm = Mock(return_value=np.zeros(7))
-    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
-    food.motion.check_arm_segment = Mock()
-    food.motion.plan_base = Mock(side_effect=[SkillFailed("counter leg blocks route"), [reachable]])
-    _, _, base = RackFoodController._plan_pick(food, name="cube_0")
-    np.testing.assert_allclose(base, reachable)
-    assert food.motion.plan_base.call_count == 2
-    np.testing.assert_allclose(food.motion.plan_base.call_args_list[0].kwargs["target"], blocked)
-
-
-def test_fresh_place_helper_rejects_blocked_base_route_before_moving(*, food):
-    food.shelf.grip = 0.8
-    food.backend.held.side_effect = [True, True, False]
-    food.backend.location.return_value = "OnRack"
-    food.backend.body_geoms = Mock(return_value={0})
-    food._placement_candidates = Mock(return_value=[np.array([1.4, 0, 0.94])])
-    food._checked_arm = Mock(return_value=np.zeros(7))
-    blocked, reachable = np.array([0.9, -0.15, 0]), np.array([0.8, -0.15, 0])
-    food._base_candidates = Mock(return_value=[blocked, reachable])
-    food.motion.check_arm_segment = Mock()
-    food.motion.plan_base = Mock(side_effect=[SkillFailed("counter leg blocks route"), [reachable]])
-    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
-    assert food.carried is None
-    food.place(name="cube_0", destination="rack_0")
-    assert food.motion.plan_base.call_count == 2
-    food._approach.assert_called_once()
-    np.testing.assert_allclose(food._approach.call_args.kwargs["base"], reachable)
-
-
-def test_place_turns_a_grasp_taken_from_behind_the_counter_to_reach_the_plate(*, food):
-    # Seed 0 food 4: picked from behind the counter, the hand approaches at 136 deg.
-    # Keeping that hand yaw puts every plate stance inside the counter's footprint.
-    behind = Rotation.from_euler("ZY", [136, 135], degrees=True).as_matrix()
-    food.shelf.site_pose = Mock(
-        return_value=Frames.pose(rotation=behind, position=[1.585, -0.04, 0.96])
-    )
-    food.shelf.grip = 0.8
-    food.backend.held.side_effect = [True, True, False]
-    food.backend.location.return_value = "OnTray"
-    food.backend.body_geoms = Mock(return_value={0})
-    food.backend.support = Mock(
-        return_value=SimpleNamespace(x_min=0.98, x_max=1.7, y_min=-0.5, y_max=0.5)
-    )
-    food._placement_candidates = Mock(return_value=[np.array([1.23, 0, 0.94])])
-
-    def stance_clear(*, pose, base, seed=None):
-        if 0.98 - 0.25 < base[0] < 1.7 + 0.25 and -0.5 - 0.25 < base[1] < 0.5 + 0.25:
-            raise SkillFailed("Scraper motion would collide: cupboard_1_counter")
-        return np.zeros(7)
-
-    food._checked_arm = Mock(side_effect=stance_clear)
-    food.motion.check_arm_segment = Mock()
-    food.motion.plan_base = Mock(side_effect=lambda *, target, arm: [target])
-    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
-    food.place(name="cube_0", destination="box_0")
-    base = food._approach.call_args.kwargs["base"]
-    assert base[0] < 0.98 - 0.25 or abs(base[1]) > 0.5 + 0.25
-    lowered = food._lower_food.call_args.kwargs["rotation"]
-    np.testing.assert_allclose(lowered[2], behind[2], atol=1e-9)  # same lean, new yaw
-
-
-def test_all_blocked_placement_routes_retain_food_without_robot_motion(*, food):
-    food.shelf.grip = 0.8
-    food.backend.held.return_value = True
-    food._placement_candidates = Mock(return_value=[np.array([1.4, 0, 0.94])])
-    food._checked_arm = Mock(return_value=np.zeros(7))
-    food._base_candidates = Mock(return_value=[np.array([0.9, -0.15, 0])])
-    food.motion.check_arm_segment = Mock()
-    food.motion.plan_base = Mock(side_effect=SkillFailed("counter leg blocks route"))
-    food.shelf.cube_pre = lambda *, grasp: grasp.copy()
-    with pytest.raises(SkillFailed, match="counter leg"):
-        food.place(name="cube_0", destination="rack_0")
-    assert food.shelf.grip == 0.8
-    food._approach.assert_not_called()
-    food.motion.line.assert_not_called()
-    food.shelf.hold.assert_not_called()
-
-
-def test_surface_staging_preserves_checked_joint_branch(*, food):
-    food.carried = "cube_0"
-    checked_arm = np.arange(7, dtype=float) * 0.1
-    food._checked_arm = Mock(return_value=checked_arm)
-    food.motion.transit_arm = Mock()
-    food.shelf.data = SimpleNamespace(qpos=np.zeros(10))
-    food.shelf.ba = np.arange(3)
-    food.shelf.site_at = Mock(return_value=np.eye(4))
-    RackFoodController._approach(
-        food,
-        pose=np.eye(4),
-        base=np.array([0.8, -0.15, 0]),
-        label="food_place",
-    )
-    food.motion.transit_arm.assert_called_once()
-    np.testing.assert_array_equal(food.motion.transit_arm.call_args.kwargs["arm"], checked_arm)
-    food.motion.transit.assert_not_called()
 
 
 def test_lowering_reobserves_food_extent_instead_of_using_old_grasp_offset(*, food):
@@ -972,33 +746,6 @@ def test_tracking_margin_applies_to_arm_not_gripper(*, separation, blocked):
         motion.check_arm_clearance(base=np.zeros(3), arm=np.zeros(7))
     distance.assert_called_once()
     assert distance.call_args.args[2:4] == (0, 2)
-
-
-def test_joint_staging_executes_planned_configuration_without_ik():
-    motion = _FoodMotion.__new__(_FoodMotion)
-    motion.shelf = SimpleNamespace(
-        base_target=np.zeros(3),
-        qa=np.arange(7),
-        data=SimpleNamespace(qpos=np.zeros(7)),
-        site_at=Mock(return_value=np.eye(4)),
-    )
-    target = np.full(7, 0.2)
-    planner = SimpleNamespace(
-        plan=Mock(return_value=[target]),
-        delta=lambda *, start, target: target - start,
-    )
-
-    def robot_step(*, arm, label):
-        motion.shelf.data.qpos[:] = arm
-
-    motion.step = Mock(side_effect=robot_step)
-    motion.check_arm_segment = Mock()
-    motion.settle_hand = Mock()
-    with patch("hitl_pmp.environments.racktoserving3d.food.ArmTransit", return_value=planner):
-        motion.transit_arm(arm=target, label="test")
-    np.testing.assert_array_equal(planner.plan.call_args.kwargs["target"], target)
-    np.testing.assert_array_equal(motion.step.call_args.kwargs["arm"], target)
-    np.testing.assert_array_equal(motion.settle_hand.call_args.kwargs["arm"], target)
 
 
 def _round_plate_food(*, food):

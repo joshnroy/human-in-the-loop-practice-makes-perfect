@@ -15,7 +15,7 @@ motions that follow (the end-on approach, the close, the seat and the release) s
 scripted, as the kitchen's do.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -154,6 +154,19 @@ class ScraperPlan(BaseModel):
     base_path: list[np.ndarray]
     arm_before_base: list[np.ndarray] = []
     arm_after_base: list[np.ndarray]
+
+
+class ReachCandidate(BaseModel):
+    """A stance and the hover the arm is planned to from it; `contact` says why the
+    scripted contact motion from that hover (stance, hover joints) would fail, or None."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    stance: np.ndarray
+    position: np.ndarray
+    rotation: np.ndarray
+    contact: Callable[[np.ndarray, np.ndarray], str | None]
+    payload: Any = None
 
 
 class ScraperMotionPlanner:
@@ -310,6 +323,7 @@ class ScraperMotionPlanner:
         what: str,
         guard: Callable[[np.ndarray], bool],
         held: HeldObject | None = None,
+        ignore: tuple[str, ...] | None = None,
     ) -> list[np.ndarray]:
         if np.linalg.norm(target[:2] - base[:2]) < 0.005 and abs(target[2] - base[2]) < 0.005:
             return [base.copy(), target.copy()]
@@ -320,7 +334,7 @@ class ScraperMotionPlanner:
             arm=arm,
             what=what,
             held=held,
-            ignore=() if held is None else ("wiper_0",),
+            ignore=(() if held is None else ("wiper_0",)) if ignore is None else ignore,
             also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
         )
         # Unwrap the heading so the base turns the short way between waypoints.
@@ -561,6 +575,135 @@ class ScraperMotionPlanner:
         raise PlanningRefused(
             "ReturnScraper: no stance reaches the seat "
             f"({ScraperMotionPlanner.tally(failures=failures)})"
+        )
+
+    @staticmethod
+    def plan_reach(
+        *,
+        tool: Any,
+        candidates: Iterable[ReachCandidate],
+        held_name: str | None,
+        carry_height: float,
+        deadline_s: float,
+        what: str,
+    ) -> tuple[ScraperPlan, ReachCandidate]:
+        """The first candidate stance whose hover is collision-free, whose scripted
+        contact motion its own `contact` check accepts from that hover, and to which a
+        base path and an arm path exist; PlanningRefused if none does in time.
+
+        Before the base moves the arm keeps its configuration, or (if the base cannot
+        move with it) tucks: holding, up to `carry_height`; empty, to the home arm.
+        `held_name`, when given, is carried rigidly (HeldObject) and has no footprint.
+        """
+        from time import monotonic
+
+        shelf = tool.shelf
+        lower, upper = ScraperMotionPlanner.limits(shelf=shelf)
+        arm = shelf.data.qpos[shelf.qa].copy()
+        base = shelf.data.qpos[shelf.ba].copy()
+        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        state = shelf.core._get_object_centric_state()  # noqa: SLF001
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=False)
+        deadline = monotonic() + deadline_s
+        failures: list[str] = []
+        try:
+            sim.set_robot_base(SE2(*(float(v) for v in base)))
+            held = (
+                None
+                if held_name is None
+                else HeldObject.grasped(sim=sim, arm=arm, name=held_name, riders=())
+            )
+            ignore = () if held_name is None else (held_name,)
+            carries: list[list[np.ndarray]] = [[arm.copy()]]
+            if held is None:
+                tuck: list[float] | None = list(np.asarray(shelf.home_arm, dtype=float))
+            else:
+                hand = shelf.site_pose()
+                tuck = ScraperMotionPlanner.free_goal(
+                    sim=sim,
+                    position=np.array([hand[0, 3], hand[1, 3], max(hand[2, 3], carry_height)]),
+                    rotation=hand[:3, :3],
+                    lower=lower,
+                    upper=upper,
+                    guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
+                    held=held,
+                )
+            if tuck is not None:
+                try:
+                    carries.append(
+                        ScraperMotionPlanner.plan_arm_to(
+                            sim=sim,
+                            start=arm,
+                            goal=KitchenMotionPlanner.with_fingers(sim=sim, arm=tuck),
+                            what="the carry pose",
+                            guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
+                            held=held,
+                        )
+                    )
+                except PlanningRefused as exc:
+                    failures.append(str(exc))
+            for candidate in candidates:
+                if monotonic() >= deadline:
+                    failures.append("deadline")
+                    break
+                stance = candidate.stance
+                if not ok(base=stance, arm=shelf.home_arm):
+                    failures.append("stance blocked")
+                    continue
+                sim.set_robot_base(SE2(*(float(v) for v in stance)))
+                hover = ScraperMotionPlanner.free_goal(
+                    sim=sim,
+                    position=candidate.position,
+                    rotation=candidate.rotation,
+                    lower=lower,
+                    upper=upper,
+                    guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
+                    held=held,
+                )
+                if hover is None:
+                    failures.append("hover")
+                    continue
+                why = candidate.contact(stance, np.asarray(hover[:7], dtype=float))
+                if why is not None:
+                    failures.append(why)
+                    continue
+                for carry in carries:
+                    try:
+                        sim.set_robot_base(SE2(*(float(v) for v in base)))
+                        base_path = ScraperMotionPlanner.plan_base(
+                            sim=sim,
+                            state=state,
+                            base=base,
+                            target=stance,
+                            arm=carry[-1],
+                            what=what,
+                            guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            held=held,
+                            ignore=ignore,
+                        )
+                        sim.set_robot_base(SE2(*(float(v) for v in stance)))
+                        arm_path = ScraperMotionPlanner.plan_arm_to(
+                            sim=sim,
+                            start=carry[-1],
+                            goal=hover,
+                            what=what,
+                            guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
+                            held=held,
+                        )
+                    except PlanningRefused as exc:
+                        failures.append(str(exc))
+                        continue
+                    plan = ScraperPlan(
+                        stance=stance,
+                        base_path=base_path,
+                        arm_before_base=carry,
+                        arm_after_base=arm_path,
+                    )
+                    return plan, candidate
+        finally:
+            sim.close()
+        raise PlanningRefused(
+            f"No planned reach to {what} ({ScraperMotionPlanner.tally(failures=failures)})"
         )
 
     @staticmethod
