@@ -1,0 +1,383 @@
+{
+ "source": "kitchen_recycling3d pomdp seed 0 (toss-sampling-growth-20261104/states/kc0.jsonl): the MoveToTossLocationAndToss dispatch state at step 174, holding the cube.",
+ "environment": "kitchen_recycling3d",
+ "kitchen_config": {
+  "variant": "kitchen-recycling-v1",
+  "scatter_objects": true,
+  "mat_product": "existing Sprout mats; SKU unverified",
+  "mat_bounds": [
+   1.15,
+   -2.5,
+   3.6,
+   2.5
+  ],
+  "kitchen_bounds": [
+   -1.5,
+   -2.5,
+   1.15,
+   2.5
+  ],
+  "layout_measured": false,
+  "crossing_difficulty_demonstrated": false,
+  "robot_radius": 0.4,
+  "direct_placement_reach": 0.85,
+  "bin_outside": [
+   0.365,
+   0.26,
+   0.384
+  ],
+  "bin_base": [
+   0.29,
+   0.19
+  ],
+  "bin_position": [
+   2.05,
+   0.0,
+   0.0
+  ],
+  "simulation_wall": 0.005,
+  "simulation_bin_mass": 0.4,
+  "measured_bin_opening": null,
+  "measured_bin_rim": null,
+  "measured_bin_mass": null,
+  "interruption_cost": 10.0,
+  "relocation_cost": 2.0,
+  "restoration_cost": 2.0,
+  "near_distance": 0.5,
+  "objects": [
+   {
+    "name": "cube_control",
+    "kind": "cube",
+    "dimensions": [
+     0.05,
+     0.05,
+     0.05
+    ],
+    "simulation_mass": 0.1,
+    "measured_mass": null,
+    "dimensions_verified": false,
+    "rigidity_verified": false
+   }
+  ],
+  "required_objects": [
+   "cube_control"
+  ],
+  "calibrations": {
+   "cube_control/near": {
+    "grasp_offset": 0.045,
+    "minimum_lift": 0.07,
+    "holding_duration": 0.15,
+    "maximum_linear_speed": 0.025,
+    "maximum_angular_speed": 0.15,
+    "settle_duration": 0.6,
+    "settle_timeout": 15.0,
+    "toss_standoff": 1.5,
+    "toss_azimuth": 0.0,
+    "toss_speed_deg_s": 150.0,
+    "release_ms": 720.0,
+    "hardware_validated": false
+   },
+   "cube_control/far": {
+    "grasp_offset": 0.045,
+    "minimum_lift": 0.07,
+    "holding_duration": 0.15,
+    "maximum_linear_speed": 0.025,
+    "maximum_angular_speed": 0.15,
+    "settle_duration": 0.6,
+    "settle_timeout": 15.0,
+    "toss_standoff": 1.5,
+    "toss_azimuth": 0.4,
+    "toss_speed_deg_s": 150.0,
+    "release_ms": 720.0,
+    "hardware_validated": false
+   }
+  }
+ },
+ "state": {
+  "bin_0": [
+   2.049999952316284,
+   -7.351562953358986e-18,
+   -8.17499999955942e-09,
+   1.0,
+   -9.56642559458859e-19,
+   -7.2951620929665345e-22,
+   1.2312842510836758e-30,
+   -1.0242436982104652e-19,
+   -6.721421052389176e-19,
+   -8.1529550235444735e-16,
+   -6.315449980791201e-15,
+   5.650761252921552e-19,
+   -6.586884708679328e-31,
+   0.365,
+   0.26,
+   0.384
+  ],
+  "collider:kitchen_counter_0:42": [
+   -1.6,
+   -0.8,
+   0.43,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.64,
+   1.1,
+   0.86
+  ],
+  "collider:kitchen_counter_0:43": [
+   -1.6,
+   -0.8,
+   0.88,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.68,
+   1.14,
+   0.04
+  ],
+  "collider:kitchen_counter_1:44": [
+   -1.6,
+   2.0,
+   0.43,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.64,
+   1.1,
+   0.86
+  ],
+  "collider:kitchen_counter_1:45": [
+   -1.6,
+   2.0,
+   0.88,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.68,
+   1.14,
+   0.04
+  ],
+  "collider:kitchen_stove:25": [
+   -1.6,
+   0.6,
+   0.44,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.64,
+   0.9,
+   0.88
+  ],
+  "collider:kitchen_stove:26": [
+   -1.6,
+   0.6,
+   0.89,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.66,
+   0.92,
+   0.03
+  ],
+  "collider:kitchen_stove:27": [
+   -1.274,
+   0.6,
+   0.43,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.016,
+   0.66,
+   0.46
+  ],
+  "collider:kitchen_stove:28": [
+   -1.2400000000000002,
+   0.6,
+   0.72,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.056,
+   0.64,
+   0.04
+  ],
+  "collider:kitchen_stove:29": [
+   -1.9100000000000001,
+   0.6,
+   1.02,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.04,
+   0.92,
+   0.26
+  ],
+  "collider:recycling_chair_0:52": [
+   2.15,
+   0.67,
+   0.429,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.492,
+   0.53,
+   0.858
+  ],
+  "collider:recycling_chair_1:54": [
+   2.85,
+   0.67,
+   0.429,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.492,
+   0.53,
+   0.858
+  ],
+  "collider:recycling_chair_2:56": [
+   2.15,
+   2.03,
+   0.429,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.492,
+   0.53,
+   0.858
+  ],
+  "collider:recycling_chair_3:58": [
+   2.85,
+   2.03,
+   0.429,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.492,
+   0.53,
+   0.858
+  ],
+  "collider:recycling_lab_desk:50": [
+   2.5,
+   1.35,
+   0.36999999999999994,
+   0.7071067811865475,
+   0.0,
+   0.0,
+   0.7071067811865475,
+   0.704,
+   1.74,
+   0.74
+  ],
+  "collider:tossing_room:2": [
+   -2.0,
+   0.0,
+   1.5,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.02,
+   6.0,
+   3.0
+  ],
+  "collider:tossing_room:3": [
+   4.2,
+   0.0,
+   1.5,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.02,
+   6.0,
+   3.0
+  ],
+  "collider:tossing_room:4": [
+   1.1,
+   -3.0,
+   1.5,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   6.2,
+   0.02,
+   3.0
+  ],
+  "collider:tossing_room:5": [
+   1.1,
+   3.0,
+   1.5,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   6.2,
+   0.02,
+   3.0
+  ],
+  "cube_0": [
+   -0.10586161936815418,
+   -0.9501300314367499,
+   0.5598443669851622,
+   0.999482710870426,
+   -0.0009035425029682261,
+   -0.03207072527000129,
+   0.0022277483489168666,
+   -0.006938087065066347,
+   0.0013462780423842916,
+   -0.0029158457905171446,
+   0.00618525805816248,
+   0.020939450457366646,
+   -0.0005558174844115422,
+   0.05,
+   0.05,
+   0.05
+  ],
+  "cuboid_barrier": [
+   1.149999976158142,
+   0.0,
+   0.0010000000474974513,
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "robot": [
+   -0.3670115003980104,
+   -0.9530336051891763,
+   1.3965409137966415e-05,
+   -0.00029061496711218213,
+   -0.34126137553786173,
+   3.1421923328149495,
+   -2.5452925534499307,
+   -0.006801705801824312,
+   -0.869810922592404,
+   1.5775806230602973,
+   1.0,
+   5.622936709271321e-06,
+   7.628878017011867e-07,
+   1.3544990664329775e-06,
+   0.0023783975719043108,
+   0.005442571369534488,
+   -0.0005894347527719122,
+   -0.006662231197386304,
+   -0.006200260158629121,
+   -0.008650260978036499,
+   0.008725469964032992,
+   6.714252845853325e-06
+  ]
+ }
+}
