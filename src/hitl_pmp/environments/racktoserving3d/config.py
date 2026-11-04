@@ -104,6 +104,8 @@ class RackServingConfig(BaseModel):
     counter_x_min: float = 0.98
     counter_x_max: float = 1.70
     counter_width: Positive = 1.0
+    # The scraper's home on the counter; its blade lies along y, so it must sit inside.
+    tool_rest_y: float = -0.34
     counter_thickness: Positive = 0.04
     counter_leg_width: Positive = 0.05
     counter_friction: Friction = (0.7, 0.005, 0.0001)
