@@ -24,7 +24,7 @@ from scipy.spatial.transform import Rotation
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
 from .semantics import CircularSupport
-from .tool import RackScraper, box_overlap
+from .tool import RackScraper
 from .transit import ArmTransit, geom_half_extents, segment_samples
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
@@ -104,13 +104,8 @@ class _FoodMotion(RackScraper):
                     > np.abs(rotation) @ size + np.abs(other_rotation) @ other_size
                 ):
                     continue
-                overlap = box_overlap(
-                    center=center,
-                    rotation=rotation,
-                    size=size,
-                    other_center=other_center,
-                    other_rotation=other_rotation,
-                    other_size=other_size,
+                overlap = self._penetration(
+                    scratch=scratch, geom=geom, obstacle=obstacle, center=center, rotation=rotation
                 )
                 top = other_center[2] + np.abs(other_rotation[2]) @ other_size
                 support = obstacle in shelf.cupboard_geoms | shelf.box_geoms
@@ -119,6 +114,31 @@ class _FoodMotion(RackScraper):
                         f"Carried food would collide with {shelf.model.geom(obstacle).name}: "
                         f"overlap={overlap:.4f}, bottom={bottom:.4f}, top={top:.4f}"
                     )
+
+    def _penetration(
+        self,
+        *,
+        scratch: Any,
+        geom: int,
+        obstacle: int,
+        center: np.ndarray,
+        rotation: np.ndarray,
+    ) -> float:
+        """Depth of the carried geom, moved to its planned pose, into `obstacle`.
+
+        MuJoCo's own narrow phase on the real shapes: an ellipsoid dumpling is not its
+        bounding box, so two neighbours with a visible gap do not count as colliding.
+        """
+        import mujoco
+
+        saved_pos, saved_mat = scratch.geom_xpos[geom].copy(), scratch.geom_xmat[geom].copy()
+        try:
+            scratch.geom_xpos[geom] = center
+            scratch.geom_xmat[geom] = rotation.reshape(9)
+            distance = mujoco.mj_geomDistance(self.shelf.model, scratch, geom, obstacle, 0.01, None)
+        finally:
+            scratch.geom_xpos[geom], scratch.geom_xmat[geom] = saved_pos, saved_mat
+        return max(0.0, -float(distance))
 
     def pad_fixture_contacts(self) -> dict[tuple[int, int], float]:
         """Closest distance of each (pad, fixture) pair among scratch data's contacts."""
@@ -497,7 +517,9 @@ class RackFoodController:
         upper = np.array([counter.x_max, counter.y_max])
         candidates = []
         for lean in (45.0, 30.0, 60.0):
-            for face, sign in ((1, -1.0), (1, 1.0), (0, -1.0), (0, 1.0)):
+            # Face 0 closes across the dumpling's short axis, onto its fat sides. A pinch on
+            # the tips (face 1) lets the food swing about the pinch line as it lifts.
+            for face, sign in ((0, -1.0), (0, 1.0)):
                 grasp = self.shelf.cube_grasp(
                     cube=name,
                     centre=centre,
