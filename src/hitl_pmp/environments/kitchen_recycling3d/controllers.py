@@ -19,6 +19,7 @@ from kinder_models.dynamic3d.utils import (
     get_target_robot_pose_from_parameters,
     inverse_kinematics_fixed_effort,
     run_base_motion_planning,
+    wrap_arm_joint_difference,
 )
 from pybullet_helpers.geometry import Pose, multiply_poses
 from pybullet_helpers.inverse_kinematics import InverseKinematicsError
@@ -135,6 +136,16 @@ class RecyclingMoveToTargetController(MoveToTargetGroundController):
 class RecyclingPickController(PickCubeController):
     """Keep collision-checked pick/retrace; replace cube poses and attachment geometry."""
 
+    # Robot links keep this far from a bin's walls along the whole hover and lift, not
+    # only at the hover's end. The arm lags its plan by up to ~0.1 rad (its position
+    # commands are clipped), which closed the ~0-1.3 mm those paths were planned with
+    # and tripped the planning sim's contact monitor on in-bin picks (kitchen v8).
+    BIN_WALL_CLEARANCE = 0.005
+
+    # The last tick's per-joint error to the waypoint then tracked, keyed by that plan
+    # and waypoint, so a sign flip toward the same waypoint can be seen.
+    _waypoint_error: tuple[tuple[int, int], Any] | None = None
+
     def configure(self, *, config: Any, spec: Any, calibration: Any) -> None:
         self.kitchen_config = config
         self.spec = spec
@@ -190,12 +201,46 @@ class RecyclingPickController(PickCubeController):
         return super()._robot_is_close_to_conf(conf, atol=atol)
 
     def _step_trajectory_phase(self, *args: Any) -> Any:
-        """Damp the endpoint command instead of oscillating across its tolerance."""
+        """Damp the endpoint command instead of oscillating across its tolerance, and an
+        intermediate waypoint's on every joint whose error flipped sign since last tick.
+
+        Upstream's kp = 2 delta, tracked exactly, maps an error e to -e: a period-2
+        cycle that never enters the 0.04 rad band once |e| exceeds it. Halved, it maps
+        e to 0. A joint still approaching from one side keeps upstream's command.
+        """
         phase, next_phase = args
         action = super()._step_trajectory_phase(phase, next_phase)
-        if self._plan_step_idx[phase] == len(cast(list[Any], self.plans[phase])) - 1:
+        plan = cast(list[Any], self.plans[phase])
+        idx = self._plan_step_idx[phase]
+        if idx == len(plan) - 1:
             action[3:10] *= 0.5
+            self._waypoint_error = None
+            return action
+        current = np.asarray(self._get_current_robot_arm_conf()[:7])
+        error = wrap_arm_joint_difference(np.asarray(plan[idx][:7]) - current)
+        key = (id(plan), idx)
+        if self._waypoint_error is not None and self._waypoint_error[0] == key:
+            flipped = error * self._waypoint_error[1] < 0
+            action[3:10][flipped] *= 0.5
+        self._waypoint_error = (key, error)
         return action
+
+    def _clears_bin_walls(self, *args: Any) -> bool:
+        """Whether every robot link is at least BIN_WALL_CLEARANCE from every bin's
+        walls (not its bottom panel, where an in-bin grasp's fingertips belong)."""
+        (configuration,) = args
+        simulator = self._pybullet_sim
+        assert simulator is not None
+        before = simulator.robot.get_joint_positions()
+        simulator.robot.set_joints(list(configuration))
+        try:
+            return all(
+                simulator.bin_wall_clearance(name, max_distance=self.BIN_WALL_CLEARANCE)
+                >= self.BIN_WALL_CLEARANCE
+                for name in simulator.bin_names
+            )
+        finally:
+            simulator.robot.set_joints(before)
 
     def _plan_base_motion(self, *args: Any) -> Any:
         """Keep the chassis clear of every object, including the not-yet-held target."""
@@ -244,11 +289,36 @@ class RecyclingPickController(PickCubeController):
         )
 
     def _plan_grasp_and_lift(self, *args: Any, endpoints_only: bool = False) -> bool:
+        """Upstream's descent and lift, refined per object, with the lift and (when
+        planning from reset) the hover both kept BIN_WALL_CLEARANCE from the bin walls.
+
+        Upstream plans the hover inside `_plan_motions` with no wall margin but at its
+        endpoint, then calls this from its end, still in phase OPEN_GRIPPER. So the
+        hover is replanned here, home to that same endpoint, and replaces upstream's.
+        Called again at the hover's end (the cube moved), the hover is done: not
+        replanned. The PickPlannable dry run is this controller's `reset`, so it
+        refuses exactly what a dispatched pick would.
+        """
         state, start_joints, candidate, held_object_collision_threshold = args
         simulator = self._pybullet_sim
         assert simulator is not None
         simulator.set_state(state)
         start_joints = self._with_fingers(start_joints, candidate.finger_state)
+        phase = self.PickCubeControllerPhase
+        if self.current_phase == phase.OPEN_GRIPPER:
+            hover = plan_checked_arm_motion(
+                simulator.robot,
+                self._with_fingers(self.home_joints.tolist(), candidate.finger_state),
+                start_joints,
+                collision_bodies=simulator.get_collision_bodies(),
+                additional_state_constraint_fn=self._clears_bin_walls,
+                physics_client_id=simulator.physics_client_id,
+                endpoints_only=endpoints_only,
+            )
+            if hover is None:
+                return False
+            if not endpoints_only:
+                self.plans[phase.MOVE_ARM_TO_HOVER_OVER_CUBE] = hover[1]
         target = self.objects[1]
         self._planned_cube_position = np.array([state.get(target, axis) for axis in "xyz"])
         rotation = Rotation.from_quat([state.get(target, key) for key in ("qx", "qy", "qz", "qw")])
@@ -311,6 +381,7 @@ class RecyclingPickController(PickCubeController):
             held_object=target_body,
             base_link_to_held_obj=simulator.base_link_to_held_obj,
             distance_threshold=held_object_collision_threshold,
+            additional_state_constraint_fn=self._clears_bin_walls,
             physics_client_id=simulator.physics_client_id,
             endpoints_only=endpoints_only,
         )

@@ -316,3 +316,113 @@ def test_the_recorded_bracelet_rim_abort_now_lifts_the_cube_without_touching_the
     assert env.last_skill_error() is None, env.last_skill_error()
     assert HOLDING.holds(after, (env.robot, env.cube))
     assert not touches, touches[:5]
+
+
+class V8PickAbort:
+    """Della kitchen v8 (array 16771368) PickCube aborts, by their dispatch state. In each
+    replay MuJoCo shows no robot-bin contact; the planning sim's contact monitor fires
+    (A, C) or the lift never converges (B)."""
+
+    FIXTURES = Path(__file__).parent / "fixtures"
+    # (C) The hover path passes the bin's far rim with ~0 planned clearance.
+    HOVER_CONTACT = "expectimax1_hover_contact_abort"
+    # (A) The lift leaves ~1.3 mm, which the arm's tracking lag closes.
+    LIFT_CONTACT = "curtis2_lift_contact_abort"
+    # (B) A period-2 limit cycle around an intermediate lift waypoint, to the step limit.
+    LIFT_STEP_LIMIT = "curtis0_lift_step_limit_abort"
+    ALL = (HOVER_CONTACT, LIFT_CONTACT, LIFT_STEP_LIMIT)
+
+    @staticmethod
+    def state(*, name: str) -> dict[str, list[float]]:
+        return json.loads((V8PickAbort.FIXTURES / f"{name}.json").read_text())
+
+
+@pytest.mark.parametrize("name", V8PickAbort.ALL)
+def test_the_recorded_v8_pick_aborts_now_lift_the_cube(*, env, name):
+    env.reset_to_seed(seed=SEED)
+    env.restore_plain_snapshot(plain=V8PickAbort.state(name=name), dtype=np.float64)
+    after = env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0]))
+    assert env.last_skill_error() is None, env.last_skill_error()
+    assert HOLDING.holds(after, (env.robot, env.cube))
+
+
+class WallClearance:
+    """The robot's clearance to the bin's walls along a planned arm path, at the
+    planner's own densification, measured independently of the controller."""
+
+    @staticmethod
+    def violation(*, controller: Any, path: list[Any], margin: float) -> Any:
+        from kinder_models.dynamic3d.tossing.parameterized_skills import (
+            first_dense_joint_path_collision,
+        )
+
+        sim = controller._pybullet_sim
+
+        def too_close(*args: Any) -> bool:
+            (q,) = args
+            sim.robot.set_joints(list(q))
+            return any(
+                sim.bin_wall_clearance(name, max_distance=2 * margin) < margin
+                for name in sim.bin_names
+            )
+
+        return first_dense_joint_path_collision(sim.robot, path, too_close)
+
+
+@pytest.mark.parametrize("name", V8PickAbort.ALL)
+def test_the_planned_hover_and_lift_keep_their_margin_from_the_bin_walls(*, env, name):
+    env.reset_to_seed(seed=SEED)
+    env.restore_plain_snapshot(plain=V8PickAbort.state(name=name), dtype=np.float64)
+    backend = env.kinder_backend()
+    state = backend._require_state()
+    controller = backend._ground_controller(
+        module="tossing",
+        key="pick_cube",
+        object_names=(backend.robot_name, backend.cube_name, backend.barrier_name),
+        state=state,
+    )
+    controller.reset(state, None)
+    phase = RecyclingPickController.PickCubeControllerPhase
+    stand = controller.plans[phase.BASE_MOTION][-1]
+    at_stand = state.copy()
+    robot = at_stand.get_object_from_name(backend.robot_name)
+    for feature, value in (("pos_base_x", stand.x), ("pos_base_y", stand.y)):
+        at_stand.set(robot, feature, value)
+    at_stand.set(robot, "pos_base_rot", stand.theta())
+    controller._pybullet_sim.set_state(at_stand)
+    margin = 0.005
+    for arm_phase in (phase.MOVE_ARM_TO_HOVER_OVER_CUBE, phase.LIFT_CUBE_TO_HOME):
+        hit = WallClearance.violation(
+            controller=controller, path=controller.plans[arm_phase], margin=margin
+        )
+        assert hit is None, (arm_phase.name, hit)
+    controller._pybullet_sim.close()
+    assert margin == RecyclingPickController.BIN_WALL_CLEARANCE
+
+
+def test_tossing3d_still_grounds_upstreams_own_pick_controller(*, env):
+    """The margin and the damping are the kitchen controller's alone: Tossing3D's pick
+    is upstream's class, with upstream's planning and stepping, unchanged."""
+    from kinder_models.dynamic3d.tossing import parameterized_skills
+    from kinder_models.dynamic3d.tossing.parameterized_skills import PickCubeController
+
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+
+    env.reset_to_seed(seed=SEED)
+    backend = env.kinder_backend()
+    state = backend._require_state()
+    controller = KinderBackend._ground_controller(
+        backend,
+        module="tossing",
+        key="pick_cube",
+        object_names=(backend.robot_name, backend.cube_name, backend.barrier_name),
+        state=state,
+    )
+    assert not isinstance(controller, RecyclingPickController)
+    assert isinstance(controller, PickCubeController)
+    upstream = parameterized_skills.__name__
+    for method in ("_plan_motions", "_plan_grasp_and_lift", "_step_trajectory_phase"):
+        assert getattr(type(controller), method).__module__ == upstream, method
+    assert parameterized_skills.plan_checked_arm_motion.__module__ == upstream
+    assert not hasattr(controller, "BIN_WALL_CLEARANCE")
+    controller._pybullet_sim.close()
