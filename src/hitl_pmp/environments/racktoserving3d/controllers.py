@@ -40,11 +40,15 @@ class StrokeStances(BaseModel):
     rear_heading: float = np.pi - 0.30
     side_exit: Literal["front", "rear_lane"] = "rear_lane"
     # "rear_corner" runs both y gathers from just behind the counter's rear corners,
-    # reached along the rear lane, instead of driving round to the side stances.
+    # reached along the rear lane, instead of driving round to the side stances. Off
+    # by default: kinematically both gathers reach from |y| = 0.78-0.82 only (inside,
+    # the base hits the corner leg; outside, the blade rolls into the wires at deep
+    # stops), and on the real arm the -y gather's release lift grazes the counter
+    # edge with half_arm_2 (2026-11-03, seeds 0-2).
     gather_stance: Literal["side", "rear_corner"] = "side"
-    corner_x_offset: float = 0.025
-    corner_y_offset: float = 0.30
-    corner_heading: float = 1.75
+    corner_x_offset: float = 0.01
+    corner_y_offset: float = 0.28
+    corner_heading: float = 1.65
 
     def side_base(self, *, side: int, config: RackServingConfig) -> np.ndarray:
         return np.array([

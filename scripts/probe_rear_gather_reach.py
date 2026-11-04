@@ -102,6 +102,7 @@ class Reach:
             except SkillFailed as exc:
                 failures.append(f"hover: {exc}"[:200])
                 continue
+            worst_angle = worst_error = 0.0
             for phase, pose, here in waypoints:
                 hand = self.hand(body=pose)
                 shelf.base_target = here.copy()
@@ -112,8 +113,16 @@ class Reach:
                 except SkillFailed as exc:
                     failures.append(f"{phase}: {exc}"[:200])
                     break
+                reached = shelf.site_at(base=here, arm=arm)
+                worst_error = max(worst_error, float(np.linalg.norm(reached[:3, 3] - hand[:3, 3])))
+                worst_angle = max(
+                    worst_angle,
+                    tool.rotation_error(actual=reached[:3, :3], target=hand[:3, :3]),
+                )
             else:
-                return True, ""
+                # Margin: the IK accepts 8 mm / 2 deg, and 2 deg of blade roll drops one
+                # end of the blade 4.4 mm, into the rack wires at a 3 mm glide.
+                return True, f"worst {worst_error * 1000:.2f} mm {worst_angle:.2f} deg"
         return False, failures[0] if len(set(failures)) == 1 else " | ".join(failures)[:400]
 
     def seeds(self) -> list[np.ndarray]:
