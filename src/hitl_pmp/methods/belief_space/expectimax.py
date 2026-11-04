@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 
+from .decision_log_encoding import DecisionLogEncoding
 from .planner import BeliefSpacePlanner
 from .types.protocol import (
     ActionT,
@@ -263,7 +264,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                     self.trace.record(
                         event="branch",
                         node=node,
-                        action=practice_action.model_dump(mode="json", fallback=str),
+                        action=DecisionLogEncoding.value(value=practice_action),
                         horizon=horizon - 1,
                         summed_cost=summed_cost + sampled_cost,
                         sampled_cost=sampled_cost,
@@ -281,7 +282,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 self.trace.record(
                     event="action_value",
                     node=node,
-                    action=practice_action.model_dump(mode="json", fallback=str),
+                    action=DecisionLogEncoding.value(value=practice_action),
                     value=value_of_state,
                 )
             # On the shared grid: an action better only by roundoff does not displace
@@ -299,7 +300,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 action=(
                     "STOP"
                     if current_best_action == STOP_ACTION
-                    else current_best_action.model_dump(mode="json", fallback=str)
+                    else DecisionLogEncoding.value(value=current_best_action)
                 ),
                 value=current_best_value,
                 reason="max_value_stop_wins_ties",

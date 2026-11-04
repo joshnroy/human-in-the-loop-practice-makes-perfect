@@ -14,6 +14,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
 )
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
+from hitl_pmp.methods.belief_space.decision_log_encoding import DecisionLogEncoding
 from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -120,8 +121,8 @@ def test_toss_failure_distribution_learns_retained_and_released_outcomes_without
     assert outcomes[1][1] is outcomes[2][1]
     assert outcomes[1][1] == baseline[1][1]  # Same single S/F update, cost and training count.
     diagnostics = json.loads((tmp_path / "effects.jsonl").read_text().splitlines()[-1])
-    assert diagnostics["before_atoms"] == sorted(map(str, before))
-    assert diagnostics["after_atoms"] == sorted(map(str, released))
+    assert diagnostics["before_atoms"] == DecisionLogEncoding.atoms(atoms=before)
+    assert diagnostics["after_atoms"] == DecisionLogEncoding.atoms(atoms=released)
     assert [row["context_total"] for row in diagnostics["failure_effect_counts"]] == [3, 3]
 
 
