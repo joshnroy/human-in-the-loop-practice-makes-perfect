@@ -1,0 +1,187 @@
+{
+ "source": "Della dry run 5cce1de, ees seed 0, recording tick 6440: PickFood(cube_3) from the plate failed its lift, cube_3 still held, left pad 10 um into box_0_rim_44",
+ "config": {
+  "surface_kind": "wire",
+  "mode": "training",
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "robot_joints": {
+  "robot_joint_x": 1.3531222116693216,
+  "robot_joint_y": -0.6811003080689616,
+  "robot_joint_th": 1.4737341543346356,
+  "robot_joint_1": 0.4835791975004779,
+  "robot_joint_2": -0.081369423398255,
+  "robot_joint_3": 2.3381823461845532,
+  "robot_joint_4": -1.4529176826145112,
+  "robot_joint_5": 0.2146027617170931,
+  "robot_joint_6": -0.9934293117203765,
+  "robot_joint_7": 4.33550912159701,
+  "robot_right_driver_joint": 0.6084741519368099,
+  "robot_right_coupler_joint": 0.0004490895775714485,
+  "robot_right_spring_link_joint": 0.6053544707379024,
+  "robot_right_follower_joint": -0.5962495340588334,
+  "robot_left_driver_joint": 0.608453215206305,
+  "robot_left_coupler_joint": 0.0004333123719081511,
+  "robot_left_spring_link_joint": 0.605192386332421,
+  "robot_left_follower_joint": -0.5962023136754381
+ },
+ "grip": 1.0,
+ "free_bodies": {
+  "cube_0": [
+   1.2868257763034316,
+   0.012379489040348808,
+   0.918537205329131,
+   0.3659949901610529,
+   -0.11139649682484863,
+   -0.9166328283829906,
+   -0.1158565734119695
+  ],
+  "cube_1": [
+   1.3069408115106733,
+   -0.00713218939457715,
+   0.9253399669408501,
+   -0.533773731413092,
+   -0.13453052789061104,
+   -0.8347196559076597,
+   -0.015173554633525807
+  ],
+  "cube_2": [
+   1.2792463454420209,
+   0.050466328492359026,
+   0.9226428558210635,
+   0.7144046391836263,
+   -0.35790569314078885,
+   0.2229506353121186,
+   0.5584107274616498
+  ],
+  "cube_3": [
+   1.2923060152109307,
+   -0.06609968738329419,
+   0.9269067029217654,
+   0.16205331182635277,
+   0.9527773526949479,
+   -0.07527145345454637,
+   -0.24553665431572244
+  ],
+  "cube_4": [
+   1.308838486521703,
+   0.11098028423702319,
+   0.9104287914823405,
+   0.36347865490878506,
+   0.6342170195918809,
+   0.49715821753308626,
+   -0.46742458881087545
+  ],
+  "wiper_0": [
+   1.0609036236518297,
+   -0.33996108200699837,
+   0.9004995693306908,
+   0.4999991690925601,
+   -0.5000201815049647,
+   -0.5000008304994629,
+   0.49997981808702757
+  ],
+  "rack_0": [
+   1.500008237027011,
+   -8.456611843774752e-06,
+   0.8999453983886833,
+   0.9999999991000171,
+   1.362438324676267e-16,
+   -7.677588112480886e-20,
+   4.242600468714667e-05
+  ],
+  "box_0": [
+   1.1907153609706704,
+   -0.002744693721402076,
+   0.8999999457448447,
+   0.9995962789915167,
+   1.810906114274582e-07,
+   4.5836032811261844e-07,
+   0.02841265608970978
+  ]
+ }
+}
