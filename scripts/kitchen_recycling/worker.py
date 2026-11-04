@@ -49,6 +49,22 @@ def sha(*, path: Path) -> str:
     return hasher.hexdigest()
 
 
+def contract(*, manifest: dict) -> tuple[int, int]:
+    """The manifest's counted-step budget and evaluation workers; absent keys are the
+    full contract's 160,000 steps and one evaluation process (prepare.py's defaults)."""
+    return manifest.get("practice_step_budget", 160000), manifest.get("evaluation_workers", 1)
+
+
+def check_budget_and_workers(*, parsed: argparse.Namespace, manifest: dict) -> None:
+    budget, workers = contract(manifest=manifest)
+    if parsed.practice_step_budget != budget:
+        raise ValueError(f"Wrong full step ceiling: expected the manifest's {budget}")
+    if parsed.evaluation_workers != workers:
+        raise ValueError(f"Wrong evaluation workers: expected the manifest's {workers}")
+    if workers > 1 and parsed.evaluation_task_rng != "per-task":
+        raise ValueError("Parallel evaluation requires --evaluation-task-rng per-task")
+
+
 def binding(*, launch: Path) -> dict:
     return {
         name: sha(path=launch / name)
@@ -131,8 +147,9 @@ def verify(*, launch: Path, full: bool) -> dict:
 
     for row in rows:
         parsed = Cli.parse_args(argv=[*row["argv"], "--output-dir", "/tmp/kitchen-parse-only"])
-        if parsed.env != "kitchen_recycling3d" or parsed.practice_step_budget != 160000:
-            raise ValueError("Wrong environment or full step ceiling")
+        if parsed.env != "kitchen_recycling3d":
+            raise ValueError("Wrong environment")
+        check_budget_and_workers(parsed=parsed, manifest=manifest)
         if parsed.goal_pursuit_horizon != 0 or parsed.stop_after_perfect_evaluations != 0:
             raise ValueError("Goal pursuit/perfect-evaluation stopping must be disabled")
         if not parsed.no_early_stop:
@@ -157,14 +174,16 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
     output = launch.parent / ("smoke" if smoke else "results") / row["arm"] / str(row["seed"])
     output.mkdir(parents=True, exist_ok=False)
     command = [sys.executable, "-m", "hitl_pmp.cli", *row["argv"], "--output-dir", str(output)]
+    budget, workers = contract(manifest=manifest)
     if smoke:
         command += [
             "--practice-step-budget",
             "3200",
             "--measurement-interval-steps",
             "3200",
+            # One task per evaluation worker, so the smoke runs them concurrently.
             "--num-test-tasks",
-            "1",
+            str(workers),
             "--evaluation-control-steps",
             "500",
         ]
@@ -196,8 +215,8 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
         raise ValueError("Early STOP/stall is not full budget completion")
     if smoke and status.get("practice_steps", 0) < 3200:
         raise ValueError("Smoke did not reach its practice ceiling")
-    if not smoke and status.get("practice_steps", 0) < 160000:
-        raise ValueError("Run stopped before the full 160000 counted-step horizon")
+    if not smoke and status.get("practice_steps", 0) < budget:
+        raise ValueError(f"Run stopped before the full {budget} counted-step horizon")
     receipt = {
         "arm": row["arm"],
         "seed": row["seed"],

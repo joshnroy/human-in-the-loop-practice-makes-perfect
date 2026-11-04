@@ -12,6 +12,16 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
 - **160,000 counted practice steps; physical cost logged, not hard-capped.**
   Historical 2,000 cost budget belongs to DP. There is no DP arm or new global
   cost-budget flag in this package.
+  An iteration run may set another budget with `prepare.py --practice-step-budget`;
+  the manifest then records `practice_step_budget` and `worker.py` holds every row
+  and the run's endpoint to it. Left at the default, the manifest carries no such key
+  and is byte-identical to the 160,000-step package.
+- One evaluation process per checkpoint by default. `prepare.py --evaluation-workers N`
+  (N at most the ten test tasks) gives every row `--evaluation-workers N
+  --evaluation-task-rng per-task`, records `evaluation_workers` in the manifest, and
+  makes the smoke evaluate N held-out tasks instead of one, so it runs N evaluation
+  processes at once. Size `--cpus-per-task` and `--memory` to match (practice plus N
+  evaluation processes).
 - Measure initially and every 3,200 steps, ten held-out tasks, 500 evaluation
   control steps per task. `--no-early-stop` is mandatory for pilots and full runs:
   disable perfect-score, repeated-STOP and no-progress termination. STOP remains
@@ -128,7 +138,7 @@ Pilot authorization file `smoke-authorization.json` contains the same binding,
 `authorized_by: "main"` (or explicit `"user"`) and `submit_smoke: true`.
 Only then: `bash scripts/kitchen_recycling/submit.sh "$REMOTE_ROOT" smoke`.
 This runs the real CLI for all three arms at seed 0, 3,200 steps, one held-out
-task, 500 evaluation steps, unchanged planner settings, at most 30 minutes/arm.
+task per evaluation worker, 500 evaluation steps, unchanged planner settings, at most 30 minutes/arm.
 Process success alone is insufficient: final evaluation and budget endpoint
 must complete. A 2h allocation cap bounds the entire smoke. The original 15-minute
 per-arm limit interrupted a progressing Della expectimax pilot at 3,156/3,200
