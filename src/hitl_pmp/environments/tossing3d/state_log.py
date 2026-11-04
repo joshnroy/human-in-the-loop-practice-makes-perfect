@@ -56,7 +56,8 @@ class SkillEvent(BaseModel):
 class TickEvent(BaseModel):
     """One physics tick's full object-centric state, as `KinderBackend.
     snapshot_to_plain` returns it -- `{object_name: [feature, ...]}`, in the object's
-    own live feature order."""
+    own live feature order -- plus, from the simulator, the gripper's finger joints
+    under `KinderBackend.finger_joints_key` (absent from logs written before them)."""
 
     kind: str = "tick"
     state: dict[str, tuple[float, ...]]

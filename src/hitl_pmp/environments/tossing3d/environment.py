@@ -511,7 +511,13 @@ class Tossing3DEnvironment(Environment):
         buffer failure mode this project has hit before. `_state_log_writer is None`
         (no `--output-dir`) still drains, just discards."""
         backend = self.backend()
-        ticks = backend.drain_substep_states()
+        # The simulator pairs each tick with its finger joints, which a KINDER state
+        # cannot carry (`KinderBackend.restore`); another backend has none to pair.
+        ticks = (
+            backend.drain_substep_ticks()
+            if isinstance(backend, KinderBackend)
+            else [(tick, {}) for tick in backend.drain_substep_states()]
+        )
         writer = self._state_log_writer
         if writer is None:
             return
@@ -525,9 +531,9 @@ class Tossing3DEnvironment(Environment):
                 {} if toss_direction_deg is None else {"toss_direction_deg": toss_direction_deg}
             ),
         )
-        for tick in ticks:
+        for tick, fingers in ticks:
             writer.record_tick(
-                state=backend.snapshot_to_plain(snapshot=tick),
+                state={**backend.snapshot_to_plain(snapshot=tick), **fingers},
                 diagnostics=backend.abstraction_diagnostics(state=tick),
             )
 
@@ -738,7 +744,11 @@ class Tossing3DEnvironment(Environment):
         return self.get_current_state()
 
     def restore_plain_snapshot(
-        self, *, plain: dict[str, list[float]], dtype: type[np.floating] = np.float32
+        self,
+        *,
+        plain: dict[str, list[float]],
+        dtype: type[np.floating] = np.float32,
+        replay: bool = False,
     ) -> State:
         """`restore`'s sibling for a *logged* tick rather than an in-memory
         `Tossing3DSnapshot` -- see `state_log.py`'s module docstring for what produces
@@ -748,9 +758,17 @@ class Tossing3DEnvironment(Environment):
         bookkeeping (what `set_state` would rewind from, and what `take_action` counts),
         neither of which a replayed tick has a real value for or needs one -- nothing a
         renderer reads (`Tossing3DRenderer.caption` and the pixels themselves) consults
-        either field."""
-        backend = self.backend()
-        backend.restore(snapshot=backend.plain_to_snapshot(plain=plain, dtype=dtype))
+        either field.
+
+        `replay=True` is for redrawing or re-running a *recorded* state: it also writes
+        back the gripper's finger joints the recording carries
+        (`KinderBackend.restore_for_replay`). Without it the fingers are left as the
+        simulator last left them, as every in-run restore leaves them."""
+        if replay:
+            self.kinder_backend().restore_for_replay(plain=plain, dtype=dtype)
+        else:
+            backend = self.backend()
+            backend.restore(snapshot=backend.plain_to_snapshot(plain=plain, dtype=dtype))
         # A restored tick is a fresh observation context: any refusal observed on
         # the previous timeline does not describe it.
         self._pickup_blocked = False
