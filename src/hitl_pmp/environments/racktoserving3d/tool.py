@@ -1001,7 +1001,9 @@ class RackScraper(TableWiper):
                 self.check_configuration(base=base, arm=arm, holding=holding)
             shelf.base_target = waypoint.copy()
             distance = np.max(np.abs(waypoint - current))
-            limit = max(150, int(np.ceil(distance / shelf.base_step_limit)) + 50)
+            # SweepServo ramps a held scraper's heading across each control period,
+            # so a turn advances about 0.8 base_step_limit per step, not 1.0.
+            limit = max(150, int(np.ceil(2 * distance / shelf.base_step_limit)) + 50)
             for _ in range(limit):
                 self.step(arm=arm, label=label)
                 if np.max(np.abs(shelf.data.qpos[shelf.ba] - waypoint)) < 0.003:

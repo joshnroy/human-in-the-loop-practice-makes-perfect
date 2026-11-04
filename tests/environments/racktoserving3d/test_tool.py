@@ -436,6 +436,40 @@ def test_servo_torque_hook_is_bounded_read_only_and_restored():
     assert robot._update_ctrl is original
 
 
+@pytest.mark.parametrize("holding", [True, False])
+def test_servo_ramps_a_held_scrapers_heading_across_the_control_period(*, holding):
+    robot = SimpleNamespace(
+        _update_ctrl=Mock(),
+        _compute_arm_torques=Mock(return_value=np.zeros(7)),
+        ARM_TORQUE_LIMITS=np.full(7, 2.0),
+        control_frequency=10.0,
+    )
+    qpos = np.zeros(10)
+    shelf = SimpleNamespace(
+        core=SimpleNamespace(_robot_env=robot),
+        model=SimpleNamespace(
+            nv=10, site_bodyid=np.array([0]), opt=SimpleNamespace(timestep=0.025)
+        ),
+        data=SimpleNamespace(qpos=qpos, xmat=np.eye(3).reshape(1, 9), xpos=np.zeros((1, 3))),
+        site=0,
+        qa=np.arange(3, 10),
+        ba=np.arange(3),
+        arm_reference=np.zeros(7),
+        ticks=0,
+        in_hand=np.eye(4) if holding else None,
+    )
+    wiper = SimpleNamespace(head_geom=0, is_bench_scraper=False)
+    shelf.data.geom_xpos = np.zeros((1, 3))
+    with SweepServo(shelf=shelf, wiper=wiper, max_normal_force_n=0):
+        action = np.r_[0.01, -0.01, 0.04, np.zeros(8)]
+        for _ in range(4):
+            robot._update_ctrl(action)
+    sent = np.array([call.args[0][:3] for call in robot._update_ctrl.call_args_list])
+    np.testing.assert_allclose(sent[:, :2], [[0.01, -0.01]] * 4)
+    expected = [0.01, 0.02, 0.03, 0.04] if holding else [0.04] * 4
+    np.testing.assert_allclose(sent[:, 2], expected)
+
+
 def reference_tool_clear(*, tool, pose, data=None):
     """`RackScraper.tool_clear` as it was: every obstacle tested one at a time."""
     from hitl_pmp.environments.racktoserving3d.tool import SUPPORT_ALLOWANCE
