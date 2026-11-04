@@ -114,7 +114,17 @@ class RackServingConfig(BaseModel):
     dumpling_mass: Positive = 0.020
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
-    food_grip_command: float = Field(default=0.8, gt=0, le=1)
+    # Closing position commanded on food; fully closed, so the force limit below,
+    # not the position, decides where the fingers stop.
+    food_grip_command: float = Field(default=1.0, gt=0, le=1)
+    food_grip_force: Positive = Field(
+        default=20.0,
+        description=(
+            "Normal force per pad (N) the gripper closes to on food, as the real 2F-85 "
+            "is commanded a force: its adjustable range is about 20-235 N, and the "
+            "prpl-tidybot driver sends 100% (motor_cmd.force = 100)."
+        ),
+    )
     gripper_contact_dimension: Literal[3, 4, 6] = 4
     scraper_width: Positive = 0.25
     scraper_blade_height: Positive = 0.12

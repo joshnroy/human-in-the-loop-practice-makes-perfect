@@ -31,6 +31,10 @@ from .transit import ArmTransit, geom_half_extents, segment_samples
 APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
 # Hand yaws about world z a placement may set the held food down with, from the grasp's.
 PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
+# Pad normal force per unit of the 2F-85 finger actuator's tendon force, measured in
+# this scene: at the model's own +5 limit each pad presses a held dumpling with ~46 N.
+FINGER_NEWTONS_PER_ACTUATOR_UNIT = 46.0 / 5.0
+FINGER_ACTUATOR_SUFFIX = "fingers_actuator"
 # How far food may have moved since its grasp was planned and still be closed on.
 REGRASP_POSITION_TOLERANCE = 0.002
 REGRASP_ANGLE_TOLERANCE_DEG = 3.0
@@ -372,7 +376,34 @@ class RackFoodController:
             self.controllers.held_food = None
             self.shelf.held_cube = None
             self.carried = None
+            self._limit_grip(newtons=None)
             raise SkillFailed(f"Food {name} is not held by bilateral pad contact")
+
+    def restore_gripper_force(self) -> None:
+        """End a food grasp's force limit when the food leaves the hand by other means."""
+        self._limit_grip(newtons=None)
+
+    def _limit_grip(self, *, newtons: float | None) -> None:
+        """Command the fingers' closing force, as the real 2F-85 takes a force setting.
+
+        Position-commanded closing on a rigid ellipsoid keeps driving the fingers in
+        at the actuator's full force; a force-limited close stops at the target
+        normal force. ``None`` restores the gripper model's own limit, which every
+        non-food grasp (the scraper) uses. Only the closing side is changed.
+        """
+        model = self.shelf.model
+        actuator = next(
+            index
+            for index in range(model.nu)
+            if model.actuator(index).name.endswith(FINGER_ACTUATOR_SUFFIX)
+        )
+        default = getattr(self.shelf, "finger_force_default", None)
+        if default is None:
+            default = float(model.actuator_forcerange[actuator, 1])
+            self.shelf.finger_force_default = default
+        model.actuator_forcerange[actuator, 1] = (
+            default if newtons is None else newtons / FINGER_NEWTONS_PER_ACTUATOR_UNIT
+        )
 
     def _checked_arm(
         self, *, pose: np.ndarray, base: np.ndarray, seed: np.ndarray | None = None
@@ -580,6 +611,7 @@ class RackFoodController:
         with self.controllers.feedback():
             grasp, pre, base = self._plan_pick(name=name)
             planned = self._pose(name=name)
+            self._limit_grip(newtons=None)
             shelf.grip = 0.0
             shelf.hold(count=10, label="food_open")
             self._approach(pose=pre, base=base, label="food")
@@ -608,6 +640,7 @@ class RackFoodController:
                         step=0.005,
                     )
                 grasp, pre = replanned
+            self._limit_grip(newtons=backend.config.food_grip_force)
             shelf.grip = backend.config.food_grip_command
             shelf.hold(count=30, label="food_close")
             self._require_held(name=name)
@@ -727,6 +760,7 @@ class RackFoodController:
             self._require_held(name=name)
             self.carried = None
             shelf.grip = 0.0
+            self._limit_grip(newtons=None)
             shelf.hold(count=20, label="food_release")
             if self.backend.held(name=name):
                 raise SkillFailed("Food remained held after release")

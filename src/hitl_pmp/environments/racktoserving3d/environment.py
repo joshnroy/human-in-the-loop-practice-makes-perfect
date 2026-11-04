@@ -14,6 +14,7 @@ from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SkillNote, S
 from .backend import RackServingBackend
 from .config import RackServingConfig
 from .controllers import RackControllers
+from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom
 from .skills import SKILL_IDS
@@ -156,6 +157,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             if destination == "human_batch_return":
                 backend.batch_return()
                 moved = backend.cube_names
+                RackFoodController(controllers=self.rack_controllers()).restore_gripper_force()
                 self.rack_controllers().held_food = None
                 self.rack_controllers().shelf.held_cube = None
             else:

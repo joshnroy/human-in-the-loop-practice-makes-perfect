@@ -1,9 +1,12 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+from hitl_pmp.environments.racktoserving3d.food import RackFoodController
 from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger, SupportRegion
 
 
@@ -93,15 +96,12 @@ def test_near_tray_without_physical_support_is_not_delivered(*, monkeypatch):
 
 
 def _dispatching_env(*, monkeypatch):
-    from types import SimpleNamespace
     from unittest.mock import Mock
 
     env = RackServingEnvironment(config=RackServingConfig())
     backend = RackServingBackend(config=env.config)
     env._backend = backend
-    controllers = SimpleNamespace(
-        shelf=SimpleNamespace(ticks=0), gather_and_sweep=Mock(), wait_until_ready=Mock()
-    )
+    controllers = SimpleNamespace(shelf=SimpleNamespace(ticks=0), gather_and_sweep=Mock())
     env._rack_controllers = controllers
     monkeypatch.setattr(RackServingEnvironment, "_bookkeeping", lambda self: (0, 0))
     monkeypatch.setattr(RackServingEnvironment, "_observed_state", lambda self, **kwargs: None)
@@ -125,3 +125,26 @@ def test_actions_are_five_wide_and_the_no_op_matches(*, monkeypatch):
     assert env.noop_action().shape == (5,)
     env.take_action(action=env.noop_action())
     assert env._last_skill_error is None
+
+
+def test_batch_return_out_of_the_hand_restores_the_grippers_own_force(*, monkeypatch):
+    # A person taking held food back to the rack ends the force-limited food grasp;
+    # the scraper must not later be gripped at the food's force.
+    env = RackServingEnvironment()
+    env._backend = RackServingBackend()
+    restored = []
+    controllers = SimpleNamespace(
+        backend=env._backend, held_food="cube_0", shelf=SimpleNamespace(held_cube="cube_0")
+    )
+    env._rack_controllers = controllers
+    monkeypatch.setattr(RackServingEnvironment, "_bookkeeping", lambda self: (0, 0))
+    monkeypatch.setattr(RackServingEnvironment, "_observed_state", lambda self, **kwargs: None)
+    monkeypatch.setattr(RackServingBackend, "batch_return", lambda self: None)
+    monkeypatch.setattr(
+        RackFoodController,
+        "restore_gripper_force",
+        lambda self: restored.append(self.controllers),
+    )
+    env.reset_movables(destination="human_batch_return")
+    assert restored == [controllers]
+    assert controllers.held_food is None
