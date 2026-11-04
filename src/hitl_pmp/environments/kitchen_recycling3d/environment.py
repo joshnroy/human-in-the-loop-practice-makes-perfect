@@ -23,12 +23,16 @@ from .drive_zone import KitchenDriveZone
 class KitchenRecycling3DEnvironment(Tossing3DEnvironment):
     kitchen_config: KitchenConfig = Field(default_factory=KitchenConfig)
     canonical_seed: int = 0
+    # False only for a scene that will never be rendered (`KitchenKinderBackend`).
+    visual_furniture: bool = True
 
     def build_backend(self) -> KitchenKinderBackend:
         config = self.kitchen_config
         if len(config.objects) != 1 or config.required_objects != (config.objects[0].name,):
             raise ValueError("The kitchen re-flavour of Tossing3D is single-object")
-        return KitchenKinderBackend(kitchen_config=config, scene_bg=self.scene_bg)
+        return KitchenKinderBackend(
+            kitchen_config=config, scene_bg=self.scene_bg, visual_furniture=self.visual_furniture
+        )
 
     def drive_zone(self) -> tuple[float, float, float, float]:
         lower, upper = KitchenDriveZone.bounds(config=self.kitchen_config)

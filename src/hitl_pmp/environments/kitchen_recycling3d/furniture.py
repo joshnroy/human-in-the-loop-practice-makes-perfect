@@ -2,7 +2,7 @@
 
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from kinder.envs.dynamic3d import envs
 
@@ -142,7 +142,46 @@ def rectangular_kitchen(*, root: Any) -> None:
         )
 
 
-def add_lab_furniture(*, xml: str) -> str:
+class VisualFurniture:
+    """The desk's and chairs' meshes, or, in a scene that will never be rendered, a
+    stand-in for each.
+
+    The meshes are visual only (`contype="0"`, `conaffinity="0"`, on bodies with no
+    joint), so no physics reads them, but compiling them costs about 5 s per build and
+    every `mj_step` carries them. A stand-in is an invisible, non-colliding 1 mm sphere
+    with the mesh geom's name, in the mesh geom's place: MuJoCo numbers geoms in tree
+    order, and the scene's collider objects are named by geom index
+    (`collider:recycling_chair_0:52`), so dropping the geoms outright would rename them
+    in every observation and every recorded state."""
+
+    @staticmethod
+    def add(*, body: Any, mesh: str, geom: dict[str, str], visual: bool) -> None:
+        if visual:
+            named = {"name": geom["name"]} if "name" in geom else {}
+            ET.SubElement(body, "geom", {**named, "type": "mesh", "mesh": mesh, **geom})
+            return
+        stand_in = {key: value for key, value in geom.items() if key in ("name", "pos")}
+        ET.SubElement(
+            body,
+            "geom",
+            {
+                "type": "sphere",
+                "size": "0.001",
+                "rgba": "0 0 0 0",
+                "contype": "0",
+                "conaffinity": "0",
+                "group": "1",
+                **stand_in,
+            },
+        )
+
+    @staticmethod
+    def asset(*, assets: Any, tag: str, visual: bool, **attributes: str) -> None:
+        if visual:
+            ET.SubElement(assets, tag, dict(attributes))
+
+
+def add_lab_furniture(*, xml: str, visual: bool = True) -> str:
     root = ET.fromstring(xml)
     rectangular_kitchen(root=root)
     assets = root.find("asset")
@@ -160,23 +199,25 @@ def add_lab_furniture(*, xml: str) -> str:
     colors = ("0.12 0.12 0.12 1", "0.65 0.42 0.23 1", "0.16 0.14 0.12 1", "0.45 0.3 0.17 1")
     for index, color in enumerate(colors):
         mesh = f"recycling_lab_desk_{index}"
-        ET.SubElement(
-            assets,
-            "mesh",
+        VisualFurniture.asset(
+            assets=assets,
+            tag="mesh",
+            visual=visual,
             name=mesh,
             file=str(source / f"scene2_table_{index}.obj"),
             scale=" ".join(map(str, FURNITURE_SCALE)),
         )
-        ET.SubElement(
-            desk,
-            "geom",
-            name=f"{mesh}_visual",
-            type="mesh",
+        VisualFurniture.add(
+            body=desk,
             mesh=mesh,
-            contype="0",
-            conaffinity="0",
-            group="1",
-            rgba=color,
+            geom={
+                "name": f"{mesh}_visual",
+                "contype": "0",
+                "conaffinity": "0",
+                "group": "1",
+                "rgba": color,
+            },
+            visual=visual,
         )
     ET.SubElement(
         desk,
@@ -191,21 +232,27 @@ def add_lab_furniture(*, xml: str) -> str:
         group="3",
     )
     chair_source = library / "replica_objects/frl_apartment_chair_04"
-    ET.SubElement(
-        assets,
-        "mesh",
+    VisualFurniture.asset(
+        assets=assets,
+        tag="mesh",
+        visual=visual,
         name="recycling_chair_mesh",
         file=str(chair_source / "frl_apartment_chair_04.obj"),
     )
-    ET.SubElement(
-        assets,
-        "texture",
+    VisualFurniture.asset(
+        assets=assets,
+        tag="texture",
+        visual=visual,
         name="recycling_chair_texture",
         type="2d",
         file=str(chair_source / "11gfdgdg.png"),
     )
-    ET.SubElement(
-        assets, "material", name="recycling_chair_material", texture="recycling_chair_texture"
+    VisualFurniture.asset(
+        assets=assets,
+        tag="material",
+        visual=visual,
+        name="recycling_chair_material",
+        texture="recycling_chair_texture",
     )
     for index, (horizontal, lateral) in enumerate(CHAIR_POSITIONS):
         chair = ET.SubElement(
@@ -215,17 +262,18 @@ def add_lab_furniture(*, xml: str) -> str:
             pos=f"{horizontal} {lateral} 0",
             quat="0 0 0 1" if index < 2 else "1 0 0 0",
         )
-        ET.SubElement(
-            chair,
-            "geom",
-            type="mesh",
+        VisualFurniture.add(
+            body=chair,
             mesh="recycling_chair_mesh",
-            material="recycling_chair_material",
-            pos="0 -0.032779485 0.45560272",
-            quat="0.707106781187 0.707106781187 0 0",
-            contype="0",
-            conaffinity="0",
-            group="1",
+            geom={
+                "material": "recycling_chair_material",
+                "pos": "0 -0.032779485 0.45560272",
+                "quat": "0.707106781187 0.707106781187 0 0",
+                "contype": "0",
+                "conaffinity": "0",
+                "group": "1",
+            },
+            visual=visual,
         )
         ET.SubElement(
             chair,
@@ -265,12 +313,25 @@ def add_mats(*, xml: str, bounds: Any) -> str:
 
 
 class RecyclingObjectCentricEnv(envs.ObjectCentricTidyBot3DEnv):
+    visual_furniture: ClassVar[bool] = True
+
     def _create_scene_xml(self) -> str:
-        xml = add_lab_furniture(xml=super()._create_scene_xml())
+        xml = add_lab_furniture(xml=super()._create_scene_xml(), visual=self.visual_furniture)
         bounds = self.task_config.get("kitchen_mats")
         return xml if bounds is None else add_mats(xml=xml, bounds=bounds)
+
+
+class PhysicsOnlyRecyclingObjectCentricEnv(RecyclingObjectCentricEnv):
+    """The same scene without the visual-only furniture meshes: never to be rendered."""
+
+    visual_furniture: ClassVar[bool] = False
 
 
 class RecyclingEnv(envs.TidyBot3DEnv):
     def _create_object_centric_env(self, *args: Any, **kwargs: Any) -> Any:
         return RecyclingObjectCentricEnv(*args, **kwargs)
+
+
+class PhysicsOnlyRecyclingEnv(envs.TidyBot3DEnv):
+    def _create_object_centric_env(self, *args: Any, **kwargs: Any) -> Any:
+        return PhysicsOnlyRecyclingObjectCentricEnv(*args, **kwargs)
