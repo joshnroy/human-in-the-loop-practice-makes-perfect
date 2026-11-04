@@ -163,6 +163,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         if action_id not in (8, 9) and not on:
             return super().take_action(action=action)
         c = self.controller()
+        c.choose_posture_turn()
         self._skill_start = c.steps
         start = float(c.data.time)
         self.last_info = {
