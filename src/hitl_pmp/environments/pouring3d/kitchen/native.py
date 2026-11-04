@@ -16,6 +16,7 @@ from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv,
 
 from .config import KitchenGeometry
 from .settling import PayloadRestWindow
+from .types import ClosedLoopPourParameters
 
 
 class KitchenScene(PotstickerScene):
@@ -166,9 +167,138 @@ class KitchenController(PotstickerController):
     levelling_rounds: int = 3
     # Two pours delivered the requested count but were still moving at 20 s.
     pour_settle_seconds: float = 30.0
+    # The closed-loop Pour's fixed settings (Josh, 2026-11-04); only the ramp rate is
+    # learned (`ClosedLoopPourParameters`).
+    # Short of the ~86 deg slide onset, so the fast approach moves no dumpling.
+    POUR_APPROACH_DEGREES: ClassVar[float] = 80.0
+    # The approved tilt ceiling: the wrist (joint 6, about 121 deg) reaches 95 deg.
+    POUR_MAX_TILT_DEGREES: ClassVar[float] = 95.0
+    # Sideways wiggle during the ramp: the prototype's 40 mm, at which 1 deg/s was exact.
+    POUR_WIGGLE_M: ClassVar[float] = 0.04
+    # Fast return, so as little as possible leaves after the cutoff.
+    POUR_RETURN_DEG_S: ClassVar[float] = 45.0
 
     def outcome_settled(self) -> bool:
         return bool(self.scene.payload_at_rest())
+
+    def run_joint_pour(self, *, parameters: Any, requested_count: int) -> dict:
+        del parameters, requested_count
+        raise ValueError("The kitchen Pour is closed-loop; use run_closed_loop_pour")
+
+    def run_closed_loop_pour(
+        self, *, parameters: ClosedLoopPourParameters, requested_count: int
+    ) -> dict:
+        """The Pour skill: carry and level to the pour start, then the closed-loop pour."""
+        if self.held != "pitcher":
+            raise ValueError("Pour requires a retained handle grasp")
+        task_request = self.scene.requested_count
+        try:
+            self.prepare_to_pour()
+            result = self.closed_loop_pour(parameters=parameters, requested=requested_count)
+            result.update(skill=f"Pour{requested_count}", requested_count=requested_count)
+            self.events.append(result)
+            return result
+        finally:
+            self.scene.requested_count = task_request
+
+    def poured_count(self) -> int:
+        """Dumplings that have left the jug, from true simulator state (no delay)."""
+        return sum(1 for location in self.scene.cube_locations() if location != "pitcher")
+
+    def closed_loop_pour(self, *, parameters: ClosedLoopPourParameters, requested: int) -> dict:
+        """Tilt until `requested` dumplings have left the jug, then return upright.
+
+        Approach to `POUR_APPROACH_DEGREES` at the carry tilt speed; past it, tilt at the
+        learned ramp rate with a fixed sideways wiggle, up to `POUR_MAX_TILT_DEGREES`.
+        The cutoff cannot take back a dumpling already on its way out, so a fast ramp
+        overshoots: that is the trade-off the learned rate faces.
+        """
+        import mujoco
+
+        if self.held != "pitcher":
+            raise ValueError("A physical handle grasp is required")
+        # mj_step leaves derived poses at the preceding integration instant.
+        mujoco.mj_forward(self.model, self.data)
+        self.scene.requested_count = requested
+        self.cutoff_reason = None
+        before = self.scene.physical_snapshot()
+        center = self.body_pose(name="tray")[0] + [0, 0, self.pour_clearance]
+        self.calibrate_joint_payload()
+        self.joint_pour_active = True
+        return_speed, self.return_speed_deg_s = self.return_speed_deg_s, self.POUR_RETURN_DEG_S
+        angle = elapsed = offset = 0.0
+        error = None
+        try:
+            while angle < self.POUR_MAX_TILT_DEGREES:
+                if self.poured_count() >= requested:
+                    self.cutoff_reason = f"{requested} left the jug at tilt {angle:.2f} deg"
+                    break
+                ramping = angle >= self.POUR_APPROACH_DEGREES
+                rate = parameters.ramp_rate_deg_s if ramping else self.TILT_SPEED_DEG_S
+                angle = min(self.POUR_MAX_TILT_DEGREES, angle + rate / self.frequency)
+                if angle >= self.POUR_APPROACH_DEGREES:
+                    elapsed += 1 / self.frequency
+                    offset = self.offset(elapsed=elapsed, amplitude_m=self.POUR_WIGGLE_M)
+                # Not a "feedback ..." phase: the ramp neither waits on joint tracking
+                # each waypoint nor widens the IK clearance, exactly as prototyped.
+                self.phase = (
+                    "closed-loop tilt ramp with sideways wiggle"
+                    if ramping
+                    else "closed-loop tilt approach"
+                )
+                self.tracked_step(center=center, angle=angle, offset=offset)
+            if self.cutoff_reason is None:
+                self.cutoff_reason = "reached max tilt"
+            self.return_pitcher_upright(center=center, angle=angle, start_offset=offset)
+            # Close the loop on the held jug's measured orientation, as the timed pour does.
+            for _ in range(round(15 * self.frequency)):
+                actual = self.hand_pose()[1] * self.rotation_offset.inv()
+                if np.degrees(np.arccos(np.clip(actual.apply([0, 0, 1])[2], -1, 1))) < 3:
+                    break
+                self.phase = "feedback return upright"
+                self.tracked_step(center=center, angle=0)
+            else:
+                raise ValueError("Pitcher did not become upright after return")
+            self.pause(phase="settle potstickers in pan", seconds=2)
+            # Fixed observation window; food state never changes the action.
+            self.pause(phase="wait for potstickers to settle", seconds=self.pour_settle_seconds - 2)
+        except ValueError as exc:
+            error = str(exc)
+        finally:
+            self.joint_pour_active = False
+            self.return_speed_deg_s = return_speed
+        after = self.scene.physical_snapshot()
+        locations = after["locations"]
+        return {
+            "mode": "closed_loop",
+            "parameters": parameters.model_dump(),
+            "requested": requested,
+            "success": error is None
+            and locations.count("tray") == requested
+            and locations.count("pitcher") == len(locations) - requested
+            and after["settled"],
+            "error": error,
+            "delivered": locations.count("tray"),
+            "retained": locations.count("pitcher"),
+            "locations": locations,
+            "settled": after["settled"],
+            "cutoff_reason": self.cutoff_reason,
+            "cutoff_tilt_degrees": angle,
+            "before": before,
+            "after": after,
+            "fixed_settings": {
+                "approach_degrees": self.POUR_APPROACH_DEGREES,
+                "approach_speed_deg_s": self.TILT_SPEED_DEG_S,
+                "max_tilt_degrees": self.POUR_MAX_TILT_DEGREES,
+                "wiggle_m": self.POUR_WIGGLE_M,
+                "wiggle_hz": self.FEED_HZ,
+                "return_speed_deg_s": self.POUR_RETURN_DEG_S,
+                "settle_seconds": self.pour_settle_seconds,
+                "observation": "true simulator locations, no delay",
+            },
+            "controller_revision": "kitchen_closed_loop_v1",
+            "bounded_ik_recoveries": self.bounded_ik_recoveries,
+        }
 
     @classmethod
     def build(

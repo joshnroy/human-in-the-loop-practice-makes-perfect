@@ -8,6 +8,29 @@ pytest.importorskip("kinder")
 from hitl_pmp.environments.pouring3d.kitchen.environment import HUMAN_RESET, KitchenEnvironment
 
 
+def test_the_kitchen_pour_action_carries_only_a_ramp_rate():
+    from hitl_pmp.environments.pouring3d.feedback_controller import FeedbackPourParameters
+
+    env = KitchenEnvironment(requested_count=1)
+    try:
+        c = env.controller()
+        for action, match in (
+            # The open-loop (tilt, amplitude, duration) action is no longer a kitchen Pour.
+            ([1, 0, 1, 86.0, 0.06, 30.0], "slots 4 and 5"),
+            ([1, 0, 1, 1.0, 0.04, 0.0], "slots 4 and 5"),
+            ([1, 0, 1, 0.1, 0.0, 0.0], "ramp_rate_deg_s"),
+        ):
+            steps = c.steps
+            env.take_action(action=np.array(action, dtype=float))
+            assert env.last_info["success"] is False
+            assert match in env.last_info["error"]
+            assert c.steps == steps
+        with pytest.raises(ValueError, match="closed-loop"):
+            c.run_joint_pour(parameters=FeedbackPourParameters(), requested_count=1)
+    finally:
+        env.close()
+
+
 def test_loaded_jug_release_requires_low_upright_slow_pose_above_home():
     import mujoco
 
