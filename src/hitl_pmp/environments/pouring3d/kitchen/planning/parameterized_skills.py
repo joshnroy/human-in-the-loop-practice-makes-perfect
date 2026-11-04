@@ -228,17 +228,20 @@ class KitchenMotionPlanner:
         what: str,
         held: HeldObject | None = None,
         ignore: tuple[str, ...] = (),
+        also_collides: Callable[[SE2], bool] | None = None,
     ) -> list[np.ndarray]:
         """A base path to `target` (x, y, yaw), the arm (and anything held) carried as
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
         scene. `ignore` names objects with no 2-D footprint, such as one the hand
-        carries above the base."""
+        carries above the base. `also_collides` is any further check of a base pose."""
         joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         if held is not None:
             sim.base_link_to_held_obj = held.base_link_to_held_obj
 
         def body_collides(pose: SE2) -> bool:  # noqa: PLR0917 -- upstream callback
+            if also_collides is not None and also_collides(pose):
+                return True
             return sim.robot_collides_at_base(
                 pose,
                 joints,
