@@ -24,6 +24,7 @@ from .tossing3d_observation_model import (
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
+    FrozenSkillEffects,
     SkillEffects,
     estimated_action_cost,
     make_tossing3d_search_state,
@@ -123,7 +124,7 @@ class Tossing3DPracticeModel(BaseModel):
     _atom_masks: AtomMasks = PrivateAttr(default_factory=lambda: AtomMasks(indexes={}))
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
     # Read-only, so the transition can memoise effects by this table's identity.
-    _effects: SkillEffects = PrivateAttr(default_factory=lambda: MappingProxyType({}))
+    _effects: SkillEffects = PrivateAttr(default_factory=lambda: FrozenSkillEffects(table={}))
     _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _domain: PracticeDomain = PrivateAttr()
@@ -182,10 +183,12 @@ class Tossing3DPracticeModel(BaseModel):
         self._precondition_masks = tuple(
             self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills
         )
-        self._effects = MappingProxyType({
-            skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
-            for skill in self.ground_skills
-        })
+        self._effects = FrozenSkillEffects(
+            table={
+                skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
+                for skill in self.ground_skills
+            }
+        )
         self._skill_belief_models, self._skill_belief_models_by_name = make_skill_belief_models(
             ground_skills=self.ground_skills, domain=self.domain
         )

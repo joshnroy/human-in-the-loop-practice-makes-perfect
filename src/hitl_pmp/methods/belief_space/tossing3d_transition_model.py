@@ -1,8 +1,7 @@
 """Symbolic practice transitions for Tossing3D."""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from functools import cache
-from types import MappingProxyType
 from typing import ClassVar
 
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
@@ -27,10 +26,31 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleF
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 
 TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
-SkillEffects = Mapping[
-    GroundSkill,
-    tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-]
+EffectTriple = tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]]
+SkillEffects = Mapping[GroundSkill, EffectTriple]
+
+
+class FrozenSkillEffects(Mapping[GroundSkill, EffectTriple]):
+    """A ground skill's (add, delete, ignore) effects, fixed at construction.
+
+    Nothing can change it afterwards, so its identity stands for its content and the
+    success-effects memo can key on it. A plain class rather than `MappingProxyType`,
+    because method checkpoints pickle the model that holds it.
+    """
+
+    __slots__ = ("_table",)
+
+    def __init__(self, *, table: Mapping[GroundSkill, EffectTriple]) -> None:
+        self._table = dict(table)
+
+    def __getitem__(self, key: GroundSkill) -> EffectTriple:  # noqa: PLR0917 -- Mapping protocol
+        return self._table[key]
+
+    def __iter__(self) -> Iterator[GroundSkill]:
+        return iter(self._table)
+
+    def __len__(self) -> int:
+        return len(self._table)
 
 
 def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -> float:
@@ -127,11 +147,10 @@ class SuccessEffectsCache:
 
     Search applies the same skill to the same symbolic state at many nodes. The result
     reads the atoms, the ground skill and the table's entry for it. Atoms are keyed by
-    value; the ground skill (frozen) and the table (a `MappingProxyType` nobody holds
-    the dict behind) by identity, each entry holding both so neither id can be reused
-    while it is cached. A hit returns the very frozenset computed on the miss, so its
-    hash, cached on the object, is not recomputed by every key it enters. A mutable
-    table is not cached.
+    value; the ground skill (frozen) and the table (a `FrozenSkillEffects`) by identity,
+    each entry holding both so neither id can be reused while it is cached. A hit
+    returns the very frozenset computed on the miss, so its hash, cached on the object,
+    is not recomputed by every key it enters. A mutable table is not cached.
     """
 
     MAX_ENTRIES: ClassVar[int] = 16384
@@ -149,7 +168,7 @@ class SuccessEffectsCache:
         ground_skill: GroundSkill,
         effects: SkillEffects,
     ) -> frozenset[GroundAtom]:
-        if not isinstance(effects, MappingProxyType):
+        if not isinstance(effects, FrozenSkillEffects):
             return compute_success_effects(
                 true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
             )
