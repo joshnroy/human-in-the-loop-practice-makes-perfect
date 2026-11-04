@@ -9,12 +9,14 @@ existed: root value, choice, node and hit counts, and every memo entry.
 
 import io
 import json
+import math
 import pickle
 
 import pytest
 
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.sweepoffshelf3d.predicates import SweepOffShelf3DPredicates
+from hitl_pmp.methods.belief_space import tossing3d_model
 from hitl_pmp.methods.belief_space.belief_digest import BeliefDigest
 from hitl_pmp.methods.belief_space.bounded_memo import BoundedMemo
 from hitl_pmp.methods.belief_space.competence_inference import (
@@ -34,12 +36,14 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     apply_success_effects,
     compute_success_effects,
     make_tossing3d_search_state,
+    render_atoms,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     ParticleFilterBelief,
     create_broad_particle_prior,
 )
+from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
     SkillHypothesis,
@@ -49,6 +53,7 @@ from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
     WeightedHypothesisBelief,
 )
 
+from . import record_search_fixture
 from . import test_object_symmetry as shelf
 from .record_search_fixture import CASES, FIXTURE, RecordedSearch
 
@@ -514,8 +519,6 @@ def test_the_search_state_is_built_without_revalidating_its_atoms() -> None:
     # The same frozenset object, so its cached hash is reused by every key it enters.
     assert built.true_atoms is atoms
     assert built.state is state
-    from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
-
     validated = Tossing3DSearchState(state=state, true_atoms=atoms, atoms=built.atoms)
     assert built == validated
     assert built.model_fields_set == validated.model_fields_set
@@ -525,31 +528,72 @@ def test_the_search_state_is_built_without_revalidating_its_atoms() -> None:
 # --- Recorded decisions --------------------------------------------------------------
 
 
+def _uncached(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route every cached function back to its uncached original, as on main."""
+
+    def build(*, state, true_atoms):
+        return Tossing3DSearchState(
+            state=state, true_atoms=true_atoms, atoms=render_atoms(true_atoms=true_atoms)
+        )
+
+    monkeypatch.setattr(
+        SearchForecastCache,
+        "refit",
+        staticmethod(
+            lambda *, belief, training_examples: belief.refit(training_examples=training_examples)
+        ),
+    )
+    monkeypatch.setattr(
+        SearchForecastCache,
+        "condition",
+        staticmethod(lambda *, belief, success: belief.condition_outcome(success=success)),
+    )
+    monkeypatch.setattr(SuccessEffectsCache, "of", staticmethod(compute_success_effects))
+    monkeypatch.setattr(AtomMasks, "mask", AtomMasks.compute)
+    monkeypatch.setattr(
+        Tossing3DPracticeModel, "transition_key", staticmethod(_pydantic_transition_key)
+    )
+    for module in (tossing3d_model, record_search_fixture):
+        monkeypatch.setattr(module, "make_tossing3d_search_state", build)
+
+
+@pytest.mark.parametrize(("state", "reduce"), CASES)
+def test_the_caches_change_no_bit_of_a_search(
+    *, monkeypatch: pytest.MonkeyPatch, state: str, reduce: bool
+) -> None:
+    """The same search, with every cache routed back to its uncached original and then
+    with the caches, cold and warm, in one process: every memo entry -- each node's key,
+    value to the bit and best action -- and the root's value, choice, node and hit
+    counts must match. One process, because the low bits of a posterior differ between
+    CPUs even for the uncached code (see the recorded test below)."""
+    with monkeypatch.context() as patched:
+        _uncached(monkeypatch=patched)
+        uncached = RecordedSearch.solve(state=state, reduce=reduce)
+    SearchForecastCache.clear()
+    SuccessEffectsCache.clear()
+    for _ in range(2):
+        assert RecordedSearch.solve(state=state, reduce=reduce) == uncached
+
+
 @pytest.fixture(scope="module")
 def recorded() -> dict[str, dict]:
     return json.loads(FIXTURE.read_text())
 
 
 @pytest.mark.parametrize(("state", "reduce"), CASES)
-@pytest.mark.parametrize("repeat", [1, 2])
-def test_a_recorded_decision_is_reproduced_bit_for_bit(
-    *, recorded: dict[str, dict], state: str, reduce: bool, repeat: int
+def test_a_recorded_decision_is_reproduced(
+    *, recorded: dict[str, dict], state: str, reduce: bool
 ) -> None:
     """SweepOffShelf3D's production J and grid, a carry-trained belief, depth 3, with and
-    without the symmetry and count reductions; recorded on main @ 746f77732, before any
-    of these caches existed. Every memo entry -- each node's key, value (to the bit) and
-    best action -- must match, not only the root. `repeat=2` solves twice in one
-    process, so the second search runs on warm caches."""
+    without the symmetry and count reductions; recorded on agni from main @ 746f77732,
+    before any of these caches existed. Choice and node and hit counts are exact; the
+    root value is compared to 1e-12, not to the bit, because main itself does not
+    reproduce agni's last bit on every CPU (on a Della Sapphire Rapids node it gives
+    ...e99bap-2 for agni's ...e99bcp-2). Bit-identity is the test above's job."""
     expected = recorded[RecordedSearch.name(state=state, reduce=reduce)]
-    for _ in range(repeat):
-        observed = RecordedSearch.solve(state=state, reduce=reduce)
-        assert {k: v for k, v in observed.items() if k != "memo"} == {
-            k: v for k, v in expected.items() if k != "memo"
-        }
-        assert set(observed["memo"]) == set(expected["memo"]), "a different set of nodes"
-        differing = {
-            key: (observed["memo"][key], entry)
-            for key, entry in expected["memo"].items()
-            if observed["memo"][key] != entry
-        }
-        assert not differing, f"{len(differing)}/{len(expected['memo'])} memo entries differ"
+    observed = RecordedSearch.solve(state=state, reduce=reduce)
+    for field in ("action", "unique_nodes", "cache_hits"):
+        assert observed[field] == expected[field], field
+    assert math.isclose(
+        float.fromhex(observed["value"]), float.fromhex(expected["value"]), rel_tol=1e-12
+    )
