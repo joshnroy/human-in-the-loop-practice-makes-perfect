@@ -56,6 +56,7 @@ def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
         ],
         check=True,
         capture_output=True,
+        cwd=directory,  # Not the repository: prepare.py must not depend on where it runs.
     )
     return output
 

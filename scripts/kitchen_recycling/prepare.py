@@ -6,6 +6,7 @@ import json
 import shlex
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[2]
 ARMS = ("ees", "expectimax", "curtis")
 # The full contract's budget, and one evaluation process per checkpoint. Left at these
 # defaults the package is byte-identical to the one v5-v8 launched from.
@@ -165,7 +166,8 @@ def main() -> None:
     rows = []
     cost_files = {}
     if costs is not None:
-        base = json.loads(Path(args.cost_file).read_text())
+        # Read from the repository, where the CLI resolves it, wherever this runs from.
+        base = json.loads((REPO / args.cost_file).read_text())
         (args.out / "costs").mkdir()
         for cost in costs:
             name = f"costs/human-reset-cost-{cost_token(cost=cost)}.json"
