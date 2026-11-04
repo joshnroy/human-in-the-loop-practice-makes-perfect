@@ -1,7 +1,6 @@
 """The two injection seams a domain-agnostic `Method` needs from Tossing3D."""
 
 import numpy as np
-from pydantic import Field
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import (
@@ -63,16 +62,14 @@ class Tossing3DSkillProvider(SkillProvider):
     """
 
     env: Tossing3DEnvironment
-    human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
-    non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
     # Off by default: the automatic reset is the human reset relabelled -- it raises the
     # same request, the same oracle executes it and it counts as a human intervention --
     # so offering both leaves the planner choosing between two cost posteriors for one
     # mechanism, which is noise rather than a decision.
     offer_non_human_reset: bool = False
     # Off only for the "is the human reset needed?" baseline. Absent, not expensive: no
-    # finite `human_reset_practice_cost` removes the skill, because a planner that is
-    # otherwise stuck will take it at any price (see `EesMethod.plan_to`).
+    # finite reset price removes the skill, because a planner that is otherwise stuck
+    # will take it at any price (see `EesMethod.plan_to`).
     offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
@@ -238,7 +235,7 @@ class Tossing3DSkillProvider(SkillProvider):
         """Two human reset skills, one per bin destination, same side first.
 
         The cube is always returned to the robot's side so practice can continue;
-        the skill names where the bin goes. Both carry the same provider-owned cost,
+        the skill names where the bin goes. The costs file prices both alike,
         so nothing here prefers a side: the choice is the planner's. The functional
         side predicates are cleared through ``ignore_effects`` before the
         destination's atoms are added. Holding is deleted when a reset relocates
@@ -301,7 +298,6 @@ class Tossing3DSkillProvider(SkillProvider):
                     }),
                     ignore_effects=CUBE_SIDES | BIN_SIDES,
                     param_dim=0,
-                    practice_cost=self.human_reset_practice_cost,
                 ),
                 objects=(env.robot, env.cube, env.bin, env.barrier),
             )
@@ -312,25 +308,18 @@ class Tossing3DSkillProvider(SkillProvider):
         )
 
     def non_human_cube_bin_reset_skill(self) -> GroundSkill:
-        """The historical destination with its independent automatic-reset cost."""
+        """The historical destination of the automatic reset."""
         return self.non_human_cube_bin_reset_skills()[0]
 
     def non_human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        """The automatic counterparts of both human resets, with their own cost."""
+        """The automatic counterparts of both human resets, under their own name."""
         return tuple(
             self._automatic_reset(reset=reset) for reset in self._cube_bin_reset_groundings()
         )
 
     def _automatic_reset(self, *, reset: GroundSkill) -> GroundSkill:
         return reset.model_copy(
-            update={
-                "skill": reset.skill.model_copy(
-                    update={
-                        "name": NON_HUMAN_RESET_NAME,
-                        "practice_cost": self.non_human_reset_practice_cost,
-                    }
-                )
-            }
+            update={"skill": reset.skill.model_copy(update={"name": NON_HUMAN_RESET_NAME})}
         )
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:

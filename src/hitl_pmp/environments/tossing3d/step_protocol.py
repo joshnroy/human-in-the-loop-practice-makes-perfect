@@ -50,7 +50,6 @@ class Tossing3DStepProtocol(SimulatedStepProtocolHooks):
             oracle=Tossing3DOracle(env=env, throw_standoff=args.oracle_throw_standoff),
             skill_provider=Tossing3DSkillProvider(
                 env=env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
             ),
         )

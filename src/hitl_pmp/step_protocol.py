@@ -989,6 +989,8 @@ class StepProtocolValidation:
 
     @staticmethod
     def check(*, args: argparse.Namespace) -> None:
+        if not getattr(args, "practice_cost_config", None):
+            raise ValueError("The step protocol prices practice only from --practice-cost-config")
         if args.method not in {"ees", "dp", "pomdp"}:
             raise ValueError("Step protocol currently supports the EES, DP and PDDL methods")
         if args.practice_reset_policy != PracticeResetPolicy.NEVER:
@@ -1012,12 +1014,11 @@ class StepProtocolValidation:
                 "'shared' a task's draws depend on the tasks before it, so tasks run apart "
                 "would not reproduce the evaluation"
             )
-        cost_path = getattr(args, "practice_cost_config", None)
-        if cost_path and args.human_skill_steps != 1:
+        cost_path = args.practice_cost_config
+        if args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
         if (
-            cost_path
-            and getattr(args, "always_ask_reset", False)
+            getattr(args, "always_ask_reset", False)
             and SAMPLED_START_RESET_SKILL_NAME
             not in PracticeCosts.load(path=cost_path).human_skills
         ):
@@ -1126,11 +1127,8 @@ class StepPracticeRunner:
     @staticmethod
     def configure_accounting(
         *, args: argparse.Namespace, method: Any, problem: Any, output: Path
-    ) -> PracticeAccounting | None:
-        cost_path = getattr(args, "practice_cost_config", None)
-        if not cost_path:
-            return None
-        accounting = PracticeAccounting(costs=PracticeCosts.load(path=cost_path))
+    ) -> PracticeAccounting:
+        accounting = PracticeAccounting(costs=PracticeCosts.load(path=args.practice_cost_config))
         accounting.set_observation_provider(provider=problem.env.cost_observation)
         method.configure_practice_accounting(accounting=accounting)
         StepFiles.json(

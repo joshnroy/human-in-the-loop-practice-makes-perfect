@@ -235,7 +235,6 @@ class Tossing3DSkills:
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     MOVE_TO_TOSS_LOCATION_AND_TOSS: ClassVar[Skill] = Skill(
@@ -289,7 +288,6 @@ class Tossing3DSkills:
         ignore_effects=CUBE_SIDES | {GRASP_CLEAR, PICK_PLANNABLE},
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
-        practice_cost=1.0,
     )
 
     _open_geometry: ClassVar[frozenset[LiftedAtom]] = frozenset({
@@ -325,7 +323,6 @@ class Tossing3DSkills:
             geometry=_open_geometry, robot=_robot, cube=_cube
         ),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     POUR_BIN: ClassVar[Skill] = Skill(
@@ -356,7 +353,6 @@ class Tossing3DSkills:
         }),
         ignore_effects=CUBE_SIDES | {GRASP_CLEAR},
         param_dim=0,
-        practice_cost=1.0,
     )
 
     @staticmethod

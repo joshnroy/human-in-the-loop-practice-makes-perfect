@@ -101,7 +101,8 @@ def test_toss_competence_is_filtered_but_the_clock_counts_every_attempt(
         after = _belief(method=method, name=TOSS_SKILL)
         conditioned = after.cycle_failures == before.cycle_failures + 1
         assert conditioned == evidence.admits(consultation=consultation), consultation
-        assert after.cost_belief != before.cost_belief
+        # Cost reaches the planner through the host's accounting, not this belief.
+        assert after.cost_belief == before.cost_belief
     assert method.pomdp_state.pending_examples[TOSS_SKILL] == len(toss_kinds)
     method.end_cycle()
     assert _belief(method=method, name=TOSS_SKILL).total_training_examples == len(toss_kinds)

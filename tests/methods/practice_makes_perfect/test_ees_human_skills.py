@@ -20,17 +20,22 @@ from hitl_pmp.environments.sweepoffshelf3d.predicates import (
 from hitl_pmp.environments.sweepoffshelf3d.skill_provider import SweepOffShelf3DSkillProvider
 from hitl_pmp.environments.sweepoffshelf3d.types import SweepOffShelf3DState
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
+from tests.practice_cost_fixtures import CostFixtures
 
 PRICE = 2.0
 
 
 def _build(*, score_human_skills: bool) -> EesMethod:
     env = SweepOffShelf3DEnvironment()
-    return EesMethod(
+    method = EesMethod(
         env=env,
-        skill_provider=SweepOffShelf3DSkillProvider(env=env, human_reset_practice_cost=PRICE),
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
         score_human_skills=score_human_skills,
     )
+    method.configure_practice_accounting(
+        accounting=CostFixtures.accounting(human={"reset_cubes": PRICE, "reset_wiper": PRICE})
+    )
+    return method
 
 
 def _state(*, on_shelf, in_box) -> SweepOffShelf3DState:

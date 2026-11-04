@@ -2,10 +2,14 @@
 
 from pathlib import Path
 
+import pytest
+
 from hitl_pmp.cli import Cli
 from scripts.tossing3d_transfer_benchmark import TransferBenchmark
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE
 
 
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE)
 def test_standard_budget_and_far_side_tests(*, tmp_path: Path) -> None:
     runs = TransferBenchmark.plan(results_root=tmp_path)
     assert [run.seed for run in runs] == list(range(10))
@@ -20,7 +24,6 @@ def test_standard_budget_and_far_side_tests(*, tmp_path: Path) -> None:
         assert args.evaluation_layout == "barrier"
         assert args.practice_reset_policy == "never"
         assert args.practice_reset_interval is None
-        assert args.human_reset_practice_cost == 5.0
         assert args.sampler_max_train_iters == 10000
         assert args.goal_pursuit_horizon is None
         assert args.output_dir == tmp_path / "ees" / str(run.seed)

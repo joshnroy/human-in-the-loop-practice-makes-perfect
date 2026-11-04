@@ -1,10 +1,10 @@
 import pytest
 
-from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle, Tossing3DSkillProvider
+from tests.practice_cost_fixtures import CostFixtures
 
 
 @pytest.mark.parametrize(("unit", "schedule"), [("episodes", "once"), ("cost", "period")])
@@ -24,7 +24,7 @@ def test_dp_cli_wires_budget_schedule_and_practice_groundings(*, unit, schedule,
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(capture))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=[
             "--env",
             "tossing3d",

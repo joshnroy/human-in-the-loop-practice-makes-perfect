@@ -298,7 +298,6 @@ class ShelfLaunch:
             "--competence-recency-size", "5",
             "--practice-reset-policy", "never",
             "--defer-rendering",
-            "--human-reset-practice-cost", "1.0",
             "--practice-cost-config", str(costs),
             "--reset-cubes-success-probability", P,
             *OCT13,

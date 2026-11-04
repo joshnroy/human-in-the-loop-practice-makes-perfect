@@ -6,8 +6,10 @@ import pytest
 
 from hitl_pmp.cli import Cli
 from scripts.tossing3d_competence_2x2 import execute_experiments, experiment_commands
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE
 
 
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE)
 @pytest.mark.parametrize("search_iterations", [100, 1000])
 @pytest.mark.parametrize("solver,depth", [("determinized_astar", None), ("expectimax", 6)])
 def test_four_commands_parse_with_only_model_and_engine_varying(
@@ -35,7 +37,6 @@ def test_four_commands_parse_with_only_model_and_engine_varying(
         assert args.num_test_tasks == 10
         assert args.max_steps_per_interaction == 20
         assert args.seed == 0
-        assert args.human_reset_practice_cost == 5
         assert args.pomdp_linear_cost_lambda == 0.0003
         assert args.pomdp_max_search_iterations == search_iterations
         assert args.pomdp_solver == solver

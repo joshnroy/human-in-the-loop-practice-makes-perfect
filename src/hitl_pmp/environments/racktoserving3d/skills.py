@@ -29,7 +29,7 @@ from .predicates import (
     SPILLED_COUNTER,
     SPILLED_FLOOR,
 )
-from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY, RackServingLedger
+from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 
 SKILL_IDS = {
     "PickScraper": 0,
@@ -94,7 +94,6 @@ class RackServing3DSkills:
         add_effects=frozenset({_HELD_SCRAPER, _AWAY}),
         delete_effects=frozenset({_EMPTY, _HOME}),
         param_dim=0,
-        practice_cost=1.0,
     )
     GATHER_AND_SWEEP: ClassVar[Skill] = Skill(
         name="GatherAndSweep",
@@ -113,7 +112,6 @@ class RackServing3DSkills:
             for food in _SLOTS
         ),
         param_dim=3,
-        practice_cost=1.0,
     )
     RETURN_SCRAPER: ClassVar[Skill] = Skill(
         name="ReturnScraper",
@@ -122,7 +120,6 @@ class RackServing3DSkills:
         add_effects=frozenset({_EMPTY, _HOME}),
         delete_effects=frozenset({_HELD_SCRAPER, _AWAY}),
         param_dim=0,
-        practice_cost=1.0,
     )
     PICK_FOOD: ClassVar[Skill] = Skill(
         name="PickFood",
@@ -131,7 +128,6 @@ class RackServing3DSkills:
         add_effects=frozenset({_HELD_FOOD, _ANY_OFF}),
         delete_effects=frozenset({_EMPTY, _AVAILABLE, *_locations(food=_FOOD)}),
         param_dim=0,
-        practice_cost=1.0,
     )
     PLACE_FOOD_ON_TRAY: ClassVar[Skill] = Skill(
         name="PlaceFoodOnTray",
@@ -145,7 +141,6 @@ class RackServing3DSkills:
         }),
         delete_effects=frozenset({_HELD_FOOD}),
         param_dim=0,
-        practice_cost=1.0,
     )
     RETURN_FOOD_TO_RACK: ClassVar[Skill] = Skill(
         name="ReturnFoodToRack",
@@ -159,7 +154,6 @@ class RackServing3DSkills:
         }),
         delete_effects=frozenset({_HELD_FOOD}),
         param_dim=0,
-        practice_cost=1.0,
     )
     HUMAN_BATCH_RETURN: ClassVar[Skill] = Skill(
         name=HUMAN_BATCH_RETURN,
@@ -191,7 +185,6 @@ class RackServing3DSkills:
             for food in _SLOTS
         ),
         param_dim=0,
-        practice_cost=5.0,
     )
     HUMAN_TOOL_RECOVERY: ClassVar[Skill] = Skill(
         name=HUMAN_TOOL_RECOVERY,
@@ -209,7 +202,6 @@ class RackServing3DSkills:
             ),
         }),
         param_dim=0,
-        practice_cost=5.0,
     )
 
     @staticmethod
@@ -225,18 +217,7 @@ class RackServing3DSkills:
         )
 
     @staticmethod
-    def human_skills(
-        *,
-        mode: Literal["training", "deployment"] = "training",
-        human_interruption_cost: float = 5.0,
-    ) -> tuple[Skill, ...]:
-        ledger = RackServingLedger(mode=mode, human_interruption_cost=human_interruption_cost)
-        if ledger.mode == "deployment":
+    def human_skills(*, mode: Literal["training", "deployment"] = "training") -> tuple[Skill, ...]:
+        if mode == "deployment":
             return ()
-        return tuple(
-            skill.model_copy(update={"practice_cost": ledger.human_interruption_cost})
-            for skill in (
-                RackServing3DSkills.HUMAN_BATCH_RETURN,
-                RackServing3DSkills.HUMAN_TOOL_RECOVERY,
-            )
-        )
+        return (RackServing3DSkills.HUMAN_BATCH_RETURN, RackServing3DSkills.HUMAN_TOOL_RECOVERY)

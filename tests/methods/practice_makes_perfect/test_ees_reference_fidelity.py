@@ -36,6 +36,7 @@ from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
 from hitl_pmp.planning.fast_downward import PlanningFailure
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def build(**kwargs):
@@ -56,7 +57,6 @@ def action(*, name):
             add_effects=frozenset(),
             delete_effects=frozenset(),
             param_dim=0,
-            practice_cost=1.0,
         ),
         objects=(),
     )
@@ -264,6 +264,10 @@ def test_dispatch_diagnostics_show_actual_setup_and_never_evaluation(
 ):
     path = tmp_path / "nested" / "ees.jsonl"
     method = build(ees_decision_log=path, goal_pursuit_horizon=5)
+    # The human reset below is charged under its destination's name, from a costs file.
+    method.configure_practice_accounting(
+        accounting=CostFixtures.accounting(human={"robot_side": 1.0})
+    )
     setup = action(name="reset" if human else "PickCube")
     target = action(name="Toss")
     state = method.env.build_initial_state(light_level=0, light_target=0.5)

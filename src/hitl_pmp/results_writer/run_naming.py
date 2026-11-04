@@ -47,13 +47,6 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
     # Global, so never absent. Rendered bare ("never"/"scheduled"): its values are
     # self-describing and this is the axis most sweeps are built around.
     RunNameField(dest="practice_reset_policy"),
-    # Tossing3D owns the human-reset skill and its configurable cost. The environment
-    # field is absent everywhere else, and `env` already distinguishes that absence.
-    RunNameField(
-        dest="human_reset_practice_cost",
-        prefix="human-reset-cost-",
-        when=("env", "tossing3d"),
-    ),
     # Named only when off. The default arm reuses runs recorded before the flag
     # existed, so its name must stay what it was; the ablation says so explicitly.
     RunNameField(

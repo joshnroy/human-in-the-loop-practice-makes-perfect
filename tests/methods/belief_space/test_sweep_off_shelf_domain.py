@@ -139,9 +139,6 @@ def test_a_human_skill_forecast_branches_on_its_inferred_competence(*, ground, a
         transition_outcomes,
     )
 
-    priced = ground.model_copy(
-        update={"skill": ground.skill.model_copy(update={"practice_cost": 2.0})}
-    )
     state = make_default_tossing3d_belief(
         num_particles=64,
         model="local_trend",
@@ -157,16 +154,16 @@ def test_a_human_skill_forecast_branches_on_its_inferred_competence(*, ground, a
     outcomes = transition_outcomes(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=before),
         state=state,
-        action=priced,
-        ground_skills=(priced,),
-        effects={priced: (priced.add_effects, priced.delete_effects, priced.ignore_effects)},
+        action=ground,
+        ground_skills=(ground,),
+        effects={ground: (ground.add_effects, ground.delete_effects, ground.ignore_effects)},
         exploration_epsilon=0.0,
         random_toss_competence=0.0,
         domain=SWEEP_OFF_SHELF_DOMAIN,
     )
     assert [p for p, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
     (_, succeeded, after_success), (_, failed, after_failure) = outcomes
-    assert priced.expected_add_effects(before_atoms=before) <= after_success
+    assert ground.expected_add_effects(before_atoms=before) <= after_success
     assert after_failure == before
     assert mean_competence(belief=succeeded.skill_beliefs[name]) > competence
     assert mean_competence(belief=failed.skill_beliefs[name]) < competence

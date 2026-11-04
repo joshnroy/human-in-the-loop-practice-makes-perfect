@@ -210,7 +210,9 @@ class Cli:
             "--practice-cost-config",
             type=Path,
             default=None,
-            help="Shared step-cost JSON; enables normalized execution costs.",
+            help="Shared step-cost JSON: robot step and per-human-skill prices. Required "
+            "by every domain that offers a human reset (the step-protocol domains); "
+            "the cycle-mode PracticeLoop reads none.",
         )
         parser.add_argument(
             "--measurement-interval-steps",
@@ -456,10 +458,22 @@ class Cli:
             args.pomdp_search_depth = environment_depth
         if args.evaluate_only and args.resume is not None:
             parser.error("--evaluate-only measures a fresh run's policy; it cannot --resume")
-        if args.preset is not None and args.practice_step_budget is None and not args.evaluate_only:
+        step_protocol = args.practice_step_budget is not None or args.evaluate_only
+        if args.preset is not None and not step_protocol:
             # A preset prices practice with its cost file, which only the step protocol
             # reads: in cycle mode the run would silently not be the preset's arm.
             parser.error(f"--preset {args.preset} runs only under --practice-step-budget")
+        if args.env in STEP_PROTOCOL_ENVIRONMENTS:
+            # These domains offer human resets, and only a costs file prices one; the
+            # cycle-mode PracticeLoop reads none, so they run only under the step
+            # protocol.
+            if not step_protocol:
+                parser.error(
+                    f"--env {args.env} offers human resets and runs only under "
+                    "--practice-step-budget (or --evaluate-only)"
+                )
+            if args.practice_cost_config is None:
+                parser.error(f"--env {args.env} needs --practice-cost-config")
         return args
 
     OBSERVATION_WEIGHT_FLAG: ClassVar[str] = "--pomdp-observation-probability-weight"

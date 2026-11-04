@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE
+
 # The DISTRIBUTION is `kindergarden`; the IMPORT package is `kinder`. Keying on the
 # distribution name here would skip everything, always. Matches how every other
 # simulator-backed test in this repo gates (see tests/environments/tossing3d/).
@@ -149,6 +151,7 @@ def test_different_seeds_produce_different_results(*, tmp_path: Path) -> None:
 # base motion is now planned by the same PyBullet call that plans its swing.
 
 
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE)
 @pytest.mark.main_only
 @needs_kinder
 @pytest.mark.parametrize("seed", [0] if os.environ.get("CI") else [0, 1, 2])
@@ -160,6 +163,7 @@ def test_tossing3d_the_same_seed_produces_identical_results(*, tmp_path: Path, s
     assert first == second
 
 
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE)
 @pytest.mark.main_only
 @needs_kinder
 def test_tossing3d_results_do_not_depend_on_the_math_thread_count(*, tmp_path: Path) -> None:

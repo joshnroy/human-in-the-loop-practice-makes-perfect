@@ -30,6 +30,7 @@ from hitl_pmp.step_protocol import (
     StepPracticeRunner,
     StepProtocolEntry,
 )
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def test_clock_uses_prepared_per_skill_duration_and_actual_robot_cost():
@@ -302,6 +303,9 @@ class FakeEnv:
         self.problem.state = ("adopted", float(action[0]))
         return self.problem.state
 
+    def cost_observation(self) -> None:
+        return None
+
     def close(self) -> None:
         pass
 
@@ -460,6 +464,8 @@ def _step_args(*, output_dir, budget: int, interval: int, human_steps: int = 1, 
         "seed": 0,
         "max_steps_per_interaction": 20,
         "num_cycles": 1,
+        # Unit prices: one robot step costs 1 and any human skill costs 1.
+        "practice_cost_config": CostFixtures.UNIT,
     }
     values.update(extra)
     return argparse.Namespace(**values)
@@ -488,7 +494,14 @@ def test_a_human_request_that_does_not_fit_ends_practice_at_the_budget(*, tmp_pa
     evaluations = FakeEvaluations()
     StepPracticeRunner.run(
         environment=FakeStepProtocol,
-        args=_step_args(output_dir=output, budget=5, interval=100, human_steps=2),
+        args=_step_args(
+            output_dir=output,
+            budget=5,
+            interval=100,
+            practice_cost_config=CostFixtures.unit_with_human_duration(
+                path=tmp_path / "costs.json", steps=2
+            ),
+        ),
         method=_scripted_method(
             script=[4, HumanCubeBinResetRequested(cost=1.0, destination="robot_side")]
         ),
@@ -885,20 +898,6 @@ def test_the_environment_supplies_the_cost_observation(*, monkeypatch, tmp_path)
     env.price = 6
     assert accounting.robot_charge().cost == 6
     assert (tmp_path / "practice_costs.json").exists()
-
-
-def test_without_a_cost_file_there_is_no_accounting(*, tmp_path):
-    import argparse
-
-    from hitl_pmp.step_protocol import StepPracticeRunner
-
-    args = argparse.Namespace(practice_cost_config=None, human_skill_steps=1)
-    assert (
-        StepPracticeRunner.configure_accounting(
-            args=args, method=None, problem=None, output=tmp_path
-        )
-        is None
-    )
 
 
 def test_a_domain_without_a_cost_observation_supplies_none():
@@ -1501,7 +1500,14 @@ def test_a_stop_only_sessions_reset_that_does_not_fit_ends_practice_at_the_budge
     output = tmp_path / "run"
     StepPracticeRunner.run(
         environment=FakeStepProtocol,
-        args=_step_args(output_dir=output, budget=2, interval=100, human_steps=2),
+        args=_step_args(
+            output_dir=output,
+            budget=2,
+            interval=100,
+            practice_cost_config=CostFixtures.unit_with_human_duration(
+                path=tmp_path / "costs.json", steps=2
+            ),
+        ),
         method=_always_ask_method(script=[InteractionComplete(planner_stop=True)]),
         problem=FakeProblem(),
         evaluations=FakeEvaluations(),

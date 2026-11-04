@@ -242,8 +242,9 @@ class KitchenEnvironment(FrozenPourEnvironment):
         if self.controller().scene.cooking_observed():
             raise ValueError("Repeated reset practice requires cold ingredients")
         self._started = True
-        # The learner charges the same practice_cost through its ordinary human
-        # action path. This ledger audits direct calls; it is not charged twice.
+        # The learner charges the same price, from the same costs file, through its
+        # ordinary human action path. This ledger audits direct calls; it is not
+        # charged twice.
         self.human_interventions += 1
         self.interruption_cost_total += self.human_interruption_cost
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}

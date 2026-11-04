@@ -13,6 +13,7 @@ from hitl_pmp.environments.pouring3d.kitchen.predicates import KitchenPredicates
 from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
 from hitl_pmp.environments.pouring3d.kitchen.tasks import KitchenTasks
 from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvironment
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def test_legacy_benchmark_unchanged_and_kitchen_opt_in():
@@ -71,7 +72,6 @@ def test_reset_cost_and_deployment_boundary_without_native_dependencies():
     provider = KitchenSkillProvider(env=practice)
     human = provider.human_cube_bin_reset_skill()
     assert human.skill.name == HUMAN_RESET
-    assert human.skill.practice_cost == 7
     assert HUMAN_RESET not in {s.name for s in provider.skills()}
     deployment = KitchenEnvironment(deployment=True)
     assert KitchenSkillProvider(env=deployment).human_cube_bin_reset_skills() == ()
@@ -138,6 +138,7 @@ def test_cli_builds_separate_training_and_deployment_modes():
     args = parser.parse_args([])
     assert str(args.practice_reset_policy.value) == "never"
     args.seed = 0
+    args.practice_cost_config = CostFixtures.BY_ENV["pouring3d_kitchen"]
     practice = KitchenCli.build_problem(args=args)
     deploy = KitchenCli.build_problem(args=args, deployment=True)
     assert not practice.env.deployment
@@ -225,6 +226,7 @@ def test_kitchen_cli_takes_ramp_rate_bounds_and_refuses_open_loop_bounds():
     args = parser.parse_args([])
     assert list(args.pour_ramp_rate_bounds) == [0.25, 5.0]
     args.seed = 0
+    args.practice_cost_config = CostFixtures.BY_ENV["pouring3d_kitchen"]
     problem = KitchenCli.build_problem(args=args)
     context = KitchenCli.context(args=args, problem=problem)
     assert context.skill_provider.ramp_rate_bounds == (0.25, 5.0)

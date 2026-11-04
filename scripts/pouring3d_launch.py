@@ -50,7 +50,7 @@ class PouringLaunch:
             "--measurement-interval-steps", "3200", "--initial-measurement",
             "--num-test-tasks", "9", "--evaluation-control-steps", "7500",
             "--skill-step-limit", "2500", "--stop-after-perfect-evaluations", "0",
-            "--practice-cost-config", str(COSTS), "--human-reset-practice-cost", "5",
+            "--practice-cost-config", str(COSTS),
             "--defer-rendering", "--record-motion", "all" if seed == 0 else "evaluation",
             "--exploration-epsilon", "0.5", "--sampler-max-train-iters", "10000",
             "--record-sampler-draws", "--no-ees-reset-gate", "--goal-pursuit-horizon", "0",

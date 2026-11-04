@@ -125,13 +125,6 @@ class Tossing3DCli:
             "this domain, so it stays overridable.",
         )
         parser.add_argument(
-            "--human-reset-practice-cost",
-            type=float,
-            default=Tossing3DSkillProvider.model_fields["human_reset_practice_cost"].default,
-            help="Cost of Tossing3D's provider-owned human cube/bin reset skill, in "
-            "robot-action equivalents.",
-        )
-        parser.add_argument(
             "--human-reset",
             action=argparse.BooleanOptionalAction,
             default=Tossing3DSkillProvider.model_fields["offer_human_reset"].default,
@@ -233,7 +226,6 @@ class Tossing3DCli:
             env=practice_problem.env,
             skill_provider=Tossing3DSkillProvider(
                 env=practice_problem.env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
             ),
             oracle=Tossing3DOracle(

@@ -47,10 +47,7 @@ class RackServingSkillProvider(SkillProvider):
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         if not self.offer_human_reset or self.env.config.mode == "deployment":
             return ()
-        batch, tool = Skills.human_skills(
-            mode=self.env.config.mode,
-            human_interruption_cost=self.env.config.human_interruption_cost,
-        )
+        batch, tool = Skills.human_skills(mode=self.env.config.mode)
         return (
             GroundSkill(
                 skill=batch, objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food)

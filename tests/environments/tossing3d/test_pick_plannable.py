@@ -403,7 +403,7 @@ def _ees_method(*, env: Tossing3DEnvironment | None = None) -> Any:
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
     env = Tossing3DEnvironment(scene_bg=False) if env is None else env
-    provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=5.0)
+    provider = Tossing3DSkillProvider(env=env)
     return EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
 
 

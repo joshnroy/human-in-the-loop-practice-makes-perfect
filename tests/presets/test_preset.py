@@ -10,6 +10,7 @@ from hitl_pmp.core.practice_costs import PracticeCosts
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.practice_loop import PracticeResetPolicy
 from hitl_pmp.presets.preset import CliPreset
+from tests.practice_cost_fixtures import CostFixtures
 
 PRESET_ONLY = ["--env", "tossing3d", "--method", "pomdp", "--preset", "tossing3d-canonical"]
 # The preset is defined only under the step protocol, which its cost file prices.
@@ -85,10 +86,12 @@ def test_the_preset_refuses_to_run_outside_the_step_protocol(
 
 
 def test_without_the_preset_the_observation_weight_default_stays_point_one() -> None:
-    args = parse(argv=["--env", "tossing3d", "--method", "pomdp"])
+    args = parse(
+        argv=["--env", "tossing3d", "--method", "pomdp", *CostFixtures.step_argv(env="tossing3d")]
+    )
     assert args.pomdp_observation_probability_weight == 0.1
     assert args.preset is None
-    assert args.practice_cost_config is None
+    assert args.practice_cost_config == CostFixtures.BY_ENV["tossing3d"]
 
 
 @pytest.mark.parametrize(

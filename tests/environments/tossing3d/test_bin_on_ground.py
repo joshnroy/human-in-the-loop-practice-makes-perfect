@@ -350,7 +350,7 @@ def test_ees_plans_through_the_reset_from_a_tipped_bin() -> None:
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
     env = Tossing3DEnvironment(scene_bg=False)
-    provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=5.0)
+    provider = Tossing3DSkillProvider(env=env)
     method = EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
     goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
     tipped = _pickable_atoms(provider=provider)

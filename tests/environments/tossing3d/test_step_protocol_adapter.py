@@ -58,12 +58,11 @@ def test_the_cli_defaults_for_the_step_schedule_are_unchanged(*, tmp_path: Path)
 
 
 def test_practice_context_matches_the_old_inline_wiring(*, tmp_path: Path) -> None:
-    args = _args(tmp_path=tmp_path, extra=["--human-reset-practice-cost", "7"])
+    args = _args(tmp_path=tmp_path, extra=[])
     problem = Tossing3DStepProtocol.build_practice_problem(args=args)
     context = Tossing3DStepProtocol.practice_context(args=args, problem=problem)
     assert context.env is problem.env
     assert isinstance(context.skill_provider, Tossing3DSkillProvider)
-    assert context.skill_provider.human_reset_practice_cost == 7
     assert context.skill_provider.offer_human_reset == args.human_reset
     assert context.oracle.throw_standoff == args.oracle_throw_standoff
     evaluation = Tossing3DStepProtocol.build_evaluation_problem(args=args)

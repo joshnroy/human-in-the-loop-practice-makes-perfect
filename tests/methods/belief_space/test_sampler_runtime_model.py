@@ -230,7 +230,8 @@ def test_fixed_controllers_condition_sf_and_cost_and_advance_their_clock(
         assert isinstance(before, BayesianSkillBelief)
         assert isinstance(after, BayesianSkillBelief)
         assert after.mean_competence() > before.mean_competence()
-        assert after.cost_belief != before.cost_belief
+        # Cost reaches the planner through the host's accounting, not this belief.
+        assert after.cost_belief == before.cost_belief
         # Every fixed-controller attempt is a training example, as in the notebook.
         assert method.pomdp_state.pending_examples.get(name, 0) == 1
     before_refit = dict(method.pomdp_state.skill_beliefs)

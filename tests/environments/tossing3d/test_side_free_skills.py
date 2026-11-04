@@ -67,7 +67,6 @@ def test_the_human_reset_is_two_skills_each_costing_five() -> None:
     ]
     for reset in resets:
         assert _types(skill=reset.skill) == (ROBOT, CUBE, BIN, BARRIER)
-        assert reset.skill.practice_cost == 5.0
     assert [provider.movables_reset_destination(ground_skill=reset) for reset in resets] == [
         "robot_side",
         "opposite_side",

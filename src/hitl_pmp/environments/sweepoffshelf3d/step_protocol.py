@@ -62,7 +62,6 @@ class SweepOffShelf3DStepProtocol(SimulatedStepProtocolHooks):
             env=env,
             skill_provider=SweepOffShelf3DSkillProvider(
                 env=env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
             ),
             oracle=SweepOffShelf3DOracle(env=env),

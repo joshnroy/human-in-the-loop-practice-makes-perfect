@@ -10,6 +10,10 @@ from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
+from tests.practice_cost_fixtures import CostFixtures
+
+# A Tossing3D run parses only under the step protocol, with a costs file.
+TOSSING3D_STEP = CostFixtures.step_argv(env="tossing3d")
 
 
 class _FakeMethodCli(MethodCli):
@@ -116,7 +120,16 @@ def test_methods_registry_contains_dp() -> None:
 
 def test_method_dp_is_accepted_with_its_flags() -> None:
     args = Cli.parse_args(
-        argv=["--env", "tossing3d", "--method", "dp", "--dp-budget", "40", "--always-ask-reset"]
+        argv=[
+            "--env",
+            "tossing3d",
+            "--method",
+            "dp",
+            "--dp-budget",
+            "40",
+            "--always-ask-reset",
+            *TOSSING3D_STEP,
+        ]  # fmt: skip
     )
     assert args.method == "dp"
     assert args.dp_budget == 40.0
@@ -128,7 +141,7 @@ def test_methods_registry_contains_tossing3d_pomdp() -> None:
 
 
 def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
-    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp"])
+    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp", *TOSSING3D_STEP])
     # None: resolved to the practice domain's default when the run starts.
     assert args.pomdp_search_depth is None
     assert args.pomdp_num_particles == 20000
@@ -154,6 +167,7 @@ def test_tossing3d_pomdp_cli_accepts_determinized_solver() -> None:
             "17",
             "--pomdp-observation-probability-weight",
             "0.25",
+            *TOSSING3D_STEP,
         ]
     )
     assert args.pomdp_solver == "determinized_astar"
@@ -413,7 +427,7 @@ def test_wandb_tag_is_repeatable_and_defaults_to_none() -> None:
     assert not hasattr(args, "mean_steps_between_human_interventions")
 
 
-POMDP_SIM = ["--env", "tossing3d", "--method", "pomdp"]
+POMDP_SIM = ["--env", "tossing3d", "--method", "pomdp", *TOSSING3D_STEP]
 
 
 @pytest.mark.parametrize(
@@ -442,5 +456,5 @@ def test_the_observation_weight_default_itself_stays_point_one() -> None:
 
 
 def test_a_method_without_the_observation_weight_is_not_asked_for_it() -> None:
-    argv = ["--env", "tossing3d", "--method", "ees"]
+    argv = ["--env", "tossing3d", "--method", "ees", *TOSSING3D_STEP]
     Cli.require_explicit_observation_weight(argv=argv, args=Cli.parse_args(argv=argv))

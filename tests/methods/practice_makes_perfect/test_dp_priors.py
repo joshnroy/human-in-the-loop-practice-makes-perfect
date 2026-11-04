@@ -14,6 +14,7 @@ from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpMdp, DpTaskModel, D
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
 from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpPriorCalibration, DpSkillPrior
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from tests.practice_cost_fixtures import CostFixtures
 
 from .test_dp_method import _build, _execute, _ground, _human
 
@@ -200,7 +201,6 @@ def test_tossing3d_cli_checks_recovery_coverage_before_practice(
 ):
     from types import SimpleNamespace
 
-    from hitl_pmp.cli import Cli
     from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 
     path, report = calibration
@@ -230,11 +230,11 @@ def test_tossing3d_cli_checks_recovery_coverage_before_practice(
         str(path),
     ]
     if complete:
-        Cli.main(argv=argv)
+        CostFixtures.dispatch(argv=argv)
         assert built[0].skills() == provider.skills()
     else:
         with pytest.raises(ValueError, match="robot skills lack calibrated DP priors.*OpenGripper"):
-            Cli.main(argv=argv)
+            CostFixtures.dispatch(argv=argv)
         assert built == []
 
 

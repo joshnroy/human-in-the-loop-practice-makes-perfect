@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from hitl_pmp.core.method.skill_provider import DomainContext
+from hitl_pmp.core.practice_costs import PracticeCosts
 from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 from .config import KitchenGeometry
-from .environment import KitchenEnvironment
+from .environment import HUMAN_RESET, KitchenEnvironment
 from .skill_provider import KitchenPourOracle, KitchenSkillProvider
 from .tasks import KitchenProblem, KitchenTasks
 
@@ -35,11 +36,22 @@ class KitchenCli:
             help="The closed-loop Pour's learned tilt ramp rate, deg/s; default %(default)s",
         )
         parser.set_defaults(
-            human_reset_practice_cost=5,
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
             **dict.fromkeys(OPEN_LOOP_POUR_FLAGS),
         )
+
+    @staticmethod
+    def human_interruption_cost(*, args: argparse.Namespace) -> float:
+        """The environment's own interruption ledger records the price the learner is
+        charged for a human reset, read from the same costs file, so the two agree."""
+        costs = PracticeCosts.load(path=args.practice_cost_config)
+        if HUMAN_RESET not in costs.human_skills:
+            raise ValueError(f"{args.practice_cost_config} does not price {HUMAN_RESET!r}")
+        charge = costs.human_skills[HUMAN_RESET].cost
+        if charge.function is not None:
+            raise ValueError(f"{HUMAN_RESET!r} needs a constant cost for the kitchen ledger")
+        return costs.human_weight * charge.value
 
     @staticmethod
     def build_problem(*, args: argparse.Namespace, deployment: bool = False) -> KitchenProblem:
@@ -53,7 +65,7 @@ class KitchenCli:
             **base.env.model_dump(exclude={"current_state", "last_info"}),
             geometry=geometry,
             deployment=deployment,
-            human_interruption_cost=args.human_reset_practice_cost,
+            human_interruption_cost=KitchenCli.human_interruption_cost(args=args),
         )
         tasks = KitchenTasks(
             env=env,
@@ -82,7 +94,6 @@ class KitchenCli:
             skill_provider=KitchenSkillProvider(
                 env=problem.env,
                 offer_human_reset=args.human_reset,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 ramp_rate_bounds=tuple(args.pour_ramp_rate_bounds),
             ),
         )

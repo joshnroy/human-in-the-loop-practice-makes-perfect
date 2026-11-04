@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -38,12 +39,15 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 def _method(*, offer_non_human_reset: bool = False) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
-    return Tossing3DPomdpMethod(
+    method = Tossing3DPomdpMethod(
         env=env,
         skill_provider=Tossing3DSkillProvider(env=env, offer_non_human_reset=offer_non_human_reset),
         seed=0,
         pomdp_num_particles=32,
     )
+    # Every skill is priced through the run's accounting: one robot step, until observed.
+    method.configure_practice_accounting(accounting=PracticeAccounting())
+    return method
 
 
 def _offered_resets(*, method: Tossing3DPomdpMethod) -> set[str]:
@@ -95,7 +99,7 @@ def test_non_human_reset_success_remains_known_even_with_zero_performance_poster
     assert _atom(method=method, name="Holding") not in after
     assert _atom(method=method, name="ClosedEmpty") in after
     assert reset.add_effects <= after
-    assert next_state.accumulated_cost == pytest.approx(mean_cost(belief=beliefs[reset_name]))
+    assert next_state.accumulated_cost == pytest.approx(state.expected_execution_costs[str(reset)])
     assert next_state.skill_beliefs == state.skill_beliefs
     assert next_state.pending_examples == {**state.pending_examples, reset_name: 1}
     assert (
@@ -140,7 +144,9 @@ def test_human_reset_forecasts_success_and_failure_from_competence(*, competence
         else:
             assert competence < 1
         assert next_state.pending_examples == {**state.pending_examples, RESET_SAME_SIDE_SKILL: 1}
-        assert next_state.accumulated_cost == pytest.approx(reset.evaluate_practice_cost())
+        assert next_state.accumulated_cost == pytest.approx(
+            state.expected_execution_costs[str(reset)]
+        )
     assert (outcomes[0][2] != before) == (competence > 0)
     assert state.skill_beliefs[RESET_SAME_SIDE_SKILL] == belief
 
@@ -232,8 +238,10 @@ def test_real_reset_still_updates_identical_cost_and_performance_filters(
     method.env.current_state = before_scene
     before = method.pomdp_state.skill_beliefs[reset_name]
     method.record_action_cost(ground_skill=reset)
+    method.observe_execution_cost(cost=5.0, steps=1, complete=True)
     method.observe_help_granted(state=after_scene)
-    expected = before.condition_execution(success=True, observed_cost=5.0)
+    # The cost is the host's charge; the belief is conditioned on the outcome alone.
+    expected = before.condition_outcome(success=True)
     assert method.pomdp_state.skill_beliefs[reset_name] == expected
     assert method.pomdp_state.pending_examples.get(reset_name, 0) == 1
     assert method.pomdp_state.accumulated_cost == 5.0
@@ -318,6 +326,7 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
         )
     )
     state = Tossing3DBeliefState(
+        expected_execution_costs={str(pick): 1.0},
         skill_beliefs={
             PICK_SKILL: point,
             TOSS_SKILL: point,
@@ -325,7 +334,7 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
             reset.skill.name: create_fixed_performance_cost_prior(
                 num_particles=32, seed=10, competence=0.0, learning_rate=0.0
             ),
-        }
+        },
     )
     ready = make_tossing3d_search_state(
         state=state, true_atoms=pick.preconditions | reset.preconditions | reset.add_effects

@@ -22,9 +22,6 @@ from .problem import KitchenRecyclingProblem
 from .skill_provider import KitchenRecyclingSkillProvider
 from .tasks import KitchenRecyclingTasks
 
-# A human reset, in robot-action equivalents: Tossing3D's.
-HUMAN_RESET_PRACTICE_COST = 5.0
-
 
 class KitchenRecyclingCli:
     @staticmethod
@@ -40,12 +37,6 @@ class KitchenRecyclingCli:
             action=argparse.BooleanOptionalAction,
             default=True,
             help="Offer the human cube/bin resets to practice. Evaluation never does.",
-        )
-        parser.add_argument(
-            "--human-reset-practice-cost",
-            type=float,
-            default=HUMAN_RESET_PRACTICE_COST,
-            help="Cost of either human reset, in robot-action equivalents.",
         )
         parser.add_argument(
             "--no-scene-bg",
@@ -109,7 +100,6 @@ class KitchenRecyclingCli:
             env=problem.env,
             skill_provider=KitchenRecyclingSkillProvider(
                 env=problem.env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
             ),
             oracle=Tossing3DOracle(env=problem.env, throw_standoff=args.oracle_throw_standoff),

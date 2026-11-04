@@ -50,7 +50,6 @@ class PourSkills:
                 param_dim=dim,
                 ignore_effects=frozenset(P.get(name=n) for n in ignore),
                 conditional_add_effects=conditional,
-                practice_cost=1,
             )
 
         empty, held = atom("HandEmpty", r), atom("HoldingPitcher", r, p)

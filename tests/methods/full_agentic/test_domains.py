@@ -27,7 +27,23 @@ def settings() -> SandboxSettings:
     return SandboxSettings(image="hitl-agentic-strict:20261002", robocode_checkout=Path("/rc"))
 
 
+ROOT = Path(__file__).parents[3]
+
+# The committed costs file equal to each domain's `default_costs()`: the flag is
+# required, and these keep the default protocol and prompt.
+DEFAULT_COSTS = {
+    "tossing3d": ROOT / "configs/normalized_practice_costs.json",
+    "sweepoffshelf3d": ROOT / "configs/sweepoffshelf3d_practice_costs.json",
+}
+
+
 def parse(*extra: str) -> object:
+    env = extra[extra.index("--env") + 1] if "--env" in extra else None
+    costs = (
+        []
+        if "--practice-cost-config" in extra or env not in DEFAULT_COSTS
+        else ["--practice-cost-config", str(DEFAULT_COSTS[env])]
+    )
     return FullAgenticRunner.parse_args(
         argv=[
             "--output",
@@ -35,8 +51,14 @@ def parse(*extra: str) -> object:
             "--sandbox-settings",
             "/unused.json",
             *extra,
+            *costs,
         ]
     )
+
+
+def test_each_default_costs_file_is_its_domains_default() -> None:
+    for name, path in DEFAULT_COSTS.items():
+        assert PracticeCosts.load(path=path) == FULL_AGENTIC_DOMAINS[name].default_costs()
 
 
 def rendered(*, args: object) -> tuple[str, str]:

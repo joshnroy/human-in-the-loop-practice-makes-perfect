@@ -38,7 +38,7 @@ def _build(*, budget: float = 100.0, always_ask: bool = False, accounting: bool 
     env = SweepOffShelf3DEnvironment()
     method = DpMethod(
         env=env,
-        skill_provider=SweepOffShelf3DSkillProvider(env=env, human_reset_practice_cost=2.0),
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
         dp_budget=budget,
         dp_solver="enumeration",
         always_ask_reset=AlwaysAskReset(cost=START_RESET_PRICE) if always_ask else None,

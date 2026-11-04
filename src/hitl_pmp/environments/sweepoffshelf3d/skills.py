@@ -91,7 +91,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({_held_wiper, _away}),
         delete_effects=frozenset({_empty, _home}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     SWEEP_SHELF: ClassVar[Skill] = Skill(
@@ -111,7 +110,6 @@ class SweepOffShelf3DSkills:
             for c in _slots
         ),
         param_dim=2,
-        practice_cost=1.0,
     )
 
     RETURN_WIPER: ClassVar[Skill] = Skill(
@@ -121,7 +119,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({_empty, _home}),
         delete_effects=frozenset({_held_wiper, _away}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     PICK_CUBE_FROM_SHELF: ClassVar[Skill] = Skill(
@@ -132,7 +129,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({_held_cube, _ANY_OFF}),
         delete_effects=frozenset({_empty, LiftedAtom(predicate=ON_SHELF, variables=(_cube,))}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     PICK_CUBE_FROM_FLOOR: ClassVar[Skill] = Skill(
@@ -142,7 +138,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({_held_cube}),
         delete_effects=frozenset({_empty, LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     PLACE_CUBE_IN_BOX: ClassVar[Skill] = Skill(
@@ -152,7 +147,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({_empty, LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
         delete_effects=frozenset({_held_cube}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     # One controller (`KinderSkills.return_cube_to_shelf`: pick the cube, drop it onto
@@ -167,7 +161,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
         delete_effects=frozenset({LiftedAtom(predicate=IN_BOX, variables=(_cube, _box))}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     RETURN_CUBE_TO_SHELF_FROM_FLOOR: ClassVar[Skill] = Skill(
@@ -177,7 +170,6 @@ class SweepOffShelf3DSkills:
         add_effects=frozenset({LiftedAtom(predicate=ON_SHELF, variables=(_cube,)), _ANY_ON}),
         delete_effects=frozenset({LiftedAtom(predicate=ON_FLOOR, variables=(_cube,))}),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     RETURN_CUBE_SKILLS: ClassVar[tuple[Skill, ...]] = (
@@ -214,7 +206,6 @@ class SweepOffShelf3DSkills:
             for c in _slots
         ),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     RESET_WIPER: ClassVar[Skill] = Skill(
@@ -233,7 +224,6 @@ class SweepOffShelf3DSkills:
             )
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     @staticmethod

@@ -41,6 +41,7 @@ from hitl_pmp.methods.belief_space.types.practice_example_source import Practice
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillHypothesis
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _value(*, horizon, **competence):
@@ -180,7 +181,6 @@ def test_expected_value_is_reproducible_and_ignores_human_competence():
 def test_human_forecasts_charge_failures_and_update_only_their_belief(*, index):
     env = RackServingEnvironment(config=RackServingConfig(human_interruption_cost=7.5))
     action = RackServingSkillProvider(env=env).human_cube_bin_reset_skills()[index]
-    assert action.evaluate_practice_cost() == 7.5
     before = _atoms(tool_home=False, food_on_rack=False)
     assert action.preconditions <= before
     state = _belief().model_copy(update={"expected_execution_costs": {str(action): 7.5}})
@@ -232,9 +232,6 @@ def test_real_method_builds_from_rack_skills_and_filters_humans(*, solver, mode,
     assert set(method.pomdp_state.sampler_training) == {"GatherAndSweep"}
     actions = method._pomdp_model.ground_skills
     assert {action.skill.name for action in actions} == set(RACK_ROBOT_SKILLS) | humans
-    assert all(
-        action.evaluate_practice_cost() == 7.5 for action in actions if action.skill.name in humans
-    )
     assert RACK_SERVING_DOMAIN.human_skill_names == frozenset(RACK_HUMAN_SKILLS)
     assert env._backend is None
 
@@ -251,6 +248,7 @@ def test_cli_builds_real_rack_method_without_running(*, tmp_path, monkeypatch, s
             solver,
             "--practice-step-budget",
             "3",
+            *CostFixtures.argv(env="racktoserving3d"),
             "--practice-reset-policy",
             "never",
             "--defer-rendering",

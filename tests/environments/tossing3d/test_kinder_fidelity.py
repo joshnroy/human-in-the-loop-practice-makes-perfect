@@ -24,6 +24,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
+from tests.practice_cost_fixtures import CostFixtures
 
 # The DISTRIBUTION is `kindergarden`; the IMPORT package is `kinder`.
 needs_kinder = pytest.mark.skipif(
@@ -749,13 +750,18 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         observed = env.restore_plain_snapshot(
             plain=json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
         )
-        provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
+        provider = Tossing3DSkillProvider(env=env)
         reset = provider.human_cube_bin_reset_skill()
         rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
         assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
         assert rim in reset.delete_effects
         # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
         method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
+        method.configure_practice_accounting(
+            accounting=CostFixtures.accounting(
+                human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}
+            )
+        )
         plan = method.plan_to(
             init_atoms=method.abstract_state(state=observed),
             goal=frozenset({GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin))}),

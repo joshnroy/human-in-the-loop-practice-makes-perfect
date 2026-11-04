@@ -6,8 +6,10 @@ import pytest
 
 from hitl_pmp.cli import Cli
 from scripts.tossing3d_autonomous_demo import AutonomousDemo
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE
 
 
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE)
 def test_recipe_uses_ees_and_keeps_practice_continuous(*, tmp_path: Path) -> None:
     args = Cli.parse_args(
         argv=AutonomousDemo.arguments(output_dir=tmp_path, cycles=2, steps=8, seed=0)
@@ -16,7 +18,6 @@ def test_recipe_uses_ees_and_keeps_practice_continuous(*, tmp_path: Path) -> Non
     assert args.layout == "same-side"
     assert args.practice_reset_policy == "never"
     assert args.practice_reset_interval is None
-    assert args.human_reset_practice_cost == 5.0
     assert args.num_cycles == 2
     assert args.max_steps_per_interaction == 8
     assert args.record_sampler_draws

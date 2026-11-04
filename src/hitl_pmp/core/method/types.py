@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate
@@ -524,7 +524,9 @@ class Skill(BaseModel):
     when their lifted conditions held in the incoming state. Their predicates quantify
     over all objects and need not bind variables in this skill's signature."""
 
-    model_config = ConfigDict(frozen=True)
+    # Forbid unknown fields: a stale `practice_cost=` (removed; costs live only in the
+    # practice-cost file) must fail loudly rather than be silently dropped.
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
     parameters: tuple[Variable, ...]
@@ -537,12 +539,6 @@ class Skill(BaseModel):
     conditional_add_effects: frozenset[ConditionalAddEffect] = frozenset()
     conditional_ignore_effects: frozenset[ConditionalIgnoreEffect] = frozenset()
     param_dim: int
-    practice_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-
-    def evaluate_practice_cost(self) -> float:
-        """Return this skill's practice cost; subclasses may compute it dynamically."""
-        assert self.practice_cost is not None, f"Practice cost is undefined for {self.name}"
-        return self.practice_cost
 
     @model_validator(mode="after")
     def _check_variables_are_declared_parameters(self) -> Skill:
@@ -596,9 +592,6 @@ class GroundSkill(BaseModel):
 
     skill: Skill
     objects: tuple[Object, ...]
-
-    def evaluate_practice_cost(self) -> float:
-        return self.skill.evaluate_practice_cost()
 
     @model_validator(mode="after")
     def _check_objects_match_parameters(self) -> GroundSkill:

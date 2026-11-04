@@ -32,7 +32,6 @@ def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_ind
     assert (empty in after) == (gripper == "open")
     assert (closed in after) == (gripper != "open")
     assert reset.preconditions <= before
-    assert reset.evaluate_practice_cost() == 5.0
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))

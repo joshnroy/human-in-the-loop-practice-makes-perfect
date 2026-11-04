@@ -40,6 +40,15 @@ def test_a_fractional_deadline_is_stated_exactly() -> None:
 
 def test_the_default_budget_is_the_parsers() -> None:
     args = FullAgenticRunner.parse_args(
-        argv=["--env", "tossing3d", "--output", "o", "--sandbox-settings", "s"]
+        argv=[
+            "--env",
+            "tossing3d",
+            "--output",
+            "o",
+            "--sandbox-settings",
+            "s",
+            "--practice-cost-config",
+            "configs/normalized_practice_costs.json",
+        ]  # fmt: skip
     )
     assert args.evaluation_control_steps == 500

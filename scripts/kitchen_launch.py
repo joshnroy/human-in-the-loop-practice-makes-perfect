@@ -79,7 +79,6 @@ class KitchenLaunch:
             "--evaluation-control-steps", "7500",
             "--skill-step-limit", "2500", "--stop-after-perfect-evaluations", "0",
             "--practice-cost-config", str(repo / COSTS_PATH),
-            "--human-reset-practice-cost", "5",
             "--defer-rendering", "--record-motion", "all" if seed == 0 else "evaluation",
             "--exploration-epsilon", "0.5", "--sampler-max-train-iters", "10000",
             "--record-sampler-draws", "--no-ees-reset-gate", "--goal-pursuit-horizon", "0",

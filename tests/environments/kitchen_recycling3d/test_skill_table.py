@@ -34,7 +34,6 @@ def row(*, skill: Skill) -> dict:
         "name": skill.name,
         "parameters": [(v.name, v.type.name) for v in skill.parameters],
         "param_dim": skill.param_dim,
-        "practice_cost": skill.practice_cost,
         "preconditions": atoms(values=skill.preconditions),
         "add_effects": atoms(values=skill.add_effects),
         "delete_effects": atoms(values=skill.delete_effects),
@@ -64,11 +63,6 @@ def test_human_resets_match_tossing3d_field_by_field():
         assert kitchen.movables_reset_destination(
             ground_skill=ours
         ) == tossing.movables_reset_destination(ground_skill=theirs)
-
-
-def test_human_resets_cost_five():
-    _, kitchen = providers()
-    assert {reset.skill.practice_cost for reset in kitchen.movables_reset_skills()} == {5.0}
 
 
 def test_predicates_types_and_objects_match_tossing3d():

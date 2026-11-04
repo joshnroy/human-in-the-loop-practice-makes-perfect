@@ -12,6 +12,7 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle, Toss
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
+from tests.practice_cost_fixtures import CostFixtures
 
 METHODS = ("ees", "expectimax", "curtis")
 
@@ -140,7 +141,7 @@ def test_human_scoring_flag_reaches_ees_method_factory(
         "ees",
         "--ees-score-human-skills" if score_humans else "--no-ees-score-human-skills",
     ]
-    Cli.main(argv=argv)
+    CostFixtures.dispatch(argv=argv)
     assert len(built) == 1
     assert built[0].score_human_skills is score_humans
 
@@ -163,7 +164,7 @@ def test_ees_decision_logging_factory_path(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(capture))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=[
             "--env",
             "tossing3d",
@@ -181,14 +182,19 @@ def test_ees_decision_logging_factory_path(
 def test_ees_decision_logging_requires_output_dir() -> None:
     from hitl_pmp.methods.practice_makes_perfect.cli import EesCli
 
-    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "ees", "--record-ees-decisions"])
+    args = Cli.parse_args(
+        argv=[
+            "--env", "tossing3d", "--method", "ees", "--record-ees-decisions",
+            *CostFixtures.step_argv(env="tossing3d"),
+        ]
+    )  # fmt: skip
     with pytest.raises(ValueError, match="requires --output-dir"):
         EesCli.method_kwargs(args=args, ctx=None, draw_recorder=None)
 
 
 def test_pomdp_rejects_ees_decision_logging() -> None:
     with pytest.raises(ValueError, match="is an EES flag"):
-        Cli.main(
+        CostFixtures.dispatch(
             argv=[
                 "--env",
                 "tossing3d",

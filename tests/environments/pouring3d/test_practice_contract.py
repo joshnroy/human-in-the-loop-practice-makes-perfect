@@ -24,10 +24,9 @@ def test_fixed_count_pour_has_three_controls():
 
 def test_human_reset_is_explicit_and_unavailable_in_evaluation():
     env = FrozenPourEnvironment()
-    practice = FrozenPourSkillProvider(env=env, human_reset_practice_cost=7)
+    practice = FrozenPourSkillProvider(env=env)
     evaluation = FrozenPourSkillProvider(env=env, offer_human_reset=False)
     assert len(practice.human_cube_bin_reset_skills()) == 1
-    assert practice.human_cube_bin_reset_skill().skill.practice_cost == 7
     assert evaluation.human_cube_bin_reset_skills() == ()
     assert "reset_shrimp" not in {s.name for s in practice.skills()}
 

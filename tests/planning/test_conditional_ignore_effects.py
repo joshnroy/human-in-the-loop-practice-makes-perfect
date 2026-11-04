@@ -40,7 +40,6 @@ def _skill(*, conditions=frozenset({_CONDITION})):
             )
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
 
 

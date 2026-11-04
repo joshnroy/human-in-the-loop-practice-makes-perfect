@@ -101,12 +101,11 @@ def test_sweep_parameter_boundaries_are_inclusive(*, params):
     assert RackServingActions.encode(ground_skill=_sweep(), params=np.array(params)).shape == (5,)
 
 
-def test_human_skills_are_priced_but_never_encoded_as_robot_actions():
+def test_human_skills_are_never_encoded_as_robot_actions():
     provider = _provider()
     human = provider.human_cube_bin_reset_skills()
     assert len(human) == 2
     for ground in human:
-        assert ground.evaluate_practice_cost() == 8.0
         assert provider.movables_reset_destination(ground_skill=ground) == ground.skill.name
         assert ground.skill not in provider.skills()
         with pytest.raises(PermissionError, match="not robot actions"):

@@ -46,7 +46,6 @@ class FrozenPourCli:
         parser.add_argument("--canonical-seed", type=int, default=0)
         parser.add_argument("--test-env-seed-offset", type=int, default=10000)
         parser.add_argument("--skill-step-limit", type=int, default=2500)
-        parser.add_argument("--human-reset-practice-cost", type=float, default=1)
         parser.add_argument("--human-reset", action=argparse.BooleanOptionalAction, default=True)
         parser.add_argument("--no-scene-bg", dest="scene_bg", action="store_false")
         parser.add_argument("--record-motion", choices=("off", "evaluation", "all"), default="off")
@@ -97,7 +96,6 @@ class FrozenPourCli:
             test_task_goals=problem.tasks.test_task_goals(),
             skill_provider=FrozenPourSkillProvider(
                 env=problem.env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
                 tilt_bounds=tuple(args.pour_tilt_bounds),
                 amplitude_bounds=tuple(args.pour_amplitude_bounds),

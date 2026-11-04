@@ -163,9 +163,10 @@ def _belief(*, domain, config=SMALL_GRID, costs=None) -> Tossing3DBeliefState:
         additional_skill_names=tuple(skill.name for skill in S.human_skills()),
         domain=domain,
     )
-    if costs is not None:
-        belief = belief.model_copy(update={"expected_execution_costs": costs})
-    return belief
+    if costs is None:
+        # The forecast a run's accounting supplies; one unit per skill, equal everywhere.
+        costs = {str(g): 1.0 for g in _ground_skills()}
+    return belief.model_copy(update={"expected_execution_costs": costs})
 
 
 # Real outcomes observed before the search: the carry route (pick, place) has worked

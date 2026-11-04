@@ -227,7 +227,10 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
             assert action.label == "no-op (no feasible parameters)"
     assert method._remaining_practice_actions == 7  # noqa: SLF001 (harness owns budget)
     assert method._pending_reset is None  # noqa: SLF001
-    assert method.pomdp_state.accumulated_cost == (1.0 if practicing and not reject else 0.0)
+    # Only a constructed practice action is recorded for the host to charge.
+    charged = ground if practicing and not reject else None
+    assert method._execution_ground_skill == charged  # noqa: SLF001
+    assert method.pomdp_state.accumulated_cost == 0.0
     if reject:
         assert episode._pending is None  # noqa: SLF001
         assert episode._pending_sampler_record is None  # noqa: SLF001
@@ -249,7 +252,7 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
         # (~84 MB a line on SweepOffShelf3D, 2026-10-14).
         assert "estimated_costs" not in dispatch
         assert dispatch["skill"] == ground.skill.name
-        assert dispatch["cost"] == dispatch["summed_cost"] == 1.0
+        assert dispatch["cost"] == dispatch["summed_cost"] == 0.0
     assert env._backend is None  # noqa: SLF001
 
 
