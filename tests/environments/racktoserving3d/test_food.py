@@ -70,6 +70,8 @@ def food():
         plan_base=Mock(),
         check_arm_clearance=Mock(),
         departing_from_contacts=Mock(side_effect=nullcontext),
+        departing={},
+        departing_food={},
     )
     # The planner (PyBullet) and the planned-path followers stand in: these tests are
     # about the scripted contact motions and the bookkeeping around them.
