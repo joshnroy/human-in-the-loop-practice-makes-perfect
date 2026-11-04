@@ -299,6 +299,7 @@ def test_joint_clearance_rejects_old_ik_collision_cost():
 def test_return_uses_release_guard_without_requiring_new_shelf_methods():
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
+    tool._stance = tool.base.copy()  # the stance search needs a real IK
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
@@ -336,6 +337,7 @@ def test_return_uses_release_guard_without_requiring_new_shelf_methods():
 def test_return_without_support_retains_the_physical_grasp():
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
+    tool._stance = tool.base.copy()  # the stance search needs a real IK
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
