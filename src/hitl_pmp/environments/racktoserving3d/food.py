@@ -6,7 +6,7 @@ physical state for observation or the existing explicit human recovery skills.
 The scraper's ``holding`` flag denotes a scraper, not food; this adapter keeps
 it false and checks the measured food payload separately.
 
-The default rigid 25-mm-high ellipsoid uses a 31-mm pinch-site offset at 45
+The rigid 27-mm-high frozen potsticker (`potsticker.py`) uses a 31-mm pinch-site offset at 45
 degrees and a force-limited close (``food_grip_force``). Native finger contacts
 and the observed food extent govern holding and placement; rack-wire and fixture
 collision failures are retained rather than weakening clearance guards.
@@ -25,7 +25,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillF
 
 from .semantics import CircularSupport
 from .tool import RackScraper
-from .transit import ArmTransit, geom_half_extents, segment_samples
+from .transit import ArmTransit, geom_half_extents, geoms_half_extents, segment_samples
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
 APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
@@ -42,6 +42,33 @@ REGRASP_ATTEMPTS = 2
 # How much a pad-fixture contact present when a lift starts may shrink (measured-state
 # jitter) and still count as the same contact the lift is leaving.
 DEPARTURE_TOLERANCE = 1e-4
+
+
+class CarriedGeom:
+    @staticmethod
+    def bounds(
+        *, model: Any, geom: int, center: np.ndarray, rotation: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, float]:
+        """Broad-phase box centre and half extents, and the lowest point, of a geom at a pose.
+
+        A potsticker mesh part's box is its AABB, which need not be centred on the geom
+        frame, and its lowest point comes from its own vertices, not that box.
+        """
+        kind = int(model.geom_type[geom])
+        if kind == 7:
+            mesh = model.geom_dataid[geom]
+            start = model.mesh_vertadr[mesh]
+            vertices = model.mesh_vert[start : start + model.mesh_vertnum[mesh]]
+            return (
+                center + rotation @ model.geom_aabb[geom][:3],
+                np.asarray(model.geom_aabb[geom][3:]),
+                float(center[2] + np.min(vertices @ rotation[2])),
+            )
+        if kind == 4:
+            size = np.asarray(model.geom_size[geom])
+            return center, size, float(center[2] - np.linalg.norm(rotation[2] * size))
+        size = geom_half_extents(model=model, geom=geom)
+        return center, size, float(center[2] - np.abs(rotation[2]) @ size)
 
 
 class _FoodMotion(RackScraper):
@@ -88,25 +115,30 @@ class _FoodMotion(RackScraper):
         live_hand = shelf.site_pose()
         target_hand = shelf.site_at(base=base, arm=arm)
         transform = target_hand @ np.linalg.inv(live_hand)
-        obstacles = shelf.cupboard_geoms | shelf.box_geoms | set(shelf.wiper_geoms) | foods
+        obstacles = list(shelf.cupboard_geoms | shelf.box_geoms | set(shelf.wiper_geoms) | foods)
+        # Every obstacle's world box at once: a potsticker carries 41 parts, and the
+        # per-pair broad phase in Python dominated placement planning.
+        other_centers = scratch.geom_xpos[obstacles]
+        other_rotations = scratch.geom_xmat[obstacles].reshape(-1, 3, 3)
+        other_reach = np.einsum(
+            "nij,nj->ni",
+            np.abs(other_rotations),
+            geoms_half_extents(model=shelf.model, geoms=np.asarray(obstacles)),
+        )
         for geom in backend.body_geoms(name=carried):
             center = transform[:3, :3] @ shelf.data.geom_xpos[geom] + transform[:3, 3]
             rotation = transform[:3, :3] @ shelf.data.geom_xmat[geom].reshape(3, 3)
-            size = shelf.model.geom_size[geom]
-            bottom = center[2] - (
-                np.linalg.norm(rotation[2] * size)
-                if int(shelf.model.geom_type[geom]) == 4
-                else np.abs(rotation[2]) @ size
+            box_center, size, bottom = CarriedGeom.bounds(
+                model=shelf.model, geom=geom, center=center, rotation=rotation
             )
-            for obstacle in obstacles:
-                other_center = scratch.geom_xpos[obstacle]
-                other_rotation = scratch.geom_xmat[obstacle].reshape(3, 3)
+            near = np.all(
+                np.abs(box_center - other_centers) <= np.abs(rotation) @ size + other_reach, axis=1
+            )
+            for index in np.flatnonzero(near):
+                obstacle = obstacles[index]
+                other_center = other_centers[index]
+                other_rotation = other_rotations[index]
                 other_size = geom_half_extents(model=shelf.model, geom=obstacle)
-                if np.any(
-                    np.abs(center - other_center)
-                    > np.abs(rotation) @ size + np.abs(other_rotation) @ other_size
-                ):
-                    continue
                 overlap = self._penetration(
                     scratch=scratch, geom=geom, obstacle=obstacle, center=center, rotation=rotation
                 )

@@ -142,6 +142,14 @@ class RackServingBackend(SweepOffShelf3DBackend):
         for geom in self.body_geoms(name=name):
             rotation = data.geom_xmat[geom].reshape(3, 3)
             size = model.geom_size[geom].copy()
+            if int(model.geom_type[geom]) == 7:
+                # A mesh's own vertices, exact where a box about its frame is not.
+                start = model.mesh_vertadr[model.geom_dataid[geom]]
+                vertices = model.mesh_vert[
+                    start : start + model.mesh_vertnum[model.geom_dataid[geom]]
+                ]
+                points.extend(vertices @ rotation.T + data.geom_xpos[geom])
+                continue
             if int(model.geom_type[geom]) == 3:
                 size = np.array([size[0], size[0], size[0] + size[1]])
             elif int(model.geom_type[geom]) == 5:

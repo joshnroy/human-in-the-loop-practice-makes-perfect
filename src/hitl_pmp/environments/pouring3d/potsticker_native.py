@@ -8,8 +8,6 @@ Friction is an explicit sensitivity assumption; no ice adhesion or thawing model
 
 import xml.etree.ElementTree as ET
 from copy import deepcopy
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, cast
 
 import mujoco
@@ -21,35 +19,11 @@ from kinder.envs.dynamic3d.pitcher_pour3d import (
     PitcherPour3DEnv,
     PouringPitcher,
 )
-from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation
 
+from .potsticker_shape import ASSETS, shape_xml, support_vertices
 from .practice.native import HandleContactPatch, SupportSurfaceLocations
 from .practice.skillet import CastIronSkillet
-
-ASSETS = Path(__file__).parent / "assets"
-
-
-@lru_cache(maxsize=1)
-def shape_xml() -> ET.Element:
-    return ET.parse(ASSETS / "potsticker-shape.xml").getroot()
-
-
-@lru_cache(maxsize=1)
-def support_vertices() -> np.ndarray:
-    """Mesh vertices plus conservative 0.65 mm seam-capsule bounding boxes."""
-    root = shape_xml()
-    points = [
-        np.fromstring(m.attrib["vertex"], sep=" ").reshape(-1, 3)
-        for m in root.findall("asset/mesh")
-    ]
-    signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
-    for geom in root.findall("worldbody/body/geom"):
-        if geom.get("type") == "capsule":
-            endpoints = np.fromstring(geom.attrib["fromto"], sep=" ").reshape(2, 3)
-            points.extend(endpoint + signs * float(geom.attrib["size"]) for endpoint in endpoints)
-    vertices = np.concatenate(points)
-    return vertices[ConvexHull(vertices).vertices]
 
 
 @register_object
