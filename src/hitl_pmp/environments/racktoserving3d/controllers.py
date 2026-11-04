@@ -20,6 +20,11 @@ from .tool import RackScraper, RackShelfSkills
 
 RELEASE_RETREAT = 0.03
 PLATE_CLEARANCE = 0.008
+LIFT_OFF_HEIGHT = 0.01
+LIFT_OFF_STEP = 0.002
+EXIT_BAND = 0.03
+EXIT_RETREAT = 0.10
+EXIT_STEP = 0.005
 
 
 class StrokeStances(BaseModel):
@@ -399,6 +404,7 @@ class RackControllers:
         body[:3, 3] = stroke.start - tool.blade_edge(pose=body).mean(axis=0)
         target = body @ np.linalg.inv(shelf.in_hand)
         rotation, position = target[:3, :3], target[:3, 3]
+        self.exit_surface(label=label)
         here = shelf.site_pose()
         carry_z = max(here[2, 3], position[2] + 0.06)
         tool.line(
@@ -463,6 +469,61 @@ class RackControllers:
             "base": base.round(4).tolist(),
         })
         self.release_swept_food(rotation=body[:3, :3], retreat=-RELEASE_RETREAT * stroke.direction)
+
+    def exit_surface(self, *, label: str) -> None:
+        """Leave a blade still at a stroke's working height the way a stroke's own
+        release would: off the surface, then back toward the base, before the raise.
+
+        A GatherAndSweep that fails mid-push skips ``release_swept_food`` and leaves
+        the blade at the stroke's end, flat on the rack with the arm at full reach
+        from the side stance. Raising straight up from there is what every later
+        call tried, and could not do (Della 16788008: 101/119 calls at 0 steps):
+        with the blade on the wires, 1 cm waypoints ask ~0.065 rad of several joints
+        at once, and the axis-clipped joint path the arm follows rolls one blade end
+        4 mm into the rack, beyond the support allowance; with the arm stretched, a
+        6 cm vertical raise is near-singular (0.7 rad of joint 4, 3.6 mm IK error).
+
+        So when the blade's edge centre is over the rack or the plate and its lowest
+        point is within ``EXIT_BAND`` of the rack top or the plate's sweep floor, it
+        is first lifted to ``LIFT_OFF_HEIGHT`` above that floor in ``LIFT_OFF_STEP``
+        waypoints (each joint then moves less than the 0.025 rad the path is checked
+        at, so the executed path is the straight one), then drawn ``EXIT_RETREAT``
+        horizontally toward the base, over the region the stroke has just swept,
+        where the arm is no longer stretched. The hand keeps its rotation throughout.
+        After a completed stroke ``release_swept_food`` has already lifted the blade
+        6 cm, so this does nothing.
+        """
+        shelf, tool, backend = self.shelf, self.tool, self.backend
+        floor = max(backend.support(name="rack_0").top_z, self.plate_clear_z())
+        edge = tool.blade_edge()
+        low = float(edge[:, 2].min())
+        x, y = edge.mean(axis=0)[:2]
+        over = any(
+            region.x_min <= x <= region.x_max and region.y_min <= y <= region.y_max
+            for region in (backend.support(name="rack_0"), backend.support(name="box_0"))
+        )
+        if not over or low >= floor + EXIT_BAND:
+            return
+        here = shelf.site_pose()
+        rise = max(0.0, floor + LIFT_OFF_HEIGHT - low)
+        if rise > 0:
+            tool.line(
+                position=here[:3, 3] + [0.0, 0.0, rise],
+                rotation=here[:3, :3],
+                label=f"{label}_lift_off",
+                holding=True,
+                step=LIFT_OFF_STEP,
+            )
+        toward = shelf.data.qpos[shelf.ba][:2] - edge.mean(axis=0)[:2]
+        toward /= np.linalg.norm(toward)
+        here = shelf.site_pose()
+        tool.line(
+            position=here[:3, 3] + EXIT_RETREAT * np.r_[toward, 0.0],
+            rotation=here[:3, :3],
+            label=f"{label}_exit_retreat",
+            holding=True,
+            step=EXIT_STEP,
+        )
 
     def settle_stroke_end(
         self,
