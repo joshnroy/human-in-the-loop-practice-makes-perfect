@@ -23,7 +23,6 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
 
 from .transit import (
     ArmTransit,
-    EmptyHandTransit,
     geom_half_extents,
     geoms_half_extents,
     segment_samples,
@@ -38,11 +37,11 @@ PRE_GRASP = 0.10
 LIFT = 0.12
 PLACE_CLEARANCE = 0.002
 SCRAPER_RETURN_STANDOFF = 0.05
-# How far back from the configured base the pick stance may move, and in what steps.
-STANCE_MIN_X = 0.20
-STANCE_STEP = 0.05
-# Heights above the pre-grasp the pick's transit may aim for, highest first.
-PRE_HIGHS = (0.15, 0.08, 0.0)
+# Largest commanded change per control step along a planned path: under the per-step
+# clip (0.1 rad, `base_step_limit`), so the robot follows each checked straight segment
+# rather than an axis-clipped one.
+PLANNED_JOINT_STEP = 0.05
+PLANNED_BASE_FRACTION = 0.8
 
 
 @contextmanager
@@ -85,8 +84,6 @@ class TableWiper:
         self.data = shelf.data
         self.rest_y = float(rest_y)
         self.base = np.array([0.60, self.rest_y, 0.0] if base is None else base, dtype=float)
-        self._stance: np.ndarray | None = None
-        self.pre_high = PRE_HIGHS[0]
         self.top = float(shelf.board[1])
         self.front = float(shelf.front_x)
         self.home_top = self.top if home_top is None else float(home_top)
@@ -204,63 +201,41 @@ class TableWiper:
                     supported = True
         return supported
 
-    def stance(self) -> np.ndarray:
-        """The pick and return base: the configured one if the arm reaches the handle from
-        it, else the nearest one behind it that does. A low counter puts the handle near
-        the arm's own mount, so the arm must stand back to reach it without collision,
-        and the transit point above the approach may have to come down with it."""
-        if self._stance is not None:
-            return self._stance.copy()
-        pose = self.rest_pose()
-        rotation = pose[:3, :3] @ self.hand_in_body
-        grasp = self.grasp_world(pose=pose)
-        pre = grasp - PRE_GRASP * rotation[:, 2]
-        self._stance, self.pre_high = self.base.copy(), PRE_HIGHS[0]
-        for pre_high in PRE_HIGHS:
-            for x in np.arange(self.base[0], STANCE_MIN_X - 1e-9, -STANCE_STEP):
-                base = np.array([x, self.base[1], self.base[2]])
-                waypoints = (pre + [0, 0, pre_high], pre, grasp)
-                if all(self._reaches(position=p, rotation=rotation, base=base) for p in waypoints):
-                    self._stance, self.pre_high = base, pre_high
-                    return self._stance.copy()
-        return self._stance.copy()
-
-    def _reaches(self, *, position: np.ndarray, rotation: np.ndarray, base: np.ndarray) -> bool:
-        try:
-            arm, penetration = self.shelf.ik(
-                position=position,
-                rotation=rotation,
-                base=base,
-                holding=False,
-            )
-        except SkillFailed:
-            return False
-        site = self.shelf.site_at(base=base, arm=arm)
-        return penetration <= 0 and float(np.linalg.norm(site[:3, 3] - position)) <= 0.002
-
     def pick(self) -> None:
-        """Approach the live handle end-on, verify the grasp, lift and tilt 45 degrees."""
+        """Plan the base and the arm to a hover in front of the handle (PyBullet) and
+        follow both, then approach the live handle end-on, verify the grasp, lift and
+        tilt 45 degrees as scripted contact motions. A refused plan moves nothing."""
+        from .planning import PlanningRefused, ScraperMotionPlanner
+
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.pads_hold_wiper():
             raise SkillFailed("PickWiper requires an empty gripper")
         try:
-            shelf.grip = 0.0
-            stance = self.stance()
-            if self.is_bench_scraper:
-                EmptyHandTransit(shelf=shelf).drive(target=stance, label="pick_wiper_base")
-            else:
-                shelf.move_base(target=stance, label="pick_wiper_base")
             pose = self.wiper_pose()
             rotation = pose[:3, :3] @ self.hand_in_body
             grasp = self.grasp_world(pose=pose)
             pre = grasp - PRE_GRASP * rotation[:, 2]
-            self.transit(
-                position=pre + [0, 0, self.pre_high],
+            try:
+                plan = ScraperMotionPlanner.plan_pick(
+                    shelf=shelf,
+                    grasp=grasp,
+                    pre=pre,
+                    rotation=rotation,
+                    preferred=self.base,
+                    after=self.lift_waypoints(pose=pose),
+                )
+            except PlanningRefused as exc:
+                raise SkillFailed(str(exc)) from exc
+            shelf.grip = 0.0
+            self.follow_base_path(path=plan.base_path, label="pick_wiper_base")
+            self.follow_arm_path(path=plan.arm_after_base, label="pick_wiper_pre")
+            self.settle_hand(
+                arm=plan.arm_after_base[-1],
+                position=pre,
                 rotation=rotation,
-                label="pick_wiper_pre_high",
-                holding=False,
+                label="pick_wiper_pre",
+                limit=300,
             )
-            self.line(position=pre, rotation=rotation, label="pick_wiper_pre", holding=False)
             self.line(
                 position=grasp,
                 rotation=rotation,
@@ -328,46 +303,70 @@ class TableWiper:
         except WiperLost as exc:
             raise SkillFailed(f"PickWiper: {exc}") from exc
 
+    def lift_waypoints(self, *, pose: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """The hand poses the scripted lift and tilt pass through from the grasp of a
+        scraper at `pose`, with the nominal grasp, so a stance can be checked for them
+        before anything moves."""
+        site = np.eye(4)
+        site[:3, :3], site[:3, 3] = self.hand_in_body, self.point
+        in_hand = np.linalg.inv(site)
+        rotation = pose[:3, :3] @ self.hand_in_body
+        lifted = self.grasp_world(pose=pose) + [0, 0, LIFT]
+        sweep_rotation = self.sweep_body_rotation(yaw_deg=0)
+        site_rotation = sweep_rotation @ in_hand[:3, :3].T
+        predicted = np.eye(4)
+        predicted[:3, :3] = sweep_rotation
+        predicted[:3, 3] = lifted + site_rotation @ in_hand[:3, 3]
+        lowest = min(
+            self.capsule_bottom(pose=predicted),
+            float(self.handle_corners(pose=predicted)[:, 2].min()),
+        )
+        raised = lifted + [0, 0, max(0.0, max(self.top, self.home_top) + 0.03 - lowest)]
+        return [(lifted, rotation), (raised, rotation), (raised, site_rotation)]
+
     def place(self) -> None:
         """Return using the measured grasp and wait for physical rest after release.
 
-        Stand farther from the board when returning the flat scraper to keep the
-        low forearm clear of the base. Untilting can shift the physical grasp, so
-        remeasure it before lowering rather than commanding a stale tool pose.
+        Planned before anything moves (PyBullet, the scraper carried rigidly): the arm
+        raised if the base cannot move with it as it is, the base to a stance from which
+        the seat is reachable with every joint clear of its limit, and the arm to a hover
+        above the seat. The lowering, seat, release and retreat stay scripted. Untilting
+        can shift the physical grasp, so it is remeasured before lowering rather than
+        commanding a stale tool pose. A refused plan moves nothing.
         """
+        from .planning import PlanningRefused, ScraperMotionPlanner
+
         shelf = self.shelf
         self.require_held(label="place_wiper_start")
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
         target_site = self.rest_pose() @ np.linalg.inv(shelf.in_hand)
         rotation, grasp = target_site[:3, :3], target_site[:3, 3]
-        return_base = self.stance()
+        preferred = self.base.copy()
         if self.is_bench_scraper:
-            return_base[0] -= SCRAPER_RETURN_STANDOFF
+            preferred[0] -= SCRAPER_RETURN_STANDOFF
         try:
-            here = shelf.site_pose()
-            carry_z = max(float(here[2, 3]), float(grasp[2] + LIFT))
-            self.line(
-                position=np.array([here[0, 3], here[1, 3], carry_z]),
-                rotation=here[:3, :3],
-                label="place_wiper_raise",
-                holding=True,
-            )
-            self.move_base(target=return_base, label="place_wiper_base")
-            above = np.array([grasp[0], grasp[1], carry_z])
-            self.line(
-                position=above,
-                rotation=self.sweep_body_rotation(yaw_deg=0) @ shelf.in_hand[:3, :3].T,
-                label="place_wiper_carry",
-                holding=True,
-                steps_per=20,
-            )
-            self.line(
-                position=above,
+            plan, hover = ScraperMotionPlanner.plan_return(
+                shelf=shelf,
+                seat=grasp + [0, 0, PLACE_CLEARANCE],
                 rotation=rotation,
-                label="place_wiper_untilt",
-                holding=True,
-                steps_per=4,
+                preferred=preferred,
+                carry_height=float(grasp[2] + LIFT),
             )
+        except PlanningRefused as exc:
+            raise SkillFailed(str(exc)) from exc
+        try:
+            self.follow_arm_path(path=plan.arm_before_base, label="place_wiper_raise")
+            self.require_held(label="place_wiper_raise")
+            self.follow_base_path(path=plan.base_path, label="place_wiper_base")
+            self.follow_arm_path(path=plan.arm_after_base, label="place_wiper_carry")
+            self.settle_hand(
+                arm=plan.arm_after_base[-1],
+                position=hover,
+                rotation=rotation,
+                label="place_wiper_carry",
+                limit=300,
+            )
+            self.require_held(label="place_wiper_carry")
             if self.is_bench_scraper:
                 self.require_held(label="place_wiper_remeasure")
                 shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
@@ -668,6 +667,42 @@ class TableWiper:
 
     def move_base(self, *, target: np.ndarray, label: str) -> None:
         self.shelf.move_base(target=target, label=label)
+
+    def follow_base_path(self, *, path: list[np.ndarray], label: str) -> None:
+        """Drive the base through every planned waypoint, the arm held where it is."""
+        shelf = self.shelf
+        arm = shelf.data.qpos[shelf.qa].copy()
+        limit = PLANNED_BASE_FRACTION * shelf.base_step_limit
+        for start, end in zip(path[:-1], path[1:], strict=True):
+            delta = np.asarray(end, dtype=float) - start
+            count = max(1, int(np.ceil(np.max(np.abs(delta)) / limit)))
+            for index in range(1, count + 1):
+                shelf.base_target = start + delta * (index / count)
+                self.step(arm=arm, label=label)
+        shelf.base_target = np.asarray(path[-1], dtype=float).copy()
+        for _ in range(150):
+            if np.max(np.abs(shelf.data.qpos[shelf.ba] - shelf.base_target)) < 0.003:
+                return
+            self.step(arm=arm, label=label)
+        raise SkillFailed(f"Base did not track the planned path during {label}")
+
+    def follow_arm_path(self, *, path: list[np.ndarray], label: str) -> None:
+        """Drive the arm along each straight joint segment of a checked plan, the short
+        way round as the planner checked it."""
+        shelf = self.shelf
+        current = shelf.data.qpos[shelf.qa].copy()
+        for waypoint in path[1:]:
+            delta = (np.asarray(waypoint, dtype=float) - current + np.pi) % (2 * np.pi) - np.pi
+            count = max(1, int(np.ceil(np.max(np.abs(delta)) / PLANNED_JOINT_STEP)))
+            for index in range(1, count + 1):
+                self.step(arm=current + delta * (index / count), label=label)
+            current = current + delta
+        for _ in range(200):
+            error = (current - shelf.data.qpos[shelf.qa] + np.pi) % (2 * np.pi) - np.pi
+            if np.max(np.abs(error)) < 0.01:
+                return
+            self.step(arm=current, label=label)
+        raise SkillFailed(f"Arm did not track the planned path during {label}")
 
     def settle_hand(
         self,
