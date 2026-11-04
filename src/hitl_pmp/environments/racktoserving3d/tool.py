@@ -855,7 +855,12 @@ class RackScraper(TableWiper):
                     and min(abs(support_top - self.home_top), abs(support_top - self.top)) <= 0.003
                     and bottom >= support_top - SUPPORT_ALLOWANCE
                 )
-                if not support:
+                # The final sweep slides food over the plate rim on purpose; let the
+                # blade ride it as shallowly as it may ride the rack, never from the side.
+                rides_plate = (
+                    obstacle in shelf.box_geoms and bottom >= support_top - SUPPORT_ALLOWANCE
+                )
+                if not (support or rides_plate):
                     return False
         return True
 
