@@ -29,6 +29,8 @@ READINESS = (
 
 # Tossing3D's two human resets, as the kitchen charges them, each at Tossing3D's 5.
 HUMAN_RESET_COSTS = {"ResetCubeBinSameSide": 5, "ResetCubeBinOppositeSide": 5}
+# The planner's own reset price, --human-reset-practice-cost: the CLI default on every row.
+HUMAN_RESET_PRACTICE_COST = 5.0
 
 
 def check_costs(*, costs: dict, cost: float = 5) -> None:
@@ -45,16 +47,22 @@ def expected_rows(*, manifest: dict) -> list[tuple]:
 
 
 def check_row_costs(*, parsed: argparse.Namespace, row: dict) -> None:
-    """The row's cost file prices both resets at its cost, is the file the manifest
-    bound (when swept), and the planner's own reset price agrees."""
+    """The row's cost file prices both resets at its cost and is the file the manifest
+    bound (when swept). The planner's --human-reset-practice-cost stays at its default
+    5 on every row: a swept cost lives only in the cost file, which both arms price
+    resets from, and the POMDP refuses at construction any skill priced above its cost
+    ceiling (20), as Tossing3D's own runs keep it (cost file 500, flag 5)."""
     cost = row.get("human_reset_cost", 5)
     path = Path(parsed.practice_cost_config)
     path = path if path.is_absolute() else REPO / path
     if "costs_sha256" in row and sha(path=path) != row["costs_sha256"]:
         raise ValueError(f"Cost file changed since the manifest bound it: {path}")
     check_costs(costs=read(path=path), cost=cost)
-    if parsed.human_reset_practice_cost != cost:
-        raise ValueError(f"The planner's human reset cost must match the cost file's {cost}")
+    if parsed.human_reset_practice_cost != HUMAN_RESET_PRACTICE_COST:
+        raise ValueError(
+            f"The planner's --human-reset-practice-cost must stay at its default "
+            f"{HUMAN_RESET_PRACTICE_COST}; a swept reset cost belongs in the cost file"
+        )
 
 
 def read(*, path: Path):
