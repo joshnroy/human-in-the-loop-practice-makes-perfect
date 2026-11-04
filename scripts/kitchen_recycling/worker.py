@@ -31,10 +31,30 @@ READINESS = (
 HUMAN_RESET_COSTS = {"ResetCubeBinSameSide": 5, "ResetCubeBinOppositeSide": 5}
 
 
-def check_costs(*, costs: dict) -> None:
+def check_costs(*, costs: dict, cost: float = 5) -> None:
     priced = {name: entry["cost"]["value"] for name, entry in costs.get("human_skills", {}).items()}
-    if priced != HUMAN_RESET_COSTS:
-        raise ValueError(f"Cost file must price exactly the two human resets at 5: {priced}")
+    if priced != {name: cost for name in HUMAN_RESET_COSTS}:
+        raise ValueError(f"Cost file must price exactly the two human resets at {cost}: {priced}")
+
+
+def expected_rows(*, manifest: dict) -> list[tuple]:
+    """(reset cost, seed, arm) per row: the nine seed-major runs, once per swept cost
+    (`None`: no sweep, the cost file's 5)."""
+    costs = manifest.get("human_reset_costs", [None])
+    return [(cost, seed, arm) for cost in costs for seed in range(3) for arm in ARMS]
+
+
+def check_row_costs(*, parsed: argparse.Namespace, row: dict) -> None:
+    """The row's cost file prices both resets at its cost, is the file the manifest
+    bound (when swept), and the planner's own reset price agrees."""
+    cost = row.get("human_reset_cost", 5)
+    path = Path(parsed.practice_cost_config)
+    path = path if path.is_absolute() else REPO / path
+    if "costs_sha256" in row and sha(path=path) != row["costs_sha256"]:
+        raise ValueError(f"Cost file changed since the manifest bound it: {path}")
+    check_costs(costs=read(path=path), cost=cost)
+    if parsed.human_reset_practice_cost != cost:
+        raise ValueError(f"The planner's human reset cost must match the cost file's {cost}")
 
 
 def read(*, path: Path):
@@ -75,9 +95,11 @@ def binding(*, launch: Path) -> dict:
 def verify(*, launch: Path, full: bool) -> dict:
     manifest = read(path=launch / "manifest.json")
     rows = manifest["runs"]
-    expected = [(seed, arm) for seed in range(3) for arm in ARMS]
-    if [(row["seed"], row["arm"]) for row in rows] != expected:
-        raise ValueError("Only the nine seed-major kitchen runs are permitted")
+    expected = expected_rows(manifest=manifest)
+    if [(row.get("human_reset_cost"), row["seed"], row["arm"]) for row in rows] != expected:
+        raise ValueError("Only the nine seed-major kitchen runs (per swept cost) are permitted")
+    if len({output(row=row) for row in rows}) != len(rows):
+        raise ValueError("Every run needs its own output directory")
     snapshot = read(path=launch / "snapshot.json")
     if not snapshot["assets_included"]:
         raise ValueError("Portable simulator assets are required")
@@ -156,9 +178,7 @@ def verify(*, launch: Path, full: bool) -> dict:
             raise ValueError("Full-horizon runs require --no-early-stop")
         if parsed.scene_bg is not False:
             raise ValueError("Pilots and full runs must use --no-scene-bg")
-        check_costs(costs=read(path=REPO / parsed.practice_cost_config))
-        if parsed.human_reset_practice_cost != 5.0:
-            raise ValueError("The planner's human reset cost must match the cost file's 5")
+        check_row_costs(parsed=parsed, row=row)
         config = read(path=REPO / parsed.kitchen_config)
         if config.get("scatter_objects") is not True:
             raise ValueError("Full experiment config must enable seeded kitchen scatter")
@@ -170,10 +190,15 @@ def verify(*, launch: Path, full: bool) -> dict:
     return manifest
 
 
+def output(*, row: dict) -> str:
+    """A run's directory under results/ (and smoke/): arm/seed, or the row's own."""
+    return row.get("output", f"{row['arm']}/{row['seed']}")
+
+
 def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
-    output = launch.parent / ("smoke" if smoke else "results") / row["arm"] / str(row["seed"])
-    output.mkdir(parents=True, exist_ok=False)
-    command = [sys.executable, "-m", "hitl_pmp.cli", *row["argv"], "--output-dir", str(output)]
+    output_dir = launch.parent / ("smoke" if smoke else "results") / output(row=row)
+    output_dir.mkdir(parents=True, exist_ok=False)
+    command = [sys.executable, "-m", "hitl_pmp.cli", *row["argv"], "--output-dir", str(output_dir)]
     budget, workers = contract(manifest=manifest)
     if smoke:
         command += [
@@ -188,7 +213,7 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
             "500",
         ]
     start = time.monotonic()
-    with (output / "worker.log").open("w") as logfile:
+    with (output_dir / "worker.log").open("w") as logfile:
         subprocess.run(
             command,
             cwd=REPO,
@@ -197,11 +222,11 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
             timeout=SMOKE_TIMEOUT_SECONDS if smoke else None,
             check=True,
         )
-    status = read(path=output / "status.json")
-    evaluations = read(path=output / "step_evaluations.json")
+    status = read(path=output_dir / "status.json")
+    evaluations = read(path=output_dir / "step_evaluations.json")
     ends = [
         json.loads(line)
-        for line in (output / "step_events.jsonl").read_text().splitlines()
+        for line in (output_dir / "step_events.jsonl").read_text().splitlines()
         if line.strip()
     ]
     ends = [event for event in ends if event.get("event") == "practice_end"]
@@ -226,7 +251,7 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
         "endpoint": ends[-1],
         "command": command,
     }
-    (output / "completion-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    (output_dir / "completion-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
 
 
@@ -234,12 +259,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("check", "smoke", "full"))
     parser.add_argument("--launch", type=Path, required=True)
-    parser.add_argument("--task", type=int, default=0, choices=range(9))
+    parser.add_argument("--task", type=int, default=0)
     args = parser.parse_args()
     launch = args.launch.resolve()
     manifest = verify(launch=launch, full=args.mode == "full")
+    if not 0 <= args.task < len(manifest["runs"]):
+        parser.error(f"--task must index one of the manifest's {len(manifest['runs'])} runs")
     if args.mode == "check":
-        print(json.dumps({"binding": binding(launch=launch), "parsed": 9}))
+        print(json.dumps({"binding": binding(launch=launch), "parsed": len(manifest["runs"])}))
     elif args.mode == "smoke":
         if not os.environ.get("SLURM_JOB_ID"):
             raise ValueError("Run physics smoke in an authorized compute allocation, not login")

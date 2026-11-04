@@ -28,6 +28,18 @@ V8_STYLE_DIGESTS = {
     "smoke.sbatch": "adeed680afc6462eb1f0a4ee8b35380dd49bd7f180ffe506876d4b5e4e72e5f8",
 }
 ITERATION = {"practice_step_budget": 65000, "evaluation_workers": 4}
+# The same tag's v9-style package (65k, four evaluation workers, 6 CPUs / 24G) as main
+# wrote it before the reset-cost sweep and --constraint existed.
+V9_STYLE_ARGS = (
+    *("--practice-step-budget", "65000", "--evaluation-workers", "4"),
+    *("--cpus-per-task", "6", "--memory", "24G"),
+)
+V9_STYLE_DIGESTS = {
+    "commands.txt": "258ab4d84d7b77297f49957de6ab7435c64f4b6ca4a79e2737e9058184b08881",
+    "full.sbatch": "781eceae5ad2847cd37c1b1648aea918ded6ea23b468adc182cced61192b581c",
+    "manifest.json": "65a262430617b9dd1eb4de0b4453ff32183305691f0be98e26dcc9902d7e31f5",
+    "smoke.sbatch": "81506e46504fde7f8872df149f922739d5e208c97488ab49b83c66372f498d4f",
+}
 
 
 def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
@@ -142,6 +154,16 @@ class PackagingTests(unittest.TestCase):
                         hashlib.sha256((output / name).read_bytes()).hexdigest(), digest
                     )
 
+    def test_no_sweep_leaves_a_v9_style_package_byte_identical(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory, extra=V9_STYLE_ARGS)
+            self.assertFalse((output / "costs").exists())
+            for name, digest in V9_STYLE_DIGESTS.items():
+                with self.subTest(file=name):
+                    self.assertEqual(
+                        hashlib.sha256((output / name).read_bytes()).hexdigest(), digest
+                    )
+
     def test_budget_and_evaluation_workers_reach_every_row(self):
         with tempfile.TemporaryDirectory() as directory:
             output = prepared(
@@ -242,6 +264,134 @@ class PackagingTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(ValueError, "160000"):
                             worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
+
+    def test_a_reset_cost_sweep_expands_rows_per_cost(self):
+        costs = ("5", "0", "10", "20", "100", "10000")
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(
+                directory=directory,
+                extra=("--human-reset-costs", *costs, "--max-parallel", "54"),
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["human_reset_costs"], [5, 0, 10, 20, 100, 10000])
+            rows = manifest["runs"]
+            self.assertEqual(
+                [(row["human_reset_cost"], row["seed"], row["arm"]) for row in rows],
+                [
+                    (cost, seed, arm)
+                    for cost in (5, 0, 10, 20, 100, 10000)
+                    for seed in range(3)
+                    for arm in prepare.ARMS
+                ],
+            )
+            self.assertEqual([row["index"] for row in rows], list(range(54)))
+            self.assertEqual(len({row["output"] for row in rows}), 54)
+            for row in rows:
+                cost, argv = row["human_reset_cost"], row["argv"]
+                self.assertEqual(row["output"], f"reset-cost-{cost}/{row['arm']}/{row['seed']}")
+                self.assertEqual(argv[argv.index("--human-reset-practice-cost") + 1], str(cost))
+                path = argv[argv.index("--practice-cost-config") + 1]
+                self.assertEqual(
+                    path, f"{manifest['remote_root']}/launch/costs/human-reset-cost-{cost}.json"
+                )
+                local = output / "costs" / f"human-reset-cost-{cost}.json"
+                self.assertEqual(
+                    hashlib.sha256(local.read_bytes()).hexdigest(), row["costs_sha256"]
+                )
+                written = json.loads(local.read_text())
+                self.assertEqual(
+                    {
+                        name: skill["cost"]["value"]
+                        for name, skill in written["human_skills"].items()
+                    },
+                    {"ResetCubeBinSameSide": cost, "ResetCubeBinOppositeSide": cost},
+                )
+                base = json.loads((HERE / "costs.json").read_text())
+                for key in ("robot_step", "human_weight", "objective_lambda"):
+                    self.assertEqual(written[key], base[key])
+            self.assertIn("--array=0-53%54\n", (output / "full.sbatch").read_text())
+            self.assertIn(
+                "/results/reset-cost-10000/curtis/2", (output / "commands.txt").read_text()
+            )
+
+    def test_a_reset_cost_sweep_refuses_duplicate_costs(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            prepared(directory=directory, extra=("--human-reset-costs", "5", "5"))
+
+    def test_constraint_reaches_both_sbatch_scripts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory, extra=("--constraint", "genoa"))
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["resources"]["constraint"], "genoa")
+            for phase in ("smoke", "full"):
+                self.assertIn(
+                    "#SBATCH --constraint=genoa\n", (output / f"{phase}.sbatch").read_text()
+                )
+
+    def test_worker_expects_the_manifests_rows(self):
+        self.assertEqual(
+            worker.expected_rows(manifest={"runs": []}),
+            [(None, seed, arm) for seed in range(3) for arm in worker.ARMS],
+        )
+        self.assertEqual(
+            worker.expected_rows(manifest={"human_reset_costs": [5, 0]})[9],
+            (0, 0, "ees"),
+        )
+
+    def test_worker_checks_each_rows_reset_cost(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "costs.json"
+            costs = json.loads((HERE / "costs.json").read_text())
+            for skill in costs["human_skills"].values():
+                skill["cost"]["value"] = 10000
+            path.write_text(json.dumps(costs))
+            row = {
+                "human_reset_cost": 10000,
+                "costs_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+
+            def parsed(*, planner=10000.0):
+                return argparse.Namespace(
+                    practice_cost_config=str(path), human_reset_practice_cost=planner
+                )
+
+            worker.check_row_costs(parsed=parsed(), row=row)
+            worker.check_row_costs(
+                parsed=argparse.Namespace(
+                    practice_cost_config=str(HERE / "costs.json"), human_reset_practice_cost=5.0
+                ),
+                row={},
+            )
+            for bad_parsed, bad_row in (
+                (parsed(planner=5.0), row),
+                (parsed(), {**row, "human_reset_cost": 5}),
+                (parsed(), {**row, "costs_sha256": "0" * 64}),
+                (parsed(planner=5.0), {}),
+            ):
+                with self.subTest(row=bad_row), self.assertRaises(ValueError):
+                    worker.check_row_costs(parsed=bad_parsed, row=bad_row)
+
+    def test_a_swept_rows_output_carries_its_cost(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launch = Path(directory) / "launch"
+            row = {"arm": "ees", "seed": 0, "argv": [], "output": "reset-cost-10/ees/0"}
+            for smoke, parent in ((True, "smoke"), (False, "results")):
+                with (
+                    self.subTest(smoke=smoke),
+                    patch.object(
+                        worker.subprocess, "run", side_effect=RuntimeError("intercepted")
+                    ) as run,
+                    self.assertRaisesRegex(RuntimeError, "intercepted"),
+                ):
+                    worker.run(launch=launch, row=row, smoke=smoke, manifest={})
+                command = run.call_args.args[0]
+                self.assertEqual(
+                    command[command.index("--output-dir") + 1],
+                    str(launch.parent / parent / "reset-cost-10/ees/0"),
+                )
 
     def test_cost_contract_is_the_two_resets_at_five(self):
         worker.check_costs(costs=json.loads((HERE / "costs.json").read_text()))

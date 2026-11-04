@@ -16,6 +16,17 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   the manifest then records `practice_step_budget` and `worker.py` holds every row
   and the run's endpoint to it. Left at the default, the manifest carries no such key
   and is byte-identical to the 160,000-step package.
+- Both human resets cost 5 by default. `prepare.py --human-reset-costs C1 C2 ...` sweeps
+  that cost: the nine runs are repeated once per cost, in the order given (manifest
+  `human_reset_costs`; row index = cost-major, then seed, then arm). Each cost gets its own
+  cost file, `costs/human-reset-cost-<C>.json` beside the manifest (the repo's
+  `costs.json` with both resets repriced), passed by its deployment path; each row adds
+  `--human-reset-practice-cost <C>` and runs in `results/reset-cost-<C>/<arm>/<seed>`.
+  `worker.py` checks each row's cost file against its bound `costs_sha256` and its cost,
+  and the planner flag against the same cost. EES prices a reset from the cost file from
+  its first decision; the POMDP arms learn it from charges observed (first-reset forecast
+  `skill_cost_prior_steps` x robot price, as in Tossing3D's own cost sweep).
+- `prepare.py --constraint <feature>` adds `#SBATCH --constraint` to both scripts.
 - One evaluation process per checkpoint by default. `prepare.py --evaluation-workers N`
   (N at most the ten test tasks) gives every row `--evaluation-workers N
   --evaluation-task-rng per-task`, records `evaluation_workers` in the manifest, and
