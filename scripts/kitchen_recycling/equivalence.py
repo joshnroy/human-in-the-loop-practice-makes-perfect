@@ -1,7 +1,8 @@
 """Launch-time equivalence guard: the smoke must decide what a recorded reference decided.
 
-A launch that claims to be behaviour-neutral (a speedup, a cache) binds, at prepare time,
-each smoke row to the run of a previous launch with the same reset cost, arm and seed and
+Mandatory from v11: every package either binds a reference or records a waiver. A launch
+that claims to be behaviour-neutral (a speedup, a cache) binds, at prepare time, each
+smoke row to the run of a previous launch with the same reset cost, arm and seed and
 the same argv (`prepare.py --equivalence-reference`). After the smoke, the gate runs
 
     python -m scripts.kitchen_recycling.equivalence --launch "$ROOT/launch"
@@ -24,13 +25,19 @@ checkpoint the smoke measured before then, task by task (the smoke runs only the
 policy *file* hash (a pickle's bytes embed its output path, `PolicyFileHash`), and, as in
 #675's `compare.py`, memory addresses and the hash order of frozensets.
 
-**Same CPU model or refuse.** Search results are not bit-reproducible across CPU types
-(#675), so both runs' `host.json` (written by `worker.run`) must name the same model.
+**Same CPU or refuse.** Search results are not bit-reproducible across CPU types (#675).
+When both runs have `host.json` (written by `worker.run`), they must name the same CPU
+model. A reference from before `host.json` existed (kitchen v10 and earlier) recorded no
+model, so its identity is its Slurm node's feature instead: its array task's job id from
+its `logs/*-full-<job>_<row>.out`, its node from `sacct`, that node's features from
+`sinfo`, and both nodes must carry `genoa` (Josh, 2026-11-04: the node label is what we
+control). The record names which identity was used.
 """
 
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -60,6 +67,8 @@ SET_LIKE = (
     "start_atoms",
 )
 SHOWN = 600
+# The Slurm feature naming Della's AMD EPYC Genoa nodes: a legacy reference's CPU identity.
+CPU_FAMILY_FEATURE = "genoa"
 
 
 class Divergence(ValueError):
@@ -140,21 +149,96 @@ def compare_records(*, name: str, smoke: list, reference: list) -> None:
         )
 
 
-def same_cpu(*, smoke: Path, reference: Path) -> str:
-    models = {}
-    for run in (smoke, reference):
-        path = run / "host.json"
-        if not path.is_file():
-            raise CpuMismatch(
-                f"{path} is missing: the run recorded no CPU model, and search results are "
-                "not bit-reproducible across CPU types, so it cannot serve here"
-            )
-        models[run] = read(path=path).get("cpu_model")
-    if not models[smoke] or models[smoke] != models[reference]:
-        raise CpuMismatch(
-            f"the smoke ran on {models[smoke]!r}, the reference on {models[reference]!r}"
+def slurm_node(*, job: str) -> str:
+    """The one node a finished Slurm job (array task) ran on, from accounting."""
+    try:
+        result = subprocess.run(
+            ["sacct", "-j", job, "-X", "-n", "-P", "-o", "JobID,NodeList"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
         )
-    return models[smoke]
+    except (OSError, subprocess.SubprocessError) as error:
+        raise CpuMismatch(f"sacct could not report job {job}: {error}") from error
+    lines = [line.split("|") for line in result.stdout.splitlines() if line.strip()]
+    nodes = {line[1] for line in lines if len(line) == 2}
+    if len(lines) != 1 or len(nodes) != 1 or any(c in next(iter(nodes)) for c in "[],"):
+        raise CpuMismatch(f"sacct does not name exactly one node for job {job}: {lines}")
+    return next(iter(nodes))
+
+
+def node_features(*, node: str) -> set[str]:
+    """A node's Slurm features (on Della, e.g. amd,genoa,rh9,nvme)."""
+    try:
+        result = subprocess.run(
+            ["sinfo", "-h", "-N", "-n", node, "-o", "%f"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise CpuMismatch(f"sinfo could not report node {node}: {error}") from error
+    return {
+        feature
+        for line in result.stdout.splitlines()
+        for feature in line.strip().split(",")
+        if feature
+    }
+
+
+def reference_job(*, reference_root: Path, index: int) -> str:
+    """A legacy reference row's array task, read from its full-array log's file name
+    (`<tag>-full-<job>_<row>.out`); refused unless exactly one array ran that row."""
+    pattern = re.compile(rf"-full-(\d+)_{index}\.out$")
+    jobs = {
+        match.group(1)
+        for path in (reference_root / "logs").glob(f"*-full-*_{index}.out")
+        if (match := pattern.search(path.name))
+    }
+    if len(jobs) != 1:
+        raise CpuMismatch(
+            f"{reference_root}/logs names {len(jobs)} full-array jobs for row {index}; "
+            "exactly one is needed to look up the node it ran on"
+        )
+    return f"{next(iter(jobs))}_{index}"
+
+
+def cpu_identity(*, smoke: Path, reference: Path, reference_job: str | None = None) -> dict:
+    """How the two runs are known to share a CPU: the same `host.json` model, or, for a
+    reference that predates `host.json`, both nodes carrying the `genoa` Slurm feature."""
+    smoke_host = smoke / "host.json"
+    if not smoke_host.is_file():
+        raise CpuMismatch(f"{smoke_host} is missing: the smoke recorded no host")
+    ours = read(path=smoke_host)
+    if (reference / "host.json").is_file():
+        theirs = read(path=reference / "host.json").get("cpu_model")
+        if not ours.get("cpu_model") or ours.get("cpu_model") != theirs:
+            raise CpuMismatch(
+                f"the smoke ran on {ours.get('cpu_model')!r}, the reference on {theirs!r}"
+            )
+        return {"basis": "host.json cpu_model", "cpu_model": theirs}
+    if reference_job is None:
+        raise CpuMismatch(
+            f"{reference}/host.json is missing and no Slurm job is known for the reference, "
+            "so its CPU cannot be identified"
+        )
+    smoke_node = (
+        ours.get("slurm", {}).get("SLURMD_NODENAME") or str(ours.get("hostname", "")).split(".")[0]
+    )
+    reference_node = slurm_node(job=reference_job)
+    for name, node in (("smoke", smoke_node), ("reference", reference_node)):
+        if CPU_FAMILY_FEATURE not in node_features(node=node):
+            raise CpuMismatch(
+                f"the {name} node {node} does not carry the {CPU_FAMILY_FEATURE!r} feature"
+            )
+    return {
+        "basis": f"slurm-feature:{CPU_FAMILY_FEATURE}",
+        "smoke_node": smoke_node,
+        "reference_node": reference_node,
+        "reference_job": reference_job,
+    }
 
 
 def budget_affected(*, event: dict) -> bool:
@@ -204,10 +288,10 @@ def compare_evaluations(*, smoke: Path, reference: Path, checkpoints: list[int])
     return compared
 
 
-def compare_run(*, smoke: Path, reference: Path) -> dict:
-    """Refuse unless both ran on one CPU model; raise `Divergence` at the first record
-    the smoke decided differently. Returns how much was compared."""
-    cpu = same_cpu(smoke=smoke, reference=reference)
+def compare_run(*, smoke: Path, reference: Path, reference_job: str | None = None) -> dict:
+    """Refuse unless both ran on one CPU (`cpu_identity`); raise `Divergence` at the first
+    record the smoke decided differently. Returns how much was compared, and how."""
+    identity = cpu_identity(smoke=smoke, reference=reference, reference_job=reference_job)
     events = records(path=smoke / "step_events.jsonl")
     prefix = []
     for event in events:
@@ -239,7 +323,7 @@ def compare_run(*, smoke: Path, reference: Path) -> dict:
         "step_events": len(prefix),
         "decisions": {"file": name, "records": len(ours)},
         "evaluation_tasks": tasks,
-        "cpu_model": cpu,
+        "cpu_identity": identity,
     }
 
 
@@ -267,8 +351,17 @@ def check(*, launch: Path) -> dict:
         for bound_run in block["runs"]:
             row = rows[bound_run["index"]]
             smoke = launch.parent / "smoke" / output(row=row)
+            reference = Path(bound_run["reference"])
             try:
-                summary = compare_run(smoke=smoke, reference=Path(bound_run["reference"]))
+                job = (
+                    None
+                    if (reference / "host.json").is_file()
+                    else reference_job(
+                        reference_root=Path(block["reference_root"]),
+                        index=bound_run["reference_index"],
+                    )
+                )
+                summary = compare_run(smoke=smoke, reference=reference, reference_job=job)
             except (Divergence, CpuMismatch) as error:
                 raise type(error)(
                     f"row {row['index']} ({row['arm']}, seed {row['seed']}) against "

@@ -259,12 +259,13 @@ def main() -> None:
     allowed = sorted({
         "--" + flag.removeprefix("--") for flag in args.equivalence_allow_difference or []
     })
-    if reference_root is None and (
-        args.equivalence_waiver is not None
-        or allowed
-        or args.equivalence_reference_manifest is not None
-    ):
-        parser.error("The equivalence options require --equivalence-reference")
+    if reference_root is None:
+        # Mandatory from v11 (Josh, 2026-11-04): a launch either proves on its smoke that
+        # it decides as a recorded reference did, or records why it is meant to differ.
+        parser.error(
+            "Every package needs --equivalence-reference ROOT, or --equivalence-reference "
+            "none with an --equivalence-waiver reason"
+        )
     if reference_root == "none":
         if not (args.equivalence_waiver or "").strip():
             parser.error("--equivalence-reference none requires an --equivalence-waiver reason")
@@ -380,8 +381,8 @@ def main() -> None:
             if costs is not None
             else {}
         ),
-        # Recorded only when given, so a package prepared without it keeps its bytes.
-        **({"equivalence": equivalence} if equivalence is not None else {}),
+        # The one key v11 adds: with it removed, the manifest is byte-identical to v8/v9's.
+        "equivalence": equivalence,
         "runs": rows,
         "resources": {
             "account": "tsilver",

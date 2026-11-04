@@ -62,6 +62,7 @@ def test_every_swept_row_prices_its_planner_skills_within_the_pomdp_ceiling(
             str(Path(prepare.__file__)),
             *("--out", str(out), "--tag", "kitchen-recycling-unit-test"),
             *("--human-reset-costs", "5", "100", "10000", "0", "--max-parallel", "36"),
+            *("--equivalence-reference", "none", "--equivalence-waiver", "unit-test package"),
         ],
         check=True,
         capture_output=True,

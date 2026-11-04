@@ -144,12 +144,16 @@ def host_record() -> dict:
 
 
 def check_equivalence(*, launch: Path, manifest: dict) -> None:
-    """A manifest that binds an equivalence reference (or a waiver) needs the gate's
-    passing (or waived) record, bound to this launch and carried verbatim into the full
-    authorization's provenance. A manifest without one is checked as it always was."""
+    """Mandatory from v11: the manifest binds an equivalence reference (or a waiver), and
+    the gate's passing (or waived) record is bound to this launch and carried verbatim
+    into the full authorization's provenance. Launches before v11 ran their own frozen
+    copy of this file and are unaffected."""
     block = manifest.get("equivalence")
     if block is None:
-        return
+        raise ValueError(
+            "The manifest records neither an equivalence reference nor a waiver "
+            "(prepare.py --equivalence-reference)"
+        )
     record = read(path=launch / "equivalence-check.json")
     if record.get("binding") != binding(launch=launch):
         raise ValueError("The equivalence record's binding is not this launch's")

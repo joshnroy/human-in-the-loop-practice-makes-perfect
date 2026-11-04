@@ -42,7 +42,23 @@ V9_STYLE_DIGESTS = {
 }
 
 
-def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
+# From v11 every package binds an equivalence reference or records a waiver
+# (equivalence.py). These tests are about everything else, so they record one.
+WAIVER = ("--equivalence-reference", "none", "--equivalence-waiver", "unit-test package")
+WAIVER_RECORD = {"reference_root": None, "waiver": "unit-test package"}
+
+
+def without_equivalence(*, path: Path) -> bytes:
+    """A manifest's bytes as prepare.py wrote them before the equivalence key existed:
+    the key removed, serialised exactly as prepare.py serialises (indent 2, newline).
+    The key is the only addition; every other byte must match the old digest."""
+    manifest = json.loads(path.read_text())
+    if manifest.pop("equivalence") != WAIVER_RECORD:
+        raise AssertionError("expected the unit-test waiver")
+    return (json.dumps(manifest, indent=2) + "\n").encode()
+
+
+def prepared(*, directory: str, extra: tuple[str, ...] = (), waiver: bool = True) -> Path:
     output = Path(directory) / "launch"
     subprocess.run(
         [
@@ -53,6 +69,7 @@ def prepared(*, directory: str, extra: tuple[str, ...] = ()) -> Path:
             "--tag",
             "kitchen-recycling-unit-test",
             *extra,
+            *(WAIVER if waiver else ()),
         ],
         check=True,
         capture_output=True,
@@ -128,6 +145,7 @@ class PackagingTests(unittest.TestCase):
                 "kitchen-recycling-unit-test",
                 "--max-parallel",
                 "4",
+                *WAIVER,
             ]
             subprocess.run(command, check=True, capture_output=True)
             manifest = json.loads((output / "manifest.json").read_text())
@@ -146,24 +164,36 @@ class PackagingTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
             self.assertFalse((output / "authorization.json").exists())
 
+    def assert_digests(self, *, output: Path, digests: dict) -> None:
+        """commands.txt and both sbatch scripts byte-for-byte; the manifest byte-for-byte
+        once its one new key, the equivalence waiver, is taken out (without_equivalence)."""
+        for name, digest in digests.items():
+            with self.subTest(file=name):
+                data = (
+                    without_equivalence(path=output / name)
+                    if name == "manifest.json"
+                    else (output / name).read_bytes()
+                )
+                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+
     def test_defaults_leave_a_v8_style_package_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:
-            output = prepared(directory=directory)
-            for name, digest in V8_STYLE_DIGESTS.items():
-                with self.subTest(file=name):
-                    self.assertEqual(
-                        hashlib.sha256((output / name).read_bytes()).hexdigest(), digest
-                    )
+            self.assert_digests(output=prepared(directory=directory), digests=V8_STYLE_DIGESTS)
 
     def test_no_sweep_leaves_a_v9_style_package_byte_identical(self):
         with tempfile.TemporaryDirectory() as directory:
             output = prepared(directory=directory, extra=V9_STYLE_ARGS)
             self.assertFalse((output / "costs").exists())
-            for name, digest in V9_STYLE_DIGESTS.items():
-                with self.subTest(file=name):
-                    self.assertEqual(
-                        hashlib.sha256((output / name).read_bytes()).hexdigest(), digest
-                    )
+            self.assert_digests(output=output, digests=V9_STYLE_DIGESTS)
+
+    def test_a_package_needs_an_equivalence_reference_or_a_waiver(self):
+        """Mandatory from v11 (Josh, 2026-11-04). Packages already launched were frozen
+        with their own copy of this script and are unaffected."""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                prepared(directory=directory, waiver=False)
+            self.assertIn(b"--equivalence-reference", raised.exception.stderr)
+            self.assertFalse((Path(directory) / "launch").exists())
 
     def test_budget_and_evaluation_workers_reach_every_row(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -500,6 +530,7 @@ class PackagingTests(unittest.TestCase):
                 directory,
                 "--tag",
                 "t3-ours-sidefree-20261030-0912",
+                *WAIVER,  # So only the tag can be what it refuses.
             ]
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 

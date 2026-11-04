@@ -156,8 +156,9 @@ def write_run(
             json.dumps({"task": number, "label": "PickCube", "timestamp": f"t{tasks}"}) + "\n"
         )
     if cpu is not None:
+        node = f"della-h1{tasks}n1"
         (directory / "host.json").write_text(
-            json.dumps({"cpu_model": cpu, "hostname": f"della-h1{tasks}n1"})
+            json.dumps({"cpu_model": cpu, "hostname": node, "slurm": {"SLURMD_NODENAME": node}})
         )
     return directory
 
@@ -193,7 +194,7 @@ def test_a_matching_pair_passes(*, tmp_path: Path) -> None:
     assert summary["step_events"] == 4
     assert summary["decisions"] == {"file": "pomdp_decisions.jsonl", "records": 8}
     assert summary["evaluation_tasks"] == 2
-    assert summary["cpu_model"] == CPU
+    assert summary["cpu_identity"] == {"basis": "host.json cpu_model", "cpu_model": CPU}
 
 
 def test_a_one_event_divergence_fails_naming_the_event(*, tmp_path: Path) -> None:
@@ -238,10 +239,112 @@ def test_a_cpu_model_mismatch_refuses(*, tmp_path: Path) -> None:
         equivalence.compare_run(smoke=smoke, reference=reference)
 
 
-def test_a_run_without_recorded_host_refuses(*, tmp_path: Path) -> None:
-    smoke, reference = pair(root=tmp_path, reference_cpu=None)
+def test_a_smoke_without_recorded_host_refuses(*, tmp_path: Path) -> None:
+    smoke, reference = pair(root=tmp_path)
+    (smoke / "host.json").unlink()
     with pytest.raises(equivalence.CpuMismatch, match="host.json"):
+        equivalence.compare_run(smoke=smoke, reference=reference, reference_job="16840531_1")
+
+
+def test_a_legacy_reference_without_a_slurm_job_refuses(*, tmp_path: Path) -> None:
+    smoke, reference = pair(root=tmp_path, reference_cpu=None)
+    with pytest.raises(equivalence.CpuMismatch, match="host.json.*Slurm job"):
         equivalence.compare_run(smoke=smoke, reference=reference)
+
+
+GENOA = {"amd", "genoa", "rh9", "nvme"}
+CASCADE = {"intel", "cascade", "rh9"}
+
+
+def legacy_slurm(*, features: dict[str, set[str]]):
+    """Stand-ins for sacct (the legacy reference job's node) and sinfo (a node's
+    features), so no test needs a cluster."""
+    return (
+        patch.object(equivalence, "slurm_node", return_value="della-h16n13"),
+        patch.object(equivalence, "node_features", side_effect=lambda *, node: features[node]),
+    )
+
+
+def test_a_legacy_reference_is_accepted_on_a_shared_genoa_feature(*, tmp_path: Path) -> None:
+    """Kitchen v10 wrote no host.json: its CPU identity is its Slurm node's feature."""
+    smoke, reference = pair(root=tmp_path, reference_cpu=None)
+    node, features = legacy_slurm(features={"della-h12n1": GENOA, "della-h16n13": GENOA})
+    with node as sacct, features:
+        summary = equivalence.compare_run(
+            smoke=smoke, reference=reference, reference_job="16840531_1"
+        )
+    sacct.assert_called_once_with(job="16840531_1")
+    assert summary["cpu_identity"] == {
+        "basis": "slurm-feature:genoa",
+        "smoke_node": "della-h12n1",
+        "reference_node": "della-h16n13",
+        "reference_job": "16840531_1",
+    }
+
+
+@pytest.mark.parametrize(
+    ("smoke_features", "reference_features"), [(GENOA, CASCADE), (CASCADE, GENOA)]
+)
+def test_a_legacy_reference_is_refused_without_a_shared_genoa_feature(
+    *, tmp_path: Path, smoke_features: set[str], reference_features: set[str]
+) -> None:
+    smoke, reference = pair(root=tmp_path, reference_cpu=None)
+    node, features = legacy_slurm(
+        features={"della-h12n1": smoke_features, "della-h16n13": reference_features}
+    )
+    with node, features, pytest.raises(equivalence.CpuMismatch, match="genoa"):
+        equivalence.compare_run(smoke=smoke, reference=reference, reference_job="16840531_1")
+
+
+def test_a_reference_with_host_json_still_needs_the_exact_model(*, tmp_path: Path) -> None:
+    """The Slurm feature is only for references that recorded no model."""
+    smoke, reference = pair(root=tmp_path, reference_cpu="AMD EPYC 9655 96-Core Processor")
+    node, features = legacy_slurm(features={"della-h12n1": GENOA, "della-h16n13": GENOA})
+    with node, features, pytest.raises(equivalence.CpuMismatch, match="9655"):
+        equivalence.compare_run(smoke=smoke, reference=reference, reference_job="16840531_1")
+
+
+@pytest.mark.parametrize(
+    ("output", "node"),
+    [
+        ("16840531_1|della-h16n13\n", "della-h16n13"),
+        ("16840531_1|della-h16n13\n16840531_1|della-h16n14\n", None),
+        ("16840531_1|della-h16n[13-14]\n", None),
+        ("", None),
+    ],
+)
+def test_sacct_must_name_exactly_one_node(*, output: str, node: str | None) -> None:
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=output)
+    with patch.object(equivalence.subprocess, "run", return_value=completed) as run:
+        if node is None:
+            with pytest.raises(equivalence.CpuMismatch, match="sacct"):
+                equivalence.slurm_node(job="16840531_1")
+        else:
+            assert equivalence.slurm_node(job="16840531_1") == node
+    assert run.call_args.args[0][0] == "sacct"
+
+
+def test_node_features_are_read_from_sinfo() -> None:
+    completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="amd,genoa,rh9,nvme\n")
+    with patch.object(equivalence.subprocess, "run", return_value=completed) as run:
+        assert equivalence.node_features(node="della-h16n13") == GENOA
+    assert run.call_args.args[0][0] == "sinfo"
+
+
+@pytest.mark.parametrize("logs", [[], ["a-full-16840531_1.out", "a-full-16850000_1.out"]])
+def test_a_legacy_reference_job_must_be_one_array_task(*, tmp_path: Path, logs: list) -> None:
+    (tmp_path / "logs").mkdir()
+    for name in [*logs, "a-full-16840531_11.out", "a-smoke-16840529_4294967294.out"]:
+        (tmp_path / "logs" / name).write_text("")
+    with pytest.raises(equivalence.CpuMismatch, match="logs"):
+        equivalence.reference_job(reference_root=tmp_path, index=1)
+
+
+def test_a_legacy_reference_job_is_read_from_its_full_array_log(*, tmp_path: Path) -> None:
+    (tmp_path / "logs").mkdir()
+    for name in ("v10-full-16840531_1.out", "v10-full-16840531_11.out", "gate-16840530.out"):
+        (tmp_path / "logs" / name).write_text("")
+    assert equivalence.reference_job(reference_root=tmp_path, index=1) == "16840531_1"
 
 
 def test_a_smoke_with_nothing_before_its_budget_refuses(*, tmp_path: Path) -> None:
@@ -277,20 +380,23 @@ def run_prepare(*, out: Path, tag: str, extra: tuple[str, ...] = ()) -> subproce
     )
 
 
+WAIVER = ("--equivalence-reference", "none", "--equivalence-waiver", "unit-test package")
+
+
 @pytest.fixture
 def reference_launch(*, tmp_path: Path) -> Path:
     """A previous launch's package, its manifest where Della keeps it: <root>/launch."""
     out = tmp_path / "kitchen-recycling-reference" / "launch"
-    assert run_prepare(out=out, tag="kitchen-recycling-reference").returncode == 0
+    assert run_prepare(out=out, tag="kitchen-recycling-reference", extra=WAIVER).returncode == 0
     return out.parent
 
 
 def test_prepare_binds_each_smoke_row_to_its_reference_run(
     *, tmp_path: Path, reference_launch: Path
 ) -> None:
-    plain = tmp_path / "plain"
+    waived = tmp_path / "waived"
     bound = tmp_path / "bound"
-    assert run_prepare(out=plain, tag="kitchen-recycling-new").returncode == 0
+    assert run_prepare(out=waived, tag="kitchen-recycling-new", extra=WAIVER).returncode == 0
     result = run_prepare(
         out=bound,
         tag="kitchen-recycling-new",
@@ -299,10 +405,12 @@ def test_prepare_binds_each_smoke_row_to_its_reference_run(
     assert result.returncode == 0, result.stderr
     manifest = json.loads((bound / "manifest.json").read_text())
     block = manifest.pop("equivalence")
-    # Only the manifest gains a key; rows, commands and scripts are what they were.
-    assert manifest == json.loads((plain / "manifest.json").read_text())
+    # Only the manifest's equivalence key differs; rows, commands and scripts do not.
+    other = json.loads((waived / "manifest.json").read_text())
+    assert other.pop("equivalence") == {"reference_root": None, "waiver": "unit-test package"}
+    assert manifest == other
     for name in ("commands.txt", "smoke.sbatch", "full.sbatch"):
-        assert (bound / name).read_bytes() == (plain / name).read_bytes()
+        assert (bound / name).read_bytes() == (waived / name).read_bytes()
     reference_manifest = reference_launch / "launch" / "manifest.json"
     assert block == {
         "reference_root": str(reference_launch),
@@ -427,6 +535,7 @@ def test_a_waiver_is_recorded_in_the_manifest(*, tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "extra",
     [
+        (),  # Mandatory from v11: a package binds a reference or records a waiver.
         ("--equivalence-reference", "none"),
         ("--equivalence-reference", "none", "--equivalence-waiver", "  "),
         ("--equivalence-waiver", "no reference named"),
@@ -469,15 +578,23 @@ def bound_launch(*, tmp_path: Path, block: dict) -> Path:
     return launch
 
 
-def bound_pair(*, tmp_path: Path, reference_decisions: list[dict] | None = None) -> Path:
+def bound_pair(
+    *,
+    tmp_path: Path,
+    reference_decisions: list[dict] | None = None,
+    legacy_curtis: bool = False,
+) -> Path:
     reference_root = tmp_path / "reference-root"
     (reference_root / "launch").mkdir(parents=True)
     (reference_root / "launch" / "manifest.json").write_text('{"runs": []}')
+    (reference_root / "logs").mkdir()
+    (reference_root / "logs" / "ref-full-16840531_2.out").write_text("")
     runs = []
     for index, arm in enumerate(prepare.ARMS):
         smoke, reference = pair(
             root=tmp_path / arm,
             reference_decisions=reference_decisions if arm == "curtis" else None,
+            reference_cpu=None if legacy_curtis and arm == "curtis" else CPU,
         )
         target = tmp_path / "deploy" / "smoke" / "reset-cost-5" / arm / "0"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -502,6 +619,24 @@ def test_the_gate_check_records_a_pass_bound_to_the_launch(*, tmp_path: Path) ->
     assert record["binding"] == worker.binding(launch=launch)
     assert [run["arm"] for run in record["runs"]] == list(prepare.ARMS)
     assert all(run["step_events"] == 4 for run in record["runs"])
+
+
+def test_the_gate_check_records_which_cpu_identity_it_used(*, tmp_path: Path) -> None:
+    """A legacy reference row's job comes from its full-array log; the record says the
+    Slurm feature, not a CPU model, matched it."""
+    launch = bound_pair(tmp_path=tmp_path, legacy_curtis=True)
+    node, features = legacy_slurm(features={"della-h12n1": GENOA, "della-h16n13": GENOA})
+    with node as sacct, features:
+        record = equivalence.check(launch=launch)
+    sacct.assert_called_once_with(job="16840531_2")
+    identities = [run["cpu_identity"] for run in record["runs"]]
+    assert identities[:2] == [{"basis": "host.json cpu_model", "cpu_model": CPU}] * 2
+    assert identities[2] == {
+        "basis": "slurm-feature:genoa",
+        "smoke_node": "della-h12n1",
+        "reference_node": "della-h16n13",
+        "reference_job": "16840531_2",
+    }
 
 
 def test_the_gate_check_fails_without_writing_a_record(*, tmp_path: Path) -> None:
@@ -553,8 +688,9 @@ def test_the_full_worker_requires_the_record_in_authorization_provenance(*, tmp_
         worker.check_equivalence(launch=launch, manifest=manifest)
     provenance.write_text(json.dumps({"phase": "full", "equivalence": record}))
     worker.check_equivalence(launch=launch, manifest=manifest)
-    # A launch prepared without the option is checked as it always was.
-    worker.check_equivalence(launch=launch, manifest={"runs": []})
+    # Mandatory from v11: a manifest with neither a reference nor a waiver is refused.
+    with pytest.raises(ValueError, match="neither an equivalence reference nor a waiver"):
+        worker.check_equivalence(launch=launch, manifest={"runs": []})
 
 
 def test_the_full_worker_refuses_a_failed_or_stale_record(*, tmp_path: Path) -> None:
