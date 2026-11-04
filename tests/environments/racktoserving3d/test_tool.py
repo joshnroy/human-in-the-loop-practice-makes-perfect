@@ -311,10 +311,28 @@ def test_joint_clearance_rejects_old_ik_collision_cost():
         tool.check_configuration(base=np.zeros(3), arm=np.zeros(7), holding=False)
 
 
-def test_return_uses_release_guard_without_requiring_new_shelf_methods():
+def _planned(*, monkeypatch, tool):
+    """Stand in for the PyBullet planner and the path followers: these tests are about
+    the scripted contact motions after the planned carry."""
+    from hitl_pmp.environments.racktoserving3d import planning
+
+    plan = planning.ScraperPlan(
+        stance=tool.base.copy(), base_path=[tool.base.copy()], arm_after_base=[np.zeros(7)]
+    )
+    monkeypatch.setattr(
+        planning.ScraperMotionPlanner,
+        "plan_return",
+        staticmethod(lambda **_: (plan, np.zeros(3))),
+    )
+    tool.follow_arm_path = Mock()
+    tool.follow_base_path = Mock()
+    tool.settle_hand = Mock()
+
+
+def test_return_uses_release_guard_without_requiring_new_shelf_methods(*, monkeypatch):
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
-    tool._stance = tool.base.copy()  # the stance search needs a real IK
+    _planned(monkeypatch=monkeypatch, tool=tool)
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
@@ -340,19 +358,16 @@ def test_return_uses_release_guard_without_requiring_new_shelf_methods():
     assert shelf.hold.call_args_list[0].kwargs["label"] == "place_wiper_release"
     assert tool.at_home.call_count == 10
     assert [call.kwargs["label"] for call in tool.line.call_args_list] == [
-        "place_wiper_raise",
-        "place_wiper_carry",
-        "place_wiper_untilt",
         "place_wiper_lower",
         "place_wiper_retreat",
         "place_wiper_clear",
     ]
 
 
-def test_return_without_support_retains_the_physical_grasp():
+def test_return_without_support_retains_the_physical_grasp(*, monkeypatch):
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
-    tool._stance = tool.base.copy()  # the stance search needs a real IK
+    _planned(monkeypatch=monkeypatch, tool=tool)
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
