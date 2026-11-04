@@ -452,7 +452,7 @@ class PotstickerController(PracticePourController):
                 self.scratch.site_xpos[self.site] - position,
                 0.22 * (rotation * actual.inv()).as_rotvec(),
                 0.002 * (q - previous),
-                self.posture_weight * (q[4] - self.posture),
+                self.posture_weight * self.posture_offset(angle=q[4], posture=self.posture),
                 self.obstacle_residual(),
             ]
 
