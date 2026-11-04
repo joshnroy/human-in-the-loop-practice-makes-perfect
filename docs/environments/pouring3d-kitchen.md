@@ -8,7 +8,8 @@ learning algorithm and launches no training experiments.
 
 Weekend practice uses **cold** dumplings and a **dry, unheated pan**.
 Water is deployment-only scene geometry, not a planner predicate. The robot chooses
-Pour1, Pour2 or Pour3 and learns each skill's ordinary three-dimensional sampler.
+Pour1, Pour2 or Pour3 and learns each skill's ordinary one-dimensional sampler, over
+the closed-loop pour's tilt ramp rate.
 It may retrieve individual pieces using the robot, or request
 `human_bulk_pour_back`. The latter costs a finite, strictly positive interruption
 cost (default 5, in the learner's existing practice-cost units). The environment
@@ -80,7 +81,7 @@ rendered objects are dumplings.
 | Skill | Discrete objects / choice | Continuous learned parameters |
 | --- | --- | --- |
 | PickPitcher | Robot, jug, pan, ordered ingredient objects | None |
-| Pour1 / Pour2 / Pour3 | Separate skills; matching count token, robot, jug, pan, ingredients | Tilt (degrees), sideways amplitude (m), feeding duration (s) |
+| Pour1 / Pour2 / Pour3 | Separate skills; matching count token, robot, jug, pan, ingredients | Tilt ramp rate past 80 deg (deg/s, 0.25-5) |
 | PlacePitcherAtHome | Robot, jug, count token | None |
 | PickShrimpFromTray / Floor / Surface | Robot, ingredient; pan for tray pickup | None |
 | DropShrimpIntoPitcher | Robot, ingredient, jug | None |
@@ -89,13 +90,45 @@ rendered objects are dumplings.
 | ActivateCooking | Robot, active count token, hob; deployment only | None |
 | MoveAway | Robot, active count token, hob; deployment only | None |
 
-Pouring uses the existing `joint_lateral` controller: measured arm/joint tracking,
-prescribed tilt, horizontal wiggle perpendicular to the pour direction, independent
-amplitude and duration. It does not predict future ingredient motion or stop at an
-oracle count. Requested count selects the skill and scores the observed result.
+### The closed-loop Pour
+
+Each Pour (Josh, 2026-11-04) replaces the open-loop tilt-hold-wiggle pour, whose
+outcome was all-or-nothing in its three parameters and sensitive to the seed:
+
+1. Carry the jug and level it at the pour start, unchanged (planned carry, below).
+2. **Approach**: tilt to 80 deg at the carry tilt speed, 10 deg/s. 80 deg is short of
+   the ~86 deg slide onset, so the approach moves no dumpling.
+3. **Ramp**: past 80 deg, tilt at the learned **ramp rate** while wiggling the jug
+   40 mm sideways (the inherited 1 Hz waveform with its 0.5 s ease-in), up to 95 deg,
+   the approved wrist ceiling.
+4. **Cutoff**: stop the moment the requested count `k` has left the jug, read from the
+   simulator's true dumpling locations with no delay (an idealised observation, not a
+   perception model). The cutoff counts dumplings that have *left the jug*, not ones
+   that have landed in the pan: a dumpling that leaves and misses the skillet is a spill,
+   and the pour fails (Josh, 2026-11-04: a real failure mode, not damped away).
+5. Return upright at a fixed 45 deg/s (the wiggle fades over 0.3 s), close the loop on
+   the jug's measured tilt until it is within 3 deg of upright, then wait the fixed 30 s
+   settle. Success is exactly `k` in the pan, the rest in the jug, settled by position.
+
+The cutoff cannot take back a dumpling already on its way out, so a fast ramp
+overshoots. That is the trade-off the learned rate faces: 1 deg/s delivered Pour1 and
+Pour2 exactly on seeds 0-3 in the prototype, while 2 deg/s overshot (Pour1 2/4,
+Pour2 0/4 successes). `test_kitchen_position_settled.py` pins both ends on the canonical
+seed. The bounds are `--pour-ramp-rate-bounds` (default 0.25-5 deg/s; 0.25 keeps the
+80-95 deg ramp within 60 s). The open-loop `--pour-tilt-bounds`,
+`--pour-amplitude-bounds` and `--pour-duration-bounds` are refused for the kitchen.
+
+The native action is `[skill, dumpling index, k, ramp rate, 0, 0]`; slots 4 and 5 held
+the open-loop wiggle and duration and must now be 0. The ramp, like the prototype,
+neither waits on joint tracking at each waypoint nor widens the IK clearance margin; the
+return and the upright check do both. The legacy `pouring3d` environment keeps its
+open-loop pour and three parameters.
+
+### Support motions
+
 Support motions retain native IK checks, add a sampled whole-base-path preflight
-including the carried jug, and check an ingredient lift continuation before grasping. Carrying/pouring use
-a larger IK clearance margin and wait on measured joint tracking before advancing
+including the carried jug, and check an ingredient lift continuation before grasping.
+Carrying and the pour's return use a larger IK clearance margin and wait on measured joint tracking before advancing
 loaded transport waypoints. Ingredients and
 partial outcomes are not snapped into desired bins after robot actions.
 
@@ -164,8 +197,8 @@ configuration (provisional, until the spill angle is measured): the arm tucks th
 into a carry pose 0.45 m ahead of the base and 1.10 m high; the base drives to the pour
 pose with arm and jug checked in 3-D; the arm moves the jug to the pour start above the
 pan. The goal configuration is the closest IKFast solution that is collision-free and
-upright, not simply the closest. The tilt, wiggle and return of the pour stay the
-scripted closed-loop controller. Measured in MuJoCo on 2026-11-02: closest approach
+upright, not simply the closest. The tilt, wiggle and return of the pour stay
+scripted (the closed-loop Pour above). Measured in MuJoCo on 2026-11-02: closest approach
 3.14 cm, jug tilt at most 11.5 deg (it hangs 3.6 deg in the compliant grasp), no
 dumpling lost.
 
