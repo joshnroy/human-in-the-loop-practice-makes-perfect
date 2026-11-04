@@ -121,7 +121,13 @@ class PlanningClearance(BaseModel):
         if c.phase in DUMPLING_CONTACT_PHASES:
             touchable.update((*c.scene.cube_names, *DUMPLING_SUPPORTS))
         if c.phase in PITCHER_CONTACT_PHASES:
+            # The dumplings in the jug ride with it from the moment the hand closes.
             touchable.update(PITCHER_SUPPORTS)
+            touchable.update(
+                name
+                for name, at in zip(c.scene.cube_names, c.scene.cube_locations(), strict=True)
+                if at == "pitcher"
+            )
         return frozenset(ignored), frozenset(touchable)
 
     def closest(
