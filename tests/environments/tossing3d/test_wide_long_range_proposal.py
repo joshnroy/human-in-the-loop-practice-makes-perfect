@@ -210,18 +210,28 @@ def test_every_witness_rung_has_a_plannable_direction_at_both_sides_receivers() 
     """The direction selector, with the real base planner, finds a stand at every
     witness standoff rung both at the natural far bin the scene resets with and at
     representative robot-side receivers (the corners and centre of the grasp-safe
-    region) -- a `NoFeasibleTossDirectionError` here would be a pool-breaking hole."""
+    region) -- a `NoFeasibleTossDirectionError` here would be a pool-breaking hole.
+
+    Asked of states holding the cube, as every toss is: the check plans the carried arm
+    and cube as the toss controller does, which a cube on the floor would make
+    meaningless. The first is a recorded toss dispatch state at the natural far bin
+    (seed 125's scene); the second, the same grasp carried to `trap2_stuck_state.json`'s
+    base pose, the robot-side receivers' original question."""
     import json as jsonlib
     from pathlib import Path
 
     from hitl_pmp.environments.tossing3d.toss_direction import TossDirectionSelector
 
-    stuck_path = Path(__file__).parent / "fixtures" / "trap2_stuck_state.json"
-    plain = jsonlib.loads(stuck_path.read_text())
+    fixtures = Path(__file__).parent / "fixtures" / "toss_check"
+    far = jsonlib.loads((fixtures / "tossing3d_tc0_step114.json").read_text())["state"]
+    plain = jsonlib.loads((fixtures / "tossing3d_tc0_step114_at_trap2_pose.json").read_text())[
+        "state"
+    ]
     env = Tossing3DEnvironment()
     rungs = sorted({standoff for standoff, *_ in ROBOT_SIDE_WITNESSES})
     try:
-        initial = env.reset_to_seed(seed=125)
+        env.reset_to_seed(seed=125)
+        initial = env.restore_plain_snapshot(plain=far, dtype=np.float64)
         bin_x = float(initial.get(obj=env.bin, feature_name="x"))
         for standoff in rungs:
             choice = TossDirectionSelector.select_for_state(state=initial, standoff=standoff)
@@ -229,7 +239,7 @@ def test_every_witness_rung_has_a_plannable_direction_at_both_sides_receivers() 
         for bin_xy in ((-0.9, -1.0), (-0.35, 0.0), (0.2, 1.5), (-0.65, -1.0)):
             moved = jsonlib.loads(jsonlib.dumps(plain))
             moved["bin_0"][0], moved["bin_0"][1] = bin_xy
-            state = env.restore_plain_snapshot(plain=moved)
+            state = env.restore_plain_snapshot(plain=moved, dtype=np.float64)
             for standoff in rungs:
                 TossDirectionSelector.select_for_state(state=state, standoff=standoff)
     finally:

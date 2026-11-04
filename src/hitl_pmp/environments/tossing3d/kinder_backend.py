@@ -787,11 +787,16 @@ class KinderBackend(BaseModel):
 
     @staticmethod
     def snapshot_digest(*, snapshot: Any) -> str | None:
-        """A digest of every object's name and exact feature bytes; `None` for none."""
+        """A digest of every object's name and exact feature bytes; `None` for none, and
+        only the identity of an opaque stand-in that is not a state at all."""
         if snapshot is None:
             return None
+        try:
+            objects = sorted(snapshot, key=lambda obj: obj.name)
+        except TypeError:
+            return f"id:{id(snapshot)}"
         digest = hashlib.sha256()
-        for obj in sorted(snapshot, key=lambda obj: obj.name):
+        for obj in objects:
             digest.update(obj.name.encode() + b"\0" + np.asarray(snapshot[obj]).tobytes())
         return digest.hexdigest()
 

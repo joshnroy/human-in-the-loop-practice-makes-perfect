@@ -263,3 +263,61 @@ def test_the_plan_cache_tells_apart_states_with_one_planar_geometry(*, monkeypat
     for snapshot in [*snapshots, *snapshots]:
         TossDirectionSelector.select(geometry=geometry, snapshot=snapshot, standoff=1.5)
     assert asked == snapshots
+
+
+@needs_kinder
+def test_a_stand_the_footprint_alone_admits_but_the_controller_refuses_is_refused() -> None:
+    """A constructed holding state: the base faces the west wall with its footprint 1 cm
+    clear, so the arm it carries at the retract configuration (reaching ~0.31 m ahead of
+    the base centre against a 0.275 m half-footprint) overhangs the wall. Main's check
+    planned the base footprint alone and accepted far-bin stands from here; the
+    dispatched controller refuses them, and so must the check."""
+    from kinder_models.dynamic3d.utils import (
+        WORLD_X_BOUNDS,
+        WORLD_Y_BOUNDS,
+        get_overhead_object_se2_pose,
+        get_target_robot_pose_from_parameters,
+        run_base_motion_planning,
+    )
+
+    env = environment(fixture=load(name="tossing3d_tc0_step114_arm_over_west_wall.json"))
+    try:
+        state = env.get_current_state()
+        snapshot = state.object_centric
+        backend = env.backend()
+        standoff, rotation = 1.8, TossDirectionSelector.rotation(direction_deg=0)
+        distance, rot32 = np.asarray([standoff, rotation], dtype=np.float32)
+        target = get_target_robot_pose_from_parameters(
+            get_overhead_object_se2_pose(snapshot, snapshot.get_object_from_name("bin_0")),
+            distance,
+            rot32,
+        )
+        # Main's check, as it called the planner for a scene with no drive zone.
+        footprint_only = run_base_motion_planning(
+            state=snapshot,
+            target_base_pose=target,
+            x_bounds=WORLD_X_BOUNDS,
+            y_bounds=WORLD_Y_BOUNDS,
+            seed=0,
+            disable_collision_objects=["cube_0"],
+        )
+        assert footprint_only is not None, "the footprint alone no longer plans this stand"
+        controller = backend._ground_controller(
+            module="tossing",
+            key="move_to_toss_location_and_toss",
+            object_names=(backend.robot_name, backend.cube_name, backend.barrier_name),
+            state=snapshot,
+        )
+        with pytest.raises(BaseException, match="planning failed"):
+            controller.reset(snapshot, np.asarray([standoff, rotation, 3.0, 500.0]))
+        TossDirectionSelector.clear_plan_cache()
+        assert (
+            TossDirectionSelector.base_plan_failure(
+                snapshot=snapshot, distance=standoff, rotation=rotation
+            )
+            is not None
+        )
+        with pytest.raises(NoFeasibleTossDirectionError):
+            TossDirectionSelector.select_for_state(state=state, standoff=standoff)
+    finally:
+        env.close()
