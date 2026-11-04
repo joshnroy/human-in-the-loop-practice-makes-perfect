@@ -20,7 +20,7 @@ pytestmark = [
 ]
 
 
-def test_native_wait_stops_after_three_control_steps_and_adopts_without_moving():
+def test_native_pick_scraper_stops_after_three_control_steps_and_adopts_without_moving():
     env = RackServingEnvironment(scene_bg=False)
     try:
         env.hard_reset()
@@ -28,7 +28,7 @@ def test_native_wait_stops_after_three_control_steps_and_adopts_without_moving()
         initial_steps = backend.control_steps()
         clock = PracticeClock(budget=3, interval=100, robot_active=True, on_measure=lambda: None)
         env.set_control_step_observers(before=clock.before_robot_step, after=clock.after_robot_step)
-        action = np.array([SKILL_IDS["Wait"], 0, 0, 0], dtype=float)
+        action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0], dtype=float)
         with pytest.raises(ControlStepLimitReached):
             env.take_action(action=action)
         env.set_control_step_observers(before=None, after=None)

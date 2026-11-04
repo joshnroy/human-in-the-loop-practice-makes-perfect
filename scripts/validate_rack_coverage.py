@@ -1,16 +1,14 @@
 """Bounded, serial existential rack coverage with durable per-attempt evidence.
 
 Example: scripts/with_env.sh python scripts/validate_rack_coverage.py --dry-run
-    --output artifacts/rack-coverage-plan --seeds 0 1 --pair 0 0 --pair 0.04 15
+    --output artifacts/rack-coverage-plan --seeds 0 1 --params 0.07 0.015 0.10
 
-A pair is SweepRack(dy metres, phi degrees). --pile-centred-baseline appends
-(dy = measured y-centroid of the food on the rack, clipped to bounds; phi = 0),
-resolved per trial from that trial's own measured initial state.
+A parameter set is GatherAndSweep(s metres, delta metres, d metres).
 
 Default is dry-run. Native execution requires --run --physical-witness-confirmed;
 that flag attests main has cleared physical validity, it does not establish it.
 Run native experiments through external run-heavy, memory caps and timeout.
-Different states may use different successful pairs. Fixed layouts are seed-
+Different states may use different successful param_sets. Fixed layouts are seed-
 independent repeats, not additional layout coverage. Finite coverage is not proof.
 """
 
@@ -33,6 +31,12 @@ from typing import Any
 
 class Coverage:
     """Serial supervisor; each native attempt owns a fresh disposable process."""
+
+    @staticmethod
+    def params_entry(*, params: tuple[float, ...]) -> dict[str, float]:
+        """One GatherAndSweep parameter set as its manifest entry."""
+        s, delta, d = params
+        return {"s_m": float(s), "delta_m": float(delta), "d_m": float(d)}
 
     @staticmethod
     def write(*, path: Path, payload: dict[str, Any]) -> None:
@@ -81,8 +85,8 @@ class Coverage:
         states = summary["states"]
         valid = summary["stop_reason"] != "invalidating_issue"
         policies = []
-        for pair in summary["pairs"]:
-            attempts = [row for row in summary["attempts"] if row["pair"] == pair]
+        for params in summary["param_sets"]:
+            attempts = [row for row in summary["attempts"] if row["params"] == params]
             successful = {row["state_id"] for row in attempts if row["success"]}
             failed = {
                 row["state_id"]
@@ -92,7 +96,7 @@ class Coverage:
                 and not row.get("invalidating_issue")
             }
             policies.append({
-                "pair": pair,
+                "params": params,
                 "covered": len(successful),
                 "tested": len(successful | failed),
                 "total": len(states),
@@ -102,7 +106,7 @@ class Coverage:
                 ],
                 "all_states_covered": valid and len(successful) == len(states),
             })
-        witnesses = [policy["pair"] for policy in policies if policy["all_states_covered"]]
+        witnesses = [policy["params"] for policy in policies if policy["all_states_covered"]]
         status = "inconclusive"
         if not valid:
             status = "invalidated"
@@ -115,17 +119,18 @@ class Coverage:
             "evidence_valid": valid,
             "per_state_oracle": {"covered": covered, "total": len(states)},
             "constant_policy": next(
-                policy for policy in policies if policy["pair"] == summary["constant_pair"]
+                policy for policy in policies if policy["params"] == summary["constant_params"]
             ),
             "candidate_constant_policies": policies,
-            "common_pairs": witnesses,
-            "common_pair_status": status,
+            "common_param_sets": witnesses,
+            "common_params_status": status,
             "measured_distinct_layouts": sum(
                 state.get("initial") is not None and not state.get("duplicate_of")
                 for state in states
             ),
             "interpretation": (
-                "Finite sampled states/pairs only. Missing or interrupted trials are unresolved. "
+                "Finite sampled states/parameter sets only. Missing or interrupted trials are "
+                "unresolved. "
                 "A common witness permits a constant policy on these states; absence on this "
                 "grid does not prove parameter learning necessary. Robot-reset reachability "
                 "and hardware validity are not tested."
@@ -162,7 +167,7 @@ class Coverage:
         Coverage.write(path=output / "summary.json", payload=summary)
         try:
             for state in summary["states"]:
-                for pair in manifest["pairs"]:
+                for params in manifest["param_sets"]:
                     if time.monotonic() >= deadline:
                         summary["stop_reason"] = "timeout"
                         break
@@ -177,7 +182,7 @@ class Coverage:
                     trial_dir.mkdir()
                     request = {
                         "state": deepcopy(state),
-                        "pair": pair,
+                        "params": params,
                         "config": manifest["config"],
                         "limits": limits,
                         "deadline": min(
@@ -188,7 +193,7 @@ class Coverage:
                     Coverage.write(path=trial_dir / "request.json", payload=request)
                     attempt = {
                         "state_id": state["id"],
-                        "pair": pair,
+                        "params": params,
                         "directory": str(trial_dir),
                         "status": "running",
                         "success": False,
@@ -207,7 +212,9 @@ class Coverage:
                             or Coverage.same_initial(left=reference, right=initial)
                         )
                         if not attempt["initial_matches_reference"]:
-                            attempt["invalidating_issue"] = "initial state differs across pairs"
+                            attempt["invalidating_issue"] = (
+                                "initial state differs across param_sets"
+                            )
                         if reference is None:
                             state["initial"] = initial
                             state["measured_locations"] = initial["locations"]
@@ -249,8 +256,8 @@ class Coverage:
                         state["status"] = "covered" if state.get("witness") else "incomplete"
                     elif attempt["success"]:
                         state["status"] = "covered"
-                        state.setdefault("witness", pair)
-                        state.setdefault("successful_pairs", []).append(pair)
+                        state.setdefault("witness", params)
+                        state.setdefault("successful_param_sets", []).append(params)
                     else:
                         state["status"] = "covered" if state.get("witness") else "uncovered"
                     Coverage.compare(summary=summary)
@@ -343,31 +350,9 @@ class NativeTrial:
         )
 
     @staticmethod
-    def resolve_pair(
-        *, pair: dict[str, Any], initial: dict[str, Any], config: dict[str, Any]
-    ) -> tuple[float, float]:
-        """A fixed (dy, phi), or the pile-centred dy measured from this trial's initial state.
-
-        The pile is the food whose measured centre lies over the rack's footprint
-        (live rack pose, configured depth and width). Location labels are not
-        used: right after a human batch return the food is still dropping onto
-        the wires, so it is over the rack but not yet classified OnRack.
-        """
-        from hitl_pmp.environments.racktoserving3d.skills import SWEEP_BOUNDS
-
-        if pair.get("dy_source") != "pile_centroid":
-            return float(pair["dy_m"]), float(pair["phi_deg"])
-        rack_x, rack_y = initial["poses"]["rack_0"][:2]
-        over_rack = [
-            initial["poses"][name][1]
-            for name in initial["locations"]
-            if abs(initial["poses"][name][0] - rack_x) <= config["rack_depth"] / 2
-            and abs(initial["poses"][name][1] - rack_y) <= config["rack_width"] / 2
-        ]
-        if not over_rack:
-            raise RuntimeError("pile-centred baseline needs food measured over the rack")
-        (low, high), _ = SWEEP_BOUNDS
-        return float(min(high, max(low, sum(over_rack) / len(over_rack)))), float(pair["phi_deg"])
+    def resolve_params(*, params: dict[str, Any]) -> tuple[float, float, float]:
+        """The fixed (s, delta, d) of one GatherAndSweep parameter set."""
+        return float(params["s_m"]), float(params["delta_m"]), float(params["d_m"])
 
     @staticmethod
     def physical_category(*, location: str | None, supports: frozenset[str], settled: bool) -> str:
@@ -497,17 +482,15 @@ class NativeTrial:
             if reference is not None and not Coverage.same_initial(
                 left=reference, right=result["initial"]
             ):
-                raise RuntimeError("initial state differs across pairs")
-            dy, phi = NativeTrial.resolve_pair(
-                pair=request["pair"], initial=result["initial"], config=request["config"]
-            )
-            result["resolved_pair"] = {"dy_m": dy, "phi_deg": phi}
+                raise RuntimeError("initial state differs across param_sets")
+            s, delta, d = NativeTrial.resolve_params(params=request["params"])
+            result["resolved_params"] = {"s_m": s, "delta_m": delta, "d_m": d}
             measure()
-            for skill in ("Wait", "PickScraper", "SweepRack", "ReturnScraper"):
+            for skill in ("PickScraper", "GatherAndSweep", "ReturnScraper"):
                 phase_start = env.backend().control_steps()
                 result["phase"] = skill
                 persist()
-                action = np.array([SKILL_IDS[skill], 0, dy, phi])
+                action = np.array([SKILL_IDS[skill], 0, s, delta, d])
                 env.take_action(action=action)
                 error = env.last_skill_error()
                 if error:
@@ -520,7 +503,7 @@ class NativeTrial:
                 if skill == "ReturnScraper":
                     result["return_completed"] = error is None
                 measure()
-                if error and skill in ("Wait", "PickScraper"):
+                if error and skill == "PickScraper":
                     break
             phase_start = env.backend().control_steps()
             result["phase"] = "settling"
@@ -574,8 +557,7 @@ def build_manifest(
     *,
     seeds: list[int] | None = None,
     layouts: list[str] | None = None,
-    pairs: list[tuple[float, float]] | None = None,
-    pile_centred_baseline: bool = False,
+    param_sets: list[tuple[float, float, float]] | None = None,
     max_trials: int = 12,
     max_seconds: float = 150,
     step_limit: int = 3500,
@@ -584,37 +566,43 @@ def build_manifest(
     settle_steps: int = 20,
     trial_seconds: float = 180,
     search_mode: str = "existential",
-    constant_pair: tuple[float, float] | None = None,
+    constant_params: tuple[float, float, float] | None = None,
 ) -> dict[str, Any]:
     """Describe requested trials and limits without importing a simulator.
 
-    Pairs are SweepRack(dy metres, phi degrees); speed is the skill's constant.
+    Parameter sets are GatherAndSweep(s m, delta m, d m); speed is the skill's constant.
     """
     from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
-    from hitl_pmp.environments.racktoserving3d.skills import SWEEP_BOUNDS, SWEEP_SPEED_M_S
+    from hitl_pmp.environments.racktoserving3d.skills import (
+        GATHER_AND_SWEEP_BOUNDS,
+        SWEEP_SPEED_M_S,
+    )
 
-    (dy_low, dy_high), (phi_low, phi_high) = SWEEP_BOUNDS
+    bounds = GATHER_AND_SWEEP_BOUNDS
 
     seeds = [0, 1, 2] if seeds is None else seeds
     layouts = ["fixed", "human_batch_return"] if layouts is None else layouts
-    pairs = [(0.0, 0.0), (0.0, -15.0), (0.0, 15.0)] if pairs is None else pairs
-    if constant_pair is not None:
-        pairs = [constant_pair, *pairs]
-    pile_only = pile_centred_baseline and not pairs
+    param_sets = (
+        [(0.07, 0.015, 0.10), (0.04, 0.0, 0.08), (0.10, 0.03, 0.06)]
+        if param_sets is None
+        else param_sets
+    )
+    if constant_params is not None:
+        param_sets = [constant_params, *param_sets]
     if not seeds or any(type(seed) is not int or seed < 0 for seed in seeds):
         raise ValueError("seeds must be nonnegative integers")
     if not layouts or any(layout not in ("fixed", "human_batch_return") for layout in layouts):
         raise ValueError("layouts must be fixed or human_batch_return")
-    if (not pairs and not pile_only) or any(
-        len(pair) != 2
-        or not math.isfinite(pair[0])
-        or not math.isfinite(pair[1])
-        or not dy_low <= pair[0] <= dy_high
-        or not phi_low <= pair[1] <= phi_high
-        for pair in pairs
+    if not param_sets or any(
+        len(params) != 3
+        or not all(math.isfinite(value) for value in params)
+        or not all(low <= value <= high for value, (low, high) in zip(params, bounds, strict=True))
+        for params in param_sets
     ):
+        (s_low, s_high), (delta_low, delta_high), (d_low, d_high) = bounds
         raise ValueError(
-            f"pairs require finite dy [{dy_low},{dy_high}] m and phi [{phi_low},{phi_high}] deg"
+            f"param_sets require finite s [{s_low},{s_high}] m,"
+            f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
         )
     if type(max_trials) is not int or not 1 <= max_trials <= 1000:
         raise ValueError("max_trials must be an integer in [1,1000]")
@@ -644,20 +632,14 @@ def build_manifest(
             selected_states.append((layout, int(seed_text)))
         if not selected_states:
             raise ValueError("states cannot be empty")
-    config = RackServingConfig(
-        mode="training", cooling_seconds=5, scraper_tilt_degrees=scraper_tilt_degrees
-    )
+    config = RackServingConfig(mode="training", scraper_tilt_degrees=scraper_tilt_degrees)
     return {
         "schema_version": 2,
         "execution_implemented": True,
         "native_workers_started": 0,
         "config": config.model_dump(mode="json"),
         "search_mode": search_mode,
-        "constant_pair": (
-            {"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}
-            if pile_only
-            else {"dy_m": float(pairs[0][0]), "phi_deg": float(pairs[0][1])}
-        ),
+        "constant_params": Coverage.params_entry(params=param_sets[0]),
         "sweep_speed_m_s": SWEEP_SPEED_M_S,
         "claim": {
             "full_space_proof": False,
@@ -682,13 +664,8 @@ def build_manifest(
             }
             for layout, seed in dict.fromkeys(selected_states)
         ],
-        "pairs": [
-            *({"dy_m": float(dy), "phi_deg": float(phi)} for dy, phi in dict.fromkeys(pairs)),
-            *(
-                [{"dy_m": None, "phi_deg": 0.0, "dy_source": "pile_centroid"}]
-                if pile_centred_baseline
-                else []
-            ),
+        "param_sets": [
+            Coverage.params_entry(params=params) for params in dict.fromkeys(param_sets)
         ],
         "limits": {
             "max_trials_total": max_trials,
@@ -700,11 +677,12 @@ def build_manifest(
             "parallel_workers": 1,
         },
         "executor_requirements": [
-            "Fresh environment per pair; reset_to_seed with the state's seed.",
+            "Fresh environment per params; reset_to_seed with the state's seed.",
             "For human layouts, call training human_batch_return once after each seed reset.",
             "Log actual setup cost, food poses, support contacts, measured locations and config.",
-            "Compare measured starting states across pairs; flag mismatches and duplicate layouts.",
-            "Use actual Wait, PickScraper, SweepRack(dy,phi), ReturnScraper controllers.",
+            "Compare measured starting states across parameter sets; flag mismatches and"
+            " duplicate layouts.",
+            "Use actual PickScraper, GatherAndSweep(s,delta,d), ReturnScraper controllers.",
             "Record each food's physical outcome separately from controller errors.",
             "Verify physical task success and scraper home; do not infer success from no error.",
             "Test the constant baseline first; existential mode stops at each state's success.",
@@ -734,11 +712,11 @@ def main(*, argv: list[str] | None = None) -> int:
     parser.add_argument("--settle-steps", type=int, default=20)
     parser.add_argument("--search-mode", choices=("existential", "grid"), default="existential")
     parser.add_argument(
-        "--constant-pair",
-        nargs=2,
+        "--constant-params",
+        nargs=3,
         type=float,
-        metavar=("DY", "PHI"),
-        help="baseline tested first for every state; defaults to first --pair",
+        metavar=("DELTA", "D", "PHI"),
+        help="baseline tested first for every state; defaults to first --params",
     )
     parser.add_argument("--trial-seconds", type=float, default=180)
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
@@ -748,11 +726,8 @@ def main(*, argv: list[str] | None = None) -> int:
         choices=("fixed", "human_batch_return"),
         default=["fixed", "human_batch_return"],
     )
-    parser.add_argument("--pair", nargs=2, action="append", type=float, metavar=("DY", "PHI"))
     parser.add_argument(
-        "--pile-centred-baseline",
-        action="store_true",
-        help="append dy = measured on-rack food y-centroid (clipped), phi = 0",
+        "--params", nargs=3, action="append", type=float, metavar=("DELTA", "D", "PHI")
     )
     parser.add_argument("--max-trials", type=int, default=12)
     parser.add_argument("--max-seconds", type=float, default=150)
@@ -772,8 +747,7 @@ def main(*, argv: list[str] | None = None) -> int:
         manifest = build_manifest(
             seeds=args.seeds,
             layouts=args.layouts,
-            pairs=None if args.pair is None else [tuple(pair) for pair in args.pair],
-            pile_centred_baseline=args.pile_centred_baseline,
+            param_sets=None if args.params is None else [tuple(params) for params in args.params],
             max_trials=args.max_trials,
             max_seconds=args.max_seconds,
             step_limit=args.step_limit,
@@ -782,7 +756,7 @@ def main(*, argv: list[str] | None = None) -> int:
             settle_steps=args.settle_steps,
             trial_seconds=args.trial_seconds,
             search_mode=args.search_mode,
-            constant_pair=None if args.constant_pair is None else tuple(args.constant_pair),
+            constant_params=None if args.constant_params is None else tuple(args.constant_params),
         )
         args.output.mkdir(parents=True, exist_ok=False)
     except (ValueError, FileExistsError) as error:

@@ -173,7 +173,7 @@ def test_cutoff_adopts_exact_completed_steps_and_live_state_without_physics(
             raise ControlStepLimitReached()
 
     env.set_control_step_observers(before=clock.before_robot_step, after=after)
-    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0], dtype=float)
+    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0], dtype=float)
     with pytest.raises(ControlStepLimitReached):
         env.take_action(action=action)
     assert clock.steps == env.last_controller_steps() == rack.controllers.shelf.ticks == 3
@@ -202,9 +202,9 @@ def test_cutoff_adopts_exact_completed_steps_and_live_state_without_physics(
 
 
 def test_normal_skill_and_noop_report_actual_steps_not_controller_estimates(*, rack):
-    rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0]))
+    rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0]))
     assert rack.env.last_controller_steps() == rack.controllers.shelf.ticks == 10
-    rack.env.take_action(action=np.array([-1, 0, 0, 0]))
+    rack.env.take_action(action=np.array([-1, 0, 0, 0, 0]))
     assert rack.env.last_controller_steps() == rack.controllers.shelf.ticks == 0
 
 
@@ -213,20 +213,20 @@ def test_observer_failure_is_not_reported_as_a_robot_skill_failure(*, rack):
         before=None, after=Mock(side_effect=ValueError("logging failed"))
     )
     with pytest.raises(ControlStepObserverFailed):
-        rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0]))
+        rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0]))
     assert rack.env.last_controller_steps() == rack.controllers.shelf.ticks == 1
     assert rack.env.last_skill_error() is None
 
 
 def test_cutoff_before_first_step_does_not_adopt_previous_skill_count(*, rack):
-    rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0]))
+    rack.env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0]))
     clock = PracticeClock(
         budget=1, interval=100, robot_active=True, robot_steps=1, on_measure=lambda: None
     )
     rack.env.set_control_step_observers(
         before=clock.before_robot_step, after=clock.after_robot_step
     )
-    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0])
+    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0])
     with pytest.raises(ControlStepLimitReached):
         rack.env.take_action(action=action)
     rack.env.adopt_interrupted_skill(action=action, reason="practice_step_budget")
@@ -256,7 +256,6 @@ def test_failed_human_attempt_keeps_charge_and_updates_observed_clock(
     assert backend.ledger.elapsed_seconds == 405
     assert backend.ledger.human_cost == 5
     assert backend.ledger.human_interventions == 1
-    assert backend.ledger.ready
     state = rack.env.get_current_state()
     assert state.get(obj=Objects.scene, feature_name="human_cost") == 5
     assert state.get(obj=Objects.scene, feature_name="elapsed_seconds") == 405
@@ -296,7 +295,7 @@ def test_human_physics_does_not_spend_robot_budget_and_charge_survives_failure(*
     assert clock.steps == clock.human_invocations == 1
     assert clock.robot_steps == 0
     clock.robot_active = True
-    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0])
+    action = np.array([SKILL_IDS["PickScraper"], 0, 0, 0, 0])
     with pytest.raises(ControlStepLimitReached):
         rack.env.take_action(action=action)
     rack.env.adopt_interrupted_skill(action=action, reason="practice_step_budget")

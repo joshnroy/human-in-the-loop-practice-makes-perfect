@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
-from hitl_pmp.environments.racktoserving3d.stroke import plan_stroke
+from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
 
@@ -34,7 +34,7 @@ def main():
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(rows, indent=2) + "\n")
 
-    env = RackServingEnvironment(config=RackServingConfig(cooling_seconds=0))
+    env = RackServingEnvironment(config=RackServingConfig())
     try:
         env.reset_to_seed(seed=0)
         tool = env.rack_controllers().tool
@@ -48,17 +48,8 @@ def main():
         shelf, tool = controller.shelf, controller.tool
         if not backend.held(name="wiper_0"):
             return
-        rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
-        stroke = plan_stroke(
-            food_corners=np.stack([backend.corners(name=name) for name in backend.cube_names]),
-            rack_back=rack.x_max,
-            rack_front=rack.x_min,
-            rack_center_y=0,
-            rack_top=rack.top_z,
-            dy=0,
-            phi_deg=0,
-            blade_width=0.25,
-            tray_back=tray.x_max,
+        stroke = GatherAndSweepPlanner.sweep(
+            d=0.10, plate_clear_z=controller.plate_clear_z(), **controller.stroke_geometry()
         )
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ tool.wiper_pose()
         body = np.eye(4)

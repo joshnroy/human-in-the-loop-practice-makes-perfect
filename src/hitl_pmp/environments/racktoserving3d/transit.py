@@ -36,6 +36,24 @@ def geom_half_extents(*, model: Any, geom: int) -> np.ndarray:
     return np.full(3, model.geom_rbound[geom])
 
 
+def geoms_half_extents(*, model: Any, geoms: np.ndarray) -> np.ndarray:
+    """`geom_half_extents` for many geoms at once, value for value."""
+    kind = np.asarray(model.geom_type)[geoms].astype(int)[:, None]
+    size = np.asarray(model.geom_size, dtype=float)[geoms]
+    radius = size[:, :1]
+    rbound = np.asarray(model.geom_rbound, dtype=float)[geoms][:, None]
+    return np.select(
+        [kind == 6, kind == 2, kind == 3, kind == 5],
+        [
+            size,
+            np.repeat(radius, 3, axis=1),
+            np.column_stack([radius, radius, size[:, 1] + size[:, 0]]),
+            np.column_stack([radius, radius, size[:, 1]]),
+        ],
+        default=np.repeat(rbound, 3, axis=1),
+    )
+
+
 def segment_samples(*, start: np.ndarray, target: np.ndarray) -> list[np.ndarray]:
     """Sample straight and axis-clipped paths, including unwrapped headings."""
     start, target = np.asarray(start, dtype=float), np.asarray(target, dtype=float)
@@ -245,23 +263,18 @@ class EmptyHandTransit:
         """Read mutable collider membership and collision enablement afresh."""
         shelf = self.shelf
         model = shelf.model
-        self.robot = {
-            geom
-            for geom in shelf.robot_geoms
-            if model.geom_contype[geom] or model.geom_conaffinity[geom]
-        }
-        self.fixtures = {
-            geom
-            for geom in shelf.cupboard_geoms | shelf.box_geoms
-            if model.geom_contype[geom] or model.geom_conaffinity[geom]
-        }
-        self.obstacles = {
-            geom
-            for geom in range(model.ngeom)
-            if (model.geom_contype[geom] or model.geom_conaffinity[geom])
-            and geom not in self.robot
-            and int(model.geom_type[geom]) != 0
-        }
+        enabled = (np.asarray(model.geom_contype) != 0) | (np.asarray(model.geom_conaffinity) != 0)
+        self.robot = {geom for geom in shelf.robot_geoms if enabled[geom]}
+        self.fixtures = {geom for geom in shelf.cupboard_geoms | shelf.box_geoms if enabled[geom]}
+        is_robot = np.zeros(int(model.ngeom), dtype=bool)
+        is_robot[list(self.robot)] = True
+        self.obstacles = set(
+            np.flatnonzero(enabled & ~is_robot & (np.asarray(model.geom_type) != 0)).tolist()
+        )
+        # Index arrays in the sets' own iteration order, so pairs are visited in the
+        # order the per-pair loop over `self.robot` x `self.obstacles` visits them.
+        self.robot_index = np.fromiter(self.robot, dtype=int, count=len(self.robot))
+        self.obstacle_index = np.fromiter(self.obstacles, dtype=int, count=len(self.obstacles))
 
     def clear(self, *, base: np.ndarray, arm: np.ndarray) -> bool:
         shelf = self.shelf
@@ -272,20 +285,36 @@ class EmptyHandTransit:
         shelf.site_at(base=base, arm=arm)
         if shelf.collision_cost(d=scratch, holding=False) > 0:
             return False
-        for robot in self.robot:
-            for obstacle in self.obstacles:
-                separation = np.linalg.norm(scratch.geom_xpos[robot] - scratch.geom_xpos[obstacle])
-                bound = model.geom_rbound[robot] + model.geom_rbound[obstacle] + TRANSIT_MARGIN
-                if separation > bound:
-                    continue
-                if (
-                    shelf.mujoco.mj_geomDistance(
-                        model, scratch, robot, obstacle, TRANSIT_MARGIN, None
-                    )
-                    < TRANSIT_MARGIN
-                ):
-                    return False
-        return True
+        return not any(
+            shelf.mujoco.mj_geomDistance(model, scratch, robot, obstacle, TRANSIT_MARGIN, None)
+            < TRANSIT_MARGIN
+            for robot, obstacle in self.near_pairs(model=model, scratch=scratch)
+        )
+
+    def near_pairs(self, *, model: Any, scratch: Any) -> list[tuple[int, int]]:
+        """Robot/obstacle pairs whose bounding spheres come within the margin.
+
+        The bounding-sphere reject is evaluated for all pairs at once, in the
+        per-pair loop's order. A vectorised norm can differ from the scalar one in
+        the last bit, so any pair within a hair of its bound is re-decided with the
+        scalar expression: the exact checks run on exactly the same pairs.
+        """
+        robots, obstacles = self.robot_index, self.obstacle_index
+        if robots.size == 0 or obstacles.size == 0:
+            return []
+        xpos, rbound = scratch.geom_xpos, model.geom_rbound
+        separation = np.linalg.norm(xpos[robots][:, None, :] - xpos[obstacles][None, :, :], axis=-1)
+        bound = rbound[robots][:, None] + rbound[obstacles][None, :] + TRANSIT_MARGIN
+        slack = 1e-9 * np.maximum(1.0, bound)
+        pairs = []
+        for row, column in zip(*np.nonzero(~(separation > bound + slack)), strict=True):
+            robot, obstacle = int(robots[row]), int(obstacles[column])
+            if separation[row, column] > bound[row, column] - slack[row, column] and (
+                np.linalg.norm(xpos[robot] - xpos[obstacle]) > bound[row, column]
+            ):
+                continue
+            pairs.append((robot, obstacle))
+        return pairs
 
     def segment_clear(self, *, start: np.ndarray, target: np.ndarray, arm: np.ndarray) -> bool:
         return all(

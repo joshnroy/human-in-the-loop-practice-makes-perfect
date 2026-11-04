@@ -14,6 +14,7 @@ from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SkillNote, S
 from .backend import RackServingBackend
 from .config import RackServingConfig
 from .controllers import RackControllers
+from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom
 from .skills import SKILL_IDS
@@ -86,9 +87,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         controllers.shelf.ticks = 0
         backend = self.backend()
         start_control_steps = backend.control_steps()
+        self._open_motion_skill(action=values)
         try:
-            if values.shape != (4,) or not np.isfinite(values).all():
-                raise SkillFailed("action must have four finite entries")
+            if values.shape != (5,) or not np.isfinite(values).all():
+                raise SkillFailed("action must have five finite entries")
             skill_id, food_index = values[:2]
             if skill_id != int(skill_id) or food_index != int(food_index):
                 raise SkillFailed("skill and food indices must be integers")
@@ -97,20 +99,18 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             name = Objects.food[int(food_index)].name
             if skill_id == SKILL_IDS["PickScraper"]:
                 controllers.pick_scraper()
-            elif skill_id == SKILL_IDS["SweepRack"]:
-                controllers.sweep(dy=values[2], phi=values[3])
+            elif skill_id == SKILL_IDS["GatherAndSweep"]:
+                controllers.gather_and_sweep(
+                    s=float(values[2]), delta=float(values[3]), d=float(values[4])
+                )
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
             elif skill_id == SKILL_IDS["PickFood"]:
                 controllers.pick_food(name=name)
             elif skill_id == SKILL_IDS["PlaceFoodOnTray"]:
-                if not self.backend().ledger.ready:
-                    raise SkillFailed("food is not elapsed-time ready")
                 controllers.place_food(name=name, destination="box_0")
             elif skill_id == SKILL_IDS["ReturnFoodToRack"]:
                 controllers.place_food(name=name, destination="rack_0")
-            elif skill_id == SKILL_IDS["Wait"]:
-                controllers.wait_until_ready()
             elif skill_id != -1:
                 raise SkillFailed("unknown robot skill; human operations are not robot actions")
         except (SkillFailed, ValueError) as error:
@@ -120,6 +120,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             controllers.shelf.ticks = self._last_controller_steps
         self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
         return self.current_state
+
+    def noop_action(self) -> Action:
+        """[skill ID, food index, s, delta, d]; -1 is the no-op skill ID."""
+        return np.array([-1.0, 0.0, 0.0, 0.0, 0.0])
 
     def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
         """Adopt measured state and grasp bookkeeping without issuing another control step."""
@@ -153,6 +157,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             if destination == "human_batch_return":
                 backend.batch_return()
                 moved = backend.cube_names
+                RackFoodController(controllers=self.rack_controllers()).restore_gripper_force()
                 self.rack_controllers().held_food = None
                 self.rack_controllers().shelf.held_cube = None
             else:
@@ -185,3 +190,13 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         self, *, before: Callable[[], None] | None = None, after: Callable[[], None] | None = None
     ) -> None:
         self.backend().set_step_observers(before=before, after=after)
+
+    def _open_motion_skill(self, *, action: np.ndarray) -> None:
+        """As the shelf's `_begin_motion`, named from this domain's own skill IDs, so the
+        motion ticks that follow belong to this action rather than the previous one."""
+        self._motion_steps = 0
+        if self._motion_sink is None or not action.size or not np.isfinite(action.flat[0]):
+            return
+        name = {index: skill for skill, index in SKILL_IDS.items()}.get(int(action.flat[0]))
+        if name is not None:
+            self._motion_sink.record_skill(name=name, objects=(), params=(), controller={})

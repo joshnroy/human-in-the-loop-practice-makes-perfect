@@ -147,7 +147,7 @@ def test_goal_check_reads_live_rack_verdict_not_shelf_goal(*, tmp_path, monkeypa
 
 @pytest.mark.parametrize("mode", ["training", "deployment"])
 def test_recording_keeps_live_state_and_full_variant_config(*, tmp_path, monkeypatch, mode):
-    args = _args(tmp_path=tmp_path, extra=("--gap", "0.02", "--initial-elapsed-seconds", "300"))
+    args = _args(tmp_path=tmp_path, extra=("--gap", "0.02"))
     problem = RackServingCli.build_problem(args=args, mode=mode)
     backend = Mock()
     backend.features.return_value = {"rack_0": np.array([1.25, 2.5])}
@@ -158,7 +158,7 @@ def test_recording_keeps_live_state_and_full_variant_config(*, tmp_path, monkeyp
         backend.features.assert_not_called()
         writer.begin_segment(phase=Phase.PRACTICE, scene_seed=29)
         backend.features.return_value = {"rack_0": np.array([3.0, 4.0])}
-        writer.robot_action(label="Wait", start_step=0, end_step=5, success=None)
+        writer.robot_action(label="PickScraper", start_step=0, end_step=5, success=None)
         writer.begin_cycle(cycle=1, task=_task(problem=problem))
     finally:
         writer.close()

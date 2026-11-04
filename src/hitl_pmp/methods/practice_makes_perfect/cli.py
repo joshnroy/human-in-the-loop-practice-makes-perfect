@@ -14,7 +14,6 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 )
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
-    RackServingPracticeDomain,
 )
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -578,10 +577,6 @@ class Tossing3DPomdpCli(EesCli):
             raise ValueError(
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
                 "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
-            )
-        if isinstance(domain, RackServingPracticeDomain):
-            domain = domain.model_copy(
-                update={"initially_ready": args.initial_elapsed_seconds >= args.cooling_seconds}
             )
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.

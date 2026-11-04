@@ -66,6 +66,7 @@ def test_the_arm_cost_files_are_not_listed_as_presets() -> None:
     assert CliPreset.names() == [
         "pouring3d-balanced",
         "pouring3d-balanced-ees",
+        "racktoserving3d-canonical",
         "tossing3d-canonical",
     ]
 

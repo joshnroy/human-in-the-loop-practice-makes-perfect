@@ -25,18 +25,17 @@ No geometry, controller, algorithm, or Algorithm 3 change is part of this plan.
 
 ## Rack model contract
 
-The domain infers seven robot skills (`PickScraper`, `SweepRack`, `ReturnScraper`,
-`PickFood`, `PlaceFoodOnTray`, `ReturnFoodToRack`, `Wait`) and the two offered human
-skills (`human_batch_return`, `human_tool_recovery`). Only `SweepRack` receives
-sampler examples; the others receive outcome examples. Wait is not assumed
-infallible. Human skills use the provider's configured interruption cost, charged
-on success and failure; they preserve readiness and are excluded from deployment.
+The domain infers six robot skills (`PickScraper`, `GatherAndSweep`, `ReturnScraper`,
+`PickFood`, `PlaceFoodOnTray`, `ReturnFoodToRack`) and the two offered human
+skills (`human_batch_return`, `human_tool_recovery`). Only `GatherAndSweep(s, delta, d)` receives
+sampler examples; the others receive outcome examples. Food is ready from the
+start (no cooling, no Wait skill, since 2026-11-03). Human skills use the provider's configured interruption cost, charged
+on success and failure, and are excluded from deployment.
 Disabled or deployment-only providers also remove human beliefs from practice.
 
-The analytical deployment value starts with five foods on the rack and uses the
-configured initial elapsed/cooling times for readiness. Its horizon is 13 skill
-actions; either sweep delivery or individual pick/place delivery is available.
-The symbolic goal is ready and all food on the tray, not scraper returned home.
+The analytical deployment value starts with five foods on the rack. Its horizon
+is 12 skill actions; either sweep delivery or individual pick/place delivery is available.
+The symbolic goal is all food on the tray, not scraper returned home.
 Beta(1, 3) competence priors and a fixed-seed 4096-sample expectation mirror the
 existing shelf domain as modeling assumptions, not measured rack performance.
 Default search depth is three; the smoke commands explicitly request one.
@@ -60,9 +59,6 @@ Initialization and planning are not charged physics steps, so wall/memory caps
 remain necessary. The 2000 per-skill cap accommodates the estimated 1300-step
 return, unlike the old 500-step evaluation default.
 
-The smoke starts at elapsed time 300 with the existing 300-second readiness
-threshold. This explicitly start-ready diagnostic avoids spending about 3000
-steps waiting; it is not the default cooling scenario or thermal validation.
 The existing wire rack, 45 mm dumpling width, and scraper geometry remain intact.
 No policy is forced to execute pickup/sweep/return: it may choose food actions,
 human help, or STOP. These tiny settings do not evaluate method quality.
@@ -98,8 +94,6 @@ COMMON=(
   --surface-kind wire
   --dumpling-width 0.045
   --no-scene-bg
-  --cooling-seconds 300
-  --initial-elapsed-seconds 300
   --skill-step-limit 2000
   --human-reset
   --human-interruption-cost 5
@@ -185,7 +179,7 @@ are explicitly smoke-only settings, not canonical experiment configurations.
 
 ## Native observer test
 
-This separate test initializes a scene, runs `Wait` to an exact three-control-step
+This separate test initializes a scene, runs `PickScraper` to an exact three-control-step
 cutoff, and verifies adoption issues no further physics step. It validates hooks,
 not transfer. On 2026-10-31 it acquired an available shared slot and passed:
 `1 passed in 2.08s`, in scope `rack-cutoff-20261031T214634770045645-1152119.scope`.

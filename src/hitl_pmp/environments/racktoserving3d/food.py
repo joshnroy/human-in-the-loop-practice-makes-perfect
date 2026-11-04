@@ -7,11 +7,13 @@ The scraper's ``holding`` flag denotes a scraper, not food; this adapter keeps
 it false and checks the measured food payload separately.
 
 The default rigid 25-mm-high ellipsoid uses a 31-mm pinch-site offset at 45
-degrees and configurable partial gripper closure (0.8). Native finger contacts
+degrees and a force-limited close (``food_grip_force``). Native finger contacts
 and the observed food extent govern holding and placement; rack-wire and fixture
 collision failures are retained rather than weakening clearance guards.
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from functools import cached_property
 from time import monotonic
 from typing import Any, ClassVar
@@ -25,16 +27,37 @@ from .semantics import CircularSupport
 from .tool import RackScraper, box_overlap
 from .transit import ArmTransit, geom_half_extents, segment_samples
 
+# How far behind a stance, along its own heading, a counter circulation may enter it.
+APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
+# Hand yaws about world z a placement may set the held food down with, from the grasp's.
+PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
+# Pad normal force per unit of the 2F-85 finger actuator's tendon force, measured in
+# this scene: at the model's own +5 limit each pad presses a held dumpling with ~46 N.
+FINGER_NEWTONS_PER_ACTUATOR_UNIT = 46.0 / 5.0
+FINGER_ACTUATOR_SUFFIX = "fingers_actuator"
+# How far food may have moved since its grasp was planned and still be closed on.
+REGRASP_POSITION_TOLERANCE = 0.002
+REGRASP_ANGLE_TOLERANCE_DEG = 3.0
+REGRASP_ATTEMPTS = 2
+# How much a pad-fixture contact present when a lift starts may shrink (measured-state
+# jitter) and still count as the same contact the lift is leaving.
+DEPARTURE_TOLERANCE = 1e-4
+
 
 class _FoodMotion(RackScraper):
     """Reuse guarded scraper routes, adding food collisions and live grasp checks."""
 
     def __init__(self, *, food: "RackFoodController") -> None:
         self.food = food
+        self.departing: dict[tuple[int, int], float] = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
     def check_configuration(self, *, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
-        super().check_configuration(base=base, arm=arm, holding=False)
+        try:
+            super().check_configuration(base=base, arm=arm, holding=False)
+        except SkillFailed:
+            if not self.departing or self._undeparted_cost() > 0:
+                raise
         shelf, backend = self.shelf, self.food.backend
         scratch = shelf.ik_data
         carried = self.food.carried
@@ -96,6 +119,68 @@ class _FoodMotion(RackScraper):
                         f"Carried food would collide with {shelf.model.geom(obstacle).name}: "
                         f"overlap={overlap:.4f}, bottom={bottom:.4f}, top={top:.4f}"
                     )
+
+    def pad_fixture_contacts(self) -> dict[tuple[int, int], float]:
+        """Closest distance of each (pad, fixture) pair among scratch data's contacts."""
+        shelf = self.shelf
+        scratch = shelf.ik_data
+        fixed = shelf.cupboard_geoms | shelf.box_geoms
+        pairs: dict[tuple[int, int], float] = {}
+        for contact in scratch.contact[: scratch.ncon]:
+            for robot, other in (
+                (int(contact.geom1), int(contact.geom2)),
+                (int(contact.geom2), int(contact.geom1)),
+            ):
+                if robot in shelf.pad_geoms and other in fixed:
+                    pairs[robot, other] = min(pairs.get((robot, other), np.inf), contact.dist)
+        return pairs
+
+    def _undeparted_cost(self) -> float:
+        """``collision_cost`` of scratch data's contacts, less the departing ones.
+
+        A departing contact is a (pad, fixture) pair recorded when the lift began
+        whose distance has not shrunk by more than ``DEPARTURE_TOLERANCE``. Every
+        other term counts exactly as ``ShelfSkills.collision_cost`` counts it.
+        """
+        shelf = self.shelf
+        scratch = shelf.ik_data
+        fixed = shelf.cupboard_geoms | shelf.box_geoms
+        wiper = set(shelf.wiper_geoms)
+        robot = shelf.robot_geoms
+        cost = 0.0
+        for contact in scratch.contact[: scratch.ncon]:
+            a, b = int(contact.geom1), int(contact.geom2)
+            depth = max(0.0, -contact.dist)
+            pair = (a, b) if a in robot else (b, a)
+            start = self.departing.get(pair)
+            if start is not None and contact.dist >= start - DEPARTURE_TOLERANCE:
+                continue
+            if a in robot and b in robot:
+                cost += max(0.0, depth - 0.001)
+            elif (a in robot and b in fixed) or (b in robot and a in fixed):
+                cost += depth + 0.001
+            elif (a in robot and b in wiper and a not in shelf.pad_geoms) or (
+                b in robot and a in wiper and b not in shelf.pad_geoms
+            ):
+                cost += depth
+        return cost
+
+    @contextmanager
+    def departing_from_contacts(self) -> Generator[None, None, None]:
+        """Within this scope, pad-fixture contacts present now may persist, not deepen.
+
+        A closed grasp on the wire rack can leave a pad resting on a wire. The lift
+        moves away from that contact, but the unconditioned check rejects the lift's
+        own starting configuration.
+        """
+        shelf = self.shelf
+        shelf.site_at(base=shelf.data.qpos[shelf.ba].copy(), arm=shelf.data.qpos[shelf.qa].copy())
+        shelf.mujoco.mj_collision(shelf.model, shelf.ik_data)
+        self.departing = self.pad_fixture_contacts()
+        try:
+            yield
+        finally:
+            self.departing = {}
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:
@@ -177,14 +262,7 @@ class _FoodMotion(RackScraper):
         shelf = self.shelf
         start = shelf.data.qpos[shelf.ba].copy()
         arm = shelf.arm_reference.copy()
-        counter = self.food.backend.support(name="counter")
-        for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
-            route = [
-                np.array([start[0], outside, start[2]]),
-                np.array([target[0], outside, start[2]]),
-                np.array([target[0], outside, target[2]]),
-                target,
-            ]
+        for route in self.circulation_routes(start=start, target=target):
             try:
                 for begin, end in zip([start, *route[:-1]], route, strict=True):
                     for base in segment_samples(start=begin, target=end):
@@ -197,12 +275,46 @@ class _FoodMotion(RackScraper):
             return
         raise SkillFailed(f"{label}: no safe food circulation: {failure}")
 
+    def circulation_routes(
+        self, *, start: np.ndarray, target: np.ndarray
+    ) -> list[list[np.ndarray]]:
+        """Routes around either side of the counter that leave and enter stances head-on.
+
+        The base backs out from its start along its own heading, drives sideways past
+        the counter, turns to the stance heading, then drives to an entry point behind
+        the stance along that heading and straight in. Each back-off is one of
+        ``APPROACH_BACKOFFS``, smallest total first. With none, a leg slides along the
+        counter's edge at the stance's own distance from it, which clips a corner leg
+        whenever the stance is yawed off the edge's normal.
+        """
+        counter = self.food.backend.support(name="counter")
+        leaving = np.array([np.cos(start[2]), np.sin(start[2])])
+        arriving = np.array([np.cos(target[2]), np.sin(target[2])])
+        pairs = sorted(
+            ((out, back) for out in APPROACH_BACKOFFS for back in APPROACH_BACKOFFS),
+            key=lambda pair: (pair[0] + pair[1], pair[0]),
+        )
+        routes = []
+        for out, back in pairs:
+            exit_ = np.r_[start[:2] - out * leaving, start[2]]
+            entry = np.r_[target[:2] - back * arriving, target[2]]
+            for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
+                route = [
+                    *([exit_] if out > 0 else []),
+                    np.array([exit_[0], outside, start[2]]),
+                    np.array([entry[0], outside, start[2]]),
+                    np.array([entry[0], outside, target[2]]),
+                    entry,
+                    *([target] if back > 0 else []),
+                ]
+                routes.append(route)
+        return routes
+
     def plan_base(self, *, target: np.ndarray, arm: np.ndarray) -> list[np.ndarray]:
         """Preflight a staged arm's complete base route before selecting its stance."""
         shelf = self.shelf
         start = shelf.data.qpos[shelf.ba].copy()
         outside_x = min(start[0], target[0]) - 0.10
-        counter = self.food.backend.support(name="counter")
         candidates = [
             [target],
             [np.array([start[0], target[1], start[2]]), target],
@@ -213,15 +325,7 @@ class _FoodMotion(RackScraper):
                 target,
             ],
         ]
-        candidates.extend(
-            [
-                np.array([start[0], outside, start[2]]),
-                np.array([target[0], outside, start[2]]),
-                np.array([target[0], outside, target[2]]),
-                target,
-            ]
-            for outside in (counter.y_min - 0.8, counter.y_max + 0.8)
-        )
+        candidates.extend(self.circulation_routes(start=start, target=target))
         failure = "no candidate base route"
         for route in candidates:
             try:
@@ -272,7 +376,34 @@ class RackFoodController:
             self.controllers.held_food = None
             self.shelf.held_cube = None
             self.carried = None
+            self._limit_grip(newtons=None)
             raise SkillFailed(f"Food {name} is not held by bilateral pad contact")
+
+    def restore_gripper_force(self) -> None:
+        """End a food grasp's force limit when the food leaves the hand by other means."""
+        self._limit_grip(newtons=None)
+
+    def _limit_grip(self, *, newtons: float | None) -> None:
+        """Command the fingers' closing force, as the real 2F-85 takes a force setting.
+
+        Position-commanded closing on a rigid ellipsoid keeps driving the fingers in
+        at the actuator's full force; a force-limited close stops at the target
+        normal force. ``None`` restores the gripper model's own limit, which every
+        non-food grasp (the scraper) uses. Only the closing side is changed.
+        """
+        model = self.shelf.model
+        actuator = next(
+            index
+            for index in range(model.nu)
+            if model.actuator(index).name.endswith(FINGER_ACTUATOR_SUFFIX)
+        )
+        default = getattr(self.shelf, "finger_force_default", None)
+        if default is None:
+            default = float(model.actuator_forcerange[actuator, 1])
+            self.shelf.finger_force_default = default
+        model.actuator_forcerange[actuator, 1] = (
+            default if newtons is None else newtons / FINGER_NEWTONS_PER_ACTUATOR_UNIT
+        )
 
     def _checked_arm(
         self, *, pose: np.ndarray, base: np.ndarray, seed: np.ndarray | None = None
@@ -317,6 +448,48 @@ class RackFoodController:
             for offset in (0.0, -0.12, 0.12)
         ]
 
+    @staticmethod
+    def _edge_distance(
+        *, centre: np.ndarray, approach: np.ndarray, lower: np.ndarray, upper: np.ndarray
+    ) -> float:
+        """How far the base side of `approach` runs from `centre` to the counter edge.
+
+        A vertical approach has no base side; it ranks last rather than failing.
+        """
+        length = float(np.linalg.norm(approach[:2]))
+        if length < 1e-6:
+            return float("inf")
+        direction = -approach[:2] / length
+        return min(
+            max(0.0, (boundary - centre[axis]) / direction[axis])
+            for axis, boundary in enumerate(np.where(direction > 0, upper, lower))
+            if abs(direction[axis]) > 1e-6
+        )
+
+    def _placement_turns(self, *, rotation: np.ndarray, centre: np.ndarray) -> list[np.ndarray]:
+        """The held hand yawed about world z, nearest counter edge first.
+
+        The grasp fixes the hand's lean and the food's pose in the hand, not the
+        direction the robot must stand to set it down: food picked from behind the
+        counter would otherwise have to be placed from behind it too.
+        """
+        counter = self.backend.support(name="counter")
+        lower = np.array([counter.x_min, counter.y_min])
+        upper = np.array([counter.x_max, counter.y_max])
+        turns = [
+            Rotation.from_euler("z", degrees, degrees=True).as_matrix()
+            for degrees in PLACEMENT_TURNS_DEG
+        ]
+        return sorted(
+            turns,
+            key=lambda turn: round(
+                self._edge_distance(
+                    centre=centre, approach=turn @ rotation[:, 2], lower=lower, upper=upper
+                ),
+                6,
+            ),
+        )
+
     def _grasp_candidates(self, *, name: str) -> list[np.ndarray]:
         centre = self._pose(name=name)[:3, 3]
         counter = self.backend.support(name="counter")
@@ -334,15 +507,12 @@ class RackFoodController:
                 )
                 standoff = 0.033 if lean == 30.0 else 0.031
                 grasp[:3, 3] = centre - standoff * grasp[:3, 2]
-                direction = -grasp[:2, 2] / np.linalg.norm(grasp[:2, 2])
-                distances = [
-                    max(0.0, (boundary - centre[axis]) / direction[axis])
-                    for axis, boundary in enumerate(np.where(direction > 0, upper, lower))
-                    if abs(direction[axis]) > 1e-6
-                ]
+                distance = self._edge_distance(
+                    centre=centre, approach=grasp[:3, 2], lower=lower, upper=upper
+                )
                 flipped = grasp.copy()
                 flipped[:3, :2] *= -1
-                candidates.extend([(min(distances), grasp), (min(distances), flipped)])
+                candidates.extend([(distance, grasp), (distance, flipped)])
         candidates.sort(key=lambda candidate: round(candidate[0], 6))
         return [pose for _, pose in candidates]
 
@@ -357,21 +527,54 @@ class RackFoodController:
                 if monotonic() >= deadline:
                     raise SkillFailed(f"No collision-free food grasp within budget: {failure}")
                 try:
-                    arm = self._checked_arm(pose=pre, base=base)
-                    for pose in Frames.line(start=pre, end=grasp, step=0.01):
-                        following = self._checked_arm(pose=pose, base=base, seed=arm)
-                        self.motion.check_arm_segment(
-                            start=arm,
-                            target=following,
-                            base=base,
-                            holding=False,
-                        )
-                        arm = following
+                    staged = self._check_descent(grasp=grasp, pre=pre, base=base)
+                    self.motion.plan_base(target=base, arm=staged)
                 except SkillFailed as exc:
                     failure = str(exc)
                     continue
                 return grasp, pre, base
         raise SkillFailed(f"No collision-free food grasp: {failure}")
+
+    def _check_descent(self, *, grasp: np.ndarray, pre: np.ndarray, base: np.ndarray) -> np.ndarray:
+        """Check the pre-grasp and the straight descent at `base`; return the staged arm."""
+        staged = arm = self._checked_arm(pose=pre, base=base)
+        for pose in Frames.line(start=pre, end=grasp, step=0.01):
+            following = self._checked_arm(pose=pose, base=base, seed=arm)
+            self.motion.check_arm_segment(start=arm, target=following, base=base, holding=False)
+            arm = following
+        return staged
+
+    def _replan_grasp(
+        self, *, name: str, grasp: np.ndarray, base: np.ndarray, planned: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """A new grasp and pre-grasp if the food moved since `planned`, else None.
+
+        The open pads can push the food during the descent. A pinch planned for its
+        old yaw then closes off the food's axes and the food rotates out while lifting.
+        The replanned grasp keeps the stance and is the reachable candidate for the
+        observed pose with the hand rotation nearest the current one.
+        """
+        now = self._pose(name=name)
+        moved = float(np.linalg.norm(now[:3, 3] - planned[:3, 3]))
+        turned = RackScraper.rotation_error(actual=planned[:3, :3], target=now[:3, :3])
+        if moved <= REGRASP_POSITION_TOLERANCE and turned <= REGRASP_ANGLE_TOLERANCE_DEG:
+            return None
+        candidates = sorted(
+            self._grasp_candidates(name=name),
+            key=lambda candidate: RackScraper.rotation_error(
+                actual=grasp[:3, :3], target=candidate[:3, :3]
+            ),
+        )
+        failure = "no candidate"
+        for candidate in candidates:
+            pre = self.shelf.cube_pre(grasp=candidate)
+            try:
+                self._check_descent(grasp=candidate, pre=pre, base=base)
+            except SkillFailed as exc:
+                failure = str(exc)
+                continue
+            return candidate, pre
+        raise SkillFailed(f"Food moved before closing; no regrasp from this stance: {failure}")
 
     def _approach(self, *, pose: np.ndarray, base: np.ndarray, label: str) -> None:
         arm = self._checked_arm(pose=pose, base=base)
@@ -398,8 +601,6 @@ class RackFoodController:
         self._validate_name(name=name)
         backend, shelf = self.backend, self.shelf
         backend.sync_clock()
-        if not backend.ledger.ready:
-            raise SkillFailed("Food is not elapsed-time ready")
         if shelf.in_hand is not None or any(
             backend.held(name=other) for other in ("wiper_0", *backend.cube_names)
         ):
@@ -409,6 +610,8 @@ class RackFoodController:
         self.carried = None
         with self.controllers.feedback():
             grasp, pre, base = self._plan_pick(name=name)
+            planned = self._pose(name=name)
+            self._limit_grip(newtons=None)
             shelf.grip = 0.0
             shelf.hold(count=10, label="food_open")
             self._approach(pose=pre, base=base, label="food")
@@ -419,18 +622,38 @@ class RackFoodController:
                 holding=False,
                 step=0.005,
             )
+            for _ in range(REGRASP_ATTEMPTS):
+                replanned = self._replan_grasp(name=name, grasp=grasp, base=base, planned=planned)
+                if replanned is None:
+                    break
+                planned = self._pose(name=name)
+                for label, pose in (
+                    ("food_regrasp_retreat", pre),
+                    ("food_regrasp_pre", replanned[1]),
+                    ("food_regrasp", replanned[0]),
+                ):
+                    self.motion.line(
+                        position=pose[:3, 3],
+                        rotation=pose[:3, :3],
+                        label=label,
+                        holding=False,
+                        step=0.005,
+                    )
+                grasp, pre = replanned
+            self._limit_grip(newtons=backend.config.food_grip_force)
             shelf.grip = backend.config.food_grip_command
             shelf.hold(count=30, label="food_close")
             self._require_held(name=name)
             self.controllers.held_food = shelf.held_cube = self.carried = name
-            self.motion.line(
-                position=pre[:3, 3],
-                rotation=pre[:3, :3],
-                label="food_lift",
-                holding=False,
-                step=0.005,
-                steps_per=5,
-            )
+            with self.motion.departing_from_contacts():
+                self.motion.line(
+                    position=pre[:3, 3],
+                    rotation=pre[:3, :3],
+                    label="food_lift",
+                    holding=False,
+                    step=0.005,
+                    steps_per=5,
+                )
             self._require_held(name=name)
 
     @staticmethod
@@ -495,8 +718,12 @@ class RackFoodController:
             deadline = monotonic() + 20.0
             failure = "no reachable placement"
             selected = None
-            for centre in self._placement_candidates(name=name, destination=destination):
-                down = Frames.pose(rotation=here[:3, :3], position=centre + offset)
+            for centre, turn in (
+                (spot, turn)
+                for spot in self._placement_candidates(name=name, destination=destination)
+                for turn in self._placement_turns(rotation=here[:3, :3], centre=spot)
+            ):
+                down = Frames.pose(rotation=turn @ here[:3, :3], position=centre + turn @ offset)
                 pre = self.shelf.cube_pre(grasp=down)
                 for base in self._base_candidates(centre=centre, approach=down[:3, 2]):
                     if monotonic() >= deadline:
@@ -533,6 +760,7 @@ class RackFoodController:
             self._require_held(name=name)
             self.carried = None
             shelf.grip = 0.0
+            self._limit_grip(newtons=None)
             shelf.hold(count=20, label="food_release")
             if self.backend.held(name=name):
                 raise SkillFailed("Food remained held after release")

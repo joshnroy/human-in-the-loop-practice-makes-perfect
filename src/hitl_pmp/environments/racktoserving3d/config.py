@@ -2,8 +2,8 @@
 
 The specified rack footprint is 0.375 m wide (world y) by 0.255 m deep
 (world x). Rack height and mass are UNVERIFIED configurable assumptions, not
-manufacturer specifications. All other hardware dimensions, masses, friction,
-and cooling times below are modeling assumptions requiring physical calibration.
+manufacturer specifications. All other hardware dimensions, masses and friction
+below are modeling assumptions requiring physical calibration.
 The dumpling is a rigid cooked-food proxy, not a deformable or thermal model.
 ``concept`` denotes an invented perforated platform, not the specified wire rack.
 """
@@ -41,9 +41,6 @@ class RackServingConfig(BaseModel):
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
     tray_thickness: Positive = 0.012
     gap: Nonnegative = 0.010
-    cooling_seconds: Nonnegative = 300
-    initial_elapsed_seconds: Nonnegative = 0
-    wait_seconds: Positive = 30
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375
@@ -117,7 +114,17 @@ class RackServingConfig(BaseModel):
     dumpling_mass: Positive = 0.020
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
-    food_grip_command: float = Field(default=0.8, gt=0, le=1)
+    # Closing position commanded on food; fully closed, so the force limit below,
+    # not the position, decides where the fingers stop.
+    food_grip_command: float = Field(default=1.0, gt=0, le=1)
+    food_grip_force: Positive = Field(
+        default=20.0,
+        description=(
+            "Normal force per pad (N) the gripper closes to on food, as the real 2F-85 "
+            "is commanded a force: its adjustable range is about 20-235 N, and the "
+            "prpl-tidybot driver sends 100% (motor_cmd.force = 100)."
+        ),
+    )
     gripper_contact_dimension: Literal[3, 4, 6] = 4
     scraper_width: Positive = 0.25
     scraper_blade_height: Positive = 0.12

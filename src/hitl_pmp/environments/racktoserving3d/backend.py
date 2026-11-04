@@ -91,9 +91,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
         self._rng = np.random.default_rng(seed)
         self.ledger = RackServingLedger(
             mode=self.config.mode,
-            cooling_seconds=self.config.cooling_seconds,
-            elapsed_seconds=self.config.initial_elapsed_seconds,
-            wait_seconds=self.config.wait_seconds,
             human_interruption_cost=self.config.human_interruption_cost,
         )
         self._time_origin = float(self.data().time)
@@ -240,6 +237,16 @@ class RackServingBackend(SweepOffShelf3DBackend):
             radius=float(radius * abs(rotation[2, 2])),
             top_z=float(data.geom_xpos[well][2] + rotation[2, 2] * half_height),
         )
+
+    def serving_near_edge_x(self) -> float:
+        """World x of the serving object's edge nearest the rack, where a sweep's d is measured.
+
+        For the Corelle plate it is the rim's outer edge on the live well centre line;
+        otherwise the live footprint's maximum x.
+        """
+        if self.config.serving_target == "corelle_plate":
+            return self.corelle_support().center_x + self.config.corelle_diameter / 2
+        return float(self.corners(name="box_0")[:, 0].max())
 
     def platter_support(self) -> RectangularSupport:
         """Live inner rectangle of the platter's lip, at the top of its floor slab.
@@ -394,7 +401,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
             atoms.add(("HandEmpty", ("robot",)))
         return RackServing3DAtoms.with_summaries(
             atoms=frozenset(atoms),
-            ledger=self.ledger,
             available_food=frozenset(
                 name for name in self.cube_names if self.food_available(name=name)
             ),
@@ -407,9 +413,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
 
     def task_succeeded(self) -> bool:
         self.sync_clock()
-        return self.ledger.ready and all(
-            self.settled_on_tray(name=name) for name in self.cube_names
-        )
+        return all(self.settled_on_tray(name=name) for name in self.cube_names)
 
     def settled_on_tray(self, *, name: str) -> bool:
         """Unheld, supported delivery with finite low linear and angular speed.
@@ -484,3 +488,12 @@ class RackServingBackend(SweepOffShelf3DBackend):
         if self._scene_file is not None:
             self._scene_file.unlink(missing_ok=True)
             self._scene_file = None
+
+    def motion_state(self) -> dict[str, list[float]]:
+        """The shelf's motion state plus the rack's free-joint pose: unlike the shelf's
+        cupboard, the rack is a movable body a sweep or a pick can push."""
+        model, data = self.model(), self.data()
+        out = super().motion_state()
+        address = model.jnt_qposadr[model.joint("rack_0_joint").id]
+        out["rack_0"] += [float(v) for v in data.qpos[address : address + 7]]
+        return out

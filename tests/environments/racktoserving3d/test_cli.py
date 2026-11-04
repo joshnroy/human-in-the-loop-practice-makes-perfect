@@ -38,9 +38,7 @@ def test_cli_defaults_match_config_with_step_protocol_registered():
         if field != "mode":
             assert getattr(args, field) == getattr(defaults, field)
     assert args.surface_kind == "wire"
-    assert args.cooling_seconds == 300
-    assert args.initial_elapsed_seconds == 0
-    assert args.wait_seconds == 30
+    assert not hasattr(args, "cooling_seconds")
     assert args.human_interruption_cost == 5
     assert args.skill_step_limit == 12000
     assert not args.scene_bg
@@ -66,8 +64,6 @@ def test_global_cli_accepts_variant_and_physical_options():
             "0.8",
             "--dumpling-mass",
             "0.03",
-            "--initial-elapsed-seconds",
-            "300",
             "--dumpling-friction",
             "0.3",
             "0.005",
@@ -80,12 +76,11 @@ def test_global_cli_accepts_variant_and_physical_options():
     assert problem.env.config.gap == 0.02
     assert problem.env.config.rack_mass == 0.8
     assert problem.env.config.dumpling_mass == 0.03
-    assert problem.env.config.initial_elapsed_seconds == 300
     assert problem.env.config.dumpling_friction == (0.3, 0.005, 0.0001)
     assert not args.human_reset
 
 
-@pytest.mark.parametrize("option", ["--human-interruption-cost", "--wait-seconds", "--rack-mass"])
+@pytest.mark.parametrize("option", ["--human-interruption-cost", "--rack-mass"])
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])
 def test_invalid_physical_and_cost_config_rejected(*, option, value):
     args = _parse(argv=(option, value))

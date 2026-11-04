@@ -27,30 +27,31 @@ def _provider(*, mode="training", offer=True):
 
 def _sweep():
     return GroundSkill(
-        skill=Skills.SWEEP_RACK,
+        skill=Skills.GATHER_AND_SWEEP,
         objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
     )
 
 
-def test_sweep_samples_lateral_offset_and_plow_angle_in_bounds():
+def test_gather_and_sweep_samples_squeeze_gather_and_depth_in_bounds():
     provider = _provider()
     rng = np.random.default_rng(10)
-    samples = np.array([provider.sample_params(ground_skill=_sweep(), rng=rng) for _ in range(200)])
-    assert samples.shape == (200, 2)
-    assert np.all(np.abs(samples[:, 0]) <= 0.1875)
-    assert np.all(np.abs(samples[:, 1]) <= 40)
-    assert samples[:, 0].min() < -0.1 and samples[:, 0].max() > 0.1
-    assert samples[:, 1].min() < -20 and samples[:, 1].max() > 20
+    samples = np.array([provider.sample_params(ground_skill=_sweep(), rng=rng) for _ in range(400)])
+    assert samples.shape == (400, 3)
+    for column, (low, high) in enumerate(((0.03, 0.14), (-0.03, 0.04), (0.04, 0.12))):
+        assert samples[:, column].min() >= low and samples[:, column].max() <= high
+        span = high - low
+        assert samples[:, column].min() < low + 0.1 * span
+        assert samples[:, column].max() > high - 0.1 * span
     action = provider.compute_action(
-        ground_skill=_sweep(), params=np.array([-0.04, 15.0]), state=State(data={})
+        ground_skill=_sweep(), params=np.array([0.07, 0.015, 0.10]), state=State(data={})
     )
-    np.testing.assert_array_equal(action, [1, 0, -0.04, 15.0])
+    np.testing.assert_array_equal(action, [1, 0, 0.07, 0.015, 0.10])
 
 
-def test_sweep_bounds_are_lateral_offset_then_plow_angle_with_fixed_speed():
-    assert Skills.SWEEP_BOUNDS == ((-0.1875, 0.1875), (-40.0, 40.0))
+def test_gather_and_sweep_bounds_are_squeeze_gather_then_depth_with_fixed_speed():
+    assert Skills.GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (-0.03, 0.04), (0.04, 0.12))
     assert SWEEP_SPEED_M_S == 0.06
-    assert Skills.SWEEP_RACK.param_dim == 2
+    assert Skills.GATHER_AND_SWEEP.param_dim == 3
 
 
 def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index():
@@ -63,12 +64,12 @@ def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index
     assert params.shape == (0,)
     np.testing.assert_array_equal(
         provider.compute_action(ground_skill=ground, params=params, state=State(data={})),
-        [3, 3, 0, 0],
+        [3, 3, 0, 0, 0],
     )
-    wait = GroundSkill(skill=Skills.WAIT, objects=())
-    assert provider.sample_params(ground_skill=wait, rng=rng).shape == (0,)
+    pick = GroundSkill(skill=Skills.PICK_SCRAPER, objects=(Objects.robot, Objects.scraper))
+    assert provider.sample_params(ground_skill=pick, rng=rng).shape == (0,)
     np.testing.assert_array_equal(
-        RackServingActions.encode(ground_skill=wait, params=np.zeros(0)), [6, 0, 0, 0]
+        RackServingActions.encode(ground_skill=pick, params=np.zeros(0)), [0, 0, 0, 0, 0]
     )
 
 
@@ -77,14 +78,17 @@ def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index
     [
         [],
         [0],
-        [0, 0, 0.06],
-        [0.19, 0],
-        [-0.19, 0],
-        [0, 41],
-        [0, -41],
-        [0, np.nan],
-        [np.inf, 0],
-        [[0, 0]],
+        [0, 0.1],
+        [0.07, 0.0, 0.1, 0.06],
+        [0.029, 0.0, 0.1],
+        [0.141, 0.0, 0.1],
+        [0.07, -0.031, 0.1],
+        [0.07, 0.041, 0.1],
+        [0.07, 0.0, 0.039],
+        [0.07, 0.0, 0.121],
+        [0.07, 0.0, np.nan],
+        [np.inf, 0.0, 0.1],
+        [[0.07, 0.0, 0.1]],
     ],
 )
 def test_invalid_sweep_parameters_rejected(*, params):
@@ -92,9 +96,9 @@ def test_invalid_sweep_parameters_rejected(*, params):
         RackServingActions.encode(ground_skill=_sweep(), params=np.array(params))
 
 
-@pytest.mark.parametrize("params", [[-0.1875, -40], [0.1875, 40]])
+@pytest.mark.parametrize("params", [[0.03, -0.03, 0.04], [0.14, 0.04, 0.12]])
 def test_sweep_parameter_boundaries_are_inclusive(*, params):
-    assert RackServingActions.encode(ground_skill=_sweep(), params=np.array(params)).shape == (4,)
+    assert RackServingActions.encode(ground_skill=_sweep(), params=np.array(params)).shape == (5,)
 
 
 def test_human_skills_are_priced_but_never_encoded_as_robot_actions():

@@ -461,15 +461,28 @@ class ShelfSkills:
             self.check_wiper_held(label=label)
 
     def pads_hold_wiper(self) -> bool:
-        """`HoldingWiper`: both gripper pads touch the wiper (the backend's own test)."""
-        touched = [False] * len(self.pad_sides)
-        for contact in self.data.contact[: self.data.ncon]:
-            for mine, other in ((contact.geom1, contact.geom2), (contact.geom2, contact.geom1)):
-                if self.model.geom_bodyid[other] != self.wiper_body:
-                    continue
-                for side, pads in enumerate(self.pad_sides):
-                    touched[side] |= int(mine) in pads
-        return all(touched)
+        """`HoldingWiper`: both gripper pads touch the wiper (the backend's own test).
+
+        Vectorised over the contact arrays: the servo calls it every physics substep,
+        and a per-contact Python loop over a scene with food on a wire rack cost more
+        than `mj_step` itself.
+        """
+        ncon = int(self.data.ncon)
+        if not self.pad_sides:
+            return True
+        if ncon == 0:
+            return False
+        first = np.asarray(self.data.contact.geom1[:ncon])
+        second = np.asarray(self.data.contact.geom2[:ncon])
+        body = self.model.geom_bodyid
+        mine = np.concatenate((
+            first[body[second] == self.wiper_body],
+            second[body[first] == self.wiper_body],
+        ))
+        if mine.size == 0:
+            return False
+        touched = set(mine.tolist())
+        return all(not touched.isdisjoint(pads) for pads in self.pad_sides)
 
     def check_wiper_held(self, *, label: str) -> None:
         if self.pads_hold_wiper():
@@ -536,21 +549,44 @@ class ShelfSkills:
         """Penetration of the robot into itself, the cupboard or the box, and (unless
         an object is held) of non-pad robot links into the wiper."""
         self.mujoco.mj_collision(self.model, d)
+        ncon = int(d.ncon)
+        if ncon == 0:
+            return 0.0
+        a = np.asarray(d.contact.geom1[:ncon])
+        b = np.asarray(d.contact.geom2[:ncon])
+        dist = np.asarray(d.contact.dist[:ncon], dtype=float)
+
+        def member(*, geoms: Any) -> tuple[np.ndarray, np.ndarray]:
+            mask = np.zeros(int(self.model.ngeom), dtype=bool)
+            mask[np.fromiter(geoms, dtype=int, count=len(geoms))] = True
+            return mask[a], mask[b]
+
+        robot_a, robot_b = member(geoms=self.robot_geoms)
+        fixed_a, fixed_b = member(geoms=self.cupboard_geoms | self.box_geoms)
+        wiper_a, wiper_b = member(geoms=set(self.wiper_geoms))
+        pad_a, pad_b = member(geoms=self.pad_geoms)
+        # `max(0.0, x)` is `x if x > 0.0 else 0.0`, NaN included; np.where keeps that.
+        depth = np.where(-dist > 0.0, -dist, 0.0)
+        self_depth = depth - 0.001
+        terms = np.where(
+            robot_a & robot_b,
+            np.where(self_depth > 0.0, self_depth, 0.0),
+            np.where(
+                (robot_a & fixed_b) | (robot_b & fixed_a),
+                depth + 0.001,
+                np.where(
+                    ~np.bool_(holding)
+                    & ((robot_a & wiper_b & ~pad_a) | (robot_b & wiper_a & ~pad_b)),
+                    depth,
+                    0.0,
+                ),
+            ),
+        )
+        # Sum in contact order, as the per-contact loop did, so the float is identical;
+        # skipping exact zeros changes nothing because every term is non-negative.
         cost = 0.0
-        wiper = set(self.wiper_geoms)
-        fixed = self.cupboard_geoms | self.box_geoms
-        for contact in d.contact[: d.ncon]:
-            a, b = contact.geom1, contact.geom2
-            depth = max(0.0, -contact.dist)
-            if a in self.robot_geoms and b in self.robot_geoms:
-                cost += max(0.0, depth - 0.001)
-            elif (a in self.robot_geoms and b in fixed) or (b in self.robot_geoms and a in fixed):
-                cost += depth + 0.001
-            elif not holding and (
-                (a in self.robot_geoms and b in wiper and a not in self.pad_geoms)
-                or (b in self.robot_geoms and a in wiper and b not in self.pad_geoms)
-            ):
-                cost += depth
+        for term in terms[terms != 0.0].tolist():
+            cost += term
         return cost
 
     def ik(

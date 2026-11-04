@@ -23,12 +23,14 @@ def main():
     parser.add_argument("--surface", choices=("wire", "concept"), default="wire")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--human-layout", action="store_true")
-    parser.add_argument("--dy", type=float, default=0.0, help="SweepRack lateral offset, m")
-    parser.add_argument("--phi", type=float, default=0.0, help="SweepRack plow angle, deg")
     parser.add_argument(
-        "--pile-centred",
-        action="store_true",
-        help="dy = measured y-centroid of food on the rack (clipped), as in the coverage grid",
+        "--s", type=float, default=0.07, help="GatherAndSweep squeeze stop behind rack front, m"
+    )
+    parser.add_argument(
+        "--delta", type=float, default=0.015, help="GatherAndSweep gather stop = food width - delta"
+    )
+    parser.add_argument(
+        "--d", type=float, default=0.10, help="GatherAndSweep sweep end before plate near edge, m"
     )
     parser.add_argument(
         "--serving-target",
@@ -40,9 +42,13 @@ def main():
         "--settle-steps", type=int, default=20, help="post-return settle, as the coverage grid"
     )
     parser.add_argument("--scraper-tilt-degrees", type=float, default=45)
-    parser.add_argument("--food-grip-command", type=float, default=0.8)
+    parser.add_argument(
+        "--food-grip-command",
+        type=float,
+        default=None,
+        help="food closing position; default: the environment's own (fully closed)",
+    )
     parser.add_argument("--gripper-contact-dimension", type=int, choices=(3, 4, 6), default=4)
-    parser.add_argument("--cooling-seconds", type=float, default=5.0)
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument("--scene-bg", action="store_true", help="render the full KINDER background")
     parser.add_argument("--playback-speed", type=int, choices=(1, 5), default=1)
@@ -63,10 +69,9 @@ def main():
     config = RackServingConfig(
         surface_kind=args.surface,
         serving_target=args.serving_target,
-        cooling_seconds=args.cooling_seconds,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
-        food_grip_command=args.food_grip_command,
         gripper_contact_dimension=args.gripper_contact_dimension,
+        **({} if args.food_grip_command is None else {"food_grip_command": args.food_grip_command}),
     )
     env = RackServingEnvironment(config=config, scene_bg=args.scene_bg, skill_step_limit=3500)
     report = {
@@ -84,7 +89,6 @@ def main():
         "experiment_relaunched": False,
     }
     renderer = writer = trace = None
-    dy = args.dy
     serving_name = {
         "corelle_plate": "CORELLE PLATE",
         "round_plate": "ROUND PLATE",
@@ -166,7 +170,9 @@ def main():
             draw = ImageDraw.Draw(canvas)
             draw.text(
                 (12, 5),
-                f"RACK → {serving_name} | SweepRack(dy={dy:+.3f} m, phi={args.phi:+.0f}°)"
+                f"RACK → {serving_name} | GatherAndSweep(s={args.s:.3f} m,"
+                f" delta={args.delta:+.3f} m,"
+                f" d={args.d:.3f} m)"
                 f" | {args.caption}"[:120],
                 font=font,
                 fill="white",
@@ -189,9 +195,8 @@ def main():
             draw.text((12, 544), text[:133], font=font, fill="#fbbf24")
             draw.text(
                 (12, 570),
-                f"DEMO clock {backend.ledger.elapsed_seconds:.1f}s / {config.cooling_seconds:g}s"
-                f"; ready={backend.ledger.ready}"
-                f" | NOT temperature sensing | human cost {backend.ledger.human_cost:g}",
+                f"clock {backend.ledger.elapsed_seconds:.1f}s"
+                f" | human cost {backend.ledger.human_cost:g}",
                 font=font,
                 fill="white",
             )
@@ -259,13 +264,7 @@ def main():
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
         initial = NativeTrial.snapshot(env=env)
         report["initial"] = initial
-        if args.pile_centred:
-            dy, _ = NativeTrial.resolve_pair(
-                pair={"dy_m": None, "phi_deg": args.phi, "dy_source": "pile_centroid"},
-                initial=initial,
-                config=config.model_dump(mode="json"),
-            )
-        report["sweep_parameters"] = {"dy_m": dy, "phi_deg": args.phi}
+        report["sweep_parameters"] = {"s_m": args.s, "delta_m": args.delta, "d_m": args.d}
         report["measured_geometry"] = {
             "rack": rack.model_dump(),
             "tray": tray.model_dump(),
@@ -276,7 +275,7 @@ def main():
             nonlocal label
             label = name
             before = backend.ledger.elapsed_seconds
-            env.take_action(action=np.array([SKILL_IDS[name], index, dy, args.phi]))
+            env.take_action(action=np.array([SKILL_IDS[name], index, args.s, args.delta, args.d]))
             row = {
                 "skill": name,
                 "food_index": index,
@@ -304,10 +303,6 @@ def main():
             print(json.dumps(row), flush=True)
 
         if not args.setup_only:
-            if not backend.ledger.ready:
-                action(name="SweepRack")
-                report["early_sweep_rejected"] = "ready" in (env.last_skill_error() or "")
-            action(name="Wait")
             if args.individual or args.reset_probe:
                 action(name="PickFood", index=0)
                 if backend.held(name="cube_0"):
@@ -318,7 +313,7 @@ def main():
                 action(name="PickScraper")
                 if backend.held(name="wiper_0"):
                     if not args.return_only:
-                        action(name="SweepRack")
+                        action(name="GatherAndSweep")
                     report["sweep_metrics"] = env.rack_controllers().metrics
                     if not args.sweep_only:
                         action(name="ReturnScraper")

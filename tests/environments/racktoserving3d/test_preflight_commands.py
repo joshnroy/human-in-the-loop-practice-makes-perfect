@@ -41,7 +41,7 @@ def test_documented_preflight_arguments_parse_and_keep_intended_bounds(
     assert args.max_steps_per_interaction == 4
     assert args.goal_pursuit_horizon == 0
     assert args.skill_step_limit == 2000
-    assert args.initial_elapsed_seconds == args.cooling_seconds == 300
+    assert not hasattr(args, "cooling_seconds")
     assert args.dumpling_width == 0.045
     assert args.defer_rendering
     assert args.num_test_tasks == 1

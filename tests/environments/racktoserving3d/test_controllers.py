@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.controllers import RackControllers
@@ -113,32 +114,230 @@ def test_release_lifts_without_dragging_food_back_then_waits():
     controller.shelf.hold.assert_called_once_with(count=40, label="food_settle")
 
 
-@pytest.mark.parametrize("phi", [-30.0, 0.0, 15.0, 40.0])
-def test_plow_rotation_yaws_the_blade_line_like_the_planned_stroke(*, phi):
-    from hitl_pmp.environments.racktoserving3d.stroke import plan_stroke
+GEOMETRY = {
+    "rack_back": 1.6275,
+    "rack_front": 1.3725,
+    "rack_y_min": -0.1875,
+    "rack_y_max": 0.1875,
+    "rack_top": 0.925,
+    "plate_center_x": 1.2323,
+    "plate_center_y": 0.0,
+    "plate_radius": 0.1302,
+    "blade_width": 0.25,
+}
+FOOD = np.array([[[1.5, 0.0, 0.94]]])
 
-    rotation = RackControllers.push_rotation(phi=phi)
-    plan = plan_stroke(
-        food_corners=np.array([[[1.5, 0.0, 0.94]]]),
-        rack_back=1.6275,
-        rack_front=1.3725,
-        rack_center_y=0.0,
-        rack_top=0.925,
-        dy=0.0,
-        phi_deg=phi,
-        blade_width=0.25,
-        tray_back=1.3625,
-    )
-    np.testing.assert_allclose(rotation[:, 0], plan.axis, atol=1e-12)
-    lean = rotation[:, 2]
-    assert lean[:2] @ plan.axis[:2] == pytest.approx(0, abs=1e-12)
-    assert lean[0] > 0 and lean[2] > 0
+
+def test_squeeze_and_sweep_hold_the_blade_like_the_old_straight_sweep():
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    sweep = GatherAndSweepPlanner.sweep(d=0.1, plate_clear_z=0.921, **GEOMETRY)
+    for stroke in (*GatherAndSweepPlanner.squeeze(s=0.07, **GEOMETRY), sweep):
+        rotation = RackControllers.stroke_rotation(stroke=stroke)
+        np.testing.assert_allclose(rotation, RackControllers.push_rotation(phi=0), atol=1e-12)
+        lean = rotation[:, 2]
+        assert lean[0] > 0 and lean[2] > 0
+
+
+def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    sweep = GatherAndSweepPlanner.sweep(d=0.1, plate_clear_z=0.921, **GEOMETRY)
+    sweep_lean = RackControllers.stroke_rotation(stroke=sweep)[:, 2]
+    for stroke in GatherAndSweepPlanner.gather(
+        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
+    ):
+        rotation = RackControllers.stroke_rotation(stroke=stroke)
+        np.testing.assert_allclose(np.abs(rotation[:, 0]), [1.0, 0.0, 0.0], atol=1e-12)
+        lean = rotation[:, 2]
+        assert lean @ stroke.direction == pytest.approx(sweep_lean @ sweep.direction)
+        assert lean[2] == pytest.approx(sweep_lean[2])
 
 
 @pytest.mark.parametrize(
-    ("dy", "phi"), [(0.19, 0.0), (-0.19, 0.0), (0.0, 41.0), (0.0, -41.0), (float("nan"), 0.0)]
+    ("s", "delta", "d"),
+    [
+        (0.029, 0.0, 0.1),
+        (0.141, 0.0, 0.1),
+        (0.07, -0.031, 0.1),
+        (0.07, 0.041, 0.1),
+        (0.07, 0.0, 0.039),
+        (0.07, 0.0, 0.121),
+        (float("nan"), 0.0, 0.1),
+    ],
 )
-def test_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(*, dy, phi):
+def test_gather_and_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(
+    *, s, delta, d
+):
     controller = RackControllers.__new__(RackControllers)
-    with pytest.raises(SkillFailed, match="SweepRack requires"):
-        controller.sweep(dy=dy, phi=phi)
+    with pytest.raises(SkillFailed, match="GatherAndSweep requires"):
+        controller.gather_and_sweep(s=s, delta=delta, d=d)
+
+
+@pytest.mark.parametrize("side", [1, -1])
+def test_side_stances_are_the_real_arm_validated_mirrored_poses(*, side):
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+    np.testing.assert_allclose(
+        stances.side_base(side=side, config=config), [1.5, side * 0.85, -side * np.pi / 2]
+    )
+    lane = side * (config.counter_width / 2 + stances.lane_clearance)
+    assert lane == pytest.approx(side * 1.0)
+
+
+def test_rear_stance_is_the_validated_sweep_pose_shifted_with_the_stroke():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+    np.testing.assert_allclose(stances.rear_base(y=0.0, config=config), [2.05, -0.15, np.pi - 0.30])
+    np.testing.assert_allclose(
+        stances.rear_base(y=0.0625, config=config), [2.05, -0.0875, np.pi - 0.30]
+    )
+
+
+def test_routes_between_stances_stay_outside_the_counter_and_end_on_the_stance():
+    from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
+
+    config = RackServingConfig()
+    stances = StrokeStances()
+
+    def outside(*, point):
+        return (
+            abs(point[1]) > config.counter_width / 2
+            or point[0] > config.counter_x_max
+            or point[0] < config.counter_x_min
+        )
+
+    rear = stances.rear_base(y=-0.0625, config=config)
+    plus = stances.side_base(side=1, config=config)
+    minus = stances.side_base(side=-1, config=config)
+    for route, goal in (
+        (stances.rear_to_side(side=1, start=rear, config=config), plus),
+        (stances.side_to_side(side=-1, config=config), minus),
+        (stances.side_to_rear(side=-1, config=config), None),
+    ):
+        assert all(outside(point=point) for point in route)
+        if goal is not None:
+            np.testing.assert_allclose(route[-1], goal)
+        else:
+            assert route[-1][0] > config.counter_x_max
+            assert route[-1][2] == pytest.approx(np.pi)
+    assert stances.side_exit == "rear_lane"
+
+
+def test_release_levels_and_backs_off_a_rolled_blade_before_rising():
+    controller = RackControllers.__new__(RackControllers)
+    rolled = np.eye(4)
+    rolled[:3, :3] = Rotation.from_euler("y", 4, degrees=True).as_matrix()
+    rolled[:3, 3] = [1.50, -0.04, 0.926]
+    edge = np.array([[1.375, -0.04, 0.9349], [1.625, -0.04, 0.9171]])
+    level = RackControllers.push_rotation(phi=0)
+    targets = []
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(return_value=rolled),
+        blade_edge=Mock(
+            side_effect=lambda pose=None: (
+                edge if pose is None else edge - rolled[:3, 3] + pose[:3, 3]
+            )
+        ),
+    )
+    controller.move_tool = Mock(side_effect=lambda **kwargs: targets.append(kwargs["body"]))
+    controller.shelf = SimpleNamespace(hold=Mock())
+    controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
+    first, last = targets[0], targets[-1]
+    np.testing.assert_allclose(first[:3, :3], level)
+    np.testing.assert_allclose(last[:3, :3], level)
+    # Levelled and backed off 3 cm against the push, about the edge centre, then lifted.
+    assert first[2, 3] == pytest.approx(rolled[2, 3] + 0.002, abs=0.01)
+    assert first[1, 3] - rolled[1, 3] == pytest.approx(-0.03, abs=0.01)
+    assert last[1, 3] == pytest.approx(first[1, 3])
+    assert last[2, 3] == pytest.approx(first[2, 3] + 0.06)
+
+
+def test_sweep_clears_the_plate_rim_by_more_than_an_ik_accepted_blade_roll():
+    controller = RackControllers.__new__(RackControllers)
+    config = RackServingConfig()
+    controller.backend = SimpleNamespace(
+        config=config, support=Mock(return_value=SimpleNamespace(top_z=0.907))
+    )
+    # 2 deg of accepted IK rotation error drops one end of the 25 cm blade 4.4 mm.
+    roll_drop = 0.125 * np.sin(np.deg2rad(2.0))
+    clearance = controller.plate_clear_z() - config.corelle_rim_top_z
+    # The blade's lowest point was measured 5 mm under its edge centre mid-sweep.
+    assert clearance > max(roll_drop, 0.005) + 0.0025
+
+
+def _settling_controller(*, lag):
+    """Fake arm whose blade edge sits a fixed ``lag`` short of every commanded edge."""
+    from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
+
+    controller = RackControllers.__new__(RackControllers)
+    stroke = GatherAndSweepPlanner.gather(
+        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
+    )[0]
+    edge = {"now": stroke.end - lag}
+    steps = []
+
+    def step(*, arm, label):
+        steps.append(label)
+        edge["now"] = np.asarray(arm) - lag
+
+    controller.tool = SimpleNamespace(
+        blade_edge=Mock(side_effect=lambda pose=None: np.array([edge["now"], edge["now"]])),
+        ik=Mock(side_effect=lambda **kwargs: kwargs["position"].copy()),
+        step=Mock(side_effect=step),
+    )
+    controller.shelf = SimpleNamespace(base_target=None)
+    controller.hand_for_tool = lambda *, body: body
+    body = np.eye(4)
+    body[:3, 3] = stroke.start
+    return controller, stroke, body, steps
+
+
+def test_stroke_end_settle_removes_a_steady_lag_along_travel_and_in_height():
+    # The +y gather travels -y with the blade along x: travel is y, the blade's length x.
+    lag = np.array([0.0, 0.0075, 0.001])
+    controller, stroke, body, steps = _settling_controller(lag=lag)
+    before, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert before == pytest.approx(np.linalg.norm(lag))
+    assert after < 0.005
+    assert 0 < len(steps) <= RackControllers.SETTLE_STEPS
+    assert set(steps) == {"gather_settle"}
+
+
+def test_stroke_end_settle_never_corrects_along_the_blade():
+    # Dragging the blade along its own length rearranged the food and made the next
+    # gather climb a dumpling (real arm, 2026-11-03): that error is left alone.
+    lag = np.array([0.05, 0.0075, 0.0])
+    controller, stroke, body, _ = _settling_controller(lag=lag)
+    _, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
+    assert commanded
+    assert all(position[0] == pytest.approx(stroke.end[0]) for position in commanded)
+    assert after == pytest.approx(0.05, abs=0.005)
+
+
+def test_stroke_end_settle_does_nothing_when_already_on_target():
+    controller, stroke, body, steps = _settling_controller(lag=np.array([0.03, 0.001, 0.0]))
+    before, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert steps == []
+    assert before == after == pytest.approx(np.hypot(0.03, 0.001))
+
+
+def test_stroke_end_settle_never_presses_the_blade_down_into_the_rack():
+    # The blade rode up 1.3 cm on a dumpling: the settle may not chase it 1.3 cm down.
+    controller, stroke, body, _ = _settling_controller(lag=np.array([0.0, 0.0, -0.013]))
+    controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
+    assert min(position[2] for position in commanded) >= stroke.end[2] - 0.002 - 1e-12
