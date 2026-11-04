@@ -575,7 +575,7 @@ def test_the_caches_change_no_bit_of_a_search(
         assert RecordedSearch.solve(state=state, reduce=reduce) == uncached
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def recorded() -> dict[str, dict]:
     return json.loads(FIXTURE.read_text())
 
