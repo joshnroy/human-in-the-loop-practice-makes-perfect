@@ -129,6 +129,16 @@ class NativePouringController(BaseModel):
         else:
             mujoco.mj_forward(self.model, self.scratch)
 
+    @staticmethod
+    def posture_offset(*, angle: float, posture: float) -> float:
+        """Joint 5 is continuous: compare it to the posture modulo a whole turn.
+
+        Exactly ``angle - posture`` whenever that is within half a turn, so an
+        unwound arm solves bit-identically to an absolute residual.
+        """
+        offset = angle - posture
+        return offset - 2 * np.pi * round(offset / (2 * np.pi))
+
     def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
 
         self.posture += float(np.clip(self.posture_goal - self.posture, -0.02, 0.02))
@@ -143,7 +153,7 @@ class NativePouringController(BaseModel):
                 self.scratch.site_xpos[self.site] - position,
                 0.22 * (rotation * actual.inv()).as_rotvec(),
                 0.002 * (q - self.last_q),
-                self.posture_weight * (q[4] - self.posture),
+                self.posture_weight * self.posture_offset(angle=q[4], posture=self.posture),
                 self.obstacle_residual(),
             ]
 
