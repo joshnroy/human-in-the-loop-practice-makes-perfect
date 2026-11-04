@@ -267,21 +267,23 @@ class PackagingTests(unittest.TestCase):
                             worker.run(launch=launch, row=row, smoke=False, manifest=manifest)
 
     def test_a_reset_cost_sweep_expands_rows_per_cost(self):
-        costs = ("5", "0", "10", "20", "100", "10000")
+        costs = ("5", "10", "20", "100", "10000", "0")
         with tempfile.TemporaryDirectory() as directory:
             output = prepared(
                 directory=directory,
                 extra=("--human-reset-costs", *costs, "--max-parallel", "54"),
             )
             manifest = json.loads((output / "manifest.json").read_text())
-            self.assertEqual(manifest["human_reset_costs"], [5, 0, 10, 20, 100, 10000])
+            self.assertEqual(manifest["human_reset_costs"], [5, 10, 20, 100, 10000, 0])
             rows = manifest["runs"]
             self.assertEqual(
                 [(row["human_reset_cost"], row["seed"], row["arm"]) for row in rows],
+                # Seed-major, then cost in the order given, then arm: one seed's full
+                # results arrive first.
                 [
                     (cost, seed, arm)
-                    for cost in (5, 0, 10, 20, 100, 10000)
                     for seed in range(3)
+                    for cost in (5, 10, 20, 100, 10000, 0)
                     for arm in prepare.ARMS
                 ],
             )
@@ -338,8 +340,8 @@ class PackagingTests(unittest.TestCase):
             [(None, seed, arm) for seed in range(3) for arm in worker.ARMS],
         )
         self.assertEqual(
-            worker.expected_rows(manifest={"human_reset_costs": [5, 0]})[9],
-            (0, 0, "ees"),
+            worker.expected_rows(manifest={"human_reset_costs": [5, 0]})[3:7],
+            [(0, 0, "ees"), (0, 0, "expectimax"), (0, 0, "curtis"), (5, 1, "ees")],
         )
 
     def test_worker_checks_each_rows_reset_cost(self):

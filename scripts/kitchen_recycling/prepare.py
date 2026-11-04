@@ -143,7 +143,8 @@ def main() -> None:
         type=float,
         nargs="+",
         default=None,
-        help="Sweep the human reset cost: every arm x seed once per cost, in this order, "
+        help="Sweep the human reset cost: every arm x seed once per cost (rows seed-major, "
+        "then cost in this order, then arm), "
         "each row with its own cost file (both resets at that cost, written beside the "
         "manifest under costs/), --human-reset-practice-cost and output directory.",
     )
@@ -175,8 +176,10 @@ def main() -> None:
                 json.dumps(priced_costs(base=base, cost=cost), indent=2) + "\n"
             )
             cost_files[cost] = name
-    for cost in costs if costs is not None else [None]:
-        for seed in range(3):
+    # Seed-major, then cost in the order given, then arm: one seed's full sweep finishes
+    # first. Without a sweep this is the nine seed-major runs.
+    for seed in range(3):
+        for cost in costs if costs is not None else [None]:
             for arm in ARMS:
                 command = argv(
                     arm=arm,

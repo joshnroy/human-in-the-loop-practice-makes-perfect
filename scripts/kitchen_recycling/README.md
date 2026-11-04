@@ -18,7 +18,8 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   and is byte-identical to the 160,000-step package.
 - Both human resets cost 5 by default. `prepare.py --human-reset-costs C1 C2 ...` sweeps
   that cost: the nine runs are repeated once per cost, in the order given (manifest
-  `human_reset_costs`; row index = cost-major, then seed, then arm). Each cost gets its own
+  `human_reset_costs`; row index = seed-major, then cost in that order, then arm, so
+  one seed's whole sweep finishes first). Each cost gets its own
   cost file, `costs/human-reset-cost-<C>.json` beside the manifest (the repo's
   `costs.json` with both resets repriced), passed by its deployment path; each row adds
   `--human-reset-practice-cost <C>` and runs in `results/reset-cost-<C>/<arm>/<seed>`.

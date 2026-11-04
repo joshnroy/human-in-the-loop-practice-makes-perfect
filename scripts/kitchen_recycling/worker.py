@@ -38,10 +38,10 @@ def check_costs(*, costs: dict, cost: float = 5) -> None:
 
 
 def expected_rows(*, manifest: dict) -> list[tuple]:
-    """(reset cost, seed, arm) per row: the nine seed-major runs, once per swept cost
-    (`None`: no sweep, the cost file's 5)."""
+    """(reset cost, seed, arm) per row: seed-major, then each swept cost in the manifest's
+    order, then arm (`None`: no sweep, the nine runs at the cost file's 5)."""
     costs = manifest.get("human_reset_costs", [None])
-    return [(cost, seed, arm) for cost in costs for seed in range(3) for arm in ARMS]
+    return [(cost, seed, arm) for seed in range(3) for cost in costs for arm in ARMS]
 
 
 def check_row_costs(*, parsed: argparse.Namespace, row: dict) -> None:
