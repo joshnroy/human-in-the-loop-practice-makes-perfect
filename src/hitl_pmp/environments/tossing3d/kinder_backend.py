@@ -169,7 +169,9 @@ def _build_state_collection_class() -> Any:
     class StateCollection(Wrapper):
         def __init__(self, env: Any) -> None:  # noqa: PLR0917 (gymnasium's own signature)
             super().__init__(env)
-            self.state_list: list[Any] = []
+            # (state, extra) pairs; `extra` is whatever `capture_extra` read at the same
+            # tick (the finger joints, see `KinderBackend.finger_joint_plain`).
+            self.state_list: list[tuple[Any, dict[str, list[float]]]] = []
             self.timing: SkillTiming | None = None
 
         def reset(self, **kwargs: Any) -> Any:
@@ -191,8 +193,12 @@ def _build_state_collection_class() -> Any:
             # Untyped past this point like the rest of this module's KINDER surface.
             unwrapped: Any = self.unwrapped
             object_centric = unwrapped._object_centric_env  # noqa: SLF001
+            capture_extra = getattr(self, "capture_extra", None)
             with SkillTiming.phase_of(timing=timing, name="state_capture"):
-                self.state_list.append(object_centric._get_current_state())  # noqa: SLF001
+                self.state_list.append((
+                    object_centric._get_current_state(),  # noqa: SLF001
+                    {} if capture_extra is None else capture_extra(),
+                ))
             if after is not None:
                 try:
                     with SkillTiming.phase_of(timing=timing, name="control_step_observers"):
@@ -201,7 +207,7 @@ def _build_state_collection_class() -> Any:
                     raise ControlStepObserverFailed() from exc
             return output
 
-        def drain(self) -> list[Any]:
+        def drain(self) -> list[tuple[Any, dict[str, list[float]]]]:
             states = self.state_list
             self.state_list = []
             return states
@@ -282,6 +288,21 @@ class KinderBackend(BaseModel):
     # the robot config and is resolved at reset (`robot_name`), so `abstract_atoms`
     # translates one to the other rather than assuming they coincide.
     robot_atom_name: ClassVar[str] = "robot"
+    # The gripper's eight finger joints, in the compiled model's qpos order, without the
+    # robot-name prefix. An `ObjectCentricState` carries none of their positions or
+    # velocities (see `restore`), so a recorded state carries them beside the objects,
+    # under a key no KINDER object can have.
+    finger_joint_suffixes: ClassVar[tuple[str, ...]] = (
+        "right_driver_joint",
+        "right_coupler_joint",
+        "right_spring_link_joint",
+        "right_follower_joint",
+        "left_driver_joint",
+        "left_coupler_joint",
+        "left_spring_link_joint",
+        "left_follower_joint",
+    )
+    finger_joints_key: ClassVar[str] = "mujoco:finger_joints"
 
     # Upstream's arm configurations are no longer named here: the composed toss reads
     # `TOSS_WINDUP_ARM_CONFIGURATION` and `TOSS_RELEASE_ARM_CONFIGURATION` itself, so this
@@ -354,6 +375,10 @@ class KinderBackend(BaseModel):
     _pick_plan_failures: OrderedDict[bytes, str | None] = PrivateAttr(default_factory=OrderedDict)
     # The execution being timed (`set_timing`), or None: nothing is timed between them.
     _timing: SkillTiming | None = PrivateAttr(default=None)
+    # The finger joints' qpos and qvel addresses, with the MuJoCo model they index.
+    _finger_addresses: tuple[Any, np.ndarray, np.ndarray] | None = PrivateAttr(default=None)
+    # A replay of a recording made before finger joints were recorded says so once.
+    _warned_unrecorded_fingers: bool = PrivateAttr(default=False)
 
     @staticmethod
     def configure_headless_rendering(
@@ -545,6 +570,7 @@ class KinderBackend(BaseModel):
             # client from a `weakref.finalize` when it is collected. An explicit
             # disconnect here would double-disconnect against a reused client id.
             self._abstractor = None
+            self._finger_addresses = None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
         """Turn per-physics-tick FRAME collection on or off, effective immediately.
@@ -574,8 +600,13 @@ class KinderBackend(BaseModel):
         return [np.asarray(frame, dtype=np.uint8) for frame in self._env.render()]
 
     def drain_substep_states(self) -> list[Any]:
+        """`drain_substep_ticks`, without the finger joints read at each tick."""
+        return [state for state, _ in self.drain_substep_ticks()]
+
+    def drain_substep_ticks(self) -> list[tuple[Any, dict[str, list[float]]]]:
         """Every `ObjectCentricState` snapshot collected since the last drain, in
-        order, clearing the buffer.
+        order, clearing the buffer -- each paired with `finger_joint_plain()` as read
+        at the same tick, which the state itself cannot carry.
 
         Unconditional, unlike `drain_substep_frames`: state capture is always on once a
         scene exists (see `_sync_recording_wrapper`), regardless of `record_substeps` --
@@ -612,6 +643,7 @@ class KinderBackend(BaseModel):
             else self._raw_env
         )
         self._env = self.api().state_collection(inner)
+        self._env.capture_extra = self.finger_joint_plain
         self._env.before_control_step = self._before_control_step
         self._env.after_control_step = self._after_control_step
         self._env.timing = self._timing
@@ -644,11 +676,21 @@ class KinderBackend(BaseModel):
         return self._require_state().copy()
 
     def restore(self, *, snapshot: Any) -> Tossing3DObservation:
-        """Put the simulator back to a `snapshot`, exactly, and re-observe.
+        """Put the simulator back to a `snapshot`, as far as the snapshot reaches, and
+        re-observe.
 
         Faithful in a way `Tossing3DEnvironment.set_state` cannot be: this restores
-        velocities and the full arm configuration too, because a KINDER
-        `ObjectCentricState` carries them. Requires `allow_state_access`.
+        velocities and the seven arm joints too, because a KINDER `ObjectCentricState`
+        carries them. Requires `allow_state_access`.
+
+        **Not the gripper's finger joints.** The state carries one gripper position and
+        one gripper velocity; upstream's `set_state` writes the first to the gripper
+        actuator's control and the second to the two driver joints' velocities. The
+        eight finger joints' positions, and six of their velocities, are written by
+        nothing, so they keep whatever the simulator last left in them -- open, or
+        closed after a grasp or a failed toss. In-run restores keep that behaviour on
+        purpose: every run so far was measured under it. A replay of a *recorded* state
+        uses `restore_for_replay`, which writes them back.
 
         **Faithful to float32, not bit-exact.** An `ObjectCentricState` is the observation
         vector, and `ObjectCentricBoxSpace` is float32, while MuJoCo integrates in
@@ -796,6 +838,77 @@ class KinderBackend(BaseModel):
             )
         return None if plan is not None else "base_motion_plan_failed"
 
+    def restore_for_replay(
+        self, *, plain: dict[str, list[float]], dtype: type[np.floating] = np.float64
+    ) -> Tossing3DObservation:
+        """`restore(plain_to_snapshot(plain))`, then the finger joints too, when `plain`
+        was recorded with them (`finger_joint_plain`); then re-observe.
+
+        Two replays of one recorded state are then bit-identical whatever ran between
+        them (`test_replaying_one_recorded_state_twice_gives_bit_identical_traces`):
+        restoring the finger positions alone was measured not to be enough, the
+        velocities matter too. A state recorded without them restores exactly as
+        `restore` does, with one warning per backend."""
+        snapshot = self.plain_to_snapshot(plain=plain, dtype=dtype)
+        self._object_centric().set_state(snapshot)
+        fingers = plain.get(self.finger_joints_key)
+        if fingers is not None:
+            self._write_finger_joints(values=fingers)
+        elif not self._warned_unrecorded_fingers:
+            self._warned_unrecorded_fingers = True
+            logger.warning(
+                "this recorded state carries no %r: the gripper's finger joints keep "
+                "whatever the simulator last left in them, so the replay may not match "
+                "the recorded run",
+                self.finger_joints_key,
+            )
+        self._state = snapshot.copy()
+        return self.observe()
+
+    def finger_joint_names(self) -> list[str]:
+        return [f"{self._robot_name}_{suffix}" for suffix in self.finger_joint_suffixes]
+
+    def finger_joint_feature_names(self) -> list[str]:
+        """The names of `finger_joint_plain`'s sixteen values, in order."""
+        names = self.finger_joint_names()
+        return [f"qpos:{name}" for name in names] + [f"qvel:{name}" for name in names]
+
+    def finger_joint_plain(self) -> dict[str, list[float]]:
+        """The live finger joints, as one more entry of a plain state: eight positions
+        then eight velocities, at MuJoCo's own float64. A read of MuJoCo's arrays and
+        nothing else, so recording it cannot change a run."""
+        data, qpos, qvel = self._finger_joint_access()
+        return {
+            self.finger_joints_key: [float(v) for v in data.qpos[qpos]]
+            + [float(v) for v in data.qvel[qvel]]
+        }
+
+    def _write_finger_joints(self, *, values: Sequence[float]) -> None:
+        import mujoco
+
+        data, qpos, qvel = self._finger_joint_access()
+        if len(values) != len(qpos) + len(qvel):
+            raise ValueError(
+                f"{self.finger_joints_key} needs {len(qpos) + len(qvel)} values, not {len(values)}"
+            )
+        data.qpos[qpos] = values[: len(qpos)]
+        data.qvel[qvel] = values[len(qpos) :]
+        sim = self._object_centric()._robot_env.sim  # noqa: SLF001
+        mujoco.mj_forward(sim.model.mj_model, data)
+
+    def _finger_joint_access(self) -> tuple[Any, np.ndarray, np.ndarray]:
+        sim = self._object_centric()._robot_env.sim  # noqa: SLF001
+        model = sim.model.mj_model
+        if self._finger_addresses is None or self._finger_addresses[0] is not model:
+            joints = [model.joint(name) for name in self.finger_joint_names()]
+            self._finger_addresses = (
+                model,
+                np.array([int(joint.qposadr[0]) for joint in joints]),
+                np.array([int(joint.dofadr[0]) for joint in joints]),
+            )
+        _, qpos, qvel = self._finger_addresses
+        return sim.data.mj_data, qpos, qvel
+
     @staticmethod
     def snapshot_to_plain(*, snapshot: Any) -> dict[str, list[float]]:
         """A `snapshot()` (or a `drain_substep_states()` element), as plain
@@ -829,10 +942,12 @@ class KinderBackend(BaseModel):
         # assets can renumber those IDs; fixed geometry belongs to the live model
         # and cannot be restored by moving state objects anyway.
         data = {obj: template[obj].copy() for obj in template if obj.name.startswith("collider:")}
+        # The finger joints (`finger_joint_plain`) are not a KINDER object; only
+        # `restore_for_replay` reads them.
         data.update({
             objects_by_name[name]: np.array(values, dtype=dtype)
             for name, values in plain.items()
-            if not name.startswith("collider:")
+            if not name.startswith(("collider:", "mujoco:"))
         })
         return type(template)(data, template.type_features)
 

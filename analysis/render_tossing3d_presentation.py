@@ -641,7 +641,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
             elif row.get("kind") == "tick":
                 last_state = {key: list(value) for key, value in row["state"].items()}
                 last_abstraction_diagnostics = row.get("abstraction_diagnostics")
-                env.restore_plain_snapshot(plain=last_state)
+                env.restore_plain_snapshot(plain=last_state, replay=True)
                 last_frame = backend.render(follow_robot=True)
             else:
                 continue

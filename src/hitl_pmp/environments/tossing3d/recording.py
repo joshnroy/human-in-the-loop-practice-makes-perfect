@@ -2,7 +2,10 @@
 
 A recorded state is `KinderBackend.snapshot_to_plain` of the live KINDER
 `ObjectCentricState` -- every object's full feature vector, which is what
-`restore_plain_snapshot` needs to put a fresh scene back into it. This is the
+`restore_plain_snapshot` needs to put a fresh scene back into it -- plus the gripper's
+eight finger joints' positions and velocities (`KinderBackend.finger_joint_plain`),
+which no KINDER object carries and without which two replays of one state differ.
+Recordings made before them still replay, fingers unrestored. This is the
 information the Tossing3D state log carried (`state_log.py`): skill name, bound
 objects, logged parameters, the controller-chosen toss direction, and per-tick states
 with their abstraction diagnostics. `LegacyTossing3DStateLog` loads those older logs
@@ -32,6 +35,7 @@ from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
 from .cli import Tossing3DCli
 from .environment import Tossing3DEnvironment
+from .kinder_backend import KinderBackend
 from .layout import Tossing3DLayout
 from .problem import Tossing3DProblem
 from .state_log import SkillEvent, StateLogHeader, StateLogReader, TickEvent
@@ -76,17 +80,30 @@ class Tossing3DRecording:
     def state(*, env: Tossing3DEnvironment) -> PlainState:
         """The live state at MuJoCo's precision, from the same source as every tick the
         environment drains -- so a skill's last tick and the state it leaves are equal,
-        and a segment's starting state or a human's result is recorded as precisely."""
+        and a segment's starting state or a human's result is recorded as precisely.
+        The simulator's finger joints ride along (`KinderBackend.finger_joint_plain`)."""
         backend = env.backend()
-        return backend.snapshot_to_plain(snapshot=backend.live_state())
+        state = backend.snapshot_to_plain(snapshot=backend.live_state())
+        if isinstance(backend, KinderBackend):
+            state.update(backend.finger_joint_plain())
+        return state
 
     @staticmethod
     def describe(*, env: Tossing3DEnvironment) -> dict[str, Any]:
         """Feature names, and the fixed collision boxes as static objects: they belong to
         the compiled scene, never move, and playback does not restore them."""
-        snapshot = env.backend().snapshot()
+        backend = env.backend()
+        snapshot = backend.snapshot()
+        fingers = (
+            {backend.finger_joints_key: backend.finger_joint_feature_names()}
+            if isinstance(backend, KinderBackend)
+            else {}
+        )
         return {
-            "feature_names": {obj.name: list(snapshot.type_features[obj.type]) for obj in snapshot},
+            "feature_names": {
+                **{obj.name: list(snapshot.type_features[obj.type]) for obj in snapshot},
+                **fingers,
+            },
             "static_objects": sorted(
                 obj.name for obj in snapshot if obj.name.startswith("collider:")
             ),
@@ -125,14 +142,14 @@ class Tossing3DReplayRenderer(ReplayRenderer):
 
     def show(self, *, state: PlainState) -> np.ndarray:
         env = self._env()
-        env.restore_plain_snapshot(plain=state, dtype=np.float64)
+        env.restore_plain_snapshot(plain=state, dtype=np.float64, replay=True)
         return env.backend().render(follow_robot=self.follow_robot)
 
     def current_state(self) -> PlainState:
         """Read back from MuJoCo itself, not from the backend's cached copy of what was
-        restored -- otherwise a round-trip check could not fail."""
-        backend = self._env().backend()
-        return backend.snapshot_to_plain(snapshot=backend.live_state())
+        restored -- otherwise a round-trip check could not fail. Finger joints included,
+        as they are recorded."""
+        return Tossing3DRecording.state(env=self._env())
 
     def close(self) -> None:
         if self._problem is not None:
