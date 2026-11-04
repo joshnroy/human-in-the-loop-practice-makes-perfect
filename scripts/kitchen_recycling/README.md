@@ -181,6 +181,46 @@ Earlier Tossing3D EES runs took about 1h52–2h06, Curtis 6h58–7h04, expectima
 by morning or extrapolate long-run learning from a startup smoke. Queue delay,
 final refits/evaluations, stalls and deployment overhead remain unmeasured here.
 
+## Launch-time equivalence guard
+
+A launch claimed to be behaviour-neutral (a speedup, a cache) proves it on its own smoke
+before the array may start. `prepare.py --equivalence-reference ROOT` binds each smoke
+row to the run of a previous launch (deployment root `ROOT`, results under
+`ROOT/results/`) with the same reset cost, arm and seed, and refuses unless the two argvs
+are equal. The comparison ignores each launch's cost-file path (the bound
+`costs_sha256` is compared instead) and every flag named by
+`--equivalence-allow-difference FLAG` (repeatable, none by default), with its values.
+When `ROOT` is on Della and the package is prepared on agni, pass a local copy of
+`ROOT/launch/manifest.json` as `--equivalence-reference-manifest`; its digest is bound,
+and the gate re-checks it against `ROOT`. The manifest gains an `equivalence` key;
+nothing else in the package changes, and without the option it is byte-identical.
+
+After the smoke, the gate runs
+`"$PY" -m scripts.kitchen_recycling.equivalence --launch "$L"` before it binds the full
+authorization. For every bound row it compares, over the smoke's own step range, the
+practice step events, the decision log (`pomdp_decisions.jsonl[.zst]` or
+`ees_decisions.jsonl`) and the held-out evaluation tasks the smoke ran, with
+wall-clock fields, the policy file hash, memory addresses and frozenset order normalised
+away (as #675's `compare.py` does). The comparable range stops where the smoke's 3,200-step
+budget cuts in: step events before the first budget-affected event, decision records
+through the smoke's last dispatch, evaluations at the checkpoints measured before then.
+Any divergence exits non-zero naming the first divergent record, so the `afterok` array
+never starts. It also refuses unless both runs' `host.json` name the same CPU model:
+search results are not bit-reproducible across CPU types. `worker.run` writes `host.json`
+(hostname, `/proc/cpuinfo` model name, Slurm ids) into every run directory after the CLI
+exits; runs from launches before this guard have none, so they cannot serve as a
+reference.
+
+A launch meant to change behaviour says so instead:
+`--equivalence-reference none --equivalence-waiver "<reason>"`. The reason is recorded
+in the manifest, and the check records it rather than comparing anything.
+
+Either way the check writes `equivalence-check.json`, bound to the launch. When the
+manifest has an `equivalence` key, `worker.verify` in full mode refuses unless that
+record is present, matches the launch's binding, passed (or carries the manifest's
+waiver), and appears verbatim as `equivalence` in `authorization-provenance.json`, so the
+launch's bind script must copy it there.
+
 ## Unlaunched local fallback
 
 `python -m scripts.kitchen_recycling.local_queue --launch PATH` only prints a plan.

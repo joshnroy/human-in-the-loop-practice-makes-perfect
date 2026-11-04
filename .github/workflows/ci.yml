@@ -670,7 +670,7 @@ jobs:
               print(f"{mod.__name__}: {path}")
           PY
       - name: Pytest — Scripts & Reproducibility
-        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/scripts
+        run: pytest -q -n auto --dist loadgroup --durations=25 -m "$PYTEST_MARK_EXPR" tests/scripts scripts/kitchen_recycling/test_packaging.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
 
