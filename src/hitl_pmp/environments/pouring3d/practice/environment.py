@@ -177,17 +177,30 @@ class FrozenPourEnvironment(Environment):
                 c.place_pitcher()
                 self.last_info["success"] = c.held is None and c.vessel_home(name="pitcher")
             elif skill.startswith("PickShrimp"):
-                c.pick_shrimp(
-                    index=index,
-                    location={
-                        "PickShrimpFromTray": "tray",
-                        "PickShrimpFromFloor": "floor",
-                        "PickShrimpFromSurface": "surface",
-                    }[skill],
-                )
+                empty = c.held is None
+                try:
+                    c.pick_shrimp(
+                        index=index,
+                        location={
+                            "PickShrimpFromTray": "tray",
+                            "PickShrimpFromFloor": "floor",
+                            "PickShrimpFromSurface": "surface",
+                        }[skill],
+                    )
+                except ValueError:
+                    # A pick that grasped but could not lift never ends holding.
+                    if empty:
+                        c.release_held_shrimp_in_place(name=c.scene.cube_names[index])
+                    raise
                 self.last_info["success"] = c.held == c.scene.cube_names[index]
             elif skill == "DropShrimpIntoPitcher":
-                c.drop_shrimp(index=index)
+                try:
+                    c.drop_shrimp(index=index)
+                except ValueError:
+                    # A carry that cannot reach the jug lets go where it is, so the
+                    # human pour-back and the dumpling picks stay applicable.
+                    c.release_held_shrimp_in_place(name=c.scene.cube_names[index])
+                    raise
                 # Judged where the skill ends: a dumpling inside the jug at release can
                 # still leave it while the gripper withdraws or the pieces settle.
                 self.last_info["success"] = c.held is None and bool(
