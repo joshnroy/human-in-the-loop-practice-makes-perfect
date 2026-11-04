@@ -39,3 +39,23 @@ def test_an_iteration_rows_budget_and_evaluation_workers_parse(*, arm: str) -> N
     assert (args.evaluation_workers, args.evaluation_task_rng) == (4, "per-task")
     assert args.defer_rendering
     assert not getattr(args, "ees_preview_test_goals", False)
+
+
+@pytest.mark.parametrize("arm", ARMS)
+def test_a_swept_rows_planner_reset_cost_parses(*, arm: str) -> None:
+    """A cost-sweep row hands the planner its reset cost and its own cost file."""
+    args = Cli.parse_args(
+        argv=[
+            *argv(
+                arm=arm,
+                seed=0,
+                cost_file="costs-10000.json",
+                kitchen_config="config.json",
+                human_reset_cost=10000,
+            ),
+            "--output-dir",
+            "unused",
+        ]
+    )
+    assert args.human_reset_practice_cost == 10000.0
+    assert str(args.practice_cost_config) == "costs-10000.json"
