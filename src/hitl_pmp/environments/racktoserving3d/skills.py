@@ -40,14 +40,16 @@ SKILL_IDS = {
     "ReturnFoodToRack": 5,
 }
 # GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
-# x-squeeze passes stop; delta (m) is subtracted from one food width to give how far
-# from the line y = c (the plate centre's y) each y gather stops; d (m) is how far
+# x-squeeze passes stop; delta (m) is how far from the line y = c (the plate centre's
+# y) each y gather stops, an absolute distance whatever the food; d (m) is how far
 # before the plate's outer near edge the final sweep's blade edge ends. Starting
 # bounds from the driven-blade grid (2026-11-03), not calibrated values. Speed is a
 # constant, not a parameter.
-# delta capped at 0.04 (Josh, 2026-11-03): from the +-0.85 side stances the deepest
-# stop that lifts cleanly on the arm is 0.5 cm from c (delta = 0.04); 0 cm failed.
-GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (-0.03, 0.04), (0.04, 0.12))
+# delta floor 0.005 (Josh, 2026-11-03): from the +-0.85 side stances the deepest
+# stop that lifts cleanly on the arm is 0.5 cm from c; 0 cm failed. The range is the
+# 2026-11-03 calibration's stops (then 0.045 m minus delta, delta in [-0.03, 0.04]),
+# made absolute (Josh, 2026-11-04) so a food's size no longer moves them.
+GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)

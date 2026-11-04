@@ -21,7 +21,8 @@ from .semantics import ServingRegion
 
 class RackLayout:
     MARGIN: ClassVar[float] = 0.03
-    MIN_SEPARATION: ClassVar[float] = 0.05
+    # The potsticker's footprint fits a 60.4 mm circle, so 61 mm apart never overlap.
+    MIN_SEPARATION: ClassVar[float] = 0.061
     MAX_YAW: ClassVar[float] = math.pi / 4
     MAX_DRAWS: ClassVar[int] = 10_000
 
