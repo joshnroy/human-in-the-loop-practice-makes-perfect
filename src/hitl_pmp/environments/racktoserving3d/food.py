@@ -7,7 +7,7 @@ The scraper's ``holding`` flag denotes a scraper, not food; this adapter keeps
 it false and checks the measured food payload separately.
 
 The default rigid 25-mm-high ellipsoid uses a 31-mm pinch-site offset at 45
-degrees and configurable partial gripper closure (0.8). Native finger contacts
+degrees and a force-limited close (``food_grip_force``). Native finger contacts
 and the observed food extent govern holding and placement; rack-wire and fixture
 collision failures are retained rather than weakening clearance guards.
 """

@@ -42,7 +42,12 @@ def main():
         "--settle-steps", type=int, default=20, help="post-return settle, as the coverage grid"
     )
     parser.add_argument("--scraper-tilt-degrees", type=float, default=45)
-    parser.add_argument("--food-grip-command", type=float, default=0.8)
+    parser.add_argument(
+        "--food-grip-command",
+        type=float,
+        default=None,
+        help="food closing position; default: the environment's own (fully closed)",
+    )
     parser.add_argument("--gripper-contact-dimension", type=int, choices=(3, 4, 6), default=4)
     parser.add_argument("--no-video", action="store_true")
     parser.add_argument("--scene-bg", action="store_true", help="render the full KINDER background")
@@ -65,8 +70,8 @@ def main():
         surface_kind=args.surface,
         serving_target=args.serving_target,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
-        food_grip_command=args.food_grip_command,
         gripper_contact_dimension=args.gripper_contact_dimension,
+        **({} if args.food_grip_command is None else {"food_grip_command": args.food_grip_command}),
     )
     env = RackServingEnvironment(config=config, scene_bg=args.scene_bg, skill_step_limit=3500)
     report = {
