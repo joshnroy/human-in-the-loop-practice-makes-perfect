@@ -487,6 +487,9 @@ class KitchenController(PotstickerController):
             current = current + delta
         for _ in range(round(10 * self.frequency)):
             if np.max(np.abs(current - self.data.qpos[self.arm_q])) < 0.01:
+                # A planned path can carry joint 5 across half a turn; the IK that
+                # follows in this skill then attracts it on the turn it is now near.
+                self.choose_posture_turn()
                 return
             self.motor_step(target_q=current, grip=grip)
         raise ValueError(f"Arm did not track the planned path in {phase}")
