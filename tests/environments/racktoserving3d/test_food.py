@@ -193,12 +193,19 @@ def test_payload_uses_ellipsoid_support_not_bounding_box(*, depth, blocked):
     rotation = Rotation.from_euler("x", 30, degrees=True).as_matrix()
     size = np.array([0.015, 0.0225, 0.0125])
     center = [0, 0, 0.9 + np.linalg.norm(rotation[2] * size) - depth]
-    data = SimpleNamespace(
-        geom_xpos=np.array([center, [0, 0, 0.45]]),
-        geom_xmat=np.array([rotation.reshape(9), np.eye(3).reshape(9)]),
-        contact=[],
-        ncon=0,
+    import mujoco
+
+    quat = Rotation.from_matrix(rotation).as_quat()[[3, 0, 1, 2]]
+    model = mujoco.MjModel.from_xml_string(
+        "<mujoco><worldbody>"
+        f'<geom type="ellipsoid" size="{size[0]} {size[1]} {size[2]}" '
+        f'pos="{center[0]} {center[1]} {center[2]}" '
+        f'quat="{quat[0]} {quat[1]} {quat[2]} {quat[3]}"/>'
+        '<geom name="counter" type="box" size="0.5 0.5 0.45" pos="0 0 0.45"/>'
+        "</worldbody></mujoco>"
     )
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
     shelf = SimpleNamespace(
         data=data,
         ik_data=data,
@@ -209,11 +216,7 @@ def test_payload_uses_ellipsoid_support_not_bounding_box(*, depth, blocked):
         pad_geoms=set(),
         site_pose=Mock(return_value=np.eye(4)),
         site_at=Mock(return_value=np.eye(4)),
-        model=SimpleNamespace(
-            geom_size=np.array([size, [0.5, 0.5, 0.45]]),
-            geom_type=np.array([4, 6]),
-            geom=Mock(return_value=SimpleNamespace(name="counter")),
-        ),
+        model=model,
     )
     motion = _FoodMotion.__new__(_FoodMotion)
     motion.shelf = shelf
@@ -491,6 +494,73 @@ def test_stances_face_approach_instead_of_always_front(*, food, approach, expect
     np.testing.assert_allclose(bases[0], expected)
 
 
+@pytest.mark.parametrize("gap,blocked", [(0.004, False), (-0.002, True)])
+def test_carried_food_collides_by_ellipsoid_shape_not_bounding_box(*, gap, blocked):
+    import mujoco
+
+    size = np.array([0.015, 0.0225, 0.0125])
+    # Offset along the diagonal: the bounding boxes overlap there even with a real gap.
+    direction = np.array([1.0, 1.0, 0.0]) / np.sqrt(2.0)
+    reach = 1.0 / np.sqrt((direction[0] / size[0]) ** 2 + (direction[1] / size[1]) ** 2)
+    offset = (2 * reach + gap) * direction
+    assert np.all(np.abs(offset[:2]) < 2 * size[:2])
+    model = mujoco.MjModel.from_xml_string(
+        "<mujoco><worldbody>"
+        f'<geom type="ellipsoid" size="{size[0]} {size[1]} {size[2]}" pos="0 0 1"/>'
+        f'<geom type="ellipsoid" size="{size[0]} {size[1]} {size[2]}" '
+        f'pos="{offset[0]} {offset[1]} 1"/>'
+        "</worldbody></mujoco>"
+    )
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    shelf = SimpleNamespace(
+        data=data,
+        ik_data=data,
+        model=model,
+        cupboard_geoms=set(),
+        box_geoms=set(),
+        wiper_geoms=set(),
+        robot_geoms=set(),
+        pad_geoms=set(),
+        site_pose=Mock(return_value=np.eye(4)),
+        site_at=Mock(return_value=np.eye(4)),
+    )
+    motion = _FoodMotion.__new__(_FoodMotion)
+    motion.shelf = shelf
+    motion.food = SimpleNamespace(
+        carried="cube_0",
+        target_geoms={0},
+        backend=SimpleNamespace(
+            cube_names=("cube_0", "cube_1"),
+            body_geoms=lambda *, name: {0} if name == "cube_0" else {1},
+        ),
+    )
+    with patch.object(RackScraper, "check_configuration"):
+        if blocked:
+            with pytest.raises(SkillFailed, match="Carried food would collide"):
+                motion.check_configuration(base=np.zeros(3), arm=np.zeros(7), holding=False)
+        else:
+            motion.check_configuration(base=np.zeros(3), arm=np.zeros(7), holding=False)
+
+
+def test_food_grasps_close_across_the_short_sides_not_the_tips(*, food):
+    food._pose = Mock(return_value=Frames.pose(rotation=np.eye(3), position=[1.55, 0, 0.94]))
+    faces = []
+
+    def cube_grasp(*, cube, centre, lean_deg, face, sign):
+        faces.append(face)
+        closing = np.eye(3)[:, face]
+        toward = sign * np.array([-closing[1], closing[0], 0])
+        return Frames.pose(
+            rotation=Frames.leaned(closing=closing, lean_toward=toward, lean_deg=lean_deg),
+            position=centre,
+        )
+
+    food.shelf.cube_grasp = cube_grasp
+    assert food._grasp_candidates(name="cube_0")
+    assert set(faces) == {0}
+
+
 def test_grasps_prefer_nearest_counter_edge(*, food):
     food.backend.support = Mock(
         return_value=SimpleNamespace(
@@ -500,7 +570,8 @@ def test_grasps_prefer_nearest_counter_edge(*, food):
             y_max=0.5,
         )
     )
-    food._pose = Mock(return_value=Frames.pose(rotation=np.eye(3), position=[1.55, 0, 0.94]))
+    # Fat-side grasps close along the food's x and lean in y: put it near the +y edge.
+    food._pose = Mock(return_value=Frames.pose(rotation=np.eye(3), position=[1.3, 0.4, 0.94]))
 
     def cube_grasp(*, cube, centre, lean_deg, face, sign):
         closing = np.eye(3)[:, face]
@@ -512,7 +583,7 @@ def test_grasps_prefer_nearest_counter_edge(*, food):
 
     food.shelf.cube_grasp = cube_grasp
     grasps = food._grasp_candidates(name="cube_0")
-    assert grasps[0][0, 2] < 0
+    assert grasps[0][1, 2] < 0
     assert grasps[0][2, 2] < 0
     np.testing.assert_allclose(grasps[0][:3, 2], grasps[1][:3, 2])
     np.testing.assert_allclose(grasps[0][:3, 0], -grasps[1][:3, 0])
