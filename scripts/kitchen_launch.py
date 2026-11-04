@@ -44,6 +44,8 @@ DELLA_EVALUATION_PROCESS_GB = 2.0
 DELLA_MEMORY_HEADROOM = 1.25
 # Practice runs alongside the evaluations: 4-7 h for the overnight budget, then the last
 # checkpoint's evaluation, its slowest task (72 min at the limit), with headroom.
+# Della's Slurm feature for its AMD Genoa CPU nodes: the launches are sized on them.
+DELLA_CONSTRAINT = "genoa"
 DELLA_TIME = {"pilot": "06:00:00", "overnight": "12:00:00", "dry": "06:00:00"}
 DEPENDENCIES = {
     "kinder": "reference/kindergarden",
@@ -252,6 +254,7 @@ class KitchenLaunch:
         time: str | None = None,
         mem: str | None = None,
         evaluation_workers: int | None = None,
+        constraint: str = DELLA_CONSTRAINT,
     ) -> Path:
         """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della.
 
@@ -275,9 +278,10 @@ class KitchenLaunch:
             evaluation_workers=workers,
         )
         sbatch = out / "array.sbatch"
+        node = f"#SBATCH --constraint={constraint}\n" if constraint else ""
         sbatch.write_text(f"""#!/usr/bin/env bash
 #SBATCH --partition=cpu
-#SBATCH --cpus-per-task={workers + 1}
+{node}#SBATCH --cpus-per-task={workers + 1}
 #SBATCH --mem={mem}
 #SBATCH --time={time}
 #SBATCH --array=1-{len(ARMS) * len(seeds)}
@@ -395,6 +399,11 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
         parser.add_argument("--time", help="della: Slurm --time (default: sized per stage)")
         parser.add_argument("--mem", help="della: Slurm --mem (default: sized per worker)")
         parser.add_argument(
+            "--constraint",
+            default=DELLA_CONSTRAINT,
+            help=f"della: Slurm --constraint (default: {DELLA_CONSTRAINT}; '' for none)",
+        )
+        parser.add_argument(
             "--evaluation-workers",
             type=int,
             help="Test tasks evaluated at once per run (default: 1 for manifest, every "
@@ -434,6 +443,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 time=args.time,
                 mem=args.mem,
                 evaluation_workers=args.evaluation_workers,
+                constraint=args.constraint,
             )
             print(f"Planned; nothing copied or submitted. sbatch {sbatch} <Della manifest>")
             return 0
