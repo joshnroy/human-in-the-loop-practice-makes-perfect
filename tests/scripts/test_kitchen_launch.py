@@ -36,9 +36,10 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.reproduce_predicators_explore_target_only
         assert not args.reproduce_predicators_double_observe
         assert args.surface_mu == 0.1
-        assert args.pour_tilt_bounds == [75, 95]
-        assert args.pour_amplitude_bounds == [0, 0.1]
-        assert args.pour_duration_bounds == [0, 60]
+        assert args.pour_ramp_rate_bounds == [0.25, 5.0]
+        assert args.pour_tilt_bounds is None
+        assert args.pour_amplitude_bounds is None
+        assert args.pour_duration_bounds is None
         costs = PracticeCosts.load(path=args.practice_cost_config)
         assert costs.robot_step.value == 0.01
         assert costs.objective_lambda == 0.0003

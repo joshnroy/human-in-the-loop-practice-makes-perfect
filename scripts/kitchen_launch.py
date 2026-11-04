@@ -67,9 +67,7 @@ class KitchenLaunch:
             "--receiving-vessel", "skillet",
             "--pour-layout", "stations",
             "--surface-mu", "0.1", "--canonical-seed", "0",
-            "--pour-tilt-bounds", "75", "95",
-            "--pour-amplitude-bounds", "0", "0.1",
-            "--pour-duration-bounds", "0", "60",
+            "--pour-ramp-rate-bounds", "0.25", "5.0",
             "--test-env-seed-offset", "10000",
             "--practice-reset-policy", "never",
             "--max-steps-per-interaction", "20",
@@ -321,6 +319,8 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             pours = [name for name in skills if name.startswith("Pour")]
             if pours != ["Pour1", "Pour2", "Pour3"]:
                 raise RuntimeError(f"Unexpected learned skills: {pours}")
+            if {s.param_dim for s in provider.skills() if s.name in pours} != {1}:
+                raise RuntimeError("Each kitchen Pour learns exactly its ramp rate")
             locations = controller.scene.cube_locations()
             if locations != ["pitcher"] * 3 or not controller.ready():
                 raise RuntimeError(f"Native initial scene is not ready: {locations}")

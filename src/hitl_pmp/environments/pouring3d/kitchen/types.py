@@ -2,10 +2,28 @@
 
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hitl_pmp.core.problem.environment.types import Object, Type
 from hitl_pmp.environments.pouring3d.practice.types import PourObjects
+
+
+class ClosedLoopPourParameters(BaseModel):
+    """The kitchen Pour's one learned parameter: its tilt ramp rate past the approach."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    # 0.25 deg/s keeps the 80-95 deg ramp within 60 s; 5 deg/s is the widest approved
+    # sampling bound (Josh, 2026-11-04).
+    LIMITS: ClassVar[tuple[float, float]] = (0.25, 5.0)
+    ramp_rate_deg_s: float = Field(allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> "ClosedLoopPourParameters":
+        low, high = self.LIMITS
+        if not low <= self.ramp_rate_deg_s <= high:
+            raise ValueError(f"ramp_rate_deg_s must lie in [{low}, {high}] deg/s")
+        return self
 
 
 class KitchenObjects(PourObjects):
