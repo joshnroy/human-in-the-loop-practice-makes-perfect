@@ -77,6 +77,10 @@ class _FoodMotion(RackScraper):
     def __init__(self, *, food: "RackFoodController") -> None:
         self.food = food
         self.departing: dict[tuple[int, int], float] = {}
+        # Carried-food overlaps (carried geom, obstacle) present when a departing scope
+        # began; like `departing`, each may persist but not deepen.
+        self.departing_food: dict[tuple[int, int], float] = {}
+        self._measuring_departure = False
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
     def check_configuration(
@@ -145,6 +149,12 @@ class _FoodMotion(RackScraper):
                 top = other_center[2] + np.abs(other_rotation[2]) @ other_size
                 support = obstacle in shelf.cupboard_geoms | shelf.box_geoms
                 if overlap > 0 and not (support and bottom >= top - 0.003):
+                    if self._measuring_departure:
+                        self.departing_food[geom, obstacle] = overlap
+                        continue
+                    allowed = self.departing_food.get((geom, obstacle))
+                    if allowed is not None and overlap <= allowed + DEPARTURE_TOLERANCE:
+                        continue
                     raise SkillFailed(
                         f"Carried food would collide with {shelf.model.geom(obstacle).name}: "
                         f"overlap={overlap:.4f}, bottom={bottom:.4f}, top={top:.4f}"
@@ -226,16 +236,30 @@ class _FoodMotion(RackScraper):
 
         A closed grasp on the wire rack can leave a pad resting on a wire. The lift
         moves away from that contact, but the unconditioned check rejects the lift's
-        own starting configuration.
+        own starting configuration. Holding food, the food's own overlaps with
+        fixtures at the start are measured and allowed the same way.
         """
         shelf = self.shelf
         shelf.site_at(base=shelf.data.qpos[shelf.ba].copy(), arm=shelf.data.qpos[shelf.qa].copy())
         shelf.mujoco.mj_collision(shelf.model, shelf.ik_data)
         self.departing = self.pad_fixture_contacts()
+        self.departing_food = {}
+        if self.food.carried is not None:
+            self._measuring_departure = True
+            try:
+                self.check_configuration(
+                    base=shelf.data.qpos[shelf.ba].copy(),
+                    arm=shelf.data.qpos[shelf.qa].copy(),
+                    holding=False,
+                )
+            except SkillFailed:
+                pass
+            finally:
+                self._measuring_departure = False
         try:
             yield
         finally:
-            self.departing = {}
+            self.departing, self.departing_food = {}, {}
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:
@@ -770,44 +794,50 @@ class RackFoodController:
         shelf = self.shelf
         self.carried = name
         with self.controllers.feedback():
-            here = shelf.site_pose()
-            offset = here[:3, 3] - self._pose(name=name)[:3, 3]
-            deadline = monotonic() + 20.0
-            failure = "no reachable placement"
-            selected = None
-            for centre, turn in (
-                (spot, turn)
-                for spot in self._placement_candidates(name=name, destination=destination)
-                for turn in self._placement_turns(rotation=here[:3, :3], centre=spot)
-            ):
-                down = Frames.pose(rotation=turn @ here[:3, :3], position=centre + turn @ offset)
-                pre = self.shelf.cube_pre(grasp=down)
-                for base in self._base_candidates(centre=centre, approach=down[:3, 2]):
-                    if monotonic() >= deadline:
-                        raise SkillFailed(f"No safe food placement within budget: {failure}")
-                    try:
-                        arm = self._checked_arm(pose=pre, base=base)
-                        self.motion.plan_base(target=base, arm=arm)
-                        for pose in Frames.line(start=pre, end=down, step=0.01):
-                            following = self._checked_arm(pose=pose, base=base, seed=arm)
-                            self.motion.check_arm_segment(
-                                start=arm,
-                                target=following,
-                                base=base,
-                                holding=False,
-                            )
-                            arm = following
-                    except SkillFailed as exc:
-                        failure = str(exc)
-                        continue
-                    selected = down, pre, base, centre
-                    break
-                if selected is not None:
-                    break
-            if selected is None:
-                raise SkillFailed(f"No safe food placement: {failure}")
-            down, pre, base, centre = selected
-            self._approach(pose=pre, base=base, label="food_place")
+            # A skill can start with a pad already resting on a fixture (a lift that
+            # failed with the food still held leaves one on the plate's rim). That
+            # contact may persist, not deepen, until the hand is over the target.
+            with self.motion.departing_from_contacts():
+                here = shelf.site_pose()
+                offset = here[:3, 3] - self._pose(name=name)[:3, 3]
+                deadline = monotonic() + 20.0
+                failure = "no reachable placement"
+                selected = None
+                for centre, turn in (
+                    (spot, turn)
+                    for spot in self._placement_candidates(name=name, destination=destination)
+                    for turn in self._placement_turns(rotation=here[:3, :3], centre=spot)
+                ):
+                    down = Frames.pose(
+                        rotation=turn @ here[:3, :3], position=centre + turn @ offset
+                    )
+                    pre = self.shelf.cube_pre(grasp=down)
+                    for base in self._base_candidates(centre=centre, approach=down[:3, 2]):
+                        if monotonic() >= deadline:
+                            raise SkillFailed(f"No safe food placement within budget: {failure}")
+                        try:
+                            arm = self._checked_arm(pose=pre, base=base)
+                            self.motion.plan_base(target=base, arm=arm)
+                            for pose in Frames.line(start=pre, end=down, step=0.01):
+                                following = self._checked_arm(pose=pose, base=base, seed=arm)
+                                self.motion.check_arm_segment(
+                                    start=arm,
+                                    target=following,
+                                    base=base,
+                                    holding=False,
+                                )
+                                arm = following
+                        except SkillFailed as exc:
+                            failure = str(exc)
+                            continue
+                        selected = down, pre, base, centre
+                        break
+                    if selected is not None:
+                        break
+                if selected is None:
+                    raise SkillFailed(f"No safe food placement: {failure}")
+                down, pre, base, centre = selected
+                self._approach(pose=pre, base=base, label="food_place")
             self._lower_food(
                 name=name,
                 destination=destination,
