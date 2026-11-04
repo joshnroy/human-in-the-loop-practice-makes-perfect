@@ -15,7 +15,6 @@ collision failures are retained rather than weakening clearance guards.
 from collections.abc import Generator
 from contextlib import contextmanager
 from functools import cached_property
-from time import monotonic
 from typing import Any, ClassVar
 
 import numpy as np
@@ -25,10 +24,9 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillF
 
 from .semantics import CircularSupport
 from .tool import RackScraper
-from .transit import ArmTransit, geom_half_extents, geoms_half_extents, segment_samples
+from .transit import geom_half_extents, geoms_half_extents
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
-APPROACH_BACKOFFS = (0.0, 0.1, 0.2, 0.3)
 # Hand yaws about world z a placement may set the held food down with, from the grasp's.
 PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
 # Pad normal force per unit of the 2F-85 finger actuator's tendon force, measured in
@@ -42,6 +40,16 @@ REGRASP_ATTEMPTS = 2
 # How much a pad-fixture contact present when a lift starts may shrink (measured-state
 # jitter) and still count as the same contact the lift is leaving.
 DEPARTURE_TOLERANCE = 1e-4
+# Planned food reaches: stances behind the food along the approach, within the arm's
+# reach of the hover from its mount, and how long the search may take.
+STANCE_DISTANCES_M = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90)
+STANCE_OFFSETS_M = (0.0, -0.12, 0.12, -0.24, 0.24)
+STANCE_TURNS_RAD = (0.0, 0.3, -0.3)
+ARM_MOUNT_AHEAD_M = 0.12
+ARM_REACH_M = 0.85
+PLAN_DEADLINE_S = 60.0
+# Holding food, the tuck before the base moves raises the hand by this.
+CARRY_RAISE_M = 0.10
 
 
 class CarriedGeom:
@@ -74,13 +82,15 @@ class CarriedGeom:
 class _FoodMotion(RackScraper):
     """Reuse guarded scraper routes, adding food collisions and live grasp checks."""
 
+    _measuring_departure: bool = False
+    departing_food: dict[tuple[int, int], float] = {}  # noqa: RUF012 -- reassigned per scope, never mutated in place outside one
+
     def __init__(self, *, food: "RackFoodController") -> None:
         self.food = food
         self.departing: dict[tuple[int, int], float] = {}
         # Carried-food overlaps (carried geom, obstacle) present when a departing scope
         # began; like `departing`, each may persist but not deepen.
-        self.departing_food: dict[tuple[int, int], float] = {}
-        self._measuring_departure = False
+        self.departing_food = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
     def check_configuration(
@@ -294,129 +304,6 @@ class _FoodMotion(RackScraper):
                 if not np.isfinite(separation) or separation < margin:
                     raise SkillFailed("Food waypoint lacks robot/fixture tracking clearance")
 
-    def transit_arm(self, *, arm: np.ndarray, label: str) -> None:
-        """Execute the checked joint branch, not another IK solution at the same hand pose."""
-        shelf = self.shelf
-        base = shelf.base_target.copy()
-        pose = shelf.site_at(base=base, arm=arm)
-        planner = ArmTransit(tool=self, base=base, holding=False)
-        route = planner.plan(start=shelf.data.qpos[shelf.qa].copy(), target=arm)
-        if route is None:
-            raise SkillFailed(f"{label}: no checked joint transit: {planner.last_failure}")
-        steps = 0
-        for waypoint in route:
-            self.check_arm_segment(
-                start=shelf.data.qpos[shelf.qa].copy(),
-                target=waypoint,
-                base=base,
-                holding=False,
-            )
-            for _ in range(120):
-                error = planner.delta(start=shelf.data.qpos[shelf.qa], target=waypoint)
-                if np.max(np.abs(error)) < 0.01:
-                    break
-                if steps >= 360:
-                    raise SkillFailed(f"{label}: joint transit exhausted its step budget")
-                self.step(arm=waypoint, label=label)
-                steps += 1
-            else:
-                raise SkillFailed(f"{label}: checked joint branch did not converge")
-        self.settle_hand(
-            arm=arm,
-            position=pose[:3, 3],
-            rotation=pose[:3, :3],
-            label=label,
-            limit=40,
-        )
-
-    def move_base(self, *, target: np.ndarray, label: str) -> None:
-        """Try checked circulation only when direct-route planning failed without motion."""
-        try:
-            super().move_base(target=target, label=label)
-            return
-        except SkillFailed as exc:
-            if not str(exc).startswith(f"{label}: no safe base transit:"):
-                raise
-            failure = str(exc)
-        shelf = self.shelf
-        start = shelf.data.qpos[shelf.ba].copy()
-        arm = shelf.arm_reference.copy()
-        for route in self.circulation_routes(start=start, target=target):
-            try:
-                for begin, end in zip([start, *route[:-1]], route, strict=True):
-                    for base in segment_samples(start=begin, target=end):
-                        self.check_configuration(base=base, arm=arm, holding=False)
-            except SkillFailed as exc:
-                failure = str(exc)
-                continue
-            for waypoint in route:
-                super().move_base(target=waypoint, label=label)
-            return
-        raise SkillFailed(f"{label}: no safe food circulation: {failure}")
-
-    def circulation_routes(
-        self, *, start: np.ndarray, target: np.ndarray
-    ) -> list[list[np.ndarray]]:
-        """Routes around either side of the counter that leave and enter stances head-on.
-
-        The base backs out from its start along its own heading, drives sideways past
-        the counter, turns to the stance heading, then drives to an entry point behind
-        the stance along that heading and straight in. Each back-off is one of
-        ``APPROACH_BACKOFFS``, smallest total first. With none, a leg slides along the
-        counter's edge at the stance's own distance from it, which clips a corner leg
-        whenever the stance is yawed off the edge's normal.
-        """
-        counter = self.food.backend.support(name="counter")
-        leaving = np.array([np.cos(start[2]), np.sin(start[2])])
-        arriving = np.array([np.cos(target[2]), np.sin(target[2])])
-        pairs = sorted(
-            ((out, back) for out in APPROACH_BACKOFFS for back in APPROACH_BACKOFFS),
-            key=lambda pair: (pair[0] + pair[1], pair[0]),
-        )
-        routes = []
-        for out, back in pairs:
-            exit_ = np.r_[start[:2] - out * leaving, start[2]]
-            entry = np.r_[target[:2] - back * arriving, target[2]]
-            for outside in (counter.y_min - 0.8, counter.y_max + 0.8):
-                route = [
-                    *([exit_] if out > 0 else []),
-                    np.array([exit_[0], outside, start[2]]),
-                    np.array([entry[0], outside, start[2]]),
-                    np.array([entry[0], outside, target[2]]),
-                    entry,
-                    *([target] if back > 0 else []),
-                ]
-                routes.append(route)
-        return routes
-
-    def plan_base(self, *, target: np.ndarray, arm: np.ndarray) -> list[np.ndarray]:
-        """Preflight a staged arm's complete base route before selecting its stance."""
-        shelf = self.shelf
-        start = shelf.data.qpos[shelf.ba].copy()
-        outside_x = min(start[0], target[0]) - 0.10
-        candidates = [
-            [target],
-            [np.array([start[0], target[1], start[2]]), target],
-            [np.array([target[0], start[1], start[2]]), target],
-            [
-                np.array([outside_x, start[1], start[2]]),
-                np.array([outside_x, target[1], start[2]]),
-                target,
-            ],
-        ]
-        candidates.extend(self.circulation_routes(start=start, target=target))
-        failure = "no candidate base route"
-        for route in candidates:
-            try:
-                for begin, end in zip([start, *route[:-1]], route, strict=True):
-                    for base in segment_samples(start=begin, target=end):
-                        self.check_configuration(base=base, arm=arm, holding=False)
-            except SkillFailed as exc:
-                failure = str(exc)
-                continue
-            return route
-        raise SkillFailed(f"No safe food base route: {failure}")
-
 
 class RackFoodController:
     """Bounded angled grasp search on the existing full-height counter scene."""
@@ -511,22 +398,6 @@ class RackFoodController:
             self.motion.check_arm_clearance(base=base, arm=arm)
         return arm
 
-    def _base_candidates(self, *, centre: np.ndarray, approach: np.ndarray) -> list[np.ndarray]:
-        forward = np.asarray(approach[:2], dtype=float)
-        length = np.linalg.norm(forward)
-        if not np.isfinite(length) or length < 1e-6:
-            raise SkillFailed("Food grasp requires a finite angled approach")
-        forward = forward / length
-        sideways = np.array([-forward[1], forward[0]])
-        return [
-            np.r_[
-                centre[:2] - distance * forward + offset * sideways,
-                np.arctan2(forward[1], forward[0]),
-            ]
-            for distance in (0.50, 0.45, 0.55, 0.60)
-            for offset in (0.0, -0.12, 0.12)
-        ]
-
     @staticmethod
     def _edge_distance(
         *, centre: np.ndarray, approach: np.ndarray, lower: np.ndarray, upper: np.ndarray
@@ -597,28 +468,107 @@ class RackFoodController:
         candidates.sort(key=lambda candidate: round(candidate[0], 6))
         return [pose for _, pose in candidates]
 
-    def _plan_pick(self, *, name: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _stances(
+        self, *, centre: np.ndarray, approach: np.ndarray, hover: np.ndarray
+    ) -> list[np.ndarray]:
+        """Bases behind `centre` along the approach, within reach of the hover: a stance
+        under the counter is refused by the planner, not by this list."""
+        forward = np.asarray(approach[:2], dtype=float)
+        length = np.linalg.norm(forward)
+        if not np.isfinite(length) or length < 1e-6:
+            raise SkillFailed("Food grasp requires a finite angled approach")
+        forward = forward / length
+        sideways = np.array([-forward[1], forward[0]])
+        heading = float(np.arctan2(forward[1], forward[0]))
+        out = []
+        for distance in STANCE_DISTANCES_M:
+            for offset in STANCE_OFFSETS_M:
+                for turn in STANCE_TURNS_RAD:
+                    stance = np.r_[
+                        centre[:2] - distance * forward + offset * sideways, heading + turn
+                    ]
+                    mount = stance[:2] + ARM_MOUNT_AHEAD_M * np.array([
+                        np.cos(stance[2]),
+                        np.sin(stance[2]),
+                    ])
+                    if np.linalg.norm(hover[:2] - mount) <= ARM_REACH_M:
+                        out.append(stance)
+        out.sort(
+            key=lambda stance: float(
+                abs(np.linalg.norm(stance[:2] - centre[:2]) - 0.55)
+                + 0.3 * abs((stance[2] - heading + np.pi) % (2 * np.pi) - np.pi)
+            )
+        )
+        return out
+
+    def _plan_pick(self, *, name: str) -> tuple[Any, np.ndarray, np.ndarray, np.ndarray]:
+        """Planned base and arm to a pre-grasp from which the straight descent is clear."""
+        from .planning import PlanningRefused, ReachCandidate, ScraperMotionPlanner
+
         centre = self._pose(name=name)[:3, 3]
         self.target_geoms = self.backend.body_geoms(name=name)
-        deadline = monotonic() + 20.0
-        failure = "no candidate"
-        for grasp in self._grasp_candidates(name=name):
-            pre = self.shelf.cube_pre(grasp=grasp)
-            for base in self._base_candidates(centre=centre, approach=grasp[:3, 2]):
-                if monotonic() >= deadline:
-                    raise SkillFailed(f"No collision-free food grasp within budget: {failure}")
-                try:
-                    staged = self._check_descent(grasp=grasp, pre=pre, base=base)
-                    self.motion.plan_base(target=base, arm=staged)
-                except SkillFailed as exc:
-                    failure = str(exc)
-                    continue
-                return grasp, pre, base
-        raise SkillFailed(f"No collision-free food grasp: {failure}")
 
-    def _check_descent(self, *, grasp: np.ndarray, pre: np.ndarray, base: np.ndarray) -> np.ndarray:
+        def descent(*, grasp: np.ndarray, pre: np.ndarray) -> Any:
+            def contact(stance: np.ndarray, hover: np.ndarray) -> str | None:  # noqa: PLR0917 -- ReachCandidate callback
+                try:
+                    self._check_descent(grasp=grasp, pre=pre, base=stance, seed=hover)
+                except SkillFailed as exc:
+                    return str(exc)[:70]
+                return None
+
+            return contact
+
+        def candidates() -> Generator[Any, None, None]:
+            for grasp in self._grasp_candidates(name=name):
+                pre = self.shelf.cube_pre(grasp=grasp)
+                contact = descent(grasp=grasp, pre=pre)
+                for stance in self._stances(centre=centre, approach=grasp[:3, 2], hover=pre[:3, 3]):
+                    yield ReachCandidate(
+                        stance=stance,
+                        position=pre[:3, 3],
+                        rotation=pre[:3, :3],
+                        contact=contact,
+                        payload=(grasp, pre),
+                    )
+
+        try:
+            plan, chosen = ScraperMotionPlanner.plan_reach(
+                tool=self.motion,
+                candidates=candidates(),
+                held_name=None,
+                carry_height=0.0,
+                deadline_s=PLAN_DEADLINE_S,
+                what="the food pre-grasp",
+            )
+        except PlanningRefused as exc:
+            raise SkillFailed(f"No collision-free food grasp: {exc}") from exc
+        grasp, pre = chosen.payload
+        return plan, grasp, pre, plan.stance
+
+    def _follow(self, *, plan: Any, pose: np.ndarray, label: str) -> None:
+        """Execute a planned reach: tuck, base, arm to `pose`."""
+        motion = self.motion
+        motion.follow_arm_path(path=plan.arm_before_base, label=f"{label}_tuck")
+        motion.follow_base_path(path=plan.base_path, label=f"{label}_base")
+        motion.follow_arm_path(path=plan.arm_after_base, label=f"{label}_pre")
+        motion.settle_hand(
+            arm=plan.arm_after_base[-1],
+            position=pose[:3, 3],
+            rotation=pose[:3, :3],
+            label=f"{label}_pre",
+            limit=300,
+        )
+
+    def _check_descent(
+        self,
+        *,
+        grasp: np.ndarray,
+        pre: np.ndarray,
+        base: np.ndarray,
+        seed: np.ndarray | None = None,
+    ) -> np.ndarray:
         """Check the pre-grasp and the straight descent at `base`; return the staged arm."""
-        staged = arm = self._checked_arm(pose=pre, base=base)
+        staged = arm = self._checked_arm(pose=pre, base=base, seed=seed)
         for pose in Frames.line(start=pre, end=grasp, step=0.01):
             following = self._checked_arm(pose=pose, base=base, seed=arm)
             self.motion.check_arm_segment(start=arm, target=following, base=base, holding=False)
@@ -657,26 +607,6 @@ class RackFoodController:
             return candidate, pre
         raise SkillFailed(f"Food moved before closing; no regrasp from this stance: {failure}")
 
-    def _approach(self, *, pose: np.ndarray, base: np.ndarray, label: str) -> None:
-        arm = self._checked_arm(pose=pose, base=base)
-        if self.carried is not None:
-            self.motion.transit_arm(arm=arm, label=f"{label}_arm_clearance")
-        else:
-            staging = self.shelf.site_at(base=self.shelf.data.qpos[self.shelf.ba].copy(), arm=arm)
-            self.motion.transit(
-                position=staging[:3, 3],
-                rotation=staging[:3, :3],
-                label=f"{label}_arm_clearance",
-                holding=False,
-            )
-        self.motion.move_base(target=base, label=f"{label}_base")
-        self.motion.line(
-            position=pose[:3, 3],
-            rotation=pose[:3, :3],
-            label=f"{label}_pre",
-            holding=False,
-        )
-
     def pick(self, *, name: str) -> None:
         """Pick one observed food; verify contact before and throughout lifting."""
         self._validate_name(name=name)
@@ -690,12 +620,13 @@ class RackFoodController:
             raise SkillFailed("Food has no observed pickable support")
         self.carried = None
         with self.controllers.feedback():
-            grasp, pre, base = self._plan_pick(name=name)
-            planned = self._pose(name=name)
-            self._limit_grip(newtons=None)
-            shelf.grip = 0.0
-            shelf.hold(count=10, label="food_open")
-            self._approach(pose=pre, base=base, label="food")
+            with self.motion.departing_from_contacts():
+                plan, grasp, pre, base = self._plan_pick(name=name)
+                planned = self._pose(name=name)
+                self._limit_grip(newtons=None)
+                shelf.grip = 0.0
+                shelf.hold(count=10, label="food_open")
+                self._follow(plan=plan, pose=pre, label="food")
             self.motion.line(
                 position=grasp[:3, 3],
                 rotation=grasp[:3, :3],
@@ -785,6 +716,65 @@ class RackFoodController:
             raise SkillFailed("No unoccupied food placement at destination; retaining grasp")
         return candidates
 
+    def _plan_place(
+        self, *, name: str, destination: str
+    ) -> tuple[Any, np.ndarray, np.ndarray, np.ndarray]:
+        """Planned carry to a pre-placement from which the straight descent is clear."""
+        from .planning import PlanningRefused, ReachCandidate, ScraperMotionPlanner
+
+        shelf = self.shelf
+        here = shelf.site_pose()
+        offset = here[:3, 3] - self._pose(name=name)[:3, 3]
+
+        def descent(*, down: np.ndarray, pre: np.ndarray) -> Any:
+            def contact(stance: np.ndarray, hover: np.ndarray) -> str | None:  # noqa: PLR0917 -- ReachCandidate callback
+                try:
+                    arm = self._checked_arm(pose=pre, base=stance, seed=hover)
+                    for pose in Frames.line(start=pre, end=down, step=0.01):
+                        following = self._checked_arm(pose=pose, base=stance, seed=arm)
+                        self.motion.check_arm_segment(
+                            start=arm, target=following, base=stance, holding=False
+                        )
+                        arm = following
+                except SkillFailed as exc:
+                    return str(exc)[:70]
+                return None
+
+            return contact
+
+        spots = self._placement_candidates(name=name, destination=destination)
+
+        def candidates() -> Generator[Any, None, None]:
+            for spot in spots:
+                for turn in self._placement_turns(rotation=here[:3, :3], centre=spot):
+                    down = Frames.pose(rotation=turn @ here[:3, :3], position=spot + turn @ offset)
+                    pre = shelf.cube_pre(grasp=down)
+                    contact = descent(down=down, pre=pre)
+                    for stance in self._stances(
+                        centre=spot, approach=down[:3, 2], hover=pre[:3, 3]
+                    ):
+                        yield ReachCandidate(
+                            stance=stance,
+                            position=pre[:3, 3],
+                            rotation=pre[:3, :3],
+                            contact=contact,
+                            payload=(down, pre, spot),
+                        )
+
+        try:
+            plan, chosen = ScraperMotionPlanner.plan_reach(
+                tool=self.motion,
+                candidates=candidates(),
+                held_name=name,
+                carry_height=float(here[2, 3] + CARRY_RAISE_M),
+                deadline_s=PLAN_DEADLINE_S,
+                what="the food pre-placement",
+            )
+        except PlanningRefused as exc:
+            raise SkillFailed(f"No safe food placement: {exc}") from exc
+        down, pre, centre = chosen.payload
+        return plan, down, pre, centre
+
     def place(self, *, name: str, destination: str) -> None:
         """Return to a free live support footprint or fail without releasing early."""
         self._validate_name(name=name)
@@ -798,46 +788,8 @@ class RackFoodController:
             # failed with the food still held leaves one on the plate's rim). That
             # contact may persist, not deepen, until the hand is over the target.
             with self.motion.departing_from_contacts():
-                here = shelf.site_pose()
-                offset = here[:3, 3] - self._pose(name=name)[:3, 3]
-                deadline = monotonic() + 20.0
-                failure = "no reachable placement"
-                selected = None
-                for centre, turn in (
-                    (spot, turn)
-                    for spot in self._placement_candidates(name=name, destination=destination)
-                    for turn in self._placement_turns(rotation=here[:3, :3], centre=spot)
-                ):
-                    down = Frames.pose(
-                        rotation=turn @ here[:3, :3], position=centre + turn @ offset
-                    )
-                    pre = self.shelf.cube_pre(grasp=down)
-                    for base in self._base_candidates(centre=centre, approach=down[:3, 2]):
-                        if monotonic() >= deadline:
-                            raise SkillFailed(f"No safe food placement within budget: {failure}")
-                        try:
-                            arm = self._checked_arm(pose=pre, base=base)
-                            self.motion.plan_base(target=base, arm=arm)
-                            for pose in Frames.line(start=pre, end=down, step=0.01):
-                                following = self._checked_arm(pose=pose, base=base, seed=arm)
-                                self.motion.check_arm_segment(
-                                    start=arm,
-                                    target=following,
-                                    base=base,
-                                    holding=False,
-                                )
-                                arm = following
-                        except SkillFailed as exc:
-                            failure = str(exc)
-                            continue
-                        selected = down, pre, base, centre
-                        break
-                    if selected is not None:
-                        break
-                if selected is None:
-                    raise SkillFailed(f"No safe food placement: {failure}")
-                down, pre, base, centre = selected
-                self._approach(pose=pre, base=base, label="food_place")
+                plan, down, pre, centre = self._plan_place(name=name, destination=destination)
+                self._follow(plan=plan, pose=pre, label="food_place")
             self._lower_food(
                 name=name,
                 destination=destination,

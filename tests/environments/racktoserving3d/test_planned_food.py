@@ -64,3 +64,24 @@ def test_a_held_food_resting_a_pad_on_the_rim_still_executes(*, skill):
         assert env._last_controller_steps > 0, error
     finally:
         env.close()
+
+
+@pytest.mark.parametrize(
+    "skill,location", [(4, "OnTray"), (5, "OnRack")], ids=["PlaceFoodOnTray", "ReturnFoodToRack"]
+)
+def test_planned_pick_then_place_on_the_counter(*, skill, location):
+    """From reset, cube_0 deep on the rack: the old fixed stances all stood the chassis
+    in the counter's legs ("No collision-free food grasp"), 0-step."""
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment()
+    try:
+        env.reset_to_seed(seed=0)
+        env.take_action(action=np.array([3.0, 0, 0, 0, 0]))
+        assert env.last_skill_error() is None
+        assert env.backend().held(name="cube_0")
+        env.take_action(action=np.array([float(skill), 0, 0, 0, 0]))
+        assert env.last_skill_error() is None
+        assert env.backend().location(name="cube_0") == location
+    finally:
+        env.close()
