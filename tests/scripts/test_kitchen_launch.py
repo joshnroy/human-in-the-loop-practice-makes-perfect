@@ -36,9 +36,10 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.reproduce_predicators_explore_target_only
         assert not args.reproduce_predicators_double_observe
         assert args.surface_mu == 0.1
-        assert args.pour_tilt_bounds == [75, 95]
-        assert args.pour_amplitude_bounds == [0, 0.1]
-        assert args.pour_duration_bounds == [0, 60]
+        assert args.pour_ramp_rate_bounds == [0.25, 5.0]
+        assert args.pour_tilt_bounds is None
+        assert args.pour_amplitude_bounds is None
+        assert args.pour_duration_bounds is None
         costs = PracticeCosts.load(path=args.practice_cost_config)
         assert costs.robot_step.value == 0.01
         assert costs.objective_lambda == 0.0003
@@ -266,6 +267,55 @@ def test_della_sbatch_runs_one_manifest_row_per_array_task(*, tmp_path, monkeypa
             '--manifest "$1" --task "$SLURM_ARRAY_TASK_ID" --go'
         )
     )
+
+
+def test_della_sbatch_pins_the_genoa_nodes_right_after_the_partition(*, tmp_path, monkeypatch):
+    _, script = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="overnight", seeds=(0, 1, 2)
+    )
+    lines = script.splitlines()
+    partition = lines.index("#SBATCH --partition=cpu")
+    assert lines[partition + 1] == "#SBATCH --constraint=genoa"
+    assert script.count("--constraint") == 1
+
+
+@pytest.mark.parametrize(("constraint", "line"), [("cascade", "#SBATCH --constraint=cascade")])
+def test_della_sbatch_takes_another_constraint(*, tmp_path, monkeypatch, constraint, line):
+    _, script = _della(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        stage="overnight",
+        seeds=(0,),
+        constraint=constraint,
+    )
+    assert line in script.splitlines()
+    assert script.count("--constraint") == 1
+
+
+def test_della_sbatch_can_drop_the_constraint(*, tmp_path, monkeypatch):
+    _, script = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="overnight", seeds=(0,), constraint=""
+    )
+    assert "--constraint" not in script
+
+
+def test_the_della_cli_passes_the_constraint_through(*, tmp_path, monkeypatch):
+    import sys
+
+    seen = {}
+
+    def della(**kwargs):
+        seen.update(kwargs)
+        return tmp_path / "array.sbatch"
+
+    monkeypatch.setattr(KitchenLaunch, "della", della)
+    argv = ["kitchen_launch", "della", "--out", str(tmp_path), "--tag", "t"]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert KitchenLaunch.main() == 0
+    assert seen["constraint"] == "genoa"
+    monkeypatch.setattr(sys, "argv", [*argv, "--constraint", ""])
+    assert KitchenLaunch.main() == 0
+    assert seen["constraint"] == ""
 
 
 def test_della_refuses_a_tag_that_is_not_a_plain_name(*, tmp_path, monkeypatch):

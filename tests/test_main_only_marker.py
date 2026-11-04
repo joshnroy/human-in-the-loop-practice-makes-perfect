@@ -49,8 +49,14 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_a_turn_in_this_grasp_still_reseats",
     "tests/environments/pouring3d/test_kitchen_position_settled.py::"
     "test_canonical_pours_are_settled_successes",
+    "tests/environments/pouring3d/test_kitchen_position_settled.py::"
+    "test_a_fast_ramp_overshoots_pour2_on_the_canonical_seed",
     "tests/environments/racktoserving3d/test_native_control_step_cutoff.py::"
     "test_native_pick_scraper_stops_after_three_control_steps_and_adopts_without_moving",
+    "tests/environments/pouring3d/test_kitchen_grip_slip.py::"
+    "test_the_held_jug_does_not_creep_in_the_hand_over_a_minute_upright",
+    "tests/environments/pouring3d/test_kitchen_grip_slip.py::"
+    "test_the_slowest_pour_still_leaves_an_upright_place",
 })
 
 

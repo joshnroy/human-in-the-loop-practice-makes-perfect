@@ -1,29 +1,46 @@
 """Ordinary skills and samplers; no kitchen-specific learning algorithm."""
 
 from functools import lru_cache
+from typing import Any
 
 import numpy as np
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Type
 from hitl_pmp.core.problem.tasks.types import Predicate
-from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+from hitl_pmp.environments.pouring3d.practice.skill_provider import (
+    FrozenPourOracle,
+    FrozenPourSkillProvider,
+)
 from hitl_pmp.environments.pouring3d.practice.skills import RESET_NAME as LEGACY_RESET
 from hitl_pmp.environments.pouring3d.practice.skills import PourSkills
 
 from .environment import HUMAN_RESET, KitchenEnvironment
 from .predicates import KitchenPredicates as P
+from .types import ClosedLoopPourParameters
 from .types import KitchenObjects as O
 
 
 class KitchenSkillProvider(FrozenPourSkillProvider):
     env: KitchenEnvironment
     human_reset_practice_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
-    # Approved 2026-11-02. The wrist (joint 6, about 121 deg) reaches a 95 deg tilt.
-    tilt_bounds: tuple[float, float] = (75.0, 95.0)
-    amplitude_bounds: tuple[float, float] = (0.0, 0.1)
-    duration_bounds: tuple[float, float] = (0.0, 60.0)
+    # The closed-loop Pour learns only its tilt ramp rate (Josh, 2026-11-04); its approach,
+    # ceiling, wiggle and return are fixed on `KitchenController`.
+    ramp_rate_bounds: tuple[float, float] = ClosedLoopPourParameters.LIMITS
+
+    @model_validator(mode="after")
+    def validate_ramp_rate_bounds(self) -> "KitchenSkillProvider":
+        stale = {"tilt_bounds", "amplitude_bounds", "duration_bounds"} & self.model_fields_set
+        if stale:
+            raise ValueError(
+                f"The kitchen Pour learns only its ramp rate; {sorted(stale)} do not apply"
+            )
+        low, high = ClosedLoopPourParameters.LIMITS
+        bounds = self.ramp_rate_bounds
+        if not np.isfinite(bounds).all() or not low <= bounds[0] <= bounds[1] <= high:
+            raise ValueError(f"Ramp rate bounds must be ordered and inside [{low}, {high}] deg/s")
+        return self
 
     @staticmethod
     @lru_cache(maxsize=1)
@@ -42,7 +59,10 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             ignore = s.ignore_effects
             if s.name.startswith("Pour") or s.name == LEGACY_RESET:
                 ignore |= {plannable}
-            return s.model_copy(update={"preconditions": pre, "ignore_effects": ignore})
+            update: dict[str, Any] = {"preconditions": pre, "ignore_effects": ignore}
+            if s.name.startswith("Pour"):
+                update["param_dim"] = len(ClosedLoopPourParameters.model_fields)
+            return s.model_copy(update=update)
 
         base = tuple(kitchen(s) for s in PourSkills.build(count=count))
         r, k = Variable(name="r", type=O.robot_type), Variable(name="k", type=O.request_type)
@@ -92,6 +112,15 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             if self.env.deployment or s.name not in {"ActivateCooking", "MoveAway"}
         )
 
+    def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
+        if not ground_skill.skill.name.startswith("Pour"):
+            return np.zeros(0)
+        return np.array([rng.uniform(*self.ramp_rate_bounds)])
+
+    def native_pour_parameters(self, *, params: np.ndarray) -> np.ndarray:
+        # Slots 4-5 carried the open-loop wiggle and duration; the kitchen fixes both.
+        return np.r_[params, 0.0, 0.0]
+
     def predicates(self) -> tuple[Predicate, ...]:
         return P.all()
 
@@ -131,3 +160,14 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
                 )
             }
         )
+
+
+class KitchenPourOracle(FrozenPourOracle):
+    """The fixed-recipe reference with the closed-loop Pour's canonical ramp rate."""
+
+    env: KitchenEnvironment
+    # 1 deg/s delivered Pour1 and Pour2 exactly on seeds 0-3 in the 2026-11-04 prototype.
+    parameters: tuple[float, ...] = (1.0,)
+
+    def provider(self) -> FrozenPourSkillProvider:
+        return KitchenSkillProvider(env=self.env)
