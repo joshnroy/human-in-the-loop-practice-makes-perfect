@@ -97,7 +97,8 @@ import logging
 import os
 import tempfile
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Generator, Mapping, MutableMapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
@@ -682,7 +683,6 @@ class KinderBackend(BaseModel):
                 WORLD_X_BOUNDS,
                 WORLD_Y_BOUNDS,
                 get_bounding_box,
-                get_overhead_kinematic2ds,
                 get_overhead_object_se2_pose,
                 get_overhead_robot_se2_pose,
             )
@@ -698,7 +698,7 @@ class KinderBackend(BaseModel):
             robot_pose = get_overhead_robot_se2_pose(snapshot, robot)
             bin_pose = get_overhead_object_se2_pose(snapshot, bin_object)
             width, height, _ = get_bounding_box(snapshot, robot)
-            geoms = get_overhead_kinematic2ds(snapshot)
+            geoms = OverheadFootprints.of(snapshot)
             obstacles = []
             for obj in snapshot.get_objects(MujocoObjectType):
                 if (
@@ -779,16 +779,18 @@ class KinderBackend(BaseModel):
                     and zone[1] - slack <= pose.y <= zone[3] + slack
                 )
 
-        plan = run_base_motion_planning(
-            state=snapshot,
-            target_base_pose=target,
-            x_bounds=x_bounds,
-            y_bounds=y_bounds,
-            seed=0,
-            disable_collision_objects=[KinderBackend.cube_name]
-            + ([] if drive_zone is None else [KinderBackend.barrier_name]),
-            body_collision_fn=outside,
-        )
+        # Every candidate stand of one state shares that state's footprints.
+        with OverheadFootprints.installed():
+            plan = run_base_motion_planning(
+                state=snapshot,
+                target_base_pose=target,
+                x_bounds=x_bounds,
+                y_bounds=y_bounds,
+                seed=0,
+                disable_collision_objects=[KinderBackend.cube_name]
+                + ([] if drive_zone is None else [KinderBackend.barrier_name]),
+                body_collision_fn=outside,
+            )
         return None if plan is not None else "base_motion_plan_failed"
 
     @staticmethod
@@ -1698,6 +1700,97 @@ class KinderBackend(BaseModel):
         if self._state is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no state.")
         return self._state
+
+
+class OverheadFootprints:
+    """Upstream's `get_overhead_kinematic2ds`, memoized on the exact bytes of the state.
+
+    Toss sampling asks the base planner (`KinderBackend.toss_base_plan_failure`) about
+    each candidate stand, and every ask rebuilt every robot and obstacle footprint from
+    the same snapshot -- about a third of sampling time. The footprints are a pure
+    function of the state (every object's type, name and features, dtype included) and
+    the registered bounding boxes, so an entry never goes stale; the bound only caps
+    memory. Each caller gets its own dict, so editing one cannot reach the memo.
+
+    `installed` puts the memo in place of upstream's function for the duration of one
+    planner call, which looks the function up at call time; it is never left installed.
+    """
+
+    MAX_ENTRIES: ClassVar[int] = 64
+    _memo: ClassVar[OrderedDict[bytes, dict[str, Any]]] = OrderedDict()
+    hits: ClassVar[int] = 0
+    misses: ClassVar[int] = 0
+
+    @staticmethod
+    def upstream(  # noqa: PLR0917 (upstream's signature)
+        state: Any,
+        bounding_boxes: Mapping[str, tuple[float, float, float]] | None = None,
+    ) -> dict[str, Any]:
+        from kinder_models.dynamic3d import utils
+
+        return dict(OverheadFootprints._original(utils=utils)(state, bounding_boxes))
+
+    @staticmethod
+    def _original(*, utils: ModuleType) -> Callable[..., dict[str, Any]]:
+        function = utils.get_overhead_kinematic2ds
+        return getattr(function, "__wrapped_upstream__", function)
+
+    @staticmethod
+    def key(
+        *, state: Any, bounding_boxes: Mapping[str, tuple[float, float, float]] | None
+    ) -> bytes:
+        parts = [
+            obj.type.name.encode()
+            + b"\0"
+            + obj.name.encode()
+            + b"\0"
+            + np.asarray(state[obj]).dtype.str.encode()
+            + np.asarray(state[obj]).tobytes()
+            for obj in sorted(state, key=lambda obj: obj.name)
+        ]
+        boxes = None if bounding_boxes is None else sorted(bounding_boxes.items())
+        return b"\1".join(parts) + b"\2" + repr(boxes).encode()
+
+    @staticmethod
+    def of(  # noqa: PLR0917 (upstream's signature)
+        state: Any,
+        bounding_boxes: Mapping[str, tuple[float, float, float]] | None = None,
+    ) -> dict[str, Any]:
+        key = OverheadFootprints.key(state=state, bounding_boxes=bounding_boxes)
+        memo = OverheadFootprints._memo
+        if key in memo:
+            memo.move_to_end(key)
+            OverheadFootprints.hits += 1
+            return dict(memo[key])
+        OverheadFootprints.misses += 1
+        footprints = OverheadFootprints.upstream(state, bounding_boxes)
+        memo[key] = dict(footprints)
+        while len(memo) > OverheadFootprints.MAX_ENTRIES:
+            memo.popitem(last=False)
+        return footprints
+
+    @staticmethod
+    @contextmanager
+    def installed() -> Generator[None, None, None]:
+        from kinder_models.dynamic3d import utils
+
+        original = utils.get_overhead_kinematic2ds
+
+        def memoized(state: Any, bounding_boxes: Any = None) -> dict[str, Any]:  # noqa: PLR0917
+            return OverheadFootprints.of(state, bounding_boxes)
+
+        memoized.__wrapped_upstream__ = original  # type: ignore[attr-defined]
+        utils.get_overhead_kinematic2ds = memoized
+        try:
+            yield
+        finally:
+            utils.get_overhead_kinematic2ds = original
+
+    @staticmethod
+    def clear() -> None:
+        OverheadFootprints._memo.clear()
+        OverheadFootprints.hits = 0
+        OverheadFootprints.misses = 0
 
 
 class TossSettlingController:
