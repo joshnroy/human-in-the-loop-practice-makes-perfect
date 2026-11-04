@@ -422,6 +422,10 @@ class KitchenController(PotstickerController):
             )
         finally:
             sim.close()
+        if planner.TUCK in planner.plans:
+            self.follow_arm_path(
+                path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=self.pitcher_open_grip
+            )
         self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
         self.follow_arm_path(
             path=planner.plans[planner.MOVE_ARM_TO_HOVER],
