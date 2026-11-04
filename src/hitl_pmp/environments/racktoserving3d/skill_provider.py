@@ -109,8 +109,9 @@ class RackServingOracle(OraclePolicyProvider):
 
     env: RackServingEnvironment
     # (s, delta, d): the driven-blade grid's best single setting (5/20 layouts fully
-    # served, 2026-11-03), not a calibrated success claim.
-    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.07, 0.015, 0.10])
+    # served, 2026-11-03; a 3 cm gather stop, then written delta = 0.015 under food
+    # width minus delta), not a calibrated success claim.
+    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.07, 0.030, 0.10])
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
         def holds(*, name: str, objects: tuple[Object, ...] = ()) -> bool:

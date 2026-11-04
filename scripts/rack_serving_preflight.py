@@ -27,7 +27,7 @@ def main():
         "--s", type=float, default=0.07, help="GatherAndSweep squeeze stop behind rack front, m"
     )
     parser.add_argument(
-        "--delta", type=float, default=0.015, help="GatherAndSweep gather stop = food width - delta"
+        "--delta", type=float, default=0.030, help="GatherAndSweep gather stop, m from y = c"
     )
     parser.add_argument(
         "--d", type=float, default=0.10, help="GatherAndSweep sweep end before plate near edge, m"
