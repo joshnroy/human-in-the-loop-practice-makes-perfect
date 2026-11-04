@@ -257,7 +257,12 @@ class EesMethod(Method):
     # candidate from the start, with the same prior any first execution would give it.
     # Exists because a domain whose training tasks all share one goal (the kitchen's
     # practice always delivers `requested_count`) otherwise never plans, and so never
-    # scores, the skills only the other test goals use. Each goal is held by name,
+    # scores, the skills only the other test goals use. With it on, planning progress
+    # scores against these pinned goals and the replanning tasks only, never the seen
+    # training tasks (an approved deviation from predicators, 2026-11-04): a training
+    # stream that always delivers one would otherwise outweigh the three test goals,
+    # which Curtis's and Expectimax's fixed deployment plans already weigh equally. The
+    # UCB denominator is then the number of tasks scored. Each goal is held by name,
     # `(predicate, object names)` per atom (see `named_goal`), because every field is
     # pickled into the deployment snapshot and a domain's predicates need not pickle.
     preview_test_goals: tuple[tuple[tuple[str, tuple[str, ...]], ...], ...] = ()
@@ -993,7 +998,7 @@ class EesMethod(Method):
         """
         if costs is None:
             costs = self.skill_costs()
-        train_indices = list(range(len(self._seen_tasks)))
+        train_indices = [] if self.preview_test_goals else list(range(len(self._seen_tasks)))
         if self.reproduce_predicators_seen_task_order:
             train_indices = train_indices[: self.planning_progress_max_tasks]
         else:
@@ -1074,7 +1079,11 @@ class EesMethod(Method):
         base_score = -sum(
             sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
         )
-        seen = len(self._preview_tasks) + len(self._seen_tasks)
+        if self.preview_test_goals:
+            # Approved deviation: the tasks actually scored (see `preview_test_goals`).
+            seen = len(self._preview_tasks) + len(self._replanning_tasks)
+        else:
+            seen = len(self._preview_tasks) + len(self._seen_tasks)
         denominator = max(seen, 1) if self.use_ucb_bonus else 1
         score = base_score / denominator
         bonus = 0.0
