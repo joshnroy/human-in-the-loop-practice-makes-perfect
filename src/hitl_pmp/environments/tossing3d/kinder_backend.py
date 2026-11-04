@@ -1761,7 +1761,9 @@ class OverheadFootprints:
             + np.asarray(state[obj]).tobytes()
             for obj in sorted(state, key=lambda obj: obj.name)
         ]
-        boxes = None if bounding_boxes is None else sorted(bounding_boxes.items())
+        # Upstream reads `None` and `{}` alike (it only asks `name in bounding_boxes`),
+        # and the toss check passes its sim's empty `{}` where the geometry passes `None`.
+        boxes = sorted(bounding_boxes.items()) if bounding_boxes else None
         return b"\1".join(parts) + b"\2" + repr(boxes).encode()
 
     @staticmethod
