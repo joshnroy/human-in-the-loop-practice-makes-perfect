@@ -177,9 +177,53 @@ class KitchenController(PotstickerController):
     POUR_WIGGLE_M: ClassVar[float] = 0.04
     # Fast return, so as little as possible leaves after the cutoff.
     POUR_RETURN_DEG_S: ClassVar[float] = 45.0
+    # During the closed-loop Pour only: aim the jug's mouth, not the hand, at the pan.
+    mouth_over_pan: bool = False
 
     def outcome_settled(self) -> bool:
         return bool(self.scene.payload_at_rest())
+
+    @staticmethod
+    def mouth_offset(
+        *,
+        hand: np.ndarray,
+        hand_rotation: Rotation,
+        jug: np.ndarray,
+        jug_rotation: Rotation,
+        commanded_rotation: Rotation,
+        height: float,
+    ) -> np.ndarray:
+        """Horizontal mouth - hand once the hand reaches `commanded_rotation`.
+
+        The jug is carried rigidly in its measured grasp; its mouth is the centre of
+        the open top, `height` up the jug's axis from its base origin.
+        """
+        grasp = hand_rotation.inv()
+        mouth_in_hand = grasp.apply(jug - hand) + (grasp * jug_rotation).apply([0, 0, height])
+        return commanded_rotation.apply(mouth_in_hand)[:2]
+
+    @classmethod
+    def mouth_correction_weight(cls, *, angle: float) -> float:
+        """0 upright, 1 from the ramp on: upright the mouth is ~0.1 m from the hand, so
+        the hand eases across during the approach, where nothing slides, not in a jump."""
+        u = min(1.0, max(0.0, angle / cls.POUR_APPROACH_DEGREES))
+        return u * u * (3 - 2 * u)
+
+    def tracked_step(self, *, center: np.ndarray, angle: float, offset: float = 0) -> None:
+        if self.mouth_over_pan:
+            jug, jug_rotation = self.body_pose(name="pitcher")
+            hand, hand_rotation = self.hand_pose()
+            shift = self.mouth_offset(
+                hand=hand,
+                hand_rotation=hand_rotation,
+                jug=jug,
+                jug_rotation=jug_rotation,
+                commanded_rotation=self.pour_orientation(angle=angle) * self.rotation_offset,
+                height=self.scene.get_object("pitcher").height,
+            )
+            center = center.copy()
+            center[:2] -= self.mouth_correction_weight(angle=angle) * shift
+        super().tracked_step(center=center, angle=angle, offset=offset)
 
     def run_joint_pour(self, *, parameters: Any, requested_count: int) -> dict:
         del parameters, requested_count
@@ -224,7 +268,7 @@ class KitchenController(PotstickerController):
         before = self.scene.physical_snapshot()
         center = self.body_pose(name="tray")[0] + [0, 0, self.pour_clearance]
         self.calibrate_joint_payload()
-        self.joint_pour_active = True
+        self.joint_pour_active = self.mouth_over_pan = True
         return_speed, self.return_speed_deg_s = self.return_speed_deg_s, self.POUR_RETURN_DEG_S
         angle = elapsed = offset = 0.0
         error = None
@@ -265,7 +309,7 @@ class KitchenController(PotstickerController):
         except ValueError as exc:
             error = str(exc)
         finally:
-            self.joint_pour_active = False
+            self.joint_pour_active = self.mouth_over_pan = False
             self.return_speed_deg_s = return_speed
         after = self.scene.physical_snapshot()
         locations = after["locations"]
@@ -295,8 +339,9 @@ class KitchenController(PotstickerController):
                 "return_speed_deg_s": self.POUR_RETURN_DEG_S,
                 "settle_seconds": self.pour_settle_seconds,
                 "observation": "true simulator locations, no delay",
+                "aim": "jug mouth over the pan centre",
             },
-            "controller_revision": "kitchen_closed_loop_v1",
+            "controller_revision": "kitchen_closed_loop_v2",
             "bounded_ik_recoveries": self.bounded_ik_recoveries,
         }
 

@@ -57,6 +57,8 @@ EXPECTED_MAIN_ONLY = frozenset({
     "test_the_held_jug_does_not_creep_in_the_hand_over_a_minute_upright",
     "tests/environments/pouring3d/test_kitchen_grip_slip.py::"
     "test_the_slowest_pour_still_leaves_an_upright_place",
+    "tests/environments/pouring3d/test_kitchen_mouth_over_pan.py::"
+    "test_the_mouth_is_over_the_pan_centre_at_the_stop_and_the_pour_delivers",
 })
 
 
