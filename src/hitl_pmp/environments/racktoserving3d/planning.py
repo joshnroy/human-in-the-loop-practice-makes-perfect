@@ -15,6 +15,7 @@ motions that follow (the end-on approach, the close, the seat and the release) s
 scripted, as the kitchen's do.
 """
 
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -33,10 +34,14 @@ from hitl_pmp.environments.pouring3d.kitchen.planning.utils import (
     PLANNING_MARGIN_M,
     KitchenPyBulletSim,
 )
+from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
 # The TidyBot chassis body, and the first arm link checked against it.
 CHASSIS = "robot_base_link"
 CHASSIS_CHECKED_FROM = "forearm_link"
+# The carried scraper's boxes are grown by this in the planner's MuJoCo check, so
+# tracking error under its payload cannot carry it into the execution guard's limit.
+TOOL_INFLATE_M = 0.01
 # How far behind the grasp the base centre may stand, and how far to either side of it.
 STANCE_BACK_M = (0.30, 0.80)
 STANCE_SIDE_M = 0.15
@@ -263,10 +268,11 @@ class ScraperMotionPlanner:
         rotation: np.ndarray,
         lower: np.ndarray,
         upper: np.ndarray,
+        guard: Callable[[Any], bool],
         held: HeldObject | None = None,
     ) -> list[float] | None:
         """A collision-free IK solution with the planning margin, inside MuJoCo's
-        limits, for a free-space hand pose."""
+        limits and passing `guard`, for a free-space hand pose."""
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
 
@@ -283,9 +289,11 @@ class ScraperMotionPlanner:
                 distance_threshold=PLANNING_MARGIN_M,
             ):
                 return True
-            return not sim.chassis_clear(
+            if not sim.chassis_clear(
                 margin=PLANNING_MARGIN_M, held=None if held is None else held.body
-            )
+            ):
+                return True
+            return not guard(q)
 
         return KitchenMotionPlanner.goal(
             sim=sim, position=position, rotation=Rotation.from_matrix(rotation), valid=invalid
@@ -300,6 +308,7 @@ class ScraperMotionPlanner:
         target: np.ndarray,
         arm: Any,
         what: str,
+        guard: Callable[[np.ndarray], bool],
         held: HeldObject | None = None,
     ) -> list[np.ndarray]:
         if np.linalg.norm(target[:2] - base[:2]) < 0.005 and abs(target[2] - base[2]) < 0.005:
@@ -312,6 +321,7 @@ class ScraperMotionPlanner:
             what=what,
             held=held,
             ignore=() if held is None else ("wiper_0",),
+            also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
         )
         # Unwrap the heading so the base turns the short way between waypoints.
         out = [base.copy()]
@@ -328,6 +338,7 @@ class ScraperMotionPlanner:
         start: Any,
         goal: list[float],
         what: str,
+        guard: Callable[[Any], bool],
         held: HeldObject | None = None,
     ) -> list[np.ndarray]:
         from kinder_models.dynamic3d.tossing.parameterized_skills import plan_checked_arm_motion
@@ -343,8 +354,11 @@ class ScraperMotionPlanner:
             base_link_to_held_obj=None if held is None else held.base_link_to_held_obj,
             distance_threshold=PLANNING_MARGIN_M,
             # Called right after the collision check has posed the robot (and `held`).
-            additional_state_constraint_fn=lambda _: sim.chassis_clear(
-                margin=PLANNING_MARGIN_M, held=None if held is None else held.body
+            additional_state_constraint_fn=lambda q: (
+                sim.chassis_clear(
+                    margin=PLANNING_MARGIN_M, held=None if held is None else held.body
+                )
+                and guard(q)
             ),
         )
         if planned is None:
@@ -354,7 +368,7 @@ class ScraperMotionPlanner:
     @staticmethod
     def plan_pick(
         *,
-        shelf: Any,
+        tool: Any,
         grasp: np.ndarray,
         pre: np.ndarray,
         rotation: np.ndarray,
@@ -364,11 +378,13 @@ class ScraperMotionPlanner:
         """Base and arm to the pre-grasp hover, from the first stance that reaches the
         hover, the grasp and each scripted hand pose `after` it (lift, tilt) on one IK
         branch; PlanningRefused if none does."""
+        shelf = tool.shelf
         lower, upper = ScraperMotionPlanner.limits(shelf=shelf)
         arm = shelf.data.qpos[shelf.qa].copy()
         base = shelf.data.qpos[shelf.ba].copy()
         sim = RackPyBulletSim.from_shelf(shelf=shelf)
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=False)
         failures: list[str] = []
         try:
             for stance in ScraperMotionPlanner.stances(grasp=grasp, preferred=preferred)[
@@ -376,7 +392,12 @@ class ScraperMotionPlanner:
             ]:
                 sim.set_robot_base(SE2(*(float(v) for v in stance)))
                 hover = ScraperMotionPlanner.free_goal(
-                    sim=sim, position=pre, rotation=rotation, lower=lower, upper=upper
+                    sim=sim,
+                    position=pre,
+                    rotation=rotation,
+                    lower=lower,
+                    upper=upper,
+                    guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
                 )
                 if hover is None:
                     failures.append("hover")
@@ -400,10 +421,15 @@ class ScraperMotionPlanner:
                         target=stance,
                         arm=arm,
                         what="the scraper pick stance",
+                        guard=ScraperMotionPlanner.base_guard(ok=ok, arm=arm),
                     )
                     sim.set_robot_base(SE2(*(float(v) for v in stance)))
                     arm_path = ScraperMotionPlanner.plan_arm_to(
-                        sim=sim, start=arm, goal=hover, what="the scraper pre-grasp"
+                        sim=sim,
+                        start=arm,
+                        goal=hover,
+                        what="the scraper pre-grasp",
+                        guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
                     )
                 except PlanningRefused as exc:
                     failures.append(str(exc))
@@ -419,7 +445,7 @@ class ScraperMotionPlanner:
     @staticmethod
     def plan_return(
         *,
-        shelf: Any,
+        tool: Any,
         seat: np.ndarray,
         rotation: np.ndarray,
         preferred: np.ndarray,
@@ -428,12 +454,14 @@ class ScraperMotionPlanner:
         """Arm tucked if needed, base to a stance, arm to a hover above the seat, the
         scraper carried rigidly and checked throughout; the hover's hand position is
         returned with the plan."""
+        shelf = tool.shelf
         lower, upper = ScraperMotionPlanner.limits(shelf=shelf)
         arm = shelf.data.qpos[shelf.qa].copy()
         base = shelf.data.qpos[shelf.ba].copy()
         sim = RackPyBulletSim.from_shelf(shelf=shelf)
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
         hover_position = seat + [0.0, 0.0, RETURN_HOVER_M]
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=True)
         failures: list[str] = []
         try:
             sim.set_robot_base(SE2(*(float(v) for v in base)))
@@ -447,13 +475,19 @@ class ScraperMotionPlanner:
                 rotation=hand[:3, :3],
                 lower=lower,
                 upper=upper,
+                guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
                 held=held,
             )
             if tuck is not None:
                 try:
                     carries.append(
                         ScraperMotionPlanner.plan_arm_to(
-                            sim=sim, start=arm, goal=tuck, what="the carry pose", held=held
+                            sim=sim,
+                            start=arm,
+                            goal=tuck,
+                            what="the carry pose",
+                            guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
+                            held=held,
                         )
                     )
                 except PlanningRefused as exc:
@@ -468,6 +502,7 @@ class ScraperMotionPlanner:
                     rotation=rotation,
                     lower=lower,
                     upper=upper,
+                    guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
                     held=held,
                 )
                 if hover is None:
@@ -499,6 +534,7 @@ class ScraperMotionPlanner:
                             target=stance,
                             arm=carry[-1],
                             what="the scraper return stance",
+                            guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
                             held=held,
                         )
                         sim.set_robot_base(SE2(*(float(v) for v in stance)))
@@ -507,6 +543,7 @@ class ScraperMotionPlanner:
                             start=carry[-1],
                             goal=hover,
                             what="the hover above the seat",
+                            guard=ScraperMotionPlanner.arm_guard(ok=ok, base=stance),
                             held=held,
                         )
                     except PlanningRefused as exc:
@@ -525,6 +562,35 @@ class ScraperMotionPlanner:
             "ReturnScraper: no stance reaches the seat "
             f"({ScraperMotionPlanner.tally(failures=failures)})"
         )
+
+    @staticmethod
+    def mujoco_guard(*, tool: Any, holding: bool) -> Callable[..., bool]:
+        """The execution guard itself (`RackScraper.check_configuration`, in MuJoCo
+        scratch data) as a planning constraint. It checks the carried scraper's boxes
+        more conservatively than PyBullet's mirror of the plate, so a path PyBullet
+        clears with the margin can still be refused mid-motion without it."""
+
+        def ok(*, base: np.ndarray, arm: Any) -> bool:
+            try:
+                tool.check_configuration(
+                    base=np.asarray(base, dtype=float),
+                    arm=np.asarray(arm[:7], dtype=float),
+                    holding=holding,
+                    inflate=TOOL_INFLATE_M,
+                )
+            except SkillFailed:
+                return False
+            return True
+
+        return ok
+
+    @staticmethod
+    def arm_guard(*, ok: Callable[..., bool], base: np.ndarray) -> Callable[[Any], bool]:
+        return lambda q: ok(base=base, arm=q)
+
+    @staticmethod
+    def base_guard(*, ok: Callable[..., bool], arm: Any) -> Callable[[np.ndarray], bool]:
+        return lambda pose: ok(base=pose, arm=arm)
 
     @staticmethod
     def limits(*, shelf: Any) -> tuple[np.ndarray, np.ndarray]:

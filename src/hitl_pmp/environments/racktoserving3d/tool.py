@@ -42,6 +42,8 @@ SCRAPER_RETURN_STANDOFF = 0.05
 # rather than an axis-clipped one.
 PLANNED_JOINT_STEP = 0.05
 PLANNED_BASE_FRACTION = 0.8
+PLANNED_JOINT_LAG = 0.03
+PLANNED_CATCH_UP_STEPS = 20
 
 
 @contextmanager
@@ -217,7 +219,7 @@ class TableWiper:
             pre = grasp - PRE_GRASP * rotation[:, 2]
             try:
                 plan = ScraperMotionPlanner.plan_pick(
-                    shelf=shelf,
+                    tool=self,
                     grasp=grasp,
                     pre=pre,
                     rotation=rotation,
@@ -346,7 +348,7 @@ class TableWiper:
             preferred[0] -= SCRAPER_RETURN_STANDOFF
         try:
             plan, hover = ScraperMotionPlanner.plan_return(
-                shelf=shelf,
+                tool=self,
                 seat=grasp + [0, 0, PLACE_CLEARANCE],
                 rotation=rotation,
                 preferred=preferred,
@@ -695,7 +697,14 @@ class TableWiper:
             delta = (np.asarray(waypoint, dtype=float) - current + np.pi) % (2 * np.pi) - np.pi
             count = max(1, int(np.ceil(np.max(np.abs(delta)) / PLANNED_JOINT_STEP)))
             for index in range(1, count + 1):
-                self.step(arm=current + delta * (index / count), label=label)
+                point = current + delta * (index / count)
+                # Advance only once the arm has caught up: loaded, it lags the command
+                # by over 0.1 rad, which takes it off the checked segment.
+                for _ in range(PLANNED_CATCH_UP_STEPS):
+                    self.step(arm=point, label=label)
+                    lag = (point - shelf.data.qpos[shelf.qa] + np.pi) % (2 * np.pi) - np.pi
+                    if np.max(np.abs(lag)) < PLANNED_JOINT_LAG:
+                        break
             current = current + delta
         for _ in range(200):
             error = (current - shelf.data.qpos[shelf.qa] + np.pi) % (2 * np.pi) - np.pi
@@ -821,7 +830,7 @@ class RackScraper(TableWiper):
                         touched[index] |= pad in pads
         return len(touched) >= 2 and all(touched)
 
-    def tool_clear(self, *, pose: np.ndarray, data: Any = None) -> bool:
+    def tool_clear(self, *, pose: np.ndarray, data: Any = None, inflate: float = 0.0) -> bool:
         """Check both complete boxes against current rack, counter and tray geometry.
 
         Only shallow upward support at the counter home or rack sweep height is
@@ -846,7 +855,8 @@ class RackScraper(TableWiper):
         for geom in (self.head_geom, self.handle_geom):
             center = pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3]
             rotation = pose[:3, :3] @ self.geom_rotation(geom=geom)
-            size = model.geom_size[geom]
+            # A planner inflates the boxes to keep a margin for tracking error.
+            size = model.geom_size[geom] + inflate
             bottom = float(center[2] - np.abs(rotation[2]) @ size)
             if ids.size:
                 reach = np.abs(rotation) @ size + other_reach
@@ -899,7 +909,9 @@ class RackScraper(TableWiper):
                     return False
         return True
 
-    def check_configuration(self, *, base: np.ndarray, arm: np.ndarray, holding: bool) -> None:
+    def check_configuration(
+        self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
+    ) -> None:
         """Reject robot collision and complete carried geometry in scratch kinematics."""
         shelf = self.shelf
         if shelf.ik_data is shelf.data:
@@ -925,7 +937,7 @@ class RackScraper(TableWiper):
         if holding:
             if shelf.in_hand is None:
                 raise SkillFailed("Scraper clearance requires a measured grasp")
-            if not self.tool_clear(pose=pose @ shelf.in_hand, data=shelf.ik_data):
+            if not self.tool_clear(pose=pose @ shelf.in_hand, data=shelf.ik_data, inflate=inflate):
                 raise SkillFailed("Scraper blade or handle would collide with fixture geometry")
 
     def check_arm_segment(
