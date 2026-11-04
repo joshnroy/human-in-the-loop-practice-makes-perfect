@@ -3,15 +3,18 @@
 Each cache memoises a pure function and is keyed on everything that function reads, so
 the tests below check two things per cache: a hit returns exactly what the uncached
 function returns, and any change to an input the function reads is a miss. The last
-group replays recorded searches -- root value, choice, node and hit counts, and a digest
-of every memo entry -- recorded on the uncached code, before any of these caches existed.
+group replays searches recorded on the uncached code, before any of these caches
+existed: root value, choice, node and hit counts, and every memo entry.
 """
 
-import hashlib
-from types import MappingProxyType
+import io
+import json
+import pickle
 
 import pytest
 
+from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.environments.sweepoffshelf3d.predicates import SweepOffShelf3DPredicates
 from hitl_pmp.methods.belief_space.belief_digest import BeliefDigest
 from hitl_pmp.methods.belief_space.bounded_memo import BoundedMemo
 from hitl_pmp.methods.belief_space.competence_inference import (
@@ -19,8 +22,6 @@ from hitl_pmp.methods.belief_space.competence_inference import (
     InferenceConfig,
     create_bayesian_prior,
 )
-from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
-from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
 from hitl_pmp.methods.belief_space.tossing3d_model import AtomMasks, Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     SearchForecastCache,
@@ -28,6 +29,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     refit_belief_state,
 )
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+    FrozenSkillEffects,
     SuccessEffectsCache,
     apply_success_effects,
     compute_success_effects,
@@ -48,6 +50,7 @@ from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
 )
 
 from . import test_object_symmetry as shelf
+from .record_search_fixture import CASES, FIXTURE, RecordedSearch
 
 SMALL = InferenceConfig(competence_bins=5, learning_rate_bins=3)
 
@@ -278,9 +281,9 @@ def test_a_belief_whose_signature_omits_a_field_is_never_served_from_the_cache()
 
 
 def _effects(*, ground_skills):
-    return MappingProxyType({
-        g: (g.add_effects, g.delete_effects, g.ignore_effects) for g in ground_skills
-    })
+    return FrozenSkillEffects(
+        table={g: (g.add_effects, g.delete_effects, g.ignore_effects) for g in ground_skills}
+    )
 
 
 def test_cached_success_effects_are_the_uncached_ones_and_the_same_object() -> None:
@@ -323,10 +326,9 @@ def test_the_success_effects_cache_misses_on_every_changed_input() -> None:
         true_atoms=other_atoms, ground_skill=first_skill, effects=effects
     ) == compute_success_effects(true_atoms=other_atoms, ground_skill=first_skill, effects=effects)
     # Another effects table, in which this skill adds nothing and deletes nothing.
-    inert = MappingProxyType({
-        **effects,
-        first_skill: (frozenset(), frozenset(), frozenset()),
-    })
+    inert = FrozenSkillEffects(
+        table={**effects, first_skill: (frozenset(), frozenset(), frozenset())}
+    )
     assert apply_success_effects(
         true_atoms=shelf.STATES["start"], ground_skill=first_skill, effects=inert
     ) == compute_success_effects(
@@ -357,7 +359,31 @@ def test_a_mutable_effects_table_is_never_served_from_the_cache() -> None:
 
 def test_the_model_hands_the_transition_a_read_only_effects_table() -> None:
     model = Tossing3DPracticeModel(ground_skills=shelf._ground_skills())
-    assert isinstance(model._effects, MappingProxyType)  # noqa: SLF001
+    assert isinstance(model._effects, FrozenSkillEffects)  # noqa: SLF001
+
+
+def test_the_model_and_its_caches_survive_a_checkpoint_pickle() -> None:
+    """Method checkpoints pickle the model, referring to its predicates (whose `holds`
+    is a lambda) by name; every cache the model holds must pickle too."""
+    predicates = {p.name: p for p in SweepOffShelf3DPredicates.all()}
+
+    class ByName(pickle.Pickler):
+        def persistent_id(self, obj: object) -> str | None:  # noqa: PLR0917 -- pickle API
+            return obj.name if isinstance(obj, Predicate) else None
+
+    class FromName(pickle.Unpickler):
+        def persistent_load(self, pid: str) -> Predicate:  # noqa: PLR0917 -- pickle API
+            return predicates[pid]
+
+    model = Tossing3DPracticeModel(ground_skills=shelf._ground_skills())
+    model._atoms_mask(atoms=shelf.STATES["start"])  # noqa: SLF001 -- warm its mask table
+    buffer = io.BytesIO()
+    ByName(buffer).dump(model)
+    buffer.seek(0)
+    restored = FromName(buffer).load()
+    assert dict(restored._effects) == dict(model._effects)  # noqa: SLF001
+    for atoms in shelf.STATES.values():
+        assert restored._atoms_mask(atoms=atoms) == model._atoms_mask(atoms=atoms)  # noqa: SLF001
 
 
 # --- _atoms_mask ---------------------------------------------------------------------
@@ -498,79 +524,32 @@ def test_the_search_state_is_built_without_revalidating_its_atoms() -> None:
 
 # --- Recorded decisions --------------------------------------------------------------
 
-# Recorded on main @ 746f77732 (no implementation caches), identical under
-# PYTHONHASHSEED 0 and 5: SweepOffShelf3D's production J and grid, the carry-trained
-# belief, depth 3; root value (hex), chosen ground action, unique nodes, memo hits,
-# memo entries whose best action is not STOP, and a SHA-256 over every memo entry.
-RECORDED = {
-    ("start", False): (
-        "0x1.95de24267e9c6p-2",
-        ("PickCubeFromShelf", ("robot", "cube_0")),
-        216,
-        105,
-        45,
-        "711799c78c699dbcb71d859cae4fd71e6d07437f79325c9054745e37569dadda",
-    ),
-    ("start", True): (
-        "0x1.95de24267e9c6p-2",
-        ("PickCubeFromShelf", ("robot", "cube_0")),
-        89,
-        18,
-        21,
-        "8daf12427cf953275f95bab35db2b349b6ebf6d9e7c1abdc30fd0ac0fb2f3916",
-    ),
-    ("scattered", True): (
-        "0x1.81309de3e99bcp-2",
-        ("PickCubeFromShelf", ("robot", "cube_4")),
-        378,
-        349,
-        78,
-        "a7db8559bc282a5bc7ee00032f0aee2e1bf94ab4a656bbcf3cb14f522074fd70",
-    ),
-}
+
+@pytest.fixture(scope="module")
+def recorded() -> dict[str, dict]:
+    return json.loads(FIXTURE.read_text())
 
 
-def _memo_digest(*, planner: ExpectimaxPlanner) -> str:
-    digest = hashlib.sha256()
-    for key, (value, action) in planner.memo.items():
-        digest.update(repr(key).encode())
-        digest.update(float(value).hex().encode())
-        digest.update(str(getattr(getattr(action, "skill", None), "name", action)).encode())
-        digest.update(str([o.name for o in getattr(action, "objects", ())]).encode())
-    return digest.hexdigest()
-
-
-@pytest.mark.parametrize(("state", "reduce"), sorted(RECORDED))
+@pytest.mark.parametrize(("state", "reduce"), CASES)
 @pytest.mark.parametrize("repeat", [1, 2])
 def test_a_recorded_decision_is_reproduced_bit_for_bit(
-    *, state: str, reduce: bool, repeat: int
+    *, recorded: dict[str, dict], state: str, reduce: bool, repeat: int
 ) -> None:
-    """`repeat=2` solves twice in one process, so the second search runs on warm caches."""
-    model = Tossing3DPracticeModel(
-        ground_skills=shelf._ground_skills(),
-        domain=SWEEP_OFF_SHELF_DOMAIN,
-        linear_cost_lambda=shelf.LINEAR_COST_LAMBDA,
-        object_symmetry=reduce,
-        merge_beliefs_by_counts=reduce,
-    )
-    belief = shelf.BELIEFS["carry_trained"](SWEEP_OFF_SHELF_DOMAIN, config=shelf.PRODUCTION_GRID)
+    """SweepOffShelf3D's production J and grid, a carry-trained belief, depth 3, with and
+    without the symmetry and count reductions; recorded on main @ 746f77732, before any
+    of these caches existed. Every memo entry -- each node's key, value (to the bit) and
+    best action -- must match, not only the root. `repeat=2` solves twice in one
+    process, so the second search runs on warm caches."""
+    expected = recorded[RecordedSearch.name(state=state, reduce=reduce)]
     for _ in range(repeat):
-        planner = ExpectimaxPlanner(use_model_j=True)
-        value, action = planner.solve(
-            environment_state=make_tossing3d_search_state(
-                state=belief, true_atoms=shelf.STATES[state]
-            ),
-            belief_state=belief,
-            summed_cost=0.0,
-            horizon=3,
-            model=model,
-        )
-        observed = (
-            value.hex(),
-            (action.skill.name, tuple(o.name for o in action.objects)),
-            planner.next_node,
-            planner.cache_hits,
-            sum(1 for _, best in planner.memo.values() if hasattr(best, "skill")),
-            _memo_digest(planner=planner),
-        )
-        assert observed == RECORDED[state, reduce]
+        observed = RecordedSearch.solve(state=state, reduce=reduce)
+        assert {k: v for k, v in observed.items() if k != "memo"} == {
+            k: v for k, v in expected.items() if k != "memo"
+        }
+        assert set(observed["memo"]) == set(expected["memo"]), "a different set of nodes"
+        differing = {
+            key: (observed["memo"][key], entry)
+            for key, entry in expected["memo"].items()
+            if observed["memo"][key] != entry
+        }
+        assert not differing, f"{len(differing)}/{len(expected['memo'])} memo entries differ"

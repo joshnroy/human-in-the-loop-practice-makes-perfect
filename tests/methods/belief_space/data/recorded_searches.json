@@ -1,0 +1,2758 @@
+{
+"scattered-reduced": {
+"action": "PickCubeFromShelf(robot,cube_4)",
+"cache_hits": 349,
+"memo": {
+"00018ae84333826440c7": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"00cbe021f364fc4be500": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"011630eeb888d1bb750d": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"01a1c194cb618faec0c1": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"0214d2169529b797721b": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"02726094c9bd30b30b2a": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"02858561098f7a79cdc1": [
+"0x1.229a074aea063p-2",
+""
+],
+"02d996d1d74ed2313f24": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"038ca642815041c749a6": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"042e743fc87a63ee472a": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"0468449bbb1dad9d876e": [
+"0x1.50807e6b14783p-2",
+""
+],
+"048a2fd8c3711391fa3e": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"04b51e012d5a6650e26f": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"061e71c9d05f0c8d222b": [
+"0x1.1f13f8f07b87ep-2",
+""
+],
+"06a4b81d0837a18de9f7": [
+"0x1.6ce448283e4f2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"075112706df8d765b6fd": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"0945580a5822d7bb00eb": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"0a8fe76e39aaac6252da": [
+"0x1.84b2af1cc023bp-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"0c6bc72cf5ac9f8e3023": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"0d3a79c80559d9addffc": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"0e0ff25cad77b3113b7d": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"0e2859b2702b1b98f333": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"0e7c5793b50baec1cec1": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"0f2fe9c406be37506eb9": [
+"0x1.6ce51049606bep-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"1013ed6d56827c1e3d35": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"104aae8518418ed3a968": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"10c9a976e81fef6c383c": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"11a6d44bf74aecbd7cab": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"12a60adaba1e741c13a1": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"12dad10cc34c2a87ee27": [
+"0x1.229a074aea063p-2",
+""
+],
+"12e996eca672001ba981": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"1466ffd4f90366604ef0": [
+"0x1.595ce4a495c8dp-2",
+""
+],
+"146978d6439087b9f318": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"14df99062a3e82f9e12d": [
+"0x1.39fe5459c823dp-2",
+""
+],
+"1528fe1157d020ce75a2": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"15dc718e9a4eff8665ba": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"15ebfe85a5492e4b94e5": [
+"0x1.229a074aea063p-2",
+""
+],
+"1706c4958d5a0ac40761": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"170b890a661801d29689": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"17865f69919b38ecc69f": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"18643957eb1522f18e4d": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"18f3c05130aa06f06eed": [
+"0x1.1759ddf672d17p-2",
+""
+],
+"191168912bf3cb63f600": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"19f09a6cd7b516883f50": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"1a1d8c5ee084a35c1a41": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"1bdc0ea84be417206693": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"1c9d6316a01b2bea1222": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"1d6ad679bcd0ff42c9fd": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"1dd6517676fd8cc3bfe8": [
+"0x1.1f13f8f07b87ep-2",
+""
+],
+"1e3fdd3db4b594e713c3": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"203e46957236cc8f0455": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"2063bfc12f9555b647c3": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"209e29dad94a6aac4f76": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"21b16f157237deb1f1f4": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"227e7883550b504d9a61": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"22c7fab594d608da4808": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"237eb24073c774989ced": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"2514bc385d623bb09cf7": [
+"0x1.229a074aea063p-2",
+""
+],
+"2572ffe947b2943e5243": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"258f96a751dcb5c9ae5f": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"2663bae76e94cb86e31b": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"274d8cd42d32f96178b4": [
+"0x1.6ce448283e4f2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"277a64b5651336113d5b": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"29cf5c5f8a1cf31ce4e2": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"2aa54d05f7362e7e0197": [
+"0x1.229a074aea063p-2",
+""
+],
+"2ac0cd00be7217178c1c": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"2baa2952f2549b7d1fc4": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"2cb5d4fb6d4e05058f7d": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"2cd36a14525d18134362": [
+"0x1.39fe5459c823dp-2",
+""
+],
+"2cfa4dfeaf2fa54a31b2": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"2da40b31a995d87ead4e": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"2e64ec6c63b225e7610d": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"2e8bb05fceb4cff81fc5": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"2f68c20ccc53c2303299": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"2f7c57b6e3abaedfeb58": [
+"0x1.229a074aea063p-2",
+""
+],
+"310f4240c2b0096e6ba8": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"31ab328aa4948a6bd476": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"33bf7605b12aeabeddb2": [
+"0x1.229a074aea063p-2",
+""
+],
+"376bf7d443df232e8cb1": [
+"0x1.51c606dbbe841p-2",
+""
+],
+"377270aeeeb389e9dab2": [
+"0x1.1a80fd0f33c8dp-2",
+""
+],
+"37e6ae5f4e5a857b99b9": [
+"0x1.41fbb80253bacp-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"3a1a90de6fe39553abde": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"3a46244b4c56015e92b4": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"3a8953f8a72fb2689c90": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"3aae6cb8cdc6af68d7ba": [
+"0x1.7d0cadabdd14ep-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"3ae730468368e9c5a072": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"3afa85f25da8a7c43c90": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"3afcda6a9e1bf87a63c7": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"3b2bb89b24862b2c7166": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"3b91d741b62aa62f5ede": [
+"0x1.229a074aea063p-2",
+""
+],
+"3bc02d6e6dfaa03e4e76": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"3d194064afda9c6ad204": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"3e39070a918ddb257e04": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"3ee41b073bf85155b06b": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"3f352dd8eddff6a1a5ac": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"4089fe780dfbb0015d2d": [
+"0x1.849b60ada9c7cp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"410c5ca6fc16bcbf13eb": [
+"0x1.41faefe1319e0p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"4179b7b94e8174c539b0": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"4216d076dfa2777ea90e": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"42d9811f07c1dcd5cb4d": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"43746dcc097e86b2035c": [
+"0x1.229a074aea063p-2",
+""
+],
+"43dccea5d243ac130f0a": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"440037de08dd1e927619": [
+"0x1.1a8034ee11ac1p-2",
+""
+],
+"44d0b1ebc6739ae381ef": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"464e1474adf26ea003ce": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"47232812899a0345fda9": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4784d94a83009c9782e4": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"482c90e9cd066bfdc3f2": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"487b77daa82e1034a512": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"49582817562b2139f6f0": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"49ca0cac19496871b9db": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"4a1b91f518acb5928386": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"4a5092ebc90fe15370c9": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"4a8877bb72bb00330fac": [
+"0x1.420c85d6d22a2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4ab5a06c110f92581af0": [
+"0x1.6ce51049606bep-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4abd2c964974c0302436": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"4b0cf34bb346368c7ec8": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"4b234a6c2dcff6fdd985": [
+"0x1.52feeab3225c5p-2",
+""
+],
+"4b2716967e7bcc91c5e3": [
+"0x1.229a074aea063p-2",
+""
+],
+"4b943e3e53b38238ccab": [
+"0x1.432e94ad8d1b2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4bc2f983fd959497067d": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"4bd87952d99f276d5bcf": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4befac45a1590d64f3d9": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"4c15c56ce200a579f0dc": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"4cb676788b4e33eb25e7": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"4ccb85a6777e763ec40e": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"4df0ed0053632815795c": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"4ed975a6fc651656923e": [
+"0x1.b9e869594e7e8p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"4f31141ba925a5123495": [
+"0x1.229a074aea063p-2",
+""
+],
+"4fade2f237a549f91aa2": [
+"0x1.229a074aea063p-2",
+""
+],
+"4fcbd9f12ccbf4aa197e": [
+"0x1.595ce4a495c8dp-2",
+""
+],
+"501be6370635f33eb4d6": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"50c4b8cba19dee257aa2": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"5181e0022b3802e3f01e": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"51c7b888b619fa59cefc": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"51d980942578051a21f4": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"51e35d7de9742cfdccdf": [
+"0x1.229a074aea063p-2",
+""
+],
+"52825ec1cb27db7c5652": [
+"0x1.5b82c7b2f0ea2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"52e0359beffebf000109": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"53135093707c239362aa": [
+"0x1.51c606dbbe841p-2",
+""
+],
+"535e379007558699bda9": [
+"0x1.7459165b14385p-2",
+""
+],
+"54788eff33e307502595": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"547d8d0ed297555c916a": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"54e64132278e7d2656d3": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"55e93ba1a362e97385b1": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"560612845bff118c644f": [
+"0x1.81309de3e99bcp-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"566f3e270754d7f63e3c": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"56df8f14179e5b28a94c": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"5742454cedb2864859e2": [
+"0x1.41fbb80253bacp-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"57abd8e8aadf15d23009": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"5b23f6d436a2d018ccd5": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"5d22ce590a148a8637f8": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"5e26c786a24aaea76e88": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"5e368d146f39a81088db": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"5f07a64bd1065f629251": [
+"0x1.6ce448283e4f2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"5fc068796fa5eb8f8bb6": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"621054fcbeb4ce766616": [
+"0x1.39ff1c7aea409p-2",
+""
+],
+"621e941f3876bff9b9ae": [
+"0x1.229a074aea063p-2",
+""
+],
+"626ebe98730b8860fc9b": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"628fa8c0651f3f994cc6": [
+"0x1.6ce51049606bep-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"62ad036a8bcccee2c50f": [
+"0x1.41faefe1319e0p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"64a7b81b2dac71eae7fa": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"64c1449b5eaaf116a567": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"65a6e11995ef6f54a25e": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"65b4521a68055aa0f68f": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"6680e315a5ab1e3a4884": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"67fb686fe0fffda4781a": [
+"0x1.229a074aea063p-2",
+""
+],
+"6b601e2c05ef1c2e006a": [
+"0x1.15daa57c5abc3p-2",
+""
+],
+"6c09866f28e2d8183833": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"6c581e10c6775b587a1e": [
+"0x1.39fe5459c823dp-2",
+""
+],
+"6d0e64c8d2b4dda157be": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"6f5722cca8733a5ad940": [
+"0x1.229a074aea063p-2",
+""
+],
+"6f5dc3f739c9d690634a": [
+"0x1.1a80fd0f33c8dp-2",
+""
+],
+"70370465552b2e7ef5b8": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"719bee41c2665cd245ca": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"727f8df861b323428cff": [
+"0x1.229a074aea063p-2",
+""
+],
+"74b3af27c7f4cfcbae38": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"75011c1cf2a9c5c67898": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"76123b895d256e4c5ef5": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"7650a2fbce409eed05fe": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"76e5e7df89ca3afea666": [
+"0x1.7459165b14385p-2",
+""
+],
+"78bffa0efbf8608fd7c5": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"7a61b60b123647fd3b52": [
+"0x1.420bbdb5b00d6p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"7b5c488c6582b1110314": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"7c2ad874f54fe19b979f": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"7e773cbd7edcea8f1ca9": [
+"0x1.229a074aea063p-2",
+""
+],
+"7f0b3b7f7686d458e3e0": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"7f5da9ae8a782f352fd2": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"7f74fde1a1661bee55d2": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"805f860864abe8002b7d": [
+"0x1.229a074aea063p-2",
+""
+],
+"80c8cd1d852dcc504e84": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"80fe5fd058ca99ee20dd": [
+"0x1.229a074aea063p-2",
+""
+],
+"81737266ed391e91e4aa": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"823605c2f4e7e040422d": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"8274ccb2679270b61b68": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"82e043451957c7b27f10": [
+"0x1.229a074aea063p-2",
+""
+],
+"8373ecf051e2accf249b": [
+"0x1.229a074aea063p-2",
+""
+],
+"83ad9506c90cb0c29542": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"84c2bf3f00a78482ad04": [
+"0x1.229a074aea063p-2",
+""
+],
+"85c70bac98a300cf300d": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"85d09fcd61d086383cc4": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"86041e7ebfa3b0015b34": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"865b3e0c7bb109770e5a": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"8708985088785b9394e2": [
+"0x1.674ce88bde942p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"878705c8730eb81e38d9": [
+"0x1.41fbb80253bacp-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"889b87c1045392795294": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"893968ea386908e05e7e": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"89ac7b8731693f7e4321": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"8ac505903da1785f4a50": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"8c6596497a702da1b9c0": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"8ca3bb863282d200879a": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"8fa2ff2b3a8147829f28": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"9053991b9a189c877a2d": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"908126746de23b4321b1": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"9136d2470d7d7c88d155": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"916ea40dd49c01f45b3c": [
+"0x1.229a074aea063p-2",
+""
+],
+"92435fb8119c98e67a3e": [
+"0x1.229a074aea063p-2",
+""
+],
+"92e557c05fb67d5bd3ce": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"93c9d19b0374815bf62b": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"93ea481583800bf7ce3f": [
+"0x1.229a074aea063p-2",
+""
+],
+"9596c81117a37af04ffe": [
+"0x1.229a074aea063p-2",
+""
+],
+"95cba76dd051ab6efa6f": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"96137a9dfea8dab4f6a6": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"966f9f8f548372e359e8": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"9746f519b055af3c43f3": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"982cd509c0ab7e8f4035": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"98b301254758440fd982": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"98cc9549ad9fda896c0b": [
+"0x1.229a074aea063p-2",
+""
+],
+"9932c14426086375b38b": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"9af32ce457c15ae83412": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"9b89ca7563bc0cc4ee79": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"9b9b7b69058c880ee792": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"9bff2d1100a086d00eba": [
+"0x1.8e60155116dadp-2",
+""
+],
+"9c8f31bc600855cc5760": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"9cadf7944d7807ea6d23": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"9d041323a333a42bfe63": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"9d5632ea832d62d2235a": [
+"0x1.52feeab3225c5p-2",
+""
+],
+"9e605f6b6a7b472f359a": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"a1e2210cd7bca0daa127": [
+"0x1.39ff1c7aea409p-2",
+""
+],
+"a1e2f1224fedfec47e21": [
+"0x1.420bbdb5b00d6p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"a24cebe0c2bada083d10": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"a2d288c81b462228a339": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"a2e42f153ac736e8e7ce": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"a4014c010bfa7ccff479": [
+"0x1.229a074aea063p-2",
+""
+],
+"a4a3d620738f7aa4e067": [
+"0x1.229a074aea063p-2",
+""
+],
+"a50ef55b7759615375e2": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"a62b9490a6db72884c89": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"a6d1cfcaf939078fe470": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"a6fdb2c3a77f83b664dc": [
+"0x1.420bbdb5b00d6p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"a70191618d1404abb469": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"aa33c8b95179cac4ce92": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"aa363a8a6bddd5c29e33": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"aca8b56ec295ed785ba1": [
+"0x1.229a074aea063p-2",
+""
+],
+"acb0ec5f9f9dc0d2de60": [
+"0x1.51c606dbbe841p-2",
+""
+],
+"ad4572df41d11cdd19f7": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"ad8568b03dde59ce2acb": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"adac7dd50a7845513b85": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"ae8294dded35d12af4d3": [
+"0x1.420bbdb5b00d6p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"aee25c8a053e478cbeff": [
+"0x1.595ce4a495c8dp-2",
+""
+],
+"af03125aa4f0b70c3120": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"af0bed3b08cde15b658d": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"afeb6aeb4ee79f9b2c83": [
+"0x1.229a074aea063p-2",
+""
+],
+"b08204349b23a2f335ff": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"b0b45f5ab6b13229bcdf": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"b12a24ae48b8b269ef90": [
+"0x1.7459165b14385p-2",
+""
+],
+"b1c3cfa9ffae5b3ce26c": [
+"0x1.420c85d6d22a2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"b376ce6a6f2c37ff2250": [
+"0x1.229a074aea063p-2",
+""
+],
+"b381a49971224064daa4": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"b3e81a23d0b7a76cea33": [
+"0x1.4a39a3e9e7faap-2",
+""
+],
+"b4e014cbf564fa983173": [
+"0x1.1a8034ee11ac1p-2",
+""
+],
+"b58a45c0d42ac69c0325": [
+"0x1.52feeab3225c5p-2",
+""
+],
+"b5e5e13edffdc85e86b7": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"b674656b6e2e74eae6b1": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"b7d722c7bc7176510925": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"b8c814c2165494e0842e": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"b91d870d34ca5c5f85a4": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"bb2e944d8e5154dda2a6": [
+"0x1.84b2af1cc023bp-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"bbee2d2d75712b03cd4c": [
+"0x1.8f92ab3c3b579p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"bcb45a5cd693c4fd8275": [
+"0x1.6ce448283e4f2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"bcc7c88fe2dbf3a9bd3e": [
+"0x1.1a8034ee11ac1p-2",
+""
+],
+"bd039ba0d67610c6514c": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"bd8f3100b71b049a6db0": [
+"0x1.39fe5459c823dp-2",
+""
+],
+"bdc522a9847772895a6b": [
+"0x1.229a074aea063p-2",
+""
+],
+"be72e971792845cd499d": [
+"0x1.229a074aea063p-2",
+""
+],
+"be9ecd4f8116ffbc6bec": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"bfa421a7a5c1ae7a7918": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"c02d778bd26e7990de03": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"c2e4609c08f6815a43ec": [
+"0x1.1a80fd0f33c8dp-2",
+""
+],
+"c3d533be8b80539e901e": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"c41ee319f032d04da2f3": [
+"0x1.1a8034ee11ac1p-2",
+""
+],
+"c49d73e6aa7f3bacda21": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"c5ee6e52fce1ec2f2dd3": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"c6ca24d09bed5506f0e1": [
+"0x1.229a074aea063p-2",
+""
+],
+"c7cc28726576b95d383c": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"c8ccfa4f2adc259fe72c": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"c9a0511726e64e1922b6": [
+"0x1.420bbdb5b00d6p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"c9e1fca8cca6b23c2f41": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"cb17013bcb7e1783958d": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"cc7a39f7bca425d04080": [
+"0x1.3944649f35014p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"cc866b22ff9ec9370da7": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"cee3e964781a22a89859": [
+"0x1.229a074aea063p-2",
+""
+],
+"cf6fe9dc9b75be71ce84": [
+"0x1.3c2d747c89884p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"d0d169ff55c7d6a37f94": [
+"0x1.229a074aea063p-2",
+""
+],
+"d219ef14b4a5c7daa3c9": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"d3424eb9941faa2b2175": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"d4a318cc417aa19a89b4": [
+"0x1.229a074aea063p-2",
+""
+],
+"d5041d1aaf469874be36": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"d51ff061d8bf33686881": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"d6141bbbd52a24a269a8": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"d61e45b36401208504cd": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"d65f5efe9302f624ec73": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"d66a60917a371e06eed6": [
+"0x1.229a074aea063p-2",
+""
+],
+"d7312367c11750ab1d1b": [
+"0x1.46c4abc256c27p-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"d850c515ee798ae4a212": [
+"0x1.1db1053ee8c9dp-2",
+""
+],
+"d9585553960da400708b": [
+"0x1.229a074aea063p-2",
+""
+],
+"d99f206e19c93b78a415": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"dac4513012cfcb43da93": [
+"0x1.229a074aea063p-2",
+""
+],
+"dc6ef414dfdb9e243f2d": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"dc7b8b4b08c7ca82c586": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"dc9d9df3bdb227625938": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"dfd6e9447f948495b898": [
+"0x1.5d96afa6d2e46p-2",
+""
+],
+"e04a365e460a6310a551": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"e0514a595b456fc4debf": [
+"0x1.1a8034ee11ac1p-2",
+""
+],
+"e0c27e7f3dc48de1a234": [
+"0x1.41faefe1319e0p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"e1810fa2c61b08e6f48e": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"e19e06b55062e2b07449": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"e24a3a940eab0f830d91": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"e3da7fb3bfe4e750bc63": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"e3e22df043da632563c4": [
+"0x1.229a074aea063p-2",
+""
+],
+"e48fe9829bfaab7866d3": [
+"0x1.229b978d2e3fbp-2",
+""
+],
+"e4ccad4fdcba305ee980": [
+"0x1.229a074aea063p-2",
+""
+],
+"e564379a499451335f0d": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"e62cc02a766a630abc2b": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"e65d2ef180590b621d74": [
+"0x1.229a074aea063p-2",
+""
+],
+"e7a5e04f62de607f0681": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"e83fd8a047064e39adc3": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"e8a1dd60e3269ebecb9b": [
+"0x1.6ce448283e4f2p-2",
+"PickCubeFromShelf(robot,cube_4)"
+],
+"e8d1c6fa3d7d8460ec4c": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"ea5202876b9062e4ff03": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"ead0a9b7738cbabe74fd": [
+"0x1.5d95e785b0c7ap-2",
+""
+],
+"eae92b018f4b3dad97f6": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"eb12727ef50c7a0063d7": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"eb1d7b9cb95169e466e3": [
+"0x1.39ff1c7aea409p-2",
+""
+],
+"eb94808656bacd416851": [
+"0x1.46c31b8012890p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"ebd35d5c85f457b959f7": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"ec20feab3d7ae53fddc1": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"ed46aec0c774a485d070": [
+"0x1.41faefe1319e0p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"ed4bca5f8969a5f4bb74": [
+"0x1.4b8167d5d2e67p-2",
+""
+],
+"ed83b61824049ec2dd5c": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"ee588195b80d50c9703b": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"ee7521a54962630a9b12": [
+"0x1.1f13f8f07b87ep-2",
+""
+],
+"ef224de3eeeef6f38c75": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"ef6fdf606eb73e7f2692": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"efec3f2a60dfac6e3788": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"effde0288e9e4a2aa5e9": [
+"0x1.84b2af1cc023bp-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"f0834eb452c1e4e682cd": [
+"0x1.229a074aea063p-2",
+""
+],
+"f0d9b747f32564f42b9c": [
+"0x1.98947e695ea7dp-2",
+""
+],
+"f1aa7c4bdfb8fa6c981b": [
+"0x1.69af38147ee27p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"f26a9dbe5a9e4fc43ce6": [
+"0x1.229a074aea063p-2",
+""
+],
+"f2e16f47a26aee80af8a": [
+"0x1.35903d3c0c34dp-2",
+""
+],
+"f3a049c3f4f1841a8d1b": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"f3c1451beb54dfb9ef16": [
+"0x1.229acf6c0c22fp-2",
+""
+],
+"f7e7aa995f8f0b0cac92": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"f805ef12d1e4f55d1a68": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"f8c997853ee0a080f425": [
+"0x1.229a074aea063p-2",
+""
+],
+"f91cb96e6ad8f0bb25c9": [
+"0x1.1daf74fca4905p-2",
+""
+],
+"f97397bb763a62dd03f6": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"f99dc52d517646e0732e": [
+"0x1.39fe5459c823dp-2",
+""
+],
+"fa9e99450b921f6a899c": [
+"0x1.1f1330cf596b2p-2",
+""
+],
+"faf4acec98540f8b8baf": [
+"0x1.420c85d6d22a2p-2",
+"PickCubeFromShelf(robot,cube_2)"
+],
+"fb07b23898d0fd52b318": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"fb56043e854bd8770618": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"fcdcd6259fe982927527": [
+"0x1.1db03d1dc6ad1p-2",
+""
+],
+"fd77bfff973a7f51067f": [
+"0x1.2511ffd4357eap-2",
+""
+],
+"fe34a0aeb3806b419fad": [
+"0x1.22993f29c7e97p-2",
+""
+],
+"ff68be1cb2821c289f38": [
+"0x1.229a074aea063p-2",
+""
+],
+"ff952b90cafd890805b8": [
+"0x1.51c53eba9c675p-2",
+""
+],
+"ff954ff35698f5c5e91b": [
+"0x1.46c3e3a134a5bp-2",
+"PickCubeFromShelf(robot,cube_0)"
+]
+},
+"unique_nodes": 378,
+"value": "0x1.81309de3e99bcp-2"
+},
+"start-full": {
+"action": "PickCubeFromShelf(robot,cube_0)",
+"cache_hits": 105,
+"memo": {
+"0077e5f3f58c1390578d": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"04201adeadbde5579f71": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"04340ec3ab036fc2e87f": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"07bcedc07d6a553e512d": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"08d365f9238decd43746": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"09849a6c8fbe9ab37457": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"099488013e3e488f4fde": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"0abfd53fc2f9023200b4": [
+"0x1.a24c336704189p-2",
+""
+],
+"0b30060a6ef945d9fce0": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"0b52ca1880f3cf38f784": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"0c1d934cc847bbbdb85b": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"0ec3ff448da738951a16": [
+"0x1.a834fb654523ap-2",
+""
+],
+"0eef5c5e26d0b63dc3f2": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_3,box_0)"
+],
+"110dbb42ffd291a9523e": [
+"0x1.7f5a0f5ca5de6p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"11158c027d0e7c9acc49": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"12522349328da4c8d6db": [
+"0x1.a834fb654523ap-2",
+""
+],
+"136d01b1d831d24b3c19": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_1)"
+],
+"148f31338b76a0b6df13": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"185b4b6643d3709fc85f": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"18a907e0227c60b5d028": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"1a84ddaf8bd996c90f24": [
+"0x1.af7df7950a959p-2",
+""
+],
+"1bf4a4b1180a0e093812": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"1cbf572f7399d816fd1f": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"1ce7870763d9b6284c45": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"1e05dc973a67ca4d8289": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"1e1f2017b7244e0927d6": [
+"0x1.a24c336704189p-2",
+""
+],
+"1ea3d6c6fb0a052d2669": [
+"0x1.2200d32913235p-1",
+""
+],
+"1eb33bf5e2300578df5d": [
+"0x1.b9e869594e7e8p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"1f8922c0416f24ad8de2": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"200f2436dbbbc68f5e74": [
+"0x1.22856c9379458p-1",
+""
+],
+"21042593478002db0177": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"215c33f78c007bcc9008": [
+"0x1.8e60155116dadp-2",
+""
+],
+"22c5d4073797f58a65c0": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"27a29635e78cbdd22170": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"27ba1be1dc12fbb22762": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"27c6c961f438ac065bf7": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"2812bb94e167c62fc6ad": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"2b93acb5e0b3716c5e47": [
+"0x1.8d8b249c738c6p-2",
+""
+],
+"2bf42aa1ef2fbed3206c": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"2c6c220b334876f0fccf": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"2dd81ce3338451021d72": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"2e8af2bd18e17d5e0be2": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"313004fe0d1597119dda": [
+"0x1.a834fb654523ap-2",
+""
+],
+"31adf1b409a7bb3cb91e": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"32c3ed7f622132ea9b8f": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"32d1eecf77fd0ef5bd26": [
+"0x1.432e94ad8d1b2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"336ab704cff729a3c720": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"33a9161de19f69b5ce58": [
+"0x1.a834fb654523ap-2",
+""
+],
+"33eab656e97f598ef627": [
+"0x1.f1fc2af9c51b0p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"34508160244ed82adee3": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"34fe8d2cb0f0718d89fa": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"359e05c93e3c82d4b5f5": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"366c26810ce9a7ad9e2f": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"377db4950cfb856f7951": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"37ffc334109f87d75d1d": [
+"0x1.674ce88bde942p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"3835e81ace4a081e8230": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"39e5f267d11f6bc47ece": [
+"0x1.90a4ded4a9925p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"3b761bf359fef1543893": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"3bbe3bded6dfea95c590": [
+"0x1.3714eff44c4f9p-2",
+""
+],
+"3c1f3a45e1164db96489": [
+"0x1.8e60155116dadp-2",
+""
+],
+"3d2f2769af0d6144dc36": [
+"0x1.83c035b70581fp-2",
+""
+],
+"3e000997c0a289ec9501": [
+"0x1.d01e96515041dp-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"3ed40f66f24603bc0fb6": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"3ef62da36a5122156493": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"40a05fd70e015bd45d27": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"418e0cce7c2aef05954b": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"425dd719681174d01db9": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"426d356420087640ce3e": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"468b7bd2f127e5467970": [
+"0x1.4c6cf58d52b31p-2",
+""
+],
+"48c84910fa1752915be4": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"48d2bd670efe97098e82": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"4901c1803a864e07b3d1": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"4932617b39c95363f8f5": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"4abb36643593cae22808": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"4b28c943401a7338e0c3": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"4c2f334a8c87ed81a416": [
+"0x1.a24c336704189p-2",
+""
+],
+"4dffb813811baf0ed944": [
+"0x1.6ffde9c4e0df8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"4e3bad265820252827be": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"4fd77e7ec2ea8859af8d": [
+"0x1.f673e70e35617p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"4ff6ba13c57f23f07900": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"500bb02596baf2d3e70a": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"501a43966e6c5df787f7": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"5111ec28fd654ba389aa": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"524eca5da34a26ab5986": [
+"0x1.8e60155116dadp-2",
+""
+],
+"5411785f48eb96c3776c": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"5474054a7ef62d32056c": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"54f608a74532953ccd51": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"553670e2e15aac41b771": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"5a24eebefb46fd232377": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"5cf91976fd60c56c1539": [
+"0x1.83c035b70581fp-2",
+""
+],
+"5e9fee0a7a54593e99ab": [
+"0x1.345b412b2b0b0p-1",
+""
+],
+"5f028501ee3b041ae185": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"5f8608b983838e5dd03d": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"62ec31d49e79af7338b9": [
+"0x1.b9e869594e7e8p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"64f30b23916d70884ee5": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_3,box_0)"
+],
+"669df1a2ff17f7ae8e60": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"675a1dab48dac50265d8": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"67b467663cc7d8504eaf": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"6c0f9b210981d975e566": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"6c2055b1ea71d0829174": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"7050332b326a702706ab": [
+"0x1.a24c336704189p-2",
+""
+],
+"722045a3aa27888e3c24": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"744a07919065532eace5": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"752918f84178a840d9ef": [
+"0x1.83c035b70581fp-2",
+""
+],
+"75fe3d6b1d92f0e1cc8f": [
+"0x1.a24c336704189p-2",
+""
+],
+"782fd9b6985a8b7d7892": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"797add30b2796aaaea3f": [
+"0x1.a24c336704189p-2",
+""
+],
+"79c6911e20e43b53cfae": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"7a7c0e6b83185514910d": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"7a90b247690101a3f592": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"7b096e1c1f0e3bc4ebd9": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"7c6fa5e8ed768a4d66aa": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"7df9b5815b4a88ce3d5f": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"7e8e1a25600b2ba80b2e": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"7ff2a59e7a1eddfa4301": [
+"0x1.a24c336704189p-2",
+""
+],
+"827c5b8c3173f2b1eb3e": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"83fe585b9933c4e7fb11": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"848e8c532c8dedd30065": [
+"0x1.8e60155116dadp-2",
+""
+],
+"86e8678cf99a4bed3d1c": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"883ee61af5afb2333e72": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"89f101aeff8d3326ea2f": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_3,box_0)"
+],
+"8d51c157ca68c76c03f0": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"8da9249e854c31a6cf8f": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_3,box_0)"
+],
+"8dd760c4e91b8ecd799f": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"8e3d2011917b454341fe": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"92219da32c9acb345c94": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"931060103ba53f48e2b9": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"934a51f06548cf380a5d": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"9392ee58fb6b9b2751d8": [
+"0x1.a24c336704189p-2",
+""
+],
+"9548a49726595aea4ae6": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"96d3a0db2b4e81f7b966": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"9a8ca88d1bf121f777e6": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"9d9400102136136e4bef": [
+"0x1.9c2e12e73a2c7p-2",
+""
+],
+"9dfa0613d8e8ff91904a": [
+"0x1.32ba6103e0ffcp-1",
+""
+],
+"9e3f317eaf0d591b7b82": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"9e9fc9dd4260287be5d7": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"a1f94946522003ea5b7c": [
+"0x1.a24c336704189p-2",
+""
+],
+"a4edbf8be179baba01f2": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"a60b6826b03932de32ac": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"a7aad08852b492b4bc80": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"a82d71829473e430e08f": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"a8552e84d4c19ec342aa": [
+"0x1.90a4ded4a9925p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"a8691717609ae2b19ef2": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"aa1c5af11c98725dbd72": [
+"0x1.849b60ada9c7cp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"aa2fe22f475bcfa3c2a5": [
+"0x1.a24c336704189p-2",
+""
+],
+"aad90eb38b6b00f4be3b": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"ab2bbb417c88f1c255dc": [
+"0x1.ec06cc812f71bp-2",
+""
+],
+"aecd156aa7ab6b083e16": [
+"0x1.95de24267e9c6p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"af67a8687a15d4069b83": [
+"0x1.b77b12a6fd9d0p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"affc1bb07ab83e372d3c": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"b0309422e97b34f0709d": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"b286f1568bafdc8936eb": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"b3afb82e9034d7ada04f": [
+"0x1.7fa3448ccc32fp-2",
+""
+],
+"b6ffa61bed159bd0a64b": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"b7cfdc70f188e8785328": [
+"0x1.8e60155116dadp-2",
+""
+],
+"b87e8e80d7b2db323f97": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"ba6ffede094843b0ade9": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"bb296cf8eb43287e6b0b": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"bbe5d4c6a615a6522aa9": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"bbe88e861ac41bf60e78": [
+"0x1.5764935d1e2b2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"bcfad7cf44e206963b2d": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"bee2f076b1204e95113d": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"bee54f2aff9454f3a036": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"bf20da5beea5c4666410": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"bf27ed49cc26048fb67c": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_1,box_0)"
+],
+"c121f7070146c87b36cb": [
+"0x1.83c035b70581fp-2",
+""
+],
+"c1aeff93117a679aeca4": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"c31a74bf04fccf6ae774": [
+"0x1.9c2e12e73a2c7p-2",
+""
+],
+"c416d977f78602e7fbdd": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"c43138cab03d77861358": [
+"0x1.62abae7d605c5p-2",
+""
+],
+"c4676d7c04d002c753af": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"c4f2244d75a6f9275056": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"c5c14bb8bff46a384e5d": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"c8a0a4ddf3288af78006": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"c918a3c11b691666d68d": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"c91cf07532e91e6d1bb9": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"c9c55edcd1f31ca70e1b": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"ca1ea4aa09ababaca1b4": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"ca512d7ac295826389d5": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"cd668a933376442db38f": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"d13cd9d6fbe18489fdf3": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"d19b9940cf2dbedf8848": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"d31ccd6dd3d2ece36715": [
+"0x1.83c035b70581fp-2",
+""
+],
+"d3384b01e2ccc657919d": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"d35305b5f71e4db6aab8": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"d5d705dc4a229b848b5e": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_3,box_0)"
+],
+"d69b2543e726f88d36af": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"d84c0fd79cb613859c57": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"dd0f3151691c20476de2": [
+"0x1.2511ffd4357eap-2",
+""
+],
+"ddaeaacd4634b177a7fe": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"de9b1df585a4dde4f406": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"e04975ae30b35cdfc66c": [
+"0x1.c771db3b01704p-2",
+""
+],
+"e0a5abaebda912395341": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"e1bae6b73256711358cc": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"e25f979d1180c0d03b43": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"e40aefbe0cf8fea98576": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"e41ad759325c730ac35c": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"e432e19b4b34ce1682c7": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"e6fc1fbfb8b8639028da": [
+"0x1.a834fb654523ap-2",
+""
+],
+"e87f6898364ae96e1d17": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_4,box_0)"
+],
+"e95ddf25af17543866a7": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"e9d343edcc038f1b5ff5": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"e9f18a07300deb794d16": [
+"0x1.7283791d3692ep-2",
+""
+],
+"ebcbe6ab3ff78436b25a": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"ebeb261ef4860642e8b0": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"ec11afa7a930df395cc8": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"ecb7901d0c96001c2962": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"ed618287bd00886c49ad": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"f217790ecfc55fcfa21d": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"f5096f842cb489ffb623": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"f5a521ab27bdafa61718": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"f74a97a5b194453509e9": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"f815a29b69aaec14e10c": [
+"0x1.a24c336704189p-2",
+""
+],
+"fb52dd19719f50d621ab": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"fbeab478c61bfa3d3eff": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_2,box_0)"
+],
+"fe5cb8f8ec7d82915b65": [
+"0x1.74584e39f21b9p-2",
+""
+]
+},
+"unique_nodes": 216,
+"value": "0x1.95de24267e9c6p-2"
+},
+"start-reduced": {
+"action": "PickCubeFromShelf(robot,cube_0)",
+"cache_hits": 18,
+"memo": {
+"0967832b3a3bea8691e7": [
+"0x1.a834fb654523ap-2",
+""
+],
+"0bd292210cc44ae5e5a8": [
+"0x1.7f5a0f5ca5de6p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"0f381a23a1ba0751765e": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"0fecac6654cce285fc8a": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"1213b186091fe9ab5149": [
+"0x1.7fa3448ccc32fp-2",
+""
+],
+"14c15934f51c31be9f9a": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"1c430aba7e3318001b04": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"203dadbe20209d965877": [
+"0x1.b77b12a6fd9d0p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"218ba404c536601c0a93": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"2264724f7d1b42de2553": [
+"0x1.90a4ded4a9925p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"23e936e3ff858d10fe12": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"2517f4d197822285b7aa": [
+"0x1.4efd51e725c67p-2",
+""
+],
+"2a63ab0bf36840098753": [
+"0x1.22856c9379458p-1",
+""
+],
+"2b281c651fa4613c6efb": [
+"0x1.84b1e6fb9e070p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"2bc3e1c271d9d90cc413": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"30109758f9cadd5abec9": [
+"0x1.4c6cf58d52b31p-2",
+""
+],
+"3135c544c509fad946d8": [
+"0x1.afbd08a793338p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"346ead73ed8948b868fd": [
+"0x1.6cef011b95c60p-2",
+""
+],
+"356b463b05fb6bb78b35": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"37780a6e2aa40043b3c9": [
+"0x1.df0c85a9761f1p-2",
+""
+],
+"3bd167350d8aaa5ea1c0": [
+"0x1.66e83da9c57bfp-2",
+""
+],
+"42e97a66bb0303c7f8e8": [
+"0x1.9a3afd9cb3c3ep-2",
+""
+],
+"43914dab219576d9bb6d": [
+"0x1.a24c336704189p-2",
+""
+],
+"44dd4a47f8379010b0f1": [
+"0x1.6ffde9c4e0df8p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"45358edb398c6c3cbe21": [
+"0x1.5764935d1e2b2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"4e05849d85a656cba247": [
+"0x1.52fe2292003f9p-2",
+""
+],
+"529bed0a6b6f2da13d42": [
+"0x1.849b60ada9c7cp-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"52e6882fd42995b0ea90": [
+"0x1.af7df7950a959p-2",
+""
+],
+"5383152244d9217c9573": [
+"0x1.345b412b2b0b0p-1",
+""
+],
+"55a1d35af1a43e9ae69b": [
+"0x1.790d8f11c6158p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"56d346295bb0e3064b28": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"5a84ee2077efb92dd558": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"5ae95067ba338acca1d6": [
+"0x1.674ce88bde942p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"5b8cb4859c178efcc7ab": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"5bae05c11ab5dc9c00d7": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"63edfc9c08fb7f7873b1": [
+"0x1.c59c4aaf47dd8p-2",
+"PickCubeFromShelf(robot,cube_1)"
+],
+"668d0ce2b2d971c16b74": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"67047e6cfe1fe9479886": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"67fc463281cb796e7fa2": [
+"0x1.8e60155116dadp-2",
+""
+],
+"6ea079e3daa582214be8": [
+"0x1.5d951f648eaaep-2",
+""
+],
+"6f6eaf325aff5d225011": [
+"0x1.90a4ded4a9925p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"738503e5599a9148eecf": [
+"0x1.7283791d3692ep-2",
+""
+],
+"76bc6dad68d628c2ae83": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"77f866c1b91bcd19ab18": [
+"0x1.62abae7d605c5p-2",
+""
+],
+"7861d1b4ec9ec360ac14": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"7fc8a4ca103f74e161b2": [
+"0x1.2511ffd4357eap-2",
+""
+],
+"81b01c3d3bf733517fd9": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"8391a872ccc0b509c82a": [
+"0x1.a24c336704189p-2",
+""
+],
+"863a6394de007460de4e": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"869bd6cba5b58b63af62": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"8cead59b2d2408d10ea3": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"8d7cbd102aa9068fd963": [
+"0x1.92bbc89db52a4p-2",
+""
+],
+"8e6bd155ee5c542558c5": [
+"0x1.70de0ed508f79p-2",
+""
+],
+"9258a49581bdfec7b9b8": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"96971b99ae029c7c24ad": [
+"0x1.7097bc423d3d1p-2",
+""
+],
+"97fe5342ff3f977219a2": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"982ddb1c3b8638e599e2": [
+"0x1.595c1c8373ac1p-2",
+""
+],
+"9ecaefeb4065e277bb4a": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"9edbc824881f1be33b6b": [
+"0x1.b9e869594e7e8p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"abacc3163d57439bd988": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"b17157ff3f61e277555c": [
+"0x1.8d8b249c738c6p-2",
+""
+],
+"b59b50386d208c4f0d1d": [
+"0x1.a24c336704189p-2",
+""
+],
+"c02348100277a9f05737": [
+"0x1.32ba6103e0ffcp-1",
+""
+],
+"c0e7d8c3bf35775ef01c": [
+"0x1.f1fc2af9c51b0p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"c17205da55da11af3d1f": [
+"0x1.83c035b70581fp-2",
+""
+],
+"c2f41b5182d8c75afbc5": [
+"0x1.9893b515c31f5p-2",
+""
+],
+"c3a9bea1960fab56e79d": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"d0a937e33b9906a80c4e": [
+"0x1.9c2e12e73a2c7p-2",
+""
+],
+"d12753ab5833e45dd808": [
+"0x1.2284a3d91a72ep-1",
+""
+],
+"da3acdabf9665abb44ce": [
+"0x1.ec06cc812f71bp-2",
+""
+],
+"db0ae1f2032d95cb443d": [
+"0x1.7f61215b99afap-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"db8f4fd2f322d573b4f4": [
+"0x1.82ec67d84dc7ep-2",
+""
+],
+"dc0a79419cd5c39b0c3a": [
+"0x1.b9e869594e7e8p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"e09da3d6d5752a9d955e": [
+"0x1.d01e96515041dp-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"e35dab9d04fec92ad704": [
+"0x1.432e94ad8d1b2p-2",
+"PickCubeFromShelf(robot,cube_0)"
+],
+"e3d75563dc660f7c7778": [
+"0x1.9c2e12e73a2c7p-2",
+""
+],
+"e3d846a45fe31564b7d6": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"e870a9b51206b5d56eb7": [
+"0x1.f673e70e35617p-2",
+"SweepShelf(robot,wiper_0,box_0,cube_0,cube_1,cube_2,cube_3,cube_4)"
+],
+"e96fc9260c64aa31ed6c": [
+"0x1.4e68786bb8539p-2",
+""
+],
+"eb2dd07771706a37f816": [
+"0x1.3714eff44c4f9p-2",
+""
+],
+"ed2a4245349d6f0f7a2e": [
+"0x1.c771db3b01704p-2",
+""
+],
+"ee072c3a0c7c6da8c350": [
+"0x1.74584e39f21b9p-2",
+""
+],
+"f09a00fe3464843c4c9c": [
+"0x1.958d182b294e2p-2",
+"PlaceCubeInBox(robot,cube_0,box_0)"
+],
+"f2e20c3c3628247a43e8": [
+"0x1.d240bb06c9b27p-2",
+""
+],
+"f4e8eebe0cc313da9d50": [
+"0x1.9892ecf4a1029p-2",
+""
+],
+"fa1a02991b3c64498a18": [
+"0x1.b1ffa418f2bd8p-2",
+""
+],
+"fae886eb1b0daa498d2d": [
+"0x1.5a9a24f0a8539p-2",
+""
+],
+"fae99b40b2b425f713cf": [
+"0x1.2200d32913235p-1",
+""
+],
+"fb888bf41b77df2d6a84": [
+"0x1.95de24267e9c6p-2",
+"PickCubeFromShelf(robot,cube_0)"
+]
+},
+"unique_nodes": 89,
+"value": "0x1.95de24267e9c6p-2"
+}
+}
