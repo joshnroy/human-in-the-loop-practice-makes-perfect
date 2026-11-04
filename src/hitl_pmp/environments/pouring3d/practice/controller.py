@@ -759,6 +759,37 @@ class PracticePourController(FeedbackPourController):
             phase="retreat after failed shrimp pick",
         )
 
+    def release_held_shrimp_in_place(self, *, name: str) -> None:
+        """Open where the arm stands, so a failed carry never strands a held piece.
+
+        Every skill that could recover the piece, the human pour-back included,
+        needs an empty hand. The piece falls under physics and is located by it.
+        """
+        if self.held != name:
+            return
+        # Start from the measured posture; the failed motion's target was never reached.
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        self.base_target = self.data.qpos[self.base_q].copy()
+        self.held = None
+        self.events.append({"event": "release held shrimp in place after failure"})
+        self.pause(phase="release held shrimp in place", seconds=3, grip=0)
+        hand, rotation = self.hand_pose()
+        try:
+            self.move(
+                position=hand + [0, 0, 0.08],
+                rotation=rotation,
+                seconds=2,
+                grip=0,
+                phase="withdraw after releasing shrimp in place",
+            )
+        except ValueError:
+            # Best effort: the hand is already empty, which is what recovery needs.
+            self.last_q = self.data.qpos[self.arm_q].copy()
+        for _ in range(100):
+            if self.scene.cubes_settled():
+                break
+            self.pause(phase="settle released shrimp", seconds=0.1, grip=0)
+
     def floor_carry_rotation(self, *, hand: np.ndarray, rotation: Rotation) -> Rotation:
         return rotation * Rotation.from_euler("x", self.recovery_floor_carry_angle, degrees=True)
 
