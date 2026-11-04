@@ -1,6 +1,13 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from hitl_pmp.cli import Cli
+from hitl_pmp.methods.belief_space.types.skill_belief import COST_MAX
+from scripts.kitchen_recycling import prepare
 from scripts.kitchen_recycling.prepare import ARMS, argv
 
 
@@ -41,21 +48,32 @@ def test_an_iteration_rows_budget_and_evaluation_workers_parse(*, arm: str) -> N
     assert not getattr(args, "ees_preview_test_goals", False)
 
 
-@pytest.mark.parametrize("arm", ARMS)
-def test_a_swept_rows_planner_reset_cost_parses(*, arm: str) -> None:
-    """A cost-sweep row hands the planner its reset cost and its own cost file."""
-    args = Cli.parse_args(
-        argv=[
-            *argv(
-                arm=arm,
-                seed=0,
-                cost_file="costs-10000.json",
-                kitchen_config="config.json",
-                human_reset_cost=10000,
-            ),
-            "--output-dir",
-            "unused",
-        ]
+def test_every_swept_row_prices_its_planner_skills_within_the_pomdp_ceiling(
+    *, tmp_path: Path
+) -> None:
+    """A cost sweep carries each row's reset cost only in its own cost file. The
+    planner's --human-reset-practice-cost stays at its default: the POMDP refuses at
+    construction any skill priced above COST_MAX, which killed kitchen v10's expectimax
+    and Curtis rows at reset costs 100 and 10000."""
+    out = tmp_path / "launch"
+    subprocess.run(
+        [
+            sys.executable,
+            str(Path(prepare.__file__)),
+            *("--out", str(out), "--tag", "kitchen-recycling-unit-test"),
+            *("--human-reset-costs", "5", "100", "10000", "0", "--max-parallel", "36"),
+        ],
+        check=True,
+        capture_output=True,
     )
-    assert args.human_reset_practice_cost == 10000.0
-    assert str(args.practice_cost_config) == "costs-10000.json"
+    manifest = json.loads((out / "manifest.json").read_text())
+    for row in manifest["runs"]:
+        assert "--human-reset-practice-cost" not in row["argv"]
+        args = Cli.parse_args(argv=[*row["argv"], "--output-dir", "unused"])
+        assert args.human_reset_practice_cost == 5.0 <= COST_MAX
+        costs = json.loads(
+            (out / "costs" / f"human-reset-cost-{row['human_reset_cost']}.json").read_text()
+        )
+        assert {skill["cost"]["value"] for skill in costs["human_skills"].values()} == {
+            row["human_reset_cost"]
+        }

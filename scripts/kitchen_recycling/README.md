@@ -21,10 +21,13 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   `human_reset_costs`; row index = seed-major, then cost in that order, then arm, so
   one seed's whole sweep finishes first). Each cost gets its own
   cost file, `costs/human-reset-cost-<C>.json` beside the manifest (the repo's
-  `costs.json` with both resets repriced), passed by its deployment path; each row adds
-  `--human-reset-practice-cost <C>` and runs in `results/reset-cost-<C>/<arm>/<seed>`.
-  `worker.py` checks each row's cost file against its bound `costs_sha256` and its cost,
-  and the planner flag against the same cost. EES prices a reset from the cost file from
+  `costs.json` with both resets repriced), passed by its deployment path; each row runs
+  in `results/reset-cost-<C>/<arm>/<seed>`. The cost lives only in that file: every row
+  keeps `--human-reset-practice-cost` at its default 5, because the POMDP refuses any
+  skill priced above its cost ceiling (20) and both arms price resets from the cost file,
+  as Tossing3D's own runs do (cost file 500, flag 5). `worker.py` checks each row's cost
+  file against its bound `costs_sha256` and its cost, and the planner flag against that
+  default. EES prices a reset from the cost file from
   its first decision; the POMDP arms learn it from charges observed (first-reset forecast
   `skill_cost_prior_steps` x robot price, as in Tossing3D's own cost sweep).
 - `prepare.py --constraint <feature>` adds `#SBATCH --constraint` to both scripts.

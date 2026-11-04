@@ -72,7 +72,6 @@ def argv(
     kitchen_config: str,
     practice_step_budget: int = PRACTICE_STEP_BUDGET,
     evaluation_workers: int = EVALUATION_WORKERS,
-    human_reset_cost: float | None = None,
 ) -> list[str]:
     common = list(COMMON)
     common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
@@ -93,10 +92,6 @@ def argv(
         "--kitchen-config",
         kitchen_config,
     ]
-    if human_reset_cost is not None:
-        # The planner's own price for both resets, besides the charge the cost file
-        # makes: every arm then sees the swept cost however it reads it.
-        result += ["--human-reset-practice-cost", cost_token(cost=human_reset_cost)]
     if arm == "ees":
         return result + shlex.split(
             "--method ees --practice-groundings all --ees-score-human-skills --record-ees-decisions"
@@ -190,7 +185,6 @@ def main() -> None:
                     kitchen_config=args.kitchen_config,
                     practice_step_budget=args.practice_step_budget,
                     evaluation_workers=args.evaluation_workers,
-                    human_reset_cost=cost,
                 )
                 row = {"index": len(rows), "arm": arm, "seed": seed, "argv": command}
                 if cost is not None:
