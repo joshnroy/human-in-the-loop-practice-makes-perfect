@@ -41,7 +41,11 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   control steps per task. `--no-early-stop` is mandatory for pilots and full runs:
   disable perfect-score, repeated-STOP and no-progress termination. STOP remains
   an actual planner decision with explicitly logged accounting; no robot action
-  is forced. A run ending below its counted-step horizon is not a completed run.
+  is forced. A run ending below its counted-step horizon is not a completed run,
+  with one exception: `prepare.py --repeated-stop-limit K` gives every row
+  `--repeated-stop-limit K` and records it in the manifest, and such a run that ends
+  as `repeated_stop` (K STOP-only sessions in a row) is complete. The other early
+  stops stay off.
 - `--no-scene-bg --defer-rendering` for both pilots and full runs. Mandatory
   physical kitchen/desk/chair assets are still packaged; video is separate.
 - Robot ticks cost 0.01; each of the two human resets costs 5 with duration 1;

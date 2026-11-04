@@ -72,6 +72,7 @@ def argv(
     kitchen_config: str,
     practice_step_budget: int = PRACTICE_STEP_BUDGET,
     evaluation_workers: int = EVALUATION_WORKERS,
+    repeated_stop_limit: int | None = None,
 ) -> list[str]:
     common = list(COMMON)
     common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
@@ -83,6 +84,10 @@ def argv(
             "--evaluation-task-rng",
             "per-task",
         ]
+    if repeated_stop_limit is not None:
+        # The one early stop a full-horizon run keeps: a planner that STOPs forever
+        # otherwise spends the rest of the budget one planning call per step.
+        common += ["--repeated-stop-limit", str(repeated_stop_limit)]
     result = [
         *common,
         "--seed",
@@ -131,6 +136,13 @@ def main() -> None:
         help="Each checkpoint's test tasks in up to this many concurrent processes "
         "(with --evaluation-task-rng per-task); the smoke then evaluates this many tasks.",
     )
+    parser.add_argument(
+        "--repeated-stop-limit",
+        type=int,
+        default=None,
+        help="Pass --repeated-stop-limit K to every row: a run ends as repeated_stop "
+        "after K STOP-only sessions in a row, despite --no-early-stop.",
+    )
     parser.add_argument("--cpus-per-task", type=int, default=2)
     parser.add_argument("--memory", default="16G")
     parser.add_argument(
@@ -150,6 +162,8 @@ def main() -> None:
         len(set(costs)) != len(costs) or any(cost < 0 or cost != cost for cost in costs)
     ):
         parser.error("--human-reset-costs must be distinct, non-negative numbers")
+    if args.repeated_stop_limit is not None and args.repeated_stop_limit <= 0:
+        parser.error("--repeated-stop-limit must be a positive integer")
     if args.practice_step_budget <= 0 or args.practice_step_budget % 1000:
         parser.error("--practice-step-budget must be a positive whole number of thousands")
     if not args.tag.startswith("kitchen-recycling-") or any(
@@ -185,6 +199,7 @@ def main() -> None:
                     kitchen_config=args.kitchen_config,
                     practice_step_budget=args.practice_step_budget,
                     evaluation_workers=args.evaluation_workers,
+                    repeated_stop_limit=args.repeated_stop_limit,
                 )
                 row = {"index": len(rows), "arm": arm, "seed": seed, "argv": command}
                 if cost is not None:
@@ -213,6 +228,11 @@ def main() -> None:
         **(
             {"evaluation_workers": args.evaluation_workers}
             if args.evaluation_workers != EVALUATION_WORKERS
+            else {}
+        ),
+        **(
+            {"repeated_stop_limit": args.repeated_stop_limit}
+            if args.repeated_stop_limit is not None
             else {}
         ),
         **(

@@ -154,7 +154,8 @@ class Cli:
             action="store_true",
             help="Step protocol: continue to the budget despite perfect evaluations, STOPs, "
             "or no-progress sessions. Charge an explicit STOP step for a zero-step session. "
-            "External STOP files and execution errors still terminate the run.",
+            "External STOP files, execution errors and an explicit --repeated-stop-limit "
+            "still terminate the run.",
         )
         parser.add_argument(
             "--initial-measurement",
@@ -187,6 +188,15 @@ class Cli:
             action="store_true",
             help="End the run when a practice session executes zero actions. Off by "
             "default; on reproduces step-protocol runs recorded before it was opt-in.",
+        )
+        parser.add_argument(
+            "--repeated-stop-limit",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            metavar="K",
+            help="End practice as repeated_stop after K STOP-only sessions in a row (step "
+            "protocol), with or without --no-early-stop, which leaves the other early stops "
+            "off. Unset: 10, or no limit under --no-early-stop.",
         )
         parser.add_argument(
             "--repeated-zero-step-limit",

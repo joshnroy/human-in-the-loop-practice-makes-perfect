@@ -93,6 +93,24 @@ def check_budget_and_workers(*, parsed: argparse.Namespace, manifest: dict) -> N
         raise ValueError("Parallel evaluation requires --evaluation-task-rng per-task")
 
 
+def check_repeated_stop_limit(*, parsed: argparse.Namespace, manifest: dict) -> None:
+    """Every row carries the manifest's STOP-streak limit, and none without one."""
+    expected = manifest.get("repeated_stop_limit")
+    if parsed.repeated_stop_limit != expected:
+        raise ValueError(
+            f"Wrong --repeated-stop-limit {parsed.repeated_stop_limit}: expected the "
+            f"manifest's {expected}"
+        )
+
+
+def complete_endpoints(*, manifest: dict) -> set[str]:
+    """How a run may end and still count as complete: at the budget, or, under a
+    STOP-streak limit, at that limit."""
+    if manifest.get("repeated_stop_limit") is None:
+        return {"practice_step_budget"}
+    return {"practice_step_budget", "repeated_stop"}
+
+
 def binding(*, launch: Path) -> dict:
     return {
         name: sha(path=launch / name)
@@ -180,6 +198,7 @@ def verify(*, launch: Path, full: bool) -> dict:
         if parsed.env != "kitchen_recycling3d":
             raise ValueError("Wrong environment")
         check_budget_and_workers(parsed=parsed, manifest=manifest)
+        check_repeated_stop_limit(parsed=parsed, manifest=manifest)
         if parsed.goal_pursuit_horizon != 0 or parsed.stop_after_perfect_evaluations != 0:
             raise ValueError("Goal pursuit/perfect-evaluation stopping must be disabled")
         if not parsed.no_early_stop:
@@ -244,11 +263,13 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
         raise ValueError("Incomplete or failed held-out evaluation")
     if evaluations[-1].get("practice_steps") != status.get("practice_steps"):
         raise ValueError("Final held-out evaluation is missing")
-    if not ends or ends[-1].get("reason") != "practice_step_budget":
+    if not ends or ends[-1].get("reason") not in complete_endpoints(manifest=manifest):
         raise ValueError("Early STOP/stall is not full budget completion")
-    if smoke and status.get("practice_steps", 0) < 3200:
+    # A run the STOP-streak limit ended has stopped practising: its horizon is its own.
+    at_budget = ends[-1].get("reason") == "practice_step_budget"
+    if smoke and at_budget and status.get("practice_steps", 0) < 3200:
         raise ValueError("Smoke did not reach its practice ceiling")
-    if not smoke and status.get("practice_steps", 0) < budget:
+    if not smoke and at_budget and status.get("practice_steps", 0) < budget:
         raise ValueError(f"Run stopped before the full {budget} counted-step horizon")
     receipt = {
         "arm": row["arm"],
