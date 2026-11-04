@@ -19,6 +19,8 @@ from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom
 from .skills import SKILL_IDS
 
+HUMAN_RETURN_SETTLE_STEPS = 20
+
 
 class RackServingEnvironment(SweepOffShelf3DEnvironment):
     config: RackServingConfig = Field(default_factory=RackServingConfig)
@@ -160,6 +162,12 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 RackFoodController(controllers=self.rack_controllers()).restore_gripper_force()
                 self.rack_controllers().held_food = None
                 self.rack_controllers().shelf.held_cube = None
+                # The return places each dumpling just above the rack; until it settles
+                # into contact, the measured state has it on nothing. The robot is held
+                # still, as `initialize_rest` holds it after an episode's own placement.
+                self.rack_controllers().shelf.hold(
+                    count=HUMAN_RETURN_SETTLE_STEPS, label="human_batch_return_settle"
+                )
             else:
                 backend.sync_clock()
                 backend.ledger = backend.ledger.charge_human(intervention="human_tool_recovery")

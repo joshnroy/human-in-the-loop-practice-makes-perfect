@@ -134,7 +134,9 @@ def test_batch_return_out_of_the_hand_restores_the_grippers_own_force(*, monkeyp
     env._backend = RackServingBackend()
     restored = []
     controllers = SimpleNamespace(
-        backend=env._backend, held_food="cube_0", shelf=SimpleNamespace(held_cube="cube_0")
+        backend=env._backend,
+        held_food="cube_0",
+        shelf=SimpleNamespace(held_cube="cube_0", hold=lambda **kwargs: None),
     )
     env._rack_controllers = controllers
     monkeypatch.setattr(RackServingEnvironment, "_bookkeeping", lambda self: (0, 0))
