@@ -92,7 +92,6 @@ class PourStart:
     @staticmethod
     def capture(*, monkeypatch, scripted: bool) -> dict:
         from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
-        from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 
         state: dict = {}
 
@@ -116,19 +115,17 @@ class PourStart:
         with monkeypatch.context() as patch:
             if scripted:
                 patch.setattr(KitchenController, "prepare_to_pour", PourStart.scripted_prepare)
-            patch.setattr(PotstickerController, "pour_prepared", stop)
+            patch.setattr(KitchenController, "closed_loop_pour", stop)
             env = KitchenEnvironment(requested_count=1)
             env.take_action(action=PICK_PITCHER)
             assert env.last_info["success"] is True, env.last_info
             with pytest.raises(PourStart.Captured):
-                from hitl_pmp.environments.pouring3d.frozen_native import (
-                    ExtendedFeedbackPourParameters,
+                from hitl_pmp.environments.pouring3d.kitchen.types import (
+                    ClosedLoopPourParameters,
                 )
 
-                env.controller().run_joint_pour(
-                    parameters=ExtendedFeedbackPourParameters(
-                        tilt_degrees=91, amplitude_m=0.01, duration_seconds=10
-                    ),
+                env.controller().run_closed_loop_pour(
+                    parameters=ClosedLoopPourParameters(ramp_rate_deg_s=1.0),
                     requested_count=1,
                 )
         return state

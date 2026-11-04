@@ -92,7 +92,7 @@ def test_count_samplers_and_cold_practice_stay_ordinary():
     assert "ActivateCooking" not in {s.name for s in p.skills()}
     for k in range(1, 4):
         g = p.ground(name=f"Pour{k}")
-        action = p.encode(ground_skill=g, params=np.array([90, 0.015, 12]))
+        action = p.encode(ground_skill=g, params=np.array([1.0]))
         assert action[2] == k
         assert any(a.predicate.name == "ColdIngredients" for a in g.preconditions)
     e._started = True
@@ -159,31 +159,88 @@ def test_kitchen_recording_uses_its_own_lazy_renderer():
     assert renderer._controller is None
 
 
-def test_pour_sampling_admits_the_approved_bounds_and_no_further():
+def test_the_open_loop_parameter_models_keep_their_100_mm_wiggle_limit():
     from pydantic import ValidationError
 
     from hitl_pmp.environments.pouring3d.feedback_controller import FeedbackPourParameters
     from hitl_pmp.environments.pouring3d.frozen_native import ExtendedFeedbackPourParameters
     from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerParameters
 
-    # Approved 2026-11-02: tilt 75-95 deg, wiggle 0-100 mm, feeding 0-60 s.
-    assert KitchenEnvironment.action_space.high[4] == pytest.approx(0.1)
-    assert KitchenEnvironment.action_space.high[5] == 60
     for parameters in (FeedbackPourParameters, ExtendedFeedbackPourParameters):
         assert parameters(tilt_degrees=95, amplitude_m=0.1, duration_seconds=10).amplitude_m == 0.1
         with pytest.raises(ValidationError):
             parameters(tilt_degrees=95, amplitude_m=0.101, duration_seconds=10)
     assert PotstickerParameters(amplitude_m=0.1).amplitude_m == 0.1
+
+
+def test_kitchen_pour_learns_only_its_ramp_rate():
+    from pydantic import ValidationError
+
+    from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+
+    # Josh 2026-11-04: the closed-loop Pour's one learned parameter, 0.25-5 deg/s.
     env = KitchenEnvironment(requested_count=1)
     provider = KitchenSkillProvider(env=env)
-    assert provider.tilt_bounds == (75, 95)
-    assert provider.amplitude_bounds == (0, 0.1)
-    assert provider.duration_bounds == (0, 60)
+    pours = [s for s in provider.skills() if s.name.startswith("Pour")]
+    assert sorted(s.name for s in pours) == ["Pour1", "Pour2", "Pour3"]
+    assert {s.param_dim for s in pours} == {1}
+    assert provider.ramp_rate_bounds == (0.25, 5.0)
+    rng = np.random.default_rng(0)
+    for k in (1, 2, 3):
+        g = provider.ground(name=f"Pour{k}")
+        draws = np.array([provider.sample_params(ground_skill=g, rng=rng) for _ in range(200)])
+        assert draws.shape == (200, 1)
+        assert draws.min() >= 0.25
+        assert draws.max() <= 5.0
+        # Native action: [Pour, unused, k, ramp rate, 0, 0].
+        np.testing.assert_array_equal(
+            provider.encode(ground_skill=g, params=np.array([1.0])), [1, 0, k, 1.0, 0, 0]
+        )
+        with pytest.raises(ValueError, match="dimension"):
+            provider.encode(ground_skill=g, params=np.array([90.0, 0.015, 12.0]))
+    np.testing.assert_array_equal(KitchenEnvironment.action_space.high[3:], [5.0, 0, 0])
+    for bounds in ((0.1, 5.0), (0.25, 6.0), (2.0, 1.0), (0.25, float("inf"))):
+        with pytest.raises(ValidationError):
+            KitchenSkillProvider(env=env, ramp_rate_bounds=bounds)
+    # The open-loop pour's bounds mean nothing to the kitchen and are refused.
+    for field, legal in (
+        ("tilt_bounds", (87.0, 95.0)),
+        ("amplitude_bounds", (0.0, 0.025)),
+        ("duration_bounds", (0.0, 30.0)),
+    ):
+        with pytest.raises(ValidationError, match="ramp rate"):
+            KitchenSkillProvider(env=env, **{field: legal})
+    # The legacy pouring3d Pour keeps its three open-loop parameters.
+    legacy = FrozenPourSkillProvider(env=FrozenPourEnvironment())
+    assert {s.param_dim for s in legacy.skills() if s.name.startswith("Pour")} == {3}
+    g = legacy.ground(name="Pour2")
+    assert legacy.sample_params(ground_skill=g, rng=rng).shape == (3,)
+
+
+def test_kitchen_cli_takes_ramp_rate_bounds_and_refuses_open_loop_bounds():
+    from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenPourOracle
+
     parser = argparse.ArgumentParser()
     KitchenCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert list(args.pour_tilt_bounds) == [75, 95]
-    assert list(args.pour_amplitude_bounds) == [0, 0.1]
-    assert list(args.pour_duration_bounds) == [0, 60]
-    with pytest.raises(ValidationError):
-        KitchenSkillProvider(env=env, amplitude_bounds=(0, 0.11))
+    assert list(args.pour_ramp_rate_bounds) == [0.25, 5.0]
+    args.seed = 0
+    problem = KitchenCli.build_problem(args=args)
+    context = KitchenCli.context(args=args, problem=problem)
+    assert context.skill_provider.ramp_rate_bounds == (0.25, 5.0)
+    assert isinstance(context.oracle, KitchenPourOracle)
+    assert context.oracle.parameters == (1.0,)
+    assert isinstance(context.oracle.provider(), KitchenSkillProvider)
+    narrow = parser.parse_args(["--pour-ramp-rate-bounds", "0.5", "2"])
+    narrow.seed = 0
+    provider = KitchenCli.context(args=narrow, problem=problem).skill_provider
+    assert provider.ramp_rate_bounds == (0.5, 2.0)
+    for flag, values in (
+        ("--pour-tilt-bounds", ["75", "95"]),
+        ("--pour-amplitude-bounds", ["0", "0.1"]),
+        ("--pour-duration-bounds", ["0", "60"]),
+    ):
+        refused = parser.parse_args([flag, *values])
+        refused.seed = 0
+        with pytest.raises(ValueError, match="--pour-ramp-rate-bounds"):
+            KitchenCli.context(args=refused, problem=problem)

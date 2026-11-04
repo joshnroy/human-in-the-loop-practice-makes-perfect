@@ -66,7 +66,7 @@ def test_construction_is_unchanged_and_an_unobserved_outcome_is_not_settled():
         env.close()
 
 
-def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dict:
+def _pick_and_pour(*, requested: int, params: tuple[float, ...]) -> dict:
     from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
     from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
 
@@ -84,18 +84,21 @@ def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dic
 
 
 @pytest.mark.main_only
-@pytest.mark.parametrize(
-    ("requested", "params"),
-    [
-        # Measured at the 0.02 handle torsional friction: the creep-era settings these
-        # replace relied on the held jug rolling 12-15 deg during the pour.
-        (1, (86.15, 0.06, 30.0)),
-        (2, (86.90, 0.06, 30.0)),
-        (3, (87.50, 0.06, 30.0)),
-    ],
-)
-def test_canonical_pours_are_settled_successes(*, requested, params):
-    info = _pick_and_pour(requested=requested, params=params)
+@pytest.mark.parametrize("requested", [1, 2, 3])
+def test_canonical_pours_are_settled_successes(*, requested):
+    # The closed-loop Pour's one parameter, its tilt ramp rate: 1 deg/s delivered Pour1
+    # and Pour2 exactly on seeds 0-3 in the 2026-11-04 prototype.
+    info = _pick_and_pour(requested=requested, params=(1.0,))
+    assert info["mode"] == "closed_loop"
     assert info["delivered"] == requested
     assert info["settled"]
     assert info["success"]
+
+
+@pytest.mark.main_only
+def test_a_fast_ramp_overshoots_pour2_on_the_canonical_seed():
+    # The trade-off the learned rate faces: at 2 deg/s the third dumpling is already
+    # on its way out when the second leaves, and the cutoff cannot take it back.
+    info = _pick_and_pour(requested=2, params=(2.0,))
+    assert info["delivered"] == 3
+    assert not info["success"]

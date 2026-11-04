@@ -21,11 +21,13 @@ pytestmark = [
 HANDLE_GEOMS = ("pitcher_handle_upper", "pitcher_handle_grip")
 # Comfortably under the ~27 deg roll at which the upright place plan stops existing.
 MAX_IN_HAND_ROTATION_DEG = 5.0
-MAX_AFTER_TWO_POURS_DEG = 8.0
-# A run of the stranded curtis/pomdp/2 episode: two failing-then-delivering pours,
-# back to back, with the jug never set down in between.
-CURTIS_POUR_1 = (1.0, 0.0, 1.0, 78.18302721227074, 0.017913403446968946, 18.4079314001052)
-CURTIS_POUR_2 = (1.0, 0.0, 2.0, 91.11100710807476, 0.014526104879165048, 13.19366702629978)
+MAX_AFTER_SLOWEST_POUR_DEG = 8.0
+# The longest a kitchen Pour holds the loaded jug tilted: Pour3 at the slowest admitted
+# ramp rate, 0.25 deg/s, up to 60 s from 80 to 95 deg. (The stranded curtis/pomdp/2
+# episode poured twice without setting the jug down, the first delivering nothing; a
+# closed-loop Pour tilts until pieces leave, so a second Pour from the same grasp finds
+# the jug no longer full and is refused.)
+SLOWEST_POUR3 = (1.0, 0.0, 3.0, 0.25, 0.0, 0.0)
 PLACE_PITCHER_AT_HOME = (2.0, 0.0, 3.0, 0.0, 0.0, 0.0)
 PICK_PITCHER = (0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
 
@@ -109,15 +111,14 @@ def test_the_held_jug_does_not_creep_in_the_hand_over_a_minute_upright():
 
 
 @pytest.mark.main_only
-def test_two_pours_without_setting_down_still_leave_an_upright_place():
+def test_the_slowest_pour_still_leaves_an_upright_place():
     env, c, reference = _picked()
     try:
-        for action in (CURTIS_POUR_1, CURTIS_POUR_2):
-            env.take_action(action=np.array(action))
-            assert env.last_info.get("error") is None, env.last_info
-            assert c.held == "pitcher"
+        env.take_action(action=np.array(SLOWEST_POUR3))
+        assert env.last_info.get("error") is None, env.last_info
+        assert c.held == "pitcher"
         rotation = InHandRotation.degrees(controller=c, reference=reference)
-        assert rotation < MAX_AFTER_TWO_POURS_DEG, rotation
+        assert rotation < MAX_AFTER_SLOWEST_POUR_DEG, rotation
         env.take_action(action=np.array(PLACE_PITCHER_AT_HOME))
         assert env.last_info["success"], env.last_info
         assert c.held is None

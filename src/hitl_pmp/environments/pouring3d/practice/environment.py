@@ -156,17 +156,9 @@ class FrozenPourEnvironment(Environment):
                     controller={"requested_count": requested, "shrimp_index": index},
                 )
             if skill == "Pour":
-                from hitl_pmp.environments.pouring3d.frozen_native import (
-                    ExtendedFeedbackPourParameters,
-                )
-
                 if c.scene.cube_locations() != ["pitcher"] * self.payload_count:
                     raise ValueError("A fresh Pour attempt starts with all payload in pitcher")
-                parameters = ExtendedFeedbackPourParameters(
-                    tilt_degrees=values[3], amplitude_m=values[4], duration_seconds=values[5]
-                )
-                run = c.run_joint_pour if self.payload_kind == "potsticker" else c.run_feedback_pour
-                result = run(parameters=parameters, requested_count=requested)
+                result = self.run_pour(controller=c, parameters=values[3:], requested=requested)
                 self.last_info.update({k: v for k, v in result.items() if k != "feedback_trace"})
             elif skill == "PickPitcher":
                 c.pick_pitcher()
@@ -225,6 +217,20 @@ class FrozenPourEnvironment(Environment):
         )
         self.current_state = self.observe()
         return self.current_state
+
+    def run_pour(self, *, controller: Any, parameters: np.ndarray, requested: int) -> dict:
+        """Run the Pour skill from its native action slots 3-5 (tilt, amplitude, duration)."""
+        from hitl_pmp.environments.pouring3d.frozen_native import ExtendedFeedbackPourParameters
+
+        values = ExtendedFeedbackPourParameters(
+            tilt_degrees=parameters[0], amplitude_m=parameters[1], duration_seconds=parameters[2]
+        )
+        run = (
+            controller.run_joint_pour
+            if self.payload_kind == "potsticker"
+            else controller.run_feedback_pour
+        )
+        return run(parameters=values, requested_count=requested)
 
     def adopt_interrupted_skill(self, *, action: Action, reason: str) -> State:
         self._steps += 1
