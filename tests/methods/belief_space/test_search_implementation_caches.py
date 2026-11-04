@@ -1,0 +1,576 @@
+"""Expectimax's implementation caches change how fast a search runs, never what it finds.
+
+Each cache memoises a pure function and is keyed on everything that function reads, so
+the tests below check two things per cache: a hit returns exactly what the uncached
+function returns, and any change to an input the function reads is a miss. The last
+group replays recorded searches -- root value, choice, node and hit counts, and a digest
+of every memo entry -- recorded on the uncached code, before any of these caches existed.
+"""
+
+import hashlib
+from types import MappingProxyType
+
+import pytest
+
+from hitl_pmp.methods.belief_space.belief_digest import BeliefDigest
+from hitl_pmp.methods.belief_space.bounded_memo import BoundedMemo
+from hitl_pmp.methods.belief_space.competence_inference import (
+    BayesianSkillBelief,
+    InferenceConfig,
+    create_bayesian_prior,
+)
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
+from hitl_pmp.methods.belief_space.tossing3d_model import AtomMasks, Tossing3DPracticeModel
+from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+    SearchForecastCache,
+    condition_skill_belief,
+    refit_belief_state,
+)
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+    SuccessEffectsCache,
+    apply_success_effects,
+    compute_success_effects,
+    make_tossing3d_search_state,
+)
+from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
+    ParticleFilterBelief,
+    create_broad_particle_prior,
+)
+from hitl_pmp.methods.belief_space.types.skill_belief import (
+    SkillBelief,
+    SkillHypothesis,
+    WeightedHypothesis,
+)
+from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
+    WeightedHypothesisBelief,
+)
+
+from . import test_object_symmetry as shelf
+
+SMALL = InferenceConfig(competence_bins=5, learning_rate_bins=3)
+
+
+def _bayesian(*, seed: int = 0, engine: str = "grid") -> BayesianSkillBelief:
+    return create_bayesian_prior(
+        model="local_trend", engine=engine, seed=seed, num_particles=16, config=SMALL
+    )
+
+
+def _copy(*, belief: SkillBelief) -> SkillBelief:
+    """Equal content in a fresh object, so identity cannot stand in for equality."""
+    return type(belief).model_validate_json(belief.model_dump_json())
+
+
+def _bayesian_variants(*, belief: BayesianSkillBelief) -> dict[str, BayesianSkillBelief]:
+    """One belief per field of `belief`, each differing from it in that field alone."""
+    weights = bytearray(belief.state_weights)
+    weights[0] ^= 1
+    values = bytearray(belief.latent_values)
+    values[0] ^= 1
+    variants = {
+        "model_name": belief.model_copy(
+            update={"model_name": "global_curve" if belief.model_name == "local_trend" else "x"}
+        ),
+        "engine": belief.model_copy(
+            update={"engine": "grid" if belief.engine == "particle" else "particle"}
+        ),
+        "config": belief.model_copy(
+            update={"config": SMALL.model_copy(update={"sigma_eta": 0.01})}
+        ),
+        "seed": belief.model_copy(update={"seed": belief.seed + 1}),
+        "state_count": belief.model_copy(update={"state_count": belief.state_count + 1}),
+        "latent_values": belief.model_copy(update={"latent_values": bytes(values)}),
+        "state_weights": belief.model_copy(update={"state_weights": bytes(weights)}),
+        "parent_indices": belief.model_copy(update={"parent_indices": b"\x00" * 8}),
+        "cost_belief": belief.model_copy(
+            update={"cost_belief": belief.cost_belief.condition_cost(observed_cost=1.0)}
+        ),
+    }
+    for field in (
+        "cycle_index",
+        "total_training_examples",
+        "incoming_training_examples",
+        "cycle_successes",
+        "cycle_failures",
+        "resampling_count",
+        "process_transition_count",
+    ):
+        variants[field] = belief.model_copy(update={field: getattr(belief, field) + 1})
+    assert set(variants) == set(BayesianSkillBelief.model_fields), "a field has no variant"
+    return variants
+
+
+def _particle_variants(*, belief: ParticleFilterBelief) -> dict[str, ParticleFilterBelief]:
+    weights = bytearray(belief.particle_weights)
+    weights[0] ^= 1
+    parameters = bytearray(belief.particle_parameters)
+    parameters[0] ^= 1
+    variants = {
+        "particle_parameters": belief.model_copy(update={"particle_parameters": bytes(parameters)}),
+        "particle_weights": belief.model_copy(update={"particle_weights": bytes(weights)}),
+        "num_particles": belief.model_copy(update={"num_particles": belief.num_particles + 1}),
+    }
+    for field in ("resampling_count", "process_transition_count", "resampling_seed"):
+        variants[field] = belief.model_copy(update={field: getattr(belief, field) + 1})
+    assert set(variants) == set(ParticleFilterBelief.model_fields), "a field has no variant"
+    return variants
+
+
+# --- BoundedMemo -----------------------------------------------------------------------
+
+
+def test_a_bounded_memo_empties_whole_when_it_reaches_its_entry_ceiling() -> None:
+    memo: BoundedMemo[int, str] = BoundedMemo(max_entries=2)
+    memo.put(key=1, value="one")
+    memo.put(key=2, value="two")
+    assert memo.get(key=1) == "one"
+    memo.put(key=3, value="three")
+    assert memo.get(key=1) is None
+    assert memo.get(key=3) == "three"
+    assert len(memo) == 1
+
+
+def test_a_bounded_memo_empties_whole_when_it_reaches_its_byte_ceiling() -> None:
+    memo: BoundedMemo[int, str] = BoundedMemo(max_entries=100, max_bytes=10)
+    memo.put(key=1, value="one", nbytes=6)
+    memo.put(key=2, value="two", nbytes=6)
+    assert memo.get(key=1) is None
+    assert memo.get(key=2) == "two"
+
+
+# --- Signature completeness: the premise every digest-keyed cache rests on -----------------
+
+
+def test_exactly_the_beliefs_whose_signature_covers_every_field_are_marked_complete() -> None:
+    def subclasses(*, cls: type) -> set[type]:
+        found = set(cls.__subclasses__())
+        for sub in tuple(found):
+            found |= subclasses(cls=sub)
+        return found
+
+    marked = {cls for cls in subclasses(cls=SkillBelief) if cls.SIGNATURE_COVERS_EVERY_FIELD}
+    assert marked == {BayesianSkillBelief, ParticleFilterBelief}
+
+
+@pytest.mark.parametrize("engine", ["grid", "particle"])
+def test_every_bayesian_field_moves_its_digest(*, engine: str) -> None:
+    belief = _bayesian(engine=engine)
+    digest = BeliefDigest.of(belief=belief)
+    assert BeliefDigest.of(belief=_copy(belief=belief)) == digest
+    for field, variant in _bayesian_variants(belief=belief).items():
+        if field == "state_count":
+            # Fixed by the weight buffer's length, which the digest does read.
+            continue
+        assert BeliefDigest.of(belief=variant) != digest, field
+
+
+def test_every_particle_field_moves_its_digest() -> None:
+    belief = create_broad_particle_prior(num_particles=8, seed=0)
+    digest = BeliefDigest.of(belief=belief)
+    for field, variant in _particle_variants(belief=belief).items():
+        if field == "num_particles":
+            continue
+        assert BeliefDigest.of(belief=variant) != digest, field
+
+
+# --- refit_belief_state's per-belief refit ---------------------------------------------
+
+
+@pytest.mark.parametrize("engine", ["grid", "particle"])
+def test_the_cached_refit_is_the_uncached_refit(*, engine: str) -> None:
+    SearchForecastCache.clear()
+    belief = _bayesian(engine=engine).condition_outcome(success=False)
+    for count in (0, 1, 3):
+        cached = SearchForecastCache.refit(belief=belief, training_examples=count)
+        assert cached == belief.refit(training_examples=count)
+        assert SearchForecastCache.refit(belief=_copy(belief=belief), training_examples=count) is (
+            cached
+        )
+
+
+@pytest.mark.parametrize("engine", ["grid", "particle"])
+def test_the_refit_cache_misses_on_every_changed_input(*, engine: str) -> None:
+    SearchForecastCache.clear()
+    belief = _bayesian(engine=engine)
+    first = SearchForecastCache.refit(belief=belief, training_examples=2)
+    assert SearchForecastCache.refit(belief=belief, training_examples=3) == belief.refit(
+        training_examples=3
+    )
+    assert SearchForecastCache.refit(belief=belief, training_examples=3) is not first
+    for field, variant in _bayesian_variants(belief=belief).items():
+        if field in ("state_count", "engine", "model_name", "parent_indices"):
+            continue  # not a valid belief on its own; the digest test covers the field
+        refitted = SearchForecastCache.refit(belief=variant, training_examples=2)
+        assert refitted is not first, field
+        assert refitted == variant.refit(training_examples=2), field
+
+
+def test_refit_belief_state_is_unchanged_by_the_cache() -> None:
+    beliefs = {
+        "a": _bayesian(seed=1).condition_outcome(success=True),
+        "b": _bayesian(seed=2, engine="particle"),
+        "c": create_broad_particle_prior(num_particles=8, seed=3),
+    }
+    state = Tossing3DBeliefState(skill_beliefs=beliefs, pending_examples={"a": 2, "c": 1})
+    expected = {
+        "a": beliefs["a"].refit(training_examples=2),
+        "b": beliefs["b"].refit(training_examples=0),
+        "c": beliefs["c"].refit(training_examples=1).advance_learning_rate(process_noise_std=0.0),
+    }
+    for _ in range(2):
+        assert refit_belief_state(state=state).skill_beliefs == expected
+
+
+# --- condition_skill_belief ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("engine", ["grid", "particle"])
+def test_the_cached_conditioning_is_the_uncached_conditioning(*, engine: str) -> None:
+    SearchForecastCache.clear()
+    belief = _bayesian(engine=engine)
+    for success in (True, False):
+        cached = condition_skill_belief(belief=belief, success=success)
+        assert cached == belief.condition_outcome(success=success)
+        assert condition_skill_belief(belief=_copy(belief=belief), success=success) is cached
+    assert condition_skill_belief(belief=belief, success=True) != condition_skill_belief(
+        belief=belief, success=False
+    )
+
+
+def test_the_conditioning_cache_misses_on_every_changed_input() -> None:
+    SearchForecastCache.clear()
+    belief = _bayesian()
+    first = condition_skill_belief(belief=belief, success=True)
+    for field, variant in _bayesian_variants(belief=belief).items():
+        if field in ("state_count", "engine", "model_name", "parent_indices"):
+            continue
+        conditioned = condition_skill_belief(belief=variant, success=True)
+        assert conditioned is not first, field
+        assert conditioned == variant.condition_outcome(success=True), field
+
+
+def test_a_belief_whose_signature_omits_a_field_is_never_served_from_the_cache() -> None:
+    """A weighted belief's signature leaves out each hypothesis's cost, so two beliefs
+    differing only there share a digest; each must still get its own posterior."""
+
+    def weighted(*, cost: float) -> WeightedHypothesisBelief:
+        return WeightedHypothesisBelief(
+            hypotheses=tuple(
+                WeightedHypothesis(
+                    hypothesis=SkillHypothesis(competence=c, learning_rate=0.1, cost=cost),
+                    probability=0.5,
+                )
+                for c in (0.2, 0.8)
+            )
+        )
+
+    cheap, dear = weighted(cost=1.0), weighted(cost=5.0)
+    assert BeliefDigest.of(belief=cheap) == BeliefDigest.of(belief=dear)
+    assert condition_skill_belief(belief=cheap, success=True) == cheap.condition_outcome(
+        success=True
+    )
+    assert condition_skill_belief(belief=dear, success=True) == dear.condition_outcome(success=True)
+
+
+# --- apply_success_effects ------------------------------------------------------------
+
+
+def _effects(*, ground_skills):
+    return MappingProxyType({
+        g: (g.add_effects, g.delete_effects, g.ignore_effects) for g in ground_skills
+    })
+
+
+def test_cached_success_effects_are_the_uncached_ones_and_the_same_object() -> None:
+    SuccessEffectsCache.clear()
+    ground_skills = shelf._ground_skills()
+    effects = _effects(ground_skills=ground_skills)
+    atoms = shelf.STATES["start"]
+    applicable = [g for g in ground_skills if g.preconditions <= atoms]
+    assert applicable
+    for ground_skill in applicable:
+        cached = apply_success_effects(true_atoms=atoms, ground_skill=ground_skill, effects=effects)
+        assert cached == compute_success_effects(
+            true_atoms=atoms, ground_skill=ground_skill, effects=effects
+        )
+        again = apply_success_effects(
+            true_atoms=frozenset(atoms), ground_skill=ground_skill, effects=effects
+        )
+        assert again is cached
+
+
+def test_the_success_effects_cache_misses_on_every_changed_input() -> None:
+    SuccessEffectsCache.clear()
+    ground_skills = shelf._ground_skills()
+    effects = _effects(ground_skills=ground_skills)
+    first_skill, second_skill = [
+        g for g in ground_skills if g.preconditions <= shelf.STATES["start"]
+    ][:2]
+    start = apply_success_effects(
+        true_atoms=shelf.STATES["start"], ground_skill=first_skill, effects=effects
+    )
+    # Another skill, the same atoms.
+    assert apply_success_effects(
+        true_atoms=shelf.STATES["start"], ground_skill=second_skill, effects=effects
+    ) == compute_success_effects(
+        true_atoms=shelf.STATES["start"], ground_skill=second_skill, effects=effects
+    )
+    # The same skill, other atoms.
+    other_atoms = shelf.STATES["start"] | shelf.STATES["scattered"]
+    assert apply_success_effects(
+        true_atoms=other_atoms, ground_skill=first_skill, effects=effects
+    ) == compute_success_effects(true_atoms=other_atoms, ground_skill=first_skill, effects=effects)
+    # Another effects table, in which this skill adds nothing and deletes nothing.
+    inert = MappingProxyType({
+        **effects,
+        first_skill: (frozenset(), frozenset(), frozenset()),
+    })
+    assert apply_success_effects(
+        true_atoms=shelf.STATES["start"], ground_skill=first_skill, effects=inert
+    ) == compute_success_effects(
+        true_atoms=shelf.STATES["start"], ground_skill=first_skill, effects=inert
+    )
+    assert (
+        compute_success_effects(
+            true_atoms=shelf.STATES["start"], ground_skill=first_skill, effects=inert
+        )
+        != start
+    )
+
+
+def test_a_mutable_effects_table_is_never_served_from_the_cache() -> None:
+    SuccessEffectsCache.clear()
+    ground_skills = shelf._ground_skills()
+    ground_skill = next(g for g in ground_skills if g.preconditions <= shelf.STATES["start"])
+    table = dict(_effects(ground_skills=ground_skills))
+    atoms = shelf.STATES["start"]
+    before = apply_success_effects(true_atoms=atoms, ground_skill=ground_skill, effects=table)
+    table[ground_skill] = (frozenset(), frozenset(), frozenset())
+    after = apply_success_effects(true_atoms=atoms, ground_skill=ground_skill, effects=table)
+    assert after != before
+    assert after == compute_success_effects(
+        true_atoms=atoms, ground_skill=ground_skill, effects=table
+    )
+
+
+def test_the_model_hands_the_transition_a_read_only_effects_table() -> None:
+    model = Tossing3DPracticeModel(ground_skills=shelf._ground_skills())
+    assert isinstance(model._effects, MappingProxyType)  # noqa: SLF001
+
+
+# --- _atoms_mask ---------------------------------------------------------------------
+
+
+def test_the_cached_atoms_mask_is_the_uncached_one() -> None:
+    model = Tossing3DPracticeModel(ground_skills=shelf._ground_skills())
+    masks = model._atom_masks  # noqa: SLF001
+    for atoms in shelf.STATES.values():
+        expected = masks.compute(atoms=atoms)
+        assert model._atoms_mask(atoms=atoms) == expected  # noqa: SLF001
+        assert model._atoms_mask(atoms=frozenset(atoms)) == expected  # noqa: SLF001
+        assert model._atoms_mask(atoms=set(atoms)) == expected  # noqa: SLF001
+    assert len({model._atoms_mask(atoms=a) for a in shelf.STATES.values()}) == len(shelf.STATES)  # noqa: SLF001
+
+
+def test_the_atoms_mask_cache_belongs_to_its_atom_index() -> None:
+    atoms = shelf.STATES["start"]
+    ordered = sorted(atoms, key=str)
+    forward = AtomMasks(indexes={atom: i for i, atom in enumerate(ordered)})
+    backward = AtomMasks(indexes={atom: i for i, atom in enumerate(reversed(ordered))})
+    partial = AtomMasks(indexes={ordered[0]: 0})
+    assert forward.mask(atoms=atoms) == backward.mask(atoms=atoms)
+    first = frozenset(ordered[:1])
+    assert forward.mask(atoms=first) != backward.mask(atoms=first)
+    assert partial.mask(atoms=atoms) == 1
+    assert forward.mask(atoms=atoms) == forward.compute(atoms=atoms)
+
+
+# --- transition_key -------------------------------------------------------------------
+
+
+def _pydantic_transition_key(*, environment_state, cost: float) -> object:
+    """The key before belief digests: pydantic equality and hashing of every belief."""
+    state = environment_state.state
+    return (
+        environment_state.atoms,
+        tuple(sorted(state.skill_beliefs.items())),
+        tuple(sorted(state.pending_examples.items())),
+        tuple(sorted(state.sampler_training.items())),
+        state.accumulated_cost,
+        cost,
+    )
+
+
+def _beliefs_for_merging() -> list[SkillBelief]:
+    grid = _bayesian()
+    particle = _bayesian(engine="particle")
+    filtered = create_broad_particle_prior(num_particles=8, seed=0)
+    weighted = WeightedHypothesisBelief.broad_prior(points_per_dimension=3)
+    found: list[SkillBelief] = [grid, particle, filtered, weighted]
+    found += [_copy(belief=b) for b in found]
+    # Every single-field variant but the two counts no valid belief can set apart from
+    # its buffers' length (the validators pin state_count and num_particles to it).
+    found += [v for f, v in _bayesian_variants(belief=grid).items() if f != "state_count"]
+    found += [v for f, v in _particle_variants(belief=filtered).items() if f != "num_particles"]
+    found += [grid.condition_outcome(success=True), grid.condition_outcome(success=False)]
+    found += [
+        weighted.model_copy(
+            update={
+                "hypotheses": tuple(
+                    item.model_copy(
+                        update={"hypothesis": item.hypothesis.model_copy(update={"cost": 2.0})}
+                    )
+                    for item in weighted.hypotheses
+                )
+            }
+        )
+    ]
+    return found
+
+
+def test_the_transition_key_merges_exactly_what_pydantic_equality_merged() -> None:
+    beliefs = _beliefs_for_merging()
+    atoms = shelf.STATES["start"]
+    states = [
+        make_tossing3d_search_state(
+            state=Tossing3DBeliefState.model_construct(skill_beliefs={"skill": belief}),
+            true_atoms=atoms,
+        )
+        for belief in beliefs
+    ]
+    for first in states:
+        for second in states:
+            old = _pydantic_transition_key(environment_state=first, cost=1.0) == (
+                _pydantic_transition_key(environment_state=second, cost=1.0)
+            )
+            new = Tossing3DPracticeModel.transition_key(
+                environment_state=first, cost=1.0
+            ) == Tossing3DPracticeModel.transition_key(environment_state=second, cost=1.0)
+            assert old == new, (first.state.skill_beliefs, second.state.skill_beliefs)
+
+
+def test_the_transition_key_still_reads_every_other_field() -> None:
+    belief = _bayesian()
+    atoms = shelf.STATES["start"]
+    base = Tossing3DBeliefState(skill_beliefs={"skill": belief})
+    changed = [
+        base.model_copy(update={"pending_examples": {"skill": 1}}),
+        base.model_copy(update={"accumulated_cost": 1.0}),
+        base.model_copy(update={"skill_beliefs": {"other": belief}}),
+    ]
+    key = Tossing3DPracticeModel.transition_key(
+        environment_state=make_tossing3d_search_state(state=base, true_atoms=atoms), cost=1.0
+    )
+    for state in changed:
+        assert key != Tossing3DPracticeModel.transition_key(
+            environment_state=make_tossing3d_search_state(state=state, true_atoms=atoms), cost=1.0
+        )
+    assert key != Tossing3DPracticeModel.transition_key(
+        environment_state=make_tossing3d_search_state(
+            state=base, true_atoms=shelf.STATES["scattered"]
+        ),
+        cost=1.0,
+    )
+    assert key != Tossing3DPracticeModel.transition_key(
+        environment_state=make_tossing3d_search_state(state=base, true_atoms=atoms), cost=2.0
+    )
+
+
+# --- make_tossing3d_search_state ------------------------------------------------------
+
+
+def test_the_search_state_is_built_without_revalidating_its_atoms() -> None:
+    state = Tossing3DBeliefState(skill_beliefs={"skill": _bayesian()})
+    atoms = shelf.STATES["start"]
+    built = make_tossing3d_search_state(state=state, true_atoms=atoms)
+    # The same frozenset object, so its cached hash is reused by every key it enters.
+    assert built.true_atoms is atoms
+    assert built.state is state
+    from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
+
+    validated = Tossing3DSearchState(state=state, true_atoms=atoms, atoms=built.atoms)
+    assert built == validated
+    assert built.model_fields_set == validated.model_fields_set
+    assert built.model_dump() == validated.model_dump()
+
+
+# --- Recorded decisions --------------------------------------------------------------
+
+# Recorded on main @ 746f77732 (no implementation caches), identical under
+# PYTHONHASHSEED 0 and 5: SweepOffShelf3D's production J and grid, the carry-trained
+# belief, depth 3; root value (hex), chosen ground action, unique nodes, memo hits,
+# memo entries whose best action is not STOP, and a SHA-256 over every memo entry.
+RECORDED = {
+    ("start", False): (
+        "0x1.95de24267e9c6p-2",
+        ("PickCubeFromShelf", ("robot", "cube_0")),
+        216,
+        105,
+        45,
+        "711799c78c699dbcb71d859cae4fd71e6d07437f79325c9054745e37569dadda",
+    ),
+    ("start", True): (
+        "0x1.95de24267e9c6p-2",
+        ("PickCubeFromShelf", ("robot", "cube_0")),
+        89,
+        18,
+        21,
+        "8daf12427cf953275f95bab35db2b349b6ebf6d9e7c1abdc30fd0ac0fb2f3916",
+    ),
+    ("scattered", True): (
+        "0x1.81309de3e99bcp-2",
+        ("PickCubeFromShelf", ("robot", "cube_4")),
+        378,
+        349,
+        78,
+        "a7db8559bc282a5bc7ee00032f0aee2e1bf94ab4a656bbcf3cb14f522074fd70",
+    ),
+}
+
+
+def _memo_digest(*, planner: ExpectimaxPlanner) -> str:
+    digest = hashlib.sha256()
+    for key, (value, action) in planner.memo.items():
+        digest.update(repr(key).encode())
+        digest.update(float(value).hex().encode())
+        digest.update(str(getattr(getattr(action, "skill", None), "name", action)).encode())
+        digest.update(str([o.name for o in getattr(action, "objects", ())]).encode())
+    return digest.hexdigest()
+
+
+@pytest.mark.parametrize(("state", "reduce"), sorted(RECORDED))
+@pytest.mark.parametrize("repeat", [1, 2])
+def test_a_recorded_decision_is_reproduced_bit_for_bit(
+    *, state: str, reduce: bool, repeat: int
+) -> None:
+    """`repeat=2` solves twice in one process, so the second search runs on warm caches."""
+    model = Tossing3DPracticeModel(
+        ground_skills=shelf._ground_skills(),
+        domain=SWEEP_OFF_SHELF_DOMAIN,
+        linear_cost_lambda=shelf.LINEAR_COST_LAMBDA,
+        object_symmetry=reduce,
+        merge_beliefs_by_counts=reduce,
+    )
+    belief = shelf.BELIEFS["carry_trained"](SWEEP_OFF_SHELF_DOMAIN, config=shelf.PRODUCTION_GRID)
+    for _ in range(repeat):
+        planner = ExpectimaxPlanner(use_model_j=True)
+        value, action = planner.solve(
+            environment_state=make_tossing3d_search_state(
+                state=belief, true_atoms=shelf.STATES[state]
+            ),
+            belief_state=belief,
+            summed_cost=0.0,
+            horizon=3,
+            model=model,
+        )
+        observed = (
+            value.hex(),
+            (action.skill.name, tuple(o.name for o in action.objects)),
+            planner.next_node,
+            planner.cache_hits,
+            sum(1 for _, best in planner.memo.values() if hasattr(best, "skill")),
+            _memo_digest(planner=planner),
+        )
+        assert observed == RECORDED[state, reduce]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import ClassVar, Final
 
 import numpy as np
 from pydantic import ConfigDict, Field, model_validator
@@ -31,6 +31,7 @@ PARTICLE_DTYPE: Final = np.dtype("<f8")
 
 class ParticleFilterBelief(SkillBelief):
     model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
+    SIGNATURE_COVERS_EVERY_FIELD: ClassVar[bool] = True
     resampling_count: int = Field(default=0, ge=0)
     process_transition_count: int = Field(default=0, ge=0)
     resampling_seed: int = Field(default=0, ge=0)
