@@ -190,6 +190,21 @@ def test_only_shallow_top_support_is_permitted(*, wire):
     assert not tool.tool_clear(pose=pose)
 
 
+@pytest.mark.parametrize("below_mm,clear", [(1.0, True), (4.0, False)])
+def test_sweep_may_ride_the_plate_rim_shallowly(*, below_mm, clear):
+    shelf = FakeShelf()
+    shelf.cupboard_geoms, shelf.box_geoms = {2}, {3}
+    # The plate rim sits lower than the rack top, so the counter/rack rule never covers it.
+    shelf.data.geom_xpos[3] = [1.5, 0, 0.913]
+    rim_top = 0.913 + 0.003
+    tool = RackScraper(shelf=shelf)
+    pose = np.eye(4)
+    pose[:3, :3] = tool.sweep_body_rotation(yaw_deg=0)
+    pose[:3, 3] = [1.5, 0, 0]
+    pose[2, 3] += rim_top - below_mm / 1000 - tool.capsule_bottom(pose=pose)
+    assert tool.tool_clear(pose=pose) is clear
+
+
 @pytest.mark.parametrize("tilt_deg", [0.001, 0.1])
 def test_movable_wire_support_tolerates_small_physical_tilt(*, tilt_deg):
     shelf = FakeShelf()
