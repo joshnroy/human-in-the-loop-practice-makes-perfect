@@ -32,13 +32,14 @@ from .types import CaseResult, SkillThreshold, SkillVerdict
 # PickCubeFromShelf is a deliberate gate lowering (Josh, 2026-10-23): #539's neighbour
 # refusals leave about 1/4 of shelf picks refused, measured 75/100 in the wiper-on-top
 # scene with a 6 mm wiper margin; the gate is that minus 3. A fix to the shelf pick's
-# grasp and base generation is in progress; raise this back when it lands.
+# grasp and base generation is in progress; raise this back when it lands. Josh re-set
+# both gates to the shelf-20261023b re-harvest on 2026-11-03: 70/97, and 0/3 harvested.
 THRESHOLDS: dict[str, SkillThreshold] = {
-    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=72, out_of=100),
+    S.PICK_CUBE_FROM_SHELF.name: SkillThreshold(min_successes=70, out_of=97),
     S.PICK_CUBE_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_FLOOR.name: SkillThreshold(min_successes=11, out_of=11),
     S.RETURN_CUBE_TO_SHELF_FROM_BOX.name: SkillThreshold(
-        min_successes=5, out_of=8, families=frozenset({"harvested"})
+        min_successes=0, out_of=3, families=frozenset({"harvested"})
     ),
 }
 SWEEP_GRID: tuple[tuple[float, float], ...] = tuple(

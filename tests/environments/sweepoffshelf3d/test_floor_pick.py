@@ -17,6 +17,9 @@ from hitl_pmp.environments.sweepoffshelf3d.kinder_skills import HOME_ARM, RETRAC
 from hitl_pmp.environments.sweepoffshelf3d.skill_benchmark.states import StateCapture, StateSet
 
 STATES = Path(__file__).resolve().parents[3] / "benchmarks/sweepoffshelf3d/states.jsonl"
+# Three box-return states from the 2026-10-14 harvest, kept for these tests when the
+# benchmark's harvested set was replaced by launch shelf-20261023b's failures.
+OLD_HARVEST = Path(__file__).resolve().parent / "fixtures/harvest_20261014_box_return_states.jsonl"
 
 # Module-scoped fixtures: keep them on one xdist worker (see tests/test_xdist_groups.py).
 pytestmark = [
@@ -41,7 +44,8 @@ def _env():
 
 @pytest.fixture(name="states", scope="module")
 def _states():
-    return {state.state_id: state for state in StateSet.load(path=STATES)}
+    states = [*StateSet.load(path=STATES), *StateSet.load(path=OLD_HARVEST)]
+    return {state.state_id: state for state in states}
 
 
 def _restore(*, env, states, state_id):
@@ -89,10 +93,10 @@ def test_a_cube_beside_the_box_is_returned_to_the_shelf(*, env, states):
     ("state_id", "cube"),
     [
         # A real practice state: 4-6 cm from the box's far wall.
-        ("harvest-ReturnCubeToShelfFromBox-18", "cube_1"),
+        ("harvest20261014-ReturnCubeToShelfFromBox-18", "cube_1"),
         # The same cube, with cube_0 on the shelf where a fixed place point let go: it
         # was dropped onto cube_0 until the drop point moved to a free spot.
-        ("harvest-ReturnCubeToShelfFromBox-17", "cube_1"),
+        ("harvest20261014-ReturnCubeToShelfFromBox-17", "cube_1"),
         # The one box state upstream's pick already returned.
         ("container-in-mid-centre", "cube_4"),
     ],
@@ -109,7 +113,7 @@ def test_a_cube_face_to_face_with_another_is_not_taken_with_it(*, env, states):
     # on cube_1 also close on cube_2's edge, and carried both out together. No centred
     # grasp keeps upstream's clearance from cube_2 (once refused outright); a grasp
     # shifted away from cube_2 does, and returns cube_1 alone.
-    _restore(env=env, states=states, state_id="harvest-ReturnCubeToShelfFromBox-19")
+    _restore(env=env, states=states, state_id="harvest20261014-ReturnCubeToShelfFromBox-19")
     atoms = _act(env=env, skill="ReturnCubeToShelfFromBox", cube="cube_1")
     assert ("InBox", ("cube_2", "box_0")) in atoms
     assert ("OnShelf", ("cube_1",)) in atoms, env.last_skill_error()
@@ -129,7 +133,7 @@ def test_a_cube_wedged_in_a_box_corner_is_refused_without_moving_it(*, env, stat
 
 @pytest.mark.parametrize(
     ("state_id", "cube"),
-    [("harvest-ReturnCubeToShelfFromBox-17", "cube_1"), ("floor-out-left-near", "cube_0")],
+    [("harvest20261014-ReturnCubeToShelfFromBox-17", "cube_1"), ("floor-out-left-near", "cube_0")],
 )
 def test_every_candidate_keeps_upstreams_clearance_from_the_box_and_cupboard(
     *, env, states, state_id, cube
