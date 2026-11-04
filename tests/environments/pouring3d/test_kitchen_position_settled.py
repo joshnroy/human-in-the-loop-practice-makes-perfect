@@ -87,10 +87,11 @@ def _pick_and_pour(*, requested: int, params: tuple[float, float, float]) -> dic
 @pytest.mark.parametrize(
     ("requested", "params"),
     [
-        # Before: delivered 2, settled False (one piece rocking on one contact point).
-        (2, (88.37, 0.06, 41.4)),
-        (1, (84.64, 0.0841, 31.2)),
-        (3, (90.33, 0.0092, 16.6)),
+        # Measured at the 0.02 handle torsional friction: the creep-era settings these
+        # replace relied on the held jug rolling 12-15 deg during the pour.
+        (1, (86.15, 0.06, 30.0)),
+        (2, (86.90, 0.06, 30.0)),
+        (3, (87.50, 0.06, 30.0)),
     ],
 )
 def test_canonical_pours_are_settled_successes(*, requested, params):
