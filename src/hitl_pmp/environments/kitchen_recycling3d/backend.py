@@ -18,7 +18,11 @@ from pydantic import Field, PrivateAttr
 
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend, TossSettlingController
 from hitl_pmp.environments.tossing3d.skill_timing import SkillTiming
-from hitl_pmp.environments.tossing3d.types import ControllerRun, Tossing3DObservation
+from hitl_pmp.environments.tossing3d.types import (
+    ControllerRun,
+    Tossing3DObservation,
+    TossPlanningScene,
+)
 
 from .bin_geometry import TaperedBin, TaperedBinCollision
 from .domain import KitchenConfig
@@ -116,29 +120,16 @@ class KitchenKinderBackend(KinderBackend):
         Always a new scene. The pick, its dry run and the toss take theirs from
         `_pick_collision_sim`, which reuses one; the open-gripper clearance check adds
         bodies to its scene, so it builds its own here."""
-        from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletPyBulletSim
+        return self.planning_scene().build(state=state)
 
-        sim = VisionBraceletPyBulletSim(state)
-        self._furnish_planning_scene(sim, state)
-        return sim
+    def planning_scene(self) -> "KitchenPlanningScene":
+        return KitchenPlanningScene(kitchen_config=self.kitchen_config)
 
     def _furnish_planning_scene(self, sim: Any, state: Any) -> None:  # noqa: PLR0917
-        TaperedBinCollision.add(
-            sim=sim,
-            name=self.bin_name,
-            pose=self._bin_pose(state=state),
-            geometry=TaperedBin.of(config=self.kitchen_config),
-        )
-        sim._bounding_boxes[self.barrier_name] = self.BARRIER_PLANNING_BOX  # noqa: SLF001
+        self.planning_scene().furnish(sim, state)
 
     def _bin_pose(self, *, state: Any) -> Any:
-        from pybullet_helpers.geometry import Pose
-
-        obj = state.get_object_from_name(self.bin_name)
-        return Pose(
-            tuple(state.get(obj, f) for f in ("x", "y", "z")),
-            tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
-        )
+        return KitchenPlanningScene.bin_pose(state=state)
 
     def _pick_collision_sim(self, *, state: Any) -> Any:
         """`_build_pick_collision_sim`'s scene, reused (`planning_scene.py`): handed
@@ -216,7 +207,6 @@ class KitchenKinderBackend(KinderBackend):
         from .controllers import (
             RecyclingMoveToTargetController,
             RecyclingPickController,
-            RecyclingTossController,
         )
 
         action_dim = int(self._raw_env.action_space.shape[0])
@@ -237,13 +227,10 @@ class KitchenKinderBackend(KinderBackend):
             )
             return pick
         if module == "tossing" and key == "move_to_toss_location_and_toss":
-            toss_names = (self.robot_name, self.cube_name, self.barrier_name)
-            toss = RecyclingTossController(
-                tuple(state.get_object_from_name(name) for name in toss_names),
-                pybullet_sim=self._pick_collision_sim(state=state),
+            toss = self.planning_scene().toss_controller(
+                snapshot=state, pybullet_sim=self._pick_collision_sim(state=state)
             )
             vars(toss)["ACTION_DIM"] = action_dim
-            toss.configure(config=self.kitchen_config)
             return TossSettlingController(backend=self, controller=toss)
         if module == "tossing" and key == "move_to_target":
             move = RecyclingMoveToTargetController(
@@ -394,3 +381,63 @@ class KitchenKinderBackend(KinderBackend):
         for _ in range(ticks):
             observation, _, _, _, _ = self._raw_env.step(action)
             self._state = self._raw_env.observation_space.devectorize(observation)
+
+
+class KitchenPlanningScene(TossPlanningScene):
+    """The kitchen's PyBullet planning scene, and the toss controller planned in it, from
+    the kitchen config alone: what a dispatched kitchen toss plans in, and so what the
+    toss feasibility check plans in (`Tossing3DState.toss_scene`)."""
+
+    kitchen_config: KitchenConfig
+
+    # The toss check has no backend, so no backend's pool: one pool per config instead,
+    # so a decision's planning scene is reused, not rebuilt, as a backend's is.
+    check_pools: ClassVar[dict[str, PlanningScenePool]] = {}
+
+    def build(self, *, state: Any) -> Any:
+        """Tossing3D's planning scene with the kitchen's tapered bin, wall for wall the
+        boxes MuJoCo simulates, the mat edge as a 16 mm line, and the robot wearing
+        MuJoCo's camera bracelet. Always a new scene."""
+        from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletPyBulletSim
+
+        sim = VisionBraceletPyBulletSim(state)
+        self.furnish(sim, state)
+        return sim
+
+    def furnish(self, sim: Any, state: Any) -> None:  # noqa: PLR0917 (a pool callback)
+        TaperedBinCollision.add(
+            sim=sim,
+            name=KinderBackend.bin_name,
+            pose=self.bin_pose(state=state),
+            geometry=TaperedBin.of(config=self.kitchen_config),
+        )
+        barrier = KinderBackend.barrier_name
+        sim._bounding_boxes[barrier] = KitchenKinderBackend.BARRIER_PLANNING_BOX  # noqa: SLF001
+
+    @staticmethod
+    def bin_pose(*, state: Any) -> Any:
+        from pybullet_helpers.geometry import Pose
+
+        obj = state.get_object_from_name(KinderBackend.bin_name)
+        return Pose(
+            tuple(state.get(obj, f) for f in ("x", "y", "z")),
+            tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+        )
+
+    def toss_controller(self, *, snapshot: Any, pybullet_sim: Any = None) -> Any:
+        """The drive-zone toss, in `pybullet_sim` or else in a scene from this config's
+        check pool, handed out exactly as built (`planning_scene.py`)."""
+        from .controllers import RecyclingTossController
+
+        if pybullet_sim is None:
+            key = self.kitchen_config.model_dump_json()
+            pool = KitchenPlanningScene.check_pools.get(key)
+            if pool is None:
+                pool = PlanningScenePool(
+                    furnish=self.furnish, bin_name=KinderBackend.bin_name, pose_of=self.bin_pose
+                )
+                KitchenPlanningScene.check_pools[key] = pool
+            pybullet_sim = pool.checkout(state=snapshot)
+        toss = RecyclingTossController.for_snapshot(snapshot=snapshot, pybullet_sim=pybullet_sim)
+        toss.configure(config=self.kitchen_config)
+        return toss

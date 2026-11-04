@@ -140,6 +140,24 @@ class TossFeasibilityGeometry(BaseModel):
     drive_zone: tuple[float, float, float, float] | None = None
 
 
+class TossPlanningScene(BaseModel, abc.ABC):
+    """How a scene builds the toss controller it dispatches, from a state alone.
+
+    Carried on `Tossing3DState.toss_scene` so the toss feasibility check
+    (`KinderBackend.toss_base_plan_failure`) plans with the very controller, in the very
+    planning scene, that a dispatched toss plans with. `None` there is Tossing3D's own
+    controller in a fresh `PyBulletSim`, as upstream's `reset` builds one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    @abc.abstractmethod
+    def toss_controller(self, *, snapshot: Any, pybullet_sim: Any = None) -> Any:
+        """The scene's toss controller, grounded on `snapshot`, planning in `pybullet_sim`
+        or else in a scene built from `snapshot` exactly as a dispatched toss's is."""
+        raise NotImplementedError
+
+
 class FixedTossDirection(BaseModel, abc.ABC):
     """A state snapshot from a backend that throws from one fixed stand direction per
     bin side, rather than choosing among four per state as the simulator does.
@@ -194,6 +212,10 @@ class Tossing3DState(State):
     # The scene's no-drive rule, carried so toss planning can read it off the state;
     # see `TossFeasibilityGeometry.drive_zone`.
     drive_zone: tuple[float, float, float, float] | None = None
+
+    # The toss controller the scene dispatches, so the toss feasibility check plans with
+    # it; see `TossPlanningScene`. None is Tossing3D's own.
+    toss_scene: TossPlanningScene | None = None
 
     # Set by a scene whose barrier is a flat line on the floor rather than a wall; see
     # `FlatBarrier`. None keeps the open-halfspace sides.
