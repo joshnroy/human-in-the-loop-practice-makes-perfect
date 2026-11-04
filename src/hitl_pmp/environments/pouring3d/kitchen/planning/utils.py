@@ -16,7 +16,7 @@ bounded by `test_kitchen_pybullet_scene.py`: with the planning margin, a configu
 PyBullet clears is never penetrating in MuJoCo.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pybullet as p
@@ -36,7 +36,16 @@ UPRIGHT_TILT_LIMIT_DEG = 10.0
 
 
 class KitchenPyBulletSim(PyBulletSim):
-    """Upstream's planning scene plus mirrored MuJoCo geometry."""
+    """Upstream's planning scene plus mirrored MuJoCo geometry.
+
+    A subclass names its own scene's bodies: `fixtures` never move after reset;
+    `movables`, and every state object whose name starts with `movable_prefix`, take
+    their pose from the state on each `set_state`.
+    """
+
+    fixtures: ClassVar[tuple[str, ...]] = MIRRORED_FIXTURES
+    movables: ClassVar[tuple[str, ...]] = MIRRORED_MOVABLES
+    movable_prefix: ClassVar[str] = "potsticker"
 
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state)
@@ -46,10 +55,11 @@ class KitchenPyBulletSim(PyBulletSim):
         self._mirrored: dict[str, int] = {}
         self._mirrored_counts: dict[str, int] = {}
         names = initial_state.get_object_names()
-        movables = [*MIRRORED_MOVABLES, *sorted(n for n in names if n.startswith("potsticker"))]
-        for name in (*MIRRORED_FIXTURES, *movables):
+        prefix = self.movable_prefix
+        movables = [*self.movables, *sorted(n for n in names if n.startswith(prefix))]
+        for name in (*self.fixtures, *movables):
             self._mirror_body(name=name, model=model, data=data)
-        for name in MIRRORED_FIXTURES:
+        for name in self.fixtures:
             body = model.body(name).id
             self.place(name=name, position=data.xpos[body], wxyz=data.xquat[body])
         self._movables = tuple(movables)
@@ -63,23 +73,28 @@ class KitchenPyBulletSim(PyBulletSim):
         return sim
 
     @staticmethod
-    def arm_mount(*, model: Any, data: Any, base_q: Any) -> Pose:
-        """The arm base's pose in the mobile base's (x, y, yaw) frame."""
+    def arm_mount(
+        *, model: Any, data: Any, base_q: Any, body: str = "robot_gen3/base_link"
+    ) -> Pose:
+        """The arm base's (or another robot `body`'s) pose in the mobile base's
+        (x, y, yaw) frame."""
         from scipy.spatial.transform import Rotation
 
         x, y, yaw = (float(v) for v in data.qpos[base_q])
-        arm = model.body("robot_gen3/base_link").id
+        arm = model.body(body).id
         to_base = Rotation.from_euler("z", yaw).inv()
         position = to_base.apply(data.xpos[arm] - np.array([x, y, 0.0]))
         rotation = to_base * Rotation.from_quat(data.xquat[arm][[1, 2, 3, 0]])
         return Pose(tuple(position.tolist()), tuple(rotation.as_quat().tolist()))
 
-    def _mirror_body(self, *, name: str, model: Any, data: Any) -> None:
+    def _mirror_body(self, *, name: str, model: Any, data: Any, subtree: bool = True) -> None:
+        """Mirror the contact geoms of body `name` and, unless not `subtree`, of every
+        body below it."""
         import mujoco
 
         root = model.body(name).id
-        bodies = set()
-        for body in range(model.nbody):
+        bodies = {root}
+        for body in range(model.nbody if subtree else 0):
             ancestor = body
             while ancestor and ancestor != root:
                 ancestor = int(model.body_parentid[ancestor])
@@ -154,6 +169,20 @@ class KitchenPyBulletSim(PyBulletSim):
             # MuJoCo collides with the convex hull of these vertices, in the geom frame;
             # PyBullet builds the same hull from the same points.
             vertices = model.mesh_vert[start : start + count].tolist()
+            return p.createCollisionShape(p.GEOM_MESH, vertices=vertices, physicsClientId=client)
+        if kind == mujoco.mjtGeom.mjGEOM_ELLIPSOID:
+            # PyBullet has no ellipsoid: the hull of points on a sphere scaled to the
+            # semi-axes, pushed out so the hull's facets circumscribe it.
+            rings, segments = 9, 16
+            polar = np.linspace(0, np.pi, rings)
+            azimuth = np.linspace(0, 2 * np.pi, segments, endpoint=False)
+            unit = np.array([
+                (np.sin(a) * np.cos(b), np.sin(a) * np.sin(b), np.cos(a))
+                for a in polar
+                for b in azimuth
+            ])
+            scale = 1.0 / (np.cos(np.pi / (rings - 1)) * np.cos(np.pi / segments))
+            vertices = (unit * size[:3] * scale).tolist()
             return p.createCollisionShape(p.GEOM_MESH, vertices=vertices, physicsClientId=client)
         raise ValueError(f"Unsupported MuJoCo geom type {kind} for {model.geom(geom).name}")
 
