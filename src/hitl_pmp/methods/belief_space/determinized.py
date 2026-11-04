@@ -15,6 +15,7 @@ from typing import Any, get_args
 
 import numpy as np
 
+from .decision_log_encoding import DecisionLogEncoding
 from .planner import BeliefSpacePlanner
 from .types.determinized import (
     DeterminizedNodeCacheInfo,
@@ -301,7 +302,7 @@ class DeterminizedAStarPlanner(
                         trace.record(
                             event="action_rejected",
                             node=0,
-                            action=action.model_dump(mode="json", fallback=str),
+                            action=DecisionLogEncoding.value(value=action),
                             reason="infeasible_stop_value",
                             sampled_cost=sampled_cost,
                             sampled_observation_probability=estimated_observation_probability,
@@ -312,7 +313,7 @@ class DeterminizedAStarPlanner(
                             node=current_search_node_id,
                             child_node=child_search_node_id,
                             depth=next_depth,
-                            action=action.model_dump(mode="json", fallback=str),
+                            action=DecisionLogEncoding.value(value=action),
                             disposition="infeasible",
                         )
                     continue
@@ -373,7 +374,7 @@ class DeterminizedAStarPlanner(
                             depth=next_depth,
                             sampled_observation_probability=estimated_observation_probability,
                             best_action_path=[
-                                a.model_dump(mode="json", fallback=str) for a in action_path
+                                DecisionLogEncoding.value(value=a) for a in action_path
                             ],
                             beats_stop=next_path_cost < 0.0,
                         )
@@ -392,7 +393,7 @@ class DeterminizedAStarPlanner(
                             node=current_search_node_id,
                             child_node=child_search_node_id,
                             depth=next_depth,
-                            action=action.model_dump(mode="json", fallback=str),
+                            action=DecisionLogEncoding.value(value=action),
                             sampled_cost=sampled_cost,
                             sampled_observation_probability=estimated_observation_probability,
                             parent_stop_value=current_node.cache_info.stop_value,
@@ -463,7 +464,7 @@ class DeterminizedAStarPlanner(
                 trace.record(
                     event="action_value",
                     node=0,
-                    action=root_action.model_dump(mode="json", fallback=str),
+                    action=DecisionLogEncoding.value(value=root_action),
                     **path,
                 )
             # Algorithm 3, line 26: return the first action on the minimum-g
@@ -474,7 +475,7 @@ class DeterminizedAStarPlanner(
                 node=0,
                 action="STOP"
                 if best_action == STOP_ACTION
-                else best_action.model_dump(mode="json", fallback=str),
+                else DecisionLogEncoding.value(value=best_action),
                 value=best_objective_value,
                 selected_path_depth=best_path_depth,
                 reason="minimum_g_sampled_path_stop_wins_ties",

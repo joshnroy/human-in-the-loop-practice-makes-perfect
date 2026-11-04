@@ -3,6 +3,7 @@
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .decision_log_encoding import DecisionLogEncoding
 from .types.failure_effects import FailureEffectCount
 
 
@@ -73,14 +74,13 @@ class EmpiricalFailureEffects:
             {
                 "skill": record.ground_skill.skill.name,
                 "objects": [obj.name for obj in record.ground_skill.objects],
-                "before_atoms": sorted(str(atom) for atom in record.before_atoms),
-                "after_atoms": sorted(
-                    str(atom)
-                    for atom in (record.before_atoms - record.delete_effects) | record.add_effects
+                "before_atoms": DecisionLogEncoding.atoms(atoms=record.before_atoms),
+                "after_atoms": DecisionLogEncoding.atoms(
+                    atoms=(record.before_atoms - record.delete_effects) | record.add_effects
                 ),
                 "was_random_exploration": record.was_random_exploration,
-                "add_effects": sorted(str(atom) for atom in record.add_effects),
-                "delete_effects": sorted(str(atom) for atom in record.delete_effects),
+                "add_effects": DecisionLogEncoding.atoms(atoms=record.add_effects),
+                "delete_effects": DecisionLogEncoding.atoms(atoms=record.delete_effects),
                 "count": record.count,
                 "context_total": sum(
                     other.count

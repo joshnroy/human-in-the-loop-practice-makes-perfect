@@ -28,6 +28,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .competence_inference import BayesianSkillBelief, InferenceConfig, smooth_history
+from .decision_log_encoding import DecisionLogEncoding
 from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
@@ -259,7 +260,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._refresh_execution_forecasts()
         self.record_diagnostic(
             event="execution_cost",
-            skill=str(ground),
+            skill=DecisionLogEncoding.text(value=ground),
             cost=cost,
             steps=steps,
             complete=complete,
@@ -315,6 +316,21 @@ class Tossing3DPomdpMethod(EesMethod):
         if self.decision_log is None:
             return
         self.decision_log.parent.mkdir(parents=True, exist_ok=True)
+        # The forecasts are keyed by `str(ground_skill)`, which lists frozensets in hash
+        # order; the log renders those keys the same way in every process.
+        if isinstance(fields.get("estimated_costs"), dict):
+            fields["estimated_costs"] = DecisionLogEncoding.ground_skill_keys(
+                costs=fields["estimated_costs"], ground_skills=self._pomdp_model.ground_skills
+            )
+        belief = fields.get("belief")
+        if isinstance(belief, dict) and isinstance(belief.get("expected_execution_costs"), dict):
+            fields["belief"] = {
+                **belief,
+                "expected_execution_costs": DecisionLogEncoding.ground_skill_keys(
+                    costs=belief["expected_execution_costs"],
+                    ground_skills=self._pomdp_model.ground_skills,
+                ),
+            }
         record = {
             "event": event,
             "seed": self.seed,
@@ -456,7 +472,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_model = self._pomdp_model.model_copy(update={"forced_start_reset": reset})
         self.record_diagnostic(
             event="forced_reset_model",
-            start_atoms=sorted(str(atom) for atom in start_atoms),
+            start_atoms=DecisionLogEncoding.atoms(atoms=start_atoms),
             cost=reset.cost,
         )
 
@@ -629,11 +645,11 @@ class Tossing3DPomdpMethod(EesMethod):
             event="failure_transition",
             skill=ground_skill.skill.name,
             objects=[obj.name for obj in ground_skill.objects],
-            before_atoms=sorted(str(atom) for atom in before_atoms),
-            after_atoms=sorted(str(atom) for atom in after_atoms),
+            before_atoms=DecisionLogEncoding.atoms(atoms=before_atoms),
+            after_atoms=DecisionLogEncoding.atoms(atoms=after_atoms),
             was_random_exploration=was_random_exploration,
-            add_effects=sorted(str(atom) for atom in after_atoms - before_atoms),
-            delete_effects=sorted(str(atom) for atom in before_atoms - after_atoms),
+            add_effects=DecisionLogEncoding.atoms(atoms=after_atoms - before_atoms),
+            delete_effects=DecisionLogEncoding.atoms(atoms=before_atoms - after_atoms),
             failure_effect_counts=EmpiricalFailureEffects.diagnostics(counts=counts),
         )
 
@@ -659,8 +675,8 @@ class Tossing3DPomdpMethod(EesMethod):
                     )
                     self.record_diagnostic(
                         event="forced_reset_start_mismatch",
-                        observed=sorted(str(atom) for atom in observed),
-                        modelled=sorted(str(atom) for atom in modelled.start_atoms),
+                        observed=DecisionLogEncoding.atoms(atoms=observed),
+                        modelled=DecisionLogEncoding.atoms(atoms=modelled.start_atoms),
                     )
             return
         reset = self._pending_reset
@@ -691,7 +707,7 @@ class Tossing3DPomdpMethod(EesMethod):
             event="outcome",
             skill=reset.skill.name,
             success=success,
-            missing_effects=sorted(str(atom) for atom in missing),
+            missing_effects=DecisionLogEncoding.atoms(atoms=missing),
             random_exploration=False,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
@@ -835,10 +851,8 @@ class Tossing3DPomdpMethod(EesMethod):
             summed_cost=self._pomdp_state.accumulated_cost,
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
-            atoms=sorted(str(atom) for atom in true_atoms),
-            action="STOP"
-            if action == STOP_ACTION
-            else action.model_dump(mode="json", fallback=str),
+            atoms=DecisionLogEncoding.atoms(atoms=true_atoms),
+            action="STOP" if action == STOP_ACTION else DecisionLogEncoding.value(value=action),
             value=value,
             horizon=horizon,
             remaining_practice_actions=self._remaining_practice_actions,
