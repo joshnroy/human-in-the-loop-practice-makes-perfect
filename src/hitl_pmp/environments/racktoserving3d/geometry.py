@@ -23,6 +23,8 @@ from hitl_pmp.environments.racktoserving3d.scene import (
     TRAY_TYPE,
 )
 
+from .potsticker import RackPotsticker
+
 
 def _values(*, values: Any) -> str:
     return " ".join(str(value) for value in values)
@@ -465,20 +467,23 @@ def install_geometry() -> None:
 
     if DUMPLING_TYPE not in REGISTERED_OBJECTS:
 
-        class RigidDumpling(Cuboid):
-            """Single rigid ellipsoid; no claims about cooked-dough deformation."""
+        class RigidPotsticker(Cuboid):
+            """Pouring3D's rigid frozen potsticker; no claims about dough deformation."""
 
             def _create_xml_element(self) -> ET.Element:
-                body = super()._create_xml_element()
-                geom = body.find("geom")
-                assert geom is not None
-                geom.set("name", f"{self.name}_dumpling")
-                geom.set("type", "ellipsoid")
-                geom.set("friction", _values(values=self.options["friction"]))
-                geom.set("condim", str(self.options["contact_dimension"]))
-                return body
+                return RackPotsticker.body(
+                    name=self.name,
+                    joint=self.joint_name,
+                    mass=float(self.options["mass"]),
+                    friction=_values(values=self.options["friction"]),
+                    condim=int(self.options["contact_dimension"]),
+                    index=int(self.name.rsplit("_", 1)[1]),
+                )
 
-        register_object(name=DUMPLING_TYPE)(RigidDumpling)
+            def get_assets(self) -> list[ET.Element]:
+                return RackPotsticker.assets()
+
+        register_object(name=DUMPLING_TYPE)(RigidPotsticker)
 
     if SCRAPER_TYPE not in REGISTERED_OBJECTS:
 

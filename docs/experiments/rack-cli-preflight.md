@@ -60,6 +60,8 @@ remain necessary. The 2000 per-skill cap accommodates the estimated 1300-step
 return, unlike the old 500-step evaluation default.
 
 The existing wire rack, 45 mm dumpling width, and scraper geometry remain intact.
+(Note, 2026-11-04: the food is now Pouring3D's frozen potsticker, whose size is read
+from its shape; `--dumpling-width` no longer exists and was removed from `COMMON`.)
 No policy is forced to execute pickup/sweep/return: it may choose food actions,
 human help, or STOP. These tiny settings do not evaluate method quality.
 
@@ -92,7 +94,6 @@ COMMON=(
   --canonical-seed 0
   --num-test-tasks 1
   --surface-kind wire
-  --dumpling-width 0.045
   --no-scene-bg
   --skill-step-limit 2000
   --human-reset

@@ -42,7 +42,7 @@ def test_documented_preflight_arguments_parse_and_keep_intended_bounds(
     assert args.goal_pursuit_horizon == 0
     assert args.skill_step_limit == 2000
     assert not hasattr(args, "cooling_seconds")
-    assert args.dumpling_width == 0.045
+    assert not hasattr(args, "dumpling_width")
     assert args.defer_rendering
     assert args.num_test_tasks == 1
     if step_budget:
