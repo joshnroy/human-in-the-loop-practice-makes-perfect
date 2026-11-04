@@ -7,8 +7,9 @@ import numpy as np
 
 # The bar for every planned kitchen skill: over its planned phases, MuJoCo's arm and
 # held jug never come closer to the scene than this. Planning keeps 1.5 cm in PyBullet,
-# which test_kitchen_pybullet_scene measured to be up to about 1 cm more optimistic than
-# MuJoCo (at the bracelet/gripper coupling): 1.5 - 1.0 = 0.5 cm.
+# which test_kitchen_pybullet_scene bounds at under 3 mm more optimistic than MuJoCo
+# since the planning robot wears the camera bracelet; the rest of the 1.5 cm covers
+# tracking during execution.
 MUJOCO_CLEARANCE_M = 0.005
 SCENE = (
     "prep_table",

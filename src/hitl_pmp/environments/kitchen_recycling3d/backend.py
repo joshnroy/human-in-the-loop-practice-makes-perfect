@@ -107,7 +107,7 @@ class KitchenKinderBackend(KinderBackend):
         and the open-gripper clearance; the base approach plans in 2-D only."""
         from pybullet_helpers.geometry import Pose
 
-        from .planning_robot import VisionBraceletPyBulletSim
+        from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletPyBulletSim
 
         obj = state.get_object_from_name(self.bin_name)
         sim = VisionBraceletPyBulletSim(state)

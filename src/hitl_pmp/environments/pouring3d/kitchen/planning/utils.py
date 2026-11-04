@@ -10,19 +10,21 @@ subtree becomes a link of one compound PyBullet body, with the same primitive (b
 cylinder, capsule, sphere) or the convex hull of the same mesh vertices, which is what
 MuJoCo collides with. Poses still come from the `ObjectCentricState`, as upstream.
 
-The robot is upstream's PyBullet Kinova Gen3 with its Robotiq gripper, not MuJoCo's
-TidyBot meshes. That gap is deliberate (plan in one model, execute in the other) and is
-bounded by `test_kitchen_pybullet_scene.py`: with the planning margin, a configuration
-PyBullet clears is never penetrating in MuJoCo.
+The robot is upstream's PyBullet Kinova Gen3 with its Robotiq gripper, wearing the
+camera bracelet MuJoCo's TidyBot and the real robot carry (`vision_bracelet_robot`),
+not MuJoCo's TidyBot meshes. That gap is deliberate (plan in one model, execute in the
+other) and is bounded by `test_kitchen_pybullet_scene.py`: with the planning margin, a
+configuration PyBullet clears is never penetrating in MuJoCo.
 """
 
 from typing import Any
 
 import numpy as np
 import pybullet as p
-from kinder_models.dynamic3d.utils import PyBulletSim
 from pybullet_helpers.geometry import Pose, set_pose
 from pybullet_helpers.inverse_kinematics import set_robot_joints_with_held_object
+
+from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletPyBulletSim
 
 # MuJoCo bodies mirrored into the planning scene. Fixtures never move after reset.
 MIRRORED_FIXTURES = ("prep_table", "stovetop")
@@ -35,8 +37,9 @@ PLANNING_MARGIN_M = 0.015
 UPRIGHT_TILT_LIMIT_DEG = 10.0
 
 
-class KitchenPyBulletSim(PyBulletSim):
-    """Upstream's planning scene plus mirrored MuJoCo geometry."""
+class KitchenPyBulletSim(VisionBraceletPyBulletSim):
+    """Upstream's planning scene, robot wearing MuJoCo's camera bracelet, plus mirrored
+    MuJoCo geometry."""
 
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state)
