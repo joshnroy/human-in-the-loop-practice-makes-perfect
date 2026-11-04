@@ -108,8 +108,12 @@ class FrozenPourSkillProvider(SkillProvider):
             SKILL_NAMES.index(native_name),
             shrimp,
             requested,
-            params if len(params) else np.zeros(3),
+            self.native_pour_parameters(params=params) if len(params) else np.zeros(3),
         ]
+
+    def native_pour_parameters(self, *, params: np.ndarray) -> np.ndarray:
+        """Native action slots 3-5 for a Pour's learned params: (tilt, amplitude, duration)."""
+        return params
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -141,11 +145,14 @@ class FrozenPourOracle(OraclePolicyProvider):
     """Fixed recipe reference; no per-seed search and no guaranteed success claim."""
 
     env: FrozenPourEnvironment
-    parameters: tuple[float, float, float] = (90.5, 0.008, 30.0)
+    parameters: tuple[float, ...] = (90.5, 0.008, 30.0)
+
+    def provider(self) -> FrozenPourSkillProvider:
+        return FrozenPourSkillProvider(env=self.env)
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
         del goal
-        provider = FrozenPourSkillProvider(env=self.env)
+        provider = self.provider()
         atoms: frozenset[tuple[str, tuple[str, ...]]] = getattr(
             state, "abstract_atoms", frozenset()
         )
