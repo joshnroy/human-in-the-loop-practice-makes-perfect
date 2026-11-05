@@ -144,9 +144,7 @@ def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
 
     sweep = GatherAndSweepPlanner.sweep(d=0.1, plate_clear_z=0.921, **GEOMETRY)
     sweep_lean = RackControllers.stroke_rotation(stroke=sweep)[:, 2]
-    for stroke in GatherAndSweepPlanner.gather(
-        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
-    ):
+    for stroke in GatherAndSweepPlanner.gather(food_corners=FOOD, delta=0.045, **GEOMETRY):
         rotation = RackControllers.stroke_rotation(stroke=stroke)
         np.testing.assert_allclose(np.abs(rotation[:, 0]), [1.0, 0.0, 0.0], atol=1e-12)
         lean = rotation[:, 2]
@@ -157,13 +155,13 @@ def test_gather_rotations_span_x_and_lean_against_each_push_like_the_sweep():
 @pytest.mark.parametrize(
     ("s", "delta", "d"),
     [
-        (0.029, 0.0, 0.1),
-        (0.141, 0.0, 0.1),
-        (0.07, -0.031, 0.1),
-        (0.07, 0.041, 0.1),
-        (0.07, 0.0, 0.039),
-        (0.07, 0.0, 0.121),
-        (float("nan"), 0.0, 0.1),
+        (0.029, 0.045, 0.1),
+        (0.141, 0.045, 0.1),
+        (0.07, 0.004, 0.1),
+        (0.07, 0.076, 0.1),
+        (0.07, 0.045, 0.039),
+        (0.07, 0.045, 0.121),
+        (float("nan"), 0.045, 0.1),
     ],
 )
 def test_gather_and_sweep_rejects_parameters_outside_bounds_before_touching_the_scene(
@@ -275,9 +273,7 @@ def _settling_controller(*, lag):
     from hitl_pmp.environments.racktoserving3d.stroke import GatherAndSweepPlanner
 
     controller = RackControllers.__new__(RackControllers)
-    stroke = GatherAndSweepPlanner.gather(
-        food_corners=FOOD, delta=0.0, food_width=0.045, **GEOMETRY
-    )[0]
+    stroke = GatherAndSweepPlanner.gather(food_corners=FOOD, delta=0.045, **GEOMETRY)[0]
     edge = {"now": stroke.end - lag}
     steps = []
 

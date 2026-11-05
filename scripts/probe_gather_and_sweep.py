@@ -1,7 +1,7 @@
 """Drive the arm through PickScraper then the shipped GatherAndSweep(s, delta, d) on one layout.
 
 Layouts come from the same RNG as the driven-blade grid (rng 20261103, five foods
-uniform on the rack with 3 cm margins, yaw +/-45 deg, centres >= 5 cm apart);
+uniform on the rack with 3 cm margins, yaw +/-45 deg, centres >= RackLayout.MIN_SEPARATION apart);
 ``--layout -1`` keeps the environment's own reset layout for ``--seed``. Writes
 report.json (per stroke reach and blade-end error from the controller's metrics,
 served count) and,
@@ -22,6 +22,7 @@ from scipy.spatial.transform import Rotation
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.controllers import StrokeStances
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+from hitl_pmp.environments.racktoserving3d.layout import RackLayout
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
 
 VIEW = 432
@@ -41,7 +42,7 @@ class Layouts:
                     rng.uniform(rack.x_min + 0.03, rack.x_max - 0.03),
                     rng.uniform(rack.y_min + 0.03, rack.y_max - 0.03),
                 ])
-                if all(np.linalg.norm(p - q) >= 0.05 for q in centres):
+                if all(np.linalg.norm(p - q) >= RackLayout.MIN_SEPARATION for q in centres):
                     centres.append(p)
             yaws = [rng.uniform(-45, 45) for _ in centres]
         return centres, yaws

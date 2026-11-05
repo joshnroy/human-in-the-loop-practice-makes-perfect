@@ -4,13 +4,16 @@ The specified rack footprint is 0.375 m wide (world y) by 0.255 m deep
 (world x). Rack height and mass are UNVERIFIED configurable assumptions, not
 manufacturer specifications. All other hardware dimensions, masses and friction
 below are modeling assumptions requiring physical calibration.
-The dumpling is a rigid cooked-food proxy, not a deformable or thermal model.
+The food is Pouring3D's rigid frozen potsticker (`potsticker.py`), whose extents
+are read from its shape, not configured; it is not a deformable or thermal model.
 ``concept`` denotes an invented perforated platform, not the specified wire rack.
 """
 
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .potsticker import RackPotsticker
 
 Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
@@ -104,13 +107,12 @@ class RackServingConfig(BaseModel):
     counter_x_min: float = 0.98
     counter_x_max: float = 1.70
     counter_width: Positive = 1.0
+    # The scraper's home on the counter; its blade lies along y, so it must sit inside.
+    tool_rest_y: float = -0.34
     counter_thickness: Positive = 0.04
     counter_leg_width: Positive = 0.05
     counter_friction: Friction = (0.7, 0.005, 0.0001)
 
-    dumpling_depth: Positive = 0.030
-    dumpling_width: Positive = 0.045
-    dumpling_height: Positive = 0.025
     dumpling_mass: Positive = 0.020
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
@@ -135,6 +137,20 @@ class RackServingConfig(BaseModel):
     scraper_tilt_degrees: float = Field(default=45, ge=-45, le=45)
     scraper_friction: Friction = (0.4, 0.005, 0.0001)
     scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
+
+    @property
+    def dumpling_depth(self) -> float:
+        """World-x extent of the potsticker at zero yaw: its short axis."""
+        return float(RackPotsticker.extents()[0])
+
+    @property
+    def dumpling_width(self) -> float:
+        """World-y extent of the potsticker at zero yaw: its 55 mm long axis."""
+        return float(RackPotsticker.extents()[1])
+
+    @property
+    def dumpling_height(self) -> float:
+        return float(RackPotsticker.extents()[2])
 
     @property
     def rack_front_x(self) -> float:

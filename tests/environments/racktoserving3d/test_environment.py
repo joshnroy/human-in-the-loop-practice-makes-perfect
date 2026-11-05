@@ -112,8 +112,8 @@ def _dispatching_env(*, monkeypatch):
 
 def test_gather_and_sweep_action_carries_squeeze_gather_and_depth(*, monkeypatch):
     env, controllers = _dispatching_env(monkeypatch=monkeypatch)
-    env.take_action(action=np.array([1, 0, 0.07, 0.015, 0.10]))
-    controllers.gather_and_sweep.assert_called_once_with(s=0.07, delta=0.015, d=0.10)
+    env.take_action(action=np.array([1, 0, 0.07, 0.030, 0.10]))
+    controllers.gather_and_sweep.assert_called_once_with(s=0.07, delta=0.030, d=0.10)
     assert env._last_skill_error is None
 
 
@@ -134,7 +134,9 @@ def test_batch_return_out_of_the_hand_restores_the_grippers_own_force(*, monkeyp
     env._backend = RackServingBackend()
     restored = []
     controllers = SimpleNamespace(
-        backend=env._backend, held_food="cube_0", shelf=SimpleNamespace(held_cube="cube_0")
+        backend=env._backend,
+        held_food="cube_0",
+        shelf=SimpleNamespace(held_cube="cube_0", hold=lambda **kwargs: None),
     )
     env._rack_controllers = controllers
     monkeypatch.setattr(RackServingEnvironment, "_bookkeeping", lambda self: (0, 0))

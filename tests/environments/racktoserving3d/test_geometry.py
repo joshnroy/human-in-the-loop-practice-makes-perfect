@@ -9,6 +9,7 @@ import pytest
 
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.geometry import install_geometry
+from hitl_pmp.environments.racktoserving3d.potsticker import RackPotsticker
 from hitl_pmp.environments.racktoserving3d.scene import (
     CORELLE_TYPE,
     COUNTER_TYPE,
@@ -94,6 +95,7 @@ def test_counter_and_free_objects_compile_without_hidden_support(
     assert fixture_bounds == pytest.approx([0.98, -0.5, 0, 1.70, 0.5, 0.9])
 
     root = ET.Element("mujoco")
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
     world = ET.SubElement(root, "worldbody")
     world.append(counter.xml_element)
     objects = {}
@@ -180,8 +182,8 @@ def test_counter_and_free_objects_compile_without_hidden_support(
     assert scraper.get_bounding_box_from_config(
         np.zeros(3), scene["objects"][SCRAPER_TYPE]["wiper_0"]
     ) == pytest.approx([-0.125, -0.009, 0, 0.125, 0.009, 0.14])
-    assert objects["cube_0"].xml_element.find("geom").get("type") == "ellipsoid"
-    food = model.geom("cube_0_dumpling")
+    assert objects["cube_0"].xml_element.find("geom").get("type") == "mesh"
+    food = model.geom("cube_0_part_0")
     assert int(model.geom_condim[food.id]) == 6
     assert food.friction[2] == pytest.approx(0.003)
     assert set(objects) == {"rack_0", "box_0", "wiper_0", *(f"cube_{index}" for index in range(5))}
@@ -236,6 +238,7 @@ def _compiled_scene(*, registry: Any, config: RackServingConfig) -> tuple[Any, A
         yaw=0,
     )
     root = ET.Element("mujoco")
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
     world = ET.SubElement(root, "worldbody")
     world.append(counter.xml_element)
     for kind, named_options in scene["objects"].items():

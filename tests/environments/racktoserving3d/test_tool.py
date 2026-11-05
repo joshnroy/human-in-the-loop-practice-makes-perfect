@@ -190,6 +190,21 @@ def test_only_shallow_top_support_is_permitted(*, wire):
     assert not tool.tool_clear(pose=pose)
 
 
+@pytest.mark.parametrize("below_mm,clear", [(1.0, True), (4.0, False)])
+def test_sweep_may_ride_the_plate_rim_shallowly(*, below_mm, clear):
+    shelf = FakeShelf()
+    shelf.cupboard_geoms, shelf.box_geoms = {2}, {3}
+    # The plate rim sits lower than the rack top, so the counter/rack rule never covers it.
+    shelf.data.geom_xpos[3] = [1.5, 0, 0.913]
+    rim_top = 0.913 + 0.003
+    tool = RackScraper(shelf=shelf)
+    pose = np.eye(4)
+    pose[:3, :3] = tool.sweep_body_rotation(yaw_deg=0)
+    pose[:3, 3] = [1.5, 0, 0]
+    pose[2, 3] += rim_top - below_mm / 1000 - tool.capsule_bottom(pose=pose)
+    assert tool.tool_clear(pose=pose) is clear
+
+
 @pytest.mark.parametrize("tilt_deg", [0.001, 0.1])
 def test_movable_wire_support_tolerates_small_physical_tilt(*, tilt_deg):
     shelf = FakeShelf()
@@ -296,9 +311,28 @@ def test_joint_clearance_rejects_old_ik_collision_cost():
         tool.check_configuration(base=np.zeros(3), arm=np.zeros(7), holding=False)
 
 
-def test_return_uses_release_guard_without_requiring_new_shelf_methods():
+def _planned(*, monkeypatch, tool):
+    """Stand in for the PyBullet planner and the path followers: these tests are about
+    the scripted contact motions after the planned carry."""
+    from hitl_pmp.environments.racktoserving3d import planning
+
+    plan = planning.ScraperPlan(
+        stance=tool.base.copy(), base_path=[tool.base.copy()], arm_after_base=[np.zeros(7)]
+    )
+    monkeypatch.setattr(
+        planning.ScraperMotionPlanner,
+        "plan_return",
+        staticmethod(lambda **_: (plan, np.zeros(3))),
+    )
+    tool.follow_arm_path = Mock()
+    tool.follow_base_path = Mock()
+    tool.settle_hand = Mock()
+
+
+def test_return_uses_release_guard_without_requiring_new_shelf_methods(*, monkeypatch):
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
+    _planned(monkeypatch=monkeypatch, tool=tool)
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
@@ -324,18 +358,16 @@ def test_return_uses_release_guard_without_requiring_new_shelf_methods():
     assert shelf.hold.call_args_list[0].kwargs["label"] == "place_wiper_release"
     assert tool.at_home.call_count == 10
     assert [call.kwargs["label"] for call in tool.line.call_args_list] == [
-        "place_wiper_raise",
-        "place_wiper_carry",
-        "place_wiper_untilt",
         "place_wiper_lower",
         "place_wiper_retreat",
         "place_wiper_clear",
     ]
 
 
-def test_return_without_support_retains_the_physical_grasp():
+def test_return_without_support_retains_the_physical_grasp(*, monkeypatch):
     shelf = FakeShelf()
     tool = RackScraper(shelf=shelf)
+    _planned(monkeypatch=monkeypatch, tool=tool)
     tool.pads_hold_grip = Mock(return_value=True)
     shelf.pose = tool.rest_pose()
     shelf.site_pose = Mock(side_effect=shelf.wiper_pose)
@@ -434,6 +466,40 @@ def test_servo_torque_hook_is_bounded_read_only_and_restored():
         assert servo.clipped_torque_count == 7
         raise RuntimeError("test")
     assert robot._update_ctrl is original
+
+
+@pytest.mark.parametrize("holding", [True, False])
+def test_servo_ramps_a_held_scrapers_heading_across_the_control_period(*, holding):
+    robot = SimpleNamespace(
+        _update_ctrl=Mock(),
+        _compute_arm_torques=Mock(return_value=np.zeros(7)),
+        ARM_TORQUE_LIMITS=np.full(7, 2.0),
+        control_frequency=10.0,
+    )
+    qpos = np.zeros(10)
+    shelf = SimpleNamespace(
+        core=SimpleNamespace(_robot_env=robot),
+        model=SimpleNamespace(
+            nv=10, site_bodyid=np.array([0]), opt=SimpleNamespace(timestep=0.025)
+        ),
+        data=SimpleNamespace(qpos=qpos, xmat=np.eye(3).reshape(1, 9), xpos=np.zeros((1, 3))),
+        site=0,
+        qa=np.arange(3, 10),
+        ba=np.arange(3),
+        arm_reference=np.zeros(7),
+        ticks=0,
+        in_hand=np.eye(4) if holding else None,
+    )
+    wiper = SimpleNamespace(head_geom=0, is_bench_scraper=False)
+    shelf.data.geom_xpos = np.zeros((1, 3))
+    with SweepServo(shelf=shelf, wiper=wiper, max_normal_force_n=0):
+        action = np.r_[0.01, -0.01, 0.04, np.zeros(8)]
+        for _ in range(4):
+            robot._update_ctrl(action)
+    sent = np.array([call.args[0][:3] for call in robot._update_ctrl.call_args_list])
+    np.testing.assert_allclose(sent[:, :2], [[0.01, -0.01]] * 4)
+    expected = [0.01, 0.02, 0.03, 0.04] if holding else [0.04] * 4
+    np.testing.assert_allclose(sent[:, 2], expected)
 
 
 def reference_tool_clear(*, tool, pose, data=None):
