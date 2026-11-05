@@ -43,7 +43,7 @@ class RackServingConfig(BaseModel):
     # standalone Sweep(d) robot skill, and the episode-initial food layout
     # (`RackLayout.lined_up`); later placements stay scattered.
     sweep_skill: bool = False
-    start_layout: Literal["scattered", "pile2col", "stack", "row"] = "scattered"
+    start_layout: Literal["scattered", "clustered", "pile2col", "stack", "row"] = "scattered"
     counter_height: Positive = 0.90
     rack_height: Positive = Field(default=0.025, description="UNVERIFIED height assumption")
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
