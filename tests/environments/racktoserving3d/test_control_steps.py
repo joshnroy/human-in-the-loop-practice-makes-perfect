@@ -187,7 +187,10 @@ def test_cutoff_adopts_exact_completed_steps_and_live_state_without_physics(
     assert state.get(obj=Objects.scene, feature_name="seed") == 23
     assert state.get(obj=Objects.scene, feature_name="steps_taken") == 5
     assert state.get(obj=Objects.scene, feature_name="elapsed_seconds") == pytest.approx(0.4)
-    assert state.abstract_atoms == frozenset(rack.atoms)
+    # The backend's atoms, plus the environment's own PickPlannable for every food (no
+    # pick refused to plan here; `pick_plannable.py`).
+    plannable = {("PickPlannable", ("robot", food.name)) for food in Objects.food}
+    assert state.abstract_atoms == frozenset(rack.atoms) | plannable
     assert env.last_skill_error() == "interrupted: practice_step_budget"
     assert rack.scene.raw_step.call_count == 4
     assert backend.grip == rack.controllers.shelf.grip
@@ -195,8 +198,8 @@ def test_cutoff_adopts_exact_completed_steps_and_live_state_without_physics(
     assert rack.controllers.held_food == rack.controllers.shelf.held_cube == expected_food
     assert (rack.controllers.shelf.in_hand is not None) == (held == "wiper_0")
     attempt = env.last_skill_attempt()
-    assert attempt[1] == frozenset()
-    assert attempt[2] == frozenset(rack.atoms)
+    assert attempt[1] == frozenset(plannable)
+    assert attempt[2] == frozenset(rack.atoms) | plannable
     action[:] = -99
     assert attempt[0][0] == SKILL_IDS["PickScraper"]
 
