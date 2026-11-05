@@ -504,3 +504,11 @@ def test_long_learning_early_differs_from_long_only_by_the_learning_update_measu
 
 def test_long_learning_early_is_sized_like_long_on_della():
     assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_learning_early") == "38G"
+
+
+@pytest.mark.parametrize("arm", ["ees", "curtis", "expectimax"])
+def test_long_one_shot_is_long_with_one_pour_per_test_task(*, arm):
+    long = KitchenLaunch.flags(arm=arm, stage="long", seed=0, evaluation_workers=9)
+    one_shot = KitchenLaunch.flags(arm=arm, stage="long_one_shot", seed=0, evaluation_workers=9)
+    assert "--evaluation-max-pour-attempts" not in long
+    assert sorted(one_shot) == sorted([*long, "--evaluation-max-pour-attempts", "1"])

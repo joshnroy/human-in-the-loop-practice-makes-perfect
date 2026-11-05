@@ -35,6 +35,8 @@ STAGES = {
     "overnight": (25600, 6400, 9),
     "long": (200_000, 25_000, 9),
     "long_learning_early": (200_000, 25_000, 9),
+    # `long`, deployed as one attempt: a test task ends at its first failed Pour.
+    "long_one_shot": (200_000, 25_000, 9),
     "dry": (1600, 1600, 3),
 }
 # Learning updates measured right after, beside the interval multiples.
@@ -43,6 +45,9 @@ STAGES = {
 # tick does not do this: the samplers are fitted only at a learning update, and the
 # first came at ~11.1k ticks (Della job 16931554), so 5k and 10k measured unfitted ones.
 LEARNING_UPDATE_MEASUREMENTS = {"long_learning_early": (1, 2, 4)}
+# Stages whose test tasks allow one Pour: at deployment the pan is hot, so a bad pour is
+# committed. Every other stage's argv is unchanged.
+ONE_SHOT_STAGES = frozenset({"long_one_shot"})
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
@@ -57,7 +62,7 @@ EVALUATION_TASK_TIMEOUT_SECONDS = 4 * 3600
 # holds at most practice plus one evaluation's workers; overnight's 27G peaked at 17.9 GB.
 DELLA_PRACTICE_GB = 3.0
 # Practice keeps 8x the data over `long`'s 200k ticks; its growth is unmeasured.
-DELLA_PRACTICE_GB_BY_STAGE = {"long": 12.0, "long_learning_early": 12.0}
+DELLA_PRACTICE_GB_BY_STAGE = {"long": 12.0, "long_learning_early": 12.0, "long_one_shot": 12.0}
 DELLA_EVALUATION_PROCESS_GB = 2.0
 DELLA_MEMORY_HEADROOM = 1.25
 # Practice runs alongside the evaluations: 4-7 h for the overnight budget, then the last
@@ -72,6 +77,7 @@ DELLA_TIME = {
     "overnight": "12:00:00",
     "long": "48:00:00",
     "long_learning_early": "48:00:00",
+    "long_one_shot": "48:00:00",
     "dry": "06:00:00",
 }
 DEPENDENCIES = {
@@ -131,6 +137,8 @@ class KitchenLaunch:
             "--reproduce-predicators-seen-task-order",
             "--no-reproduce-predicators-skip-perfect",
         ]  # fmt: skip
+        if stage in ONE_SHOT_STAGES:
+            common += ["--evaluation-max-pour-attempts", "1"]
         if evaluation_workers > 1:
             common += [
                 "--evaluation-workers", str(evaluation_workers),
