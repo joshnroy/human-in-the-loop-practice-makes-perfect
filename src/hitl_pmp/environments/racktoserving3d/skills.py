@@ -23,6 +23,7 @@ from .predicates import (
     HOLDING_SCRAPER,
     ON_RACK,
     ON_TRAY,
+    PICK_PLANNABLE,
     SCRAPER_AWAY,
     SCRAPER_HOME,
     SCRAPER_ON_FLOOR,
@@ -74,6 +75,8 @@ def _locations(*, food: Variable) -> frozenset[LiftedAtom]:
 
 _EMPTY = _atom(predicate=HAND_EMPTY, variables=(_ROBOT,))
 _HELD_FOOD = _atom(predicate=HOLDING_FOOD, variables=(_ROBOT, _FOOD))
+# PickFood needs it; skills that move the food make it true again (`pick_plannable.py`).
+_PLANNABLE = _atom(predicate=PICK_PLANNABLE, variables=(_ROBOT, _FOOD))
 _HELD_SCRAPER = _atom(predicate=HOLDING_SCRAPER, variables=(_ROBOT, _SCRAPER))
 _HOME = _atom(predicate=SCRAPER_HOME, variables=(_SCRAPER,))
 _AWAY = _atom(predicate=SCRAPER_AWAY, variables=(_SCRAPER,))
@@ -126,7 +129,7 @@ class RackServing3DSkills:
     PICK_FOOD: ClassVar[Skill] = Skill(
         name="PickFood",
         parameters=(_ROBOT, _FOOD, _RACK, _TRAY),
-        preconditions=frozenset({_EMPTY, _AVAILABLE}),
+        preconditions=frozenset({_EMPTY, _AVAILABLE, _PLANNABLE}),
         add_effects=frozenset({_HELD_FOOD, _ANY_OFF}),
         delete_effects=frozenset({_EMPTY, _AVAILABLE, *_locations(food=_FOOD)}),
         param_dim=0,
@@ -138,6 +141,7 @@ class RackServing3DSkills:
         add_effects=frozenset({
             _EMPTY,
             _AVAILABLE,
+            _PLANNABLE,
             _ANY_OFF,
             _atom(predicate=ON_TRAY, variables=(_FOOD, _TRAY)),
         }),
@@ -151,6 +155,7 @@ class RackServing3DSkills:
         add_effects=frozenset({
             _EMPTY,
             _AVAILABLE,
+            _PLANNABLE,
             _ANY_ON,
             _atom(predicate=ON_RACK, variables=(_FOOD, _RACK)),
         }),
@@ -165,6 +170,7 @@ class RackServing3DSkills:
             _ANY_ON,
             *(_atom(predicate=ON_RACK, variables=(food, _RACK)) for food in _SLOTS),
             *(_atom(predicate=FOOD_AVAILABLE, variables=(food,)) for food in _SLOTS),
+            *(_atom(predicate=PICK_PLANNABLE, variables=(_ROBOT, food)) for food in _SLOTS),
         }),
         delete_effects=frozenset({
             _ANY_OFF,

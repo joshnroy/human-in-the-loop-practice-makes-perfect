@@ -107,6 +107,12 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
         }
 
     @staticmethod
+    def isolate_evaluation_task(*, problem: Problem) -> None:
+        """PickFood refusals outlive tasks on one instance (`pick_plannable.py`), as
+        Pouring3D's kitchen pick refusals do; each evaluation task starts without them."""
+        RackServingStepProtocol.env(problem=problem).forget_pick_refusals()
+
+    @staticmethod
     def human_skill_names() -> dict[str, str]:
         return {
             HUMAN_BATCH_RETURN: HUMAN_BATCH_RETURN,

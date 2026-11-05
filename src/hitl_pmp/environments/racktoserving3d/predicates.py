@@ -92,6 +92,10 @@ SCRAPER_ON_FLOOR = RackServing3DAtoms.predicate(
     name="ScraperOnFloor", types=(Objects.scraper_type,)
 )
 FOOD_AVAILABLE = RackServing3DAtoms.predicate(name="FoodAvailable", types=(Objects.food_type,))
+# False only where this environment saw PickFood refuse to plan (`pick_plannable.py`).
+PICK_PLANNABLE = RackServing3DAtoms.predicate(
+    name="PickPlannable", types=(Objects.robot_type, Objects.food_type)
+)
 ANY_FOOD_ON_RACK = RackServing3DAtoms.predicate(name="AnyFoodOnRack", types=())
 ANY_FOOD_OFF_RACK = RackServing3DAtoms.predicate(name="AnyFoodOffRack", types=())
 _FOOD_CHAIN = frozenset(
@@ -114,6 +118,7 @@ DYNAMIC_PREDICATES = (
     SCRAPER_AWAY,
     SCRAPER_ON_FLOOR,
     FOOD_AVAILABLE,
+    PICK_PLANNABLE,
     ANY_FOOD_ON_RACK,
     ANY_FOOD_OFF_RACK,
 )
