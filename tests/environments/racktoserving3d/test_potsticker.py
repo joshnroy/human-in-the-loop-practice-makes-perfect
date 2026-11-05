@@ -158,8 +158,10 @@ SIMPLIFIED = ("hull", "hull_crest", "primitives", "pouch_hull", "ellipsoid")
 BODY = {"name": "cube_0", "joint": "j", "mass": 0.02, "friction": "1 0 0", "condim": 6, "index": 0}
 
 
-def test_the_default_dumpling_collision_is_the_full_potsticker():
-    assert RackServingConfig().dumpling_collision == "full"
+def test_the_default_dumpling_collision_is_the_single_hull():
+    # Josh, 2026-11-05: the hull served like the full model on paired Della layouts
+    # (18/25 vs 17/25, pick/place 5/5 each) at 1.21x the simulation speed.
+    assert RackServingConfig().dumpling_collision == "hull"
 
 
 def test_full_collision_builds_the_same_body_as_before_the_option_existed():
