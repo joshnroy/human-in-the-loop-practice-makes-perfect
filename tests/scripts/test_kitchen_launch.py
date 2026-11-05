@@ -480,3 +480,41 @@ def test_long_one_shot_is_long_with_one_pour_per_test_task(*, arm):
     one_shot = KitchenLaunch.flags(arm=arm, stage="long_one_shot", seed=0, evaluation_workers=9)
     assert "--evaluation-max-pour-attempts" not in long
     assert sorted(one_shot) == sorted([*long, "--evaluation-max-pour-attempts", "1"])
+
+
+def test_long_early_stage_measures_at_5k_and_10k_then_every_25k():
+    for stage in ("long", "long_early"):
+        for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+            args = Cli.parse_args(argv=run.command[3:])
+            assert args.practice_step_budget == 200_000
+            assert args.measurement_interval_steps == 25_000
+            assert args.initial_measurement
+            assert args.extra_measurement_steps == ([5000, 10000] if stage == "long_early" else [])
+
+
+def test_long_early_differs_from_long_only_by_the_extra_measurements():
+    long = KitchenLaunch.runs(stage="long", results_root=Path("/unused"))
+    early = KitchenLaunch.runs(stage="long_early", results_root=Path("/unused"))
+    for a, b in zip(long, early, strict=True):
+        assert b.command[: len(a.command)] == a.command
+        assert b.command[len(a.command) :] == ["--extra-measurement-steps", "5000", "10000"]
+    for stage in ("pilot", "overnight", "long", "dry"):
+        for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+            assert "--extra-measurement-steps" not in run.command
+
+
+def test_long_early_is_sized_like_long_on_della():
+    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_early") == "38G"
+
+
+def test_long_one_shot_early_is_long_one_shot_plus_the_early_measurements():
+    one_shot = KitchenLaunch.runs(stage="long_one_shot", results_root=Path("/unused"))
+    combined = KitchenLaunch.runs(stage="long_one_shot_early", results_root=Path("/unused"))
+    for a, b in zip(one_shot, combined, strict=True):
+        assert b.command == [*a.command, "--extra-measurement-steps", "5000", "10000"]
+        args = Cli.parse_args(argv=b.command[3:])
+        assert args.practice_step_budget == 200_000
+        assert args.measurement_interval_steps == 25_000
+        assert args.evaluation_max_pour_attempts == 1
+        assert args.extra_measurement_steps == [5000, 10000]
+    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_one_shot_early") == "38G"

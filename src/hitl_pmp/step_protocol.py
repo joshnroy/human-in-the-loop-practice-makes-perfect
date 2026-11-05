@@ -56,6 +56,8 @@ class PracticeClock(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     budget: int = Field(gt=0)
     interval: int = Field(gt=0)
+    # `--extra-measurement-steps`: thresholds measured as well as every interval multiple.
+    extra_thresholds: frozenset[int] = frozenset()
     human_steps: int = Field(default=1, gt=0)
     robot_steps: int = 0
     stop_steps: int = 0
@@ -134,9 +136,11 @@ class PracticeClock(BaseModel):
     def _advanced(self, *, previous: int) -> None:
         # Once per crossed threshold: one increment can cross several (a human
         # invocation longer than the interval) or land past one without touching it.
-        for threshold in range(
-            (previous // self.interval + 1) * self.interval, self.steps + 1, self.interval
-        ):
+        thresholds = set(
+            range((previous // self.interval + 1) * self.interval, self.steps + 1, self.interval)
+        )
+        thresholds |= {t for t in self.extra_thresholds if previous < t <= self.steps}
+        for threshold in sorted(thresholds):
             self._measuring_at = threshold
             try:
                 self.on_measure()
@@ -578,6 +582,7 @@ class StepProtocolResume:
         "evaluation_task_timeout_seconds": "None",
         "repeated_stop_limit": "None",
         "evaluation_max_pour_attempts": "None",
+        "extra_measurement_steps": "[]",
     }
 
     @staticmethod
@@ -1437,6 +1442,7 @@ class StepPracticeRunner:
             # Never spent under `--evaluate-only`, which needs no budget.
             budget=args.practice_step_budget or 1,
             interval=args.measurement_interval_steps,
+            extra_thresholds=frozenset(getattr(args, "extra_measurement_steps", None) or ()),
             human_steps=args.human_skill_steps,
             on_measure=lambda: measure() if clock.measurement_steps < clock.budget else None,
             on_progress=status,
@@ -1588,6 +1594,11 @@ class StepPracticeRunner:
                     "no_early_stop": no_early_stop,
                     "evaluate_only": evaluate_only,
                     "measurement_interval_steps": clock.interval,
+                    **(
+                        {"extra_measurement_steps": sorted(clock.extra_thresholds)}
+                        if clock.extra_thresholds
+                        else {}
+                    ),
                     "human_skill_steps": clock.human_steps,
                     "evaluation_control_steps": args.evaluation_control_steps,
                     "learning_session_action_limit": args.max_steps_per_interaction,
