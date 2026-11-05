@@ -361,6 +361,91 @@ def test_a_smoke_with_nothing_before_its_budget_refuses(*, tmp_path: Path) -> No
         equivalence.compare_run(smoke=smoke, reference=reference)
 
 
+# ------------------------------------------------- #681's decision-log schema change
+# #681 removed Skill.practice_cost and the outcome records' cost-observation fields after
+# kitchen v10 ran. A v10 reference logs them; a smoke from today's source cannot. Exactly
+# those three fields are ignored, and nothing else.
+
+SKILL_REPR_V10 = (
+    "skill=Skill(name='PickCube', parameters=(), preconditions=frozenset(), "
+    "param_dim=0, practice_cost=1.0) objects=(Object(name='robot'),)"
+)
+SKILL_REPR_NOW = (
+    "skill=Skill(name='PickCube', parameters=(), preconditions=frozenset(), "
+    "param_dim=0) objects=(Object(name='robot'),)"
+)
+
+
+def skill_dict(**extra: object) -> dict:
+    return {"name": "PickCube", "parameters": [], "preconditions": [], "param_dim": 0, **extra}
+
+
+def outcome_v10(**changes: object) -> dict:
+    return {
+        "event": "outcome",
+        "decision": 3,
+        "success": True,
+        "action": {"skill": skill_dict(practice_cost=1.0), "objects": ["robot"]},
+        "configured_cost_observation": None,
+        "cost_observation_source": "host_control_steps",
+        "estimated_costs": {SKILL_REPR_V10: 2.09},
+        **changes,
+    }
+
+
+def outcome_now(**changes: object) -> dict:
+    return {
+        "event": "outcome",
+        "decision": 3,
+        "success": True,
+        "action": {"skill": skill_dict(), "objects": ["robot"]},
+        "estimated_costs": {SKILL_REPR_NOW: 2.09},
+        **changes,
+    }
+
+
+def test_the_681_schema_fields_are_ignored() -> None:
+    equivalence.compare_records(
+        name="pomdp_decisions.jsonl", smoke=[outcome_now()], reference=[outcome_v10()]
+    )
+    equivalence.compare_records(
+        name="pomdp_decisions.jsonl",
+        smoke=[{"event": "decision", "chosen": SKILL_REPR_NOW}],
+        reference=[{"event": "decision", "chosen": SKILL_REPR_V10}],
+    )
+
+
+@pytest.mark.parametrize(
+    ("smoke", "reference"),
+    [
+        # A decision that differs is still a divergence.
+        (outcome_now(success=False), outcome_v10()),
+        # So is a different cost estimate behind the same renamed key.
+        (outcome_now(estimated_costs={SKILL_REPR_NOW: 2.10}), outcome_v10()),
+        # practice_cost is ignored only on a serialised Skill, not on any dict.
+        (
+            {"event": "execution_cost", "cost": {"value": 1}},
+            {"event": "execution_cost", "cost": {"value": 1, "practice_cost": 1.0}},
+        ),
+        # The cost-observation fields are ignored only on outcome records.
+        (
+            {"event": "execution_cost", "cost": 1},
+            {"event": "execution_cost", "cost": 1, "cost_observation_source": "host"},
+        ),
+        # Only a numeric practice_cost at the end of a Skill repr is stripped.
+        (
+            {"event": "decision", "chosen": SKILL_REPR_NOW},
+            {"event": "decision", "chosen": SKILL_REPR_NOW.replace("PickCube", "Pick")},
+        ),
+    ],
+)
+def test_anything_else_still_diverges(*, smoke: dict, reference: dict) -> None:
+    with pytest.raises(equivalence.Divergence):
+        equivalence.compare_records(
+            name="pomdp_decisions.jsonl", smoke=[smoke], reference=[reference]
+        )
+
+
 # ---------------------------------------------------------------- prepare.py binding
 
 

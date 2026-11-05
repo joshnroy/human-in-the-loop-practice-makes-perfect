@@ -23,7 +23,11 @@ checkpoint the smoke measured before then, task by task (the smoke runs only the
 
 **Normalised away**, and nothing else: wall-clock fields (`timestamp`, `*_seconds`), the
 policy *file* hash (a pickle's bytes embed its output path, `PolicyFileHash`), and, as in
-#675's `compare.py`, memory addresses and the hash order of frozensets.
+#675's `compare.py`, memory addresses and the hash order of frozensets. Also the three
+decision-log fields #681 removed after kitchen v10 ran, so a v10 reference stays usable:
+a numeric `practice_cost=` at the end of a `Skill(...)` repr, a `practice_cost` key on a
+serialised Skill (a dict with `name`, `parameters` and `preconditions`), and
+`configured_cost_observation` / `cost_observation_source` on `outcome` records.
 
 **Same CPU or refuse.** Search results are not bit-reproducible across CPU types (#675).
 When both runs have `host.json` (written by `worker.run`), they must name the same CPU
@@ -50,6 +54,10 @@ BUDGET = "practice_step_budget"
 FILE_IDENTITY = ("policy_file_sha256", "policy_sha256")
 DECISION_LOGS = ("pomdp_decisions.jsonl", "ees_decisions.jsonl")
 ADDRESS = re.compile(r" at 0x[0-9a-f]+")
+# #681's removals (Skill.practice_cost; the outcome records' cost-observation fields).
+SKILL_PRACTICE_COST = re.compile(r"(param_dim=\d+), practice_cost=-?[0-9.]+(?:e[-+]?\d+)?\)")
+SKILL_FIELDS = {"name", "parameters", "preconditions"}
+OUTCOME_COST_FIELDS = ("configured_cost_observation", "cost_observation_source")
 # Lists serialised from frozensets: their order follows element hashes, and a
 # predicate's `holds` lambda hashes by address, so it varies from process to process.
 SET_LIKE = (
@@ -82,7 +90,7 @@ class CpuMismatch(ValueError):
 def canon_key(*, key: str) -> str:
     """A `str(ground_skill)` key renders its frozensets in hash order (GroundSkillText),
     so it is compared as a multiset of characters, as #675's compare.py does."""
-    key = ADDRESS.sub("", key)
+    key = SKILL_PRACTICE_COST.sub(r"\1)", ADDRESS.sub("", key))
     return "".join(sorted(key)) if key.startswith("skill=Skill(") else key
 
 
@@ -93,10 +101,15 @@ def is_wall_clock(*, key: str) -> bool:
 def scrub(*, value: object, key: str = "") -> object:
     """Drop wall-clock and file-identity fields; strip addresses; order set-like lists."""
     if isinstance(value, dict):
+        dropped = set(FILE_IDENTITY)
+        if set(value) >= SKILL_FIELDS:
+            dropped.add("practice_cost")
+        if value.get("event") == "outcome":
+            dropped.update(OUTCOME_COST_FIELDS)
         return {
             canon_key(key=str(k)): scrub(value=v, key=str(k))
             for k, v in value.items()
-            if not is_wall_clock(key=str(k)) and k not in FILE_IDENTITY
+            if not is_wall_clock(key=str(k)) and k not in dropped
         }
     if isinstance(value, list):
         items = [scrub(value=v) for v in value]
