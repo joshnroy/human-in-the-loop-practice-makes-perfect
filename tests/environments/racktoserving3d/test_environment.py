@@ -31,6 +31,7 @@ def test_deployment_rejects_human_before_any_physical_write(*, monkeypatch, dest
 
 def test_batch_return_is_charged_and_does_not_restart_the_clock(*, monkeypatch):
     backend = RackServingBackend(ledger=RackServingLedger(elapsed_seconds=400))
+    backend._rng = np.random.default_rng(0)
     monkeypatch.setattr(RackServingBackend, "sync_clock", lambda self: None)
     monkeypatch.setattr(RackServingBackend, "food_placements", lambda self, **kwargs: {})
     monkeypatch.setattr(RackServingBackend, "_commit", lambda self, **kwargs: None)
@@ -42,6 +43,7 @@ def test_batch_return_is_charged_and_does_not_restart_the_clock(*, monkeypatch):
 
 def test_failed_human_attempt_is_still_an_interruption(*, monkeypatch):
     backend = RackServingBackend()
+    backend._rng = np.random.default_rng(0)
     monkeypatch.setattr(RackServingBackend, "sync_clock", lambda self: None)
 
     def unavailable(*args, **kwargs):

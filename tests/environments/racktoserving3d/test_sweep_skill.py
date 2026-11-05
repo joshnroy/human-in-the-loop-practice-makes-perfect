@@ -1,8 +1,8 @@
-"""Opt-in standalone Sweep(d) and the opt-in lined-up start layouts.
+"""Standalone Sweep(d), on by default, and the lined-up start layouts.
 
-Both exist for the Sweep vs GatherAndSweep tradeoff probe (2026-11-05); neither is
-on by default, so every existing preset keeps the six robot skills and the scattered
-layout.
+Sweep came from the Sweep vs GatherAndSweep tradeoff probe (2026-11-05) and became
+a default robot skill with the gathered-fraction start (Josh, 2026-11-05); the
+lined-up layouts stay opt-in.
 """
 
 import importlib.util
@@ -24,10 +24,10 @@ RACK = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, to
 SWEEP_OBJECTS = (Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food)
 
 
-def test_sweep_is_not_a_robot_skill_by_default():
-    assert RackServingConfig().sweep_skill is False
-    assert Skills.SWEEP not in Skills.robot_skills()
-    assert Skills.SWEEP in Skills.robot_skills(include_sweep=True)
+def test_sweep_is_a_robot_skill_by_default_and_can_be_disabled():
+    assert RackServingConfig().sweep_skill is True
+    assert Skills.robot_skills()[-1] == Skills.SWEEP
+    assert Skills.SWEEP not in Skills.robot_skills(include_sweep=False)
 
 
 def test_sweep_has_gather_and_sweeps_d_bounds_and_effect_shape():
@@ -117,10 +117,44 @@ def test_a_gathered_fraction_mixes_stack_and_scattered_starts():
 def test_sweep_is_refused_unless_enabled():
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(sweep_skill=False))
     try:
         env.reset_to_seed(seed=0)
         env.take_action(action=np.array([SKILL_IDS["Sweep"], 0, 0, 0, 0.08]))
         assert "not enabled" in (env._last_skill_error or "")
+    finally:
+        env.close()
+
+
+def test_the_gathered_fraction_defaults_to_a_quarter():
+    assert RackServingConfig().gathered_fraction == 0.25
+
+
+@kinder
+def test_the_human_batch_return_draws_from_the_same_start_mixture():
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment(config=RackServingConfig(gathered_fraction=1.0))
+    try:
+        env.reset_to_seed(seed=0)
+        backend = env.backend()
+        backend.batch_return()
+        assert backend.start_kind() == "stack"
+        ys = [backend.food_centre(name=name)[1] for name in backend.cube_names]
+        assert max(ys) - min(ys) < 0.02
+    finally:
+        env.close()
+
+
+@kinder
+def test_a_scattered_only_config_keeps_the_batch_return_scattered():
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment(config=RackServingConfig(gathered_fraction=0.0))
+    try:
+        env.reset_to_seed(seed=0)
+        backend = env.backend()
+        backend.batch_return()
+        assert backend.start_kind() == "scattered"
     finally:
         env.close()
