@@ -13,13 +13,13 @@ import pytest
 pytest.importorskip("kinder")
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
+from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 from hitl_pmp.environments.pouring3d.practice.skills import SKILL_NAMES
 
 pytestmark = pytest.mark.xdist_group("kitchen_wide_grasp")
 
 DUMPLING = 1
 PICK = np.array([SKILL_NAMES.index("PickShrimpFromTray"), DUMPLING, 1, 0, 0, 0], dtype=float)
-DROP = np.array([SKILL_NAMES.index("DropShrimpIntoPitcher"), DUMPLING, 1, 0, 0, 0], dtype=float)
 # The recorded pan and dumpling at rest before that pick (MuJoCo qpos: xyz, wxyz).
 RECORDED_PAN = np.array([0.8542, 0.8422, 0.74])
 RECORDED_DUMPLING = np.array([0.9097, 0.7973, 0.7618, -0.5525, -0.8282, -0.0788, -0.0506])
@@ -71,26 +71,79 @@ def test_the_chosen_grasp_closes_across_the_long_sides():
     env.close()
 
 
-def test_the_recorded_pick_closes_on_the_long_sides_and_the_drop_lands_in_the_jug():
+def test_the_recorded_pick_tries_the_long_sides_first_then_the_ends():
+    """The recorded dumpling's long sides cannot be reached beside the wall (measured:
+    "No feasible continuation"), so the pick falls back to its ends, as on record, but
+    only after the long sides were refused, and it still picks the dumpling."""
     env = Scene.recorded_dumpling_near_the_wall()
     c = env.controller()
-    closing: list[float] = []
-    sink = c.callback
-
-    def first_descent(**kwargs):  # noqa: PLR0917 -- controller callback signature
-        if sink is not None:
-            sink(**kwargs)
-        # The pads' axis as the hand starts down, before the fingers can touch the
-        # dumpling. A descent along the long axis can knock it a quarter turn into a
-        # long-side grasp by luck (it did in this replay), or not (it did not on record).
-        if c.phase == "descend to shrimp body" and not closing:
-            closing.append(Scene.long_axis_component(env=env))
-
-    c.callback = first_descent
     env.take_action(action=PICK)
     assert env.last_info["success"] is True, env.last_info
-    assert closing and closing[0] < LONG_AXIS_LIMIT, closing
-    env.take_action(action=DROP)
-    assert env.last_info["success"] is True, env.last_info
-    assert c.scene.cube_locations()[DUMPLING] == "pitcher"
+    branches = [e["grasp_branch"] for e in c.events if e.get("event") == "dumpling grasp branch"]
+    assert branches == ["long sides", "ends"], branches
+    attempts = [e for e in c.events if e.get("event") == "dumpling pick attempt"]
+    assert attempts[0]["grasp_branch"] == "long sides"
+    assert attempts[-1]["grasp_branch"] == "ends"
+    env.close()
+
+
+class Branches:
+    """Stub the grasp below the kitchen's branch choice: record each branch and the yaw
+    it asked for; refuse or fail the long-side branch with `long_side_error`."""
+
+    @staticmethod
+    def patched(*, monkeypatch, long_side_error: str) -> list[tuple[str, float]]:
+        seen: list[tuple[str, float]] = []
+
+        def pick_shrimp(self, *, index: int, location: str) -> None:  # noqa: PLR0917 -- patched method
+            point, across = self.payload_grasp_geometry(name=self.scene.cube_names[index])
+            branch = self.payload_grasp_branch
+            seen.append((
+                branch,
+                self.payload_grasp_yaw(point=point, across=across, location=location),
+            ))
+            if branch == "long sides":
+                raise ValueError(long_side_error)
+
+        monkeypatch.setattr(PotstickerController, "pick_shrimp", pick_shrimp)
+        return seen
+
+    @staticmethod
+    def quarter_turn(*, a: float, b: float) -> bool:
+        turn = abs((a - b + np.pi / 2) % np.pi - np.pi / 2)
+        return bool(abs(turn - np.pi / 2) < 1e-6)
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        "No feasible continuation from prepared arm postures",
+        "Insufficient obstacle clearance in position for shrimp pick: planning scene "
+        "forearm_link/collider:stovetop:14 12.0 mm",
+    ],
+)
+def test_a_refused_long_side_pick_falls_back_to_the_ends(*, monkeypatch, refusal):
+    env = Scene.recorded_dumpling_near_the_wall()
+    c = env.controller()
+    seen = Branches.patched(monkeypatch=monkeypatch, long_side_error=refusal)
+    c.pick_shrimp(index=DUMPLING, location="tray")
+    assert [branch for branch, _ in seen] == ["long sides", "ends"]
+    assert Branches.quarter_turn(a=seen[0][1], b=seen[1][1])
+    assert [e["grasp_branch"] for e in c.events if e.get("event") == "dumpling grasp branch"] == [
+        "long sides",
+        "ends",
+    ]
+    assert c.payload_grasp_branch == "long sides"
+    env.close()
+
+
+def test_a_long_side_pick_that_moved_never_falls_back(*, monkeypatch):
+    env = Scene.recorded_dumpling_near_the_wall()
+    c = env.controller()
+    seen = Branches.patched(
+        monkeypatch=monkeypatch, long_side_error="Shrimp grasp lacks both finger contacts"
+    )
+    with pytest.raises(ValueError, match="^Shrimp grasp lacks both finger contacts$"):
+        c.pick_shrimp(index=DUMPLING, location="tray")
+    assert [branch for branch, _ in seen] == ["long sides"]
     env.close()
