@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from .potsticker import RackPotsticker
 from .semantics import ServingRegion
 
 
@@ -25,6 +26,9 @@ class RackLayout:
     MIN_SEPARATION: ClassVar[float] = 0.061
     MAX_YAW: ClassVar[float] = math.pi / 4
     MAX_DRAWS: ClassVar[int] = 10_000
+    LINED_UP_FRONT_GAP: ClassVar[float] = 0.010
+    LINED_UP_JITTER: ClassVar[float] = 0.005
+    LINED_UP_YAW_JITTER: ClassVar[float] = 0.15
 
     @staticmethod
     def sample(
@@ -46,6 +50,45 @@ class RackLayout:
             if RackLayout._clear(points=points, others=fixed):
                 return tuple((x, y, yaw) for (x, y), yaw in zip(points, yaws.tolist(), strict=True))
         raise RuntimeError(f"no rack layout of {count} dumplings within {RackLayout.MAX_DRAWS}")
+
+    @staticmethod
+    def lined_up(
+        *, rng: np.random.Generator, rack: ServingRegion, center_y: float, kind: str
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres packed against the rack's front edge on y = center_y.
+
+        Opt-in starts for the Sweep vs GatherAndSweep probe (2026-11-05), each a guess
+        at GatherAndSweep's post-gather state, not a measured one:
+        ``pile2col``: long axis along x, columns at center_y +- 15 mm (3 + 2), 60 mm
+        x pitch; ``stack``: long axis along y, one column, 32 mm x pitch; ``row``: long
+        axis along x, one row across y, 32 mm pitch. The nearest pieces' front ends
+        sit ``LINED_UP_FRONT_GAP`` behind the front edge. Each centre is jittered
+        +-``LINED_UP_JITTER`` and each yaw +-``LINED_UP_YAW_JITTER``; the caller
+        rejects colliding draws.
+        """
+        depth, width, _ = RackPotsticker.extents()
+        along_x = math.pi / 2
+        if kind == "pile2col":
+            first = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + width / 2
+            nominal = [(first + 0.060 * i, center_y + 0.015, along_x) for i in range(3)]
+            nominal += [(first + 0.060 * i, center_y - 0.015, along_x) for i in range(2)]
+        elif kind == "stack":
+            first = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + depth / 2
+            nominal = [(first + 0.032 * i, center_y, 0.0) for i in range(5)]
+        elif kind == "row":
+            x = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + width / 2
+            nominal = [(x, center_y + 0.032 * (i - 2), along_x) for i in range(5)]
+        else:
+            raise ValueError(f"unknown lined-up layout {kind!r}")
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, y + dy, yaw + dyaw)
+            for (x, y, yaw), (dx, dy, dyaw) in zip(nominal, jitter.tolist(), strict=True)
+        )
 
     @staticmethod
     def _clear(*, points: list[tuple[float, float]], others: list[tuple[float, float]]) -> bool:
