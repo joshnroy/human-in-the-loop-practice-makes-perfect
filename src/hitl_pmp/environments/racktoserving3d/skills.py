@@ -39,6 +39,7 @@ SKILL_IDS = {
     "PickFood": 3,
     "PlaceFoodOnTray": 4,
     "ReturnFoodToRack": 5,
+    "Sweep": 6,
 }
 # GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
 # x-squeeze passes stop; delta (m) is how far from the line y = c (the plate centre's
@@ -51,6 +52,9 @@ SKILL_IDS = {
 # 2026-11-03 calibration's stops (then 0.045 m minus delta, delta in [-0.03, 0.04]),
 # made absolute (Josh, 2026-11-04) so a food's size no longer moves them.
 GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
+# Sweep(d): GatherAndSweep's final stroke alone, over the same d bounds. Opt-in
+# (`RackServingConfig.sweep_skill`), for the Sweep vs GatherAndSweep tradeoff probe.
+SWEEP_BOUNDS = (GATHER_AND_SWEEP_BOUNDS[2],)
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
 _FOOD = Variable(name="food", type=Objects.food_type)
@@ -118,6 +122,7 @@ class RackServing3DSkills:
         ),
         param_dim=3,
     )
+    SWEEP: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(update={"name": "Sweep", "param_dim": 1})
     RETURN_SCRAPER: ClassVar[Skill] = Skill(
         name="ReturnScraper",
         parameters=(_ROBOT, _SCRAPER),
@@ -213,7 +218,7 @@ class RackServing3DSkills:
     )
 
     @staticmethod
-    def robot_skills() -> tuple[Skill, ...]:
+    def robot_skills(*, include_sweep: bool = False) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
         return (
             skills.PICK_SCRAPER,
@@ -222,7 +227,7 @@ class RackServing3DSkills:
             skills.PICK_FOOD,
             skills.PLACE_FOOD_ON_TRAY,
             skills.RETURN_FOOD_TO_RACK,
-        )
+        ) + ((skills.SWEEP,) if include_sweep else ())
 
     @staticmethod
     def human_skills(*, mode: Literal["training", "deployment"] = "training") -> tuple[Skill, ...]:

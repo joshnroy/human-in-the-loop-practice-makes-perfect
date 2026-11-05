@@ -102,8 +102,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
         core.box_interior = self.box_interior
         core.cube_in_box = lambda name: self.settled_on_tray(name=name)
         self._tool_home = None
-        # Every episode starts from its own seed's draw of the shared rack layout.
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        # Every episode starts from its own seed's draw of the shared rack layout,
+        # unless an opt-in lined-up start is configured.
+        names = list(self.cube_names)
+        if self.config.start_layout == "scattered":
+            self._commit(placements=self.food_placements(names=names))
+        else:
+            self._commit(
+                placements=self.food_placements(names=names, start_layout=self.config.start_layout)
+            )
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
@@ -447,10 +454,13 @@ class RackServingBackend(SweepOffShelf3DBackend):
         self.ledger = self.ledger.charge_human(intervention="human_batch_return")
         self._commit(placements=self.food_placements(names=list(self.cube_names)))
 
-    def food_placements(self, *, names: list[str]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    def food_placements(
+        self, *, names: list[str], start_layout: str = "scattered"
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Place `names` on the rack as one draw of the shared layout distribution,
         conditioned on every other dumpling's current centre; a layout that collides
-        with anything else in the scene is redrawn whole."""
+        with anything else in the scene is redrawn whole. A lined-up `start_layout`
+        draws all five from `RackLayout.lined_up` instead."""
         import mujoco
 
         model, scratch, addresses, _ = self._scratch(names=names)
@@ -458,8 +468,19 @@ class RackServingBackend(SweepOffShelf3DBackend):
         support = self.body_geoms(name="rack_0")
         others = [self.food_centre(name=other) for other in self.cube_names if other not in names]
         height = rack.top_z + self.config.dumpling_height / 2 + 0.002
+        tray = self.support(name="box_0")
         for _ in range(MAX_RETURN_LAYOUTS):
-            layout = RackLayout.sample(rng=self._rng, rack=rack, count=len(names), others=others)
+            if start_layout == "scattered":
+                layout = RackLayout.sample(
+                    rng=self._rng, rack=rack, count=len(names), others=others
+                )
+            else:
+                layout = RackLayout.lined_up(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    kind=start_layout,
+                )
             placed = {
                 name: (np.array([x, y, height]), RackLayout.quaternion(yaw=yaw))
                 for name, (x, y, yaw) in zip(names, layout, strict=True)

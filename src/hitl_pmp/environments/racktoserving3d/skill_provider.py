@@ -13,7 +13,7 @@ from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
 from .predicates import RackServing3DAtoms, RackServing3DPredicates
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
-from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
+from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS, SWEEP_BOUNDS
 from .skills import RackServing3DSkills as Skills
 
 
@@ -22,7 +22,7 @@ class RackServingSkillProvider(SkillProvider):
     offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
-        return Skills.robot_skills()
+        return Skills.robot_skills(include_sweep=self.env.config.sweep_skill)
 
     def predicates(self) -> tuple[Predicate, ...]:
         return RackServing3DPredicates.all()
@@ -34,9 +34,10 @@ class RackServingSkillProvider(SkillProvider):
         return Objects.all_objects()
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill != Skills.GATHER_AND_SWEEP:
+        bounds = {Skills.GATHER_AND_SWEEP: GATHER_AND_SWEEP_BOUNDS, Skills.SWEEP: SWEEP_BOUNDS}
+        if ground_skill.skill not in bounds:
             return np.zeros(0)
-        return np.array([rng.uniform(lower, upper) for lower, upper in GATHER_AND_SWEEP_BOUNDS])
+        return np.array([rng.uniform(lower, upper) for lower, upper in bounds[ground_skill.skill]])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -78,7 +79,7 @@ class RackServingActions:
         skill = ground_skill.skill
         if skill.name in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
             raise PermissionError("human interventions are not robot actions")
-        if skill not in Skills.robot_skills():
+        if skill not in Skills.robot_skills(include_sweep=True):
             raise ValueError(f"unknown rack-serving robot skill: {skill.name}")
         params = np.asarray(params, dtype=float)
         if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
@@ -91,6 +92,11 @@ class RackServingActions:
             ):
                 raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
             continuous = params
+        if skill == Skills.SWEEP:
+            ((lower, upper),) = SWEEP_BOUNDS
+            if not lower <= params[0] <= upper:
+                raise ValueError("Sweep d is outside the declared bounds")
+            continuous = np.array([0.0, 0.0, params[0]])
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
             food_index = Objects.food.index(ground_skill.objects[1])
