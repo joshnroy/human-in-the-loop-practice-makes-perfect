@@ -60,7 +60,7 @@ class PotstickerScene(ObjectCentricPitcherPour3DEnv):
     # around its step; `step` then reports False and `_check_goals()` stays exact.
     compute_terminated: bool = True
 
-    def _is_terminated(self, obs: dict[str, Any]) -> bool:
+    def _is_terminated(self, obs: dict[str, Any]) -> bool:  # noqa: PLR0917 -- KinDER protocol
         return self.compute_terminated and bool(super()._is_terminated(obs))
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
