@@ -75,8 +75,11 @@ SIM_TOSS_PARAMETERS = TossParameterSet(
 # robot's `toss` accepts (standoff 0.9-1.45 m); nothing a real run draws may fall outside
 # it. It differs from the sim's on all three axes; the sim's bounds are untouched by it.
 REAL_TOSS_PARAMETERS = TossParameterSet(
-    # The far spot's tape-clearance window, used for both spots (Josh, 2026-10-20).
-    standoff_bounds=(1.37, 1.45),
+    # One distance for both bins (Josh, 2026-11-05): from 1.37 m even the fastest bottle
+    # throw reached only the near bin's near rim, so the robot stands 1.20 m from either
+    # bin and searches speed and release alone. A set's bounds must be an interval, so
+    # +-5 mm stands in for "fixed".
+    standoff_bounds=(1.195, 1.205),
     speed_bounds=(100.0, 140.0),
     release_ms_bounds=(500.0, 850.0),
 )
