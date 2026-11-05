@@ -550,10 +550,14 @@ class PracticePourController(FeedbackPourController):
         return (
             self.held is None
             and self.scene.cube_locations() == ["pitcher"] * len(self.scene.cube_names)
-            and self.scene.cubes_settled()
+            and self.ready_settled()
             and self.vessel_home(name="pitcher")
             and self.vessel_home(name="tray")
         )
+
+    def ready_settled(self) -> bool:
+        """Whether the payload is at rest for `ready()`; a subclass may judge it differently."""
+        return bool(self.scene.cubes_settled())
 
     def outcome_settled(self) -> bool:
         """Whether a measured split is at rest; a subclass may judge it differently."""
