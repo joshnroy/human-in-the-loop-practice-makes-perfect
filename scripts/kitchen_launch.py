@@ -133,9 +133,13 @@ class KitchenLaunch:
             "--pomdp-solver", "determinized_astar" if arm == "curtis" else "expectimax",
         ]  # fmt: skip
         if arm == "curtis":
+            # 1600, not 100: the no-op Wait skill floods the zero-heuristic search, so 100
+            # pops never reach reset -> pour, STOP wins, and the run ends on the
+            # repeated-STOP limit (~2,980 ticks, job 16876353). Replaying seed 0's
+            # decisions, 800 already chooses the human reset; 1600 is 2x that, ~3 s each.
             planner += [
                 "--pomdp-determinized-variant", "curtis", "--pomdp-num-rollouts", "all",
-                "--pomdp-draw-scope", "node", "--pomdp-max-search-iterations", "100",
+                "--pomdp-draw-scope", "node", "--pomdp-max-search-iterations", "1600",
             ]  # fmt: skip
         else:
             # Expectimax only: Curtis is bounded by its iterations, never a depth.

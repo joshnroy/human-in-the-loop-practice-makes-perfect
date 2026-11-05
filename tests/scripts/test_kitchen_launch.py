@@ -63,7 +63,7 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
             if run.output_dir.parts[-3] == "curtis":
                 assert args.pomdp_solver == "determinized_astar"
                 assert args.pomdp_determinized_variant == "curtis"
-                assert args.pomdp_max_search_iterations == 100
+                assert args.pomdp_max_search_iterations == 1600
                 assert args.pomdp_draw_scope == "node"
                 assert args.pomdp_num_rollouts is None
                 assert args.pomdp_observation_probability_weight == 0.01
@@ -472,3 +472,18 @@ def test_della_long_is_sized_for_the_slowest_arm_within_48_hours(*, tmp_path, mo
 def test_della_overnight_memory_is_unchanged_by_the_long_stage():
     assert KitchenLaunch.della_memory(evaluation_workers=9) == "27G"
     assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long") == "38G"
+
+
+@pytest.mark.parametrize("stage", ["pilot", "overnight", "long", "dry"])
+def test_only_curtis_carries_the_1600_iteration_search_budget(*, stage):
+    # At 100 iterations the zero-heuristic search never reaches reset -> pour behind the
+    # no-op Wait skill, so STOP wins and the run ends on the repeated-STOP limit.
+    for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+        argv = run.command[3:]
+        arm = run.output_dir.parts[-3]
+        if arm == "curtis":
+            at = argv.index("--pomdp-max-search-iterations")
+            assert argv[at + 1] == "1600"
+            assert argv.count("--pomdp-max-search-iterations") == 1
+        else:
+            assert "--pomdp-max-search-iterations" not in argv
