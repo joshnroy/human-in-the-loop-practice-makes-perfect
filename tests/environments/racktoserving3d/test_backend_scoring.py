@@ -57,8 +57,11 @@ def scoring_scene(*, monkeypatch):
 
 
 def _ground_atoms(*, atoms):
+    """The backend's measured atoms, plus the environment's default `PickPlannable` for
+    every food (no pick has refused to plan here; `pick_plannable.py`)."""
     predicates = {predicate.name: predicate for predicate in RackServing3DPredicates.all()}
     objects = {obj.name: obj for obj in Objects.all_objects()}
+    atoms = {*atoms, *(("PickPlannable", (Objects.robot.name, f.name)) for f in Objects.food)}
     return (
         frozenset(
             GroundAtom(predicate=predicates[name], objects=tuple(objects[key] for key in keys))

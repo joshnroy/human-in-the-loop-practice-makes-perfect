@@ -86,7 +86,10 @@ class RackPickPlannable:
     def atoms(
         *, backend: Any, refusals: dict[str, PickRefusal], pose: PoseOf | None = None
     ) -> set[AbstractAtom]:
-        """Forget every refusal whose food or plate moved; the rest make the atom false."""
+        """Forget every refusal whose food or plate moved; the rest make the atom false.
+        With nothing remembered no pose is read, so every observation costs nothing."""
+        if not refusals:
+            return {(PICK_PLANNABLE, ("robot", n)) for n in backend.cube_names}
         pose = RackPickPlannable.live_pose(backend=backend) if pose is None else pose
         plate = pose(name=PLATE)
         for name in list(refusals):
