@@ -478,10 +478,11 @@ def install_geometry() -> None:
                     friction=_values(values=self.options["friction"]),
                     condim=int(self.options["contact_dimension"]),
                     index=int(self.name.rsplit("_", 1)[1]),
+                    collision=self.options.get("collision", "full"),
                 )
 
             def get_assets(self) -> list[ET.Element]:
-                return RackPotsticker.assets()
+                return RackPotsticker.assets(collision=self.options.get("collision", "full"))
 
         register_object(name=DUMPLING_TYPE)(RigidPotsticker)
 
