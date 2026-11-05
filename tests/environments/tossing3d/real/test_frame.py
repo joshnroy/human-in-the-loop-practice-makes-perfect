@@ -39,7 +39,7 @@ def test_the_two_bin_spots_land_on_their_named_sides_in_the_domain_frame() -> No
     robot_spot = BIN_SPOTS[Tossing3DSide.ROBOT]
     far_spot = BIN_SPOTS[Tossing3DSide.OPPOSITE]
     assert robot_spot.center == (-0.30, -1.00)
-    assert far_spot.center == (0.24, 1.19)
+    assert far_spot.center == (0.245, 1.07)
     assert ROOM_FRAME.to_domain(x=robot_spot.center[0], y=robot_spot.center[1])[0] < 0.0
     assert ROOM_FRAME.to_domain(x=far_spot.center[0], y=far_spot.center[1])[0] > 0.0
     assert ROOM_FRAME.to_domain(x=CUBE_SPOT[0], y=CUBE_SPOT[1])[0] < 0.0
@@ -54,9 +54,9 @@ def test_the_final_layout_throws_from_one_distance_at_both_bins() -> None:
     """2026-11-05 (Josh): the robot throws from 1.20 m only, and searches over speed and
     release alone. From the closest stand the old far spot allowed (1.37 m), even the
     fastest throw reached only the near bin's near rim. The far bin moved to
-    (0.24, 1.19), so its stand (bin minus 1.20 m) keeps 2 cm more than the tape clearance."""
+    (0.245, 1.07): at 1.19 the base turning into its stand came 4.2 cm from the tape."""
     low, high = REAL_TOSS_PARAMETERS.standoff_bounds
     assert low == pytest.approx(1.20, abs=0.006) and high == pytest.approx(1.20, abs=0.006)
     assert REAL_TOSS_PARAMETERS.speed_bounds == (100.0, 140.0)
     assert REAL_TOSS_PARAMETERS.release_ms_bounds == (500.0, 850.0)
-    assert BIN_SPOTS[Tossing3DSide.OPPOSITE].center == pytest.approx((0.24, 1.19))
+    assert BIN_SPOTS[Tossing3DSide.OPPOSITE].center == pytest.approx((0.245, 1.07))

@@ -88,10 +88,10 @@ BIN_SPOTS: Final[dict[Tossing3DSide, BinSpot]] = {
         description="the close spot on the robot's side of the tape, long side along y",
     ),
     Tossing3DSide.OPPOSITE: BinSpot(
-        center=(0.24, 1.19),
+        center=(0.245, 1.07),
         yaw=0.0,
-        description="the far spot across the tape, inside x 0.06..0.42, y 1.06..1.32 "
-        "(1.20 m from a stand 2 cm inside the tape clearance, 2026-11-05), "
+        description="the far spot across the tape, inside x 0.06..0.43, y 0.94..1.20 "
+        "(1.20 m from a stand the base can turn into, 2026-11-05), "
         "long side along x",
     ),
 }
