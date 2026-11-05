@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import shlex
+import shutil
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -62,6 +63,74 @@ def priced_costs(*, base: dict, cost: float) -> dict:
     for name in RESET_NAMES:
         result["human_skills"][name]["cost"]["value"] = cost_value(cost=cost)
     return result
+
+
+def flag_values(*, argv: list[str]) -> list[tuple[str, list[str]]]:
+    """An argv as (flag, its values) pairs, in order: a value is any token after a flag
+    that is not itself a `--` flag."""
+    pairs: list[tuple[str, list[str]]] = []
+    for token in argv:
+        if token.startswith("--") or not pairs:
+            pairs.append((token, []))
+        else:
+            pairs[-1][1].append(token)
+    return pairs
+
+
+def comparable_argv(*, row: dict, allowed: list[str]) -> dict[str, list[list[str]]]:
+    """A row's argv as two launches may share it: each flag's values, every occurrence
+    in order (argparse reads flags in any order, so launches may emit them differently),
+    each declared flag dropped, and a bound cost file named by its digest, not its
+    per-launch path."""
+    result: dict[str, list[list[str]]] = {}
+    for flag, values in flag_values(argv=row["argv"]):
+        if flag in allowed:
+            continue
+        if flag == "--practice-cost-config" and "costs_sha256" in row:
+            values = [f"sha256:{row['costs_sha256']}"]
+        result.setdefault(flag, []).append(values)
+    return result
+
+
+def bind_equivalence(
+    *, rows: list[dict], reference: dict, reference_root: str, allowed: list[str]
+) -> list[dict]:
+    """Each smoke row's reference run: the reference launch's row of the same reset cost,
+    arm and seed, whose argv must equal this row's but for the declared flags."""
+    bound = []
+    for row in rows[: len(ARMS)]:  # The rows worker.py's smoke runs.
+        key = (row.get("human_reset_cost"), row["arm"], row["seed"])
+        matches = [
+            other
+            for other in reference["runs"]
+            if (other.get("human_reset_cost"), other["arm"], other["seed"]) == key
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"The reference has {len(matches)} runs at (reset cost, arm, seed) {key}"
+            )
+        (match,) = matches
+        ours = comparable_argv(row=row, allowed=allowed)
+        theirs = comparable_argv(row=match, allowed=allowed)
+        if ours != theirs:
+            differences = {
+                flag: (ours.get(flag, "absent"), theirs.get(flag, "absent"))
+                for flag in sorted(set(ours) | set(theirs))
+                if ours.get(flag) != theirs.get(flag)
+            }
+            raise ValueError(
+                f"Row {row['index']} ({row['arm']}, seed {row['seed']}) differs from reference "
+                f"row {match['index']} in {differences} (this launch, "
+                "reference); declare an intended difference with "
+                "--equivalence-allow-difference, or waive the check"
+            )
+        output = match.get("output", f"{match['arm']}/{match['seed']}")
+        bound.append({
+            "index": row["index"],
+            "reference_index": match["index"],
+            "reference": f"{reference_root}/results/{output}",
+        })
+    return bound
 
 
 def argv(
@@ -156,7 +225,58 @@ def main() -> None:
         "manifest under costs/), --human-reset-practice-cost and output directory.",
     )
     parser.add_argument("--constraint", default=None, help="Slurm --constraint for every job")
+    parser.add_argument(
+        "--equivalence-reference",
+        default=None,
+        help="A previous launch's deployment root (absolute): bind each smoke row to its run "
+        "of the same reset cost, arm and seed, whose argv must equal the row's, so the gate "
+        "can check the smoke decides as it did (equivalence.py). 'none' with "
+        "--equivalence-waiver records a launch meant to change behaviour.",
+    )
+    parser.add_argument(
+        "--equivalence-reference-manifest",
+        type=Path,
+        default=None,
+        help="A local copy of the reference's launch/manifest.json, when the reference "
+        "root is remote (default: the root's own launch/manifest.json)",
+    )
+    parser.add_argument(
+        "--equivalence-allow-difference",
+        action="append",
+        default=None,
+        metavar="FLAG",
+        help="A CLI flag (e.g. repeated-stop-limit) whose presence or value may differ from "
+        "the reference's argv; repeatable. None by default.",
+    )
+    parser.add_argument(
+        "--equivalence-waiver",
+        default=None,
+        help="Why this launch has no equivalence reference; recorded in the manifest and "
+        "the authorization provenance. Requires --equivalence-reference none.",
+    )
     args = parser.parse_args()
+    reference_root = args.equivalence_reference
+    allowed = sorted({
+        "--" + flag.removeprefix("--") for flag in args.equivalence_allow_difference or []
+    })
+    if reference_root is None:
+        # Mandatory from v11 (Josh, 2026-11-04): a launch either proves on its smoke that
+        # it decides as a recorded reference did, or records why it is meant to differ.
+        parser.error(
+            "Every package needs --equivalence-reference ROOT, or --equivalence-reference "
+            "none with an --equivalence-waiver reason"
+        )
+    if reference_root == "none":
+        if not (args.equivalence_waiver or "").strip():
+            parser.error("--equivalence-reference none requires an --equivalence-waiver reason")
+        if allowed or args.equivalence_reference_manifest is not None:
+            parser.error("A waived launch has no reference to differ from")
+    elif reference_root is not None:
+        if args.equivalence_waiver is not None:
+            parser.error("--equivalence-waiver applies only to --equivalence-reference none")
+        if not reference_root.startswith("/"):
+            parser.error("--equivalence-reference must be an absolute deployment root")
+        reference_root = reference_root.rstrip("/")
     costs = args.human_reset_costs
     if costs is not None and (
         len(set(costs)) != len(costs) or any(cost < 0 or cost != cost for cost in costs)
@@ -211,6 +331,27 @@ def main() -> None:
                 rows.append(row)
     if not 1 <= args.max_parallel <= len(rows):
         parser.error(f"--max-parallel must be between 1 and {len(rows)}")
+    equivalence = None
+    if reference_root == "none":
+        equivalence = {"reference_root": None, "waiver": args.equivalence_waiver}
+    elif reference_root is not None:
+        path = args.equivalence_reference_manifest or Path(reference_root) / "launch/manifest.json"
+        try:
+            runs = bind_equivalence(
+                rows=rows,
+                reference=json.loads(path.read_text()),
+                reference_root=reference_root,
+                allowed=allowed,
+            )
+        except (OSError, ValueError, KeyError) as error:
+            shutil.rmtree(args.out)  # Created by this invocation: leave no partial package.
+            parser.error(f"Equivalence reference: {error}")
+        equivalence = {
+            "reference_root": reference_root,
+            "reference_manifest_sha256": digest(path=path),
+            "allowed_argv_differences": allowed,
+            "runs": runs,
+        }
     manifest = {
         "schema": 1,
         "tag": args.tag,
@@ -240,6 +381,8 @@ def main() -> None:
             if costs is not None
             else {}
         ),
+        # The one key v11 adds: with it removed, the manifest is byte-identical to v8/v9's.
+        "equivalence": equivalence,
         "runs": rows,
         "resources": {
             "account": "tsilver",

@@ -6,6 +6,8 @@ import importlib
 import importlib.metadata
 import json
 import os
+import platform
+import socket
 import subprocess
 import sys
 import time
@@ -111,6 +113,62 @@ def complete_endpoints(*, manifest: dict) -> set[str]:
     return {"practice_step_budget", "repeated_stop"}
 
 
+SLURM_HOST_KEYS = (
+    "SLURM_JOB_ID",
+    "SLURM_ARRAY_JOB_ID",
+    "SLURM_ARRAY_TASK_ID",
+    "SLURMD_NODENAME",
+    "SLURM_JOB_PARTITION",
+)
+
+
+def cpu_model() -> str:
+    """The CPU's model name as /proc/cpuinfo gives it; platform's guess elsewhere."""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or platform.machine()
+
+
+def host_record() -> dict:
+    """Where a run ran. Search results are not bit-reproducible across CPU models, so
+    the launch-time equivalence check (equivalence.py) compares only like with like."""
+    return {
+        "hostname": socket.gethostname(),
+        "cpu_model": cpu_model(),
+        "slurm": {key: os.environ[key] for key in SLURM_HOST_KEYS if key in os.environ},
+    }
+
+
+def check_equivalence(*, launch: Path, manifest: dict) -> None:
+    """Mandatory from v11: the manifest binds an equivalence reference (or a waiver), and
+    the gate's passing (or waived) record is bound to this launch and carried verbatim
+    into the full authorization's provenance. Launches before v11 ran their own frozen
+    copy of this file and are unaffected."""
+    block = manifest.get("equivalence")
+    if block is None:
+        raise ValueError(
+            "The manifest records neither an equivalence reference nor a waiver "
+            "(prepare.py --equivalence-reference)"
+        )
+    record = read(path=launch / "equivalence-check.json")
+    if record.get("binding") != binding(launch=launch):
+        raise ValueError("The equivalence record's binding is not this launch's")
+    if block["reference_root"] is None:
+        if record.get("waived") is not True or record.get("waiver") != block["waiver"]:
+            raise ValueError("The equivalence record does not carry the manifest's waiver")
+    elif record.get("passed") is not True or (
+        [run["index"] for run in record.get("runs", [])] != [run["index"] for run in block["runs"]]
+    ):
+        raise ValueError("The equivalence check did not pass for every bound smoke row")
+    provenance = read(path=launch / "authorization-provenance.json")
+    if provenance.get("equivalence") != record:
+        raise ValueError("The authorization provenance must carry the equivalence record")
+
+
 def binding(*, launch: Path) -> dict:
     return {
         name: sha(path=launch / name)
@@ -171,6 +229,7 @@ def verify(*, launch: Path, full: bool) -> dict:
             "submit_full": True,
         }:
             raise ValueError("Explicit main authorization for this exact package is required")
+        check_equivalence(launch=launch, manifest=manifest)
     else:
         authorization = read(path=launch / "smoke-authorization.json")
         if authorization.get("authorized_by") not in {"main", "user"}:
@@ -249,6 +308,8 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
             timeout=SMOKE_TIMEOUT_SECONDS if smoke else None,
             check=True,
         )
+    # After the CLI has exited, so the run never sees it.
+    (output_dir / "host.json").write_text(json.dumps(host_record(), indent=2) + "\n")
     status = read(path=output_dir / "status.json")
     evaluations = read(path=output_dir / "step_evaluations.json")
     ends = [
