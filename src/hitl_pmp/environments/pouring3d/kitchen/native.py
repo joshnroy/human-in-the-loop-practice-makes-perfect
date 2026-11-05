@@ -507,6 +507,10 @@ class KitchenController(PotstickerController):
             self.follow_arm_path(
                 path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=self.pitcher_open_grip
             )
+            # Reaching over the jug after a drop, a whole turn of joint 3 is blocked
+            # (ees/ees/2 tick 24); tucked high, it is not. Whole turns leave the plans
+            # that follow valid: the follower takes continuous joints the short way.
+            self.unwind_continuous_joints()
         self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
         self.follow_arm_path(
             path=planner.plans[planner.MOVE_ARM_TO_HOVER],
