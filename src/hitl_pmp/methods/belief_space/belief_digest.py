@@ -43,6 +43,17 @@ class BeliefDigest:
         return digest
 
     @staticmethod
+    def content_key(*, belief: SkillBelief) -> object:
+        """Equal for two beliefs exactly when the beliefs are equal, and cheap to hash.
+
+        The digest, where the signature reads every field; otherwise the belief itself,
+        compared and hashed by pydantic as before (a weighted belief's signature leaves
+        out each hypothesis's cost)."""
+        if type(belief).SIGNATURE_COVERS_EVERY_FIELD:
+            return BeliefDigest.of(belief=belief)
+        return belief
+
+    @staticmethod
     def digest(*, value: object) -> bytes:
         chunks: list[bytes] = []
         BeliefDigest._encode(value=value, chunks=chunks)

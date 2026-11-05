@@ -1,10 +1,12 @@
 """Symbolic practice transitions for Tossing3D."""
 
+from collections.abc import Iterator, Mapping
 from functools import cache
 from typing import ClassVar
 
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.methods.belief_space.bounded_memo import BoundedMemo
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
 from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_DOMAIN, PracticeDomain
@@ -24,6 +26,31 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleF
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 
 TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
+EffectTriple = tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]]
+SkillEffects = Mapping[GroundSkill, EffectTriple]
+
+
+class FrozenSkillEffects(Mapping[GroundSkill, EffectTriple]):
+    """A ground skill's (add, delete, ignore) effects, fixed at construction.
+
+    Nothing can change it afterwards, so its identity stands for its content and the
+    success-effects memo can key on it. A plain class rather than `MappingProxyType`,
+    because method checkpoints pickle the model that holds it.
+    """
+
+    __slots__ = ("_table",)
+
+    def __init__(self, *, table: Mapping[GroundSkill, EffectTriple]) -> None:
+        self._table = dict(table)
+
+    def __getitem__(self, key: GroundSkill) -> EffectTriple:  # noqa: PLR0917 -- Mapping protocol
+        return self._table[key]
+
+    def __iter__(self) -> Iterator[GroundSkill]:
+        return iter(self._table)
+
+    def __len__(self) -> int:
+        return len(self._table)
 
 
 def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -> float:
@@ -78,7 +105,12 @@ def render_atoms(*, true_atoms: frozenset[GroundAtom]) -> tuple[str, ...]:
 def make_tossing3d_search_state(
     *, state: Tossing3DBeliefState, true_atoms: frozenset[GroundAtom]
 ) -> Tossing3DSearchState:
-    return Tossing3DSearchState(
+    """Built without validation, which only re-checked what the types below assert and
+    copied `true_atoms` into a new frozenset: keeping the caller's object keeps its
+    cached hash for every key and memo it enters."""
+    assert type(state) is Tossing3DBeliefState
+    assert type(true_atoms) is frozenset
+    return Tossing3DSearchState.model_construct(
         state=state,
         true_atoms=true_atoms,
         atoms=render_atoms(true_atoms=true_atoms),
@@ -110,14 +142,65 @@ def transition_belief_state(
     )
 
 
+class SuccessEffectsCache:
+    """`compute_success_effects`, memoised for a read-only effects table.
+
+    Search applies the same skill to the same symbolic state at many nodes. The result
+    reads the atoms, the ground skill and the table's entry for it. Atoms are keyed by
+    value; the ground skill (frozen) and the table (a `FrozenSkillEffects`) by identity,
+    each entry holding both so neither id can be reused while it is cached. A hit
+    returns the very frozenset computed on the miss, so its hash, cached on the object,
+    is not recomputed by every key it enters. A mutable table is not cached.
+    """
+
+    MAX_ENTRIES: ClassVar[int] = 16384
+    _memo: ClassVar[
+        BoundedMemo[
+            tuple[int, int, frozenset[GroundAtom]],
+            tuple[SkillEffects, GroundSkill, frozenset[GroundAtom]],
+        ]
+    ] = BoundedMemo(max_entries=MAX_ENTRIES)
+
+    @staticmethod
+    def of(
+        *,
+        true_atoms: frozenset[GroundAtom],
+        ground_skill: GroundSkill,
+        effects: SkillEffects,
+    ) -> frozenset[GroundAtom]:
+        if not isinstance(effects, FrozenSkillEffects):
+            return compute_success_effects(
+                true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+            )
+        key = (id(effects), id(ground_skill), true_atoms)
+        entry = SuccessEffectsCache._memo.get(key=key)
+        if entry is not None and entry[0] is effects and entry[1] is ground_skill:
+            return entry[2]
+        result = compute_success_effects(
+            true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+        )
+        SuccessEffectsCache._memo.put(key=key, value=(effects, ground_skill, result))
+        return result
+
+    @staticmethod
+    def clear() -> None:
+        SuccessEffectsCache._memo.clear()
+
+
 def apply_success_effects(
     *,
     true_atoms: frozenset[GroundAtom],
     ground_skill: GroundSkill,
-    effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ],
+    effects: SkillEffects,
+) -> frozenset[GroundAtom]:
+    return SuccessEffectsCache.of(true_atoms=true_atoms, ground_skill=ground_skill, effects=effects)
+
+
+def compute_success_effects(
+    *,
+    true_atoms: frozenset[GroundAtom],
+    ground_skill: GroundSkill,
+    effects: SkillEffects,
 ) -> frozenset[GroundAtom]:
     add_effects, delete_effects, ignore_effects = effects[ground_skill]
     # An ignored predicate the operator re-asserts is a functional update: its old
@@ -161,10 +244,7 @@ def transition_outcomes(
     state: Tossing3DBeliefState,
     action: GroundSkill,
     ground_skills: tuple[GroundSkill, ...],
-    effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ],
+    effects: SkillEffects,
     exploration_epsilon: float,
     random_toss_competence: float,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
@@ -231,10 +311,7 @@ def binary_outcomes(
     ground_skill: GroundSkill,
     probability: float,
     cost: float,
-    effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ],
+    effects: SkillEffects,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     domain: PracticeDomain = TOSSING3D_DOMAIN,
 ) -> tuple[TransitionBranch, ...]:
@@ -280,10 +357,7 @@ def toss_outcomes(
     toss_cost: float,
     exploration_epsilon: float,
     random_toss_competence: float,
-    effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ],
+    effects: SkillEffects,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
     domain: PracticeDomain = TOSSING3D_DOMAIN,

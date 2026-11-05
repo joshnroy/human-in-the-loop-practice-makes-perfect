@@ -1,7 +1,7 @@
 """Common interface and value types for skill beliefs."""
 
 from abc import ABC, abstractmethod
-from typing import Final
+from typing import ClassVar, Final
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -33,6 +33,10 @@ class SkillBelief(BaseModel, ABC):
     """Representation-independent posterior over a skill's parameters."""
 
     model_config = ConfigDict(frozen=True)
+    # True only where `signature()` reads every field (a count fixed by a buffer's
+    # length aside), so equal digests mean equal beliefs and a digest can key a
+    # memo of any pure function of the belief. Each subclass decides for itself.
+    SIGNATURE_COVERS_EVERY_FIELD: ClassVar[bool] = False
 
     @abstractmethod
     def mean_competence(self) -> float: ...

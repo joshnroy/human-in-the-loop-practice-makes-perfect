@@ -44,7 +44,7 @@ def _ground(*, obj, ignored=_GEOMETRY):
 def test_search_indexes_conditions_and_marks_conditionally_forgotten_predicates_dynamic():
     skill = _ground(obj=_FIRST)
     model = Tossing3DPracticeModel(ground_skills=(skill,))
-    assert GroundAtom(predicate=_GUARD, objects=(_FIRST,)) in model._atom_indexes
+    assert GroundAtom(predicate=_GUARD, objects=(_FIRST,)) in model._atom_masks.indexes
     assert _GEOMETRY.name in model._dynamic_predicates
 
 
