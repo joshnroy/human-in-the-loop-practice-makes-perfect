@@ -220,6 +220,15 @@ class Cli:
             default=1700,
         )
         parser.add_argument(
+            "--extra-measurement-steps",
+            nargs="+",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=[],
+            help="Step protocol: practice steps measured as well as every "
+            "--measurement-interval-steps multiple, e.g. 5000 10000 to see learning "
+            "before the first 25,000-step checkpoint. Duplicates are measured once.",
+        )
+        parser.add_argument(
             "--human-skill-steps", type=lambda value: Cli.parse_positive_int(value=value), default=1
         )
         parser.add_argument(
