@@ -16,6 +16,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     CUBE_ON_ROBOT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.real.backend import (
+    PlacementRequest,
     PracticeScene,
     RealSkillStepCosts,
     TerminalPerson,
@@ -347,6 +348,35 @@ def test_only_y_or_n_answers_anything_else_asks_again() -> None:
     person = TerminalPerson(write=lines.append, read=lambda _prompt: next(declines))
     with pytest.raises(KeyboardInterrupt):
         person.confirm(action="PickCube")
+
+
+def test_a_timed_human_reset_is_the_seconds_between_the_start_y_and_the_done_y() -> None:
+    """With `time_human_resets`, a human reset asks for a y when the person starts and
+    a y when it is done; the seconds between them are the reset's measured time. A
+    scene or a restore is the experiment's own setup: one y, never timed."""
+    prompts: list[str] = []
+    ticks = iter([100.0, 140.5])
+
+    person = TerminalPerson(
+        write=lambda _line: None,
+        read=lambda prompt: prompts.append(prompt) or "y",
+        time_human_resets=True,
+        clock=lambda: next(ticks),
+    )
+    request = PlacementRequest(
+        kind="human reset",
+        destination=Tossing3DSide.ROBOT,
+        cube=CUBE_SPOT,
+        bin=BIN_SPOTS[Tossing3DSide.ROBOT],
+    )
+    person.place(request=request)
+    assert len(prompts) == 2 and "start" in prompts[0].lower()
+    assert "in place" in prompts[1]
+    assert person.drain_seconds() == pytest.approx(40.5)
+    assert person.drain_seconds() is None
+    prompts.clear()
+    person.place(request=request.model_copy(update={"kind": "scene"}))
+    assert len(prompts) == 1 and person.drain_seconds() is None
 
 
 def test_an_evaluation_reset_after_practice_ends_holding_leaves_the_cube_pickable() -> None:
