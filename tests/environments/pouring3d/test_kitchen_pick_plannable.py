@@ -24,9 +24,10 @@ DUMPLING = 2
 PICK = 3  # PickShrimpFromTray in practice.skills.SKILL_NAMES
 REFUSAL = "No feasible continuation from prepared arm postures"
 PICK_ACTION = np.array([PICK, DUMPLING, 1, 0, 0, 0], dtype=float)
-# At a 0.84 m hob a dumpling 6 cm from the pan centre, on the -y side, has no
-# collision-free hover for any of the four grasp candidates (measured 2026-11-02).
-UNPLANNABLE_OFFSET = (0.0, -0.06)
+# At a 0.84 m hob a dumpling 6 cm out on +x and -y has no collision-free hover on
+# either grasp branch, long sides or ends (measured 2026-11-04). At (0, -0.06), the
+# offset used before the ends fallback, the ends branch now picks it.
+UNPLANNABLE_OFFSET = (0.06, -0.06)
 
 
 def test_every_dumpling_pick_requires_the_atom_but_the_human_reset_does_not():
