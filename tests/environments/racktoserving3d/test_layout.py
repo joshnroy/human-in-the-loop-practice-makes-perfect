@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.layout import RackLayout
 from hitl_pmp.environments.racktoserving3d.semantics import SupportRegion
 
@@ -77,8 +78,8 @@ def test_every_episode_reset_starts_from_its_seeds_draw_of_the_layout(*, monkeyp
     monkeypatch.setattr(RackServingBackend, "core", lambda self: SimpleNamespace())
     calls = []
 
-    def placements(self, *, names):  # noqa: PLR0917 -- a method stand-in
-        calls.append((list(names), self._rng.bit_generator.state))
+    def placements(self, *, names, start_layout="scattered"):  # noqa: PLR0917 -- a stand-in
+        calls.append((list(names), start_layout, self._rng.bit_generator.state))
         return {"sentinel": names}
 
     committed = []
@@ -86,11 +87,17 @@ def test_every_episode_reset_starts_from_its_seeds_draw_of_the_layout(*, monkeyp
     monkeypatch.setattr(
         RackServingBackend, "_commit", lambda self, *, placements: committed.append(placements)
     )
+    names = list(RackServingBackend.cube_names)
+    # A scattered-only config draws no stack/scattered coin: the seed's own first draw.
+    RackServingBackend(config=RackServingConfig(gathered_fraction=0.0)).reset(seed=seed)
+    assert calls == [(names, "scattered", np.random.default_rng(seed).bit_generator.state)]
+    assert committed == [{"sentinel": names}]
+    # The default mixture draws its coin first, then places from the same generator.
+    calls.clear()
     RackServingBackend().reset(seed=seed)
-    assert calls == [
-        (list(RackServingBackend.cube_names), np.random.default_rng(seed).bit_generator.state)
-    ]
-    assert committed == [{"sentinel": list(RackServingBackend.cube_names)}]
+    rng = np.random.default_rng(seed)
+    kind = "stack" if rng.uniform() < RackServingConfig().gathered_fraction else "scattered"
+    assert calls == [(names, kind, rng.bit_generator.state)]
 
 
 class _Scratch:

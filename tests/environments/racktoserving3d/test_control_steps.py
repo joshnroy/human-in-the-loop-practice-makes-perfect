@@ -250,6 +250,7 @@ def test_failed_human_attempt_keeps_charge_and_updates_observed_clock(
         raise RuntimeError("human attempt failed")
 
     if destination == "human_batch_return":
+        backend._rng = np.random.default_rng(0)
         monkeypatch.setattr(RackServingBackend, "food_placements", fail)
     else:
         rack.controllers.tool.initialize_rest.side_effect = fail

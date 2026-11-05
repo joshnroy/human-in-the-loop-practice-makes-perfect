@@ -116,10 +116,8 @@ def test_a_plate_line_pile_keeps_x_uniform_over_the_inset():
     assert np.ptp(xs) > 0.6 * (RACK.x_max - RACK.x_min - 2 * RackLayout.MARGIN)
 
 
-def test_plate_line_centre_and_gathered_fraction_are_opt_in():
-    config = RackServingConfig()
-    assert config.cluster_center_y_sigma is None
-    assert config.gathered_fraction == 0.0
+def test_the_plate_line_centre_is_opt_in():
+    assert RackServingConfig().cluster_center_y_sigma is None
 
 
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="KINDER simulator")
