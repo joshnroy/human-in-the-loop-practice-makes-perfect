@@ -262,6 +262,10 @@ class KitchenController(PotstickerController):
         if self.held != "pitcher":
             raise ValueError("Pour requires a retained handle grasp")
         task_request = self.scene.requested_count
+        # The pour moves joint 5's posture attractor to `pour_posture`. Left there, it
+        # drags the wrist in every scripted move after the pour: the place's lift off the
+        # handle turned the open fingers and spun a released empty jug 17.8 deg off home.
+        posture = (self.posture, self.posture_goal)
         try:
             self.prepare_to_pour()
             result = self.closed_loop_pour(parameters=parameters, requested=requested_count)
@@ -270,6 +274,7 @@ class KitchenController(PotstickerController):
             return result
         finally:
             self.scene.requested_count = task_request
+            self.posture, self.posture_goal = posture
 
     def poured_count(self) -> int:
         """Dumplings that have left the jug, from true simulator state (no delay)."""
