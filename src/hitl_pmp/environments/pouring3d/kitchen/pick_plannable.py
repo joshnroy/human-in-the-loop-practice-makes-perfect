@@ -80,8 +80,10 @@ class KitchenPickPlannable:
     """A static-method container, never instantiated."""
 
     @staticmethod
-    def is_planning_refusal(*, error: str) -> bool:
-        return error.startswith(PLANNING_PREFIXES)
+    def is_planning_refusal(*, error: str, prefixes: tuple[str, ...] = PLANNING_PREFIXES) -> bool:
+        """Whether `error` is a planning refusal; another domain passes its own skill's
+        `prefixes` (RackToServing3D's PickFood, `racktoserving3d/pick_plannable.py`)."""
+        return error.startswith(prefixes)
 
     @staticmethod
     def pose(*, controller: Any, name: str) -> Pose:
