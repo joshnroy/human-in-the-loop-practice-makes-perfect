@@ -104,6 +104,71 @@ class RackPyBulletSim(KitchenPyBulletSim):
         ]
         self._chassis_links = tuple(range(names.index(CHASSIS_CHECKED_FROM), len(names)))
         self.place_chassis()
+        # Every planning query is getClosestPoints, which ignores collision filters; the
+        # contact pairs performCollisionDetection caches are never read. Unfiltered, each
+        # check recomputed the scene's own resting contacts (the dumplings on the rack),
+        # 2 ms of a 5.7 ms check. The call still refreshes the AABBs `near_bodies` reads.
+        for index in range(p.getNumBodies(physicsClientId=client)):
+            body = p.getBodyUniqueId(index, physicsClientId=client)
+            for link in range(-1, p.getNumJoints(body, physicsClientId=client)):
+                p.setCollisionFilterGroupMask(body, link, 0, 0, physicsClientId=client)
+
+    def near_bodies(
+        self, *, bodies: Iterable[int], held_object: int | None, margin: float
+    ) -> list[int]:
+        """Those of `bodies` whose AABB comes within `margin` of the AABB of the robot
+        (and `held_object`) as posed now: the only ones getClosestPoints can find
+        within `margin`, since every AABB contains its shape."""
+        client = self.physics_client_id
+        p.performCollisionDetection(physicsClientId=client)
+        robot = self.robot.robot_id
+        parts = [(robot, link) for link in range(-1, p.getNumJoints(robot, physicsClientId=client))]
+        if held_object is not None:
+            parts += [
+                (held_object, link)
+                for link in range(-1, p.getNumJoints(held_object, physicsClientId=client))
+            ]
+        boxes = np.array([p.getAABB(body, link, physicsClientId=client) for body, link in parts])
+        lower, upper = boxes[:, 0].min(axis=0) - margin, boxes[:, 1].max(axis=0) + margin
+        overlapping = p.getOverlappingObjects(
+            lower.tolist(), upper.tolist(), physicsClientId=client
+        )
+        found = {body for body, _ in overlapping or ()}
+        return [body for body in bodies if body in found]
+
+    def robot_collides_at_base(  # noqa: PLR0917 -- upstream signature
+        self,
+        base_pose: SE2,
+        joints: Any,
+        held_object: int | None = None,
+        collision_bodies: set[int] | None = None,
+        distance_threshold: float = 1e-6,
+    ) -> bool:
+        """Upstream's check, over only the obstacles near the robot (`near_bodies`)."""
+        from pybullet_helpers.inverse_kinematics import (
+            check_collisions_with_held_object,
+            set_robot_joints_with_held_object,
+        )
+
+        if collision_bodies is None:
+            collision_bodies = self.get_collision_bodies(held_object=held_object)
+        offset = self.base_link_to_held_obj if held_object is not None else None
+        self.set_robot_base(base_pose)
+        set_robot_joints_with_held_object(
+            self.robot, self.physics_client_id, held_object, offset, list(joints)
+        )
+        near = self.near_bodies(
+            bodies=collision_bodies, held_object=held_object, margin=distance_threshold
+        )
+        return check_collisions_with_held_object(
+            self.robot,
+            near,
+            self.physics_client_id,
+            held_object,
+            offset,
+            list(joints),
+            distance_threshold=distance_threshold,
+        )
 
     def place_chassis(self) -> None:
         from pybullet_helpers.geometry import multiply_poses, set_pose
