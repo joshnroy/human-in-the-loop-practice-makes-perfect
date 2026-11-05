@@ -711,6 +711,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
             dp_solver="gurobi",
             dp_budget=188.0,
             dp_prior_calibration=None,
+            dp_initial_competence={},
         )
         worker.check_dp_row(parsed=good, manifest=manifest, row={"arm": "dp"})
         for field, value in (
@@ -719,6 +720,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
             ("dp_solver", "enumeration"),
             ("dp_budget", 187.0),
             ("dp_prior_calibration", Path("priors.json")),
+            ("dp_initial_competence", {"PickCube": 0.5}),
             ("method", "ees"),
         ):
             with self.subTest(field=field), self.assertRaises(ValueError):
