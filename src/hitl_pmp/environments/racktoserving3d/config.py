@@ -117,7 +117,7 @@ class RackServingConfig(BaseModel):
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
     dumpling_collision: CollisionModel = Field(
-        default="full",
+        default="hull",
         description=(
             "Potsticker contact geometry; every option keeps the full textured mesh as "
             "visual geometry and the full model's mass and inertia (see potsticker.py)"
