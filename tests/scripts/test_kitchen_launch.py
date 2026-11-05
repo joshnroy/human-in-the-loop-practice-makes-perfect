@@ -472,3 +472,11 @@ def test_della_long_is_sized_for_the_slowest_arm_within_48_hours(*, tmp_path, mo
 def test_della_overnight_memory_is_unchanged_by_the_long_stage():
     assert KitchenLaunch.della_memory(evaluation_workers=9) == "27G"
     assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long") == "38G"
+
+
+@pytest.mark.parametrize("arm", ["ees", "curtis", "expectimax"])
+def test_long_one_shot_is_long_with_one_pour_per_test_task(*, arm):
+    long = KitchenLaunch.flags(arm=arm, stage="long", seed=0, evaluation_workers=9)
+    one_shot = KitchenLaunch.flags(arm=arm, stage="long_one_shot", seed=0, evaluation_workers=9)
+    assert "--evaluation-max-pour-attempts" not in long
+    assert sorted(one_shot) == sorted([*long, "--evaluation-max-pour-attempts", "1"])
