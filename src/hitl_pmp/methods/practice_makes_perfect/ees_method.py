@@ -574,17 +574,16 @@ class EesMethod(Method):
         self._practice_accounting = accounting
 
     def practice_action_cost(self, *, ground_skill: GroundSkill) -> float:
-        if (
-            self._practice_accounting is not None
-            and ground_skill in self.skill_provider.human_cube_bin_reset_skills()
-        ):
-            name = self.skill_provider.human_skill_name(ground_skill=ground_skill)
-            assert name is not None, f"{ground_skill} is a human skill without a name"
-            return (
-                self._practice_accounting.costs.human_weight
-                * self._practice_accounting.human_charge(skill=name).cost
+        """A human skill's price: the practice-cost file's charge for its name."""
+        accounting = self._practice_accounting
+        if accounting is None:
+            raise RuntimeError(
+                f"{ground_skill.skill.name} is priced only by a practice-cost file; run "
+                "under the step protocol with --practice-cost-config"
             )
-        return ground_skill.evaluate_practice_cost()
+        name = self.skill_provider.human_skill_name(ground_skill=ground_skill)
+        assert name is not None, f"{ground_skill} is a human skill without a name"
+        return accounting.costs.human_weight * accounting.human_charge(skill=name).cost
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         self._execution_ground_skill = ground_skill
@@ -1372,12 +1371,17 @@ class EesMethod(Method):
 
     def start_reset_cost(self) -> float:
         """What one forced full reset is charged: by its own name under step accounting,
-        as every human skill is, else the wrapper's configured price."""
+        as every human skill is, else the wrapper's explicit price."""
         assert self.always_ask_reset is not None
         if self._practice_accounting is not None:
             return (
                 self._practice_accounting.costs.human_weight
                 * self._practice_accounting.human_charge(skill=SAMPLED_START_RESET_SKILL_NAME).cost
+            )
+        if self.always_ask_reset.cost is None:
+            raise ValueError(
+                "--always-ask-reset needs a price: a --practice-cost-config that prices "
+                f"{SAMPLED_START_RESET_SKILL_NAME!r}, or --always-ask-reset-cost"
             )
         return self.always_ask_reset.cost
 

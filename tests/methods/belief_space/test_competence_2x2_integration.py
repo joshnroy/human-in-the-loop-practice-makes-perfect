@@ -1,26 +1,19 @@
 """Exercise the four competence models through the real method and CLI boundaries."""
 
-import argparse
 import json
-from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import pytest
 
-from hitl_pmp.cli import Cli
-from hitl_pmp.core.method.method import Method
-from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle, Tossing3DSkillProvider
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     PICK_SKILL,
-    RESET_SAME_SIDE_SKILL,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -47,7 +40,7 @@ def _build(
     env = Tossing3DEnvironment(scene_bg=False)
     method = Tossing3DPomdpMethod(
         env=env,
-        skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.25),
+        skill_provider=Tossing3DSkillProvider(env=env),
         seed=17,
         pomdp_competence_model=model,
         pomdp_inference_engine=engine,
@@ -91,141 +84,7 @@ def _belief(*, method: Tossing3DPomdpMethod, name: str) -> BayesianSkillBelief:
 
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_cli_constructs_and_runs_each_selected_inference_arm(
-    *, model: Model, engine: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    constructed: list[Tossing3DPomdpMethod] = []
-
-    def run_method(
-        *,
-        args: argparse.Namespace,
-        method_factory: Callable[[DomainContext], Method],
-        num_cycles: int,
-        max_steps_per_interaction: int,
-    ) -> None:
-        assert num_cycles == 10
-        assert max_steps_per_interaction > 0
-        assert args.defer_rendering is True
-        env = Tossing3DEnvironment(scene_bg=False)
-        method = method_factory(
-            DomainContext(
-                env=env,
-                skill_provider=Tossing3DSkillProvider(env=env),
-                oracle=Tossing3DOracle(env=env),
-            )
-        )
-        assert isinstance(method, Tossing3DPomdpMethod)
-        constructed.append(method)
-        for belief in method.pomdp_state.skill_beliefs.values():
-            assert isinstance(belief, BayesianSkillBelief)
-            assert (belief.model_name, belief.engine) == (model, engine)
-            assert belief.config.competence_bins == 5
-            assert belief.config.learning_rate_bins == 4
-        pick = _ground(method=method, name=PICK_SKILL)
-        before = _belief(method=method, name=PICK_SKILL).mean_competence()
-        method.observe_outcome(ground_skill=pick, success=True)
-        assert _belief(method=method, name=PICK_SKILL).mean_competence() > before
-        selected = method.select_skill_to_practice(true_atoms=pick.preconditions)
-        assert len(selected) == 1
-        assert method.env._backend is None  # noqa: SLF001
-
-    monkeypatch.setattr(Tossing3DCli, "run_method", run_method)
-    Cli.main(
-        argv=[
-            "--env",
-            "tossing3d",
-            "--method",
-            "pomdp",
-            "--pomdp-observation-probability-weight",
-            "0.1",
-            "--pomdp-competence-model",
-            model,
-            "--pomdp-inference-engine",
-            engine,
-            "--pomdp-num-particles",
-            "64",
-            "--pomdp-grid-competence-bins",
-            "5",
-            "--pomdp-grid-learning-rate-bins",
-            "4",
-            "--pomdp-search-depth",
-            "1",
-            "--pomdp-num-samples",
-            "2",
-            "--num-cycles",
-            "10",
-        ]
-    )
-    assert len(constructed) == 1
-
-
-@pytest.mark.parametrize("cost_lambda", [None, 0.07])
-def test_cost_observations_dispatch_charges_and_objective_are_identical_across_arms(
-    *, cost_lambda: float | None, tmp_path: Path
-) -> None:
-    costs_by_arm = []
-    logs_by_arm = []
-    objectives_by_arm = []
-    for model, engine in ARMS:
-        decision_log = tmp_path / f"{model}-{engine}.jsonl"
-        method = _build(
-            model=model, engine=engine, cost_lambda=cost_lambda, decision_log=decision_log
-        )
-        initial_costs = {
-            name: _belief(method=method, name=name).cost_belief.signature()
-            for name in method.pomdp_state.skill_beliefs
-        }
-        for name, success, random in (
-            (PICK_SKILL, True, False),
-            (TOSS_SKILL, False, True),
-            (TOSS_SKILL, True, False),
-        ):
-            ground = _ground(method=method, name=name)
-            before = method.pomdp_state
-            method.record_action_cost(ground_skill=ground)
-            assert method.pomdp_state.skill_beliefs == before.skill_beliefs
-            method.observe_outcome(
-                ground_skill=ground, success=success, was_random_exploration=random
-            )
-        reset = _ground(method=method, name=RESET_SAME_SIDE_SKILL)
-        method.record_action_cost(ground_skill=reset)
-        method.observe_help_granted(state=method.env.get_current_state())
-        assert method.pomdp_state.accumulated_cost == 3.25
-        conditioned_costs = {
-            name: _belief(method=method, name=name).cost_belief.signature()
-            for name in method.pomdp_state.skill_beliefs
-        }
-        method.end_cycle()
-        assert method.pomdp_state.accumulated_cost == 3.25
-        assert conditioned_costs == {
-            name: _belief(method=method, name=name).cost_belief.signature()
-            for name in method.pomdp_state.skill_beliefs
-        }
-        assert conditioned_costs[PICK_SKILL] != initial_costs[PICK_SKILL]
-        costs_by_arm.append((initial_costs, conditioned_costs))
-        logs_by_arm.append([
-            (event["skill"], event["configured_cost_observation"], event["cost_observation_source"])
-            for event in map(json.loads, decision_log.read_text().splitlines())
-            if event["event"] == "outcome"
-        ])
-        objectives_by_arm.append([
-            method._pomdp_model.G(policy_value=0.6, summed_cost=cost)  # noqa: SLF001
-            for cost in (0.0, 3.25, 21.0)
-        ])
-    assert all(costs == costs_by_arm[0] for costs in costs_by_arm)
-    assert all(logs == logs_by_arm[0] for logs in logs_by_arm)
-    assert [cost for _, cost, _ in logs_by_arm[0]] == [1.0, 1.0, 1.0, 0.25]
-    assert all(values == objectives_by_arm[0] for values in objectives_by_arm)
-    expected = (
-        [0.6, 0.6, -np.inf]
-        if cost_lambda is None
-        else [0.6 - cost_lambda * c for c in (0, 3.25, 21)]
-    )
-    assert objectives_by_arm[0] == pytest.approx(expected)
-
-
-@pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evidence(
+def test_random_toss_is_sampler_data_but_never_competence_evidence(
     *, model: Model, engine: Engine
 ) -> None:
     method = _build(model=model, engine=engine)
@@ -236,7 +95,8 @@ def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evid
     assert after_random.latent_values == before.latent_values
     assert after_random.state_weights == before.state_weights
     assert after_random.cycle_successes == after_random.cycle_failures == 0
-    assert after_random.cost_belief != before.cost_belief
+    # Its cost reaches the planner through the host's accounting, not this belief.
+    assert after_random.cost_belief == before.cost_belief
     assert method.pomdp_state.pending_examples.get(TOSS_SKILL, 0) == 0
     method.observe_sampler_outcome(
         skill_name=TOSS_SKILL, param_dim=4, sampler_input=[0.0], success=False

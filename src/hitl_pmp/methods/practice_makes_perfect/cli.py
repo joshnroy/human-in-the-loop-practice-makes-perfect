@@ -69,12 +69,10 @@ class EesCli:
         return parsed
 
     @staticmethod
-    def always_ask_reset(*, args: argparse.Namespace, ctx: Any) -> AlwaysAskReset | None:
+    def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
-        return AlwaysAskReset.for_provider(
-            skill_provider=ctx.skill_provider, cost=args.always_ask_reset_cost
-        )
+        return AlwaysAskReset(cost=args.always_ask_reset_cost)
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -245,8 +243,7 @@ class EesCli:
             type=float,
             default=None,
             help="Price of one --always-ask-reset reset when no --practice-cost-config "
-            "prices reset_to_sampled_start (default: the domain's own human-reset price, "
-            "--human-reset-practice-cost).",
+            "prices reset_to_sampled_start. A costs file's price always wins.",
         )
         parser.add_argument(
             "--defer-rendering",
@@ -324,7 +321,7 @@ class EesCli:
             competence_window_size=args.competence_window_size,
             competence_recency_size=args.competence_recency_size,
             reset_cost_gate=args.ees_reset_gate,
-            always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
+            always_ask_reset=EesCli.always_ask_reset(args=args),
             score_human_skills=args.ees_score_human_skills,
             prior_alpha=args.ees_prior_alpha,
             prior_beta=args.ees_prior_beta,
@@ -613,7 +610,7 @@ class Tossing3DPomdpCli(EesCli):
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
                 reset_cost_gate=args.ees_reset_gate,
-                always_ask_reset=EesCli.always_ask_reset(args=args, ctx=ctx),
+                always_ask_reset=EesCli.always_ask_reset(args=args),
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history

@@ -25,6 +25,7 @@ from hitl_pmp.environments.tossing3d.skill_provider import (
     Tossing3DSkillProvider,
 )
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import state
 
@@ -150,25 +151,22 @@ def test_reset_destination_is_decoded_from_the_reset_skill() -> None:
 @pytest.mark.parametrize("layout", ["barrier", "same-side"])
 def test_practice_resets_offer_both_bin_destinations_to_the_planner(*, layout: str) -> None:
     """Which side a practice reset sends the bin to is the planner's choice: the
-    human and the automatic reset are each grounded for both destinations, each
-    grounding priced at that mechanism's own cost, so neither side is favoured."""
+    human and the automatic reset are each grounded for both destinations, and the
+    costs file prices a destination by name, so neither side is favoured."""
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 
     provider = Tossing3DSkillProvider(
         env=Tossing3DEnvironment(layout=Tossing3DLayout(layout)),
-        human_reset_practice_cost=3.0,
-        non_human_reset_practice_cost=7.0,
         offer_non_human_reset=True,
     )
-    for group, cost in (
-        (provider.human_cube_bin_reset_skills(), 3.0),
-        (provider.non_human_cube_bin_reset_skills(), 7.0),
+    for group in (
+        provider.human_cube_bin_reset_skills(),
+        provider.non_human_cube_bin_reset_skills(),
     ):
         assert [provider.movables_reset_destination(ground_skill=g) for g in group] == [
             "robot_side",
             "opposite_side",
         ]
-        assert {g.evaluate_practice_cost() for g in group} == {cost}
     assert {
         provider.movables_reset_destination(ground_skill=g)
         for g in provider.movables_reset_skills()
@@ -231,10 +229,6 @@ def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
     assert _provider().human_cube_bin_reset_skill().skill.param_dim == 0
 
 
-def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
-    assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
-
-
 def test_practice_offers_no_non_human_reset_by_default() -> None:
     """The automatic reset is a relabelled human reset -- same exception, same oracle,
     same intervention count -- so offering both makes the choice between them noise."""
@@ -253,19 +247,13 @@ def test_the_non_human_reset_is_offered_only_when_asked_for() -> None:
     )
 
 
-def test_human_reset_is_two_skills_each_costing_five() -> None:
+def test_human_reset_is_two_skills() -> None:
     provider = _provider()
     human_destinations = provider.human_cube_bin_reset_skills()
     assert {reset.skill.name for reset in human_destinations} == {
         RESET_CUBE_BIN_SAME_SIDE_NAME,
         RESET_CUBE_BIN_OPPOSITE_SIDE_NAME,
     }
-    assert {reset.evaluate_practice_cost() for reset in human_destinations} == {5.0}
-
-
-def test_human_reset_cost_is_provider_configuration() -> None:
-    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(), human_reset_practice_cost=0.125)
-    assert provider.human_cube_bin_reset_skill().evaluate_practice_cost() == 0.125
 
 
 @pytest.mark.parametrize("stranded", [False, True])
@@ -283,9 +271,14 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
-    provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
+    provider = Tossing3DSkillProvider(env=env)
     # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
     method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
+    method.configure_practice_accounting(
+        accounting=CostFixtures.accounting(
+            human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}
+        )
+    )
     atoms = {
         GroundAtom(
             predicate=CLOSED_EMPTY if closed else HAND_EMPTY,
@@ -359,9 +352,14 @@ def test_ees_plans_a_reset_to_either_side_only_while_practicing(*, destination: 
     from hitl_pmp.planning.fast_downward import PlanningFailure
 
     env = Tossing3DEnvironment()
-    provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
+    provider = Tossing3DSkillProvider(env=env)
     # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
     method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
+    method.configure_practice_accounting(
+        accounting=CostFixtures.accounting(
+            human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}
+        )
+    )
     side, other = (
         (BIN_ON_ROBOT_SIDE, BIN_ON_OPPOSITE_SIDE)
         if destination == "robot_side"

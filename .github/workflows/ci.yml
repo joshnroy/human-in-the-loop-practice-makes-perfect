@@ -66,6 +66,8 @@ jobs:
               - 'tests/__init__.py'
               - 'tests/environments/__init__.py'
               - 'tests/mimiclabs_assets.py'
+              - 'tests/practice_cost_fixtures.py'
+              - 'tests/unit_practice_costs.json'
               - 'tests/ci_shard.py'
               - 'tests/ci_shard_durations.json'
               - 'tests/environments/tossing3d/**'

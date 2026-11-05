@@ -61,8 +61,6 @@ def experiment_commands(
                     "barrier",
                     "--practice-reset-policy",
                     "never",
-                    "--human-reset-practice-cost",
-                    "5",
                     "--pomdp-linear-cost-lambda",
                     "0.0003",
                     "--pomdp-solver",

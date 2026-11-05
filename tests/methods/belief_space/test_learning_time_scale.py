@@ -182,7 +182,7 @@ def test_cli_installs_candidate_config_with_physical_costs_unchanged(
             method_factory(
                 DomainContext(
                     env=env,
-                    skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=5.0),
+                    skill_provider=Tossing3DSkillProvider(env=env),
                     oracle=Tossing3DOracle(env=env),
                 )
             )
@@ -198,6 +198,4 @@ def test_cli_installs_candidate_config_with_physical_costs_unchanged(
     assert method.pomdp_learning_time_scale == time_scale
     assert method.pomdp_observation_probability_weight == 0
     assert method.pomdp_linear_cost_lambda == 0.0003
-    assert {skill.evaluate_practice_cost() for skill in method.skills()} == {1.0}
-    assert {skill.evaluate_practice_cost() for skill in method.human_skills()} == {5.0}
     assert method.env._backend is None  # noqa: SLF001

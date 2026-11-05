@@ -33,6 +33,7 @@ from hitl_pmp.practice_loop import PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
+from tests.practice_cost_fixtures import CostFixtures
 
 CONTROL_STEPS_PER_ACTION = 400
 # Light Switch's own `Goal.describe()`; the runner must not supply a string of its own.
@@ -204,7 +205,7 @@ def _args(*, output: Path, **overrides: Any) -> argparse.Namespace:
         evaluation_control_steps=3000,
         human_skill_steps=1,
         stop_after_perfect_evaluations=0,
-        practice_cost_config=None,
+        practice_cost_config=CostFixtures.UNIT,
     )
     values.update(overrides)
     return argparse.Namespace(**values)

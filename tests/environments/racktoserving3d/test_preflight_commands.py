@@ -36,6 +36,12 @@ def test_documented_preflight_arguments_parse_and_keep_intended_bounds(
     )
     if solver == "expectimax":
         argv += ["--pomdp-search-depth", "1"]
+    if not step_budget:
+        # The documented one-cycle commands: refused, since the rack offers human
+        # resets and only the step protocol prices them.
+        with pytest.raises(SystemExit):
+            Cli.parse_args(argv=argv)
+        return
     args = Cli.parse_args(argv=argv)
     assert args.env == "racktoserving3d"
     assert args.max_steps_per_interaction == 4

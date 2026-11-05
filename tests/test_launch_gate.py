@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.launch_gate import LaunchBlocked, LaunchGate, LaunchIdentity
+from tests.practice_cost_fixtures import CostFixtures
 
 COMMIT = "a" * 40
 KG = "b" * 40
@@ -169,6 +170,7 @@ SHELF_STEP_RUN = [
     "ees",
     "--practice-step-budget",
     "5",
+    *CostFixtures.argv(env="sweepoffshelf3d"),
 ]
 
 

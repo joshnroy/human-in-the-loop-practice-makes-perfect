@@ -19,6 +19,7 @@ from hitl_pmp.environments.sweepoffshelf3d.step_protocol import SweepOffShelf3DS
 from hitl_pmp.launch_gate import LaunchGate
 from hitl_pmp.recording.run_record.types import Phase
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry, StepProtocolValidation
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _args(*, tmp_path: Path, extra: tuple[str, ...] = ()):
@@ -30,6 +31,7 @@ def _args(*, tmp_path: Path, extra: tuple[str, ...] = ()):
             "ees",
             "--practice-step-budget",
             "5",
+            *CostFixtures.argv(env="racktoserving3d"),
             "--practice-reset-policy",
             "never",
             "--defer-rendering",

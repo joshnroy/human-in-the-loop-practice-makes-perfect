@@ -70,10 +70,7 @@ def _domain_model(**kwargs: object) -> Tossing3DPracticeModel:
     if reset_cost is not None:
         resets = provider.human_cube_bin_reset_skills()
         assert resets
-        skills = (
-            *skills,
-            *(reset.skill.model_copy(update={"practice_cost": reset_cost}) for reset in resets),
-        )
+        skills = (*skills, *(reset.skill for reset in resets))
     ground_skills = SkillGrounder.applicable_ground_skills(
         skills=skills,
         objects=provider.objects(),
@@ -82,6 +79,13 @@ def _domain_model(**kwargs: object) -> Tossing3DPracticeModel:
         ),
     )
     return Tossing3DPracticeModel(ground_skills=tuple(ground_skills), **kwargs)
+
+
+def _priced(*, state: Tossing3DBeliefState, model: Tossing3DPracticeModel) -> Tossing3DBeliefState:
+    """The forecast a run's accounting supplies: one unit per ground skill."""
+    return state.model_copy(
+        update={"expected_execution_costs": {str(g): 1.0 for g in model.ground_skills}}
+    )
 
 
 def _ground_skill(*, model: Tossing3DPracticeModel, name: str):
@@ -264,6 +268,7 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         }
     )
     model = _domain_model(random_toss_competence=0.5)
+    state = _priced(state=state, model=model)
     environment_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
     action = _action(model=model, search_state=environment_state, name=TOSS_SKILL)
     successors = model.sample_next_states(
@@ -287,8 +292,8 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
 
 def test_unseen_toss_failure_retains_empirical_identity_prior() -> None:
     """Side-aware operators retain the measured failure model rather than assuming release."""
-    state = _point_state(toss=0.5, pick=0.5, open_gripper=1.0)
     model = _domain_model(exploration_epsilon=0.0)
+    state = _priced(state=_point_state(toss=0.5, pick=0.5, open_gripper=1.0), model=model)
     before = _search_state(model=model, state=state, action_name=TOSS_SKILL)
     outcomes = _outcomes(model=model, state=state, name=TOSS_SKILL)
     assert len(outcomes) == 2
@@ -674,7 +679,6 @@ def test_human_reset_observation_updates_its_joint_belief_without_training_credi
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
     reset = _ground_skill(model=model, name=RESET_SAME_SIDE_SKILL)
-    assert reset.evaluate_practice_cost() == 0.25
     success_only = condition_skill_belief(
         belief=state.skill_beliefs[RESET_SAME_SIDE_SKILL], success=True
     )
@@ -926,8 +930,9 @@ def test_search_cost_lookup_renders_each_ground_skill_once(
     pick = _ground_skill(model=model, name=PICK_SKILL)
     toss = _ground_skill(model=model, name=TOSS_SKILL)
     twin = pick.model_copy()
-    state = Tossing3DBeliefState(skill_beliefs={}, expected_execution_costs={str(pick): 7.25})
-    unpriced = toss.evaluate_practice_cost()
+    state = Tossing3DBeliefState(
+        skill_beliefs={}, expected_execution_costs={str(pick): 7.25, str(toss): 1.5}
+    )
     assert GroundSkillText.of(ground_skill=pick) == str(pick)
     assert GroundSkillText.of(ground_skill=twin) == str(twin)
     for ground in (pick, toss, twin):
@@ -939,7 +944,15 @@ def test_search_cost_lookup_renders_each_ground_skill_once(
     monkeypatch.setattr(GroundSkill, "__str__", no_render)
     assert estimated_action_cost(state=state, action=pick) == 7.25
     assert estimated_action_cost(state=state, action=twin) == 7.25
-    assert estimated_action_cost(state=state, action=toss) == unpriced
+    assert estimated_action_cost(state=state, action=toss) == 1.5
+
+
+def test_an_action_with_no_forecast_and_no_cost_belief_is_refused() -> None:
+    """No skill carries a price of its own: the practice-cost file prices every one,
+    through the forecast, so a missing forecast is an error rather than a default."""
+    toss = _ground_skill(model=_domain_model(), name=TOSS_SKILL)
+    with pytest.raises(ValueError, match="no cost forecast"):
+        estimated_action_cost(state=Tossing3DBeliefState(skill_beliefs={}), action=toss)
 
 
 def test_bin_pouring_has_its_own_uncertain_transition_belief() -> None:

@@ -68,12 +68,6 @@ class SweepOffShelf3DCli:
             help="Control steps one skill may take before it is cut off as a failure.",
         )
         parser.add_argument(
-            "--human-reset-practice-cost",
-            type=float,
-            default=SweepOffShelf3DSkillProvider.model_fields["human_reset_practice_cost"].default,
-            help="Cost of each human skill (reset_cubes, reset_wiper) in robot-skill units.",
-        )
-        parser.add_argument(
             "--human-reset",
             action=argparse.BooleanOptionalAction,
             default=True,
@@ -134,7 +128,6 @@ class SweepOffShelf3DCli:
             env=practice.env,
             skill_provider=SweepOffShelf3DSkillProvider(
                 env=practice.env,
-                human_reset_practice_cost=args.human_reset_practice_cost,
                 offer_human_reset=args.human_reset,
             ),
             oracle=SweepOffShelf3DOracle(env=practice.env),

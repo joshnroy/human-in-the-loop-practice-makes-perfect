@@ -109,7 +109,6 @@ def test_practice_charges_resets_under_the_cost_file_names():
         seed=0,
         test_env_seed_offset=10000,
         human_reset=True,
-        human_reset_practice_cost=5.0,
         oracle_throw_standoff=1.55,
     )
     problem = KitchenRecyclingCli.build_problem(args=args)

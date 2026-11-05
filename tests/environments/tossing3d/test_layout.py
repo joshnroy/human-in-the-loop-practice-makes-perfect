@@ -2,21 +2,23 @@
 
 import json
 
-from hitl_pmp.cli import Cli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def test_stock_layout_has_no_task_override() -> None:
-    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "ees"])
+    args = CostFixtures.parse(argv=["--env", "tossing3d", "--method", "ees"])
     env = Tossing3DCli.build_problem(args=args).env
     assert env.layout is Tossing3DLayout.BARRIER
     assert env.backend().task_config_path is None
 
 
 def test_same_side_layout_reaches_backend_and_has_space_to_throw() -> None:
-    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "ees", "--layout", "same-side"])
+    args = CostFixtures.parse(
+        argv=["--env", "tossing3d", "--method", "ees", "--layout", "same-side"]
+    )
     env = Tossing3DCli.build_problem(args=args).env
     path = env.backend().task_config_path
     assert path is not None
@@ -69,7 +71,7 @@ def test_live_scene_matches_selected_layout(*, tmp_path) -> None:
 
 
 def test_far_side_evaluation_does_not_change_practice_layout() -> None:
-    args = Cli.parse_args(
+    args = CostFixtures.parse(
         argv=[
             "--env",
             "tossing3d",
@@ -96,14 +98,16 @@ def test_far_side_evaluation_does_not_change_practice_layout() -> None:
 
 
 def test_evaluation_layout_defaults_to_practice_layout() -> None:
-    args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "ees", "--layout", "same-side"])
+    args = CostFixtures.parse(
+        argv=["--env", "tossing3d", "--method", "ees", "--layout", "same-side"]
+    )
     assert Tossing3DCli.build_evaluation_problem(args=args).env.layout is Tossing3DLayout.SAME_SIDE
 
 
 def test_mixed_layout_runner_keeps_replay_logs_separate(*, tmp_path, monkeypatch) -> None:
     from hitl_pmp.method_runner import MethodRunner
 
-    args = Cli.parse_args(
+    args = CostFixtures.parse(
         argv=[
             "--env",
             "tossing3d",

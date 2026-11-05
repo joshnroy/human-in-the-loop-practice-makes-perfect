@@ -399,8 +399,7 @@ class PackagingTests(unittest.TestCase):
             for row in rows:
                 cost, argv = row["human_reset_cost"], row["argv"]
                 self.assertEqual(row["output"], f"reset-cost-{cost}/{row['arm']}/{row['seed']}")
-                # The cost lives only in the row's cost file: the planner flag stays at its
-                # default, the POMDP refuses any skill price above its cost ceiling (20).
+                # The cost lives only in the row's cost file; no flag prices a reset.
                 self.assertNotIn("--human-reset-practice-cost", argv)
                 path = argv[argv.index("--practice-cost-config") + 1]
                 self.assertEqual(
@@ -465,21 +464,15 @@ class PackagingTests(unittest.TestCase):
                 "costs_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
 
-            def parsed(*, planner=5.0):
-                return argparse.Namespace(
-                    practice_cost_config=str(path), human_reset_practice_cost=planner
-                )
+            def parsed():
+                return argparse.Namespace(practice_cost_config=str(path))
 
             worker.check_row_costs(parsed=parsed(), row=row)
             worker.check_row_costs(
-                parsed=argparse.Namespace(
-                    practice_cost_config=str(HERE / "costs.json"), human_reset_practice_cost=5.0
-                ),
+                parsed=argparse.Namespace(practice_cost_config=str(HERE / "costs.json")),
                 row={},
             )
             for bad_parsed, bad_row in (
-                (parsed(planner=10000.0), row),
-                (parsed(planner=20.0), row),
                 (parsed(), {**row, "human_reset_cost": 5}),
                 (parsed(), {**row, "costs_sha256": "0" * 64}),
                 (parsed(), {}),

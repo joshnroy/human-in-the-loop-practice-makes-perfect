@@ -12,9 +12,9 @@ from hitl_pmp.cli import ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
-from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -52,15 +52,6 @@ def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> Non
     assert args.scene_bg is True
     assert args.test_env_seed_offset == Tossing3DTasks.model_fields["test_env_seed_offset"].default
     assert args.oracle_throw_standoff == ORACLE_THROW_STANDOFF
-    assert (
-        args.human_reset_practice_cost
-        == Tossing3DSkillProvider.model_fields["human_reset_practice_cost"].default
-    )
-
-
-def test_human_reset_practice_cost_is_overridable() -> None:
-    args = _build_parser().parse_args(["--human-reset-practice-cost", "0.125"])
-    assert args.human_reset_practice_cost == pytest.approx(0.125)
 
 
 def test_there_is_no_scene_selection_flag() -> None:
@@ -84,7 +75,7 @@ def test_the_oracle_standoff_is_overridable() -> None:
 
 
 def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> None:
-    args = Cli.parse_args(
+    args = CostFixtures.parse(
         argv=["--env", "tossing3d", "--method", "skill-oracle", "--canonical-seed", "7"]
     )
     assert args.canonical_seed == 7
@@ -212,7 +203,9 @@ def test_the_human_reset_flag_reaches_both_practice_methods(
     monkeypatch.setattr(tossing3d_cli.MethodRunner, "run", capture)
     flag = "--human-reset" if human_reset else "--no-human-reset"
     weight = ["--pomdp-observation-probability-weight", "0.1"] if method == "pomdp" else []
-    Cli.main(argv=["--env", "tossing3d", "--method", method, *weight, "--no-scene-bg", flag])
+    CostFixtures.dispatch(
+        argv=["--env", "tossing3d", "--method", method, *weight, "--no-scene-bg", flag]
+    )
     (built_method,) = built
     provider = built_method.skill_provider  # type: ignore[attr-defined]
     assert provider.offer_human_reset is human_reset

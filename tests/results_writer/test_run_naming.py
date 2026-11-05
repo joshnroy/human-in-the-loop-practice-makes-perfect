@@ -36,7 +36,6 @@ class Namespaces:
             "practice_reset_policy": "never",
             "two_way_ledge": False,
             "unsplit_skills": False,
-            "human_reset_practice_cost": 5.0,
             "human_reset": True,
             "num_cycles": 100,
         }
@@ -67,20 +66,13 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
     )
 
 
-def test_default_human_reset_cost_is_named() -> None:
-    name = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
-    assert "human-reset-cost-5-0" in name
-
-
 def test_a_run_without_the_human_reset_says_so_and_the_default_name_is_unchanged() -> None:
     """The with-reset arm reuses runs named before the flag existed, so the default
     keeps its old name and only the ablation gains a token."""
     default = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", human_reset=False))
-    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
-    assert ablated == (
-        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-human-reset-c100-seed3"
-    )
+    assert default == "tossing3d-ees-oneway-split-never-c100-seed3"
+    assert ablated == "tossing3d-ees-oneway-split-never-no-human-reset-c100-seed3"
 
 
 def test_missing_tossing3d_human_reset_flag_raises() -> None:
@@ -97,22 +89,15 @@ def test_a_run_without_the_ees_reset_gate_says_so_and_the_default_name_is_unchan
     ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", ees_reset_gate=False))
     unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     assert default == unregistered
-    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
-    assert ablated == (
-        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-ees-reset-gate-c100-seed3"
-    )
+    assert default == "tossing3d-ees-oneway-split-never-c100-seed3"
+    assert ablated == "tossing3d-ees-oneway-split-never-no-ees-reset-gate-c100-seed3"
 
 
-def test_missing_tossing3d_human_reset_cost_raises() -> None:
-    args = Namespaces.ees_tossingroom(env="tossing3d")
-    del args.human_reset_practice_cost
-    with pytest.raises(ValueError, match="human-reset-practice-cost"):
-        RunNamer.name(args=args)
-
-
-def test_non_tossing3d_ees_name_omits_inapplicable_reset_cost() -> None:
+def test_no_name_carries_a_reset_cost() -> None:
+    """The reset price lives only in the costs file, so no run name carries one."""
     args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"])
     assert "human-reset-cost" not in RunNamer.name(args=args)
+    assert "human-reset-cost" not in RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
 
 
 def test_the_seed_sorts_last() -> None:
@@ -154,9 +139,8 @@ def test_a_missing_required_field_raises_instead_of_being_defaulted() -> None:
 
 def test_names_are_url_and_path_safe() -> None:
     """A run name ends up in a URL and in offline directory names, so it stays
-    lowercase `[a-z0-9-]` regardless of what a flag's value looked like -- a float cost
-    is the case worth pinning here, since "0.134" contains a "." _slug must strip."""
-    name = RunNamer.name(args=Namespaces.ees_tossingroom(human_reset_practice_cost=0.134))
+    lowercase `[a-z0-9-]` regardless of what a flag's value looked like."""
+    name = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     assert name == name.lower()
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
 

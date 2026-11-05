@@ -58,7 +58,6 @@ from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
-from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
 
@@ -429,10 +428,6 @@ class Tossing3DPomdpMethod(EesMethod):
             "the configured practice domain's skills are missing: "
             f"{sorted(missing)} from {sorted(available)}"
         )
-        assert all(skill.skill.practice_cost is not None for skill in ground_skills)
-        assert all(skill.evaluate_practice_cost() <= COST_MAX for skill in ground_skills), (
-            f"POMDP cost observations must be at most {COST_MAX}"
-        )
 
     @property
     def search_depth(self) -> int:
@@ -531,15 +526,12 @@ class Tossing3DPomdpMethod(EesMethod):
             skill_name, consultation = pending
             assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
             assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
-        configured_cost_observation = (
-            ground_skill.evaluate_practice_cost() if self._practice_accounting is None else None
-        )
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
-            observed_cost=configured_cost_observation,
+            observed_cost=None,
             consultation=consultation,
         )
         self.record_diagnostic(
@@ -556,10 +548,6 @@ class Tossing3DPomdpMethod(EesMethod):
             ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
-            configured_cost_observation=configured_cost_observation,
-            cost_observation_source="configured_practice_cost"
-            if self._practice_accounting is None
-            else "host_control_steps",
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -583,41 +571,32 @@ class Tossing3DPomdpMethod(EesMethod):
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
         super().record_action_cost(ground_skill=ground_skill)
-        action_cost = (
-            ground_skill.evaluate_practice_cost() if self._practice_accounting is None else 0.0
-        )
-        updates: dict[str, object] = {
-            "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
-        }
         if self.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
             # Its success is inferred, so remember what it was asked to change.
             self._pending_reset = ground_skill
             self._pending_reset_before_atoms = self.abstract_state(
                 state=self.env.get_current_state()
             )
-        self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         # No cost table: the decision event just before carries it, and repeating it
-        # here doubled the decision log.
+        # here doubled the decision log. Nothing is charged at dispatch: the host
+        # charges the action once it has run (`observe_execution_cost`).
         self.record_diagnostic(
             event="dispatch",
             skill=ground_skill.skill.name,
-            cost=action_cost,
+            cost=0.0,
             summed_cost=self._pomdp_state.accumulated_cost,
         )
 
     def record_forced_reset(self, *, reason: str, cost: float, consecutive_stranded: int) -> None:
         """The always-ask wrapper overrode this step's decision with a full reset: charge
         it to the session like any action, remember to expect its completion, and log
-        it apart from the planner's own choices."""
-        action_cost = cost if self._practice_accounting is None else 0.0
-        self._pomdp_state = self._pomdp_state.model_copy(
-            update={"accumulated_cost": self._pomdp_state.accumulated_cost + action_cost}
-        )
+        it apart from the planner's own choices. As at dispatch, the host charges it."""
+        del cost
         self._pending_start_reset = True
         self.record_diagnostic(
             event="forced_reset",
             reason=reason,
-            cost=action_cost,
+            cost=0.0,
             consecutive_stranded=consecutive_stranded,
             summed_cost=self._pomdp_state.accumulated_cost,
         )
@@ -681,9 +660,6 @@ class Tossing3DPomdpMethod(EesMethod):
             return
         reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
-        observed_cost = (
-            reset.evaluate_practice_cost() if self._practice_accounting is None else None
-        )
         before = self._pending_reset_before_atoms
         after = self.abstract_state(state=state)
         missing = reset.expected_add_effects(before_atoms=before) - after
@@ -700,7 +676,7 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skill=reset,
             success=success,
             was_random_exploration=False,
-            observed_cost=observed_cost,
+            observed_cost=None,
         )
         self._pending_reset = None
         self.record_diagnostic(
@@ -711,10 +687,6 @@ class Tossing3DPomdpMethod(EesMethod):
             random_exploration=False,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
-            configured_cost_observation=observed_cost,
-            cost_observation_source="configured_practice_cost"
-            if self._practice_accounting is None
-            else "host_control_steps",
             estimated_costs=self.practice_skill_costs(),
         )
 

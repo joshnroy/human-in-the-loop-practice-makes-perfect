@@ -87,7 +87,6 @@ class SameSideSkills:
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
 
     PICK_FLOOR: ClassVar[Skill] = Skill(
@@ -103,7 +102,6 @@ class SameSideSkills:
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
@@ -118,7 +116,6 @@ class SameSideSkills:
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
         }),
         param_dim=0,
-        practice_cost=1.0,
     )
     OPEN: ClassVar[Skill] = Tossing3DSkills.OPEN_GRIPPER.model_copy(
         update={

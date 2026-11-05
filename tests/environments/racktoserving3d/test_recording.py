@@ -16,6 +16,7 @@ from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepP
 from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 from hitl_pmp.recording.run_record.reader import RunRecordReader
 from hitl_pmp.recording.run_record.types import ActionEntry, Phase, RecordingHeader, TickEntry
+from tests.practice_cost_fixtures import CostFixtures
 
 _NEEDS_KINDER = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="needs KINDER"
@@ -32,6 +33,7 @@ def _args(*, tmp_path: Path, record_motion: str):
         argv=[
             "--env", "racktoserving3d", "--method", "ees",
             "--practice-step-budget", "5", "--practice-reset-policy", "never",
+            *CostFixtures.argv(env="racktoserving3d"),
             "--defer-rendering", "--output-dir", str(tmp_path), "--seed", "0",
             "--record-motion", record_motion,
         ]

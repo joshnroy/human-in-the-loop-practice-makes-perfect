@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Any
 
 import numpy as np
-from pydantic import Field, model_validator
+from pydantic import model_validator
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Type
@@ -24,7 +24,6 @@ from .types import KitchenObjects as O
 
 class KitchenSkillProvider(FrozenPourSkillProvider):
     env: KitchenEnvironment
-    human_reset_practice_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
     # The closed-loop Pour learns only its tilt ramp rate (Josh, 2026-11-04); its approach,
     # ceiling, wiggle and return are fixed on `KitchenController`.
     ramp_rate_bounds: tuple[float, float] = ClosedLoopPourParameters.LIMITS
@@ -87,7 +86,6 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             add_effects=frozenset({a("HobOn", h)}),
             delete_effects=frozenset({a("HobOff", h), cold}),
             param_dim=0,
-            practice_cost=1,
         )
         away = Skill(
             name="MoveAway",
@@ -101,7 +99,6 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             add_effects=frozenset({a("RobotAway", r), a("MealStarted", k)}),
             delete_effects=frozenset(),
             param_dim=0,
-            practice_cost=1,
         )
         return (*base[:-1], activation, away, base[-1].model_copy(update={"name": HUMAN_RESET}))
 
@@ -152,14 +149,7 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         if self.env.deployment or not self.offer_human_reset:
             return None
-        ground = self.ground(name=HUMAN_RESET)
-        return ground.model_copy(
-            update={
-                "skill": ground.skill.model_copy(
-                    update={"practice_cost": self.env.human_interruption_cost}
-                )
-            }
-        )
+        return self.ground(name=HUMAN_RESET)
 
 
 class KitchenPourOracle(FrozenPourOracle):

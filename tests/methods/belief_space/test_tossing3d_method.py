@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
@@ -31,7 +32,6 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_competence,
-    mean_cost,
     mean_learning_rate,
 )
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
@@ -43,14 +43,12 @@ from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 def _build(**kwargs: object) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
-    reset_cost = float(kwargs.pop("human_reset_practice_cost", 5.0))
     offer_non_human_reset = bool(kwargs.pop("offer_non_human_reset", False))
     config = {"pomdp_search_depth": 2, **kwargs}
     return Tossing3DPomdpMethod(
         env=env,
         skill_provider=Tossing3DSkillProvider(
             env=env,
-            human_reset_practice_cost=reset_cost,
             offer_non_human_reset=offer_non_human_reset,
         ),
         seed=0,
@@ -347,19 +345,13 @@ def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() 
     assert {side for _name, side in offered} == {"robot_side", "opposite_side"}
 
 
-def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
-    method = _build()
-    assert {skill.evaluate_practice_cost() for skill in method.skills()} == {1.0}
-    assert {
-        skill.evaluate_practice_cost() for skill in Tossing3DSkillProvider(env=method.env).skills()
-    } == {1.0}
-
-
 def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     method = _build()
+    method.configure_practice_accounting(accounting=PracticeAccounting())
     pick = _grounding(method=method, name=PICK_SKILL)
     before = method.pomdp_state
     method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=1.0, steps=1, complete=True)
     dispatched = method.pomdp_state
     assert dispatched.accumulated_cost == 1.0
     assert dispatched.skill_beliefs == before.skill_beliefs
@@ -373,21 +365,21 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert after.pending_examples.get(PICK_SKILL, 0) == 1
     assert isinstance(after.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert isinstance(before.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
-    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
-        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 1.0
-    )
 
 
 def test_record_action_cost_only_records_realized_cost() -> None:
     method = _build()
+    method.configure_practice_accounting(accounting=PracticeAccounting())
     pick = _grounding(method=method, name=PICK_SKILL)
     for _ in range(21):
         method.record_action_cost(ground_skill=pick)
+        assert method.pomdp_state.accumulated_cost == 0.0
+    method.observe_execution_cost(cost=21.0, steps=21, complete=True)
     assert method.pomdp_state.accumulated_cost == 21.0
 
 
 def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
-    method = _build(human_reset_practice_cost=0.00001)
+    method = _build()
     before = method.pomdp_state
     values = method.practice_skill_competences()
     assert values["PickCube (belief mean)"] == pytest.approx(2 / 3, abs=0.03)
@@ -450,33 +442,10 @@ def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
     assert method.pomdp_state.accumulated_cost == 0.0
 
 
-def test_reset_cost_is_charged_at_dispatch_without_another_selection(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    method = _build(human_reset_practice_cost=0.005)
-    method.env.current_state = _SymbolicScenes(method=method, monkeypatch=monkeypatch).scene(
-        atoms=frozenset()
-    )
-    reset_skill = method.human_skills()[0]
-    reset = next(
-        skill
-        for skill in SkillGrounder.applicable_ground_skills(
-            skills=(reset_skill,),
-            objects=method.objects(),
-            true_atoms=SkillGrounder.all_possible_ground_atoms(
-                objects=method.objects(), predicates=method.predicates()
-            ),
-        )
-    )
-    method.record_action_cost(ground_skill=reset)
-    assert method.pomdp_state.accumulated_cost == 0.005
-
-
 def test_completed_human_reset_jointly_updates_performance_and_cost_without_training(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    observed_cost = 0.00001
-    method = _build(human_reset_practice_cost=observed_cost)
+    method = _build()
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     method.env.current_state = scenes.scene(atoms=frozenset())
     reset_skill = method.human_skills()[0]
@@ -500,11 +469,9 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
 
     after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
     assert isinstance(before, BayesianSkillBelief)
-    assert after == before.condition_execution(success=True, observed_cost=observed_cost)
+    # Its cost is the host's to observe (`observe_execution_cost`), not the belief's.
+    assert after == before.condition_outcome(success=True)
     assert mean_competence(belief=after) > mean_competence(belief=before)
-    assert abs(mean_cost(belief=after) - observed_cost) < abs(
-        mean_cost(belief=before) - observed_cost
-    )
     assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 1
 
 
@@ -548,23 +515,20 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief(
     )
 
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-    assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
+    assert automatic_after == automatic_before.condition_outcome(success=True)
     assert method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL] == human_before
     assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 1
     assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 0
 
 
-def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="cost observations must be at most"):
-        _build(human_reset_practice_cost=20.01)
-
-
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
     method = _build(sampler_max_train_iters=2)
+    method.configure_practice_accounting(accounting=PracticeAccounting())
     pick = _grounding(method=method, name=PICK_SKILL)
     toss = _grounding(method=method, name=TOSS_SKILL)
     for success in (True, False):
         method.record_action_cost(ground_skill=pick)
+        method.observe_execution_cost(cost=1.0, steps=1, complete=True)
         method.observe_outcome(ground_skill=pick, success=success)
         method.observe_sampler_outcome(
             skill_name=TOSS_SKILL, param_dim=4, sampler_input=[float(success)], success=success
@@ -590,6 +554,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     assert sampler.score_inputs(sampler_inputs=[[0.0], [1.0]]) == predictions
     assert '"event": "session_start"' in method.decision_log.read_text()
     method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=1.0, steps=1, complete=True)
     method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert method.pomdp_state.accumulated_cost == 1.0
     decision = json.loads(method.decision_log.read_text().splitlines()[-1])
@@ -735,6 +700,7 @@ def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_plan
         goal_pursuit_horizon=100,
         reproduce_predicators_random_when_stranded=True,
     )
+    method.configure_practice_accounting(accounting=PracticeAccounting())
     state = Tossing3DState(
         data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
         abstract_atoms=frozenset(),
@@ -877,7 +843,7 @@ def _last_outcome(*, path: Path) -> tuple[str, str, bool]:
 def test_a_human_reset_whose_promised_effects_hold_is_recorded_as_a_success(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    method = _build(human_reset_practice_cost=5.0)
+    method = _build()
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     method.decision_log = tmp_path / "decisions.jsonl"
     before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
@@ -888,7 +854,7 @@ def test_a_human_reset_whose_promised_effects_hold_is_recorded_as_a_success(
     method.observe_help_granted(state=scenes.scene(atoms=promised))
 
     after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
-    assert after == before.condition_execution(success=True, observed_cost=5.0)
+    assert after == before.condition_outcome(success=True)
     assert mean_competence(belief=after) > mean_competence(belief=before)
     assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SAME_SIDE_SKILL, True)
     # Each destination is its own skill with its own belief: the other one is untouched.
@@ -901,7 +867,7 @@ def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure
 ) -> None:
     """The reset promises PickPlannable; a scene where it is still false afterwards is
     a reset that did not deliver, whatever the human reported."""
-    method = _build(human_reset_practice_cost=5.0)
+    method = _build()
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     method.decision_log = tmp_path / "decisions.jsonl"
     before = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
@@ -911,7 +877,7 @@ def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure
     method.observe_help_granted(state=scenes.scene(atoms=_without_pick_plannable(atoms=promised)))
 
     after = method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL]
-    assert after == before.condition_execution(success=False, observed_cost=5.0)
+    assert after == before.condition_outcome(success=False)
     assert mean_competence(belief=after) < mean_competence(belief=before)
     assert method.pomdp_state.pending_examples.get(RESET_SAME_SIDE_SKILL, 0) == 1
     assert _last_outcome(path=method.decision_log) == ("outcome", RESET_SAME_SIDE_SKILL, False)
@@ -920,7 +886,7 @@ def test_a_human_reset_that_leaves_the_cube_unplannable_is_recorded_as_a_failure
 def test_repeated_undelivered_resets_drive_the_reset_belief_down(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    method = _build(human_reset_practice_cost=5.0)
+    method = _build()
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     trajectory = [mean_competence(belief=method.pomdp_state.skill_beliefs[RESET_SAME_SIDE_SKILL])]
     for _ in range(5):
@@ -955,7 +921,7 @@ def test_the_human_reset_is_an_inferred_skill_like_any_robot_skill() -> None:
 def test_an_undelivered_human_reset_teaches_the_failure_effect_model(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    method = _build(human_reset_practice_cost=5.0)
+    method = _build()
     scenes = _SymbolicScenes(method=method, monkeypatch=monkeypatch)
     promised = scenes.dispatch_human_reset(before_atoms=frozenset())
     delivered = _without_pick_plannable(atoms=promised)

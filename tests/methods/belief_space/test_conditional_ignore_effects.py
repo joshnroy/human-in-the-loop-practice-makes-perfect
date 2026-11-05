@@ -35,7 +35,6 @@ def _ground(*, obj, ignored=_GEOMETRY):
                 )
             }),
             param_dim=0,
-            practice_cost=1.0,
         ),
         objects=(obj,),
     )

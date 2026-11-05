@@ -1,0 +1,10 @@
+{
+  "robot_step": {"value": 1},
+  "human_skills": {
+    "reset_cube_far": {},
+    "reset_cube_and_bin_near": {},
+    "reset_to_sampled_start": {},
+    "reset_cubes": {},
+    "reset_wiper": {}
+  }
+}

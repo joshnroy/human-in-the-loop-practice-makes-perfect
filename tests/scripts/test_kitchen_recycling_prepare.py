@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.cli import Cli
-from hitl_pmp.methods.belief_space.types.skill_belief import COST_MAX
 from scripts.kitchen_recycling import prepare
 from scripts.kitchen_recycling.prepare import ARMS, argv
 
@@ -48,13 +47,11 @@ def test_an_iteration_rows_budget_and_evaluation_workers_parse(*, arm: str) -> N
     assert not getattr(args, "ees_preview_test_goals", False)
 
 
-def test_every_swept_row_prices_its_planner_skills_within_the_pomdp_ceiling(
-    *, tmp_path: Path
-) -> None:
-    """A cost sweep carries each row's reset cost only in its own cost file. The
-    planner's --human-reset-practice-cost stays at its default: the POMDP refuses at
-    construction any skill priced above COST_MAX, which killed kitchen v10's expectimax
-    and Curtis rows at reset costs 100 and 10000."""
+def test_every_swept_row_prices_its_resets_only_in_its_cost_file(*, tmp_path: Path) -> None:
+    """A cost sweep carries each row's reset cost only in its own cost file: no flag
+    prices a reset, so no reset cost can trip the POMDP's particle cost ceiling (the
+    construction assert that killed kitchen v10's expectimax and Curtis rows at reset
+    costs 100 and 10000 is gone with the per-skill price it checked)."""
     out = tmp_path / "launch"
     subprocess.run(
         [
@@ -71,7 +68,7 @@ def test_every_swept_row_prices_its_planner_skills_within_the_pomdp_ceiling(
     for row in manifest["runs"]:
         assert "--human-reset-practice-cost" not in row["argv"]
         args = Cli.parse_args(argv=[*row["argv"], "--output-dir", "unused"])
-        assert args.human_reset_practice_cost == 5.0 <= COST_MAX
+        assert not hasattr(args, "human_reset_practice_cost")
         costs = json.loads(
             (out / "costs" / f"human-reset-cost-{row['human_reset_cost']}.json").read_text()
         )

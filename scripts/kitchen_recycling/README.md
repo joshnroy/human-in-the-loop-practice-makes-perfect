@@ -22,12 +22,10 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   one seed's whole sweep finishes first). Each cost gets its own
   cost file, `costs/human-reset-cost-<C>.json` beside the manifest (the repo's
   `costs.json` with both resets repriced), passed by its deployment path; each row runs
-  in `results/reset-cost-<C>/<arm>/<seed>`. The cost lives only in that file: every row
-  keeps `--human-reset-practice-cost` at its default 5, because the POMDP refuses any
-  skill priced above its cost ceiling (20) and both arms price resets from the cost file,
-  as Tossing3D's own runs do (cost file 500, flag 5). `worker.py` checks each row's cost
-  file against its bound `costs_sha256` and its cost, and the planner flag against that
-  default. EES prices a reset from the cost file from
+  in `results/reset-cost-<C>/<arm>/<seed>`. The cost lives only in that file, the one
+  reset price there is: no skill carries a price of its own. `worker.py` checks each
+  row's cost file against its bound `costs_sha256` and its cost. EES prices a reset
+  from the cost file from
   its first decision; the POMDP arms learn it from charges observed (first-reset forecast
   `skill_cost_prior_steps` x robot price, as in Tossing3D's own cost sweep).
 - `prepare.py --constraint <feature>` adds `#SBATCH --constraint` to both scripts.
@@ -51,8 +49,7 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
 - Robot ticks cost 0.01; each of the two human resets costs 5 with duration 1;
   planner linear objective lambda is 0.0003. `costs.json` prices exactly
   `ResetCubeBinSameSide` and `ResetCubeBinOppositeSide`, the names the kitchen charges
-  Tossing3D's two resets under, and the planner's `--human-reset-practice-cost`
-  defaults to the same 5; `worker.py` checks both. There is no `Recover_*`,
+  Tossing3D's two resets under; `worker.py` checks it. There is no `Recover_*`,
   `RelocateBinNear` or `RestoreBinTarget`, and no bottle/can object identity.
 - **The environment is Tossing3D re-flavoured** (#637): Tossing3D's skills, operators,
   predicates, samplers, bounds and reset costs on the kitchen scene; one belief per

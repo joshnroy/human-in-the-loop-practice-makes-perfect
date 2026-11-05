@@ -1,7 +1,6 @@
 """SweepOffShelf3D's `SkillProvider` and privileged oracle."""
 
 import numpy as np
-from pydantic import Field
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
@@ -19,7 +18,6 @@ ORACLE_SWEEP_PARAMS = (0.005, 0.05)
 
 class SweepOffShelf3DSkillProvider(SkillProvider):
     env: SweepOffShelf3DEnvironment
-    human_reset_practice_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
     # Off only for a baseline without the human: the skills are then absent, not priced.
     offer_human_reset: bool = True
 
@@ -48,14 +46,10 @@ class SweepOffShelf3DSkillProvider(SkillProvider):
         return SweepOffShelf3DActions.encode(ground_skill=ground_skill, params=params)
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        """Both human skills, grounded once each, at the configured cost."""
+        """Both human skills, grounded once each; the costs file prices them by name."""
         if not self.offer_human_reset:
             return ()
-        priced = (
-            skill.model_copy(update={"practice_cost": self.human_reset_practice_cost})
-            for skill in S.human_skills()
-        )
-        cubes, wiper = priced
+        cubes, wiper = S.human_skills()
         return (
             GroundSkill(skill=cubes, objects=(O.robot, O.box, *O.cubes)),
             GroundSkill(skill=wiper, objects=(O.robot, O.wiper)),

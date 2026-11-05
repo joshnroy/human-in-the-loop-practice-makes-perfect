@@ -3,7 +3,7 @@
 from functools import lru_cache
 
 import numpy as np
-from pydantic import Field, model_validator
+from pydantic import model_validator
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
@@ -18,7 +18,6 @@ from .types import PourObjects
 
 class FrozenPourSkillProvider(SkillProvider):
     env: FrozenPourEnvironment
-    human_reset_practice_cost: float = Field(default=1, ge=0, allow_inf_nan=False)
     offer_human_reset: bool = True
     # Sampling includes deliberately failing low/high-flow regions. These do not
     # depend on the task seed or hidden outcomes, and are frozen per experiment.
@@ -128,14 +127,7 @@ class FrozenPourSkillProvider(SkillProvider):
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         if not self.offer_human_reset:
             return None
-        ground = self.ground(name=RESET_NAME)
-        return ground.model_copy(
-            update={
-                "skill": ground.skill.model_copy(
-                    update={"practice_cost": self.human_reset_practice_cost}
-                )
-            }
-        )
+        return self.ground(name=RESET_NAME)
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
         return ground_skill.skill.name

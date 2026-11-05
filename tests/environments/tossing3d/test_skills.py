@@ -56,6 +56,7 @@ from hitl_pmp.environments.tossing3d.toss_direction import (
 )
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import INITIAL_ATOMS, state
 
@@ -402,7 +403,6 @@ def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) 
     """Each dial in bounds, and each one a real draw rather than a constant dressed as
     one -- a sampler that returned a bound's midpoint in some slot would pass a
     containment-only check on every draw."""
-    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 
     rng = np.random.default_rng(0)
     draws = [
@@ -417,7 +417,6 @@ def test_the_three_same_side_toss_dials_are_drawn_independently() -> None:
     """A sampler that wrote one draw into several slots, or derived one from another,
     would pass every single-slot test above while collapsing the space onto a line or a
     plane. Pinned as near-zero rank correlation between all three pairs."""
-    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 
     rng = np.random.default_rng(0)
     draws = np.array([
@@ -438,7 +437,6 @@ def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     graded receiver region clamps to the controller's own 1.25 -- and never
     below it.
     """
-    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
     from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
         WIDE_TOSS_STANDOFF_BOUNDS,
         WideLongRangeTossProposal,
@@ -491,10 +489,6 @@ def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     bin_side = GroundAtom(predicate=BIN_ON_ROBOT_SIDE, objects=(env.bin, env.barrier))
     assert cube_side in toss.expected_add_effects(before_atoms=toss.preconditions | {bin_side})
     assert toss.skill is Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
-
-
-def test_same_side_robot_skills_cost_one() -> None:
-    assert {skill.evaluate_practice_cost() for skill in SameSideSkills.skills()} == {1.0}
 
 
 def test_toss_requires_a_held_cube_and_grounded_bin_without_binding_side() -> None:
@@ -560,7 +554,9 @@ def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
     # pouring enabled, EES may legitimately select either feasible action.
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE, enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
-    method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
+    method = CostFixtures.priced(
+        method=EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
+    )
     same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}
     floor = state(env=env, abstract_atoms=INITIAL_ATOMS, **same_side_pose)
     holding = state(env=env, abstract_atoms=HOLDING_ATOMS, **same_side_pose)

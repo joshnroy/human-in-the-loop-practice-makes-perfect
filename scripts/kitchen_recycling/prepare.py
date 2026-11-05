@@ -222,7 +222,7 @@ def main() -> None:
         help="Sweep the human reset cost: every arm x seed once per cost (rows seed-major, "
         "then cost in this order, then arm), "
         "each row with its own cost file (both resets at that cost, written beside the "
-        "manifest under costs/), --human-reset-practice-cost and output directory.",
+        "manifest under costs/) and output directory.",
     )
     parser.add_argument("--constraint", default=None, help="Slurm --constraint for every job")
     parser.add_argument(

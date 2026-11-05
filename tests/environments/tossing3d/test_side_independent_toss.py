@@ -21,6 +21,7 @@ from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpTaskModel
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import BIN_SIDE, CUBE_SIDE
 
@@ -138,7 +139,7 @@ def test_dp_success_copies_side_without_creating_distinct_toss_targets(*, bin_si
 @pytest.mark.parametrize("bin_side", Tossing3DSides.objects())
 def test_ees_toss_setup_does_not_require_a_bin_relocation(*, bin_side):
     env, provider, toss, before = _scene(bin_side=bin_side, cube_side=Tossing3DSides.robot)
-    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    method = CostFixtures.priced(method=EesMethod(env=env, skill_provider=provider, seed=0))
     assert (
         method.plan_to(init_atoms=before, goal=toss.preconditions, costs={}, practicing=True) == []
     )
@@ -146,7 +147,7 @@ def test_ees_toss_setup_does_not_require_a_bin_relocation(*, bin_side):
 
 def test_toss_evidence_and_exploration_counts_follow_one_identity():
     env, provider, toss, _ = _scene(bin_side=Tossing3DSides.robot, cube_side=Tossing3DSides.robot)
-    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    method = CostFixtures.priced(method=EesMethod(env=env, skill_provider=provider, seed=0))
     for bin_side, success in zip(Tossing3DSides.objects(), [True, False], strict=True):
         _, _, target, before = _scene(bin_side=bin_side, cube_side=Tossing3DSides.robot)
         assert target.preconditions <= before

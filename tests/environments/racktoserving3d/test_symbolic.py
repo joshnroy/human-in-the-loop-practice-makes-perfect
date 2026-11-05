@@ -1,9 +1,6 @@
 """Core Skill groundings and alternate delivery/recovery plans, without physics."""
 
-import math
-
 import pytest
-from pydantic import ValidationError
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import State
@@ -99,15 +96,6 @@ def test_robot_ids_bounds_and_human_separation():
     )
     assert not {skill.name for skill in Skills.human_skills()} & set(SKILL_IDS)
     assert Skills.human_skills(mode="deployment") == ()
-    assert all(
-        skill.practice_cost == 8.0 for skill in Skills.human_skills(human_interruption_cost=8)
-    )
-
-
-@pytest.mark.parametrize("cost", [0.0, -1.0, math.nan, math.inf, -math.inf])
-def test_human_skill_cost_validation(*, cost):
-    with pytest.raises(ValidationError):
-        Skills.human_skills(human_interruption_cost=cost)
 
 
 def test_goal_is_delivery_not_sweep_history():

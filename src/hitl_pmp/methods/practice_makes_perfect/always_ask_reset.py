@@ -20,15 +20,14 @@ a reset at three moments:
    counts toward `repeated_stop`.
 
 The reset is the human *full* reset to a freshly sampled start state
-(`HumanStartResetRequested`), at the domain's existing human-reset price unless
-configured otherwise.
+(`HumanStartResetRequested`), priced by the practice-cost file's
+`reset_to_sampled_start`, or by an explicit price when no costs file is configured.
 """
 
 import logging
 
 from pydantic import BaseModel, Field, PrivateAttr
 
-from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import GroundSkill
 
 logger = logging.getLogger(__name__)
@@ -44,8 +43,8 @@ class AlwaysAskReset(BaseModel):
     dispatches while practising, `take_owed` at the top of every practice step (after the
     previous skill's outcome was observed), and `record_forced` when it asks."""
 
-    # The price used when no practice-cost file prices the reset by name.
-    cost: float = Field(ge=0.0, allow_inf_nan=False)
+    # An explicit price, used only when no practice-cost file prices the reset by name.
+    cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
     _owed: bool = PrivateAttr(default=False)
     _skill_attempts: int = PrivateAttr(default=0)
@@ -53,21 +52,6 @@ class AlwaysAskReset(BaseModel):
     _stranded_run: int = PrivateAttr(default=0)
     _longest_stranded_run: int = PrivateAttr(default=0)
     _events: list[dict[str, object]] = PrivateAttr(default_factory=list)
-
-    @staticmethod
-    def for_provider(
-        *, skill_provider: SkillProvider, cost: float | None = None
-    ) -> "AlwaysAskReset":
-        """Priced at `cost`, or by default at the domain's own human-reset price."""
-        if cost is None:
-            resets = skill_provider.human_cube_bin_reset_skills()
-            if not resets:
-                raise ValueError(
-                    "this domain offers no human reset to take the price from; give the "
-                    "price explicitly"
-                )
-            cost = resets[0].evaluate_practice_cost()
-        return AlwaysAskReset(cost=cost)
 
     @staticmethod
     def triggers(*, ground_skill: GroundSkill) -> bool:

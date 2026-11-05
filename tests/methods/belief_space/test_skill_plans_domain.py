@@ -32,7 +32,6 @@ def _grounds():
                 add_effects=frozenset(),
                 delete_effects=frozenset(),
                 param_dim=3,
-                practice_cost=1,
             ),
             objects=(),
         )

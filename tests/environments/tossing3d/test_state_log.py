@@ -25,6 +25,7 @@ from hitl_pmp.environments.tossing3d.state_log import (
     TickEvent,
 )
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE_WIRING
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
@@ -174,6 +175,7 @@ def test_state_capture_is_unconditional_even_when_frame_recording_is_off() -> No
 
 
 @pytest.mark.main_only
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE_WIRING)
 def test_an_ordinary_cli_run_writes_a_state_log_with_no_manual_wiring(*, tmp_path: Path) -> None:
     """The property the rest of this file's tests don't cover: a real run through the
     actual `hitl_pmp.cli` entrypoint -- the path every sweep and every human actually

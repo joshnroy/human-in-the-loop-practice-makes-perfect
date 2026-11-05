@@ -67,7 +67,10 @@ def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -
     belief = state.skill_beliefs.get(action.skill.name)
     if isinstance(belief, (ParticleFilterBelief, BayesianSkillBelief)):
         return belief.mean_cost()
-    return action.evaluate_practice_cost()
+    raise ValueError(
+        f"no cost forecast for {action.skill.name}: the practice-cost file prices every "
+        "skill, so configure practice accounting before planning"
+    )
 
 
 class GroundSkillText:

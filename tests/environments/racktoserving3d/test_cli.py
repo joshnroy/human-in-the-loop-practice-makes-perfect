@@ -16,6 +16,7 @@ from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects a
 from hitl_pmp.environments.racktoserving3d.problem import EPISODE_HORIZON
 from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
 from hitl_pmp.method_runner import MethodRunner
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _parse(*, argv=()):
@@ -69,6 +70,7 @@ def test_global_cli_accepts_variant_and_physical_options():
             "0.005",
             "0.0001",
             "--no-human-reset",
+            *CostFixtures.step_argv(env="racktoserving3d"),
         ]
     )
     problem = RackServingCli.build_problem(args=args, mode="training")

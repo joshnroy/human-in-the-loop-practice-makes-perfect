@@ -47,7 +47,7 @@ log = Path(sys.argv[1])
 env = Tossing3DEnvironment(scene_bg=False)
 method = Tossing3DPomdpMethod(
     env=env,
-    skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=5.0),
+    skill_provider=Tossing3DSkillProvider(env=env),
     seed=0,
     pomdp_search_depth=2,
     pomdp_solver=sys.argv[2],
@@ -102,7 +102,7 @@ def _ground_skills() -> list[GroundSkill]:
     env = Tossing3DEnvironment(scene_bg=False)
     method = Tossing3DPomdpMethod(
         env=env,
-        skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=5.0),
+        skill_provider=Tossing3DSkillProvider(env=env),
         seed=0,
     )
     universe = SkillGrounder.all_possible_ground_atoms(

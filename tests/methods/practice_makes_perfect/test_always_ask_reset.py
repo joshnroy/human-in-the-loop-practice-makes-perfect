@@ -51,6 +51,7 @@ from hitl_pmp.methods.practice_makes_perfect.always_ask_reset import (
 )
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
 from hitl_pmp.planning.fast_downward import PlanningFailure
+from tests.practice_cost_fixtures import CostFixtures
 
 PRICE = 3.0
 
@@ -73,11 +74,30 @@ def _rule_or_none(*, wrapped: bool) -> AlwaysAskReset | None:
     return AlwaysAskReset(cost=PRICE) if wrapped else None
 
 
+def _priced(*, method: EesMethod) -> EesMethod:
+    """Every human skill is priced by the run's costs file: the partial resets at one,
+    the forced full reset at PRICE, as the wrapper's own price would have it."""
+    method.configure_practice_accounting(
+        accounting=CostFixtures.accounting(
+            human={
+                "reset_cube_far": 1.0,
+                "reset_cube_and_bin_near": 1.0,
+                "reset_cubes": 1.0,
+                "reset_wiper": 1.0,
+                "reset_to_sampled_start": PRICE,
+            }
+        )
+    )
+    return method
+
+
 def _shelf(*, wrapped: bool = True) -> _Domain:
     env = SweepOffShelf3DEnvironment()
     provider = SweepOffShelf3DSkillProvider(env=env)
-    method = EesMethod(
-        env=env, skill_provider=provider, always_ask_reset=_rule_or_none(wrapped=wrapped)
+    method = _priced(
+        method=EesMethod(
+            env=env, skill_provider=provider, always_ask_reset=_rule_or_none(wrapped=wrapped)
+        )
     )
     return _Domain(
         method=method,
@@ -123,8 +143,10 @@ def _tossing_domain(*, method: EesMethod, env: Tossing3DEnvironment) -> _Domain:
 
 def _tossing(*, wrapped: bool = True) -> _Domain:
     env, provider = _tossing_env_and_provider()
-    method = EesMethod(
-        env=env, skill_provider=provider, always_ask_reset=_rule_or_none(wrapped=wrapped)
+    method = _priced(
+        method=EesMethod(
+            env=env, skill_provider=provider, always_ask_reset=_rule_or_none(wrapped=wrapped)
+        )
     )
     return _tossing_domain(method=method, env=env)
 
@@ -368,8 +390,8 @@ def test_the_stranded_check_offers_no_reset_either_way(
 def test_the_pomdp_planner_records_a_forced_reset_and_its_completion(
     *, world: _World, tmp_path
 ) -> None:
-    """Charged to the session and logged apart from the planner's own decisions; its
-    completion is consumed without a belief update."""
+    """Logged apart from the planner's own decisions and charged by the host, not at
+    dispatch; its completion is consumed without a belief update."""
     env, provider = _tossing_env_and_provider()
     method = Tossing3DPomdpMethod(
         env=env,
@@ -384,7 +406,7 @@ def test_the_pomdp_planner_records_a_forced_reset_and_its_completion(
     world.atoms = domain.plain.preconditions
     with pytest.raises(HumanStartResetRequested):
         _episode(domain=domain).step(state=domain.state)
-    assert method.pomdp_state.accumulated_cost == PRICE
+    assert method.pomdp_state.accumulated_cost == 0.0
     method.observe_help_granted(state=domain.state)
     events = (tmp_path / "decisions.jsonl").read_text()
     assert '"forced_reset"' in events
@@ -512,22 +534,24 @@ def test_the_trigger_follows_the_definition_not_the_name() -> None:
     assert not AlwaysAskReset.triggers(ground_skill=_any_grounding(skill=toss))
 
 
-def test_the_price_defaults_to_the_domains_human_reset_price() -> None:
-    _, provider = _tossing_env_and_provider()
-    assert AlwaysAskReset.for_provider(skill_provider=provider).cost == (
-        provider.human_reset_practice_cost
+def test_without_a_costs_file_the_price_is_the_explicit_one() -> None:
+    """No skill carries a price: without a costs file the wrapper's explicit price is
+    the only one, and a run with neither is refused."""
+    assert _shelf(wrapped=True).method.start_reset_cost() == PRICE
+    env = SweepOffShelf3DEnvironment()
+    unpriced = EesMethod(
+        env=env,
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
+        always_ask_reset=AlwaysAskReset(),
     )
-    shelf = SweepOffShelf3DSkillProvider(
-        env=SweepOffShelf3DEnvironment(), human_reset_practice_cost=2.0
+    with pytest.raises(ValueError, match="needs a price"):
+        unpriced.start_reset_cost()
+    explicit = EesMethod(
+        env=env,
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
+        always_ask_reset=AlwaysAskReset(cost=0.5),
     )
-    assert AlwaysAskReset.for_provider(skill_provider=shelf).cost == 2.0
-    assert AlwaysAskReset.for_provider(skill_provider=shelf, cost=0.5).cost == 0.5
-
-
-def test_without_a_domain_human_reset_the_price_must_be_given() -> None:
-    shelf = SweepOffShelf3DSkillProvider(env=SweepOffShelf3DEnvironment(), offer_human_reset=False)
-    with pytest.raises(ValueError, match="price"):
-        AlwaysAskReset.for_provider(skill_provider=shelf)
+    assert explicit.start_reset_cost() == 0.5
 
 
 # --- the planner's own choices are unchanged ------------------------------------------

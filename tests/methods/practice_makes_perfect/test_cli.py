@@ -13,6 +13,7 @@ from hitl_pmp.methods.practice_makes_perfect.cli import (
     RandomSkillsCli,
     Tossing3DPomdpCli,
 )
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _weight(*, method: str) -> list[str]:
@@ -374,7 +375,6 @@ def test_ees_on_tossing3d_honours_the_defer_rendering_flag(
     """EES renders in-run by default, as it always has; --defer-rendering reaches
     Tossing3DCli.run_method, which then builds no renderer. POMDP forces it on
     regardless, and is not this flag's business."""
-    from hitl_pmp.cli import Cli
     from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 
     seen: list[bool] = []
@@ -383,7 +383,7 @@ def test_ees_on_tossing3d_honours_the_defer_rendering_flag(
         seen.append(args.defer_rendering)
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", "tossing3d", "--method", "ees", *argv])
+    CostFixtures.dispatch(argv=["--env", "tossing3d", "--method", "ees", *argv])
     assert seen == [expected]
 
 
@@ -402,7 +402,6 @@ def test_the_goal_pursuit_schedule_flags_reach_both_methods(
     expected: tuple[int, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from hitl_pmp.cli import Cli
     from hitl_pmp.core.method.skill_provider import DomainContext
     from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
@@ -426,7 +425,7 @@ def test_the_goal_pursuit_schedule_flags_reach_both_methods(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=["--env", "tossing3d", "--method", method_name, *_weight(method=method_name), *argv]
     )
     (method,) = built
@@ -455,7 +454,9 @@ def test_the_pomdp_search_depth_defaults_to_the_domains(
 
     env_cli = {"tossing3d": Tossing3DCli, "sweepoffshelf3d": SweepOffShelf3DCli}[env_name]
     monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", env_name, "--method", "pomdp", *_weight(method="pomdp"), *argv])
+    CostFixtures.dispatch(
+        argv=["--env", env_name, "--method", "pomdp", *_weight(method="pomdp"), *argv]
+    )
     assert seen == [expected]
 
 
@@ -475,7 +476,7 @@ def test_determinized_astar_resolves_no_search_depth(
 
     env_cli = {"tossing3d": Tossing3DCli, "sweepoffshelf3d": SweepOffShelf3DCli}[env_name]
     monkeypatch.setattr(env_cli, "run_method", staticmethod(_run_method))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=[
             "--env",
             env_name,
@@ -530,7 +531,7 @@ def test_the_always_ask_reset_flag_wraps_every_planner(
         Tossing3DCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
     )
     flag = ["--always-ask-reset"] if wrapped else []
-    Cli.main(
+    CostFixtures.dispatch(
         argv=["--env", "tossing3d", "--method", method, *_weight(method=method), *extra, *flag]
     )
     env = Tossing3DEnvironment(scene_bg=False)
@@ -575,7 +576,7 @@ def test_the_pomdp_decision_log_is_compressed_by_default(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=[
             *("--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp")),
             *("--output-dir", str(tmp_path), *argv),
@@ -620,7 +621,7 @@ def test_the_draw_scope_flag_reaches_the_determinized_planner(
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(
+    CostFixtures.dispatch(
         argv=[
             *("--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp")),
             *argv,
@@ -672,7 +673,9 @@ def _tossing3d_pomdp(*, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> obj
         )
 
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
-    Cli.main(argv=["--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp"), *argv])
+    CostFixtures.dispatch(
+        argv=["--env", "tossing3d", "--method", "pomdp", *_weight(method="pomdp"), *argv]
+    )
     (method,) = built
     return method
 

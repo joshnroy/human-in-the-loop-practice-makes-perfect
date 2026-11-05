@@ -8,6 +8,7 @@ from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvir
 from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
 from hitl_pmp.environments.pouring3d.practice.tasks import FrozenPourTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from tests.practice_cost_fixtures import CostFixtures
 
 pytestmark = pytest.mark.xdist_group("ees_preview_test_goals")
 
@@ -119,6 +120,7 @@ def _kitchen_args(*, extra):
             "3",
             "--practice-step-budget",
             "100",
+            *CostFixtures.argv(env="pouring3d_kitchen"),
             *extra,
         ]  # fmt: skip
     )

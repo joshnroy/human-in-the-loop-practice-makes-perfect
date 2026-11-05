@@ -268,8 +268,6 @@ class FullAgenticRunner:
 
     @staticmethod
     def costs(*, args: argparse.Namespace, domain: type[FullAgenticDomain]) -> PracticeCosts:
-        if args.practice_cost_config is None:
-            return domain.default_costs()
         costs = PracticeCosts.load(path=args.practice_cost_config)
         if set(costs.human_skills) != set(domain.human_interventions):
             raise ValueError(
@@ -335,7 +333,7 @@ class FullAgenticRunner:
         parser.add_argument("--measurement-interval-steps", type=int, default=1700)
         parser.add_argument("--human-skill-steps", type=int, default=1)
         parser.add_argument("--stop-after-perfect-evaluations", type=int, default=0)
-        parser.add_argument("--practice-cost-config", type=Path, default=None)
+        parser.add_argument("--practice-cost-config", type=Path, required=True)
         parser.add_argument("--evaluation-control-steps", type=int, default=500)
         parser.add_argument("--num-test-tasks", type=int, default=10)
         parser.add_argument("--seed", type=int, default=0)
