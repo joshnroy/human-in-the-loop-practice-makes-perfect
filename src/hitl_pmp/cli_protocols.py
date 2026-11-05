@@ -196,6 +196,12 @@ class StepProtocolEnvironment(Protocol):
         to `skill_timing.jsonl` beside its event; None for a domain that times none."""
         ...
 
+    @staticmethod
+    def drain_measured_seconds(*, problem: Problem) -> float | None:
+        """The wall-clock seconds of the last robot skill or human reset, once, for
+        `--wall-clock-cost-per-second`; None for a domain that measures none."""
+        ...
+
 
 class SimulatedStepProtocolHooks:
     """`StepProtocolEnvironment`'s real-robot hooks, for a simulated domain: nobody
@@ -236,6 +242,11 @@ class SimulatedStepProtocolHooks:
 
     @staticmethod
     def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
+        del problem
+        return None
+
+    @staticmethod
+    def drain_measured_seconds(*, problem: Problem) -> float | None:
         del problem
         return None
 

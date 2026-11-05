@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from hitl_pmp.cli import ENVIRONMENTS, STEP_PROTOCOL_ENVIRONMENTS, Cli
+from hitl_pmp.environments.tossing3d.real.backend import WallClock
 from hitl_pmp.environments.tossing3d.real.cli import Tossing3DRealCli
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.step_protocol import (
@@ -233,3 +234,31 @@ def test_the_real_robot_asks_before_driving_home_unless_told_not_to(
         env = build(args=args).env
         assert isinstance(env, RealTossing3DEnvironment)
         assert env.confirm_start is confirms
+
+
+def test_wall_clock_costs_are_what_the_planner_observes(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--wall-clock-cost-per-second r`: each robot skill's observed cost is r times its
+    measured seconds (the camera look after it excluded), and a human reset's is r times
+    the person's timed seconds, weighted by the costs file's `human_weight`. The step
+    budget still counts the sim's ticks."""
+    seconds = iter(float(n) for n in range(1, 10_000))
+    monkeypatch.setattr(WallClock, "now", staticmethod(lambda: next(seconds)))
+    output = tmp_path / "run"
+    Cli.main(
+        argv=[
+            *FAKE_RUN,
+            *("--practice-step-budget", "1500", "--output-dir", str(output)),
+            *("--wall-clock-cost-per-second", "0.1", "--no-initial-measurement"),
+        ]
+    )
+    events = [json.loads(line) for line in (output / "step_events.jsonl").read_text().splitlines()]
+    assert not any(e["event"] == "measurement" and e["practice_steps"] == 0 for e in events)
+    robot = [e for e in events if e["event"] == "robot" and e["end_step"] > e["start_step"]]
+    assert robot and all(e["seconds"] > 0 for e in robot)
+    assert all(e["observed_cost"] == pytest.approx(0.1 * e["seconds"]) for e in robot)
+    assert all(e["end_step"] - e["start_step"] in (1, 90, 119, 680) for e in robot)
+    humans = [e for e in events if e["event"] == "human"]
+    weight = json.loads((output / "practice_costs.json").read_text())["human_weight"]
+    assert all(e["cost"] == pytest.approx(weight * 0.1 * e["seconds"]) for e in humans)

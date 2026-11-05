@@ -224,13 +224,33 @@ class TerminalPerson(BaseModel):
 
     write: Callable[[str], None] = RealSessionLog.say
     read: Callable[[str], str] = RealSessionLog.ask
+    # A human reset (the planner's request, the one charged) asks for a y as the person
+    # starts and a y when done; the seconds between are its measured time. A scene or a
+    # restore is the experiment's own setup: one y, never timed.
+    time_human_resets: bool = False
+    clock: Callable[[], float] = time.monotonic
+
+    _seconds: float | None = PrivateAttr(default=None)
 
     def place(self, *, request: PlacementRequest) -> None:
         RealSessionLog.detail(line=request.details())
         self.write(request.instructions())
+        timed = self.time_human_resets and request.kind == "human reset"
+        started = 0.0
+        if timed:
+            self._yes(question="Starting it now? (y as you start)", declined=request.kind)
+            started = self.clock()
         self._yes(question="Are the cube and the bin in place?", declined=request.kind)
+        if timed:
+            self._seconds = self.clock() - started
+            self.write(f"human reset: {self._seconds:.0f} s")
         self.write("observing the scene (the cameras take up to ~30 s) ...")
         self.placed(request=request)
+
+    def drain_seconds(self) -> float | None:
+        """The last timed human reset's seconds, once."""
+        seconds, self._seconds = self._seconds, None
+        return seconds
 
     def placed(self, *, request: PlacementRequest) -> None:
         """After y. A real person has already done it; a fake one does it here."""
@@ -267,6 +287,15 @@ class RealSceneSnapshot(FixedTossDirection):
         return self.frame.yaw_to_domain(yaw=self.reply.toss_direction)
 
 
+class WallClock:
+    """A static-method container, never instantiated: the seconds a robot skill's
+    measured time is read from (`RealTossingBackend.drain_measured_seconds`)."""
+
+    @staticmethod
+    def now() -> float:
+        return time.monotonic()
+
+
 class RealTossingBackend(BaseModel):
     """`Tossing3DBackend` over a `TossingRobot`. See the module docstring."""
 
@@ -288,6 +317,7 @@ class RealTossingBackend(BaseModel):
     _seen: Tossing3DObservation | None = PrivateAttr(default=None)
     _ticks: list[RealSceneSnapshot] = PrivateAttr(default_factory=list)
     _before: Callable[[], None] | None = PrivateAttr(default=None)
+    _skill_seconds: float | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
     _progress: PracticeProgress | EvaluationProgress | None = PrivateAttr(default=None)
 
@@ -389,6 +419,13 @@ class RealTossingBackend(BaseModel):
         observation = self.observe()
         self._say(line="planning the next skill ...")
         return observation
+
+    def drain_measured_seconds(self) -> float | None:
+        """The wall-clock seconds of the last robot skill or timed human reset, once
+        (the camera look after either excluded); None when neither was measured."""
+        human = self.person.drain_seconds() if hasattr(self.person, "drain_seconds") else None
+        skill, self._skill_seconds = self._skill_seconds, None
+        return human if human is not None else skill
 
     # --- observation and abstraction ----------------------------------------------------
 
@@ -584,7 +621,7 @@ class RealTossingBackend(BaseModel):
         if self.confirm_each_skill:
             self.person.confirm(action=action)
         self._say(line=f"running {action} ...")
-        started = time.monotonic()
+        started = WallClock.now()
         if self._before is not None:
             self._before()
         try:
@@ -598,7 +635,9 @@ class RealTossingBackend(BaseModel):
         # Observed before the steps are charged, so a goal check made at each charged
         # step (evaluation's) sees the scene the skill left, as a sim tick would.
         outcome = "ok" if run.error is None else run.error
-        self._say(line=f"{action}: {outcome} ({time.monotonic() - started:.0f} s); observing ...")
+        # The skill's own time: the look that follows is not part of it.
+        self._skill_seconds = WallClock.now() - started
+        self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
         self._seen = None
         self.observe()
         self._say(line="planning the next skill ...")
