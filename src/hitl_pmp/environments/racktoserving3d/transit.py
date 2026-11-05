@@ -72,6 +72,12 @@ def segment_samples(*, start: np.ndarray, target: np.ndarray) -> list[np.ndarray
     return [*straight, *clipped, target.copy()]
 
 
+# A start at most this far past a joint stop is driven back inside it before routing,
+# to this far inside.
+LIMIT_RECOVERY_RAD = 0.1
+LIMIT_RECOVERY_MARGIN = 0.01
+
+
 class ArmTransit:
     """Bounded bidirectional joint routing using the tool's complete collision guard.
 
@@ -120,6 +126,18 @@ class ArmTransit:
             and np.all(arm[self.limited] >= self.ranges[self.limited, 0])
             and np.all(arm[self.limited] <= self.ranges[self.limited, 1])
         )
+
+    def back_inside(self, *, arm: np.ndarray) -> np.ndarray | None:
+        """`arm` with each limited joint just past its stop moved `LIMIT_RECOVERY_MARGIN`
+        inside it; None if `arm` is within its limits or too far past to recover."""
+        if not np.isfinite(arm).all() or self.in_limits(arm=arm):
+            return None
+        low = self.ranges[:, 0] + LIMIT_RECOVERY_MARGIN
+        high = self.ranges[:, 1] - LIMIT_RECOVERY_MARGIN
+        inside = np.where(self.limited, np.clip(arm, low, high), arm)
+        if np.max(np.abs(inside - arm)) > LIMIT_RECOVERY_RAD:
+            return None
+        return inside
 
     def edge_clear(self, *, start: np.ndarray, target: np.ndarray) -> bool:
         if self.exhausted():
@@ -190,6 +208,18 @@ class ArmTransit:
         self.edge_checks = 0
         self.last_failure = ""
         self.deadline = monotonic() + self.time_limit_s
+        inside = self.back_inside(arm=start)
+        if inside is not None:
+            # Contact can push a joint a little past its stop; the controller then holds
+            # it there. Drive it back inside first, along a checked edge, then plan.
+            try:
+                self.tool.check_arm_segment(
+                    start=start, target=inside, base=self.base, holding=self.holding
+                )
+            except SkillFailed as exc:
+                raise SkillFailed(f"Arm transit start past a joint stop is blocked: {exc}") from exc
+            rest = self.plan(start=inside, target=target)
+            return None if rest is None else [inside, *rest]
         for name, arm in (("start", start), ("goal", target)):
             if not self.in_limits(arm=arm):
                 raise SkillFailed(f"Arm transit {name} violates joint limits")

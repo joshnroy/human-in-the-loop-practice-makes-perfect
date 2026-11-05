@@ -1,0 +1,239 @@
+{
+ "source": "/scratch/gpfs/TSILVER/jr2860/results/rack-full-12db26a-ees-20261104/ees/ees/0 tick 12261: start of failure 23 of 24 consecutive failed ReturnScraper",
+ "label": "ReturnScraper(robot, wiper_0)",
+ "outcomes": [
+  "return_clear_rack: hand tracking error 5.5 mm / 0.5 deg",
+  "return_clear_rack: Cartesian fraction 0.500: IK failed at [1.522 0.003 1.19 ]: residual 0.011",
+  "return_clear_rack: Cartesian fraction 0.417: IK failed at [1.55  0.003 1.2  ]: residual 0.011"
+ ],
+ "steps": [
+  76,
+  15,
+  12,
+  12,
+  9,
+  6,
+  6,
+  6,
+  6,
+  6,
+  6,
+  6,
+  6,
+  6,
+  6,
+  3,
+  3,
+  3,
+  3,
+  3,
+  3,
+  3,
+  3,
+  3
+ ],
+ "config": {
+  "surface_kind": "wire",
+  "mode": "training",
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "robot_joints": {
+  "robot_joint_x": 2.050000123336503,
+  "robot_joint_y": -0.14421149644316342,
+  "robot_joint_th": 2.841592271760403,
+  "robot_joint_1": 1.1193037080404682,
+  "robot_joint_2": 0.12016944921581683,
+  "robot_joint_3": 6.217384981185936,
+  "robot_joint_4": -0.0007911803922294912,
+  "robot_joint_5": -1.1663093962588544,
+  "robot_joint_6": 2.089999999621598,
+  "robot_joint_7": 3.3310769726832596,
+  "robot_right_driver_joint": 0.6465756026273759,
+  "robot_right_coupler_joint": 0.0005794999263717145,
+  "robot_right_spring_link_joint": 0.6412268835076111,
+  "robot_right_follower_joint": -0.6398093063365358,
+  "robot_left_driver_joint": 0.6466219297531772,
+  "robot_left_coupler_joint": 0.0005234669374685699,
+  "robot_left_spring_link_joint": 0.6413958676590278,
+  "robot_left_follower_joint": -0.6383234993972906
+ },
+ "grip": 1.0,
+ "free_bodies": {
+  "cube_0": [
+   1.3608555756859622,
+   0.009376787759503567,
+   0.9126347521383597,
+   0.9204582135452043,
+   -0.000624140817195017,
+   0.3907984800769039,
+   -0.005730229924941374
+  ],
+  "cube_1": [
+   1.3196315125206914,
+   -0.0733350712080704,
+   0.9100476309969429,
+   0.4007353374317314,
+   0.6019495432797067,
+   -0.5322868987307958,
+   0.4401574651398968
+  ],
+  "cube_2": [
+   1.2305497646686832,
+   0.03389007885832779,
+   0.9194040211570799,
+   0.8046604072475362,
+   0.0490321395968903,
+   -0.5874329010614386,
+   0.0709934155067991
+  ],
+  "cube_3": [
+   1.225209084067985,
+   -0.0656339974755685,
+   0.9173743221367751,
+   0.05508918726196115,
+   0.757410253431364,
+   -0.0743939449424104,
+   0.6463438948421807
+  ],
+  "cube_4": [
+   1.308809400164541,
+   0.1141694064183125,
+   0.9106880744815514,
+   0.4088554644659128,
+   0.588427618457462,
+   0.4707986623907332,
+   -0.5147220283841933
+  ],
+  "wiper_0": [
+   1.5675383696205027,
+   0.025293933455977163,
+   1.1724723030496964,
+   -0.6333842745752464,
+   -0.36509193888455094,
+   -0.31933869776995294,
+   -0.6029552495740452
+  ],
+  "rack_0": [
+   1.4999986496704407,
+   -5.236325485575426e-06,
+   0.8999453983886686,
+   0.9999999995450003,
+   1.0293502471234729e-16,
+   5.493665476725253e-20,
+   3.0166180347516264e-05
+  ],
+  "box_0": [
+   1.181533397199201,
+   0.005788536569442504,
+   0.8999999633730084,
+   0.9991249349490218,
+   1.0732839244174233e-08,
+   2.596575826320539e-08,
+   -0.041825403322750726
+  ]
+ },
+ "previous": [
+  {
+   "skill": "ReturnScraper",
+   "label": "ReturnScraper(robot, wiper_0)",
+   "steps": 3,
+   "outcome": "return_clear_rack: Cartesian fraction 0.167: IK failed at [1.713 0.012 1.265]: residual 0.023"
+  },
+  {
+   "skill": "ReturnScraper",
+   "label": "ReturnScraper(robot, wiper_0)",
+   "steps": 3,
+   "outcome": "return_clear_rack: Cartesian fraction 0.167: IK failed at [1.717 0.012 1.266]: residual 0.023"
+  },
+  {
+   "skill": "ReturnScraper",
+   "label": "ReturnScraper(robot, wiper_0)",
+   "steps": 3,
+   "outcome": "return_clear_rack: Cartesian fraction 0.167: IK failed at [1.72  0.012 1.268]: residual 0.022"
+  }
+ ]
+}

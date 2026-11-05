@@ -57,6 +57,25 @@ def test_transit_rejects_invalid_joint_goal():
         planner.plan(start=np.zeros(2), target=np.array([4.0, 0]))
 
 
+def test_a_start_pushed_just_past_a_stop_is_routed_back_inside_first():
+    """Curtis seed 2 (12db26a): contact had pushed the arm a little past a joint stop, so
+    every GatherAndSweep failed 4 steps in with "Arm transit start violates joint
+    limits", 17 times. The route now begins by driving that joint back inside."""
+    planner = ArmTransit(tool=make_tool(), base=np.zeros(3), holding=True)
+    start = np.array([np.pi + 0.02, 0.0])
+    route = planner.plan(start=start, target=np.array([1.0, 0.0]))
+    assert route is not None
+    assert planner.in_limits(arm=route[0])
+    assert np.max(np.abs(route[0] - start)) < 0.1
+    np.testing.assert_allclose(route[-1], [1.0, 0.0])
+
+
+def test_a_start_far_past_a_stop_is_still_refused():
+    planner = ArmTransit(tool=make_tool(), base=np.zeros(3), holding=False)
+    with pytest.raises(SkillFailed, match="start violates joint limits"):
+        planner.plan(start=np.array([np.pi + 0.5, 0.0]), target=np.zeros(2))
+
+
 def test_wrapped_shortcut_cannot_cross_joint_stop():
     tool = make_tool()
     planner = ArmTransit(tool=tool, base=np.zeros(3), holding=False)
