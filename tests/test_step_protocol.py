@@ -1754,3 +1754,73 @@ def test_a_run_recorded_before_the_repeated_stop_limit_existed_still_resumes():
     assert StepProtocolResume.comparable(arguments=before) != StepProtocolResume.comparable(
         arguments={**before, "repeated_stop_limit": "100"}
     )
+
+
+def test_extra_measurement_steps_measure_early_beside_the_interval(*, tmp_path):
+    """`--extra-measurement-steps`: each listed practice step is measured as well as every
+    interval multiple, so a long run shows learning before its first interval checkpoint.
+    Duplicates, and a step that is already an interval multiple, are measured once."""
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=30_000,
+            interval=25_000,
+            extra_measurement_steps=[10_000, 5_000, 25_000, 10_000],
+        ),
+        method=_scripted_method(script=[30_000]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert not (output / "failure.txt").exists()
+    assert _measured(output=output) == [0, 5_000, 10_000, 25_000, 30_000]
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert protocol["extra_measurement_steps"] == [5_000, 10_000, 25_000]
+
+
+def test_without_extra_measurement_steps_the_schedule_and_record_are_unchanged(*, tmp_path):
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=30_000, interval=25_000),
+        method=_scripted_method(script=[30_000]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _measured(output=output) == [0, 25_000, 30_000]
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert "extra_measurement_steps" not in protocol
+
+
+def test_an_extra_threshold_inside_a_jump_is_measured_once_in_order():
+    measured = []
+    clock = PracticeClock(
+        budget=1000,
+        interval=10,
+        extra_thresholds=frozenset({3, 10, 15}),
+        human_steps=20,
+        on_measure=lambda: measured.append(clock.measurement_steps),
+    )
+    clock.before_human()
+    clock.human_invoked()
+    assert measured == [3, 10, 15, 20]
+
+
+def test_extra_measurement_steps_parse_and_default_empty():
+    from hitl_pmp.cli import Cli
+
+    base = ["--env", "lightswitch", "--method", "ees"]
+    assert Cli.parse_args(argv=base).extra_measurement_steps == []
+    parsed = Cli.parse_args(argv=[*base, "--extra-measurement-steps", "5000", "10000"])
+    assert parsed.extra_measurement_steps == [5000, 10000]
+    with pytest.raises(SystemExit):
+        Cli.parse_args(argv=[*base, "--extra-measurement-steps", "0"])
+
+
+def test_a_run_recorded_before_extra_measurement_steps_still_resumes():
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    assert StepProtocolResume.comparable(arguments={}) == StepProtocolResume.comparable(
+        arguments={"extra_measurement_steps": str([])}
+    )
