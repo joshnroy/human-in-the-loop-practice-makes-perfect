@@ -52,8 +52,8 @@ SKILL_IDS = {
 # 2026-11-03 calibration's stops (then 0.045 m minus delta, delta in [-0.03, 0.04]),
 # made absolute (Josh, 2026-11-04) so a food's size no longer moves them.
 GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
-# Sweep(d): GatherAndSweep's final stroke alone, over the same d bounds. Opt-in
-# (`RackServingConfig.sweep_skill`), for the Sweep vs GatherAndSweep tradeoff probe.
+# Sweep(d): GatherAndSweep's final stroke alone, over the same d bounds; offered unless
+# `RackServingConfig.sweep_skill` is False.
 SWEEP_BOUNDS = (GATHER_AND_SWEEP_BOUNDS[2],)
 SWEEP_SPEED_M_S = 0.06
 _ROBOT = Variable(name="robot", type=Objects.robot_type)
@@ -218,7 +218,7 @@ class RackServing3DSkills:
     )
 
     @staticmethod
-    def robot_skills(*, include_sweep: bool = False) -> tuple[Skill, ...]:
+    def robot_skills(*, include_sweep: bool = True) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
         return (
             skills.PICK_SCRAPER,

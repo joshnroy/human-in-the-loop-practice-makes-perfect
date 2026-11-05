@@ -114,10 +114,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
         core.cube_in_box = lambda name: self.settled_on_tray(name=name)
         self._tool_home = None
         # Every episode starts from its own seed's draw of the shared rack layout,
-        # unless an opt-in lined-up start is configured.
+        # unless an opt-in fixed layout is configured.
+        self._place_all_food()
+
+    def _place_all_food(self) -> None:
+        """All five on the rack: the configured layout, or the start mixture (the
+        "stack" pile with probability `gathered_fraction`, else scattered)."""
         names = list(self.cube_names)
         kind = self.config.start_layout
-        # Drawn only when opted in, so the default's layout draws are unchanged.
+        # No coin at fraction 0, so a scattered-only config draws exactly as before.
         if (
             kind == "scattered"
             and self.config.gathered_fraction > 0
@@ -470,7 +475,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def batch_return(self) -> None:
         self.sync_clock()
         self.ledger = self.ledger.charge_human(intervention="human_batch_return")
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        # The person returns food from the same start mixture an episode starts from.
+        self._place_all_food()
 
     def food_placements(
         self, *, names: list[str], start_layout: str = "scattered"

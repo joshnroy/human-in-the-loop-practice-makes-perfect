@@ -98,7 +98,7 @@ def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
         assert RACK_SERVING_DOMAIN.belief_name(skill_name=name) == name
         assert source == (
             PracticeExampleSource.SAMPLER
-            if name == "GatherAndSweep"
+            if name in {"GatherAndSweep", "Sweep"}
             else PracticeExampleSource.OUTCOME
         )
 
@@ -229,7 +229,7 @@ def test_real_method_builds_from_rack_skills_and_filters_humans(*, solver, mode,
     )
     humans = set(RACK_HUMAN_SKILLS) if mode == "training" and offer_human else set()
     assert set(method.pomdp_state.skill_beliefs) == set(RACK_ROBOT_SKILLS) | humans
-    assert set(method.pomdp_state.sampler_training) == {"GatherAndSweep"}
+    assert set(method.pomdp_state.sampler_training) == {"GatherAndSweep", "Sweep"}
     actions = method._pomdp_model.ground_skills
     assert {action.skill.name for action in actions} == set(RACK_ROBOT_SKILLS) | humans
     assert RACK_SERVING_DOMAIN.human_skill_names == frozenset(RACK_HUMAN_SKILLS)
@@ -293,3 +293,47 @@ def test_no_wait_in_the_planner_domain_and_a_fresh_episode_can_sweep_at_once():
     assert all(skill != "Wait" for options in moves.values() for skill, _ in options)
     holding = dict(moves[(RACK_NUM_FOOD, "scraper", False)])
     assert holding["GatherAndSweep"] == (0, "scraper", False)
+
+
+def test_sweep_is_a_second_sampler_route_from_the_rack_with_the_scraper_held():
+    assert RACK_ROBOT_SKILLS[-1] == "Sweep"
+    assert "Sweep" in RACK_SERVING_DOMAIN.sampler_skills
+    assert "Sweep" in RACK_SERVING_DOMAIN.optional_skill_names
+    holding = RackServingDeployment.transitions()[(RACK_NUM_FOOD, "scraper", False)]
+    assert ("Sweep", (0, "scraper", False)) in holding
+    assert ("GatherAndSweep", (0, "scraper", False)) in holding
+    assert _value(horizon=2, PickScraper=1, Sweep=1) == 1
+    assert _value(horizon=4, PickScraper=1, Sweep=0.25, GatherAndSweep=0.5) == pytest.approx(
+        1 - 0.5**3
+    )
+
+
+def test_sweep_appends_after_every_existing_belief_so_prior_seeds_do_not_move():
+    names = [name for name, _ in RACK_SERVING_DOMAIN.belief_sources]
+    assert names == [
+        "PickScraper",
+        "GatherAndSweep",
+        "ReturnScraper",
+        "PickFood",
+        "PlaceFoodOnTray",
+        "ReturnFoodToRack",
+        "human_batch_return",
+        "human_tool_recovery",
+        "Sweep",
+    ]
+
+
+def test_a_provider_without_sweep_drops_its_belief_and_still_values_deployment():
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+
+    domain = PracticeDomainWithoutSkills.keep_offered(
+        domain=RACK_SERVING_DOMAIN,
+        offered=frozenset(RACK_ROBOT_SKILLS[:-1]) | frozenset(RACK_HUMAN_SKILLS),
+    )
+    assert "Sweep" not in dict(domain.belief_sources)
+    beliefs = {
+        name: Mock(sample=Mock(return_value=np.array([[1.0, 0.0]] * 4)))
+        for name in RACK_ROBOT_SKILLS[:-1]
+    }
+    values = domain.sample_policy_values(beliefs=beliefs, rng=np.random.default_rng(0), count=4)
+    np.testing.assert_array_equal(values, np.ones(4))
