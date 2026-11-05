@@ -24,7 +24,8 @@ def test_legacy_benchmark_unchanged_and_kitchen_opt_in():
     assert ENVIRONMENTS["pouring3d_kitchen"] is KitchenCli
     assert "pouring3d_kitchen" in STEP_PROTOCOL_ENVIRONMENTS
     assert FrozenPourEnvironment.action_space.high[0] == 7
-    assert KitchenEnvironment.action_space.high[0] == 9
+    # The kitchen dispatches only the shared robot skills; no lifecycle action ids.
+    assert KitchenEnvironment.action_space.high[0] == 7
 
 
 def test_missing_measurements_stay_unknown_and_proxies_are_configurable():
@@ -94,13 +95,57 @@ def test_count_samplers_and_cold_practice_stay_ordinary():
         g = p.ground(name=f"Pour{k}")
         action = p.encode(ground_skill=g, params=np.array([1.0]))
         assert action[2] == k
-        assert any(a.predicate.name == "ColdIngredients" for a in g.preconditions)
     e._started = True
     with pytest.raises(ValueError, match="no free reset"):
         KitchenTasks(env=e).build_task(seed=0)
 
 
-def test_deployment_plan_requires_pour_put_down_activation_and_retreat():
+REMOVED_SKILLS = {"Wait", "ActivateCooking", "MoveAway"}
+REMOVED_PREDICATES = {"HobOn", "HobOff", "ColdIngredients", "RobotAway", "MealStarted"}
+
+
+@pytest.mark.parametrize("deployment", [False, True])
+def test_the_kitchen_offers_no_wait_and_no_cooking_lifecycle_skills(*, deployment):
+    provider = KitchenSkillProvider(env=KitchenEnvironment(deployment=deployment))
+    names = {s.name for s in provider.skills()}
+    assert not names & REMOVED_SKILLS
+    assert {"PickPitcher", "Pour1", "Pour2", "Pour3", "PlacePitcherAtHome"} <= names
+    assert not {s.name for s in provider.domain(count=3)} & REMOVED_SKILLS
+    for name in REMOVED_SKILLS:
+        with pytest.raises(StopIteration):
+            provider.ground(name=name)
+
+
+def test_the_legacy_pouring_benchmark_keeps_its_wait_skill():
+    from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+
+    legacy = FrozenPourSkillProvider(env=FrozenPourEnvironment())
+    assert "Wait" in {s.name for s in legacy.skills()}
+
+
+def test_no_kitchen_predicate_or_precondition_mentions_the_cooking_lifecycle():
+    assert not {p.name for p in P.all()} & REMOVED_PREDICATES
+    for skill in KitchenSkillProvider.domain(count=3):
+        mentioned = {
+            a.predicate.name for a in skill.preconditions | skill.add_effects | skill.delete_effects
+        }
+        assert not mentioned & REMOVED_PREDICATES, skill.name
+
+
+@pytest.mark.parametrize("deployment", [False, True])
+def test_a_test_task_goal_is_the_split_and_jug_home_goal_atom(*, deployment):
+    env = KitchenEnvironment(deployment=deployment, requested_count=2)
+    tasks = KitchenTasks(env=env, requested_counts=(1, 2, 3))
+    requests = env.objects().requests()
+    assert tasks.goal().atoms == frozenset({
+        GroundAtom(predicate=P.get(name="Goal"), objects=(requests[1],))
+    })
+    assert [g.atoms for g in tasks.test_task_goals()] == [
+        frozenset({GroundAtom(predicate=P.get(name="Goal"), objects=(r,))}) for r in requests
+    ]
+
+
+def test_deployment_plan_is_pick_pour_put_down():
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 
     provider = KitchenSkillProvider(env=KitchenEnvironment(deployment=True, requested_count=3))
@@ -111,7 +156,6 @@ def test_deployment_plan_requires_pour_put_down_activation_and_retreat():
 
     initial = provider.ground(name="PickPitcher").preconditions | frozenset({
         atom("ActiveRequest", o.requests()[2]),
-        atom("HobOff", o.hob),
         *(atom(f"Count{n}", obj) for n, obj in enumerate(o.requests(), 1)),
     })
     plan = FastDownwardPlanner.plan(
@@ -120,16 +164,9 @@ def test_deployment_plan_requires_pour_put_down_activation_and_retreat():
         predicates=provider.predicates(),
         types=provider.types(),
         init_atoms=initial,
-        goal=frozenset({atom("MealStarted", o.requests()[2])}),
+        goal=frozenset({atom("Goal", o.requests()[2])}),
     )
-    assert [g.skill.name for g in plan] == [
-        "PickPitcher",
-        "Pour3",
-        "PlacePitcherAtHome",
-        "ActivateCooking",
-        "MoveAway",
-    ]
-    assert all(g.skill.name != HUMAN_RESET for g in plan)
+    assert [g.skill.name for g in plan] == ["PickPitcher", "Pour3", "PlacePitcherAtHome"]
 
 
 def test_cli_builds_separate_training_and_deployment_modes():
@@ -143,7 +180,7 @@ def test_cli_builds_separate_training_and_deployment_modes():
     deploy = KitchenCli.build_problem(args=args, deployment=True)
     assert not practice.env.deployment
     assert deploy.env.deployment
-    assert next(iter(deploy.tasks.goal().atoms)).predicate.name == "MealStarted"
+    assert next(iter(deploy.tasks.goal().atoms)).predicate.name == "Goal"
     assert next(iter(practice.tasks.goal().atoms)).predicate.name == "Goal"
 
 

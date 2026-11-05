@@ -566,7 +566,8 @@ class Tossing3DPomdpCli(EesCli):
                 initial_competence_alpha=1.0,
                 initial_competence_beta=3.0,
                 default_search_depth=4,
-                deterministic_skills=frozenset({"Wait"}),
+                # The kitchen offers no Wait (KitchenSkillProvider.domain).
+                deterministic_skills=frozenset() if kitchen else frozenset({"Wait"}),
                 human_skill_names=frozenset({reset_name}),
                 failure_effect_skills=frozenset((*support, *pours)),
             )
