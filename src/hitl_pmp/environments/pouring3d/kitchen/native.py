@@ -37,7 +37,50 @@ class KitchenScene(PotstickerScene):
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
         self.payload_rest.clear()
-        return super().reset(seed=seed, options=options)
+        result = super().reset(seed=seed, options=options)
+        self.release_payloads()
+        return result
+
+    # A dumpling the gripper has closed on is held rigidly until it is released: a
+    # weld from the hand to the piece, frozen at the pose it was grasped in (Josh,
+    # 2026-11-05). Grasp quality is not what this experiment measures, so a pick can
+    # fail only by refusing to plan or by not reaching the piece, never by slipping.
+    def grasp_weld(self, *, name: str) -> int:
+        import mujoco
+
+        model, _ = self._model_and_data()
+        return int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, f"grasp_weld_{name}"))
+
+    def attach_payload(self, *, name: str) -> None:
+        import mujoco
+
+        model, data = self._model_and_data()
+        hand, piece = model.body(f"{self.robot_name}_bracelet_link").id, model.body(name).id
+        hand_rotation = data.xmat[hand].reshape(3, 3)
+        weld = self.grasp_weld(name=name)
+        model.eq_data[weld, 3:6] = hand_rotation.T @ (data.xpos[piece] - data.xpos[hand])
+        relative = np.zeros(4)
+        hand_inverse = np.zeros(4)
+        mujoco.mju_negQuat(hand_inverse, data.xquat[hand])
+        mujoco.mju_mulQuat(relative, hand_inverse, data.xquat[piece])
+        model.eq_data[weld, 6:10] = relative
+        data.eq_active[weld] = 1
+
+    def attached_payload(self) -> str | None:
+        _, data = self._model_and_data()
+        return next(
+            (name for name in self.cube_names if data.eq_active[self.grasp_weld(name=name)]),
+            None,
+        )
+
+    def release_payloads(self) -> None:
+        _, data = self._model_and_data()
+        for name in self.cube_names:
+            data.eq_active[self.grasp_weld(name=name)] = 0
+
+    def respawn_payload_in_pitcher(self) -> None:
+        self.release_payloads()
+        super().respawn_payload_in_pitcher()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
         result = super().step(action)
@@ -99,6 +142,18 @@ class KitchenScene(PotstickerScene):
         if size is None:
             size = ET.SubElement(root, "size")
         size.set("nuserdata", "1")
+        equality = root.find("equality")
+        if equality is None:
+            equality = ET.SubElement(root, "equality")
+        for name in self.cube_names:
+            ET.SubElement(
+                equality,
+                "weld",
+                name=f"grasp_weld_{name}",
+                body1=f"{self.robot_name}_bracelet_link",
+                body2=name,
+                active="false",
+            )
         pan = self.get_object("tray")
         body = root.find(".//body[@name='tray']")
         assert body is not None
@@ -655,7 +710,42 @@ class KitchenController(PotstickerController):
         finally:
             self.obstacle_clearance = previous
 
+    # Phases in which a closed gripper takes a dumpling: the weld engages here once
+    # the piece is between the pads, touching one pad or, after the full close, none.
+    PAYLOAD_GRASP_PHASES: ClassVar[frozenset[str]] = frozenset({"pinch shrimp", "retain shrimp"})
+    # A piece touching neither pad still counts as taken after the full close if its
+    # centre of mass is this close to the pinch point (the pads span about 85 mm).
+    PAYLOAD_BETWEEN_PADS_M: ClassVar[float] = 0.05
+
+    def payload_between_pads(self, *, name: str) -> bool:
+        centre = self.data.xipos[self.model.body(name).id]
+        return bool(
+            np.linalg.norm(centre - self.data.site_xpos[self.site]) < self.PAYLOAD_BETWEEN_PADS_M
+        )
+
+    def finger_contacts(self, *, name: str, handle_only: bool = False) -> set[str]:
+        if name in self.scene.cube_names:
+            if self.scene.attached_payload() == name:
+                return {"left", "right"}
+            contacts = super().finger_contacts(name=name, handle_only=handle_only)
+            if self.phase in self.PAYLOAD_GRASP_PHASES and (
+                contacts or (self.phase == "retain shrimp" and self.payload_between_pads(name=name))
+            ):
+                self.scene.attach_payload(name=name)
+                self.events.append({"event": "dumpling attached", "payload": name})
+                return {"left", "right"}
+            return contacts
+        return super().finger_contacts(name=name, handle_only=handle_only)
+
     def motor_step(self, *, target_q: np.ndarray, grip: float) -> None:
+        attached = self.scene.attached_payload()
+        if (
+            attached is not None
+            and self.held != attached
+            and self.phase not in self.PAYLOAD_GRASP_PHASES
+        ):
+            # Every release path clears `held` before it opens the fingers.
+            self.scene.release_payloads()
         super().motor_step(target_q=target_q, grip=grip)
         if self.held == "pitcher" and self.phase in {
             "fold and raise pitcher for transport",
