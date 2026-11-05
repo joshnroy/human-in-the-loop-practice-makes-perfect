@@ -1,6 +1,9 @@
 # Tossing env v10 + v10b: human-reset-cost sweep (seeds 0–2)
 
 > **Final:** all 54 runs ended (48 at budget, 6 ended by repeated STOP), data as of 2026-11-04 16:18 EST.
+>
+> **Added 2026-11-05:** a fourth arm, Deliberate Practice, on this same grid is reported in
+> [the DP baseline log](2026-11-05-tossing-env-dp-baseline.md). Nothing below is changed.
 
 ## TL;DR
 
