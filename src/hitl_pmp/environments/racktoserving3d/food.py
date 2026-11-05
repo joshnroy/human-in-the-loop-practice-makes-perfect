@@ -107,25 +107,9 @@ class _FoodMotion(RackScraper):
         shelf, backend = self.shelf, self.food.backend
         scratch = shelf.ik_data
         carried = self.food.carried
-        foods = {
-            geom
-            for name in backend.cube_names
-            if name != carried
-            for geom in backend.body_geoms(name=name)
-        }
-        for contact in scratch.contact[: scratch.ncon]:
-            if contact.dist > 0:
-                continue
-            for robot, other in (
-                (int(contact.geom1), int(contact.geom2)),
-                (int(contact.geom2), int(contact.geom1)),
-            ):
-                if (
-                    robot in shelf.robot_geoms
-                    and other in foods
-                    and not (robot in shelf.pad_geoms and other in self.food.target_geoms)
-                ):
-                    raise SkillFailed("Food motion would collide with ungrasped food")
+        foods = self._food_geoms(carried=carried)
+        if self._touches_ungrasped_food(scratch=scratch, foods=foods):
+            raise SkillFailed("Food motion would collide with ungrasped food")
         if carried is None:
             return
         live_hand = shelf.site_pose()
@@ -171,6 +155,41 @@ class _FoodMotion(RackScraper):
                         f"Carried food would collide with {shelf.model.geom(obstacle).name}: "
                         f"overlap={overlap:.4f}, bottom={bottom:.4f}, top={top:.4f}"
                     )
+
+    def _food_geoms(self, *, carried: str | None) -> set[int]:
+        """Every food's contact geoms but the carried one's. A controller lives for one
+        skill call, under one model, so each body's geoms are read once."""
+        backend = self.food.backend
+        cache: dict[str, set[int]] = self.__dict__.setdefault("_body_geoms", {})
+        for name in backend.cube_names:
+            if name not in cache:
+                cache[name] = backend.body_geoms(name=name)
+        # Built in the same insertion order as before, so iteration order is too.
+        return {geom for name in backend.cube_names if name != carried for geom in cache[name]}
+
+    def _touches_ungrasped_food(self, *, scratch: Any, foods: set[int]) -> bool:
+        """Whether a non-positive-distance contact in `scratch` puts a robot geom on an
+        ungrasped food (a pad on the target food excepted), in either geom order."""
+        ncon = int(scratch.ncon)
+        if ncon == 0 or not foods:
+            return False
+        shelf = self.shelf
+        count = int(shelf.model.ngeom)
+
+        def mask(*, geoms: Any) -> np.ndarray:
+            out = np.zeros(count, dtype=bool)
+            out[np.fromiter(geoms, dtype=int, count=len(geoms))] = True
+            return out
+
+        robot, food, pad = (mask(geoms=g) for g in (shelf.robot_geoms, foods, shelf.pad_geoms))
+        target = mask(geoms=self.food.target_geoms)
+        a = np.asarray(scratch.contact.geom1[:ncon])
+        b = np.asarray(scratch.contact.geom2[:ncon])
+        touching = ~(np.asarray(scratch.contact.dist[:ncon]) > 0)
+        hit = (robot[a] & food[b] & ~(pad[a] & target[b])) | (
+            robot[b] & food[a] & ~(pad[b] & target[a])
+        )
+        return bool(np.any(touching & hit))
 
     def _penetration(
         self,
