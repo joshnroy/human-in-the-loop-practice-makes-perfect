@@ -150,16 +150,11 @@ class RackControllers:
             self.tool.pick()
 
     def return_scraper(self) -> None:
+        """Planned from wherever the scraper is held, behind the counter included: the
+        base path goes round it. A scripted clear-and-circulate prefix used to run first
+        from behind the counter and, from an arm left at a joint limit, failed after a
+        few steps on every retry."""
         with self.feedback():
-            if self.shelf.data.qpos[self.shelf.ba[0]] > self.backend.config.counter_center_x:
-                here = self.shelf.site_pose()
-                self.tool.line(
-                    position=here[:3, 3] + [0.10, 0, 0.06],
-                    rotation=here[:3, :3],
-                    label="return_clear_rack",
-                    holding=True,
-                )
-                self.around_counter(to_rear=False)
             self.tool.place()
 
     @staticmethod
