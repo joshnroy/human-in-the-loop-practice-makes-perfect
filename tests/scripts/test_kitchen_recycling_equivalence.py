@@ -562,6 +562,61 @@ def test_a_waiver_cannot_accompany_a_reference(*, tmp_path: Path, reference_laun
     assert result.returncode != 0
 
 
+DP = (
+    *("--arms", "ees", "expectimax", "curtis", "dp"),
+    *("--dp-episode-budget", "188", "--dp-repeated-stop-limit", "100"),
+)
+
+
+def test_prepare_waives_a_new_arm_and_binds_the_others(
+    *, tmp_path: Path, reference_launch: Path
+) -> None:
+    """A new arm has no reference run; the arms the reference ran are still checked."""
+    result = run_prepare(
+        out=tmp_path / "new",
+        tag="kitchen-recycling-new",
+        extra=(
+            *DP,
+            *("--equivalence-reference", str(reference_launch)),
+            *("--equivalence-waive-arm", "dp"),
+            *("--equivalence-waiver", "new DP arm, no prior reference"),
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    block = json.loads((tmp_path / "new" / "manifest.json").read_text())["equivalence"]
+    assert block["waived_arms"] == ["dp"]
+    assert block["waiver"] == "new DP arm, no prior reference"
+    assert block["runs"] == [
+        {
+            "index": index,
+            "reference_index": index,
+            "reference": f"{reference_launch}/results/reset-cost-5/{arm}/0",
+        }
+        for index, arm in enumerate(prepare.ARMS)
+    ]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (),  # The reference has no DP run to bind.
+        ("--equivalence-waive-arm", "dp"),  # A waived arm needs a stated reason.
+        ("--equivalence-waiver", "why"),  # A reason needs the arm it waives.
+        ("--equivalence-waive-arm", "sac", "--equivalence-waiver", "why"),  # No such arm.
+    ],
+)
+def test_prepare_refuses_a_half_stated_arm_waiver(
+    *, tmp_path: Path, reference_launch: Path, extra: tuple[str, ...]
+) -> None:
+    result = run_prepare(
+        out=tmp_path / "new",
+        tag="kitchen-recycling-new",
+        extra=(*DP, *("--equivalence-reference", str(reference_launch)), *extra),
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "new").exists()
+
+
 # ---------------------------------------------------------------- the gate's check
 
 
@@ -667,6 +722,17 @@ def test_the_gate_check_records_a_waiver(*, tmp_path: Path) -> None:
         "waiver": "meant to differ",
     }
     assert json.loads((launch / equivalence.RECORD).read_text()) == record
+
+
+def test_the_gate_check_carries_an_arm_waiver_into_its_record(*, tmp_path: Path) -> None:
+    launch = bound_pair(tmp_path=tmp_path)
+    manifest = json.loads((launch / "manifest.json").read_text())
+    manifest["equivalence"] |= {"waived_arms": ["dp"], "waiver": "new DP arm"}
+    (launch / "manifest.json").write_text(json.dumps(manifest))
+    record = equivalence.check(launch=launch)
+    assert record["passed"] is True
+    assert (record["waived_arms"], record["waiver"]) == (["dp"], "new DP arm")
+    assert [run["arm"] for run in record["runs"]] == list(prepare.ARMS)
 
 
 # ---------------------------------------------------------------- worker.py

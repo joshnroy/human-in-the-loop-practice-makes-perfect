@@ -528,5 +528,203 @@ class PackagingTests(unittest.TestCase):
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
 
+# Deliberate Practice, the paper's way (Josh, 2026-11-04): episodes budget, allocated once,
+# Gurobi, no prior calibration, inside the same counted-step ceiling as every other arm.
+DP_ARMS = ("ees", "expectimax", "curtis", "dp")
+DP_ARGS = (
+    *V9_STYLE_ARGS,
+    *("--human-reset-costs", "5", "0"),
+    *("--arms", *DP_ARMS),
+    *("--dp-episode-budget", "188", "--dp-repeated-stop-limit", "100"),
+)
+
+
+class DeliberatePracticeArmTests(unittest.TestCase):
+    def manifest(self, *, directory: str, extra: tuple[str, ...] = DP_ARGS) -> dict:
+        return json.loads(
+            (prepared(directory=directory, extra=extra) / "manifest.json").read_text()
+        )
+
+    def test_the_dp_arm_is_ees_with_the_paper_faithful_dp_flags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory=directory)
+        self.assertEqual(manifest["arms"], list(DP_ARMS))
+        self.assertEqual(
+            [(row["seed"], row["human_reset_cost"], row["arm"]) for row in manifest["runs"]],
+            [(seed, cost, arm) for seed in range(3) for cost in (5, 0) for arm in DP_ARMS],
+        )
+        rows = {(row["seed"], row["human_reset_cost"], row["arm"]): row for row in manifest["runs"]}
+        for seed in range(3):
+            for cost in (5, 0):
+                ees, dp = rows[(seed, cost, "ees")], rows[(seed, cost, "dp")]
+                self.assertEqual(dp["output"], f"reset-cost-{cost}/dp/{seed}")
+                self.assertEqual(dp["costs_sha256"], ees["costs_sha256"])
+                self.assertEqual(dp["repeated_stop_limit"], 100)
+                self.assertNotIn("repeated_stop_limit", ees)
+                expected = list(ees["argv"])
+                expected[expected.index("--method") + 1] = "dp"
+                self.assertEqual(
+                    prepare.flag_values(argv=dp["argv"]),
+                    prepare.flag_values(
+                        argv=[
+                            *expected[: expected.index("--seed")],
+                            *("--repeated-stop-limit", "100"),
+                            *expected[expected.index("--seed") :],
+                            *("--dp-budget-unit", "episodes"),
+                            *("--dp-allocation-schedule", "once"),
+                            *("--dp-solver", "gurobi"),
+                            *("--dp-budget", "188"),
+                        ]
+                    ),
+                )
+                self.assertNotIn("--dp-prior-calibration", dp["argv"])
+                # The counted-step ceiling is the other arms' own.
+                self.assertEqual(
+                    dp["argv"][dp["argv"].index("--practice-step-budget") + 1], "65000"
+                )
+        self.assertEqual(
+            manifest["dp"],
+            {
+                "budget_unit": "episodes",
+                "allocation_schedule": "once",
+                "solver": "gurobi",
+                "episode_budget": 188,
+                "repeated_stop_limit": 100,
+                "prior_calibration": None,
+                "gurobi_module": prepare.GUROBI_MODULE,
+                "gurobi_pythonpath": prepare.GUROBI_PYTHONPATH,
+            },
+        )
+
+    def test_only_a_dp_package_loads_gurobi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory, extra=DP_ARGS)
+            for phase in ("smoke", "full"):
+                script = (output / f"{phase}.sbatch").read_text()
+                self.assertIn(f"module load {prepare.GUROBI_MODULE}\n", script)
+                self.assertIn(
+                    f'export PYTHONPATH="$PYTHONPATH:{prepare.GUROBI_PYTHONPATH}"', script
+                )
+                self.assertIn('"$ROOT/env/bin/python" -c "import gurobipy"', script)
+                self.assertIn("--array=0-23%" if phase == "full" else "--time=02:00:00", script)
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(directory=directory, extra=V9_STYLE_ARGS)
+            for phase in ("smoke", "full"):
+                self.assertNotIn("gurobi", (output / f"{phase}.sbatch").read_text())
+
+    def test_a_dp_arm_needs_a_whole_positive_episode_budget(self):
+        without = tuple(token for token in DP_ARGS if token not in {"--dp-episode-budget", "188"})
+        for extra in (
+            without,
+            (*without, "--dp-episode-budget", "0"),
+            (*without, "--dp-episode-budget", "18.5"),
+            (*V9_STYLE_ARGS, "--dp-episode-budget", "188"),  # No DP arm to give it to.
+            (*V9_STYLE_ARGS, "--arms", "ees", "ees"),
+        ):
+            with (
+                self.subTest(extra=extra),
+                tempfile.TemporaryDirectory() as directory,
+                self.assertRaises(subprocess.CalledProcessError),
+            ):
+                prepared(directory=directory, extra=extra)
+
+    def test_dp_rows_parse_as_the_cli_reads_them(self):
+        from hitl_pmp.cli import Cli
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory=directory)
+        for row in manifest["runs"]:
+            parsed = Cli.parse_args(argv=[*row["argv"], "--output-dir", "/tmp/parse-only"])
+            worker.check_repeated_stop_limit(parsed=parsed, manifest=manifest, row=row)
+            worker.check_dp_row(parsed=parsed, manifest=manifest, row=row)
+            if row["arm"] == "dp":
+                self.assertEqual(
+                    (parsed.method, parsed.dp_budget_unit, parsed.dp_allocation_schedule),
+                    ("dp", "episodes", "once"),
+                )
+                self.assertEqual((parsed.dp_solver, parsed.dp_budget), ("gurobi", 188.0))
+                self.assertIsNone(parsed.dp_prior_calibration)
+                self.assertEqual(parsed.repeated_stop_limit, 100)
+            else:
+                self.assertIsNone(parsed.repeated_stop_limit)
+
+    def test_the_worker_reads_the_arms_from_the_manifest(self):
+        self.assertEqual(worker.arms(manifest={}), worker.ARMS)
+        manifest = {"arms": list(DP_ARMS), "human_reset_costs": [5, 0]}
+        self.assertEqual(
+            worker.expected_rows(manifest=manifest)[:5],
+            [(5, 0, "ees"), (5, 0, "expectimax"), (5, 0, "curtis"), (5, 0, "dp"), (0, 0, "ees")],
+        )
+        self.assertEqual(len(worker.expected_rows(manifest=manifest)), 24)
+
+    def test_the_worker_holds_each_dp_row_to_the_manifest(self):
+        manifest = {"dp": {"episode_budget": 188}, "arms": list(DP_ARMS)}
+        good = argparse.Namespace(
+            method="dp",
+            dp_budget_unit="episodes",
+            dp_allocation_schedule="once",
+            dp_solver="gurobi",
+            dp_budget=188.0,
+            dp_prior_calibration=None,
+        )
+        worker.check_dp_row(parsed=good, manifest=manifest, row={"arm": "dp"})
+        for field, value in (
+            ("dp_budget_unit", "cost"),
+            ("dp_allocation_schedule", "period"),
+            ("dp_solver", "enumeration"),
+            ("dp_budget", 187.0),
+            ("dp_prior_calibration", Path("priors.json")),
+            ("method", "ees"),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                worker.check_dp_row(
+                    parsed=argparse.Namespace(**{**vars(good), field: value}),
+                    manifest=manifest,
+                    row={"arm": "dp"},
+                )
+        # A non-DP row must not run DP.
+        with self.assertRaises(ValueError):
+            worker.check_dp_row(parsed=good, manifest=manifest, row={"arm": "ees"})
+
+    def test_a_dp_rows_own_repeated_stop_limit_completes_it(self):
+        manifest = {**ITERATION, "arms": list(DP_ARMS)}
+        dp = {"arm": "dp", "seed": 0, "argv": [], "repeated_stop_limit": 100}
+        ees = {"arm": "ees", "seed": 0, "argv": []}
+        self.assertEqual(
+            worker.complete_endpoints(manifest=manifest, row=dp),
+            {"practice_step_budget", "repeated_stop"},
+        )
+        self.assertEqual(
+            worker.complete_endpoints(manifest=manifest, row=ees), {"practice_step_budget"}
+        )
+        worker.check_repeated_stop_limit(
+            parsed=argparse.Namespace(repeated_stop_limit=100), manifest=manifest, row=dp
+        )
+        for limit, row in ((None, dp), (100, ees)):
+            with self.subTest(arm=row["arm"]), self.assertRaises(ValueError):
+                worker.check_repeated_stop_limit(
+                    parsed=argparse.Namespace(repeated_stop_limit=limit), manifest=manifest, row=row
+                )
+
+    def test_the_smoke_runs_one_row_per_manifest_arm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory=directory)
+        ran = []
+        launch = Path("/nonexistent/launch")
+        with (
+            patch.object(worker, "verify", return_value=manifest),
+            patch.object(
+                worker, "run", side_effect=lambda **kw: ran.append(kw["row"]["arm"]) or {}
+            ),
+            patch.object(worker, "binding", return_value={}),
+            patch.dict(worker.os.environ, {"SLURM_JOB_ID": "1"}),
+            patch.object(sys, "argv", ["worker.py", "smoke", "--launch", str(launch)]),
+            patch.object(Path, "open", side_effect=RuntimeError("smoke-passed written")),
+            self.assertRaisesRegex(RuntimeError, "smoke-passed written"),
+        ):
+            worker.main()
+        self.assertEqual(ran, list(DP_ARMS))
+
+
 if __name__ == "__main__":
     unittest.main()

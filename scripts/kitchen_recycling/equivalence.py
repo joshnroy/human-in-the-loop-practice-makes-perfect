@@ -382,6 +382,12 @@ def check(*, launch: Path) -> dict:
             "reference_manifest_sha256": block["reference_manifest_sha256"],
             "allowed_argv_differences": block["allowed_argv_differences"],
             "runs": runs,
+            # Arms the reference never ran: recorded with their reason, not compared.
+            **(
+                {"waived_arms": block["waived_arms"], "waiver": block["waiver"]}
+                if "waived_arms" in block
+                else {}
+            ),
         }
     with (launch / RECORD).open("x") as stream:
         stream.write(json.dumps(record, indent=2) + "\n")
