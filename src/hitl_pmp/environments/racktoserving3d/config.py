@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .potsticker import RackPotsticker
+from .potsticker import CollisionModel, RackPotsticker
 
 Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
@@ -116,6 +116,13 @@ class RackServingConfig(BaseModel):
     dumpling_mass: Positive = 0.020
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
+    dumpling_collision: CollisionModel = Field(
+        default="full",
+        description=(
+            "Potsticker contact geometry; every option keeps the full textured mesh as "
+            "visual geometry and the full model's mass and inertia (see potsticker.py)"
+        ),
+    )
     # Closing position commanded on food; fully closed, so the force limit below,
     # not the position, decides where the fingers stop.
     food_grip_command: float = Field(default=1.0, gt=0, le=1)

@@ -90,6 +90,7 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
             "mass": config.dumpling_mass,
             "friction": list(config.dumpling_friction),
             "contact_dimension": config.dumpling_contact_dimension,
+            "collision": config.dumpling_collision,
             "rgba": [0.88, 0.78, 0.59, 1],
         }
         region = point_region(
