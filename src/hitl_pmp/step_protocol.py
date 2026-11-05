@@ -1468,6 +1468,8 @@ class StepPracticeRunner:
         # (evaluation recorded), restore, practise -- so a resume re-runs an evaluation
         # that never finished and never one that did.
         measure_every_cycles = getattr(args, "measure_every_cycles", None)
+        # The real robot's wall-clock pricing: what the planner observes per second.
+        wall_clock_rate: float | None = getattr(args, "wall_clock_cost_per_second", None)
 
         def learn(*, actions: int, reason: str) -> None:
             nonlocal learning_updates
@@ -1705,11 +1707,20 @@ class StepPracticeRunner:
             # Discards a timing no event owns (the run's opening scene reset), so the
             # one written below is this reset's own.
             environment.drain_execution_timing(problem=problem)
+            if wall_clock_rate is not None:
+                environment.drain_measured_seconds(problem=problem)
+            seconds: float | None = None
             try:
                 problem.execute_movables_reset(destination=destination)
                 success = True
             finally:
                 reset_counts[destination] = reset_counts.get(destination, 0) + 1
+                if wall_clock_rate is not None:
+                    seconds = environment.drain_measured_seconds(problem=problem)
+                    if seconds is not None:
+                        # The person's timed seconds are the reset's charge, weighted
+                        # by `human_weight` in the total like any human cost.
+                        charge = charge.model_copy(update={"cost": wall_clock_rate * seconds})
                 clock.human_invoked(charge=charge)
                 cost = accounting.total_cost - before_cost if accounting else request_cost
                 metrics.record_human_intervention(cost=cost)
@@ -1725,6 +1736,7 @@ class StepPracticeRunner:
                     cost=cost,
                     success=success,
                     **({"forced": forced} if forced else {}),
+                    **({"seconds": seconds} if seconds is not None else {}),
                 )
                 StepFiles.timing(
                     path=timings,
@@ -1879,6 +1891,10 @@ class StepPracticeRunner:
                     interruption: str | None = None
                     completed = False
                     environment.drain_execution_timing(problem=problem)
+                    if wall_clock_rate is not None:
+                        environment.drain_measured_seconds(problem=problem)
+                    seconds = None
+                    observed_cost: float | None = None
                     try:
                         state = problem.take_action(action=action.action)
                         completed = True
@@ -1891,10 +1907,22 @@ class StepPracticeRunner:
                         )
                     finally:
                         clock.robot_active = False
+                        charged = accounting.total_cost - before_cost if accounting else 0
+                        observed_steps = clock.steps - before_count
+                        if wall_clock_rate is not None and accounting is not None:
+                            seconds = environment.drain_measured_seconds(problem=problem)
+                            if seconds is not None and observed_steps > 0:
+                                # The planner prices a skill from its observed step
+                                # count, so the measured cost goes in as the steps it
+                                # would buy; the budget still counts the sim's ticks.
+                                observed_cost = wall_clock_rate * seconds
+                                charged = observed_cost
+                                observed_steps = max(
+                                    1,
+                                    round(observed_cost / accounting.costs.robot_step.value),
+                                )
                         method.observe_execution_cost(
-                            cost=accounting.total_cost - before_cost if accounting else 0,
-                            steps=clock.steps - before_count,
-                            complete=completed,
+                            cost=charged, steps=observed_steps, complete=completed
                         )
                     actions += 1
                     robot_skills += 1
@@ -1912,6 +1940,11 @@ class StepPracticeRunner:
                         interruption=interruption,
                         cost=robot_cost,
                         skill_error=skill_error,
+                        **(
+                            {"seconds": seconds, "observed_cost": observed_cost}
+                            if observed_cost is not None
+                            else {}
+                        ),
                         **StepFiles.trace(environment=environment, problem=problem),
                     )
                     StepFiles.timing(
