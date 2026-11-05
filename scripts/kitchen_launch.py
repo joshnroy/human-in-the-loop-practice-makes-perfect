@@ -28,7 +28,14 @@ COSTS_PATH = "configs/kitchen_pilot_costs.json"
 COSTS = REPO / COSTS_PATH
 # stage -> (practice ticks, measurement interval, test tasks). `dry` sizes a Della launch:
 # one practice block between two full-length evaluations of one task per requested count.
-STAGES = {"pilot": (6400, 6400, 3), "overnight": (25600, 6400, 9), "dry": (1600, 1600, 3)}
+# `long` is the overnight protocol at 8x the practice: 25,600 ticks is about 5 practice
+# cycles, too few to learn the Pour's ramp rate.
+STAGES = {
+    "pilot": (6400, 6400, 3),
+    "overnight": (25600, 6400, 9),
+    "long": (200_000, 25_000, 9),
+    "dry": (1600, 1600, 3),
+}
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
@@ -39,14 +46,26 @@ DELLA_EVALUATION_WORKERS = {stage: tasks for stage, (_, _, tasks) in STAGES.item
 # One task's ceiling: the dry run's slowest, 72 min at the 7,500-step limit, about 3x over.
 EVALUATION_TASK_TIMEOUT_SECONDS = 4 * 3600
 # Resident memory, GiB: the practice process, and one evaluation process (one task).
+# Evaluations never overlap (`FreshProcessEvaluations` runs one at a time), so a job
+# holds at most practice plus one evaluation's workers; overnight's 27G peaked at 17.9 GB.
 DELLA_PRACTICE_GB = 3.0
+# Practice keeps 8x the data over `long`'s 200k ticks; its growth is unmeasured.
+DELLA_PRACTICE_GB_BY_STAGE = {"long": 12.0}
 DELLA_EVALUATION_PROCESS_GB = 2.0
 DELLA_MEMORY_HEADROOM = 1.25
 # Practice runs alongside the evaluations: 4-7 h for the overnight budget, then the last
 # checkpoint's evaluation, its slowest task (72 min at the limit), with headroom.
 # Della's Slurm feature for its AMD Genoa CPU nodes: the launches are sized on them.
 DELLA_CONSTRAINT = "genoa"
-DELLA_TIME = {"pilot": "06:00:00", "overnight": "12:00:00", "dry": "06:00:00"}
+# `long` is sized on the slowest arm, expectimax (2026-11-04 job 16876353: 14,800 ticks
+# in 6,978 s, ~2.1 ticks/s): ~26 h for 200k ticks plus the final ~1 h evaluation. EES
+# (25,600 in 1.25-2 h) needs 10-16 h. 48 h is ~1.75x that projection, in the same QOS band as 36 h.
+DELLA_TIME = {
+    "pilot": "06:00:00",
+    "overnight": "12:00:00",
+    "long": "48:00:00",
+    "dry": "06:00:00",
+}
 DEPENDENCIES = {
     "kinder": "reference/kindergarden",
     "kinder_models": "reference/kinder-baselines",
@@ -236,10 +255,11 @@ class KitchenLaunch:
             stream.write(json.dumps(data, indent=2) + "\n")
 
     @staticmethod
-    def della_memory(*, evaluation_workers: int) -> str:
+    def della_memory(*, evaluation_workers: int, stage: str | None = None) -> str:
         """Slurm `--mem` for practice plus `evaluation_workers` evaluation processes."""
+        practice = DELLA_PRACTICE_GB_BY_STAGE.get(stage or "", DELLA_PRACTICE_GB)
         gigabytes = DELLA_MEMORY_HEADROOM * (
-            DELLA_PRACTICE_GB + evaluation_workers * DELLA_EVALUATION_PROCESS_GB
+            practice + evaluation_workers * DELLA_EVALUATION_PROCESS_GB
         )
         return f"{math.ceil(gigabytes)}G"
 
@@ -263,7 +283,11 @@ class KitchenLaunch:
             DELLA_EVALUATION_WORKERS[stage] if evaluation_workers is None else evaluation_workers
         )
         time = DELLA_TIME[stage] if time is None else time
-        mem = KitchenLaunch.della_memory(evaluation_workers=workers) if mem is None else mem
+        mem = (
+            KitchenLaunch.della_memory(evaluation_workers=workers, stage=stage)
+            if mem is None
+            else mem
+        )
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tag):
             raise ValueError("--tag must contain only letters, digits, underscores and hyphens")
         sha = KitchenLaunch.identity()["commit"]
