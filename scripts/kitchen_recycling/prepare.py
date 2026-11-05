@@ -159,6 +159,7 @@ def argv(
     evaluation_workers: int = EVALUATION_WORKERS,
     repeated_stop_limit: int | None = None,
     dp_episode_budget: int | None = None,
+    dp_initial_competence: tuple[str, ...] = (),
 ) -> list[str]:
     common = list(COMMON)
     common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
@@ -201,6 +202,11 @@ def argv(
             ),
             "--dp-budget",
             str(dp_episode_budget),
+            *[
+                token
+                for value in dp_initial_competence
+                for token in ("--dp-initial-competence", value)
+            ],
         ]
     return result + [
         "--method",
@@ -264,6 +270,14 @@ def main() -> None:
         default=None,
         help="--repeated-stop-limit K on the DP rows only: DP STOPs once its allocation is "
         "spent, and this ends the run there instead of at the step ceiling.",
+    )
+    parser.add_argument(
+        "--dp-initial-competence",
+        action="append",
+        default=None,
+        metavar="SKILL=P",
+        help="Passed to every DP row: a robot skill's starting competence P in (0, 1) "
+        "(repeatable, one per skill).",
     )
     parser.add_argument("--cpus-per-task", type=int, default=2)
     parser.add_argument("--memory", default="16G")
@@ -340,6 +354,18 @@ def main() -> None:
         "dp" not in arms or args.dp_repeated_stop_limit <= 0
     ):
         parser.error("--dp-repeated-stop-limit must be positive and needs a DP arm")
+    initial_competence: dict[str, float] = {}
+    for value in args.dp_initial_competence or []:
+        name, _, raw = value.partition("=")
+        try:
+            competence = float(raw)
+        except ValueError:
+            parser.error(f"--dp-initial-competence expects SKILL=P, got {value!r}")
+        if not name or name in initial_competence or not 0 < competence < 1:
+            parser.error(f"--dp-initial-competence needs one P in (0, 1) per skill: {value!r}")
+        initial_competence[name] = competence
+    if initial_competence and "dp" not in arms:
+        parser.error("--dp-initial-competence needs a DP arm")
     if not set(waived_arms) <= set(arms):
         parser.error("--equivalence-waive-arm must name arms of this package")
     if reference_root == "none":
@@ -403,6 +429,7 @@ def main() -> None:
                     evaluation_workers=args.evaluation_workers,
                     repeated_stop_limit=limit,
                     dp_episode_budget=args.dp_episode_budget,
+                    dp_initial_competence=tuple(args.dp_initial_competence or ()),
                 )
                 row = {"index": len(rows), "arm": arm, "seed": seed, "argv": command}
                 if arm == "dp" and args.dp_repeated_stop_limit is not None:
@@ -485,6 +512,7 @@ def main() -> None:
                     "episode_budget": args.dp_episode_budget,
                     "repeated_stop_limit": args.dp_repeated_stop_limit,
                     "prior_calibration": None,
+                    "initial_competence": initial_competence,
                     "gurobi_module": GUROBI_MODULE,
                     "gurobi_pythonpath": GUROBI_PYTHONPATH,
                 }

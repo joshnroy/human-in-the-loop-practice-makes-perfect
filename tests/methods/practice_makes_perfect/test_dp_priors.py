@@ -361,3 +361,70 @@ def test_calibrated_mode_refuses_unmeasured_deployment_skills(*, calibration, mo
     )
     with pytest.raises(ValueError, match="lack calibrated DP priors"):
         method.choose_practice_target()
+
+
+# ------------------------------------------------- --dp-initial-competence
+# A starting competence per robot skill, set directly (kitchen v11-dp: early practice
+# success rates), with the calibration path's prior strength of two and the default
+# Delta. The calibration file and its seed guard are untouched.
+
+
+def test_an_initial_competence_sets_that_robot_skills_starting_belief():
+    env = SweepOffShelf3DEnvironment()
+    provider = SweepOffShelf3DSkillProvider(env=env)
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=2000,
+        dp_initial_competence={"PickWiper": 0.1},
+    )
+    ground = _ground(method=method, name="PickWiper")
+    history = method.competence_model(ground_skill=ground)
+    assert history.get_current_competence() == pytest.approx(0.1)
+    assert (history.alpha, history.beta) == pytest.approx((0.2, 1.8))
+    linear = method._linear_model(history=history, ground_skill=ground)
+    assert linear.get_current_competence() == pytest.approx(0.1)
+    assert linear.learning_rate() == pytest.approx(method.dp_initial_learning_rate)
+    # Unnamed skills, humans and plain EES keep their priors.
+    other = next(s for s in provider.skills() if s.name != "PickWiper")
+    assert method.competence_model(
+        ground_skill=_ground(method=method, name=other.name)
+    ).get_current_competence() == pytest.approx(10 / 11)
+    assert method.human_skill_competence(ground_skill=_human(method=method)) == pytest.approx(
+        10 / 11
+    )
+    assert EesMethod(env=env, skill_provider=provider).competence_model(
+        ground_skill=ground
+    ).get_current_competence() == pytest.approx(10 / 11)
+
+
+@pytest.mark.parametrize(
+    ("competence", "match"),
+    [
+        ({"NotASkill": 0.5}, "not robot skills"),
+        ({"PickWiper": 1.0}, "strictly between 0 and 1"),
+        ({"PickWiper": 0.0}, "strictly between 0 and 1"),
+    ],
+)
+def test_an_initial_competence_must_name_robot_skills_inside_zero_one(*, competence, match):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match=match):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=2000,
+            dp_initial_competence=competence,
+        )
+
+
+def test_an_initial_competence_excludes_a_calibration_file(*, calibration):
+    path, _report = calibration
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=2000,
+            dp_prior_calibration=path,
+            dp_initial_competence={"PickWiper": 0.5},
+        )

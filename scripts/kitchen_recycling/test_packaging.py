@@ -591,10 +591,55 @@ class DeliberatePracticeArmTests(unittest.TestCase):
                 "episode_budget": 188,
                 "repeated_stop_limit": 100,
                 "prior_calibration": None,
+                "initial_competence": {},
                 "gurobi_module": prepare.GUROBI_MODULE,
                 "gurobi_pythonpath": prepare.GUROBI_PYTHONPATH,
             },
         )
+
+    def test_initial_competences_reach_only_the_dp_rows(self):
+        competences = ("PickCube=0.99", "MoveToTossLocationAndToss=0.1")
+        extra = (*DP_ARGS, *[t for c in competences for t in ("--dp-initial-competence", c)])
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory=directory, extra=extra)
+        self.assertEqual(
+            manifest["dp"]["initial_competence"],
+            {"PickCube": 0.99, "MoveToTossLocationAndToss": 0.1},
+        )
+        for row in manifest["runs"]:
+            pairs = [
+                v
+                for f, v in prepare.flag_values(argv=row["argv"])
+                if f == "--dp-initial-competence"
+            ]
+            self.assertEqual(pairs, [[c] for c in competences] if row["arm"] == "dp" else [])
+        manifest_good = {"dp": manifest["dp"]}
+        good = argparse.Namespace(
+            method="dp",
+            dp_budget_unit="episodes",
+            dp_allocation_schedule="once",
+            dp_solver="gurobi",
+            dp_budget=188.0,
+            dp_prior_calibration=None,
+            dp_initial_competence={"PickCube": 0.99, "MoveToTossLocationAndToss": 0.1},
+        )
+        worker.check_dp_row(parsed=good, manifest=manifest_good, row={"arm": "dp"})
+        with self.assertRaises(ValueError):
+            worker.check_dp_row(
+                parsed=argparse.Namespace(**{**vars(good), "dp_initial_competence": {}}),
+                manifest=manifest_good,
+                row={"arm": "dp"},
+            )
+
+    def test_initial_competences_need_a_dp_arm(self):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            prepared(
+                directory=directory,
+                extra=(*V9_STYLE_ARGS, "--dp-initial-competence", "PickCube=0.5"),
+            )
 
     def test_only_a_dp_package_loads_gurobi(self):
         with tempfile.TemporaryDirectory() as directory:

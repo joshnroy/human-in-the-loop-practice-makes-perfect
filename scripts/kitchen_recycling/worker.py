@@ -55,7 +55,8 @@ def expected_rows(*, manifest: dict) -> list[tuple]:
 
 def check_dp_row(*, parsed: argparse.Namespace, manifest: dict, row: dict) -> None:
     """A DP row runs DP exactly as the manifest records it (episodes, allocated once,
-    Gurobi, the manifest's B, no prior calibration); no other row runs DP."""
+    Gurobi, the manifest's B and initial competences, no prior calibration); no other row
+    runs DP."""
     if row["arm"] != "dp":
         if parsed.method == "dp":
             raise ValueError(f"Only the DP arm may run --method dp, not {row['arm']}")
@@ -67,6 +68,7 @@ def check_dp_row(*, parsed: argparse.Namespace, manifest: dict, row: dict) -> No
         "dp_solver": "gurobi",
         "dp_budget": float(manifest["dp"]["episode_budget"]),
         "dp_prior_calibration": None,
+        "dp_initial_competence": manifest["dp"].get("initial_competence", {}),
     }
     actual = {name: getattr(parsed, name, None) for name in expected}
     if actual != expected:

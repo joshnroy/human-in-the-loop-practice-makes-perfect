@@ -1,6 +1,6 @@
 import argparse
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, get_args
 
@@ -670,6 +670,29 @@ class DpCli(EesCli):
     EES flag (its priors seed DP's competence models too) plus its own. Human skills
     are always scored: DpMethod requires it, whatever --ees-score-human-skills says."""
 
+    class InitialCompetence(argparse.Action):
+        """Collects repeated SKILL=P values into one dict, refusing a repeated skill."""
+
+        def __call__(  # noqa: PLR0917
+            self,
+            parser: argparse.ArgumentParser,
+            namespace: argparse.Namespace,
+            values: str | Sequence[Any] | None,
+            option_string: str | None = None,
+        ) -> None:
+            name, separator, raw = str(values).partition("=")
+            try:
+                competence = float(raw)
+            except ValueError:
+                competence = None
+            if not separator or not name or competence is None:
+                parser.error(f"{option_string} expects SKILL=P, got {values!r}")
+            current = dict(getattr(namespace, self.dest) or {})
+            if name in current:
+                parser.error(f"{option_string} names {name} twice")
+            current[name] = competence
+            setattr(namespace, self.dest, current)
+
     @staticmethod
     def unit_interval(*, value: str) -> float:
         parsed = float(value)
@@ -721,12 +744,22 @@ class DpCli(EesCli):
             help="Total Gurobi seconds per allocation, including least-cost tie breaking; "
             "failure to certify optimality raises instead of silently proceeding.",
         )
-        parser.add_argument(
+        priors = parser.add_mutually_exclusive_group()
+        priors.add_argument(
             "--dp-prior-calibration",
             type=Path,
             default=None,
             help="Validated held-out per-skill DP priors. Overrides robot competence and "
             "learning-rate priors without changing EES or human scoring. Source drift raises.",
+        )
+        priors.add_argument(
+            "--dp-initial-competence",
+            action=DpCli.InitialCompetence,
+            default={},
+            metavar="SKILL=P",
+            help="A robot skill's starting competence P in (0, 1), set directly as "
+            "Beta(2P, 2(1-P)) with the default Delta (repeatable, one per skill). Skills not "
+            "named keep the EES prior. Excludes --dp-prior-calibration.",
         )
         parser.add_argument(
             "--dp-initial-learning-rate",
@@ -791,6 +824,7 @@ class DpCli(EesCli):
                 dp_solver=args.dp_solver,
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
+                dp_initial_competence=args.dp_initial_competence,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
                 ),

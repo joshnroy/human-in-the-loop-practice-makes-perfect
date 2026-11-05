@@ -46,3 +46,54 @@ def test_dp_cli_wires_budget_schedule_and_practice_groundings(*, unit, schedule,
     assert method.dp_allocation_schedule == schedule
     assert method.score_human_skills is True
     assert not method.pursues_goal_in_period(period=0)
+
+
+def test_dp_cli_parses_repeatable_initial_competences():
+    base = ["--env", "tossing3d", "--method", "dp", "--dp-budget", "188"]
+    args = CostFixtures.parse(
+        argv=[
+            *base,
+            *("--dp-initial-competence", "PickCube=0.99"),
+            *("--dp-initial-competence", "MoveToTossLocationAndToss=0.1"),
+        ]
+    )
+    assert args.dp_initial_competence == {"PickCube": 0.99, "MoveToTossLocationAndToss": 0.1}
+    assert CostFixtures.parse(argv=base).dp_initial_competence == {}
+    for bad in (["PickCube"], ["PickCube=high"], ["PickCube=0.5", "PickCube=0.6"]):
+        with pytest.raises(SystemExit):
+            CostFixtures.parse(
+                argv=[*base, *[t for value in bad for t in ("--dp-initial-competence", value)]]
+            )
+    with pytest.raises(SystemExit):
+        CostFixtures.parse(
+            argv=[
+                *base,
+                *("--dp-initial-competence", "PickCube=0.5"),
+                *("--dp-prior-calibration", "priors.json"),
+            ]
+        )
+
+
+def test_dp_cli_passes_initial_competences_to_the_method(*, monkeypatch):
+    captured = []
+
+    def capture(*, method_factory, **kwargs):
+        env = Tossing3DEnvironment(scene_bg=False)
+        captured.append(
+            method_factory(
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(capture))
+    CostFixtures.dispatch(
+        argv=[
+            *("--env", "tossing3d", "--method", "dp", "--dp-budget", "188"),
+            *("--dp-initial-competence", "MoveToTossLocationAndToss=0.1"),
+        ]
+    )
+    assert captured[0].dp_initial_competence == {"MoveToTossLocationAndToss": 0.1}
