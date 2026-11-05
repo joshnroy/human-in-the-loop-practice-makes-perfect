@@ -60,9 +60,11 @@ class KitchenScene(PotstickerScene):
         _, data = self._model_and_data()
         self.payload_rest.record(time=float(data.time), positions=self.payload_positions())
 
-    # `cubes_settled` stays KinDER's speed rule: it gates construction, the human
-    # reset, `ready()` and the drop settle loop, and the controllers were validated
-    # on the start state that rule produces. Only outcomes are judged by position.
+    # `cubes_settled` stays KinDER's speed rule for construction and the human reset:
+    # both start from zeroed velocities with no position history, and the controllers
+    # were validated on the start state that rule produces. Outcomes, the drop's settle
+    # wait and `ready()` also accept position rest (`KitchenController`): a dumpling
+    # rocking on one contact point failed 5/60 drops on the speed rule alone.
     def payload_at_rest(self) -> bool:
         """Outcome rest by position (`PayloadRestWindow`), immune to rocking in place."""
         _, data = self._model_and_data()
@@ -180,6 +182,19 @@ class KitchenController(PotstickerController):
 
     def outcome_settled(self) -> bool:
         return bool(self.scene.payload_at_rest())
+
+    def ready_settled(self) -> bool:
+        # Position rest admits a dumpling rocking in place; the speed rule still covers
+        # construction and the human reset, which have no position history yet.
+        return bool(self.scene.payload_at_rest() or self.scene.cubes_settled())
+
+    def settle_returned_payload(self) -> None:
+        # By position: the speed rule never sees a dumpling rocking in place as settled.
+        for _ in range(200):
+            self.pause(phase="settle returned potstickers", seconds=0.1, grip=0)
+            if self.scene.payload_at_rest():
+                return
+        raise ValueError("Returned potstickers did not settle within 20 seconds")
 
     def run_joint_pour(self, *, parameters: Any, requested_count: int) -> dict:
         del parameters, requested_count
