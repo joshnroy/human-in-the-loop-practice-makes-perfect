@@ -32,11 +32,12 @@ def test_the_config_food_extents_are_the_potstickers_not_free_parameters():
     assert config.dumpling_mass == 0.020
 
 
-def _env(*, seed=0):
+def _env(*, seed=0, collision="full"):
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
     from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(dumpling_collision=collision))
     RackServingTasks(env=env, seed=seed).sample_train_task()
     return env
 
@@ -49,6 +50,24 @@ def _settle(*, env, placements):
 
 
 @kinder_only
+def test_the_default_reset_scene_collides_each_potsticker_as_one_hull():
+    import mujoco
+
+    env = _env(collision="hull")
+    try:
+        backend = env.backend()
+        model = backend.model()
+        for name in backend.cube_names:
+            geoms = backend.body_geoms(name=name)
+            assert [int(model.geom_type[geom]) for geom in geoms] == [
+                int(mujoco.mjtGeom.mjGEOM_MESH)
+            ]
+            assert model.body_mass[model.body(name).id] == pytest.approx(0.020)
+            assert backend.location(name=name) == "OnRack"
+    finally:
+        env.close()
+
+
 def test_reset_scene_has_five_potsticker_bodies_with_its_collision_geoms():
     import mujoco
 
