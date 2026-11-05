@@ -39,11 +39,41 @@ def check_costs(*, costs: dict, cost: float = 5) -> None:
         raise ValueError(f"Cost file must price exactly the two human resets at {cost}: {priced}")
 
 
+def arms(*, manifest: dict) -> tuple[str, ...]:
+    """The manifest's arms in row order; absent, the three every package had before DP."""
+    return tuple(manifest.get("arms", ARMS))
+
+
 def expected_rows(*, manifest: dict) -> list[tuple]:
     """(reset cost, seed, arm) per row: seed-major, then each swept cost in the manifest's
     order, then arm (`None`: no sweep, the nine runs at the cost file's 5)."""
     costs = manifest.get("human_reset_costs", [None])
-    return [(cost, seed, arm) for seed in range(3) for cost in costs for arm in ARMS]
+    return [
+        (cost, seed, arm) for seed in range(3) for cost in costs for arm in arms(manifest=manifest)
+    ]
+
+
+def check_dp_row(*, parsed: argparse.Namespace, manifest: dict, row: dict) -> None:
+    """A DP row runs DP exactly as the manifest records it (episodes, allocated once,
+    Gurobi, the manifest's B and initial competences, no prior calibration); no other row
+    runs DP."""
+    if row["arm"] != "dp":
+        if parsed.method == "dp":
+            raise ValueError(f"Only the DP arm may run --method dp, not {row['arm']}")
+        return
+    expected = {
+        "method": "dp",
+        "dp_budget_unit": "episodes",
+        "dp_allocation_schedule": "once",
+        "dp_solver": "gurobi",
+        "dp_budget": float(manifest["dp"]["episode_budget"]),
+        "dp_prior_calibration": None,
+        "dp_initial_competence": manifest["dp"].get("initial_competence", {}),
+        "dp_initial_learning_rate_for": manifest["dp"].get("initial_learning_rate_for", {}),
+    }
+    actual = {name: getattr(parsed, name, None) for name in expected}
+    if actual != expected:
+        raise ValueError(f"DP row differs from the manifest's DP contract: {actual}")
 
 
 def check_row_costs(*, parsed: argparse.Namespace, row: dict) -> None:
@@ -85,9 +115,18 @@ def check_budget_and_workers(*, parsed: argparse.Namespace, manifest: dict) -> N
         raise ValueError("Parallel evaluation requires --evaluation-task-rng per-task")
 
 
-def check_repeated_stop_limit(*, parsed: argparse.Namespace, manifest: dict) -> None:
-    """Every row carries the manifest's STOP-streak limit, and none without one."""
-    expected = manifest.get("repeated_stop_limit")
+def repeated_stop_limit(*, manifest: dict, row: dict | None = None) -> int | None:
+    """A row's STOP-streak limit: its own (the DP rows'), else the manifest's."""
+    if row is not None and "repeated_stop_limit" in row:
+        return row["repeated_stop_limit"]
+    return manifest.get("repeated_stop_limit")
+
+
+def check_repeated_stop_limit(
+    *, parsed: argparse.Namespace, manifest: dict, row: dict | None = None
+) -> None:
+    """Every row carries its STOP-streak limit, and none without one."""
+    expected = repeated_stop_limit(manifest=manifest, row=row)
     if parsed.repeated_stop_limit != expected:
         raise ValueError(
             f"Wrong --repeated-stop-limit {parsed.repeated_stop_limit}: expected the "
@@ -95,10 +134,10 @@ def check_repeated_stop_limit(*, parsed: argparse.Namespace, manifest: dict) -> 
         )
 
 
-def complete_endpoints(*, manifest: dict) -> set[str]:
+def complete_endpoints(*, manifest: dict, row: dict | None = None) -> set[str]:
     """How a run may end and still count as complete: at the budget, or, under a
     STOP-streak limit, at that limit."""
-    if manifest.get("repeated_stop_limit") is None:
+    if repeated_stop_limit(manifest=manifest, row=row) is None:
         return {"practice_step_budget"}
     return {"practice_step_budget", "repeated_stop"}
 
@@ -210,7 +249,7 @@ def verify(*, launch: Path, full: bool) -> dict:
         gate = read(path=launch / "smoke-passed.json")
         if gate.get("binding") != binding(launch=launch) or gate.get("passed") is not True:
             raise ValueError("Matching completed smoke gate required")
-        if set(gate.get("arms", [])) != set(ARMS):
+        if set(gate.get("arms", [])) != set(arms(manifest=manifest)):
             raise ValueError("Smoke must cover every method")
         authorization = read(path=launch / "authorization.json")
         if authorization != {
@@ -247,7 +286,8 @@ def verify(*, launch: Path, full: bool) -> dict:
         if parsed.env != "kitchen_recycling3d":
             raise ValueError("Wrong environment")
         check_budget_and_workers(parsed=parsed, manifest=manifest)
-        check_repeated_stop_limit(parsed=parsed, manifest=manifest)
+        check_repeated_stop_limit(parsed=parsed, manifest=manifest, row=row)
+        check_dp_row(parsed=parsed, manifest=manifest, row=row)
         if parsed.goal_pursuit_horizon != 0 or parsed.stop_after_perfect_evaluations != 0:
             raise ValueError("Goal pursuit/perfect-evaluation stopping must be disabled")
         if not parsed.no_early_stop:
@@ -314,7 +354,7 @@ def run(*, launch: Path, row: dict, smoke: bool, manifest: dict) -> dict:
         raise ValueError("Incomplete or failed held-out evaluation")
     if evaluations[-1].get("practice_steps") != status.get("practice_steps"):
         raise ValueError("Final held-out evaluation is missing")
-    if not ends or ends[-1].get("reason") not in complete_endpoints(manifest=manifest):
+    if not ends or ends[-1].get("reason") not in complete_endpoints(manifest=manifest, row=row):
         raise ValueError("Early STOP/stall is not full budget completion")
     # A run the STOP-streak limit ended has stopped practising: its horizon is its own.
     at_budget = ends[-1].get("reason") == "practice_step_budget"
@@ -352,12 +392,12 @@ def main() -> None:
             raise ValueError("Run physics smoke in an authorized compute allocation, not login")
         receipts = [
             run(launch=launch, row=row, smoke=True, manifest=manifest)
-            for row in manifest["runs"][:3]
+            for row in manifest["runs"][: len(arms(manifest=manifest))]
         ]
         gate = {
             "binding": binding(launch=launch),
             "passed": True,
-            "arms": list(ARMS),
+            "arms": list(arms(manifest=manifest)),
             "receipts": receipts,
         }
         with (launch / "smoke-passed.json").open("x") as stream:

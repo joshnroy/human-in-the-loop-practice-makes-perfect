@@ -10,8 +10,8 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   `experiment-config.json`. Seeded kitchen scatter remains enabled.
 - Seeds 0, 1, 2; arms EES, expectimax, Curtis: **nine jobs**, not an object sweep.
 - **160,000 counted practice steps; physical cost logged, not hard-capped.**
-  Historical 2,000 cost budget belongs to DP. There is no DP arm or new global
-  cost-budget flag in this package.
+  Historical 2,000 cost budget belongs to Tossing3D's DP. There is no global
+  cost-budget flag in this package; the opt-in DP arm (below) budgets in episodes.
   An iteration run may set another budget with `prepare.py --practice-step-budget`;
   the manifest then records `practice_step_budget` and `worker.py` holds every row
   and the run's endpoint to it. Left at the default, the manifest carries no such key
@@ -55,6 +55,21 @@ authorization plus matching evidence. No old Tossing3D/sweeptable launcher is us
   predicates, samplers, bounds and reset costs on the kitchen scene; one belief per
   skill, no near/far copies; goal `InBin` by KINDER's classifier. The practice domain
   for expectimax and Curtis is `TOSSING3D_DOMAIN`, with one belief per reset.
+
+- **Deliberate Practice arm (opt in).** `prepare.py --arms ees expectimax curtis dp
+  --dp-episode-budget B [--dp-repeated-stop-limit K]` adds a DP row per seed and cost:
+  the EES row's argv with `--method dp --dp-budget-unit episodes --dp-allocation-schedule
+  once --dp-solver gurobi --dp-budget B`, no `--dp-prior-calibration` (DP starts from the
+  EES priors and Delta 0.1), and the other arms' counted-step ceiling. B counts completed
+  target-skill attempts (Vats et al.'s episode budget, b_u = 1); setup executions and human
+  resets do not consume it. Once its allocation is spent DP chooses STOP, and `--no-early-stop`
+  ignores DP's own completion, so `--dp-repeated-stop-limit K` (DP rows only, recorded on
+  each DP row) ends such a run as a complete `repeated_stop`. The manifest records `arms`
+  and a `dp` block; `worker.py` reads the arm list from it, runs one smoke row per arm and
+  holds each DP row to that block (`check_dp_row`). Both sbatch scripts of a DP package
+  `module load gurobi/13.0.0` and append the isolated gurobipy binding the Tossing3D DP
+  launches used to `PYTHONPATH`, then check `import gurobipy` before any run.
+  A package without `--arms` is byte-identical to one prepared before the option existed.
 
 ## Canonical method provenance
 
@@ -224,7 +239,11 @@ which identity was used (`host.json cpu_model`, or `slurm-feature:genoa` with bo
 names and the reference job).
 
 A launch meant to change behaviour says so instead:
-`--equivalence-reference none --equivalence-waiver "<reason>"`. The reason is recorded
+`--equivalence-reference none --equivalence-waiver "<reason>"`. A launch that adds an arm
+the reference never ran (DP) keeps the reference for the other arms and waives only the
+new one: `--equivalence-waive-arm dp --equivalence-waiver "<reason>"`. That arm's smoke row
+is not bound; the manifest's block and the check's record carry `waived_arms` and the
+reason. The reason is recorded
 in the manifest, and the check records it rather than comparing anything.
 
 Either way the check writes `equivalence-check.json`, bound to the launch.

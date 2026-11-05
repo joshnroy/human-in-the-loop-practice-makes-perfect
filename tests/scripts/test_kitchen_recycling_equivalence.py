@@ -361,6 +361,91 @@ def test_a_smoke_with_nothing_before_its_budget_refuses(*, tmp_path: Path) -> No
         equivalence.compare_run(smoke=smoke, reference=reference)
 
 
+# ------------------------------------------------- #681's decision-log schema change
+# #681 removed Skill.practice_cost and the outcome records' cost-observation fields after
+# kitchen v10 ran. A v10 reference logs them; a smoke from today's source cannot. Exactly
+# those three fields are ignored, and nothing else.
+
+SKILL_REPR_V10 = (
+    "skill=Skill(name='PickCube', parameters=(), preconditions=frozenset(), "
+    "param_dim=0, practice_cost=1.0) objects=(Object(name='robot'),)"
+)
+SKILL_REPR_NOW = (
+    "skill=Skill(name='PickCube', parameters=(), preconditions=frozenset(), "
+    "param_dim=0) objects=(Object(name='robot'),)"
+)
+
+
+def skill_dict(**extra: object) -> dict:
+    return {"name": "PickCube", "parameters": [], "preconditions": [], "param_dim": 0, **extra}
+
+
+def outcome_v10(**changes: object) -> dict:
+    return {
+        "event": "outcome",
+        "decision": 3,
+        "success": True,
+        "action": {"skill": skill_dict(practice_cost=1.0), "objects": ["robot"]},
+        "configured_cost_observation": None,
+        "cost_observation_source": "host_control_steps",
+        "estimated_costs": {SKILL_REPR_V10: 2.09},
+        **changes,
+    }
+
+
+def outcome_now(**changes: object) -> dict:
+    return {
+        "event": "outcome",
+        "decision": 3,
+        "success": True,
+        "action": {"skill": skill_dict(), "objects": ["robot"]},
+        "estimated_costs": {SKILL_REPR_NOW: 2.09},
+        **changes,
+    }
+
+
+def test_the_681_schema_fields_are_ignored() -> None:
+    equivalence.compare_records(
+        name="pomdp_decisions.jsonl", smoke=[outcome_now()], reference=[outcome_v10()]
+    )
+    equivalence.compare_records(
+        name="pomdp_decisions.jsonl",
+        smoke=[{"event": "decision", "chosen": SKILL_REPR_NOW}],
+        reference=[{"event": "decision", "chosen": SKILL_REPR_V10}],
+    )
+
+
+@pytest.mark.parametrize(
+    ("smoke", "reference"),
+    [
+        # A decision that differs is still a divergence.
+        (outcome_now(success=False), outcome_v10()),
+        # So is a different cost estimate behind the same renamed key.
+        (outcome_now(estimated_costs={SKILL_REPR_NOW: 2.10}), outcome_v10()),
+        # practice_cost is ignored only on a serialised Skill, not on any dict.
+        (
+            {"event": "execution_cost", "cost": {"value": 1}},
+            {"event": "execution_cost", "cost": {"value": 1, "practice_cost": 1.0}},
+        ),
+        # The cost-observation fields are ignored only on outcome records.
+        (
+            {"event": "execution_cost", "cost": 1},
+            {"event": "execution_cost", "cost": 1, "cost_observation_source": "host"},
+        ),
+        # Only a numeric practice_cost at the end of a Skill repr is stripped.
+        (
+            {"event": "decision", "chosen": SKILL_REPR_NOW},
+            {"event": "decision", "chosen": SKILL_REPR_NOW.replace("PickCube", "Pick")},
+        ),
+    ],
+)
+def test_anything_else_still_diverges(*, smoke: dict, reference: dict) -> None:
+    with pytest.raises(equivalence.Divergence):
+        equivalence.compare_records(
+            name="pomdp_decisions.jsonl", smoke=[smoke], reference=[reference]
+        )
+
+
 # ---------------------------------------------------------------- prepare.py binding
 
 
@@ -562,6 +647,61 @@ def test_a_waiver_cannot_accompany_a_reference(*, tmp_path: Path, reference_laun
     assert result.returncode != 0
 
 
+DP = (
+    *("--arms", "ees", "expectimax", "curtis", "dp"),
+    *("--dp-episode-budget", "188", "--dp-repeated-stop-limit", "100"),
+)
+
+
+def test_prepare_waives_a_new_arm_and_binds_the_others(
+    *, tmp_path: Path, reference_launch: Path
+) -> None:
+    """A new arm has no reference run; the arms the reference ran are still checked."""
+    result = run_prepare(
+        out=tmp_path / "new",
+        tag="kitchen-recycling-new",
+        extra=(
+            *DP,
+            *("--equivalence-reference", str(reference_launch)),
+            *("--equivalence-waive-arm", "dp"),
+            *("--equivalence-waiver", "new DP arm, no prior reference"),
+        ),
+    )
+    assert result.returncode == 0, result.stderr
+    block = json.loads((tmp_path / "new" / "manifest.json").read_text())["equivalence"]
+    assert block["waived_arms"] == ["dp"]
+    assert block["waiver"] == "new DP arm, no prior reference"
+    assert block["runs"] == [
+        {
+            "index": index,
+            "reference_index": index,
+            "reference": f"{reference_launch}/results/reset-cost-5/{arm}/0",
+        }
+        for index, arm in enumerate(prepare.ARMS)
+    ]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        (),  # The reference has no DP run to bind.
+        ("--equivalence-waive-arm", "dp"),  # A waived arm needs a stated reason.
+        ("--equivalence-waiver", "why"),  # A reason needs the arm it waives.
+        ("--equivalence-waive-arm", "sac", "--equivalence-waiver", "why"),  # No such arm.
+    ],
+)
+def test_prepare_refuses_a_half_stated_arm_waiver(
+    *, tmp_path: Path, reference_launch: Path, extra: tuple[str, ...]
+) -> None:
+    result = run_prepare(
+        out=tmp_path / "new",
+        tag="kitchen-recycling-new",
+        extra=(*DP, *("--equivalence-reference", str(reference_launch)), *extra),
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "new").exists()
+
+
 # ---------------------------------------------------------------- the gate's check
 
 
@@ -667,6 +807,17 @@ def test_the_gate_check_records_a_waiver(*, tmp_path: Path) -> None:
         "waiver": "meant to differ",
     }
     assert json.loads((launch / equivalence.RECORD).read_text()) == record
+
+
+def test_the_gate_check_carries_an_arm_waiver_into_its_record(*, tmp_path: Path) -> None:
+    launch = bound_pair(tmp_path=tmp_path)
+    manifest = json.loads((launch / "manifest.json").read_text())
+    manifest["equivalence"] |= {"waived_arms": ["dp"], "waiver": "new DP arm"}
+    (launch / "manifest.json").write_text(json.dumps(manifest))
+    record = equivalence.check(launch=launch)
+    assert record["passed"] is True
+    assert (record["waived_arms"], record["waiver"]) == (["dp"], "new DP arm")
+    assert [run["arm"] for run in record["runs"]] == list(prepare.ARMS)
 
 
 # ---------------------------------------------------------------- worker.py

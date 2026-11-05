@@ -9,6 +9,13 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARMS = ("ees", "expectimax", "curtis")
+# Deliberate Practice (docs/dp-baseline.md), opt in with --arms: EES's argv with --method dp.
+# Every package without it is byte-identical to one prepared before it existed.
+ALL_ARMS = (*ARMS, "dp")
+# Della's Gurobi, as the Tossing3D DP launches loaded it: the licensed module, and an
+# isolated gurobipy 13.0.0 binding appended to PYTHONPATH (the runtime env is not modified).
+GUROBI_MODULE = "gurobi/13.0.0"
+GUROBI_PYTHONPATH = "/scratch/gpfs/TSILVER/jr2860/launch/dp-gurobi-preflight-20261025/python-deps"
 # The full contract's budget, and one evaluation process per checkpoint. Left at these
 # defaults the package is byte-identical to the one v5-v8 launched from.
 PRACTICE_STEP_BUDGET = 160000
@@ -93,12 +100,21 @@ def comparable_argv(*, row: dict, allowed: list[str]) -> dict[str, list[list[str
 
 
 def bind_equivalence(
-    *, rows: list[dict], reference: dict, reference_root: str, allowed: list[str]
+    *,
+    rows: list[dict],
+    reference: dict,
+    reference_root: str,
+    allowed: list[str],
+    smoke_rows: int = len(ARMS),
+    waived_arms: tuple[str, ...] = (),
 ) -> list[dict]:
     """Each smoke row's reference run: the reference launch's row of the same reset cost,
-    arm and seed, whose argv must equal this row's but for the declared flags."""
+    arm and seed, whose argv must equal this row's but for the declared flags. A waived
+    arm (one the reference never ran) is not bound."""
     bound = []
-    for row in rows[: len(ARMS)]:  # The rows worker.py's smoke runs.
+    for row in rows[:smoke_rows]:  # The rows worker.py's smoke runs.
+        if row["arm"] in waived_arms:
+            continue
         key = (row.get("human_reset_cost"), row["arm"], row["seed"])
         matches = [
             other
@@ -142,6 +158,9 @@ def argv(
     practice_step_budget: int = PRACTICE_STEP_BUDGET,
     evaluation_workers: int = EVALUATION_WORKERS,
     repeated_stop_limit: int | None = None,
+    dp_episode_budget: int | None = None,
+    dp_initial_competence: tuple[str, ...] = (),
+    dp_initial_learning_rate_for: tuple[str, ...] = (),
 ) -> list[str]:
     common = list(COMMON)
     common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
@@ -170,6 +189,31 @@ def argv(
         return result + shlex.split(
             "--method ees --practice-groundings all --ees-score-human-skills --record-ees-decisions"
         )
+    if arm == "dp":
+        if dp_episode_budget is None:
+            raise ValueError("The DP arm needs an episode budget")
+        # EES with DP choosing the practice target: Vats et al.'s episode budget (each
+        # completed target attempt costs one), allocated once, solved by Gurobi, from the
+        # EES priors (no prior calibration).
+        return result + [
+            *shlex.split(
+                "--method dp --practice-groundings all --ees-score-human-skills "
+                "--record-ees-decisions --dp-budget-unit episodes "
+                "--dp-allocation-schedule once --dp-solver gurobi"
+            ),
+            "--dp-budget",
+            str(dp_episode_budget),
+            *[
+                token
+                for value in dp_initial_competence
+                for token in ("--dp-initial-competence", value)
+            ],
+            *[
+                token
+                for value in dp_initial_learning_rate_for
+                for token in ("--dp-initial-learning-rate-for", value)
+            ],
+        ]
     return result + [
         "--method",
         "pomdp",
@@ -212,6 +256,42 @@ def main() -> None:
         help="Pass --repeated-stop-limit K to every row: a run ends as repeated_stop "
         "after K STOP-only sessions in a row, despite --no-early-stop.",
     )
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        choices=ALL_ARMS,
+        default=list(ARMS),
+        help="The arms per seed and cost, in row order (default: EES, expectimax, Curtis).",
+    )
+    parser.add_argument(
+        "--dp-episode-budget",
+        type=int,
+        default=None,
+        help="The DP arm's budget B in completed target-skill attempts (--dp-budget-unit "
+        "episodes, allocated once). Required with --arms ... dp.",
+    )
+    parser.add_argument(
+        "--dp-repeated-stop-limit",
+        type=int,
+        default=None,
+        help="--repeated-stop-limit K on the DP rows only: DP STOPs once its allocation is "
+        "spent, and this ends the run there instead of at the step ceiling.",
+    )
+    parser.add_argument(
+        "--dp-initial-competence",
+        action="append",
+        default=None,
+        metavar="SKILL=P",
+        help="Passed to every DP row: a robot skill's starting competence P in (0, 1) "
+        "(repeatable, one per skill).",
+    )
+    parser.add_argument(
+        "--dp-initial-learning-rate-for",
+        action="append",
+        default=None,
+        metavar="SKILL=D",
+        help="Passed to every DP row: a robot skill's own Delta prior D >= 0 (repeatable).",
+    )
     parser.add_argument("--cpus-per-task", type=int, default=2)
     parser.add_argument("--memory", default="16G")
     parser.add_argument(
@@ -251,8 +331,17 @@ def main() -> None:
     parser.add_argument(
         "--equivalence-waiver",
         default=None,
-        help="Why this launch has no equivalence reference; recorded in the manifest and "
-        "the authorization provenance. Requires --equivalence-reference none.",
+        help="Why this launch has no equivalence reference (with --equivalence-reference "
+        "none), or why the --equivalence-waive-arm arms have none; recorded in the manifest "
+        "and the authorization provenance.",
+    )
+    parser.add_argument(
+        "--equivalence-waive-arm",
+        action="append",
+        default=None,
+        metavar="ARM",
+        help="An arm the reference never ran (repeatable): its smoke row is not bound, the "
+        "other arms' still are. Requires a reference and --equivalence-waiver.",
     )
     args = parser.parse_args()
     reference_root = args.equivalence_reference
@@ -266,14 +355,59 @@ def main() -> None:
             "Every package needs --equivalence-reference ROOT, or --equivalence-reference "
             "none with an --equivalence-waiver reason"
         )
+    arms = tuple(args.arms)
+    waived_arms = tuple(sorted(set(args.equivalence_waive_arm or [])))
+    if len(set(arms)) != len(arms):
+        parser.error("--arms must be distinct")
+    if ("dp" in arms) != (args.dp_episode_budget is not None):
+        parser.error("--dp-episode-budget is required with, and only with, a DP arm")
+    if args.dp_episode_budget is not None and args.dp_episode_budget <= 0:
+        parser.error("--dp-episode-budget must be a positive whole number of episodes")
+    if args.dp_repeated_stop_limit is not None and (
+        "dp" not in arms or args.dp_repeated_stop_limit <= 0
+    ):
+        parser.error("--dp-repeated-stop-limit must be positive and needs a DP arm")
+    initial_competence: dict[str, float] = {}
+    for value in args.dp_initial_competence or []:
+        name, _, raw = value.partition("=")
+        try:
+            competence = float(raw)
+        except ValueError:
+            parser.error(f"--dp-initial-competence expects SKILL=P, got {value!r}")
+        if not name or name in initial_competence or not 0 < competence < 1:
+            parser.error(f"--dp-initial-competence needs one P in (0, 1) per skill: {value!r}")
+        initial_competence[name] = competence
+    if initial_competence and "dp" not in arms:
+        parser.error("--dp-initial-competence needs a DP arm")
+    initial_learning_rate_for: dict[str, float] = {}
+    for value in args.dp_initial_learning_rate_for or []:
+        name, _, raw = value.partition("=")
+        try:
+            rate = float(raw)
+        except ValueError:
+            parser.error(f"--dp-initial-learning-rate-for expects SKILL=D, got {value!r}")
+        if not name or name in initial_learning_rate_for or not 0 <= rate < float("inf"):
+            parser.error(
+                f"--dp-initial-learning-rate-for needs one finite D >= 0 per skill: {value!r}"
+            )
+        initial_learning_rate_for[name] = rate
+    if initial_learning_rate_for and "dp" not in arms:
+        parser.error("--dp-initial-learning-rate-for needs a DP arm")
+    if not set(waived_arms) <= set(arms):
+        parser.error("--equivalence-waive-arm must name arms of this package")
     if reference_root == "none":
         if not (args.equivalence_waiver or "").strip():
             parser.error("--equivalence-reference none requires an --equivalence-waiver reason")
-        if allowed or args.equivalence_reference_manifest is not None:
+        if allowed or args.equivalence_reference_manifest is not None or waived_arms:
             parser.error("A waived launch has no reference to differ from")
     elif reference_root is not None:
-        if args.equivalence_waiver is not None:
-            parser.error("--equivalence-waiver applies only to --equivalence-reference none")
+        if waived_arms and not (args.equivalence_waiver or "").strip():
+            parser.error("--equivalence-waive-arm requires an --equivalence-waiver reason")
+        if args.equivalence_waiver is not None and not waived_arms:
+            parser.error(
+                "--equivalence-waiver applies only to --equivalence-reference none or "
+                "--equivalence-waive-arm"
+            )
         if not reference_root.startswith("/"):
             parser.error("--equivalence-reference must be an absolute deployment root")
         reference_root = reference_root.rstrip("/")
@@ -309,7 +443,8 @@ def main() -> None:
     # first. Without a sweep this is the nine seed-major runs.
     for seed in range(3):
         for cost in costs if costs is not None else [None]:
-            for arm in ARMS:
+            for arm in arms:
+                limit = args.dp_repeated_stop_limit if arm == "dp" else args.repeated_stop_limit
                 command = argv(
                     arm=arm,
                     seed=seed,
@@ -319,9 +454,14 @@ def main() -> None:
                     kitchen_config=args.kitchen_config,
                     practice_step_budget=args.practice_step_budget,
                     evaluation_workers=args.evaluation_workers,
-                    repeated_stop_limit=args.repeated_stop_limit,
+                    repeated_stop_limit=limit,
+                    dp_episode_budget=args.dp_episode_budget,
+                    dp_initial_competence=tuple(args.dp_initial_competence or ()),
+                    dp_initial_learning_rate_for=tuple(args.dp_initial_learning_rate_for or ()),
                 )
                 row = {"index": len(rows), "arm": arm, "seed": seed, "argv": command}
+                if arm == "dp" and args.dp_repeated_stop_limit is not None:
+                    row["repeated_stop_limit"] = args.dp_repeated_stop_limit
                 if cost is not None:
                     row |= {
                         "human_reset_cost": cost_value(cost=cost),
@@ -342,6 +482,8 @@ def main() -> None:
                 reference=json.loads(path.read_text()),
                 reference_root=reference_root,
                 allowed=allowed,
+                smoke_rows=len(arms),
+                waived_arms=waived_arms,
             )
         except (OSError, ValueError, KeyError) as error:
             shutil.rmtree(args.out)  # Created by this invocation: leave no partial package.
@@ -351,6 +493,11 @@ def main() -> None:
             "reference_manifest_sha256": digest(path=path),
             "allowed_argv_differences": allowed,
             "runs": runs,
+            **(
+                {"waived_arms": list(waived_arms), "waiver": args.equivalence_waiver}
+                if waived_arms
+                else {}
+            ),
         }
     manifest = {
         "schema": 1,
@@ -379,6 +526,27 @@ def main() -> None:
         **(
             {"human_reset_costs": [cost_value(cost=cost) for cost in costs]}
             if costs is not None
+            else {}
+        ),
+        # Recorded only with a DP arm (or another non-default arm list), so every other
+        # manifest keeps its bytes; worker.arms reads an absent key as the default three.
+        **({"arms": list(arms)} if arms != ARMS else {}),
+        **(
+            {
+                "dp": {
+                    "budget_unit": "episodes",
+                    "allocation_schedule": "once",
+                    "solver": "gurobi",
+                    "episode_budget": args.dp_episode_budget,
+                    "repeated_stop_limit": args.dp_repeated_stop_limit,
+                    "prior_calibration": None,
+                    "initial_competence": initial_competence,
+                    "initial_learning_rate_for": initial_learning_rate_for,
+                    "gurobi_module": GUROBI_MODULE,
+                    "gurobi_pythonpath": GUROBI_PYTHONPATH,
+                }
+            }
+            if "dp" in arms
             else {}
         ),
         # The one key v11 adds: with it removed, the manifest is byte-identical to v8/v9's.
@@ -416,6 +584,14 @@ def main() -> None:
             f"#SBATCH --array=0-{len(rows) - 1}%{args.max_parallel}\n" if phase == "full" else ""
         )
         constraint = f"#SBATCH --constraint={args.constraint}\n" if args.constraint else ""
+        # Only a DP package loads Gurobi; an import check fails the job before any run.
+        gurobi = (
+            f"set +u\nmodule load {GUROBI_MODULE}\nset -u\n"
+            f'export PYTHONPATH="$PYTHONPATH:{GUROBI_PYTHONPATH}"\n'
+            '"$ROOT/env/bin/python" -c "import gurobipy"\n'
+            if "dp" in arms
+            else ""
+        )
         script = (
             "#!/usr/bin/env bash\n"
             "#SBATCH --account=tsilver\n#SBATCH --partition=cpu\n"
@@ -441,6 +617,7 @@ def main() -> None:
             'export TMPDIR="$ROOT/tmp/${SLURM_JOB_ID}-${SLURM_ARRAY_TASK_ID:-smoke}"\n'
             'mkdir -p "$TMPDIR"\nexport TEMP="$TMPDIR" TMP="$TMPDIR"\n'
             'export XDG_RUNTIME_DIR="$TMPDIR/xdg"\nmkdir -m 700 "$XDG_RUNTIME_DIR"\n'
+            f"{gurobi}"
             'exec "$ROOT/env/bin/python" scripts/kitchen_recycling/worker.py '
             f'{phase} --launch "$ROOT/launch" --task "${{SLURM_ARRAY_TASK_ID:-0}}"\n'
         )

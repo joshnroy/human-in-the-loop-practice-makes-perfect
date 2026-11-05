@@ -2,8 +2,9 @@
 
 import hashlib
 import json
+import math
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field, PrivateAttr, model_validator
 
@@ -40,6 +41,10 @@ class DpMethod(EesMethod):
     enumeration is an explicitly selected reference, never a silent fallback.
     """
 
+    # The Beta strength alpha + beta of a directly set initial competence: the same weak
+    # strength scripts/tossing3d_dp_priors.py gives a calibrated one.
+    DP_PRIOR_STRENGTH: ClassVar[float] = 2.0
+
     dp_budget: float = Field(gt=0.0, allow_inf_nan=False)
     dp_budget_unit: Literal["cost", "episodes"] = "cost"
     dp_allocation_schedule: Literal["once", "period"] = "period"
@@ -47,7 +52,12 @@ class DpMethod(EesMethod):
     dp_solver_time_limit: float = Field(default=60.0, gt=0.0, allow_inf_nan=False)
     dp_solver_log: Path | None = None
     dp_prior_calibration: Path | None = None
+    # A starting competence per named robot skill, set directly rather than calibrated:
+    # Beta(2p, 2(1-p)), the calibration path's prior strength, with the default Delta.
+    dp_initial_competence: dict[str, float] = Field(default_factory=dict)
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
+    # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
+    dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
     dp_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     dp_max_skills: int = Field(default=8, ge=1)
     dp_max_allocations: int = Field(default=200_000, ge=1)
@@ -86,7 +96,46 @@ class DpMethod(EesMethod):
             self._dp_prior_sha256 = hashlib.sha256(
                 self.dp_prior_calibration.read_bytes()
             ).hexdigest()
+        if self.dp_initial_learning_rate_for:
+            if self.dp_prior_calibration is not None:
+                raise ValueError(
+                    "dp_initial_learning_rate_for and dp_prior_calibration are mutually exclusive"
+                )
+            unknown = set(self.dp_initial_learning_rate_for) - {
+                skill.name for skill in self.skills()
+            }
+            if unknown:
+                raise ValueError(f"initial learning rates name not robot skills: {sorted(unknown)}")
+            for name, rate in self.dp_initial_learning_rate_for.items():
+                if not math.isfinite(rate) or rate < 0.0:
+                    raise ValueError(
+                        f"initial learning rate of {name} must be finite and non-negative"
+                    )
+        if self.dp_initial_competence:
+            if self.dp_prior_calibration is not None:
+                raise ValueError(
+                    "dp_initial_competence and dp_prior_calibration are mutually exclusive"
+                )
+            unknown = set(self.dp_initial_competence) - {skill.name for skill in self.skills()}
+            if unknown:
+                raise ValueError(f"initial competences name not robot skills: {sorted(unknown)}")
+            for name, competence in self.dp_initial_competence.items():
+                if not 0.0 < competence < 1.0:
+                    raise ValueError(
+                        f"initial competence of {name} must be strictly between 0 and 1"
+                    )
+                self._dp_skill_priors[name] = DpSkillPrior(
+                    alpha=self.DP_PRIOR_STRENGTH * competence,
+                    beta=self.DP_PRIOR_STRENGTH * (1.0 - competence),
+                    initial_learning_rate=self.initial_learning_rate(skill_name=name),
+                )
         return self
+
+    def initial_learning_rate(self, *, skill_name: str | None) -> float:
+        """A skill's Delta prior: its own override, else the global one."""
+        if skill_name is None:
+            return self.dp_initial_learning_rate
+        return self.dp_initial_learning_rate_for.get(skill_name, self.dp_initial_learning_rate)
 
     def competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
         prior = self._dp_skill_priors.get(ground_skill.skill.name)
@@ -380,6 +429,8 @@ class DpMethod(EesMethod):
                     "episodes": self._dp_episodes,
                     "physical_cost": self._require_accounting().total_cost,
                     "prior_calibration_sha256": self._dp_prior_sha256,
+                    "initial_competence": dict(self.dp_initial_competence),
+                    "initial_learning_rate_for": dict(self.dp_initial_learning_rate_for),
                     "practice_groundings": self.practice_groundings,
                     "executed_since_solve": [
                         {
@@ -407,7 +458,11 @@ class DpMethod(EesMethod):
             alpha=prior.alpha if prior is not None else self.prior_alpha,
             beta=prior.beta if prior is not None else self.prior_beta,
             initial_delta=(
-                prior.initial_learning_rate if prior is not None else self.dp_initial_learning_rate
+                prior.initial_learning_rate
+                if prior is not None
+                else self.initial_learning_rate(
+                    skill_name=ground_skill.skill.name if ground_skill is not None else None
+                )
             ),
             smoothing=self.dp_smoothing,
             cycle_observations=(

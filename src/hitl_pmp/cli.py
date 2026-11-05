@@ -456,6 +456,10 @@ class Cli:
             and args.pomdp_search_depth is None
         ):
             args.pomdp_search_depth = environment_depth
+        # A method may refuse flag combinations argparse cannot express on its own.
+        method_check = getattr(METHODS.get(args.method), "check_args", None)
+        if method_check is not None:
+            method_check(args=args, parser=parser)
         if args.evaluate_only and args.resume is not None:
             parser.error("--evaluate-only measures a fresh run's policy; it cannot --resume")
         step_protocol = args.practice_step_budget is not None or args.evaluate_only
