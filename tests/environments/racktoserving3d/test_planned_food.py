@@ -85,3 +85,16 @@ def test_planned_pick_then_place_on_the_counter(*, skill, location):
         assert env.backend().location(name="cube_0") == location
     finally:
         env.close()
+
+
+def test_a_held_food_on_the_rim_is_placed_from_under_the_counter_overhang():
+    """The fixture's base stands with its chassis under the counter top. Upstream's 2-D
+    check projects the whole counter onto the floor, so that start "collided" and no
+    base path existed; the chassis is checked against the counter in 3-D instead."""
+    env = restored(fixture=HELD_ON_RIM)
+    try:
+        env.take_action(action=np.array([4.0, 3, 0, 0, 0]))
+        assert env.last_skill_error() is None
+        assert env.backend().location(name="cube_3") == "OnTray"
+    finally:
+        env.close()

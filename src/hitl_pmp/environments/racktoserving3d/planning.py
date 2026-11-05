@@ -42,6 +42,8 @@ CHASSIS_CHECKED_FROM = "forearm_link"
 # The carried scraper's boxes are grown by this in the planner's MuJoCo check, so
 # tracking error under its payload cannot carry it into the execution guard's limit.
 TOOL_INFLATE_M = 0.01
+# Upstream's names for the counter's compiled collider boxes.
+COUNTER_COLLIDERS = "collider:cupboard_1:"
 # How far behind the grasp the base centre may stand, and how far to either side of it.
 STANCE_BACK_M = (0.30, 0.80)
 STANCE_SIDE_M = 0.15
@@ -334,7 +336,10 @@ class ScraperMotionPlanner:
             arm=arm,
             what=what,
             held=held,
-            ignore=(() if held is None else ("wiper_0",)) if ignore is None else ignore,
+            ignore=(
+                *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
+                *ScraperMotionPlanner.counter_colliders(state=state),
+            ),
             also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
         )
         # Unwrap the heading so the base turns the short way between waypoints.
@@ -344,6 +349,20 @@ class ScraperMotionPlanner:
             pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
             out.append(pose)
         return out
+
+    @staticmethod
+    def counter_colliders(*, state: Any) -> tuple[str, ...]:
+        """The counter's compiled collider boxes, which get no 2-D floor footprint.
+
+        Upstream projects each box onto the floor, the counter top included, so a
+        chassis that stands under the top's overhang (as one can: the top is 0.9 m up)
+        "collides" in 2-D and no base path leaves it. The chassis is checked against
+        the counter in 3-D at every base-path check instead (the MuJoCo guard: the
+        `robot_base_link` geoms against the top and the legs).
+        """
+        return tuple(
+            name for name in state.get_object_names() if name.startswith(COUNTER_COLLIDERS)
+        )
 
     @staticmethod
     def plan_arm_to(
