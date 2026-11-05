@@ -91,6 +91,37 @@ def test_clustered_is_opt_in():
     assert RackServingConfig(start_layout="clustered").start_layout == "clustered"
 
 
+def _plate_line(*, seed, tau, center_y=0.05):
+    return RackLayout.clustered(
+        rng=np.random.default_rng(seed),
+        rack=RACK,
+        count=5,
+        center_y=center_y,
+        center_y_sigma=tau,
+    )
+
+
+@pytest.mark.parametrize("tau", [0.015, 0.03])
+def test_a_plate_line_pile_centres_its_y_on_c(*, tau):
+    offsets = [
+        np.mean([y for _, y, _ in _plate_line(seed=s, tau=tau)[0]]) - 0.05 for s in range(300)
+    ]
+    # Piece noise (sigma up to 0.10, clipped to the inset) adds to tau; the median stays on c.
+    assert abs(np.median(offsets)) < 0.01
+    assert np.std(offsets) < tau + 0.03
+
+
+def test_a_plate_line_pile_keeps_x_uniform_over_the_inset():
+    xs = [np.mean([x for x, _, _ in _plate_line(seed=s, tau=0.03)[0]]) for s in range(300)]
+    assert np.ptp(xs) > 0.6 * (RACK.x_max - RACK.x_min - 2 * RackLayout.MARGIN)
+
+
+def test_plate_line_centre_and_gathered_fraction_are_opt_in():
+    config = RackServingConfig()
+    assert config.cluster_center_y_sigma is None
+    assert config.gathered_fraction == 0.0
+
+
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="KINDER simulator")
 def test_a_clustered_start_settles_five_pieces_on_the_rack_and_reports_sigma():
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
