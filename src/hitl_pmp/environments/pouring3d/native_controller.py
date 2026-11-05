@@ -248,7 +248,15 @@ class NativePouringController(BaseModel):
         ]
         if self.env.action_space.shape == (18,):
             action = np.r_[action, np.zeros(7)]
-        self.env.step(action)
+        # `terminated` is discarded here, so the scene need not compute it.
+        compute_terminated = getattr(self.scene, "compute_terminated", None)
+        if compute_terminated is not None:
+            self.scene.compute_terminated = False
+        try:
+            self.env.step(action)
+        finally:
+            if compute_terminated is not None:
+                self.scene.compute_terminated = compute_terminated
         self.steps += 1
         if self.callback is not None:
             self.callback(controller=self)
