@@ -7,6 +7,7 @@ import numpy as np
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.problem.environment.types import Action, Object, State
+from hitl_pmp.environments.pouring3d.kitchen.types import PickRefusal
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SkillNote, SweepOffShelf3DState
@@ -16,6 +17,7 @@ from .config import RackServingConfig
 from .controllers import RackControllers
 from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
+from .pick_plannable import RackPickPlannable
 from .predicates import AbstractAtom
 from .skills import SKILL_IDS
 
@@ -33,6 +35,9 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
 
     _backend: RackServingBackend | None = PrivateAttr(default=None)
     _rack_controllers: RackControllers | None = PrivateAttr(default=None)
+    # PickFood planning refusals by food name, kept for the life of this instance
+    # (see `pick_plannable.py`).
+    _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
 
     def backend(self) -> RackServingBackend:
         if self._backend is None:
@@ -56,7 +61,9 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
 
     def _observed_state(self, *, seed: int, steps_taken: int) -> SweepOffShelf3DState:
         backend = self.backend()
-        atoms = backend.abstract_atoms()
+        atoms = backend.abstract_atoms() | RackPickPlannable.atoms(
+            backend=backend, refusals=self._pick_refusals
+        )
         features = backend.features()
         data = {obj: features[obj.name] for obj in Objects.all_objects()}
         data[Objects.scene] = np.array(
@@ -90,6 +97,7 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         backend = self.backend()
         start_control_steps = backend.control_steps()
         self._open_motion_skill(action=values)
+        refused_from = self._pick_food_before(values=values)
         try:
             if values.shape != (5,) or not np.isfinite(values).all():
                 raise SkillFailed("action must have five finite entries")
@@ -120,8 +128,35 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         finally:
             self._last_controller_steps = backend.control_steps() - start_control_steps
             controllers.shelf.ticks = self._last_controller_steps
+        if refused_from is not None:
+            name, before = refused_from
+            refusal = RackPickPlannable.refusal(
+                backend=backend,
+                name=name,
+                before=before,
+                error=self._last_skill_error,
+                steps=self._last_controller_steps,
+            )
+            if refusal is not None:
+                self._pick_refusals[name] = refusal
         self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
         return self.current_state
+
+    def _pick_food_before(self, *, values: np.ndarray) -> tuple[str, PickRefusal] | None:
+        """The food and poses a dispatched PickFood starts from, else None."""
+        if values.shape != (5,) or not np.isfinite(values).all():
+            return None
+        if values[0] != SKILL_IDS["PickFood"] or not 0 <= values[1] < len(Objects.food):
+            return None
+        name = Objects.food[int(values[1])].name
+        return name, RackPickPlannable.before(backend=self.backend(), name=name)
+
+    def forget_pick_refusals(self) -> None:
+        """Start an evaluation task as a fresh environment would (`pick_plannable.py`)."""
+        self._pick_refusals.clear()
+        if self._rack_controllers is not None:
+            seed, count = self._bookkeeping()
+            self.current_state = self._observed_state(seed=seed, steps_taken=count)
 
     def noop_action(self) -> Action:
         """[skill ID, food index, s, delta, d]; -1 is the no-op skill ID."""

@@ -1,0 +1,194 @@
+{
+ "source": "/scratch/gpfs/TSILVER/jr2860/results/rack-dry-5088ea2-20261105/determinized-curtis/pomdp/0/evaluations/0000/tasks/00/recording.jsonl action row 5275: PickFood(robot, cube_3, rack_0, box_0)",
+ "label": "PickFood(robot, cube_3, rack_0, box_0)",
+ "outcome": "No collision-free food grasp: No planned reach to the food pre-grasp (stance blocked: 1434, Scraper motion would collide, cost 0.01050: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00106: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00107: [('rack_0_wire_x_6', 'robo: 3, Scraper motion would collide, cost 0.00108: [('rack_0_wire_x_6', 'robo: 4, Scraper motion would collide, cost 0.00110: [('rack_0_wire_x_6', 'robo: 4, axis-clipped joint segment at 0.025 rad: Scraper motion would collide,: 2, Scraper motion would collide, cost 0.00111: [('rack_0_wire_x_6', 'robo: 3, hover: 214, axis-clipped joint segment at 0.175 rad: Scraper motion would collide,: 1, Scraper motion would collide, cost 0.00109: [('rack_0_wire_x_6', 'robo: 2, straight joint segment fraction 0.152: Scraper motion would collide, c: 1, Scraper motion would collide, cost 0.00122: [('cupboard_1_counter', 'r: 1, Scraper motion would collide, cost 0.00113: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00112: [('rack_0_wire_x_6', 'robo: 4, Scraper motion would collide, cost 0.00114: [('rack_0_wire_x_6', 'robo: 1, straight joint segment fraction 0.244: Scraper motion would collide, c: 1, Scraper motion would collide, cost 0.00132: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00188: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00273: [('rack_0_wire_x_5', 'robo: 1, Scraper motion would collide, cost 0.00197: [('rack_0_wire_x_6', 'robo: 3, Scraper motion would collide, cost 0.00198: [('rack_0_wire_x_6', 'robo: 5, Scraper motion would collide, cost 0.00266: [('rack_0_wire_x_5', 'robo: 1, Scraper motion would collide, cost 0.00203: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00205: [('rack_0_wire_x_6', 'robo: 4, Scraper motion would collide, cost 0.00161: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00176: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00200: [('rack_0_wire_x_6', 'robo: 6, Scraper motion would collide, cost 0.00201: [('rack_0_wire_x_6', 'robo: 4, Scraper motion would collide, cost 0.00199: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00204: [('rack_0_wire_x_6', 'robo: 6, Scraper motion would collide, cost 0.00207: [('rack_0_wire_x_6', 'robo: 9, Scraper motion would collide, cost 0.00206: [('rack_0_wire_x_6', 'robo: 8, Scraper motion would collide, cost 0.00209: [('rack_0_wire_x_6', 'robo: 18, Scraper motion would collide, cost 0.00210: [('rack_0_wire_x_6', 'robo: 9, Scraper motion would collide, cost 0.00208: [('rack_0_wire_x_6', 'robo: 6, Scraper motion would collide, cost 0.00211: [('rack_0_wire_x_6', 'robo: 7, Scraper motion would collide, cost 0.00227: [('cupboard_1_counter', 'r: 1, Scraper motion would collide, cost 0.00213: [('rack_0_wire_x_6', 'robo: 2, Scraper motion would collide, cost 0.00173: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00181: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00170: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00174: [('rack_0_wire_x_6', 'robo: 1, Scraper motion would collide, cost 0.00494: [('rack_0_wire_x_8', 'robo: 1, Scraper motion would collide, cost 0.00493: [('rack_0_wire_x_8', 'robo: 2, Scraper motion would collide, cost 0.00491: [('rack_0_wire_x_8', 'robo: 6, Scraper motion would collide, cost 0.00490: [('rack_0_wire_x_8', 'robo: 7, Scraper motion would collide, cost 0.00492: [('rack_0_wire_x_8', 'robo: 4, Scraper motion would collide, cost 0.00489: [('rack_0_wire_x_8', 'robo: 1, Scraper motion would collide, cost 0.00776: [('cupboard_1_counter', 'r: 1)",
+ "previous": [
+  "PickScraper",
+  "GatherAndSweep",
+  "ReturnScraper"
+ ],
+ "config": {
+  "surface_kind": "wire",
+  "mode": "deployment",
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "robot_joints": {
+  "robot_joint_x": 0.6024627167406102,
+  "robot_joint_y": -0.4403125715252496,
+  "robot_joint_th": 6.033185307275374,
+  "robot_joint_1": -1.3227575705346841,
+  "robot_joint_2": -0.4616033023213964,
+  "robot_joint_3": 2.21562019374414,
+  "robot_joint_4": -1.869374573389933,
+  "robot_joint_5": 1.2070330884215348,
+  "robot_joint_6": -1.917149673451286,
+  "robot_joint_7": 1.5631972611300524,
+  "robot_right_driver_joint": 0.0026066498237743707,
+  "robot_right_coupler_joint": 0.00015939216006662636,
+  "robot_right_spring_link_joint": 0.0030510722033765094,
+  "robot_right_follower_joint": -0.003461172080594738,
+  "robot_left_driver_joint": 0.0025986037516585896,
+  "robot_left_coupler_joint": 0.00013321854310747574,
+  "robot_left_spring_link_joint": 0.0029743684054348166,
+  "robot_left_follower_joint": -0.0033696386057499006
+ },
+ "grip": 0.0,
+ "free_bodies": {
+  "cube_0": [
+   1.2745009593402414,
+   0.0058721717762482235,
+   0.9173650410004095,
+   -0.5545919486467905,
+   0.009687306909138457,
+   -0.8320541942973063,
+   -0.00444345960555569
+  ],
+  "cube_1": [
+   1.3001320909703364,
+   -0.004407969833531838,
+   0.9181938008850646,
+   -0.5220040018595118,
+   0.03820222837871308,
+   -0.8394439692259823,
+   -0.1462403306878177
+  ],
+  "cube_2": [
+   1.3135853071914818,
+   0.03968074781406122,
+   0.9175049531901167,
+   0.07738022822281104,
+   0.7397465760502154,
+   -0.11817145011332013,
+   0.6578927054469316
+  ],
+  "cube_3": [
+   1.357979671964515,
+   -0.069156409107821,
+   0.9120490495444469,
+   -0.13443522281911469,
+   0.5048606455703416,
+   -0.07692298057745209,
+   -0.8491912355170389
+  ],
+  "cube_4": [
+   1.3294537720248527,
+   0.10917893692933213,
+   0.9100476332599334,
+   -0.2223558798098634,
+   0.7409410788352918,
+   0.3109321013739373,
+   0.5521642950640353
+  ],
+  "wiper_0": [
+   1.0609751187024716,
+   -0.34004725807028297,
+   0.9004995659482353,
+   -0.4999415687810738,
+   0.49996252087094994,
+   0.5000584264004189,
+   -0.5000374743106967
+  ],
+  "rack_0": [
+   1.4999843150144403,
+   -4.153530203925334e-06,
+   0.8999453983886687,
+   0.9999999990172964,
+   9.365525292668792e-17,
+   9.942885921185428e-20,
+   4.4332899939721446e-05
+  ],
+  "box_0": [
+   1.232313408489955,
+   -4.346166029350138e-06,
+   0.8999999617101531,
+   0.9999999995019594,
+   -1.1324696440342761e-08,
+   5.167896432937331e-08,
+   3.15607365592747e-05
+  ]
+ }
+}
