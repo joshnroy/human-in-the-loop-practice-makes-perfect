@@ -183,6 +183,9 @@ class KitchenController(PotstickerController):
     # MuJoCo IK clearances (m) tried, in order, when a solution leaves the margin in the
     # planning scene: MuJoCo's robot model is not the planner's.
     PLANNING_RESOLVE_CLEARANCES: ClassVar[tuple[float, ...]] = (0.025, 0.035)
+    # Dumpling grasp families, tried in order (`pick_shrimp`).
+    PAYLOAD_GRASP_BRANCHES: ClassVar[tuple[str, ...]] = ("long sides", "ends")
+    payload_grasp_branch: str = "long sides"
 
     def outcome_settled(self) -> bool:
         return bool(self.scene.payload_at_rest())
@@ -506,9 +509,38 @@ class KitchenController(PotstickerController):
         raise ValueError(f"Arm did not track the planned path in {phase}")
 
     def pick_shrimp(self, *, index: int, location: str) -> None:
+        """Grasp on the dumpling's long sides; only if every long-side try is refused
+        before any motion, grasp across its ends instead (Josh, 2026-11-04, option b).
+
+        Long-side grasps hold through the carry (grasp lost 1/30 picks, against 6/27 for
+        the inherited choice) but are refused for many dumplings near the skillet wall
+        (picks 17/30 against 24/27). A refusal moved nothing, so trying the ends from the
+        same state costs only time; a physical failure is not retried this way.
+        """
+        from .pick_plannable import KitchenPickPlannable
+
         if self.held is None:
             self.unwind_continuous_joints()
-        super().pick_shrimp(index=index, location=location)
+        name = self.scene.cube_names[index]
+        start, _ = self.body_pose(name=name)
+        try:
+            for branch in self.PAYLOAD_GRASP_BRANCHES:
+                self.payload_grasp_branch = branch
+                self.events.append({"event": "dumpling grasp branch", "grasp_branch": branch})
+                try:
+                    super().pick_shrimp(index=index, location=location)
+                    return
+                except ValueError as exc:
+                    if (
+                        branch == self.PAYLOAD_GRASP_BRANCHES[-1]
+                        or not KitchenPickPlannable.is_planning_refusal(error=str(exc))
+                        or self.held is not None
+                        or self.scene.cube_locations()[index] != location
+                        or np.linalg.norm(self.body_pose(name=name)[0] - start) > 0.005
+                    ):
+                        raise
+        finally:
+            self.payload_grasp_branch = self.PAYLOAD_GRASP_BRANCHES[0]
 
     def planning_violation(self, *, base: np.ndarray, arm: np.ndarray) -> Any:
         """The robot's closest approach in the planning scene if inside the margin."""
@@ -528,24 +560,27 @@ class KitchenController(PotstickerController):
         return None
 
     def payload_grasp_yaw(self, *, point: np.ndarray, across: np.ndarray, location: str) -> float:
-        """Close across the dumpling's measured width, pads on its long sides, always.
+        """Close across the dumpling's measured width (pads on its long sides), or, on
+        the "ends" branch, a quarter turn from it (pads on its two tapered ends).
 
         `across` is measured from the dumpling as it lies (`payload_grasp_geometry`).
-        The inherited fallback turns the grasp a quarter turn when the open fingers do
-        not fit beside the skillet wall, which puts the pads on the dumpling's two
-        tapered ends, 55 mm apart: it held through the lift and slipped out in the
-        carry (2026-11-04). Whether a long-side grasp clears the wall is left to the
-        collision-checked approach, which refuses rather than moves.
+        The inherited choice turned the grasp to the ends whenever the open fingers did
+        not fit beside the skillet wall, by a footprint heuristic, before trying the
+        long sides at all; an end grasp held through the lift and slipped out in the
+        carry (2026-11-04). Here the ends are tried only after the collision-checked
+        long-side approach refused (`pick_shrimp`).
         """
         del point, location
         yaw = np.arctan2(across[1], across[0])
+        if self.payload_grasp_branch == "ends":
+            yaw += np.pi / 2
         return float((yaw + np.pi / 2) % np.pi - np.pi / 2)
 
     def payload_retry_candidates(
         self, *, original: tuple[float, float, float, float, float]
     ) -> tuple[tuple[float, float, float, float, float], ...]:
-        """The inherited retries, but every one closing on the long sides: the last turns
-        the grasp 15 degrees, not 45, so both pads stay on the long faces."""
+        """The inherited retries, but the last turns the grasp 15 degrees, not 45, so the
+        pads stay on the faces the branch chose."""
         *inherited, (depth, opening, pitch, clearance, _) = super().payload_retry_candidates(
             original=original
         )

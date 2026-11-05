@@ -55,6 +55,8 @@ class PotstickerController(PracticePourController):
     # Fixed controller-variant setting, separate from the three learned parameters.
     anticipation_seconds: float = 0.0
     mouth_history: dict[str, tuple[float, float, float]] = Field(default_factory=dict)
+    # Which grasp family a dumpling pick is trying; a subclass may choose between several.
+    payload_grasp_branch: str = "measured"
 
     def place_pitcher(self) -> None:
         if self.can_release_pitcher_over_home():
@@ -294,6 +296,7 @@ class PotstickerController(PracticePourController):
                     "attempt": attempt,
                     "pitch_degrees": candidate[2],
                     "yaw_offset_degrees": candidate[4],
+                    "grasp_branch": self.payload_grasp_branch,
                 })
                 (
                     self.recovery_finger_offset,
