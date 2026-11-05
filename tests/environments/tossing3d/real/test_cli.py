@@ -213,3 +213,23 @@ def test_the_real_robot_searches_the_canonical_depth_only_with_expectimax(
         ]  # fmt: skip
     )
     assert seen["method"].pomdp_search_depth == expected
+
+
+@pytest.mark.parametrize(("extra", "confirms"), [((), True), (("--robot-no-confirm-home",), False)])
+def test_the_real_robot_asks_before_driving_home_unless_told_not_to(
+    *, tmp_path: Path, extra: tuple[str, ...], confirms: bool
+) -> None:
+    key = tmp_path / "authkey"
+    key.write_text("unused")
+    real = [*FAKE_RUN[:-6], "--robot", "real", "--robot-host", "unused"]
+    real += ["--robot-authkey-file", str(key), "--num-test-tasks", "1", "--seed", "0"]
+    args = Cli.parse_args(
+        argv=[*real, *extra, "--practice-step-budget", "100", "--output-dir", "unused"]
+    )
+    for build in (
+        Tossing3DRealCli.build_practice_problem,
+        Tossing3DRealCli.build_evaluation_problem,
+    ):
+        env = build(args=args).env
+        assert isinstance(env, RealTossing3DEnvironment)
+        assert env.confirm_start is confirms

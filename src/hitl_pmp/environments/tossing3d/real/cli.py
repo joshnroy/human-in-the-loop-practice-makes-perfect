@@ -77,6 +77,12 @@ class Tossing3DRealCli:
             "default only before the drive home at a task's start, and at each placement).",
         )
         parser.add_argument(
+            "--robot-no-confirm-home",
+            action="store_true",
+            help="With --robot real, drive home at a task's start without asking first; "
+            "each placement still waits for the person's y.",
+        )
+        parser.add_argument(
             "--measure-every-cycles",
             type=Tossing3DRealCli.positive_int,
             default=None,
@@ -142,7 +148,7 @@ class Tossing3DRealCli:
         env = RealTossing3DEnvironment(
             tossing_robot=robot,
             person=person,
-            confirm_start=args.robot == "real",
+            confirm_start=args.robot == "real" and not args.robot_no_confirm_home,
             confirm_each_skill=args.robot == "real" and args.robot_confirm_each_skill,
             canonical_seed=args.canonical_seed,
             evaluation=evaluation,
