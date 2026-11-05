@@ -95,7 +95,7 @@ def test_counter_and_free_objects_compile_without_hidden_support(
     assert fixture_bounds == pytest.approx([0.98, -0.5, 0, 1.70, 0.5, 0.9])
 
     root = ET.Element("mujoco")
-    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets(collision=config.dumpling_collision))
     world = ET.SubElement(root, "worldbody")
     world.append(counter.xml_element)
     objects = {}
@@ -238,7 +238,7 @@ def _compiled_scene(*, registry: Any, config: RackServingConfig) -> tuple[Any, A
         yaw=0,
     )
     root = ET.Element("mujoco")
-    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets(collision=config.dumpling_collision))
     world = ET.SubElement(root, "worldbody")
     world.append(counter.xml_element)
     for kind, named_options in scene["objects"].items():
