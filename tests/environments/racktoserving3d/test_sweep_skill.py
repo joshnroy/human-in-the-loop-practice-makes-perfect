@@ -99,6 +99,21 @@ def test_a_lined_up_start_places_five_settled_pieces_on_the_rack(*, kind):
 
 
 @kinder
+def test_a_gathered_fraction_mixes_stack_and_scattered_starts():
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment(config=RackServingConfig(gathered_fraction=0.5))
+    try:
+        kinds = set()
+        for seed in range(8):
+            env.reset_to_seed(seed=seed)
+            kinds.add(env.backend().start_kind())
+        assert kinds == {"stack", "scattered"}
+    finally:
+        env.close()
+
+
+@kinder
 def test_sweep_is_refused_unless_enabled():
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
