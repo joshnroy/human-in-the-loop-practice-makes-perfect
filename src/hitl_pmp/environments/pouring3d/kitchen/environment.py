@@ -1,4 +1,4 @@
-"""Opt-in kitchen lifecycle. Episode initialization is never a practice action."""
+"""Opt-in kitchen variant. Episode initialization is never a practice action."""
 
 from typing import Any, ClassVar, Literal
 
@@ -47,7 +47,9 @@ class KitchenEnvironment(FrozenPourEnvironment):
     # held the open-loop pour's wiggle and duration; the closed-loop Pour fixes both.
     action_space: ClassVar[Box] = Box(
         low=np.array([0, 0, 1, 0, 0, 0], dtype=float),
-        high=np.array([9, 2, 3, ClosedLoopPourParameters.LIMITS[1], 0, 0], dtype=float),
+        high=np.array(
+            [len(SKILL_NAMES) - 1, 2, 3, ClosedLoopPourParameters.LIMITS[1], 0, 0], dtype=float
+        ),
         dtype=np.float64,
     )
 
@@ -112,18 +114,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         on = c.scene.cooking_observed()
         state.data[O.hob] = np.array([float(on), float(not on)])
         atoms = set(state.abstract_atoms)
-        atoms.add(("HobOn" if on else "HobOff", ("hob",)))
-        if not on:
-            atoms.add(("ColdIngredients", ()))
         atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
-        away = c.base_home[:2].copy()
-        away[0] -= self.geometry.retreat_distance_m
-        if np.linalg.norm(c.data.qpos[c.base_q][:2] - away) < 0.025:
-            atoms.add(("RobotAway", ("robot",)))
-            if on:
-                for k in range(1, 4):
-                    if ("Goal", (f"request_{k}",)) in atoms:
-                        atoms.add(("MealStarted", (f"request_{k}",)))
         state.abstract_atoms = frozenset(atoms)
         return state
 
@@ -171,68 +162,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         picks = values[0] == skill_id and 0 <= skill_id < len(SKILL_NAMES)
         if picks and SKILL_NAMES[skill_id].startswith("PickShrimp"):
             return self.watched_pick(action=action, index=index)
-        action_id = values[0]
-        on = self.controller().scene.cooking_observed()
-        if action_id not in (8, 9) and not on:
-            return super().take_action(action=action)
-        c = self.controller()
-        c.choose_posture_turn()
-        self._skill_start = c.steps
-        start = float(c.data.time)
-        self.last_info = {
-            "skill": {8: "ActivateCooking", 9: "MoveAway"}.get(action_id, "Rejected"),
-            "success": False,
-            "error": None,
-        }
-        try:
-            if (
-                any(values[i] != int(values[i]) for i in range(3))
-                or not 0 <= values[1] < 3
-                or not 1 <= values[2] <= 3
-            ):
-                raise ValueError("Invalid discrete action fields")
-            if not self.deployment:
-                raise ValueError("Practice uses cold ingredients; cooking is deployment only")
-            if action_id == 8:
-                atoms = self.observe().abstract_atoms
-                if on or ("Goal", (f"request_{self.requested_count}",)) not in atoms:
-                    raise ValueError(
-                        "Cooking requires the observed requested split, no spills, and jug put down"
-                    )
-                if self._skill_sink:
-                    self._skill_sink(
-                        name="ActivateCooking",
-                        objects=[],
-                        params=[],
-                        controller={"interface": "simulated"},
-                    )
-                c.pause(phase="simulated hob command", seconds=0.5)
-                c.scene.set_cooking(enabled=True)
-                self.last_info["success"] = c.scene.cooking_observed()
-            elif action_id == 9 and on:
-                if self._skill_sink:
-                    self._skill_sink(name="MoveAway", objects=[], params=[], controller={})
-                c.move_away(distance=self.geometry.retreat_distance_m)
-                self.last_info["success"] = (
-                    "RobotAway",
-                    ("robot",),
-                ) in self.observe().abstract_atoms
-            else:
-                raise ValueError(
-                    "Hot-task manipulation/reset is not implemented; "
-                    "only move away after activation"
-                )
-        except ValueError as exc:
-            self.last_info["error"] = str(exc)
-        self._steps += 1
-        self.last_info.update(
-            seconds=float(c.data.time) - start,
-            controller_steps=c.steps - self._skill_start,
-            locations=c.scene.cube_locations(),
-            held=c.held,
-        )
-        self.current_state = self.observe()
-        return self.current_state
+        return super().take_action(action=action)
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
         if self.deployment:
@@ -259,10 +189,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""
-        if (
-            "MealStarted",
-            (f"request_{self.requested_count}",),
-        ) not in self.observe().abstract_atoms:
+        if ("Goal", (f"request_{self.requested_count}",)) not in self.observe().abstract_atoms:
             raise ValueError("Handoff requires completed deployment")
         self.episode_boundaries.append({"reason": "human removes cooked food between tasks"})
         self._started = False

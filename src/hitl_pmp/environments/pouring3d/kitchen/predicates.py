@@ -1,4 +1,4 @@
-"""Measured appliance/robot predicates; activation is not a cooking simulation."""
+"""The shared pouring predicates plus the observed pick plannability."""
 
 from functools import lru_cache
 
@@ -16,14 +16,7 @@ class KitchenPredicates:
             *PourPredicates.all(),
             *(
                 PourPredicates.make(name=name, types=types)
-                for name, types in (
-                    ("HobOff", (O.hob_type,)),
-                    ("HobOn", (O.hob_type,)),
-                    ("ColdIngredients", ()),
-                    ("RobotAway", (O.robot_type,)),
-                    ("MealStarted", (O.request_type,)),
-                    ("PickPlannable", (O.robot_type, O.shrimp_type)),
-                )
+                for name, types in (("PickPlannable", (O.robot_type, O.shrimp_type)),)
             ),
         )
 

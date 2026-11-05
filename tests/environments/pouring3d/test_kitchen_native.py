@@ -108,26 +108,18 @@ def test_partial_spill_failure_and_costed_human_reset_preserve_robot_and_vessels
             env.hard_reset()
         with pytest.raises(ValueError, match="No free"):
             env.set_state(state=initial_state)
-        env.take_action(action=np.array([8, 0, 3, 0, 0, 0]))
-        assert not c.scene.cooking_observed()
-        assert "cold" in env.last_info["error"]
         c.scene.set_cooking(enabled=True)
-        assert ("HobOn", ("hob",)) in env.observe().abstract_atoms
-        assert ("ColdIngredients", ()) not in env.observe().abstract_atoms
         with pytest.raises(ValueError, match="cold"):
             env.reset_movables(destination=HUMAN_RESET)
     finally:
         env.close()
 
 
-def test_deployment_rejects_human_and_premature_cooking_without_mutating_world():
+def test_deployment_rejects_a_human_reset_and_a_premature_handoff_without_mutating_world():
     env = KitchenEnvironment(deployment=True, requested_count=3)
     try:
         c = env.controller()
         before = c.data.qpos.copy()
-        env.take_action(action=np.array([8, 0, 3, 0, 0, 0]))
-        assert not env.last_info["success"]
-        assert not c.scene.cooking_observed()
         with pytest.raises(ValueError, match="forbidden"):
             env.reset_movables(destination=HUMAN_RESET)
         np.testing.assert_array_equal(before, c.data.qpos)

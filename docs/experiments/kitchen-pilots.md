@@ -29,11 +29,10 @@ interface; the environment's interruption ledger is an audit, not a second charg
 Curtis and expectimax use the existing `SkillPlansPracticeDomain` and unmodified
 inference/search algorithms. As in the original pouring study, their planning
 utility estimates the learned pick–pour–place subtask, averaged over requested
-counts. Actual deployment evaluation additionally executes activation and retreat
-and measures `MealStarted`. These deployment-only support actions are not trained
-or assigned invented practice observations. Thus the model's predicted utility is
-a proxy, not the measured full-task success rate. Report both pour and full-task
-outcomes; do not treat low productivity or early STOP as an infrastructure failure.
+counts. Deployment evaluation measures the same subtask, `Goal(request)` (since
+2026-11-05; earlier launches also executed hob activation and retreat and measured
+`MealStarted`). Do not treat low productivity or early STOP as an infrastructure
+failure.
 
 ## Launch and provenance
 
