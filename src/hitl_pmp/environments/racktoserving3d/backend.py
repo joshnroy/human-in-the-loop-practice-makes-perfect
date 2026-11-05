@@ -48,6 +48,11 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _tool_home: Callable[[], bool] | None = PrivateAttr(default=None)
     _rng: Any = PrivateAttr(default=None)
     _start_sigma: float | None = PrivateAttr(default=None)
+    _start_kind: str = PrivateAttr(default="scattered")
+
+    def start_kind(self) -> str:
+        """This episode's start layout, after any `gathered_fraction` draw."""
+        return self._start_kind
 
     def start_sigma(self) -> float | None:
         """The spread of this episode's clustered start pile; None for other layouts."""
@@ -111,12 +116,19 @@ class RackServingBackend(SweepOffShelf3DBackend):
         # Every episode starts from its own seed's draw of the shared rack layout,
         # unless an opt-in lined-up start is configured.
         names = list(self.cube_names)
-        if self.config.start_layout == "scattered":
+        kind = self.config.start_layout
+        # Drawn only when opted in, so the default's layout draws are unchanged.
+        if (
+            kind == "scattered"
+            and self.config.gathered_fraction > 0
+            and self._rng.uniform() < self.config.gathered_fraction
+        ):
+            kind = "stack"
+        self._start_kind = kind
+        if kind == "scattered":
             self._commit(placements=self.food_placements(names=names))
         else:
-            self._commit(
-                placements=self.food_placements(names=names, start_layout=self.config.start_layout)
-            )
+            self._commit(placements=self.food_placements(names=names, start_layout=kind))
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
@@ -482,7 +494,11 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 )
             elif start_layout == "clustered":
                 layout, self._start_sigma = RackLayout.clustered(
-                    rng=self._rng, rack=rack, count=len(names)
+                    rng=self._rng,
+                    rack=rack,
+                    count=len(names),
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    center_y_sigma=self.config.cluster_center_y_sigma,
                 )
             else:
                 layout = RackLayout.lined_up(

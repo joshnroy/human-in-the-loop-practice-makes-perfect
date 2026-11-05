@@ -57,7 +57,12 @@ class RackLayout:
 
     @staticmethod
     def clustered(
-        *, rng: np.random.Generator, rack: ServingRegion, count: int
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        count: int,
+        center_y: float | None = None,
+        center_y_sigma: float | None = None,
     ) -> tuple[tuple[tuple[float, float, float], ...], float]:
         """One random pile and its spread: (`count` (x, y, yaw) centres, sigma).
 
@@ -68,10 +73,20 @@ class RackLayout:
         sigma. Pieces are placed one at a time, each redrawn until its real footprint
         clears those already placed (`footprints_overlap`): joint rejection of all
         five found no layout in 200,000 draws at sigma = 0.017 m.
+
+        With ``center_y_sigma`` (tau), the pile centre's y is instead N(``center_y``,
+        tau) clipped to the inset, its x still uniform: a pile at the plate line.
         """
         low = np.array([rack.x_min + RackLayout.MARGIN, rack.y_min + RackLayout.MARGIN])
         high = np.array([rack.x_max - RackLayout.MARGIN, rack.y_max - RackLayout.MARGIN])
-        centre = rng.uniform(low, high)
+        if center_y_sigma is None:
+            centre = rng.uniform(low, high)
+        else:
+            if center_y is None:
+                raise ValueError("a plate-line pile needs center_y")
+            centre = np.clip(
+                [rng.uniform(low[0], high[0]), rng.normal(center_y, center_y_sigma)], low, high
+            )
         sigma = float(np.exp(rng.uniform(*np.log(RackLayout.CLUSTER_SIGMA))))
         for _ in range(RackLayout.MAX_CLUSTER_PILES):
             layout: list[tuple[float, float, float]] = []
