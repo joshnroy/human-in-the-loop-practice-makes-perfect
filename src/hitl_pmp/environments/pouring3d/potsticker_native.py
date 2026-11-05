@@ -21,6 +21,7 @@ from kinder.envs.dynamic3d.pitcher_pour3d import (
 )
 from scipy.spatial.transform import Rotation
 
+from .pitcher_containment import PitcherContainment
 from .potsticker_shape import ASSETS, shape_xml, support_vertices
 from .practice.native import HandleContactPatch, SupportSurfaceLocations
 from .practice.skillet import CastIronSkillet
@@ -145,7 +146,9 @@ class PotstickerScene(ObjectCentricPitcherPour3DEnv):
         geometry = self.get_object(vessel)
         if isinstance(geometry, CastIronSkillet):
             return bool(geometry.contains_capsules(endpoints=local, radii=np.zeros(len(local))))
-        return bool(cast(PouringPitcher, geometry).contains_points(local))
+        return PitcherContainment.contains_points(
+            pitcher=cast(PouringPitcher, geometry), points=local
+        )
 
     def cube_locations(self) -> list[str]:
         return SupportSurfaceLocations.classify(scene=self, locations=super().cube_locations())
