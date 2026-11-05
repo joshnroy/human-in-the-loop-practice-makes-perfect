@@ -23,15 +23,9 @@ from hitl_pmp.environments.racktoserving3d.scene import (
     "serving_target", ["round_plate", "slate", "lipped_platter", "corelle_plate"]
 )
 @pytest.mark.parametrize("tilt", [0, 15, 45])
-def test_production_food_settles_on_priority_tray(
-    *, tilt: float, serving_target: str, request: pytest.FixtureRequest
-) -> None:
-    if (tilt, serving_target) == (45, "corelle_plate"):
-        # Measured 2026-11-04: dropped at 45 degrees, the potsticker slides to the rim
-        # and creeps there at up to ~5 mm/s, below the 0.02 m/s settled-delivery limit.
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason="potsticker creeps against the Corelle rim")
-        )
+def test_production_food_settles_on_priority_tray(*, tilt: float, serving_target: str) -> None:
+    # The full 41-part potsticker crept against the Corelle rim at 45 degrees (~5 mm/s,
+    # measured 2026-11-04); the production single-hull collision settles there.
     _settles(tilt=tilt, serving_target=serving_target)
 
 
