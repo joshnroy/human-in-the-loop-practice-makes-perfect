@@ -176,9 +176,12 @@ class PotstickerController(PracticePourController):
             grip=0,
             phase="withdraw empty gripper above pitcher",
         )
-        # A dropped piece can disturb the previously returned pieces. Require
-        # sustained natural rest, charging every motor tick, before promising
-        # Settled to the symbolic planner. No velocity/state edits.
+        self.settle_returned_payload()
+
+    def settle_returned_payload(self) -> None:
+        """A dropped piece can disturb the previously returned pieces. Require
+        sustained natural rest, charging every motor tick, before promising
+        Settled to the symbolic planner. No velocity/state edits."""
         stable = 0
         for _ in range(200):
             self.pause(phase="settle returned potstickers", seconds=0.1, grip=0)
