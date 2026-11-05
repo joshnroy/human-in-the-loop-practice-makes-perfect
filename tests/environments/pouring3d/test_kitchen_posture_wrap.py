@@ -14,8 +14,8 @@ import pytest
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
-from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
 from hitl_pmp.environments.pouring3d.native_controller import NativePouringController
+from hitl_pmp.environments.pouring3d.practice.skills import SKILL_NAMES
 
 pytestmark = pytest.mark.xdist_group("kitchen_posture_wrap")
 
@@ -102,11 +102,11 @@ def test_crossing_posture_minus_pi_within_a_skill_does_not_flip_the_attractor(
 
 def test_each_skill_rechooses_the_turn_from_the_arm_it_starts_from():
     env = KitchenEnvironment(requested_count=1)
-    provider = KitchenSkillProvider(env=env)
     c = env.controller()
     Arm.wind(c=c, by=-TURN)
-    wait = provider.ground(name="Wait", request=1)
-    env.take_action(action=provider.encode(ground_skill=wait, params=np.zeros(0)))
+    # The native no-op: the kitchen no longer offers Wait as a skill, but dispatch still
+    # re-chooses the turn before any skill, a no-op included.
+    env.take_action(action=np.array([SKILL_NAMES.index("Wait"), 0, 1, 0, 0, 0]))
     assert env.last_info["success"], env.last_info
     assert c.posture_turn == pytest.approx(-TURN, abs=1e-12)
 

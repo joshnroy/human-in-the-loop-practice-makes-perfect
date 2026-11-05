@@ -19,10 +19,16 @@ cost. The bulk-reset abstraction moves only the ingredients; it does not reset t
 robot, jug, or pan.
 
 Deployment has a fixed requested count. The planner must pour the observed correct
-split into the uncovered pan, put down the jug, invoke `ActivateCooking`, then
-`MoveAway`. `MealStarted(request)` is the deployment goal. No human action is
-available through the provider, and direct `reset_movables` calls are rejected at
-the environment boundary. Hot ingredient manipulation is not implemented.
+split into the uncovered pan and put the jug down: `Goal(request)`, which
+`PlacePitcherAtHome` adds when `SplitCorrect(request)` holds, is the deployment goal,
+the same goal practice previews. No human action is available through the provider,
+and direct `reset_movables` calls are rejected at the environment boundary.
+
+The kitchen offers neither the legacy benchmark's no-op `Wait` nor the deployment-only
+lifecycle steps `ActivateCooking` and `MoveAway` (Josh, 2026-11-05). `Wait` did no
+work, yet EES spent almost all of its practice on it and it filled Curtis's search;
+the lifecycle steps did no work in the experiment and could not fail. The hob stays
+in the scene as physical scenery.
 
 Human removal of cooked food is a **between-task handoff**, declared only after
 completed deployment. It is not an in-task rescue or a practice reset. The simulator
@@ -85,10 +91,7 @@ rendered objects are dumplings.
 | PlacePitcherAtHome | Robot, jug, count token | None |
 | PickShrimpFromTray / Floor / Surface | Robot, ingredient; pan for tray pickup | None |
 | DropShrimpIntoPitcher | Robot, ingredient, jug | None |
-| Wait | None | None |
 | human_bulk_pour_back | Robot, jug, pan, ordered ingredients; training only | None; explicit interruption cost |
-| ActivateCooking | Robot, active count token, hob; deployment only | None |
-| MoveAway | Robot, active count token, hob; deployment only | None |
 
 ### The closed-loop Pour
 
@@ -145,11 +148,10 @@ bound fails the skill with a message naming the joint. The motors track about
 
 Existing predicates remain: HandEmpty, HoldingPitcher, HoldingShrimp, PitcherHome,
 TrayHome, InPitcher, InTray, OnFloor, OnSurface, Settled, PayloadOrder, Count1/2/3,
-ActiveRequest, NoSpills, NeedsReset, ReadyToPour, SplitCorrect, Goal. Added predicates:
-HobOff, HobOn, ColdIngredients, RobotAway, MealStarted, PickPlannable. Containment,
-settling and robot-away checks use native observed state. Hob state is an explicit
-simulator userdata channel with a visible burner/control indicator. The simulated activation
-skill is **not** a validated physical heat-control interface.
+ActiveRequest, NoSpills, NeedsReset, ReadyToPour, SplitCorrect, Goal. Added predicate:
+PickPlannable. Containment and settling checks use native observed state. Hob state
+is a simulator userdata channel with a visible burner/control indicator, observed as
+features but carried by no predicate.
 
 `PickPlannable(robot, ingredient)` is a precondition of all three ingredient picks and
 of nothing else; in particular the human bulk pour-back does not require it. It is

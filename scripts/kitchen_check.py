@@ -189,11 +189,7 @@ def check(
             except ValueError:
                 np.testing.assert_array_equal(before, c.data.qpos)
                 rows.append({"check": "deployment human rejection", "success": True})
-            if not run(name="ActivateCooking"):
-                raise ValueError("Cooking precondition not achieved")
-            if not run(name="MoveAway"):
-                raise ValueError("Retreat failed")
-            c.pause(phase="deployment complete — simulated hob ON", seconds=2)
+            c.pause(phase="deployment complete", seconds=2)
         else:
             # Recover one real poured ingredient through the robot action interface.
             locations = c.scene.cube_locations()

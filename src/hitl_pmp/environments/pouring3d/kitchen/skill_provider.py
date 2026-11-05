@@ -6,8 +6,8 @@ from typing import Any
 import numpy as np
 from pydantic import model_validator
 
-from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
-from hitl_pmp.core.problem.environment.types import Action, Type
+from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
+from hitl_pmp.core.problem.environment.types import Type
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.pouring3d.practice.skill_provider import (
     FrozenPourOracle,
@@ -44,7 +44,6 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
     @staticmethod
     @lru_cache(maxsize=1)
     def domain(*, count: int) -> tuple[Skill, ...]:
-        cold = LiftedAtom(predicate=P.get(name="ColdIngredients"), variables=())
         plannable = P.get(name="PickPlannable")
 
         def kitchen(s: Skill) -> Skill:  # noqa: PLR0917
@@ -52,7 +51,7 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
             # from this pose (see `pick_plannable.py`); the human pour-back
             # deliberately does not. Skills that move dumplings forget the atom; it is
             # re-read on observation.
-            pre = s.preconditions | {cold}
+            pre = s.preconditions
             if s.name.startswith("PickShrimp"):
                 pre |= {LiftedAtom(predicate=plannable, variables=s.parameters[:2])}
             ignore = s.ignore_effects
@@ -63,51 +62,10 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
                 update["param_dim"] = len(ClosedLoopPourParameters.model_fields)
             return s.model_copy(update=update)
 
-        base = tuple(kitchen(s) for s in PourSkills.build(count=count))
-        r, k = Variable(name="r", type=O.robot_type), Variable(name="k", type=O.request_type)
-        # Hob is unique and needs no new binding type in the shared grounding interface.
-        # Using a zero-argument appliance predicate would lose observed object typing;
-        # ground() supplies h explicitly below.
-        h = Variable(name="h", type=O.hob_type)
-
-        def a(name: str, *vs: Variable) -> LiftedAtom:  # noqa: PLR0917
-            return LiftedAtom(predicate=P.get(name=name), variables=vs)
-
-        activation = Skill(
-            name="ActivateCooking",
-            parameters=(r, k, h),
-            preconditions=frozenset({
-                a("Goal", k),
-                a("ActiveRequest", k),
-                a("HandEmpty", r),
-                a("HobOff", h),
-                cold,
-            }),
-            add_effects=frozenset({a("HobOn", h)}),
-            delete_effects=frozenset({a("HobOff", h), cold}),
-            param_dim=0,
-        )
-        away = Skill(
-            name="MoveAway",
-            parameters=(r, k, h),
-            preconditions=frozenset({
-                a("HobOn", h),
-                a("Goal", k),
-                a("ActiveRequest", k),
-                a("HandEmpty", r),
-            }),
-            add_effects=frozenset({a("RobotAway", r), a("MealStarted", k)}),
-            delete_effects=frozenset(),
-            param_dim=0,
-        )
-        return (*base[:-1], activation, away, base[-1].model_copy(update={"name": HUMAN_RESET}))
-
-    def skills(self) -> tuple[Skill, ...]:
-        return tuple(
-            s
-            for s in super().skills()
-            if self.env.deployment or s.name not in {"ActivateCooking", "MoveAway"}
-        )
+        # The legacy benchmark's no-op Wait does no work here: EES spent nearly all its
+        # practice on it and it flooded Curtis's search (Josh, 2026-11-05).
+        base = tuple(kitchen(s) for s in PourSkills.build(count=count) if s.name != "Wait")
+        return (*base[:-1], base[-1].model_copy(update={"name": HUMAN_RESET}))
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if not ground_skill.skill.name.startswith("Pour"):
@@ -123,28 +81,6 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
 
     def types(self) -> tuple[Type, ...]:
         return O.types()
-
-    def ground(self, *, name: str, request: int | None = None, shrimp: int = 0) -> GroundSkill:
-        if name not in {"ActivateCooking", "MoveAway"}:
-            return super().ground(name=name, request=request, shrimp=shrimp)
-        request = self.env.requested_count if request is None else request
-        if not 1 <= request <= 3:
-            raise ValueError("Invalid request")
-        skill = next(s for s in self.domain(count=3) if s.name == name)
-        return GroundSkill(
-            skill=skill, objects=(O.robot, self.env.objects().requests()[request - 1], O.hob)
-        )
-
-    def encode(self, *, ground_skill: GroundSkill, params: np.ndarray) -> Action:
-        if ground_skill.skill.name not in {"ActivateCooking", "MoveAway"}:
-            return super().encode(ground_skill=ground_skill, params=params)
-        if params.shape != (0,):
-            raise ValueError("Kitchen support actions have no continuous parameters")
-        requested = int(ground_skill.objects[1].name.split("_")[-1])
-        return np.array(
-            [8 if ground_skill.skill.name == "ActivateCooking" else 9, 0, requested, 0, 0, 0],
-            dtype=float,
-        )
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         if self.env.deployment or not self.offer_human_reset:
