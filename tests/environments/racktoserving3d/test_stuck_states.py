@@ -43,3 +43,35 @@ def test_return_scraper_from_behind_the_counter_returns_or_refuses():
             assert env.rack_controllers().tool.at_home()
     finally:
         env.close()
+
+
+def test_a_transit_starting_just_past_a_joint_stop_recovers():
+    """Curtis seed 2 (12db26a) failed GatherAndSweep 17 times, 4 steps each, with
+    "squeeze_plus_y_arm_clearance: Arm transit start violates joint limits". That run
+    recorded no arm joints and a local replay diverged, so this state is synthetic: from
+    reset, joint 6 set 0.005 rad past its stop (MuJoCo's limits are soft, and a loaded
+    arm can rest just beyond one), with the hand empty so the jump drops nothing."""
+    import mujoco
+
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment()
+    try:
+        env.reset_to_seed(seed=0)
+        controllers = env.rack_controllers()
+        shelf, tool = controllers.shelf, controllers.tool
+        model, data = shelf.model, shelf.data
+        joint = shelf.joints[5]
+        data.qpos[shelf.qa[5]] = model.jnt_range[joint, 1] + 0.005
+        mujoco.mj_forward(model, data)
+        here = shelf.site_pose()
+        with controllers.feedback():
+            tool.transit(
+                position=here[:3, 3] + [0.0, 0.0, 0.03],
+                rotation=here[:3, :3],
+                label="recover_past_stop",
+                holding=False,
+            )
+        assert data.qpos[shelf.qa[5]] <= model.jnt_range[joint, 1]
+    finally:
+        env.close()
