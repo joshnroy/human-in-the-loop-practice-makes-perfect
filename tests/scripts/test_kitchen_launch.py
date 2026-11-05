@@ -439,3 +439,36 @@ def test_run_rebuilds_the_rows_with_the_manifests_worker_count(*, tmp_path, monk
     )
     assert KitchenLaunch.run(manifest=path, max_workers=1, task=1) == 0
     assert "--evaluation-workers" in observed[0].command
+
+
+def test_long_stage_practises_200k_ticks_with_nine_measurements():
+    for run in KitchenLaunch.runs(stage="long", results_root=Path("/unused")):
+        args = Cli.parse_args(argv=run.command[3:])
+        assert args.practice_step_budget == 200_000
+        assert args.measurement_interval_steps == 25_000
+        assert args.num_test_tasks == 9
+        assert args.initial_measurement
+        assert args.evaluation_control_steps == 7500
+        # The initial measurement, one every 25k ticks short of the budget, the final one.
+        interior = len(range(25_000, 200_000, 25_000))
+        assert 1 + interior + 1 == 9
+
+
+def test_della_long_is_sized_for_the_slowest_arm_within_48_hours(*, tmp_path, monkeypatch):
+    manifest, script = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="long", seeds=(0, 1, 2)
+    )
+    assert manifest["evaluation_workers"] == 9
+    assert "#SBATCH --constraint=genoa" in script
+    assert "#SBATCH --cpus-per-task=10" in script
+    assert "#SBATCH --time=48:00:00" in script
+    # Practice for 8x the overnight budget gets 12 GB, not 3: tonight's 27G job peaked
+    # at 17.9 GB MaxRSS, and evaluations never overlap (one queue, one at a time).
+    assert "#SBATCH --mem=38G" in script
+    for row in manifest["runs"]:
+        assert row["resolved_args"]["practice_step_budget"] == 200_000
+
+
+def test_della_overnight_memory_is_unchanged_by_the_long_stage():
+    assert KitchenLaunch.della_memory(evaluation_workers=9) == "27G"
+    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long") == "38G"
