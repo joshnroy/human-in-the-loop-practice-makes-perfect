@@ -428,3 +428,82 @@ def test_an_initial_competence_excludes_a_calibration_file(*, calibration):
             dp_prior_calibration=path,
             dp_initial_competence={"PickWiper": 0.5},
         )
+
+
+# ------------------------------------------------- --dp-initial-learning-rate-for
+# A per-skill Delta prior; unnamed skills keep the global --dp-initial-learning-rate.
+
+
+def test_a_per_skill_learning_rate_overrides_only_that_skill():
+    env = SweepOffShelf3DEnvironment()
+    provider = SweepOffShelf3DSkillProvider(env=env)
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=2000,
+        dp_initial_competence={"PickWiper": 0.1},
+        dp_initial_learning_rate_for={"PickWiper": 0.001},
+    )
+    pick = _ground(method=method, name="PickWiper")
+    linear = method._linear_model(
+        history=method.competence_model(ground_skill=pick), ground_skill=pick
+    )
+    assert linear.get_current_competence() == pytest.approx(0.1)
+    assert linear.learning_rate() == pytest.approx(0.001)
+    other = _ground(
+        method=method, name=next(s.name for s in provider.skills() if s.name != "PickWiper")
+    )
+    unnamed = method._linear_model(
+        history=method.competence_model(ground_skill=other), ground_skill=other
+    )
+    assert unnamed.learning_rate() == pytest.approx(method.dp_initial_learning_rate)
+    assert unnamed.get_current_competence() == pytest.approx(10 / 11)
+
+
+def test_a_per_skill_learning_rate_alone_keeps_the_default_competence():
+    env = SweepOffShelf3DEnvironment()
+    method = DpMethod(
+        env=env,
+        skill_provider=SweepOffShelf3DSkillProvider(env=env),
+        dp_budget=2000,
+        dp_initial_learning_rate_for={"PickWiper": 0.001},
+    )
+    pick = _ground(method=method, name="PickWiper")
+    history = method.competence_model(ground_skill=pick)
+    assert history.get_current_competence() == pytest.approx(10 / 11)
+    linear = method._linear_model(history=history, ground_skill=pick)
+    assert linear.learning_rate() == pytest.approx(0.001)
+    assert linear.get_current_competence() == pytest.approx(10 / 11)
+
+
+@pytest.mark.parametrize(
+    ("rates", "match"),
+    [
+        ({"NotASkill": 0.01}, "not robot skills"),
+        ({"PickWiper": -0.1}, "finite and non-negative"),
+        ({"PickWiper": float("inf")}, "finite and non-negative"),
+        ({"PickWiper": float("nan")}, "finite and non-negative"),
+    ],
+)
+def test_a_per_skill_learning_rate_must_be_a_finite_robot_skill_rate(*, rates, match):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match=match):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=2000,
+            dp_initial_learning_rate_for=rates,
+        )
+
+
+def test_a_per_skill_learning_rate_excludes_a_calibration_file(*, calibration):
+    path, _report = calibration
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=2000,
+            dp_prior_calibration=path,
+            dp_initial_learning_rate_for={"PickWiper": 0.001},
+        )

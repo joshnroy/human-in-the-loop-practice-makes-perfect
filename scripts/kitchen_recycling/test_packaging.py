@@ -592,6 +592,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
                 "repeated_stop_limit": 100,
                 "prior_calibration": None,
                 "initial_competence": {},
+                "initial_learning_rate_for": {},
                 "gurobi_module": prepare.GUROBI_MODULE,
                 "gurobi_pythonpath": prepare.GUROBI_PYTHONPATH,
             },
@@ -622,6 +623,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
             dp_budget=188.0,
             dp_prior_calibration=None,
             dp_initial_competence={"PickCube": 0.99, "MoveToTossLocationAndToss": 0.1},
+            dp_initial_learning_rate_for={},
         )
         worker.check_dp_row(parsed=good, manifest=manifest_good, row={"arm": "dp"})
         with self.assertRaises(ValueError):
@@ -630,6 +632,35 @@ class DeliberatePracticeArmTests(unittest.TestCase):
                 manifest=manifest_good,
                 row={"arm": "dp"},
             )
+
+    def test_per_skill_learning_rates_reach_only_the_dp_rows(self):
+        extra = (
+            *DP_ARGS,
+            *("--dp-initial-competence", "MoveToTossLocationAndToss=0.1"),
+            *("--dp-initial-learning-rate-for", "MoveToTossLocationAndToss=0.001"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory=directory, extra=extra)
+        self.assertEqual(
+            manifest["dp"]["initial_learning_rate_for"], {"MoveToTossLocationAndToss": 0.001}
+        )
+        for row in manifest["runs"]:
+            values = [
+                v
+                for f, v in prepare.flag_values(argv=row["argv"])
+                if f == "--dp-initial-learning-rate-for"
+            ]
+            self.assertEqual(
+                values, [["MoveToTossLocationAndToss=0.001"]] if row["arm"] == "dp" else []
+            )
+        for bad in ("Toss=-1", "Toss=inf", "Toss", "Toss=0.1 Toss=0.2"):
+            tokens = [t for v in bad.split() for t in ("--dp-initial-learning-rate-for", v)]
+            with (
+                self.subTest(bad=bad),
+                tempfile.TemporaryDirectory() as directory,
+                self.assertRaises(subprocess.CalledProcessError),
+            ):
+                prepared(directory=directory, extra=(*DP_ARGS, *tokens))
 
     def test_initial_competences_need_a_dp_arm(self):
         with (
@@ -712,6 +743,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
             dp_budget=188.0,
             dp_prior_calibration=None,
             dp_initial_competence={},
+            dp_initial_learning_rate_for={},
         )
         worker.check_dp_row(parsed=good, manifest=manifest, row={"arm": "dp"})
         for field, value in (
@@ -721,6 +753,7 @@ class DeliberatePracticeArmTests(unittest.TestCase):
             ("dp_budget", 187.0),
             ("dp_prior_calibration", Path("priors.json")),
             ("dp_initial_competence", {"PickCube": 0.5}),
+            ("dp_initial_learning_rate_for", {"PickCube": 0.001}),
             ("method", "ees"),
         ):
             with self.subTest(field=field), self.assertRaises(ValueError):

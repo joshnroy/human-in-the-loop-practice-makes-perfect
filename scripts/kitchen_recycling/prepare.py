@@ -160,6 +160,7 @@ def argv(
     repeated_stop_limit: int | None = None,
     dp_episode_budget: int | None = None,
     dp_initial_competence: tuple[str, ...] = (),
+    dp_initial_learning_rate_for: tuple[str, ...] = (),
 ) -> list[str]:
     common = list(COMMON)
     common[common.index("--practice-step-budget") + 1] = str(practice_step_budget)
@@ -206,6 +207,11 @@ def argv(
                 token
                 for value in dp_initial_competence
                 for token in ("--dp-initial-competence", value)
+            ],
+            *[
+                token
+                for value in dp_initial_learning_rate_for
+                for token in ("--dp-initial-learning-rate-for", value)
             ],
         ]
     return result + [
@@ -278,6 +284,13 @@ def main() -> None:
         metavar="SKILL=P",
         help="Passed to every DP row: a robot skill's starting competence P in (0, 1) "
         "(repeatable, one per skill).",
+    )
+    parser.add_argument(
+        "--dp-initial-learning-rate-for",
+        action="append",
+        default=None,
+        metavar="SKILL=D",
+        help="Passed to every DP row: a robot skill's own Delta prior D >= 0 (repeatable).",
     )
     parser.add_argument("--cpus-per-task", type=int, default=2)
     parser.add_argument("--memory", default="16G")
@@ -366,6 +379,20 @@ def main() -> None:
         initial_competence[name] = competence
     if initial_competence and "dp" not in arms:
         parser.error("--dp-initial-competence needs a DP arm")
+    initial_learning_rate_for: dict[str, float] = {}
+    for value in args.dp_initial_learning_rate_for or []:
+        name, _, raw = value.partition("=")
+        try:
+            rate = float(raw)
+        except ValueError:
+            parser.error(f"--dp-initial-learning-rate-for expects SKILL=D, got {value!r}")
+        if not name or name in initial_learning_rate_for or not 0 <= rate < float("inf"):
+            parser.error(
+                f"--dp-initial-learning-rate-for needs one finite D >= 0 per skill: {value!r}"
+            )
+        initial_learning_rate_for[name] = rate
+    if initial_learning_rate_for and "dp" not in arms:
+        parser.error("--dp-initial-learning-rate-for needs a DP arm")
     if not set(waived_arms) <= set(arms):
         parser.error("--equivalence-waive-arm must name arms of this package")
     if reference_root == "none":
@@ -430,6 +457,7 @@ def main() -> None:
                     repeated_stop_limit=limit,
                     dp_episode_budget=args.dp_episode_budget,
                     dp_initial_competence=tuple(args.dp_initial_competence or ()),
+                    dp_initial_learning_rate_for=tuple(args.dp_initial_learning_rate_for or ()),
                 )
                 row = {"index": len(rows), "arm": arm, "seed": seed, "argv": command}
                 if arm == "dp" and args.dp_repeated_stop_limit is not None:
@@ -513,6 +541,7 @@ def main() -> None:
                     "repeated_stop_limit": args.dp_repeated_stop_limit,
                     "prior_calibration": None,
                     "initial_competence": initial_competence,
+                    "initial_learning_rate_for": initial_learning_rate_for,
                     "gurobi_module": GUROBI_MODULE,
                     "gurobi_pythonpath": GUROBI_PYTHONPATH,
                 }

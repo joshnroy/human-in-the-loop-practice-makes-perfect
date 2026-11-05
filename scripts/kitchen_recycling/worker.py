@@ -69,6 +69,7 @@ def check_dp_row(*, parsed: argparse.Namespace, manifest: dict, row: dict) -> No
         "dp_budget": float(manifest["dp"]["episode_budget"]),
         "dp_prior_calibration": None,
         "dp_initial_competence": manifest["dp"].get("initial_competence", {}),
+        "dp_initial_learning_rate_for": manifest["dp"].get("initial_learning_rate_for", {}),
     }
     actual = {name: getattr(parsed, name, None) for name in expected}
     if actual != expected:

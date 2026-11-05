@@ -94,6 +94,30 @@ def test_dp_cli_passes_initial_competences_to_the_method(*, monkeypatch):
         argv=[
             *("--env", "tossing3d", "--method", "dp", "--dp-budget", "188"),
             *("--dp-initial-competence", "MoveToTossLocationAndToss=0.1"),
+            *("--dp-initial-learning-rate-for", "MoveToTossLocationAndToss=0.001"),
         ]
     )
     assert captured[0].dp_initial_competence == {"MoveToTossLocationAndToss": 0.1}
+    assert captured[0].dp_initial_learning_rate_for == {"MoveToTossLocationAndToss": 0.001}
+
+
+def test_dp_cli_parses_repeatable_per_skill_learning_rates():
+    base = ["--env", "tossing3d", "--method", "dp", "--dp-budget", "188"]
+    args = CostFixtures.parse(
+        argv=[*base, *("--dp-initial-learning-rate-for", "MoveToTossLocationAndToss=0.001")]
+    )
+    assert args.dp_initial_learning_rate_for == {"MoveToTossLocationAndToss": 0.001}
+    assert CostFixtures.parse(argv=base).dp_initial_learning_rate_for == {}
+    for bad in (["PickCube"], ["PickCube=fast"], ["PickCube=0.1", "PickCube=0.2"]):
+        with pytest.raises(SystemExit):
+            CostFixtures.parse(
+                argv=[*base, *[t for v in bad for t in ("--dp-initial-learning-rate-for", v)]]
+            )
+    with pytest.raises(SystemExit):
+        CostFixtures.parse(
+            argv=[
+                *base,
+                *("--dp-initial-learning-rate-for", "PickCube=0.1"),
+                *("--dp-prior-calibration", "priors.json"),
+            ]
+        )
