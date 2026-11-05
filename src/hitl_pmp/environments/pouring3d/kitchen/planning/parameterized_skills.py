@@ -294,8 +294,12 @@ class PickPitcherController:
     starts at home, so its pick is unchanged.
     """
 
+    TUCK = "planned tuck arm before pitcher pick"
     BASE_MOTION = "planned base to pitcher"
     MOVE_ARM_TO_HOVER = "planned arm to pitcher hover"
+    # Within this of `home` (the episode-initial arm) on every joint, continuous joints
+    # mod a turn, the arm is already tucked: a fresh episode's pick is unchanged.
+    TUCKED_RAD = 0.01
 
     def __init__(self, *, sim: KitchenPyBulletSim) -> None:
         self.sim = sim
@@ -314,17 +318,35 @@ class PickPitcherController:
     ) -> None:
         sim = self.sim
         sim.set_state(x)
+        tuck: list[np.ndarray] = []
         if (
             np.linalg.norm(base_target[:2] - base[:2]) < 0.01
             and abs(base_target[2] - base[2]) < 0.01
         ):
             base_path = [base.copy(), base_target.copy()]
         else:
+            # A failed dumpling skill can leave the arm reaching out over the stove,
+            # where no base path exists for it as it is: tuck it into the carry pose
+            # (the jug carries' own, hand oriented for the hover) at the full margin.
+            if not self.tucked(arm=arm, home=home):
+                carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler(
+                    "z", float(base[2])
+                ).apply(CarryToPourController.CARRY_HAND_IN_BASE)
+                tuck = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=arm,
+                    position=carry,
+                    rotation=rotation,
+                    what="the tucked arm",
+                    reference=home,
+                )
+                arm = tuck[-1]
             base_path = KitchenMotionPlanner.plan_base(
                 sim=sim, state=x, target=base_target, arm=arm, what="the pitcher pick pose"
             )
         sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
         self.plans = {
+            **({self.TUCK: tuck} if tuck else {}),
             self.BASE_MOTION: base_path,
             self.MOVE_ARM_TO_HOVER: KitchenMotionPlanner.plan_arm(
                 sim=sim,
@@ -335,6 +357,19 @@ class PickPitcherController:
                 reference=home,
             ),
         }
+
+    @staticmethod
+    def nearest(*, home: np.ndarray, arm: np.ndarray) -> np.ndarray:
+        """`home`, its continuous joints (1, 3, 5, 7) on the turn nearest `arm`."""
+        goal = np.asarray(home, dtype=float).copy()
+        turns = np.round((np.asarray(arm)[[0, 2, 4, 6]] - goal[[0, 2, 4, 6]]) / (2 * np.pi))
+        goal[[0, 2, 4, 6]] += 2 * np.pi * turns
+        return goal
+
+    @classmethod
+    def tucked(cls, *, arm: np.ndarray, home: np.ndarray) -> bool:
+        delta = np.asarray(arm, dtype=float) - cls.nearest(home=home, arm=arm)
+        return bool(np.max(np.abs(delta)) < cls.TUCKED_RAD)
 
 
 class CarryToPourController:
