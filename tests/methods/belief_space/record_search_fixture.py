@@ -10,10 +10,12 @@ import hashlib
 import json
 from pathlib import Path
 
+from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 
 from . import test_object_symmetry as shelf
 
@@ -47,6 +49,19 @@ class RecordedSearch:
         )
         belief = shelf.BELIEFS["carry_trained"](
             SWEEP_OFF_SHELF_DOMAIN, config=shelf.PRODUCTION_GRID
+        )
+        # The cost lookups the searches were recorded with: a skill with a learned
+        # belief priced at its posterior mean, every other skill at its old unit
+        # practice cost. A forecast for every grounding would override the means.
+        learned = (BayesianSkillBelief, ParticleFilterBelief)
+        belief = belief.model_copy(
+            update={
+                "expected_execution_costs": {
+                    str(ground): 1.0
+                    for ground in shelf._ground_skills()
+                    if not isinstance(belief.skill_beliefs.get(ground.skill.name), learned)
+                }
+            }
         )
         planner = ExpectimaxPlanner(use_model_j=True)
         value, action = planner.solve(
