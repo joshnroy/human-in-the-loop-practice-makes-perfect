@@ -208,9 +208,11 @@ class KitchenController(PotstickerController):
     station_pour_base_offset: ClassVar[float] = 0.60
     recovery_pitch_degrees: float = 30.0
     recovery_base_x: float = 0.30
-    # Episode-initial arm configuration; set by build(). Continuous joints are
-    # unwound by whole turns towards it before every empty-hand pick.
+    # Episode-initial arm configuration; set by build().
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    # Continuous joints are unwound by whole turns towards zero before every empty-hand
+    # pick once they are this far past half a turn.
+    unwind_band: ClassVar[float] = np.deg2rad(20.0)
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
     # Execution speeds of planned motions, within what the motors are measured to track.
@@ -416,16 +418,20 @@ class KitchenController(PotstickerController):
         return controller
 
     def continuous_turns(self) -> np.ndarray:
-        """Whole turns each continuous arm joint has wound away from its neutral angle.
+        """Whole turns each continuous arm joint has wound away from zero, the middle of
+        its +-12 rad IK range.
 
-        Hysteresis: a joint less than a full turn from neutral counts as unwound, so
-        one resting near +-180 deg (the wrist after a pour) never flips back and forth.
+        Measured from zero, not from neutral: joint 3's neutral is 180 deg, so an arm
+        under a full turn from neutral could start a skill at 380 deg, and one
+        PickPitcher (+307 deg in ees/ees/2) then pinned it at the 688 deg bound.
+        Hysteresis: a joint within `unwind_band` past half a turn counts as unwound, so
+        one resting near +-180 deg never flips back and forth.
         """
         continuous = self.lower == -12
-        offset = self.data.qpos[self.arm_q] - self.arm_neutral_q
-        wound = continuous & (np.abs(offset) >= 2 * np.pi)
-        turns = np.zeros(len(offset), dtype=int)
-        turns[wound] = np.round(offset[wound] / (2 * np.pi)).astype(int)
+        q = self.data.qpos[self.arm_q]
+        wound = continuous & (np.abs(q) > np.pi + self.unwind_band)
+        turns = np.zeros(len(q), dtype=int)
+        turns[wound] = np.round(q[wound] / (2 * np.pi)).astype(int)
         return turns
 
     def unwind_continuous_joints(self) -> None:

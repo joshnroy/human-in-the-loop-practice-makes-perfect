@@ -91,13 +91,28 @@ def test_an_unwound_arm_is_left_alone(*, monkeypatch):
     assert seen and c.steps == steps
 
 
-@pytest.mark.parametrize("degrees", [185.0, -185.0])
-def test_a_joint_less_than_a_full_turn_from_neutral_never_flips(*, degrees):
-    c = Wound.kitchen(turns={6: degrees / 360.0})
+@pytest.mark.parametrize("degrees", [190.0, -190.0])
+def test_a_joint_inside_the_hysteresis_band_never_flips(*, degrees):
+    # Joint 7's neutral is 90 deg; this puts it at +-190 deg, just past half a turn.
+    c = Wound.kitchen(turns={6: (degrees - 90.0) / 360.0})
     q, steps = c.data.qpos[c.arm_q].copy(), c.steps
     c.unwind_continuous_joints()
     assert c.steps == steps
     np.testing.assert_array_equal(c.data.qpos[c.arm_q], q)
+
+
+@pytest.mark.parametrize("degrees", [343.0, 380.0])
+def test_joint_3_is_unwound_toward_the_middle_of_its_ik_range(*, degrees):
+    # Joint 3's neutral is 180 deg, so 343 deg is under half a turn from neutral, yet
+    # ees/ees/2's next PickPitcher (+307 deg) or dumpling pick (+271 deg) from there
+    # reaches the 688 deg IK bound. Measured from zero, the middle of the bound.
+    c = Wound.kitchen(turns={2: (degrees - 180.0) / 360.0})
+    before_hand = c.hand_pose()[0]
+    c.unwind_continuous_joints()
+    q3 = np.rad2deg(c.data.qpos[c.arm_q[2]])
+    assert abs(q3) <= 180.0
+    assert abs(q3 - (degrees - 360.0)) < 2.0
+    assert np.linalg.norm(c.hand_pose()[0] - before_hand) < 0.01
 
 
 def test_nothing_is_unwound_while_holding():
