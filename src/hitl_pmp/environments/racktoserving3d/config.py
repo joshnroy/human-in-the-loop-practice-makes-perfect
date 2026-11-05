@@ -39,16 +39,18 @@ class RackServingConfig(BaseModel):
 
     surface_kind: Literal["wire", "concept"] = "wire"
     mode: Literal["training", "deployment"] = "training"
-    # Opt-in for the Sweep vs GatherAndSweep tradeoff probe (2026-11-05): a
-    # standalone Sweep(d) robot skill, and the episode-initial food layout
-    # (`RackLayout.lined_up`); later placements stay scattered.
-    sweep_skill: bool = False
+    # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
+    # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
+    # (`RackLayout.lined_up`, `RackLayout.clustered`) for episode starts.
+    sweep_skill: bool = True
     start_layout: Literal["scattered", "clustered", "pile2col", "stack", "row"] = "scattered"
     # clustered only: tau (m) of the pile centre's y about the plate centre line; None
     # keeps the centre uniform over the rack.
     cluster_center_y_sigma: Positive | None = None
-    # scattered only: the probability an episode instead starts from the "stack" pile.
-    gathered_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    # scattered only: the probability an episode start or a human batch return places
+    # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,
+    # Josh). At 0 no coin is drawn, so the scattered draws are exactly the old ones.
+    gathered_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
     counter_height: Positive = 0.90
     rack_height: Positive = Field(default=0.025, description="UNVERIFIED height assumption")
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")

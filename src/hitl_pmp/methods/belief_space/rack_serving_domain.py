@@ -26,7 +26,11 @@ RACK_ROBOT_SKILLS = (
     "PickFood",
     "PlaceFoodOnTray",
     "ReturnFoodToRack",
+    # Last, so the six older skills keep their prior seeds and Monte Carlo draws.
+    "Sweep",
 )
+# Two ways to empty the rack with the scraper held, both all-or-nothing in this model.
+RACK_SWEEP_SKILLS = ("GatherAndSweep", "Sweep")
 RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
 RACK_EXPECTATION_SAMPLES = 4096
 RACK_EXPECTATION_SEED = 0
@@ -61,7 +65,9 @@ class RackServingDeployment:
                     if hand == "scraper":
                         options.append(("ReturnScraper", (on_rack, "empty", True)))
                         if on_rack:
-                            options.append(("GatherAndSweep", (0, "scraper", False)))
+                            options.extend(
+                                (name, (0, "scraper", False)) for name in RACK_SWEEP_SKILLS
+                            )
                     if hand == "empty":
                         if on_rack:
                             options.append(("PickFood", (on_rack - 1, "food", home)))
@@ -88,6 +94,8 @@ class RackServingDeployment:
                 best = solved[state].copy()
                 if not best.any():
                     for skill, successor in options:
+                        if skill not in competences:
+                            continue
                         competence = competences[skill]
                         best = np.maximum(
                             best,
@@ -111,29 +119,38 @@ class RackServingPracticeDomain(PracticeDomain):
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
     sampler_skill: str = "GatherAndSweep"
+    # Sweep is appended after the human skills, so every older belief keeps its
+    # prior-seed slot.
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (
             name,
             PracticeExampleSource.SAMPLER
-            if name == "GatherAndSweep"
+            if name in RACK_SWEEP_SKILLS
             else PracticeExampleSource.OUTCOME,
         )
-        for name in (*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS)
+        for name in (*RACK_ROBOT_SKILLS[:-1], *RACK_HUMAN_SKILLS, RACK_ROBOT_SKILLS[-1])
     )
+    # `RackServingConfig.sweep_skill=False` removes Sweep from the provider.
+    optional_skill_names: frozenset[str] = frozenset({"Sweep"})
     failure_effect_skills: frozenset[str] = frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS))
     human_skill_names: frozenset[str] = frozenset(RACK_HUMAN_SKILLS)
+
+    def robot_skills(self) -> tuple[str, ...]:
+        """The modelled robot skills this domain still has beliefs for."""
+        believed = dict(self.belief_sources)
+        return tuple(name for name in RACK_ROBOT_SKILLS if name in believed)
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
     ) -> list[Any]:
-        samples = {name: sample_skills(beliefs[name], count) for name in RACK_ROBOT_SKILLS}
+        samples = {name: sample_skills(beliefs[name], count) for name in self.robot_skills()}
         return [{name: draws[index] for name, draws in samples.items()} for index in range(count)]
 
     def evaluate_theta(self, *, theta: Any) -> float:
         return float(
             RackServingDeployment.values(
                 competences={
-                    name: np.array([theta[name].competence]) for name in RACK_ROBOT_SKILLS
+                    name: np.array([theta[name].competence]) for name in self.robot_skills()
                 },
                 horizon=self.deployment_horizon,
             )[0]
@@ -144,7 +161,8 @@ class RackServingPracticeDomain(PracticeDomain):
     ) -> NDArray[np.float64]:
         return RackServingDeployment.values(
             competences={
-                name: beliefs[name].sample(rng=rng, count=count)[:, 0] for name in RACK_ROBOT_SKILLS
+                name: beliefs[name].sample(rng=rng, count=count)[:, 0]
+                for name in self.robot_skills()
             },
             horizon=self.deployment_horizon,
         )
