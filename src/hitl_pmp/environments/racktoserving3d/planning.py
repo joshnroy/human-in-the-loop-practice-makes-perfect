@@ -726,6 +726,43 @@ class ScraperMotionPlanner:
         )
 
     @staticmethod
+    def start_blocked(*, tool: Any, held_name: str | None) -> bool:
+        """Whether the live configuration itself fails the planner's own checks (the
+        margin in PyBullet, the MuJoCo guard), so that no plan can start from it."""
+        from pybullet_helpers.inverse_kinematics import check_collisions_with_held_object
+
+        shelf = tool.shelf
+        arm = shelf.data.qpos[shelf.qa].copy()
+        base = shelf.data.qpos[shelf.ba].copy()
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=held_name is not None)
+        if not ok(base=base, arm=arm):
+            return True
+        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        try:
+            sim.set_robot_base(SE2(*(float(v) for v in base)))
+            held = (
+                None
+                if held_name is None
+                else HeldObject.grasped(sim=sim, arm=arm, name=held_name, riders=())
+            )
+            bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
+            if check_collisions_with_held_object(
+                sim.robot,
+                bodies,
+                sim.physics_client_id,
+                None if held is None else held.body,
+                None if held is None else held.base_link_to_held_obj,
+                KitchenMotionPlanner.with_fingers(sim=sim, arm=arm),
+                distance_threshold=PLANNING_MARGIN_M,
+            ):
+                return True
+            return not sim.chassis_clear(
+                margin=PLANNING_MARGIN_M, held=None if held is None else held.body
+            )
+        finally:
+            sim.close()
+
+    @staticmethod
     def mujoco_guard(*, tool: Any, holding: bool) -> Callable[..., bool]:
         """The execution guard itself (`RackScraper.check_configuration`, in MuJoCo
         scratch data) as a planning constraint. It checks the carried scraper's boxes
