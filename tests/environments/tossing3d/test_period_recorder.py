@@ -14,6 +14,7 @@ import imageio
 import pytest
 
 from hitl_pmp.cli import Cli
+from tests.practice_cost_fixtures import RETIRED_CYCLE_MODE_WIRING
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
@@ -43,6 +44,7 @@ def _run(*, output_dir: Path) -> None:
 
 
 @pytest.mark.main_only
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE_WIRING)
 def test_an_ordinary_cli_run_writes_one_video_per_period_and_per_sweep(*, tmp_path: Path) -> None:
     output_dir = tmp_path / "run"
     _run(output_dir=output_dir)
@@ -56,6 +58,7 @@ def test_an_ordinary_cli_run_writes_one_video_per_period_and_per_sweep(*, tmp_pa
 
 
 @pytest.mark.main_only
+@pytest.mark.xfail(strict=True, reason=RETIRED_CYCLE_MODE_WIRING)
 def test_the_practice_video_carries_every_substep_frame_not_one_per_skill(
     *, tmp_path: Path
 ) -> None:

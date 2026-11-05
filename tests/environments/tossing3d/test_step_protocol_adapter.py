@@ -9,15 +9,16 @@ import argparse
 import json
 from pathlib import Path
 
-from hitl_pmp.cli import STEP_PROTOCOL_ENVIRONMENTS, Cli
+from hitl_pmp.cli import STEP_PROTOCOL_ENVIRONMENTS
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
 from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.recording.run_record.types import Phase
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _args(*, tmp_path: Path, extra: tuple[str, ...] | list[str] = ()) -> argparse.Namespace:
-    return Cli.parse_args(
+    return CostFixtures.parse(
         argv=[
             "--env",
             "tossing3d",

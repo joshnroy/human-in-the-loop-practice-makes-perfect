@@ -13,10 +13,13 @@ from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerCont
 from hitl_pmp.environments.pouring3d.practice.cli import FrozenPourCli
 from hitl_pmp.environments.pouring3d.practice.environment import FrozenPourEnvironment
 from hitl_pmp.environments.pouring3d.practice.skill_provider import FrozenPourSkillProvider
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def test_default_cli_uses_three_dumplings_and_independent_skills():
-    args = Cli.parse_args(argv=["--env", "pouring3d", "--method", "ees"])
+    args = Cli.parse_args(
+        argv=["--env", "pouring3d", "--method", "ees", *CostFixtures.step_argv(env="pouring3d")]
+    )
     problem = FrozenPourCli.build_problem(args=args)
     assert problem.env.payload_kind == "potsticker"
     provider = FrozenPourSkillProvider(env=problem.env)

@@ -16,7 +16,6 @@ from typing import Any
 
 import pytest
 
-from hitl_pmp.cli import Cli
 from hitl_pmp.step_protocol import (
     EvaluationTaskFailures,
     FreshProcessEvaluations,
@@ -26,6 +25,7 @@ from hitl_pmp.step_protocol import (
     StepProtocolValidation,
     TaskParallelEvaluation,
 )
+from tests.practice_cost_fixtures import CostFixtures
 from tests.step_evaluation_fakes import LightSwitchEvaluationProtocol
 from tests.test_step_protocol import FakeProblem, FakeStepProtocol, _scripted_method, _step_args
 
@@ -246,7 +246,7 @@ def test_parts_run_in_their_own_processes_at_most_workers_at_once():
 
 
 def _parse(*extra: str):
-    return Cli.parse_args(
+    return CostFixtures.parse(
         argv=["--env", "pouring3d_kitchen", "--method", "ees", "--output-dir", "/x", *extra]
     )
 

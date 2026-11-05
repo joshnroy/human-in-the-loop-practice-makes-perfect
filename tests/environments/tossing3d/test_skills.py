@@ -56,6 +56,7 @@ from hitl_pmp.environments.tossing3d.toss_direction import (
 )
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import INITIAL_ATOMS, state
 
@@ -553,7 +554,9 @@ def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
     # pouring enabled, EES may legitimately select either feasible action.
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE, enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
-    method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
+    method = CostFixtures.priced(
+        method=EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
+    )
     same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}
     floor = state(env=env, abstract_atoms=INITIAL_ATOMS, **same_side_pose)
     holding = state(env=env, abstract_atoms=HOLDING_ATOMS, **same_side_pose)

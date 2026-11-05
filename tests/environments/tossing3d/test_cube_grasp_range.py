@@ -19,6 +19,7 @@ from hitl_pmp.environments.tossing3d.predicates import HOLDING
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, PICK_PLANNABLE_ATOM, state
 
@@ -134,8 +135,10 @@ def test_both_planners_follow_the_dry_run_near_the_barrier(*, plannable: bool) -
     else:
         assert valid <= _RESET_NAMES
 
-    ees = EesMethod(
-        env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0, reset_cost_gate=False
+    ees = CostFixtures.priced(
+        method=EesMethod(
+            env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0, reset_cost_gate=False
+        )
     )
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = ees.plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)

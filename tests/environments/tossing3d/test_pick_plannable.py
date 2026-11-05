@@ -45,6 +45,7 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvide
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader, StateLogWriter
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, state
 
@@ -404,7 +405,9 @@ def _ees_method(*, env: Tossing3DEnvironment | None = None) -> Any:
 
     env = Tossing3DEnvironment(scene_bg=False) if env is None else env
     provider = Tossing3DSkillProvider(env=env)
-    return EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
+    return CostFixtures.priced(
+        method=EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
+    )
 
 
 def test_ees_plans_through_the_reset_when_the_pick_is_unplannable() -> None:

@@ -14,6 +14,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
+from tests.practice_cost_fixtures import CostFixtures
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -74,7 +75,7 @@ def test_the_oracle_standoff_is_overridable() -> None:
 
 
 def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> None:
-    args = Cli.parse_args(
+    args = CostFixtures.parse(
         argv=["--env", "tossing3d", "--method", "skill-oracle", "--canonical-seed", "7"]
     )
     assert args.canonical_seed == 7
@@ -202,7 +203,9 @@ def test_the_human_reset_flag_reaches_both_practice_methods(
     monkeypatch.setattr(tossing3d_cli.MethodRunner, "run", capture)
     flag = "--human-reset" if human_reset else "--no-human-reset"
     weight = ["--pomdp-observation-probability-weight", "0.1"] if method == "pomdp" else []
-    Cli.main(argv=["--env", "tossing3d", "--method", method, *weight, "--no-scene-bg", flag])
+    CostFixtures.dispatch(
+        argv=["--env", "tossing3d", "--method", method, *weight, "--no-scene-bg", flag]
+    )
     (built_method,) = built
     provider = built_method.skill_provider  # type: ignore[attr-defined]
     assert provider.offer_human_reset is human_reset

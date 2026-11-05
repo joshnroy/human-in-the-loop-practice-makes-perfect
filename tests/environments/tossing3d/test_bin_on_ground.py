@@ -41,6 +41,7 @@ from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.practice_cost_fixtures import CostFixtures
 
 from .observations import BIN_ON_GROUND_ATOM, BIN_SIDE, CUBE_SIDE, INITIAL_ATOMS, state
 
@@ -351,7 +352,9 @@ def test_ees_plans_through_the_reset_from_a_tipped_bin() -> None:
 
     env = Tossing3DEnvironment(scene_bg=False)
     provider = Tossing3DSkillProvider(env=env)
-    method = EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
+    method = CostFixtures.priced(
+        method=EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
+    )
     goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
     tipped = _pickable_atoms(provider=provider)
 
@@ -425,11 +428,13 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
         assert valid
         assert {ground.skill.name for ground in valid} <= _RESET_NAMES
 
-        ees = EesMethod(
-            env=env,
-            skill_provider=Tossing3DSkillProvider(env=env),
-            seed=0,
-            reset_cost_gate=False,
+        ees = CostFixtures.priced(
+            method=EesMethod(
+                env=env,
+                skill_provider=Tossing3DSkillProvider(env=env),
+                seed=0,
+                reset_cost_gate=False,
+            )
         )
         # The tipped state already scores: the cube lies inside the bin's region and
         # KINDER's own `_check_goals` agrees. Scoring is deliberately unchanged here, so

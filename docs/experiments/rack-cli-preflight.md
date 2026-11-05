@@ -106,6 +106,7 @@ COMMON=(
 )
 
 STEP_FLAGS=(
+  --practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json
   --practice-step-budget 4000
   --measurement-interval-steps 4000
   --evaluation-control-steps 4000
@@ -162,7 +163,10 @@ run_preflight expectimax-step "${STEP_FLAGS[@]}" "${POMDP_FLAGS[@]}" --pomdp-sol
   --pomdp-search-depth 1
 ```
 
-For a literal one-cycle smoke **instead of** the corresponding step-budget run:
+For a literal one-cycle smoke **instead of** the corresponding step-budget run.
+**Refused since #681:** a domain that offers a human reset runs only under the step
+protocol, the one runner that reads a costs file, so these commands stop at parsing.
+They are kept for the record:
 
 ```bash
 run_preflight ees-cycle --num-cycles 1 --method ees
