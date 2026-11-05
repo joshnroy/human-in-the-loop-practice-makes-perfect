@@ -46,6 +46,8 @@ def _start(*, rack_count=5, elsewhere="OnTray", held_scraper=False):
         (elsewhere, (food.name, Objects.tray.name) if elsewhere == "OnTray" else (food.name,))
         for food in Objects.food[rack_count:]
     }
+    # No pick has refused to plan in a state never tried (`pick_plannable.py`).
+    names |= {("PickPlannable", (Objects.robot.name, food.name)) for food in Objects.food}
     if held_scraper:
         names.add(("HoldingScraper", (Objects.robot.name, Objects.scraper.name)))
     else:
