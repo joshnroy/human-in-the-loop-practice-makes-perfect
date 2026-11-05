@@ -75,3 +75,18 @@ def test_a_transit_starting_just_past_a_joint_stop_recovers():
         assert data.qpos[shelf.qa[5]] <= model.jnt_range[joint, 1]
     finally:
         env.close()
+
+
+def test_return_scraper_after_a_sweep_that_failed_mid_stroke_escapes_and_returns():
+    """Seed 1, PickScraper then GatherAndSweep(0.07, 0.030, 0.10), which stopped at
+    "sweep_level: measured scraper pose failed to converge" with the blade over the rack.
+    The scripted clear-and-circulate prefix returned from here; the planner alone could
+    not start (the blade inside its margin) and refused, 0 steps."""
+    env = restored_holding(fixture=FIXTURES / "after_failed_sweep_level_seed1.json")
+    try:
+        assert env.backend().held(name="wiper_0")
+        steps, error = done_or_refused(env=env, action=np.array([2.0, 0, 0, 0, 0]))
+        assert error is None, f"{steps} steps, then: {error}"
+        assert env.rack_controllers().tool.at_home()
+    finally:
+        env.close()

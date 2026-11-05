@@ -43,6 +43,9 @@ SCRAPER_RETURN_STANDOFF = 0.05
 PLANNED_JOINT_STEP = 0.05
 PLANNED_BASE_FRACTION = 0.8
 PLANNED_JOINT_LAG = 0.03
+# A held tool whose start no plan can leave first backs off this far and rises this far.
+ESCAPE_BACK_M = 0.10
+ESCAPE_UP_M = 0.06
 PLANNED_CATCH_UP_STEPS = 20
 
 
@@ -305,6 +308,35 @@ class TableWiper:
         except WiperLost as exc:
             raise SkillFailed(f"PickWiper: {exc}") from exc
 
+    def escape(self, *, label: str, reason: str) -> None:
+        """Back the held tool away from the base's heading and up, as the scripted
+        return used to before circulating; every waypoint's IK and joint segment is
+        checked before the first step, so an escape that cannot finish never starts."""
+        shelf = self.shelf
+        here = shelf.site_pose()
+        heading = float(shelf.data.qpos[shelf.ba[2]])
+        target = here[:3, 3] + np.array([
+            -ESCAPE_BACK_M * np.cos(heading),
+            -ESCAPE_BACK_M * np.sin(heading),
+            ESCAPE_UP_M,
+        ])
+        arm = shelf.data.qpos[shelf.qa].copy()
+        count = max(1, int(np.ceil(np.linalg.norm(target - here[:3, 3]) / 0.01)))
+        for fraction in np.linspace(0, 1, count + 1)[1:]:
+            previous = arm
+            try:
+                arm = self.ik(
+                    position=(1 - fraction) * here[:3, 3] + fraction * target,
+                    rotation=here[:3, :3],
+                    holding=True,
+                    seed=previous,
+                )
+            except SkillFailed as exc:
+                raise SkillFailed(f"{reason}; escape refused: {exc}") from exc
+            if float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi))) > 0.6:
+                raise SkillFailed(f"{reason}; escape refused: IK branch jump")
+        self.line(position=target, rotation=here[:3, :3], label=label, holding=True)
+
     def lift_waypoints(self, *, pose: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
         """The hand poses the scripted lift and tilt pass through from the grasp of a
         scraper at `pose`, with the nominal grasp, so a stance can be checked for them
@@ -346,16 +378,31 @@ class TableWiper:
         preferred = self.base.copy()
         if self.is_bench_scraper:
             preferred[0] -= SCRAPER_RETURN_STANDOFF
-        try:
-            plan, hover = ScraperMotionPlanner.plan_return(
+
+        def make_plan() -> Any:
+            return ScraperMotionPlanner.plan_return(
                 tool=self,
                 seat=grasp + [0, 0, PLACE_CLEARANCE],
                 rotation=rotation,
                 preferred=preferred,
                 carry_height=float(grasp[2] + LIFT),
             )
+
+        try:
+            plan_and_hover = make_plan()
         except PlanningRefused as exc:
-            raise SkillFailed(str(exc)) from exc
+            # A plan cannot start from a configuration its own checks reject (a sweep
+            # that failed mid-stroke leaves the blade on the rack). Leave it along a
+            # straight line checked whole before moving, then plan once more; from a
+            # start that is not blocked, a refusal moves nothing.
+            if not ScraperMotionPlanner.start_blocked(tool=self, held_name="wiper_0"):
+                raise SkillFailed(str(exc)) from exc
+            self.escape(label="place_wiper_escape", reason=str(exc))
+            try:
+                plan_and_hover = make_plan()
+            except PlanningRefused as again:
+                raise SkillFailed(f"after escaping the start: {again}") from again
+        plan, hover = plan_and_hover
         try:
             self.follow_arm_path(path=plan.arm_before_base, label="place_wiper_raise")
             self.require_held(label="place_wiper_raise")
