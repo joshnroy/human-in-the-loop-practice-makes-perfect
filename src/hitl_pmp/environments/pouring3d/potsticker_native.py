@@ -55,6 +55,14 @@ class FrozenPotsticker(Cuboid):
 
 
 class PotstickerScene(ObjectCentricPitcherPour3DEnv):
+    # KinDER's `step` answers `terminated` with the full goal check, about half of a
+    # control tick's wall time. A caller that discards `terminated` clears this flag
+    # around its step; `step` then reports False and `_check_goals()` stays exact.
+    compute_terminated: bool = True
+
+    def _is_terminated(self, obs: dict[str, Any]) -> bool:  # noqa: PLR0917 -- KinDER protocol
+        return self.compute_terminated and bool(super()._is_terminated(obs))
+
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
         _, info = super().reset(seed=seed, options=options)
         # Stacked pieces occasionally need more than the base scene's one second.
