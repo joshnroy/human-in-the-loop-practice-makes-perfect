@@ -228,6 +228,14 @@ class Cli:
             default=500,
         )
         parser.add_argument(
+            "--evaluation-max-pour-attempts",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            help="Step protocol: end a held-out task unsolved once this many of its "
+            "one-shot skills (the pouring domains' Pours) have failed, with the domain's "
+            "reason (pour_failed). Default: no limit. Practice is unaffected.",
+        )
+        parser.add_argument(
             "--evaluation-workers",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

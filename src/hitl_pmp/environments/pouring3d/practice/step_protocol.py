@@ -5,6 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from hitl_pmp.cli_protocols import SimulatedStepProtocolHooks
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.environment.types import Action, State
@@ -17,7 +19,7 @@ from .cli import FrozenPourCli
 from .environment import FrozenPourEnvironment
 from .problem import FrozenPourProblem
 from .skill_provider import FrozenPourSkillProvider
-from .skills import RESET_NAME
+from .skills import RESET_NAME, SKILL_NAMES
 from .types import PourObjects
 
 
@@ -134,6 +136,17 @@ class FrozenPourStepProtocol(SimulatedStepProtocolHooks):
         return FrozenPourStepProtocol.env(problem=problem).adopt_interrupted_skill(
             action=action, reason=reason
         )
+
+    @staticmethod
+    def one_shot_failure_reason(*, action: Action) -> str | None:
+        """Every Pour (Pour1/Pour2/Pour3 dispatch the native `Pour`): at deployment the
+        pan is hot, so a bad pour is committed."""
+        values = np.asarray(action, dtype=float)
+        if values.shape != (6,) or not np.isfinite(values[0]):
+            return None
+        skill_id = int(values[0])
+        known = values[0] == skill_id and 0 <= skill_id < len(SKILL_NAMES)
+        return "pour_failed" if known and SKILL_NAMES[skill_id] == "Pour" else None
 
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:

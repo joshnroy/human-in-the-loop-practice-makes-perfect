@@ -184,6 +184,13 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def one_shot_failure_reason(*, action: Action) -> str | None:
+        """The end reason (e.g. `pour_failed`) of a held-out task whose `action` failed,
+        if `action` dispatches a one-shot skill -- one whose failure at deployment is
+        committed -- counted against `--evaluation-max-pour-attempts`; None otherwise."""
+        ...
+
+    @staticmethod
     def isolate_evaluation_task(*, problem: Problem) -> None:
         """Under `--evaluation-task-rng per-task`, before each held-out task: forget
         whatever this evaluation environment instance remembers from earlier tasks, so the
@@ -237,6 +244,12 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def drain_execution_timing(*, problem: Problem) -> dict[str, Any] | None:
         del problem
+        return None
+
+    @staticmethod
+    def one_shot_failure_reason(*, action: Action) -> str | None:
+        """By default a domain has no one-shot skill: every failure may be retried."""
+        del action
         return None
 
     @staticmethod
