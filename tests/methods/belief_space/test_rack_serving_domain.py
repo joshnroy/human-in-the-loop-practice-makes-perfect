@@ -347,3 +347,55 @@ def test_the_deployment_model_sweeps_only_a_full_rack_like_the_operators():
     for on_rack in range(RACK_NUM_FOOD):
         options = {skill for skill, _ in moves[(on_rack, "scraper", False)]}
         assert not options & set(RACK_SWEEP_SKILLS), on_rack
+
+
+@pytest.mark.parametrize("prior", [None, (4.0, 1.0)])
+def test_the_competence_prior_flag_overrides_the_domains_beta_prior(
+    *, tmp_path, monkeypatch, prior
+):
+    # Josh, 2026-11-06: launch Curtis at prior mean 0.25 (the domain's Beta(1, 3)) and 0.8.
+    flag = [] if prior is None else ["--pomdp-competence-prior", *(str(v) for v in prior)]
+    args = Cli.parse_args(
+        argv=[
+            "--env",
+            "racktoserving3d",
+            "--method",
+            "pomdp",
+            "--pomdp-solver",
+            "determinized_astar",
+            "--practice-step-budget",
+            "3",
+            *CostFixtures.argv(env="racktoserving3d"),
+            "--practice-reset-policy",
+            "never",
+            "--defer-rendering",
+            "--output-dir",
+            str(tmp_path),
+            "--pomdp-num-particles",
+            "32",
+            "--pomdp-inference-engine",
+            "grid",
+            "--pomdp-grid-competence-bins",
+            "9",
+            "--pomdp-grid-learning-rate-bins",
+            "4",
+            *flag,
+        ]
+    )
+    runner = Mock()
+    monkeypatch.setattr(StepPracticeRunner, "run", runner)
+    from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
+
+    StepProtocolEntry.run(
+        args=args,
+        method_cli=Tossing3DPomdpCli,
+        env_cli=RackServingCli,
+        environment=RackServingStepProtocol,
+    )
+    domain = runner.call_args.kwargs["method"].pomdp_domain
+    expected = (1.0, 3.0) if prior is None else prior
+    assert (domain.initial_competence_alpha, domain.initial_competence_beta) == expected
+    assert (
+        RACK_SERVING_DOMAIN.initial_competence_alpha,
+        RACK_SERVING_DOMAIN.initial_competence_beta,
+    ) == (1.0, 3.0)
