@@ -44,6 +44,7 @@ DEPARTURE_TOLERANCE = 1e-4
 # finely that move is checked: the guard checks each step at five fractions.
 DEPART_M = 0.005
 DEPART_SAMPLES = 21
+DEPART_STEPS = 15
 # Planned food reaches: stances behind the food along the approach, within the arm's
 # reach of the hover from its mount, and how long the search may take.
 STANCE_DISTANCES_M = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90)
@@ -364,14 +365,14 @@ class _FoodMotion(RackScraper):
         arm = shelf.data.qpos[shelf.qa].copy()
         for direction in self._departure_directions():
             target = here[:3, 3] + DEPART_M * direction
-            if self._departs(base=base, arm=arm, position=target, rotation=here[:3, :3]):
-                self.line(
-                    position=target,
-                    rotation=here[:3, :3],
-                    label=label,
-                    holding=False,
-                    step=0.005,
-                    steps_per=5,
+            checked = self._departs(base=base, arm=arm, position=target, rotation=here[:3, :3])
+            if checked is not None:
+                # Command the very arm checked, not a fresh Cartesian line: a line's own
+                # IK waypoints are other configurations, and one touched the rim.
+                for _ in range(DEPART_STEPS):
+                    self.step(arm=checked, label=label)
+                self.settle_hand(
+                    arm=checked, position=target, rotation=here[:3, :3], label=label, limit=40
                 )
                 return
         names = sorted(
@@ -392,18 +393,19 @@ class _FoodMotion(RackScraper):
 
     def _departs(
         self, *, base: np.ndarray, arm: np.ndarray, position: np.ndarray, rotation: np.ndarray
-    ) -> bool:
-        """Whether the joint-interpolated move to `position` keeps every starting
-        pad-fixture contact no deeper than it began, adds none, and ends clear."""
+    ) -> np.ndarray | None:
+        """The arm at `position` if the joint-interpolated move there keeps every
+        starting pad-fixture contact no deeper than it began, adds none, and ends
+        clear; else None."""
         shelf = self.shelf
         target, _ = shelf.ik(
             position=position, rotation=rotation, base=base, holding=False, attempts=4, seed=arm
         )
         if not np.isfinite(target).all():
-            return False
+            return None
         reached = shelf.site_at(base=base, arm=target)
         if np.linalg.norm(reached[:3, 3] - position) > 0.001:
-            return False
+            return None
         delta = (target - arm + np.pi) % (2 * np.pi) - np.pi
         for fraction in np.linspace(0.0, 1.0, DEPART_SAMPLES):
             shelf.site_at(base=base, arm=arm + fraction * delta)
@@ -412,10 +414,10 @@ class _FoodMotion(RackScraper):
             for pair, distance in contacts.items():
                 start = self.departing.get(pair)
                 if start is None or distance < start - DEPARTURE_TOLERANCE:
-                    return False
+                    return None
             if fraction == 1.0 and contacts:
-                return False
-        return True
+                return None
+        return arm + delta
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:

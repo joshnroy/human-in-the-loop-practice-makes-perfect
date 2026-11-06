@@ -32,10 +32,21 @@ from tests.environments.racktoserving3d.test_stuck_states import (
 FIXTURES = Path(__file__).parent / "fixtures"
 PICK_START = FIXTURES / "stuck_ees0_pick_food_rim_start.json"
 HELD_IN_RIM = FIXTURES / "stuck_ees0_held_food_pad_in_rim.json"
+# The same sequence replayed on agni from the first version of this fix (ceb22b7): the
+# left pad on `box_0_rim_5`. That version checked one 5 mm move but executed it as a
+# Cartesian line with its own IK, whose midpoint touched the rim; 14 zero-step calls
+# followed.
+LOCAL_PICK_START = FIXTURES / "local_ees0_pick_food_rim_start.json"
+LOCAL_HELD_IN_RIM = FIXTURES / "local_ees0_held_food_pad_in_rim.json"
+PICK_STARTS = pytest.mark.parametrize("start", [PICK_START, LOCAL_PICK_START], ids=["della", "agni"])
+HELD_STARTS = pytest.mark.parametrize(
+    "held", [HELD_IN_RIM, LOCAL_HELD_IN_RIM], ids=["della", "agni"]
+)
 
 
-def test_a_pick_food_whose_closed_pad_touches_the_rim_lifts_the_food():
-    env = restored(fixture=PICK_START)
+@PICK_STARTS
+def test_a_pick_food_whose_closed_pad_touches_the_rim_lifts_the_food(*, start):
+    env = restored(fixture=start)
     try:
         steps, error = done_or_refused(env=env, action=np.array([3.0, 0, 0, 0, 0]))
         assert error is None, f"{steps} steps, then: {error}"
@@ -45,8 +56,9 @@ def test_a_pick_food_whose_closed_pad_touches_the_rim_lifts_the_food():
 
 
 @pytest.mark.parametrize("skill", [4, 5], ids=["PlaceFoodOnTray", "ReturnFoodToRack"])
-def test_a_held_food_skill_starting_with_a_pad_in_the_rim_leaves_it(*, skill):
-    env = restored_frozen(fixture=HELD_IN_RIM)
+@HELD_STARTS
+def test_a_held_food_skill_starting_with_a_pad_in_the_rim_leaves_it(*, skill, held):
+    env = restored_frozen(fixture=held)
     try:
         controllers = env.rack_controllers()
         assert env.backend().held(name="cube_0")
@@ -59,14 +71,15 @@ def test_a_held_food_skill_starting_with_a_pad_in_the_rim_leaves_it(*, skill):
         env.close()
 
 
-def test_the_departure_never_presses_a_pad_deeper_into_the_rim():
+@HELD_STARTS
+def test_the_departure_never_presses_a_pad_deeper_into_the_rim(*, held):
     """Measured at every control step of the departure: each starting pad-fixture
     contact is never deeper than it began and no new one appears, the food still held.
     (The commanded end clears the rim; the tracked hand may still graze it by microns,
     and the rise that follows leaves it.)"""
     from hitl_pmp.environments.racktoserving3d.food import DEPARTURE_TOLERANCE, RackFoodController
 
-    env = restored_frozen(fixture=HELD_IN_RIM)
+    env = restored_frozen(fixture=held)
     try:
         controllers = env.rack_controllers()
         controllers.held_food = controllers.shelf.held_cube = "cube_0"
