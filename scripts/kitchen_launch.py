@@ -186,11 +186,16 @@ class KitchenLaunch:
         seed instead: each run adds `--human-reset-success-probability p` and writes
         under `human-reset-p<p>/`; without it the runs are exactly the stage's own."""
         sweep: tuple[float | None, ...] = human_reset_success_probabilities or (None,)
+        # A sweep runs seed-major, then p, then arm (Josh, 2026-11-06): Della starts array
+        # rows in order, so every p of seed 0 runs first. Without one, the stage's order.
+        order = (
+            [(p, arm, seed) for seed in seeds for p in sweep for arm in ARMS]
+            if human_reset_success_probabilities
+            else [(None, arm, seed) for arm in ARMS for seed in seeds]
+        )
         return [
             run
-            for p in sweep
-            for arm in ARMS
-            for seed in seeds
+            for p, arm, seed in order
             for run in SweepRunner.plan(
                 env="pouring3d_kitchen",
                 methods=["ees" if arm == "ees" else "pomdp"],

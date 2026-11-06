@@ -586,3 +586,18 @@ def test_a_della_reset_competence_sweep_sizes_its_array_to_every_row(*, tmp_path
     )
     assert len(manifest["runs"]) == 18
     assert "#SBATCH --array=1-18\n" in script
+
+
+def test_a_reset_competence_sweep_runs_seed_major_then_p_then_arm():
+    # Della starts array rows in order, so every p and arm of seed 0 run before seed 1.
+    runs = KitchenLaunch.runs(
+        stage="long",
+        results_root=Path("/unused"),
+        seeds=(0, 1),
+        human_reset_success_probabilities=(1.0, 0.1),
+    )
+    order = [
+        (run.seed, Cli.parse_args(argv=run.command[3:]).human_reset_success_probability)
+        for run in runs
+    ]
+    assert order == [(s, p) for s in (0, 1) for p in (1.0, 0.1) for _ in range(3)]
