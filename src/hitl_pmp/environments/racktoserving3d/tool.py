@@ -44,7 +44,7 @@ SCRAPER_RETURN_STANDOFF = 0.05
 PLANNED_JOINT_STEP = 0.05
 PLANNED_BASE_FRACTION = 0.8
 PLANNED_JOINT_LAG = 0.03
-# A start no plan can leave (`plan_from_clear_start`) is left along a checked line this
+# A start no plan can leave (`BlockedStart`) is left along a checked line this
 # long (straight up first), or a held tool backs off ESCAPE_BACK_M and rises ESCAPE_UP_M;
 # failing every line, the base backs away ESCAPE_BACK_M.
 ESCAPE_BACK_M = 0.10
@@ -69,6 +69,120 @@ class RackShelfSkills(ShelfSkills):
 
     def wiper_unwatched(self) -> Any:
         return wiper_unwatched(shelf=self)
+
+
+class BlockedStart:
+    """Leaving a start no plan can begin from, shared by every PyBullet-planned skill.
+
+    PyBullet's mirror keeps a 15 mm margin from everything, so a configuration MuJoCo
+    shows clear (a hand left just above the rack, a held dumpling resting on its
+    wires) can be one no plan begins from, and the skill refuses at 0 steps on every
+    call. `tool` is the motion that executes: a `RackScraper` or the food's motion.
+    """
+
+    @staticmethod
+    def plan(
+        *,
+        tool: Any,
+        make_plan: Callable[[], Any],
+        held_name: str | None,
+        holding: bool,
+        label: str,
+        distance: float = ESCAPE_UP_M,
+        back_first: bool = False,
+        prepare: Callable[[], None] | None = None,
+    ) -> Any:
+        """`make_plan()`, or, if it is refused from a start the planner's own checks
+        reject (`ScraperMotionPlanner.start_blocked`, `held_name` included), the plan
+        made once more after `escape`. From a start that is not blocked a refusal
+        moves nothing. `prepare` runs first when an escape is needed (an empty food
+        hand opens)."""
+        from .planning import PlanningRefused, ScraperMotionPlanner
+
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as exc:
+            # Only a planner refusal (raised, or wrapped by the food skills) can be a
+            # blocked start; any other failure (no free placement) stands as it is.
+            refused = isinstance(exc, PlanningRefused) or isinstance(exc.__cause__, PlanningRefused)
+            reason = str(exc)
+            if not refused:
+                raise
+            if not ScraperMotionPlanner.start_blocked(tool=tool, held_name=held_name):
+                raise SkillFailed(reason) from exc
+        if prepare is not None:
+            prepare()
+        BlockedStart.escape(
+            tool=tool,
+            label=label,
+            holding=holding,
+            distance=distance,
+            back_first=back_first,
+            reason=reason,
+        )
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as again:
+            raise SkillFailed(f"after escaping the start: {again}") from again
+
+    @staticmethod
+    def escape(
+        *,
+        tool: Any,
+        label: str,
+        holding: bool,
+        distance: float,
+        back_first: bool,
+        reason: str,
+    ) -> None:
+        """Move the hand, and whatever it holds, out of a blocked start along the first
+        line `line_plannable` accepts (every waypoint's IK and joint segment checked by
+        the execution guard before the first step), keeping the hand's rotation: with
+        `back_first`, back off the base's heading ESCAPE_BACK_M and up ESCAPE_UP_M (a
+        held tool's old escape); then `distance` along each of `directions`. Failing
+        every line, back the base away, checked by the MuJoCo guard. An escape that
+        cannot finish never starts."""
+        from .planning import ScraperMotionPlanner
+
+        shelf = tool.shelf
+        here = shelf.site_pose()
+        rotation = here[:3, :3]
+        base = shelf.data.qpos[shelf.ba].copy()
+        heading = np.array([np.cos(base[2]), np.sin(base[2]), 0.0])
+        offsets = [distance * direction for direction in BlockedStart.directions()]
+        if back_first:
+            offsets.insert(0, -ESCAPE_BACK_M * heading + [0.0, 0.0, ESCAPE_UP_M])
+        for offset in offsets:
+            target = here[:3, 3] + offset
+            if not tool.line_plannable(
+                position=target, rotation=rotation, holding=holding, step=ESCAPE_STEP_M
+            ):
+                continue
+            tool.line(
+                position=target,
+                rotation=rotation,
+                label=label,
+                holding=holding,
+                step=ESCAPE_STEP_M,
+                steps_per=5,
+            )
+            return
+        back = base - ESCAPE_BACK_M * heading
+        arm = shelf.data.qpos[shelf.qa].copy()
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=holding)
+        if not all(ok(base=pose, arm=arm) for pose in segment_samples(start=base, target=back)):
+            raise SkillFailed(f"{reason}; escape refused: no checked line out, nor back-away")
+        tool.follow_base_path(path=[base, back], label=f"{label}_back")
+
+    @staticmethod
+    def directions() -> list[np.ndarray]:
+        """Straight up, then up and away along each of eight headings, then level."""
+        headings = [
+            np.array([np.cos(angle), np.sin(angle), 0.0])
+            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
+        ]
+        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
+        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
 
 
 class TableWiper:
@@ -227,7 +341,8 @@ class TableWiper:
 
             # A food pick that failed can leave the empty hand just above the rack,
             # within the planner's margin of the food on it, so no base path can start.
-            plan = self.plan_from_clear_start(
+            plan = BlockedStart.plan(
+                tool=self,
                 make_plan=lambda: ScraperMotionPlanner.plan_pick(
                     tool=self,
                     grasp=grasp,
@@ -317,99 +432,6 @@ class TableWiper:
         except WiperLost as exc:
             raise SkillFailed(f"PickWiper: {exc}") from exc
 
-    def plan_from_clear_start(
-        self,
-        *,
-        make_plan: Callable[[], Any],
-        held_name: str | None,
-        holding: bool,
-        label: str,
-        distance: float = ESCAPE_UP_M,
-        first: tuple[np.ndarray, ...] = (),
-        prepare: Callable[[], None] | None = None,
-    ) -> Any:
-        """`make_plan()`, or, if it is refused from a start the planner's own checks
-        reject (`ScraperMotionPlanner.start_blocked`, `held_name` included), the plan
-        made once more after leaving that start along a checked escape
-        (`escape_start`).
-
-        PyBullet's mirror keeps a 15 mm margin from everything, so a configuration
-        MuJoCo shows clear (a hand left just above the rack, a held dumpling resting on
-        its wires) can be one no plan begins from, and the skill refuses at 0 steps on
-        every call. From a start that is not blocked a refusal moves nothing.
-        `prepare` runs first when an escape is needed (an empty food hand opens).
-        """
-        from .planning import PlanningRefused, ScraperMotionPlanner
-
-        try:
-            return make_plan()
-        except (PlanningRefused, SkillFailed) as exc:
-            reason = str(exc)
-            if not ScraperMotionPlanner.start_blocked(tool=self, held_name=held_name):
-                raise SkillFailed(reason) from exc
-        if prepare is not None:
-            prepare()
-        self.escape_start(
-            label=label, holding=holding, distance=distance, first=first, reason=reason
-        )
-        try:
-            return make_plan()
-        except (PlanningRefused, SkillFailed) as again:
-            raise SkillFailed(f"after escaping the start: {again}") from again
-
-    def escape_start(
-        self,
-        *,
-        label: str,
-        holding: bool,
-        distance: float,
-        first: tuple[np.ndarray, ...],
-        reason: str,
-    ) -> None:
-        """Move the hand, and whatever it holds, out of a blocked start: along the first
-        of `first` (displacements) and then `distance` along `escape_directions` whose
-        whole line `line_plannable` accepts (every waypoint's IK and joint segment
-        checked by the execution guard before the first step), keeping the hand's
-        rotation; failing every line, back the base away. An escape that cannot finish
-        never starts."""
-        shelf = self.shelf
-        here = shelf.site_pose()
-        rotation = here[:3, :3]
-        for offset in (*first, *(distance * d for d in self.escape_directions())):
-            target = here[:3, 3] + offset
-            if not self.line_plannable(
-                position=target, rotation=rotation, holding=holding, step=ESCAPE_STEP_M
-            ):
-                continue
-            self.line(
-                position=target,
-                rotation=rotation,
-                label=label,
-                holding=holding,
-                step=ESCAPE_STEP_M,
-                steps_per=5,
-            )
-            return
-        from .planning import ScraperMotionPlanner
-
-        base = shelf.data.qpos[shelf.ba].copy()
-        back = base - ESCAPE_BACK_M * np.array([np.cos(base[2]), np.sin(base[2]), 0.0])
-        arm = shelf.data.qpos[shelf.qa].copy()
-        ok = ScraperMotionPlanner.mujoco_guard(tool=self, holding=holding)
-        if not all(ok(base=pose, arm=arm) for pose in segment_samples(start=base, target=back)):
-            raise SkillFailed(f"{reason}; escape refused: no checked line out, nor back-away")
-        self.follow_base_path(path=[base, back], label=f"{label}_back")
-
-    @staticmethod
-    def escape_directions() -> list[np.ndarray]:
-        """Straight up, then up and away along each of eight headings, then level."""
-        headings = [
-            np.array([np.cos(angle), np.sin(angle), 0.0])
-            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
-        ]
-        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
-        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
-
     def lift_waypoints(self, *, pose: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
         """The hand poses the scripted lift and tilt pass through from the grasp of a
         scraper at `pose`, with the nominal grasp, so a stance can be checked for them
@@ -452,10 +474,10 @@ class TableWiper:
         if self.is_bench_scraper:
             preferred[0] -= SCRAPER_RETURN_STANDOFF
 
-        heading = float(shelf.data.qpos[shelf.ba[2]])
         # A sweep that failed mid-stroke leaves the blade on the rack. Back the held
         # tool away from the base's heading and up first, as the scripted return did.
-        plan_and_hover = self.plan_from_clear_start(
+        plan_and_hover = BlockedStart.plan(
+            tool=self,
             make_plan=lambda: ScraperMotionPlanner.plan_return(
                 tool=self,
                 seat=grasp + [0, 0, PLACE_CLEARANCE],
@@ -466,13 +488,7 @@ class TableWiper:
             held_name="wiper_0",
             holding=True,
             label="place_wiper_escape",
-            first=(
-                np.array([
-                    -ESCAPE_BACK_M * np.cos(heading),
-                    -ESCAPE_BACK_M * np.sin(heading),
-                    ESCAPE_UP_M,
-                ]),
-            ),
+            back_first=True,
         )
         plan, hover = plan_and_hover
         try:

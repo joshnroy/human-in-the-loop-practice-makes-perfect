@@ -69,6 +69,7 @@ def food():
     helper = RackFoodController(controllers=controllers)
     helper.motion = SimpleNamespace(
         line=Mock(),
+        line_plannable=Mock(return_value=True),
         transit=Mock(),
         move_base=Mock(),
         plan_base=Mock(),
@@ -107,8 +108,17 @@ def test_occupied_hand_is_not_opened(*, food):
     assert food.shelf.grip == 1.0
 
 
+def _refused(*, message: str) -> SkillFailed:
+    """A food plan's refusal as the food skills raise it: wrapping the planner's."""
+    from hitl_pmp.environments.racktoserving3d.planning import PlanningRefused
+
+    failure = SkillFailed(message)
+    failure.__cause__ = PlanningRefused(message)
+    return failure
+
+
 def test_no_reachable_grasp_does_not_move(*, food):
-    food._plan_pick.side_effect = SkillFailed("no collision-free food grasp")
+    food._plan_pick.side_effect = _refused(message="no collision-free food grasp")
     with (
         patch.object(ScraperMotionPlanner, "start_blocked", return_value=False),
         pytest.raises(SkillFailed, match="collision-free"),
@@ -119,8 +129,14 @@ def test_no_reachable_grasp_does_not_move(*, food):
 
 
 def test_a_refusal_from_a_blocked_start_rises_and_plans_once_more(*, food):
-    food._plan_pick.side_effect = SkillFailed("no collision-free food grasp")
+    food._plan_pick.side_effect = _refused(message="no collision-free food grasp")
     food.motion.line = Mock()
+    food.motion.shelf = SimpleNamespace(
+        site_pose=food.shelf.site_pose,
+        data=SimpleNamespace(qpos=np.zeros(10)),
+        ba=[0, 1, 2],
+        qa=list(range(3, 10)),
+    )
     with (
         patch.object(ScraperMotionPlanner, "start_blocked", return_value=True),
         pytest.raises(SkillFailed, match="after escaping the start"),
