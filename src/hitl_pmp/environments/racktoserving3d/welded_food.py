@@ -96,16 +96,16 @@ class WeldedFood:
         return np.column_stack([x, np.cross(z, x), z])
 
     @staticmethod
-    def snap_into_hand(*, backend: Any, shelf: Any, name: str) -> None:
+    def snap_into_hand(*, backend: Any, shelf: Any, name: str, raise_m: float = 0.0) -> None:
         """Move `name` upright into the hand, at rest, its short axis across the pads,
-        and engage its weld."""
+        `raise_m` above where the hand holds it, and engage its weld."""
         site = shelf.site_pose()
         across = site[:3, 0]
         rotation = WeldedFood.yawed(yaw=float(np.arctan2(across[1], across[0])))
         WeldedFood._set_pose(
             backend=backend,
             name=name,
-            position=site[:3, 3] + HELD_CENTRE_M * site[:3, 2],
+            position=site[:3, 3] + HELD_CENTRE_M * site[:3, 2] + [0.0, 0.0, raise_m],
             rotation=rotation,
         )
         model, data = backend.model(), backend.data()
