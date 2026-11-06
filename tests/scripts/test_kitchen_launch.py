@@ -635,3 +635,18 @@ def test_long_one_shot_learning_della_rows_carry_both_flags_on_genoa_for_48h(
     assert "#SBATCH --time=48:00:00" in script
     assert "#SBATCH --mem=38G" in script
     assert "#SBATCH --constraint=genoa" in script
+
+
+def test_a_reset_competence_sweep_runs_seed_major_then_p_then_arm():
+    # Della starts array rows in order, so every p and arm of seed 0 run before seed 1.
+    runs = KitchenLaunch.runs(
+        stage="long",
+        results_root=Path("/unused"),
+        seeds=(0, 1),
+        human_reset_success_probabilities=(1.0, 0.1),
+    )
+    order = [
+        (run.seed, Cli.parse_args(argv=run.command[3:]).human_reset_success_probability)
+        for run in runs
+    ]
+    assert order == [(s, p) for s in (0, 1) for p in (1.0, 0.1) for _ in range(3)]
