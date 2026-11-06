@@ -521,3 +521,68 @@ def test_every_seed_of_every_stage_records_full_motion(*, stage):
     for run in runs:
         args = Cli.parse_args(argv=run.command[3:])
         assert args.record_motion == "all", (stage, run.output_dir, run.seed)
+
+
+def test_no_reset_competence_sweep_leaves_every_stage_unchanged():
+    for stage in STAGES:
+        for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+            assert "--human-reset-success-probability" not in run.command
+
+
+def test_a_reset_competence_sweep_crosses_each_p_with_every_arm_and_seed():
+    root = Path("/unused")
+    runs = KitchenLaunch.runs(
+        stage="long", results_root=root, human_reset_success_probabilities=(0.5, 1.0)
+    )
+    assert len(runs) == 12
+    assert len({r.output_dir for r in runs}) == 12
+    plain = {
+        (r.output_dir.parts[-3], r.seed): r
+        for r in KitchenLaunch.runs(stage="long", results_root=root)
+    }
+    for run in runs:
+        p = Cli.parse_args(argv=run.command[3:]).human_reset_success_probability
+        assert p in {0.5, 1.0}
+        assert run.output_dir.parts[-4] == f"human-reset-p{p}"
+        # The stage's own argv plus only the competence: same arm, seed and protocol.
+        base = plain[(run.output_dir.parts[-3], run.seed)]
+        argv = [a if a != str(run.output_dir) else "OUT" for a in run.command]
+        at = argv.index("--human-reset-success-probability")
+        assert argv[at + 1] == str(p)
+        del argv[at : at + 2]
+        assert argv == [a if a != str(base.output_dir) else "OUT" for a in base.command]
+
+
+def test_a_reset_competence_sweep_survives_the_manifest_round_trip(*, tmp_path, monkeypatch):
+    monkeypatch.setattr(KitchenLaunch, "identity", lambda **_: {"commit": "a" * 40})
+    monkeypatch.setattr(KitchenLaunch, "native_check", lambda: {"ready": True})
+    path = tmp_path / "manifest.json"
+    KitchenLaunch.write_manifest(
+        path=path,
+        stage="pilot",
+        results_root=tmp_path / "results",
+        human_reset_success_probabilities=(0.25, 0.75),
+    )
+    manifest = json.loads(path.read_text())
+    assert manifest["human_reset_success_probabilities"] == [0.25, 0.75]
+    assert len(manifest["runs"]) == 12
+    observed = []
+    monkeypatch.setattr(
+        "scripts.kitchen_launch.SweepRunner.execute",
+        lambda **kwargs: observed.extend(kwargs["runs"]) or [],
+    )
+    assert KitchenLaunch.run(manifest=path, max_workers=1, task=12) == 0
+    argv = observed[0].command
+    assert argv[argv.index("--human-reset-success-probability") + 1] == "0.75"
+
+
+def test_a_della_reset_competence_sweep_sizes_its_array_to_every_row(*, tmp_path, monkeypatch):
+    manifest, script = _della(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        stage="long",
+        seeds=(0, 2),
+        human_reset_success_probabilities=(0.0, 0.5, 1.0),
+    )
+    assert len(manifest["runs"]) == 18
+    assert "#SBATCH --array=1-18\n" in script
