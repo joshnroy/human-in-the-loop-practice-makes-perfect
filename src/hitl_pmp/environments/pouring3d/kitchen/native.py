@@ -208,6 +208,8 @@ class KitchenController(PotstickerController):
     station_pour_base_offset: ClassVar[float] = 0.60
     recovery_pitch_degrees: float = 30.0
     recovery_base_x: float = 0.30
+    # PlacePitcherAtHome's final back-off in -x; set by build() from the geometry.
+    clear_workspace_backoff: float = 0.35
     # Episode-initial arm configuration; set by build().
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
     # Continuous joints are unwound by whole turns towards zero before every empty-hand
@@ -415,6 +417,7 @@ class KitchenController(PotstickerController):
         ]
         controller.mode = "joint_lateral"
         controller.arm_neutral_q = controller.data.qpos[controller.arm_q].copy()
+        controller.clear_workspace_backoff = geometry.clear_workspace_backoff_m
         return controller
 
     def continuous_turns(self) -> np.ndarray:
@@ -694,7 +697,7 @@ class KitchenController(PotstickerController):
             clear.reset(
                 x=self.scene._get_object_centric_state(),
                 arm=self.data.qpos[self.arm_q].copy(),
-                base_target=self.base_home + [-0.35, 0, 0],
+                base_target=self.base_home + [-self.clear_workspace_backoff, 0, 0],
             )
         finally:
             sim.close()

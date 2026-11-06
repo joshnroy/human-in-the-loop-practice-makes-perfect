@@ -1,0 +1,6 @@
+{
+  "prep_table_xy": [1.0, 0.25],
+  "pitcher_home_xy": [0.7, 0.45],
+  "robot_home_y": 0.45,
+  "clear_workspace_backoff_m": 0.0
+}
