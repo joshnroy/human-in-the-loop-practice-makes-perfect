@@ -584,6 +584,7 @@ class StepProtocolResume:
         "extra_measurement_steps": "[]",
         "measure_after_learning_updates": "[]",
         "evaluation_max_pour_attempts": "None",
+        "repeated_zero_step_call_limit": "20",
     }
 
     @staticmethod
@@ -1138,6 +1139,10 @@ class StepPracticeRunner:
     # A session of skills each refused at planning executes no control step, so the
     # next session plans from the same state and refuses the same way.
     REPEATED_ZERO_STEP_LIMIT: ClassVar[int] = 5
+    # The same stall counted call by call, across sessions: a session that moved once
+    # never counts above, and zero-step calls cost no practice step, so the budget
+    # never ends a run that keeps making them. One full session's worth by default.
+    REPEATED_ZERO_STEP_CALL_LIMIT: ClassVar[int] = 20
     # A run whose sessions are this many human resets in a row with no robot skill has
     # stopped practising too: only the person acts, and the robot never does.
     REPEATED_NO_ROBOT_ACTION_LIMIT: ClassVar[int] = 10
@@ -1326,6 +1331,7 @@ class StepPracticeRunner:
         early_stop = False
         stop_streak = 0
         zero_step_streak = 0
+        zero_step_call_streak = 0
         no_robot_action_streak = 0
         accounting: PracticeAccounting | None
         if saved is None:
@@ -1355,6 +1361,7 @@ class StepPracticeRunner:
             # Absent from a checkpoint written before this streak existed: it then
             # starts again, which can only delay `repeated_zero_step`, never trip it.
             zero_step_streak = saved.get("zero_step_streak", 0)
+            zero_step_call_streak = saved.get("zero_step_call_streak", 0)
             no_robot_action_streak = saved.get("no_robot_action_streak", 0)
             started -= saved["elapsed_seconds"]
             StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
@@ -1366,6 +1373,11 @@ class StepPracticeRunner:
         )
         zero_step_limit = getattr(
             args, "repeated_zero_step_limit", StepPracticeRunner.REPEATED_ZERO_STEP_LIMIT
+        )
+        zero_step_call_limit = getattr(
+            args,
+            "repeated_zero_step_call_limit",
+            StepPracticeRunner.REPEATED_ZERO_STEP_CALL_LIMIT,
         )
         # A given limit applies with or without --no-early-stop: a planner that STOPs
         # forever otherwise spends the whole budget, one planning call per step.
@@ -1571,6 +1583,7 @@ class StepPracticeRunner:
                     ],
                     "stop_streak": stop_streak,
                     "zero_step_streak": zero_step_streak,
+                    "zero_step_call_streak": zero_step_call_streak,
                     "no_robot_action_streak": no_robot_action_streak,
                     "elapsed_seconds": time.monotonic() - started,
                     "clock": clock.model_dump(
@@ -1657,6 +1670,9 @@ class StepPracticeRunner:
                     "stop_skill_steps": 1,
                     "repeated_stop_limit": stop_limit,
                     "repeated_zero_step_limit": None if no_early_stop else zero_step_limit,
+                    "repeated_zero_step_call_limit": (
+                        None if no_early_stop else zero_step_call_limit
+                    ),
                     "repeated_no_robot_action_limit": (
                         None if no_early_stop else StepPracticeRunner.REPEATED_NO_ROBOT_ACTION_LIMIT
                     ),
@@ -1679,7 +1695,7 @@ class StepPracticeRunner:
         ) -> bool:
             """One human reset through the practice clock; `False`, with the budget reached,
             when it does not fit in what remains."""
-            nonlocal state, budget_reached
+            nonlocal state, budget_reached, zero_step_call_streak
             name = human_skills[destination]
             try:
                 charge = clock.before_human(skill=name)
@@ -1745,6 +1761,8 @@ class StepPracticeRunner:
                     cost=cost,
                     cycle=cycle,
                 )
+            # A reset changes the scene, so the next zero-step call is not the same stall.
+            zero_step_call_streak = 0
             state = problem.get_current_state()
             method.observe_help_granted(state=state)
             return True
@@ -1801,6 +1819,7 @@ class StepPracticeRunner:
                 actions = 0
                 robot_skills = 0
                 stopped = False
+                zero_step_calls_reached = False
                 session_robot_steps = clock.robot_steps
                 session_human_invocations = clock.human_invocations
                 session_start_steps = clock.steps
@@ -1873,6 +1892,7 @@ class StepPracticeRunner:
                         stopped = True
                         break
                     before_count = clock.steps
+                    before_robot_steps = clock.robot_steps
                     before_cost = accounting.total_cost if accounting else 0
                     robot_invocations += 1
                     clock.robot_active = True
@@ -1937,6 +1957,13 @@ class StepPracticeRunner:
                     if interruption is not None:
                         budget_reached = True
                         break
+                    # Counted across sessions; a STOP is not a robot call, so it neither
+                    # extends nor breaks this.
+                    moved = clock.robot_steps > before_robot_steps
+                    zero_step_call_streak = 0 if moved else zero_step_call_streak + 1
+                    if not no_early_stop and zero_step_call_streak >= zero_step_call_limit:
+                        zero_step_calls_reached = True
+                        break
                 if early_stop:
                     endpoint = "three_perfect_evaluations"
                     break
@@ -1952,6 +1979,11 @@ class StepPracticeRunner:
                     endpoint = "method_practice_complete"
                     if actions > 0:
                         learn(actions=actions, reason=endpoint)
+                    break
+                if zero_step_calls_reached:
+                    # Cut off part-way, as `repeated_zero_step` ends a run: not learned
+                    # from, and no session end recorded for a session that did not end.
+                    endpoint = "repeated_zero_step_calls"
                     break
                 metrics.practice_session_ends.append(
                     PracticeSessionEnd(
