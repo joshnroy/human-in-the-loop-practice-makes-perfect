@@ -239,6 +239,75 @@ def test_the_ees_competence_prior_flags_reach_ees(
     assert (method.prior_alpha, method.prior_beta) == expected
 
 
+def _ees_method_from(*, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> object:
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+
+    args = _build_ees_parser().parse_args(argv)
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    return captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+
+
+def test_the_shared_competence_prior_reaches_ees_as_a_beta(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mean 0.8 worth five attempts is Beta(4, 1)."""
+    method = _ees_method_from(
+        argv=["--competence-prior-mean", "0.8", "--competence-prior-strength", "5"],
+        monkeypatch=monkeypatch,
+    )
+    assert (method.prior_alpha, method.prior_beta) == pytest.approx((4.0, 1.0))  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--competence-prior-mean", "0.8"],
+        ["--competence-prior-strength", "5"],
+        [
+            "--competence-prior-mean", "0.8", "--competence-prior-strength", "5",
+            "--ees-prior-alpha", "2",
+        ],
+    ],
+)  # fmt: skip
+def test_the_shared_competence_prior_is_whole_and_unambiguous(
+    *, argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="competence-prior"):
+        _ees_method_from(argv=argv, monkeypatch=monkeypatch)
+
+
+@pytest.mark.parametrize("value", ["0", "1", "1.5", "-0.1"])
+def test_the_competence_prior_mean_lies_strictly_inside_the_unit_interval(*, value: str) -> None:
+    with pytest.raises(SystemExit):
+        _build_ees_parser().parse_args(["--competence-prior-mean", value])
+
+
+def test_ees_refuses_a_skill_cost_prior_it_would_ignore(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """EES prices a skill by -log(competence) alone; it has no execution-cost estimate."""
+    with pytest.raises(ValueError, match="skill-cost-prior-steps"):
+        _ees_method_from(argv=["--skill-cost-prior-steps", "500"], monkeypatch=monkeypatch)
+
+
+def test_pomdp_defaults_leave_the_domain_prior_and_cost_prior_alone() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    assert args.competence_prior_mean is None
+    assert args.competence_prior_strength is None
+    assert args.skill_cost_prior_steps is None
+
+
 @pytest.mark.parametrize("flag", ["--ees-prior-alpha", "--ees-prior-beta"])
 @pytest.mark.parametrize("value", ["0", "-1"])
 def test_the_ees_prior_must_be_positive(*, flag: str, value: str) -> None:

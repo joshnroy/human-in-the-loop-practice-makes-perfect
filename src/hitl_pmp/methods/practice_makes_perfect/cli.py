@@ -69,6 +69,27 @@ class EesCli:
         return parsed
 
     @staticmethod
+    def open_unit_float(*, value: str) -> float:
+        parsed = float(value)
+        if not 0 < parsed < 1:
+            raise argparse.ArgumentTypeError(f"must lie strictly in (0, 1), got {value}")
+        return parsed
+
+    @staticmethod
+    def competence_prior(*, args: argparse.Namespace) -> tuple[float, float] | None:
+        """--competence-prior-mean/-strength as Beta(alpha, beta), or None if unset."""
+        mean = getattr(args, "competence_prior_mean", None)
+        strength = getattr(args, "competence_prior_strength", None)
+        if mean is None and strength is None:
+            return None
+        if mean is None or strength is None:
+            raise ValueError("--competence-prior-mean and --competence-prior-strength go together")
+        # strength - alpha, not (1 - mean) * strength: 0.2 * 5 is 0.9999999999999998,
+        # and a beta below one puts infinite density on the grid's competence-1 bin.
+        alpha = mean * strength
+        return alpha, strength - alpha
+
+    @staticmethod
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
@@ -208,6 +229,30 @@ class EesCli:
                 "method there does: a labelled deviation from the paper.",
             )
         parser.add_argument(
+            "--competence-prior-mean",
+            type=lambda value: EesCli.open_unit_float(value=value),
+            default=None,
+            help="Mean of every skill's initial competence prior, robot and human alike, "
+            "with --competence-prior-strength. EES and dp: Beta(mean * strength, "
+            "(1 - mean) * strength), replacing --ees-prior-alpha/-beta. pomdp: the same "
+            "Beta as the practice domain's initial competence prior. Omit both to keep "
+            "each method's own default.",
+        )
+        parser.add_argument(
+            "--competence-prior-strength",
+            type=lambda value: EesCli.positive_float(value=value),
+            default=None,
+            help="Pseudo-observations the --competence-prior-mean is worth (alpha + beta).",
+        )
+        parser.add_argument(
+            "--skill-cost-prior-steps",
+            type=lambda value: EesCli.positive_float(value=value),
+            default=None,
+            help="pomdp and dp: control steps an untried skill, the human reset included, "
+            "is priced at until its first observed cost (method default 1). EES has no "
+            "execution-cost estimate and refuses it.",
+        )
+        parser.add_argument(
             "--ees-score-human-skills",
             action=argparse.BooleanOptionalAction,
             # None, not the method's default, so --method pomdp can tell a flag it
@@ -273,6 +318,11 @@ class EesCli:
         # Resolved in place, so the config snapshot records the value the run used.
         if args.ees_score_human_skills is None:
             args.ees_score_human_skills = EesMethod.model_fields["score_human_skills"].default
+        if getattr(args, "skill_cost_prior_steps", None) is not None:
+            raise ValueError(
+                "--skill-cost-prior-steps: EES prices a skill by -log(competence) alone and "
+                "keeps no execution-cost estimate"
+            )
         # Built here rather than inside the factory lambda so a missing --output-dir is
         # rejected before the environment is constructed, and so it is built exactly
         # once even if a caller ever invokes the factory more than once (two recorders
@@ -298,6 +348,16 @@ class EesCli:
         preview = getattr(args, "ees_preview_test_goals", False)
         if preview and not ctx.test_task_goals:
             raise ValueError(f"--ees-preview-test-goals: --env {args.env} enumerates no test goals")
+        prior = EesCli.competence_prior(args=args)
+        if prior is None:
+            prior = (args.ees_prior_alpha, args.ees_prior_beta)
+        elif (args.ees_prior_alpha, args.ees_prior_beta) != (
+            EesMethod.model_fields["prior_alpha"].default,
+            EesMethod.model_fields["prior_beta"].default,
+        ):
+            raise ValueError(
+                "--competence-prior-mean/-strength replace --ees-prior-alpha/-beta: pass one"
+            )
         return dict(
             preview_test_goals=(
                 tuple(EesMethod.named_goal(goal=goal.atoms) for goal in ctx.test_task_goals)
@@ -323,8 +383,8 @@ class EesCli:
             reset_cost_gate=args.ees_reset_gate,
             always_ask_reset=EesCli.always_ask_reset(args=args),
             score_human_skills=args.ees_score_human_skills,
-            prior_alpha=args.ees_prior_alpha,
-            prior_beta=args.ees_prior_beta,
+            prior_alpha=prior[0],
+            prior_beta=prior[1],
             reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
             reproduce_predicators_practice_target_history=(
                 args.reproduce_predicators_practice_target_history
@@ -353,6 +413,18 @@ class Tossing3DPomdpCli(EesCli):
         "KitchenRecyclingCli": TOSSING3D_DOMAIN,
         "RackServingCli": RACK_SERVING_DOMAIN,
     }
+
+    @staticmethod
+    def with_competence_prior(
+        *, domain: PracticeDomain, prior: tuple[float, float] | None
+    ) -> PracticeDomain:
+        """The domain with every skill's initial competence prior replaced, or as is."""
+        if prior is None:
+            return domain
+        alpha, beta = prior
+        return domain.model_copy(
+            update={"initial_competence_alpha": alpha, "initial_competence_beta": beta}
+        )
 
     @staticmethod
     def num_rollouts(text: str, /) -> int | None:  # noqa: PLR0917 -- argparse's `type`
@@ -529,7 +601,7 @@ class Tossing3DPomdpCli(EesCli):
         if (args.ees_prior_alpha, args.ees_prior_beta) != defaults:
             raise ValueError(
                 "--ees-prior-alpha/--ees-prior-beta are EES flags: --method pomdp takes its "
-                "competence priors from its practice domain"
+                "competence priors from its practice domain or --competence-prior-mean/-strength"
             )
         if args.pomdp_solver == "determinized_astar" and args.pomdp_search_depth is not None:
             raise ValueError(
@@ -576,6 +648,7 @@ class Tossing3DPomdpCli(EesCli):
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
                 "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
             )
+        competence_prior = EesCli.competence_prior(args=args)
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
             # Determinized A* searches no depth, so its snapshot records None.
@@ -646,8 +719,16 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 pomdp_skill_step_costs=skill_step_costs,
-                pomdp_domain=(
-                    domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                **(
+                    {}
+                    if args.skill_cost_prior_steps is None
+                    else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
+                ),
+                pomdp_domain=Tossing3DPomdpCli.with_competence_prior(
+                    domain=(
+                        domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                    ),
+                    prior=competence_prior,
                 ),
                 decision_log=(
                     args.output_dir
@@ -837,6 +918,11 @@ class DpCli(EesCli):
                     **EesCli.method_kwargs(args=args, ctx=ctx, draw_recorder=draw_recorder),
                     "score_human_skills": True,
                 },
+                **(
+                    {}
+                    if args.skill_cost_prior_steps is None
+                    else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
+                ),
                 dp_budget=args.dp_budget,
                 dp_budget_unit=args.dp_budget_unit,
                 dp_allocation_schedule=args.dp_allocation_schedule,
