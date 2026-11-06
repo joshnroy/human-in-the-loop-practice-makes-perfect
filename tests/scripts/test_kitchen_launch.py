@@ -29,7 +29,7 @@ def test_paired_matrix_and_evaluation_contract(*, stage, budget):
         assert args.practice_reset_policy == "never"
         assert not args.always_ask_reset
         assert args.stop_after_perfect_evaluations == 0
-        assert args.record_motion == ("all" if run.seed == 0 else "evaluation")
+        assert args.record_motion == "all"
         assert args.scene_bg
         assert args.exploration_epsilon == 0.5
         assert args.sampler_max_train_iters == 10000
@@ -512,3 +512,13 @@ def test_long_one_shot_is_long_with_one_pour_per_test_task(*, arm):
     one_shot = KitchenLaunch.flags(arm=arm, stage="long_one_shot", seed=0, evaluation_workers=9)
     assert "--evaluation-max-pour-attempts" not in long
     assert sorted(one_shot) == sorted([*long, "--evaluation-max-pour-attempts", "1"])
+
+
+@pytest.mark.parametrize("stage", sorted(STAGES))
+def test_every_seed_of_every_stage_records_full_motion(*, stage):
+    # Every practice run can then be replayed as video, not only seed 0's.
+    runs = KitchenLaunch.runs(stage=stage, results_root=Path("/unused"), seeds=(0, 1, 2))
+    assert len(runs) == 9
+    for run in runs:
+        args = Cli.parse_args(argv=run.command[3:])
+        assert args.record_motion == "all", (stage, run.output_dir, run.seed)
