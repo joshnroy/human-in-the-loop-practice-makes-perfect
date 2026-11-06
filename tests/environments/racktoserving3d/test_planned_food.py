@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+
 FIXTURES = Path(__file__).parent / "fixtures"
 HELD_ON_RIM = FIXTURES / "held_food_pad_on_plate_rim.json"
 
@@ -26,7 +28,8 @@ def restored(*, fixture: Path):
 
     plain = json.loads(fixture.read_text())
     config = RackServingConfig.model_validate({
-        k: v for k, v in plain.get("config", {}).items() if k in RackServingConfig.model_fields
+        "food_handling": "physical",
+        **{k: v for k, v in plain.get("config", {}).items() if k in RackServingConfig.model_fields},
     })
     env = RackServingEnvironment(config=config)
     RackServingTasks(env=env, seed=0).sample_train_task()
@@ -83,7 +86,7 @@ def test_planned_pick_then_place_on_the_counter(*, skill, location):
     in the counter's legs ("No collision-free food grasp"), 0-step."""
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     try:
         env.reset_to_seed(seed=0)
         env.take_action(action=np.array([3.0, 0, 0, 0, 0]))

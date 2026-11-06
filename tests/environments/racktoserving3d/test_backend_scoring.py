@@ -8,6 +8,7 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.predicates import RackServing3DPredicates
@@ -49,7 +50,10 @@ def scoring_scene(*, monkeypatch):
     # A reset also lays the food out (`test_layout.py`); these tests score a fixed scene.
     monkeypatch.setattr(RackServingBackend, "food_placements", lambda self, *, names: {})
     monkeypatch.setattr(RackServingBackend, "_commit", lambda self, *, placements: None)
-    backend = RackServingBackend(ledger=RackServingLedger(elapsed_seconds=300))
+    backend = RackServingBackend(
+        config=RackServingConfig(food_handling="physical"),
+        ledger=RackServingLedger(elapsed_seconds=300),
+    )
     backend._tool_home = lambda: True
     return SimpleNamespace(
         backend=backend, data=data, supports=supports, held=held, addresses=addresses
@@ -253,7 +257,7 @@ def test_supported_but_unsettled_food_is_pickable_without_delivery_credit(*, sco
 
 def test_step_evaluation_does_not_latch_rolling_or_unsupported_contact(*, scoring_scene):
     scene = scoring_scene
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     env._backend = scene.backend
     clock = EvaluationClock(
         budget=10,
