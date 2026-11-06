@@ -588,3 +588,73 @@ def test_single_task_objective_and_solve_use_affordable_not_saturation_bounds(
     assert result.tie_break_retries == 0
     assert result.objective == pytest.approx(1 if budget > 0 else 0.999, abs=1e-9, rel=0)
     assert sum(costs[skill] * count for skill, count in result.allocation.items()) <= max(0, budget)
+
+
+def _single_toss_arguments():
+    return dict(
+        mdp=DpMdp(
+            initial_probabilities={0: 1},
+            terminal_rewards={1: 1},
+            transitions=[DpTransition(state=0, skill="toss", successor=1)],
+        ),
+        competences={"toss": 0.1},
+        learning_rates={"toss": 0.1},
+        costs={"toss": 1},
+        budget=3,
+    )
+
+
+def test_time_limit_incumbent_is_accepted_with_its_status():
+    model = SimpleNamespace(
+        Status=gp.GRB.TIME_LIMIT, SolCount=1, ObjVal=0.5, ObjBound=1, MIPGap=1, Runtime=0.1
+    )
+    assert DpGurobiAllocator._accepted_status(model=model, phase="task_value") == "TIME_LIMIT"
+
+
+@pytest.mark.parametrize(
+    ("status", "solution_count"),
+    [("TIME_LIMIT", 0), ("INFEASIBLE", 0), ("INTERRUPTED", 1), ("SUBOPTIMAL", 1)],
+)
+def test_no_time_limit_incumbent_still_raises(*, status, solution_count):
+    model = SimpleNamespace(
+        Status=getattr(gp.GRB, status),
+        SolCount=solution_count,
+        ObjVal=0.5,
+        ObjBound=1,
+        MIPGap=1,
+        Runtime=0.1,
+    )
+    with pytest.raises(DpOptimizationError) as failure:
+        DpGurobiAllocator._accepted_status(model=model, phase="task_value")
+    assert failure.value.diagnostics["phase"] == "task_value"
+
+
+def test_time_limited_suboptimal_incumbent_is_returned_with_its_gap(*, monkeypatch):
+    predicted_success = DpAllocator.predicted_success
+
+    def suboptimal(**kwargs):
+        return predicted_success(**kwargs) - 0.1
+
+    monkeypatch.setattr(DpAllocator, "predicted_success", staticmethod(suboptimal))
+    monkeypatch.setattr(
+        DpGurobiAllocator, "_accepted_status", staticmethod(lambda **_: "TIME_LIMIT")
+    )
+    result = DpGurobiAllocator.allocate(**_single_toss_arguments())
+    assert result.status == "TIME_LIMIT"
+    assert result.allocation == {"toss": 3}
+    assert result.objective == pytest.approx(0.3)
+    assert result.objective_bound == pytest.approx(0.4)
+    assert result.absolute_gap == pytest.approx(0.1)
+    assert result.relative_gap == pytest.approx(0.1 / 0.3)
+
+
+def test_a_suboptimal_allocation_reported_optimal_still_raises(*, monkeypatch):
+    predicted_success = DpAllocator.predicted_success
+    monkeypatch.setattr(
+        DpAllocator,
+        "predicted_success",
+        staticmethod(lambda **kwargs: predicted_success(**kwargs) - 0.1),
+    )
+    with pytest.raises(DpOptimizationError) as failure:
+        DpGurobiAllocator.allocate(**_single_toss_arguments())
+    assert failure.value.diagnostics["phase"] == "primary_independent_verification"
