@@ -583,6 +583,7 @@ class StepProtocolResume:
         "repeated_stop_limit": "None",
         "extra_measurement_steps": "[]",
         "measure_after_learning_updates": "[]",
+        "evaluation_max_pour_attempts": "None",
     }
 
     @staticmethod
@@ -790,6 +791,8 @@ class StepEvaluation:
                     solved=check_goal(),
                 )
                 reason = "goal" if clock.solved else "step_budget"
+                max_one_shot = getattr(args, "evaluation_max_pour_attempts", None)
+                one_shot_failures = 0
                 problem.env.set_control_step_observers(before=clock.before, after=clock.after)
                 try:
                     while not clock.solved and clock.steps < args.evaluation_control_steps:
@@ -832,6 +835,15 @@ class StepEvaluation:
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
+                        # A one-shot skill (a Pour) that failed at deployment is
+                        # committed: past the allowed attempts the task ends unsolved.
+                        if max_one_shot is not None and error is not None and not clock.solved:
+                            one_shot = environment.one_shot_failure_reason(action=action.action)
+                            if one_shot is not None:
+                                one_shot_failures += 1
+                                if one_shot_failures >= max_one_shot:
+                                    reason = one_shot
+                                    break
                 finally:
                     problem.env.set_control_step_observers(before=None, after=None)
                 if clock.solved:
@@ -1628,6 +1640,11 @@ class StepPracticeRunner:
                         if evaluation_workers > 1
                         or EvaluationTaskRng.of(args=args) != EvaluationTaskRng.SHARED
                         or getattr(args, "evaluation_task_timeout_seconds", None) is not None
+                        else {}
+                    ),
+                    **(
+                        {"evaluation_max_pour_attempts": args.evaluation_max_pour_attempts}
+                        if getattr(args, "evaluation_max_pour_attempts", None) is not None
                         else {}
                     ),
                     "evaluation_x_axis": "practice_steps",
