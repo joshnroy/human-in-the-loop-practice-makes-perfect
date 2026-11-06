@@ -37,17 +37,22 @@ STAGES = {
     # `long`, deployed as one attempt: a test task ends at its first failed Pour.
     "long_one_shot": (200_000, 25_000, 9),
     "long_learning_early": (200_000, 25_000, 9),
+    # `long_one_shot` plus `long_learning_early`'s measurements after updates 1, 2 and 4.
+    "long_one_shot_learning": (200_000, 25_000, 9),
     "dry": (1600, 1600, 3),
 }
 # Stages whose test tasks allow one Pour: at deployment the pan is hot, so a bad pour is
 # committed. Every other stage's argv is unchanged.
-ONE_SHOT_STAGES = frozenset({"long_one_shot"})
+ONE_SHOT_STAGES = frozenset({"long_one_shot", "long_one_shot_learning"})
 # Learning updates measured right after, beside the interval multiples.
 # `long_learning_early` is `long` plus measurements after updates 1, 2 and 4, so learning
 # shows within the first hours; `long`'s argv is left exactly as it was. A fixed early
 # tick does not do this: the samplers are fitted only at a learning update, and the
 # first came at ~11.1k ticks (Della job 16931554), so 5k and 10k measured unfitted ones.
-LEARNING_UPDATE_MEASUREMENTS = {"long_learning_early": (1, 2, 4)}
+LEARNING_UPDATE_MEASUREMENTS = {
+    "long_learning_early": (1, 2, 4),
+    "long_one_shot_learning": (1, 2, 4),
+}
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
@@ -66,6 +71,7 @@ DELLA_PRACTICE_GB_BY_STAGE = {
     "long": 12.0,
     "long_one_shot": 12.0,
     "long_learning_early": 12.0,
+    "long_one_shot_learning": 12.0,
 }
 DELLA_EVALUATION_PROCESS_GB = 2.0
 DELLA_MEMORY_HEADROOM = 1.25
@@ -82,6 +88,7 @@ DELLA_TIME = {
     "long": "48:00:00",
     "long_one_shot": "48:00:00",
     "long_learning_early": "48:00:00",
+    "long_one_shot_learning": "48:00:00",
     "dry": "06:00:00",
 }
 DEPENDENCIES = {
