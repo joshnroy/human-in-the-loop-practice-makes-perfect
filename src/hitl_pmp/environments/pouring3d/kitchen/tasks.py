@@ -1,16 +1,31 @@
 """Independent deployment episodes and persistent, cold in-place practice."""
 
 from hitl_pmp.core.problem.environment.types import State
-from hitl_pmp.core.problem.tasks.types import Task
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.pouring3d.practice.problem import FrozenPourProblem
 from hitl_pmp.environments.pouring3d.practice.tasks import FrozenPourTasks
 
 from .environment import KitchenEnvironment
+from .predicates import KitchenPredicates as P
 from .types import KitchenObjects
 
 
 class KitchenTasks(FrozenPourTasks):
     env: KitchenEnvironment
+
+    def goal(self, *, requested: int | None = None) -> Goal:
+        """Pour n: exactly n dumplings in the skillet, the hand empty and the jug home.
+        The legacy `Goal(request_n)` also required `TrayHome`, which the welded skillet
+        always satisfies."""
+        requested = self.env.requested_count if requested is None else requested
+        o = self.env.objects()
+        return Goal(
+            atoms=frozenset({
+                GroundAtom(predicate=P.get(name=f"Split{requested}"), objects=()),
+                GroundAtom(predicate=P.get(name="HandEmpty"), objects=(o.robot,)),
+                GroundAtom(predicate=P.get(name="PitcherHome"), objects=(o.pitcher,)),
+            })
+        )
 
     def build_task(self, *, seed: int, requested: int | None = None) -> Task:
         requested = self.env.requested_count if requested is None else requested

@@ -169,10 +169,9 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
         }
         if args.method == "ees":
             assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
-            assert [goal[0][1][0] for goal in method.preview_test_goals] == [
-                "request_1",
-                "request_2",
-                "request_3",
+            assert list(method.preview_test_goals) == [
+                (("HandEmpty", ("robot",)), ("PitcherHome", ("pitcher",)), (f"Split{n}", ()))
+                for n in (1, 2, 3)
             ]
         else:
             assert method.pomdp_solver == args.pomdp_solver

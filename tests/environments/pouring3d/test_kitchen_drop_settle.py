@@ -13,6 +13,7 @@ pytest.importorskip("kinder")
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import HUMAN_RESET, KitchenEnvironment
 from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController, KitchenScene
+from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
 from hitl_pmp.environments.pouring3d.practice.controller import PracticePourController
 
 pytestmark = pytest.mark.xdist_group("kitchen_drop_settle")
@@ -88,7 +89,11 @@ def test_a_dumpling_rocking_in_place_leaves_the_scene_ready(*, monkeypatch):
     env = _rested_env(monkeypatch=monkeypatch)
     try:
         assert env.controller().ready()
-        assert ("ReadyToPour", ()) in env.observe().abstract_atoms
+        # ReadyToPour is gone from the kitchen; PickPitcher reads the same facts.
+        pick = KitchenSkillProvider(env=env).ground(name="PickPitcher")
+        assert {
+            (a.predicate.name, tuple(o.name for o in a.objects)) for a in pick.preconditions
+        } <= env.observe().abstract_atoms
     finally:
         env.close()
 

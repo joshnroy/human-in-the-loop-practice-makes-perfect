@@ -14,6 +14,7 @@ from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
 
 from .config import KitchenGeometry
 from .pick_plannable import KitchenPickPlannable
+from .predicates import KitchenPredicates
 from .types import ClosedLoopPourParameters, PickRefusal
 from .types import KitchenObjects as O
 
@@ -123,7 +124,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         if c.ready_settled():
             atoms |= {("Settled", (name,)) for name in c.scene.cube_names if name != c.held}
         atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
-        state.abstract_atoms = frozenset(atoms)
+        state.abstract_atoms = KitchenPredicates.translate(atoms=frozenset(atoms))
         return state
 
     def after_tick(self) -> None:
@@ -192,7 +193,6 @@ class KitchenEnvironment(FrozenPourEnvironment):
         food_only = (
             c.held is None
             and c.vessel_home(name="pitcher")
-            and c.vessel_home(name="tray")
             and c.scene.cube_locations() != ["pitcher"] * self.payload_count
         )
         if food_only:
@@ -209,14 +209,12 @@ class KitchenEnvironment(FrozenPourEnvironment):
 
     def reset_from_any_state(self) -> bool:
         """The human reset from a state the food-only pour-back does not cover (Josh,
-        2026-11-06): the human stands a displaced skillet at home, takes the jug or a
-        dumpling from the hand and stands the jug at home, and returns the dumplings to
-        it if any is out or the jug moved. What is already in place is not touched, so
-        from the fully reset state this changes nothing. Same price, same success test
-        (`ready()`) and zero robot ticks."""
+        2026-11-06): the human takes the jug or a dumpling from the hand and stands the
+        jug at home, and returns the dumplings to it if any is out or the jug moved. The
+        skillet is welded to the stove, so it is never displaced. What is already in
+        place is not touched, so from the fully reset state this changes nothing. Same
+        price, same success test (`ready()`) and zero robot ticks."""
         c = self.controller()
-        if not c.vessel_home(name="tray"):
-            c.human_stands_vessel_home(name="tray")
         jug_moved = c.held is not None or not c.vessel_home(name="pitcher")
         if jug_moved:
             c.human_takes_jug_home()
@@ -236,7 +234,12 @@ class KitchenEnvironment(FrozenPourEnvironment):
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""
-        if ("Goal", (f"request_{self.requested_count}",)) not in self.observe().abstract_atoms:
+        done = {
+            (f"Split{self.requested_count}", ()),
+            ("HandEmpty", ("robot",)),
+            ("PitcherHome", ("pitcher",)),
+        }
+        if not done <= self.observe().abstract_atoms:
             raise ValueError("Handoff requires completed deployment")
         self.episode_boundaries.append({"reason": "human removes cooked food between tasks"})
         self._started = False
