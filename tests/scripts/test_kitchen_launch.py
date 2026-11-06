@@ -522,3 +522,44 @@ def test_every_seed_of_every_stage_records_full_motion(*, stage):
     for run in runs:
         args = Cli.parse_args(argv=run.command[3:])
         assert args.record_motion == "all", (stage, run.output_dir, run.seed)
+
+
+def test_long_one_shot_learning_is_long_one_shot_plus_the_learning_update_measurements():
+    one_shot = KitchenLaunch.runs(stage="long_one_shot", results_root=Path("/unused"))
+    learning = KitchenLaunch.runs(stage="long_learning_early", results_root=Path("/unused"))
+    combined = KitchenLaunch.runs(stage="long_one_shot_learning", results_root=Path("/unused"))
+    tail = ["--measure-after-learning-updates", "1", "2", "4"]
+    for a, b, c in zip(one_shot, learning, combined, strict=True):
+        assert c.command == [*a.command, *tail]
+        assert sorted(c.command) == sorted([*b.command, "--evaluation-max-pour-attempts", "1"])
+        args = Cli.parse_args(argv=c.command[3:])
+        assert args.practice_step_budget == 200_000
+        assert args.measurement_interval_steps == 25_000
+        assert args.evaluation_max_pour_attempts == 1
+        assert args.measure_after_learning_updates == [1, 2, 4]
+        assert args.extra_measurement_steps == []
+    assert STAGES["long_one_shot_learning"] == STAGES["long"]
+    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_one_shot_learning") == "38G"
+
+
+def test_long_one_shot_learning_della_rows_carry_both_flags_on_genoa_for_48h(
+    *, tmp_path, monkeypatch
+):
+    manifest, script = _della(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, stage="long_one_shot_learning", seeds=(0, 1, 2)
+    )
+    assert len(manifest["runs"]) == 9
+    for row in manifest["runs"]:
+        command = row["argv"]
+        i = command.index("--evaluation-max-pour-attempts")
+        assert command[i + 1] == "1"
+        j = command.index("--measure-after-learning-updates")
+        assert command[j + 1 : j + 4] == ["1", "2", "4"]
+        assert command[command.index("--practice-step-budget") + 1] == "200000"
+        assert command[command.index("--measurement-interval-steps") + 1] == "25000"
+        if row["arm"] == "curtis":
+            assert command[command.index("--pomdp-max-search-iterations") + 1] == "100"
+    assert "#SBATCH --array=1-9" in script
+    assert "#SBATCH --time=48:00:00" in script
+    assert "#SBATCH --mem=38G" in script
+    assert "#SBATCH --constraint=genoa" in script
