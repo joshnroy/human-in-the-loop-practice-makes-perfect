@@ -71,24 +71,28 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
     def human_reset(*, legacy: Skill) -> Skill:
         """The human pour-back, applicable from any practice state (Josh, 2026-11-06).
 
-        The food-only reset required an empty hand and the jug at home, so a jug held
-        after a spill, with its placement refused, was a dead end. Here the human also
-        takes the jug or a dumpling from the hand and stands the jug at home. From the
-        states the food-only reset covered, its successor is unchanged.
+        The food-only reset required an empty hand, both vessels home and a dumpling
+        out of the jug, so a jug held after a spill, with its placement refused, was a
+        dead end. Here the human also takes the jug or a dumpling from the hand and
+        stands the jug and the skillet at home. Its only precondition is the constant
+        `PayloadOrder` chain. From the states the food-only reset covered, its
+        successor is unchanged; from the fully reset state it changes nothing.
         """
         parameters = {v.name: v for v in legacy.parameters}
-        r, p = parameters["r"], parameters["p"]
+        r, p, t = parameters["r"], parameters["p"], parameters["t"]
         slots = tuple(v for v in legacy.parameters if v.name.startswith("s"))
 
         def atom(name: str, *variables: Variable) -> LiftedAtom:  # noqa: PLR0917
             return LiftedAtom(predicate=P.get(name=name), variables=variables)
 
-        hand_and_jug = {atom("HandEmpty", r), atom("PitcherHome", p)}
+        restored = {atom("HandEmpty", r), atom("PitcherHome", p), atom("TrayHome", t)}
         return legacy.model_copy(
             update={
                 "name": HUMAN_RESET,
-                "preconditions": legacy.preconditions - hand_and_jug,
-                "add_effects": legacy.add_effects | hand_and_jug,
+                "preconditions": frozenset(
+                    a for a in legacy.preconditions if a.predicate.name == "PayloadOrder"
+                ),
+                "add_effects": legacy.add_effects | restored,
                 "delete_effects": legacy.delete_effects
                 | {atom("HoldingPitcher", r, p)}
                 | {atom("HoldingShrimp", r, s) for s in slots},
