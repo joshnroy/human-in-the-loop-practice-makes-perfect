@@ -1524,6 +1524,140 @@ def test_the_zero_step_limit_defaults_to_five_on_the_cli():
     assert args.repeated_zero_step_limit == 5
 
 
+def _robot_events(*, output) -> list[dict]:
+    return [e for e in _events(output=output) if e["event"] == "robot"]
+
+
+def _run_zero_step_calls(*, output, script: list, budget: int = 1000, **extra) -> None:
+    """Sessions of three actions, the session-level limit out of the way."""
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=budget,
+            interval=100,
+            max_steps_per_interaction=3,
+            **{"repeated_zero_step_limit": 100, **extra},
+        ),
+        method=_scripted_method(script=script),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+
+
+def test_zero_step_calls_across_a_session_boundary_end_the_run(*, tmp_path):
+    """RackToServing3D EES seed 0: zero-step calls inside sessions that had moved, which
+    the session-level limit never counts. The K-th call in a row ends practice there,
+    part-way through its session."""
+    output = tmp_path / "run"
+    _run_zero_step_calls(
+        output=output,
+        script=[1, 0, 0] + [0, 0] + [1] * 30,
+        repeated_zero_step_call_limit=4,
+    )
+    end = [e for e in _events(output=output) if e["event"] == "practice_end"][0]
+    assert end["reason"] == "repeated_zero_step_calls"
+    assert end["practice_steps"] == 1
+    assert len(_session_starts(output=output)) == 2
+    assert [r["label"] for r in _robot_events(output=output)] == ["skill1"] + ["skill0"] * 4
+    assert _protocol(output=output)["repeated_zero_step_call_limit"] == 4
+
+
+@pytest.mark.parametrize("breaker", ["moving_call", "human_reset"])
+def test_a_moving_call_or_a_human_reset_resets_the_zero_step_call_count(*, tmp_path, breaker):
+    item = {
+        "moving_call": 1,
+        "human_reset": HumanCubeBinResetRequested(cost=1.0, destination="robot_side"),
+    }[breaker]
+    output = tmp_path / "run"
+    _run_zero_step_calls(
+        output=output,
+        script=[0, 0, 0, item] + [0] * 4 + [1] * 30,
+        repeated_zero_step_call_limit=4,
+    )
+    assert _endpoint(output=output) == "repeated_zero_step_calls"
+    labels = [r["label"] for r in _robot_events(output=output)]
+    assert labels[-4:] == ["skill0"] * 4
+    assert labels.count("skill0") == 7
+
+
+def test_one_fewer_zero_step_call_than_the_limit_does_not_end_the_run(*, tmp_path):
+    output = tmp_path / "run"
+    _run_zero_step_calls(
+        output=output,
+        script=[0, 0, 0, 1] + [0, 0, 0, 1] * 5,
+        budget=6,
+        repeated_zero_step_call_limit=4,
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert [r["label"] for r in _robot_events(output=output)].count("skill0") == 18
+
+
+def test_stop_decisions_neither_extend_nor_break_the_zero_step_call_count(*, tmp_path):
+    """A STOP is not a robot call: zero-step calls on either side of one, or of a
+    STOP-only session, are still in a row."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    stop = InteractionComplete(planner_stop=True)
+    output = tmp_path / "run"
+    _run_zero_step_calls(
+        output=output,
+        script=[0, stop, stop, 0, 0, stop, 0] + [1] * 30,
+        repeated_zero_step_call_limit=4,
+    )
+    assert _endpoint(output=output) == "repeated_zero_step_calls"
+    assert len(_robot_events(output=output)) == 4
+    assert len(_stop_events(output=output)) == 3
+
+
+def test_the_session_level_zero_step_limit_still_ends_the_run_first(*, tmp_path):
+    """Sessions of two refusals: the session-level limit, K = 3 sessions, trips at six
+    zero-step calls, well before the call-level default of 20."""
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=1000,
+            interval=100,
+            max_steps_per_interaction=2,
+            repeated_zero_step_limit=3,
+            repeated_zero_step_call_limit=20,
+        ),
+        method=_scripted_method(script=[0] * 40),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert _endpoint(output=output) == "repeated_zero_step"
+    assert len(_robot_events(output=output)) == 6
+
+
+def test_the_zero_step_call_limit_defaults_to_twenty(*, tmp_path):
+    from hitl_pmp.cli import Cli
+
+    args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"])
+    assert args.repeated_zero_step_call_limit == 20
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "lightswitch", "--method", "ees", "--repeated-zero-step-call-limit", "0"]
+        )
+    # A namespace without the flag (a caller other than the CLI) gets the same default.
+    output = tmp_path / "run"
+    _run_zero_step_calls(output=output, script=[1, 0, 0] + [0] * 40)
+    assert _endpoint(output=output) == "repeated_zero_step_calls"
+    assert [r["label"] for r in _robot_events(output=output)].count("skill0") == 20
+    assert _protocol(output=output)["repeated_zero_step_call_limit"] == 20
+
+
+def test_no_early_stop_records_no_zero_step_call_limit(*, tmp_path):
+    output = tmp_path / "run"
+    _run_zero_step_calls(
+        output=output, script=[0] * 30, budget=3, no_early_stop=True, repeated_zero_step_limit=1
+    )
+    assert _endpoint(output=output) == "practice_step_budget"
+    assert _protocol(output=output)["repeated_zero_step_call_limit"] is None
+
+
 def test_a_stop_is_charged_one_robot_step_through_the_accounting():
     from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
 
@@ -1753,4 +1887,18 @@ def test_a_run_recorded_before_the_repeated_stop_limit_existed_still_resumes():
     )
     assert StepProtocolResume.comparable(arguments=before) != StepProtocolResume.comparable(
         arguments={**before, "repeated_stop_limit": "100"}
+    )
+
+
+def test_a_run_recorded_before_the_zero_step_call_limit_existed_resumes_under_the_default():
+    """Such a run had no call-level limit; resumed, it takes the default 20, which is the
+    point of the guard (a stuck Della run is resumed into it, not left to run on)."""
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    before = {"seed": "0", "env": "racktoserving3d"}
+    assert StepProtocolResume.comparable(arguments=before) == StepProtocolResume.comparable(
+        arguments={**before, "repeated_zero_step_call_limit": "20"}
+    )
+    assert StepProtocolResume.comparable(arguments=before) != StepProtocolResume.comparable(
+        arguments={**before, "repeated_zero_step_call_limit": "100"}
     )
