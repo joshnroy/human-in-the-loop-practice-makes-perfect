@@ -83,6 +83,15 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
         return problem.env
 
     @staticmethod
+    def drain_measured_seconds(*, problem: Problem) -> float | None:
+        return (
+            Tossing3DRealStepProtocol
+            .real_env(problem=problem)
+            .real_backend()
+            .drain_measured_seconds()
+        )
+
+    @staticmethod
     def practice_progress(
         *, problem: Problem, cycle: int, action: int, max_actions: int, steps: int, budget: int
     ) -> None:

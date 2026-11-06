@@ -83,6 +83,15 @@ class Tossing3DRealCli:
             "each placement still waits for the person's y.",
         )
         parser.add_argument(
+            "--wall-clock-cost-per-second",
+            type=float,
+            default=None,
+            help="Price what the planner observes in wall-clock seconds at this rate: a "
+            "robot skill's measured time (the camera look after it excluded), and a human "
+            "reset's time from the person's start y to their done y (weighted by the "
+            "costs file's human_weight). The step budget still counts the sim's ticks.",
+        )
+        parser.add_argument(
             "--measure-every-cycles",
             type=Tossing3DRealCli.positive_int,
             default=None,
@@ -135,7 +144,12 @@ class Tossing3DRealCli:
             RealSessionLog.configure(output_dir=Path(args.output_dir))
         if args.robot == "fake":
             fake = FakeTossingRobot()
-            robot, person = fake, FakePerson(robot=fake)
+            robot, person = (
+                fake,
+                FakePerson(
+                    robot=fake, time_human_resets=args.wall_clock_cost_per_second is not None
+                ),
+            )
         else:
             if args.robot_host is None:
                 raise ValueError("--robot real needs --robot-host")
@@ -144,7 +158,7 @@ class Tossing3DRealCli:
                 port=args.robot_port,
                 authkey=SkillServerClient.read_authkey(path=args.robot_authkey_file),
             )
-            person = TerminalPerson()
+            person = TerminalPerson(time_human_resets=args.wall_clock_cost_per_second is not None)
         env = RealTossing3DEnvironment(
             tossing_robot=robot,
             person=person,
