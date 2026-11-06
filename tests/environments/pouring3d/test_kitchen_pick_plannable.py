@@ -58,6 +58,7 @@ def test_every_dumpling_pick_requires_the_atom_but_the_human_reset_does_not():
         ("IK infeasible in descend to shrimp body: residual 0.0120; joint degrees []", False),
         ("Insufficient obstacle clearance in descend to shrimp body: a/b", False),
         ("Motor tracking failed in descend to shrimp body", False),
+        ("Motor tracking failed in position for shrimp pick", False),
         ("Base tracking failed in clear aisle for shrimp pick", False),
         ("Physical shrimp grasp lost", False),
         ("Shrimp grasp lacks both finger contacts", False),
