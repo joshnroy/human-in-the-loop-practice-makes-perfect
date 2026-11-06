@@ -29,6 +29,14 @@ from .transit import geom_half_extents, geoms_half_extents
 # How far behind a stance, along its own heading, a counter circulation may enter it.
 # Hand yaws about world z a placement may set the held food down with, from the grasp's.
 PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
+# A placement releases the food with its lowest point, and the gripper's, this far
+# above the support; a grasp reaching further below the food than the cap refuses.
+RELEASE_CLEARANCE_M = 0.003
+RELEASE_MAX_DROP_M = 0.02
+# How far the gripper at a planned release must stay from every ungrasped food.
+SET_DOWN_FOOD_CLEARANCE_M = 0.003
+# Spacing of the spots searched on a round serving target, a fraction of a dumpling.
+ROUND_PLACEMENT_STEP_M = 0.005
 # Pad normal force per unit of the 2F-85 finger actuator's tendon force, measured in
 # this scene: at the model's own +5 limit each pad presses a held dumpling with ~46 N.
 FINGER_NEWTONS_PER_ACTUATOR_UNIT = 46.0 / 5.0
@@ -894,20 +902,65 @@ class RackFoodController:
                 )
             self._require_held(name=name)
 
+    def _release_height(self, *, name: str) -> float:
+        """How far above the support the held food's lowest point is released.
+
+        Food held low in the hand has the pads reaching below it; set down by its own
+        lowest point, those pads would be driven into the rack's wires or the plate's
+        floor, and every placement would be refused. The release rises until the
+        gripper's colliding geometry keeps the same clearance the food does, and refuses
+        a drop longer than a dumpling could take without leaving its spot.
+        """
+        shelf = self.shelf
+        model, data = shelf.model, shelf.data
+        food_bottom = float(self.backend.corners(name=name)[:, 2].min())
+        gripper_bottom = min(
+            (
+                CarriedGeom.bounds(
+                    model=model,
+                    geom=geom,
+                    center=data.geom_xpos[geom],
+                    rotation=data.geom_xmat[geom].reshape(3, 3),
+                )[2]
+                for geom in shelf.gripper_geoms
+                if model.geom_contype[geom] or model.geom_conaffinity[geom]
+            ),
+            default=food_bottom,
+        )
+        reach_below = max(0.0, food_bottom - gripper_bottom)
+        if reach_below > RELEASE_MAX_DROP_M:
+            raise SkillFailed(
+                f"Food held {reach_below:.3f} m above the pads' tips; retaining grasp"
+            )
+        return RELEASE_CLEARANCE_M + reach_below
+
     @staticmethod
     def _box_xy(*, lower: np.ndarray, upper: np.ndarray) -> list[tuple[float, float]]:
         """The four horizontal corners of an axis-aligned box."""
         return [(float(x), float(y)) for x in (lower[0], upper[0]) for y in (lower[1], upper[1])]
 
-    def _placement_candidates(self, *, name: str, destination: str) -> list[np.ndarray]:
+    def _placement_candidates(
+        self, *, name: str, destination: str, turn: np.ndarray | None = None
+    ) -> list[np.ndarray]:
+        """Free spots for the held food's centre at `destination`, most clearance first.
+
+        `turn` is the world-z yaw the hand will set the food down with: the footprint
+        checked is the food's own, turned, not its as-held box. A food held diagonally
+        is a third wider than one set down square to the axes, and on a plate already
+        holding food that difference is the whole free area.
+        """
         region = self.backend.support(name=destination)
         corners = self.backend.corners(name=name)
         centre = self._pose(name=name)[:3, 3]
-        lower, upper = corners.min(axis=0) - centre, corners.max(axis=0) - centre
+        relative = corners - centre
+        if turn is not None:
+            relative = relative @ turn.T
+        lower, upper = relative.min(axis=0), relative.max(axis=0)
+        release = self._release_height(name=name)
         if destination == "rack_0":
             # The same layout distribution as every reset and the person's return.
             return [
-                np.array([x, y, region.top_z - lower[2] + 0.003])
+                np.array([x, y, region.top_z - lower[2] + release])
                 for x, y in self.backend.rack_put_back_draws(
                     name=name, count=self.RACK_PUT_BACK_DRAWS
                 )
@@ -917,30 +970,109 @@ class RackFoodController:
         if xs[0] > xs[1] or ys[0] > ys[1]:
             raise SkillFailed("Food footprint does not fit destination")
         round_target = isinstance(region, CircularSupport)
+        if round_target:
+            # A plate is small and fills from its middle: a coarse grid can fall
+            # entirely on served food while room remains between it and the rim.
+            grid_x = np.arange(xs[0], xs[1] + 1e-9, ROUND_PLACEMENT_STEP_M)
+            grid_y = np.arange(ys[0], ys[1] + 1e-9, ROUND_PLACEMENT_STEP_M)
+        else:
+            grid_x, grid_y = np.linspace(*xs, 3), np.linspace(*ys, 5)
+        others = [
+            (box.min(axis=0), box.max(axis=0))
+            for box in (
+                self.backend.corners(name=other)
+                for other in self.backend.cube_names
+                if other != name
+            )
+        ]
         candidates = []
-        for target_x in np.linspace(*xs, 7 if round_target else 3):
-            for target_y in np.linspace(*ys, 7 if round_target else 5):
-                target = np.array([target_x, target_y, region.top_z - lower[2] + 0.003])
+        for target_x in grid_x:
+            for target_y in grid_y:
+                target = np.array([target_x, target_y, region.top_z - lower[2] + release])
                 if round_target and not region.contains_xy(
                     points=self._box_xy(lower=target + lower, upper=target + upper), margin=0.02
                 ):
                     continue
-                occupied = False
-                for other in self.backend.cube_names:
-                    if other == name:
-                        continue
-                    obstacle = self.backend.corners(name=other)
-                    occupied |= bool(
-                        np.all(
-                            (target + upper + 0.005 >= obstacle.min(axis=0))
-                            & (target + lower - 0.005 <= obstacle.max(axis=0))
+                gaps = [
+                    float(
+                        np.max(
+                            np.r_[
+                                (obstacle_lower - (target + upper))[:3],
+                                ((target + lower) - obstacle_upper)[:3],
+                            ]
                         )
                     )
-                if not occupied:
-                    candidates.append(target)
+                    for obstacle_lower, obstacle_upper in others
+                ]
+                clearance = min(gaps, default=float("inf"))
+                if clearance > 0.005:
+                    candidates.append((clearance, target))
         if not candidates:
             raise SkillFailed("No unoccupied food placement at destination; retaining grasp")
-        return candidates
+        if round_target:
+            candidates.sort(key=lambda candidate: -round(min(candidate[0], 1.0), 3))
+        return [target for _, target in candidates]
+
+    def _placements(
+        self, *, name: str, destination: str, rotation: np.ndarray
+    ) -> list[tuple[np.ndarray, list[np.ndarray]]]:
+        """Each spot, with the hand yaws to try there, in the order to try them.
+
+        On the rack the spots are the shared layout draws and every yaw is tried at
+        each. Elsewhere a spot is free only for the yaws whose turned footprint fits,
+        so each yaw is searched for its own spots, and the spots of all yaws are tried
+        in order of clearance.
+        """
+        if destination == "rack_0":
+            return [
+                (spot, self._placement_turns(rotation=rotation, centre=spot))
+                for spot in self._placement_candidates(name=name, destination=destination)
+            ]
+        region = self.backend.support(name=destination)
+        middle = np.array([(region.x_min + region.x_max) / 2, (region.y_min + region.y_max) / 2])
+        turns = self._placement_turns(rotation=rotation, centre=middle)
+        per_turn: list[list[np.ndarray]] = []
+        for turn in turns:
+            try:
+                per_turn.append(
+                    self._placement_candidates(name=name, destination=destination, turn=turn)
+                )
+            except SkillFailed:
+                per_turn.append([])
+        if not any(per_turn):
+            raise SkillFailed("No unoccupied food placement at destination; retaining grasp")
+        # Interleave by rank, so the best spot of every yaw comes before the second-best
+        # of any: yaws differ in which stances can reach them, not only in room.
+        out = []
+        for rank in range(max(len(spots) for spots in per_turn)):
+            for turn, spots in zip(turns, per_turn, strict=True):
+                if rank < len(spots):
+                    out.append((spots[rank], [turn]))
+        return out
+
+    def _check_set_down_clearance(self, *, name: str) -> None:
+        """At the release pose left in scratch data, the gripper keeps a margin from
+        every ungrasped food.
+
+        The descent check refuses only contact; a pad that ends a hair from served
+        food touches it as the measured lowering corrects the last millimetres.
+        """
+        import mujoco
+
+        shelf = self.shelf
+        model, scratch = shelf.model, shelf.ik_data
+        foods = self.motion._food_geoms(carried=name)  # noqa: SLF001
+        for geom in sorted(shelf.gripper_geoms):
+            if not (model.geom_contype[geom] or model.geom_conaffinity[geom]):
+                continue
+            for other in sorted(foods):
+                distance = mujoco.mj_geomDistance(
+                    model, scratch, geom, other, SET_DOWN_FOOD_CLEARANCE_M, None
+                )
+                if distance < SET_DOWN_FOOD_CLEARANCE_M:
+                    raise SkillFailed(
+                        f"Set-down gripper within {distance:.4f} m of {model.geom(other).name}"
+                    )
 
     def _plan_place(
         self, *, name: str, destination: str
@@ -962,17 +1094,18 @@ class RackFoodController:
                             start=arm, target=following, base=stance, holding=False
                         )
                         arm = following
+                    self._check_set_down_clearance(name=name)
                 except SkillFailed as exc:
                     return str(exc)[:70]
                 return None
 
             return contact
 
-        spots = self._placement_candidates(name=name, destination=destination)
+        placements = self._placements(name=name, destination=destination, rotation=here[:3, :3])
 
         def candidates() -> Generator[Any, None, None]:
-            for spot in spots:
-                for turn in self._placement_turns(rotation=here[:3, :3], centre=spot):
+            for spot, turns in placements:
+                for turn in turns:
                     down = Frames.pose(rotation=turn @ here[:3, :3], position=spot + turn @ offset)
                     pre = shelf.cube_pre(grasp=down)
                     contact = descent(down=down, pre=pre)
@@ -1069,7 +1202,10 @@ class RackFoodController:
             centre = self._pose(name=name)[:3, 3]
             corners = self.backend.corners(name=name)
             region = self.backend.support(name=destination)
-            target = np.r_[target_xy, region.top_z + centre[2] - corners[:, 2].min() + 0.003]
+            target = np.r_[
+                target_xy,
+                region.top_z + centre[2] - corners[:, 2].min() + self._release_height(name=name),
+            ]
             error = target - centre
             bounds = corners[:, :2] + error[:2]
             if not region.contains_xy(
