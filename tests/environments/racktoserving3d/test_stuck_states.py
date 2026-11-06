@@ -191,6 +191,15 @@ def restored_frozen(*, fixture: Path):
     for joint, value in plain["robot_joints"].items():
         data.qpos[model.jnt_qposadr[model.joint(joint).id]] = value
     for name, pose in plain["free_bodies"].items():
+        if name in ("rack_0", "box_0"):
+            # Welded since 2026-11-06; the fixture predates that and is restored
+            # exactly, including a plate a push had already moved. A welded pose is
+            # otherwise fixed from reset on, so the controllers' long-lived IK data
+            # is told of the move here.
+            backend.core().get_object(name).set_pose(pose[:3], pose[3:])
+            ik_data = env.rack_controllers().shelf.ik_data
+            ik_data.mocap_pos[:], ik_data.mocap_quat[:] = data.mocap_pos, data.mocap_quat
+            continue
         address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
         data.qpos[address : address + 7] = pose
     data.qvel[:] = 0.0

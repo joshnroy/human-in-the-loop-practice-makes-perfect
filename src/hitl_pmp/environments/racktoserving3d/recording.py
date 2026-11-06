@@ -5,8 +5,8 @@ The rack is built on SweepOffShelf3D's machinery, so is its recording. Without
 base pose and gripper command, each dumpling's full pose, the scraper's position and
 yaw, and the rack's and plate's live support bounds -- a storyboard, one frame per
 action, arm at home. With it, every `motion_stride()`-th control step is recorded as
-`RackServingBackend.motion_state()`: every robot joint and every free body's pose
-(five dumplings, the scraper, the plate and the rack), played one tick per frame at
+`RackServingBackend.motion_state()`: every robot joint and every body's pose
+(five dumplings, the scraper, and the welded plate and rack), played one tick per frame at
 `MOTION_FPS`, which is full motion at real time.
 
 The drawing scene is rebuilt from the variant config the header carries, in the lab2
@@ -27,6 +27,10 @@ from .config import RackServingConfig
 from .objects import RackServing3DObjects as Objects
 
 MOVABLES = (*(food.name for food in Objects.food), "wiper_0", "box_0", "rack_0")
+# Welded to the counter since 2026-11-06: placed by pose, not by a free joint. A
+# recording made before then may carry a rack or plate a sweep pushed; it is drawn
+# where it was recorded.
+WELDED = ("box_0", "rack_0")
 
 
 class RackServingReplayRenderer(SweepOffShelf3DReplayRenderer):
@@ -65,7 +69,7 @@ class RackServingReplayRenderer(SweepOffShelf3DReplayRenderer):
         return np.asarray(self._renderer.render(), dtype=np.uint8).copy()
 
     def _pose_motion(self, *, state: PlainState) -> None:
-        """Every robot joint and every free body's pose, exactly as recorded."""
+        """Every robot joint and every body's pose, exactly as recorded."""
         backend = self._built()
         model, data = backend.model(), backend.data()
         names = (self.motion() or {}).get("robot_joints", RackServingBackend.ROBOT_JOINTS)
@@ -73,8 +77,12 @@ class RackServingReplayRenderer(SweepOffShelf3DReplayRenderer):
             data.qpos[model.jnt_qposadr[model.joint(joint).id]] = float(value)
         backend.grip = float(state[Objects.robot.name][3])
         for name in MOVABLES:
+            pose = np.asarray(state[name][-7:], dtype=float)
+            if name in WELDED:
+                backend.core().get_object(name).set_pose(pose[:3], pose[3:])
+                continue
             address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
-            data.qpos[address : address + 7] = np.asarray(state[name][-7:], dtype=float)
+            data.qpos[address : address + 7] = pose
 
     def _pose_boundary(self, *, state: PlainState) -> None:
         """A storyboard state: base and gripper, each dumpling's full pose, the scraper

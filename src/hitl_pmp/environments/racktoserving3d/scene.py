@@ -137,7 +137,7 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
         }
     return {
         "description": (
-            f"Movable cooling rack to movable {serving_noun}; rigid dumpling proxies. "
+            f"Cooling rack to {serving_noun}, both welded to the counter; rigid dumpling proxies. "
             "Hardware height, mass, friction and cooling are unverified assumptions."
         ),
         "robots": {"tidybot": {"robot": {}}},
