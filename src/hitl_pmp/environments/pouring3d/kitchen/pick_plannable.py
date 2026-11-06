@@ -28,8 +28,11 @@ recorded for its dumpling only if all of these hold:
 - the hand is empty and the dumpling is where it was, within 5 mm and 5 degrees.
 
 A physical failure (a slip, a lost or incomplete grasp, a tracking fault, contact-motion
-IK in "descend to shrimp body") never records a refusal: it is an ordinary failed attempt
-for competence.
+IK in "descend to shrimp body") does not record a refusal the first time: it is an ordinary
+failed attempt for competence. When the next dispatched pick of that dumpling fails with the
+identical error from the same dumpling and pan poses (the tolerances below), it is recorded
+as a refusal: EES seed 1 (2026-11-05) dispatched one pick 23 times into the same tracking
+failure.
 
 ## When it is forgotten
 
@@ -109,6 +112,26 @@ class KitchenPickPlannable:
             return None
         now = KitchenPickPlannable.pose(controller=c, name=name)
         if not KitchenPickPlannable.same_pose(a=now, b=before.dumpling):
+            return None
+        return before.model_copy(update={"error": error})
+
+    @staticmethod
+    def repeated(
+        *, controller: Any, before: PickRefusal, error: str | None, previous: PickRefusal | None
+    ) -> PickRefusal | None:
+        """The refusal to record when a pick fails again exactly as it last failed, or None.
+
+        The pick is deterministic, so a second identical failure from the same poses will
+        recur on every dispatch, whatever kind of failure it is.
+        """
+        if error is None or previous is None or controller.held is not None:
+            return None
+        if error != previous.error:
+            return None
+        same = KitchenPickPlannable.same_pose
+        if not (
+            same(a=before.dumpling, b=previous.dumpling) and same(a=before.pan, b=previous.pan)
+        ):
             return None
         return before.model_copy(update={"error": error})
 

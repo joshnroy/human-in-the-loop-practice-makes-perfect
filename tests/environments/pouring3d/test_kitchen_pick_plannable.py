@@ -240,3 +240,27 @@ def test_the_memory_belongs_to_one_environment_instance(*, in_pan, monkeypatch):
     assert not Scenes.plannable(env=in_pan)
     other = Scenes.dumpling_in_pan(hob=0.74, offset=(0.0, 0.0))
     assert Scenes.plannable(env=other)
+
+
+def test_a_physical_failure_repeated_identically_from_the_same_pose_is_a_refusal(
+    *, in_pan, monkeypatch
+):
+    # EES seed 1 dispatched one pick 23 times into the same tracking failure: a
+    # deterministic failure from an unchanged state is as certain as a planning refusal.
+    error = "Motor tracking failed in descend to shrimp body"
+    Scenes.fake_pick(monkeypatch=monkeypatch, error=error, touch=True)
+    in_pan.take_action(action=PICK_ACTION)
+    assert Scenes.plannable(env=in_pan)
+    in_pan.take_action(action=PICK_ACTION)
+    assert not Scenes.plannable(env=in_pan)
+
+
+def test_a_different_error_or_a_moved_dumpling_is_not_a_repeat(*, in_pan, monkeypatch):
+    Scenes.fake_pick(monkeypatch=monkeypatch, error="Shrimp grasp lacks both finger contacts")
+    in_pan.take_action(action=PICK_ACTION)
+    Scenes.fake_pick(monkeypatch=monkeypatch, error="Physical shrimp grasp lost")
+    in_pan.take_action(action=PICK_ACTION)
+    assert Scenes.plannable(env=in_pan)
+    Scenes.nudge(env=in_pan, dx=0.02)
+    in_pan.take_action(action=PICK_ACTION)
+    assert Scenes.plannable(env=in_pan)
