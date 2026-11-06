@@ -731,6 +731,12 @@ class KitchenController(PotstickerController):
             )
         finally:
             sim.close()
+        if not np.array_equal(planner.base_target, self.base_home):
+            self.events.append({
+                "event": "placement base pose occupied; placing from a nearby pose",
+                "nominal": self.base_home.tolist(),
+                "base_target": planner.base_target.tolist(),
+            })
         self.follow_arm_path(path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=1)
         self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
         self.follow_arm_path(
