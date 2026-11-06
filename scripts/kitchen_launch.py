@@ -196,23 +196,33 @@ class KitchenLaunch:
         seeds: tuple[int, ...] = SEEDS,
         repo: Path = REPO,
         evaluation_workers: int = 1,
+        human_reset_success_probabilities: tuple[float, ...] | None = None,
     ) -> list[SweepRun]:
+        """Every arm x seed. Given `human_reset_success_probabilities`, every p x arm x
+        seed instead: each run adds `--human-reset-success-probability p` and writes
+        under `human-reset-p<p>/`; without it the runs are exactly the stage's own."""
+        sweep: tuple[float | None, ...] = human_reset_success_probabilities or (None,)
         return [
             run
+            for p in sweep
             for arm in ARMS
             for seed in seeds
             for run in SweepRunner.plan(
                 env="pouring3d_kitchen",
                 methods=["ees" if arm == "ees" else "pomdp"],
                 seeds=[seed],
-                results_root=results_root / arm,
-                shared_args=KitchenLaunch.flags(
-                    arm=arm,
-                    stage=stage,
-                    seed=seed,
-                    repo=repo,
-                    evaluation_workers=evaluation_workers,
-                ),
+                results_root=(results_root if p is None else results_root / f"human-reset-p{p}")
+                / arm,
+                shared_args=[
+                    *KitchenLaunch.flags(
+                        arm=arm,
+                        stage=stage,
+                        seed=seed,
+                        repo=repo,
+                        evaluation_workers=evaluation_workers,
+                    ),
+                    *([] if p is None else ["--human-reset-success-probability", str(p)]),
+                ],
                 method_args={},
             )
         ]
@@ -274,6 +284,7 @@ class KitchenLaunch:
         seeds: tuple[int, ...] = SEEDS,
         repo: Path = REPO,
         evaluation_workers: int = 1,
+        human_reset_success_probabilities: tuple[float, ...] | None = None,
     ) -> None:
         identity = KitchenLaunch.identity()
         root = results_root.resolve()
@@ -283,6 +294,7 @@ class KitchenLaunch:
             seeds=seeds,
             repo=repo,
             evaluation_workers=evaluation_workers,
+            human_reset_success_probabilities=human_reset_success_probabilities,
         )
         data = {
             "status": "planned",
@@ -290,6 +302,11 @@ class KitchenLaunch:
             "stage": stage,
             "seeds": list(seeds),
             "evaluation_workers": evaluation_workers,
+            **(
+                {"human_reset_success_probabilities": list(human_reset_success_probabilities)}
+                if human_reset_success_probabilities
+                else {}
+            ),
             "results_root": str(root),
             "working_directory": str(repo),
             "cost_sha256": hashlib.sha256(COSTS.read_bytes()).hexdigest(),
@@ -320,6 +337,7 @@ class KitchenLaunch:
         mem: str | None = None,
         evaluation_workers: int | None = None,
         constraint: str = DELLA_CONSTRAINT,
+        human_reset_success_probabilities: tuple[float, ...] | None = None,
     ) -> Path:
         """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della.
 
@@ -345,7 +363,9 @@ class KitchenLaunch:
             seeds=seeds,
             repo=code,
             evaluation_workers=workers,
+            human_reset_success_probabilities=human_reset_success_probabilities,
         )
+        rows = len(ARMS) * len(seeds) * len(human_reset_success_probabilities or (None,))
         sbatch = out / "array.sbatch"
         node = f"#SBATCH --constraint={constraint}\n" if constraint else ""
         sbatch.write_text(f"""#!/usr/bin/env bash
@@ -353,7 +373,7 @@ class KitchenLaunch:
 {node}#SBATCH --cpus-per-task={workers + 1}
 #SBATCH --mem={mem}
 #SBATCH --time={time}
-#SBATCH --array=1-{len(ARMS) * len(seeds)}
+#SBATCH --array=1-{rows}
 #SBATCH --job-name={tag}
 #SBATCH --output={DELLA}/slurm-logs/%x-%A_%a.out
 set -euo pipefail
@@ -413,6 +433,10 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             results_root=Path(data["results_root"]),
             seeds=tuple(data.get("seeds", SEEDS)),
             evaluation_workers=data.get("evaluation_workers", 1),
+            human_reset_success_probabilities=tuple(
+                data.get("human_reset_success_probabilities", ())
+            )
+            or None,
         )
         # Array siblings may already be running, so their outputs exist; only the
         # rows this worker will execute must still be fresh (validated below).
@@ -478,11 +502,26 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             help="Test tasks evaluated at once per run (default: 1 for manifest, every "
             "task of the stage for della); more than 1 evaluates with per-task RNGs",
         )
+        parser.add_argument(
+            "--human-reset-success-probabilities",
+            type=float,
+            nargs="+",
+            help="Sweep the human pour-back's true competence: every p x arm x seed, each "
+            "under human-reset-p<p>/ (default: no sweep; the stage's runs unchanged)",
+        )
         args = parser.parse_args()
+        sweep = (
+            tuple(args.human_reset_success_probabilities)
+            if args.human_reset_success_probabilities
+            else None
+        )
         if args.mode == "check":
             rows = KitchenLaunch.rows(
                 runs=KitchenLaunch.runs(
-                    stage=args.stage, results_root=Path("/unused"), seeds=tuple(args.seeds)
+                    stage=args.stage,
+                    results_root=Path("/unused"),
+                    seeds=tuple(args.seeds),
+                    human_reset_success_probabilities=sweep,
                 )
             )
             for row in rows:
@@ -498,8 +537,9 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 stage=args.stage,
                 results_root=args.results_root,
                 evaluation_workers=args.evaluation_workers or 1,
+                human_reset_success_probabilities=sweep,
             )
-            print(f"Planned six runs in {args.out}; nothing submitted")
+            print(f"Planned the runs in {args.out}; nothing submitted")
             return 0
         if args.mode == "della":
             if args.out is None or args.tag is None:
@@ -513,6 +553,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 mem=args.mem,
                 evaluation_workers=args.evaluation_workers,
                 constraint=args.constraint,
+                human_reset_success_probabilities=sweep,
             )
             print(f"Planned; nothing copied or submitted. sbatch {sbatch} <Della manifest>")
             return 0
