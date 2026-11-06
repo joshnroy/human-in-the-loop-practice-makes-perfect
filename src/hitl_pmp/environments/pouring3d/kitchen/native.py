@@ -210,9 +210,12 @@ class KitchenController(PotstickerController):
     recovery_base_x: float = 0.30
     # Episode-initial arm configuration; set by build().
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
-    # Continuous joints are unwound by whole turns towards zero before every empty-hand
-    # pick once they are this far past half a turn.
-    unwind_band: ClassVar[float] = np.deg2rad(20.0)
+    # Continuous joints are unwound by whole turns towards zero before a dumpling pick
+    # and after PickPitcher's tuck once they are within this of their IK bound (688 deg):
+    # the largest single-skill excursion measured, joint 3's +307 deg in one PickPitcher,
+    # with room to spare.
+    # Below that a skill cannot reach the bound, and unwinding costs about 350 ticks.
+    unwind_margin: ClassVar[float] = np.deg2rad(350.0)
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
     # Execution speeds of planned motions, within what the motors are measured to track
@@ -424,12 +427,12 @@ class KitchenController(PotstickerController):
         Measured from zero, not from neutral: joint 3's neutral is 180 deg, so an arm
         under a full turn from neutral could start a skill at 380 deg, and one
         PickPitcher (+307 deg in ees/ees/2) then pinned it at the 688 deg bound.
-        Hysteresis: a joint within `unwind_band` past half a turn counts as unwound, so
-        one resting near +-180 deg never flips back and forth.
+        Only a joint within `unwind_margin` of its bound counts as wound: joint 7 rests
+        at 196-238 deg after every pour, and unwinding it there bought nothing.
         """
         continuous = self.lower == -12
         q = self.data.qpos[self.arm_q]
-        wound = continuous & (np.abs(q) > np.pi + self.unwind_band)
+        wound = continuous & (np.abs(q) > self.upper - self.unwind_margin)
         turns = np.zeros(len(q), dtype=int)
         turns[wound] = np.round(q[wound] / (2 * np.pi)).astype(int)
         return turns
@@ -443,12 +446,19 @@ class KitchenController(PotstickerController):
         turn leaves the hand pose unchanged; the joint path between is collision-
         checked in scratch before any motor command, and a blocked path executes
         nothing. The other joints are untouched and there is no home posture.
+
+        Each wound joint turns on its own: at ees/ees/2 tick 135, joints 1 and 3 turning
+        together were blocked every time, while joint 3 alone was clear.
         """
         if self.held is not None:
             raise ValueError("Unwinding requires an empty hand")
-        turns = self.continuous_turns()
-        if not turns.any():
-            return
+        for joint in np.flatnonzero(self.continuous_turns()):
+            turns = np.zeros(len(self.arm_q), dtype=int)
+            turns[joint] = self.continuous_turns()[joint]
+            self.unwind_by(turns=turns)
+
+    def unwind_by(self, *, turns: np.ndarray) -> None:
+        """Rotate the arm back by `turns` whole turns per joint, if the path is clear."""
         start = self.data.qpos[self.arm_q].copy()
         goal = start - 2 * np.pi * turns
         self.phase = "unwind continuous arm joints"

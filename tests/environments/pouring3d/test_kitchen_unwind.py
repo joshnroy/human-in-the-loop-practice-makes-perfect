@@ -1,4 +1,5 @@
-"""Continuous arm joints are unwound by whole turns before every empty-hand pick."""
+"""Continuous arm joints near their IK bound are unwound by whole turns before every
+empty-hand pick."""
 
 import mujoco
 import numpy as np
@@ -94,6 +95,18 @@ def test_an_unwound_arm_is_left_alone(*, monkeypatch):
 @pytest.mark.parametrize("degrees", [190.0, -190.0])
 def test_a_joint_inside_the_hysteresis_band_never_flips(*, degrees):
     # Joint 7's neutral is 90 deg; this puts it at +-190 deg, just past half a turn.
+    c = Wound.kitchen(turns={6: (degrees - 90.0) / 360.0})
+    q, steps = c.data.qpos[c.arm_q].copy(), c.steps
+    c.unwind_continuous_joints()
+    assert c.steps == steps
+    np.testing.assert_array_equal(c.data.qpos[c.arm_q], q)
+
+
+@pytest.mark.parametrize("degrees", [196.0, 222.0, 238.0, -238.0])
+def test_a_joint_far_from_its_ik_bound_is_not_unwound(*, degrees):
+    # Joint 7 rests at 196-238 deg after Pour and PlacePitcherAtHome. Unwinding it there
+    # cost 348 ticks before every dumpling pick and after every PickPitcher tuck, with
+    # 450 deg still to the 688 deg bound.
     c = Wound.kitchen(turns={6: (degrees - 90.0) / 360.0})
     q, steps = c.data.qpos[c.arm_q].copy(), c.steps
     c.unwind_continuous_joints()
