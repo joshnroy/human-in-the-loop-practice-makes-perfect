@@ -5,7 +5,7 @@ import pytest
 
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.practice_costs import PracticeCosts
-from scripts.kitchen_launch import KitchenLaunch
+from scripts.kitchen_launch import STAGES, KitchenLaunch
 
 
 @pytest.mark.parametrize("stage,budget", [("pilot", 6400), ("overnight", 25600)])
@@ -474,26 +474,33 @@ def test_della_overnight_memory_is_unchanged_by_the_long_stage():
     assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long") == "38G"
 
 
-def test_long_early_stage_measures_at_5k_and_10k_then_every_25k():
-    for stage in ("long", "long_early"):
+def test_long_learning_early_measures_at_0_after_updates_1_2_4_then_every_25k():
+    for stage in ("long", "long_learning_early"):
         for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
             args = Cli.parse_args(argv=run.command[3:])
             assert args.practice_step_budget == 200_000
             assert args.measurement_interval_steps == 25_000
             assert args.initial_measurement
-            assert args.extra_measurement_steps == ([5000, 10000] if stage == "long_early" else [])
+            assert args.extra_measurement_steps == []
+            assert args.measure_after_learning_updates == (
+                [1, 2, 4] if stage == "long_learning_early" else []
+            )
 
 
-def test_long_early_differs_from_long_only_by_the_extra_measurements():
+def test_long_learning_early_differs_from_long_only_by_the_learning_update_measurements():
     long = KitchenLaunch.runs(stage="long", results_root=Path("/unused"))
-    early = KitchenLaunch.runs(stage="long_early", results_root=Path("/unused"))
+    early = KitchenLaunch.runs(stage="long_learning_early", results_root=Path("/unused"))
     for a, b in zip(long, early, strict=True):
         assert b.command[: len(a.command)] == a.command
-        assert b.command[len(a.command) :] == ["--extra-measurement-steps", "5000", "10000"]
+        assert b.command[len(a.command) :] == ["--measure-after-learning-updates", "1", "2", "4"]
     for stage in ("pilot", "overnight", "long", "dry"):
         for run in KitchenLaunch.runs(stage=stage, results_root=Path("/unused")):
+            assert "--measure-after-learning-updates" not in run.command
             assert "--extra-measurement-steps" not in run.command
+    # Its 5k/10k-tick measurements came before the first learning update, so measured
+    # unfitted samplers; the stage is gone rather than kept under a misleading name.
+    assert "long_early" not in STAGES
 
 
-def test_long_early_is_sized_like_long_on_della():
-    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_early") == "38G"
+def test_long_learning_early_is_sized_like_long_on_della():
+    assert KitchenLaunch.della_memory(evaluation_workers=9, stage="long_learning_early") == "38G"

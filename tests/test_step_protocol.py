@@ -1824,3 +1824,101 @@ def test_a_run_recorded_before_extra_measurement_steps_still_resumes():
     assert StepProtocolResume.comparable(arguments={}) == StepProtocolResume.comparable(
         arguments={"extra_measurement_steps": str([])}
     )
+
+
+def test_measure_after_learning_updates_measures_the_policy_each_listed_update_made(*, tmp_path):
+    """`--measure-after-learning-updates 1 2 4`: a measurement right after the 1st, 2nd
+    and 4th learning updates, beside the interval's, so an early measurement sees a
+    policy that has learned rather than an unfitted prior. Each cycle here is 3 one-step
+    actions, so update k lands at practice step 3k."""
+    output = tmp_path / "run"
+    method = CountsLearning(
+        env=LightSwitchEnvironment(grid_size=4),
+        skill_provider=LightSwitchSkillProvider(env=LightSwitchEnvironment(grid_size=4)),
+        seed=0,
+    )
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(
+            output_dir=output,
+            budget=20,
+            interval=10,
+            max_steps_per_interaction=3,
+            measure_after_learning_updates=[4, 1, 2, 2],
+        ),
+        method=method,
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    assert not (output / "failure.txt").exists()
+    records = json.loads((output / "measurements.json").read_text())
+    by_step = {r["practice_steps"]: r for r in records}
+    assert [r["practice_steps"] for r in records] == [0, 3, 6, 10, 12, 20]
+    assert [r["learning_updates"] for r in records] == [0, 1, 2, 3, 4, method._learned]
+    for step, updates in ((3, 1), (6, 2), (12, 4)):
+        assert by_step[step]["learning_updates"] == updates
+        assert by_step[step]["after_cycle"] == updates - 1
+    assert "after_cycle" not in by_step[10]
+    names = [e["event"] for e in _events(output=output)]
+    assert names[names.index("learning_update") + 1] == "measurement"
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert protocol["measure_after_learning_updates"] == [1, 2, 4]
+
+
+def test_without_measure_after_learning_updates_the_schedule_and_record_are_unchanged(*, tmp_path):
+    output = tmp_path / "run"
+    StepPracticeRunner.run(
+        environment=FakeStepProtocol,
+        args=_step_args(output_dir=output, budget=20, interval=10, max_steps_per_interaction=3),
+        method=_scripted_method(script=[]),
+        problem=FakeProblem(),
+        evaluations=FakeEvaluations(),
+    )
+    records = json.loads((output / "measurements.json").read_text())
+    assert [r["practice_steps"] for r in records] == [0, 10, 20]
+    assert all("after_cycle" not in r for r in records)
+    protocol = json.loads((output / "step_protocol.json").read_text())
+    assert "measure_after_learning_updates" not in protocol
+
+
+def test_measure_after_learning_updates_is_refused_for_in_process_evaluations(*, tmp_path):
+    """An in-process evaluation uses practice's room, which only `--measure-every-cycles`
+    puts back; the flag is for evaluations spawned beside practice."""
+
+    class InProcess(FakeStepProtocol):
+        @staticmethod
+        def evaluation_pool():
+            return FakeEvaluations()
+
+    with pytest.raises(ValueError, match="--measure-every-cycles"):
+        StepPracticeRunner.run(
+            environment=InProcess,
+            args=_step_args(
+                output_dir=tmp_path / "run",
+                budget=20,
+                interval=10,
+                measure_after_learning_updates=[1],
+            ),
+            method=_scripted_method(script=[]),
+            problem=FakeProblem(),
+            evaluations=FakeEvaluations(),
+        )
+
+
+def test_measure_after_learning_updates_parse_and_default_empty():
+    from hitl_pmp.cli import Cli
+
+    base = ["--env", "lightswitch", "--method", "ees"]
+    assert Cli.parse_args(argv=base).measure_after_learning_updates == []
+    parsed = Cli.parse_args(argv=[*base, "--measure-after-learning-updates", "1", "2", "4"])
+    assert parsed.measure_after_learning_updates == [1, 2, 4]
+    with pytest.raises(SystemExit):
+        Cli.parse_args(argv=[*base, "--measure-after-learning-updates", "0"])
+
+
+def test_a_run_recorded_before_measure_after_learning_updates_still_resumes():
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    assert StepProtocolResume.comparable(arguments={}) == StepProtocolResume.comparable(
+        arguments={"measure_after_learning_updates": str([])}
+    )
