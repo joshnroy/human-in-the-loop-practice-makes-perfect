@@ -59,13 +59,9 @@ def _plan(*, env: KitchenEnvironment, planner_type: type) -> dict:
         sim.close()
 
 
-@pytest.mark.xfail(
-    reason="This recorded arm is 14.4 mm from the scene, inside the 15 mm planning margin, "
-    "so no planned motion may start from it. Expected to pass once every skill keeps the "
-    "15 mm clearance throughout (the clearance-invariant change).",
-    strict=False,
-)
 def test_a_pick_from_the_stranded_reach_tucks_first_and_succeeds():
+    # This recorded arm is 14.4 mm from the scene in PyBullet, inside the 15 mm planning
+    # margin: the tuck escapes the margin first (`test_kitchen_plan_from_inside_margin`).
     env = _stranded()
     seen = Clearance.record(env=env)
     env.take_action(action=PICK_PITCHER)
