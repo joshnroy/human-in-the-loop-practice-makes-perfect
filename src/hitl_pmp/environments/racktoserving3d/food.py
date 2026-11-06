@@ -371,7 +371,7 @@ class _FoodMotion(RackScraper):
         here = shelf.site_pose()
         base = shelf.data.qpos[shelf.ba].copy()
         arm = shelf.data.qpos[shelf.qa].copy()
-        for direction in self._departure_directions():
+        for direction in self.escape_directions():
             target = here[:3, 3] + DEPART_M * direction
             checked = self._departs(base=base, arm=arm, position=target, rotation=here[:3, :3])
             if checked is not None:
@@ -388,16 +388,6 @@ class _FoodMotion(RackScraper):
             for pad, fixture in self.departing
         )
         raise SkillFailed(f"{label}: no departure from {names} leaves them without deepening")
-
-    @staticmethod
-    def _departure_directions() -> list[np.ndarray]:
-        """Straight up, then up and away along each of eight headings, then level."""
-        headings = [
-            np.array([np.cos(angle), np.sin(angle), 0.0])
-            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
-        ]
-        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
-        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
 
     def _departs(
         self, *, base: np.ndarray, arm: np.ndarray, position: np.ndarray, rotation: np.ndarray
@@ -744,38 +734,25 @@ class RackFoodController:
 
         A placement whose retreat failed leaves the open hand down at the plate, within
         the planner's margin of it and of the food on it, so every reach is refused.
-        Rise straight up, open, out of that start (a line checked as it goes, as the
-        placement's own escape), then plan once more. From a start that is not blocked
-        a refusal moves nothing.
+        The empty hand opens and leaves that start along a checked escape
+        (`RackScraper.plan_from_clear_start`), then plans once more.
         """
-        from .planning import ScraperMotionPlanner
-
-        try:
-            return self._plan_pick(name=name)
-        except SkillFailed as exc:
-            if not ScraperMotionPlanner.start_blocked(tool=self.motion, held_name=None):
-                raise
-            reason = str(exc)
         shelf = self.shelf
-        if shelf.grip > 0.0:
-            shelf.grip = 0.0
-            shelf.hold(count=25, label="food_pick_escape_open")
-        here = shelf.site_pose()
-        try:
-            self.motion.line(
-                position=here[:3, 3] + [0.0, 0.0, PICK_ESCAPE_M],
-                rotation=here[:3, :3],
-                label="food_pick_escape",
-                holding=False,
-                step=0.005,
-                steps_per=5,
-            )
-        except SkillFailed as exc:
-            raise SkillFailed(f"{reason}; escape refused: {exc}") from exc
-        try:
-            return self._plan_pick(name=name)
-        except SkillFailed as again:
-            raise SkillFailed(f"after escaping the start: {again}") from again
+
+        def open_hand() -> None:
+            if shelf.grip > 0.0:
+                shelf.grip = 0.0
+                shelf.hold(count=25, label="food_pick_escape_open")
+
+        plan: tuple[Any, np.ndarray, np.ndarray, np.ndarray] = self.motion.plan_from_clear_start(
+            make_plan=lambda: self._plan_pick(name=name),
+            held_name=None,
+            holding=False,
+            label="food_pick_escape",
+            distance=PICK_ESCAPE_M,
+            prepare=open_hand,
+        )
+        return plan
 
     def _follow(self, *, plan: Any, pose: np.ndarray, label: str) -> None:
         """Execute a planned reach: tuck, base, arm to `pose`."""
@@ -1161,7 +1138,15 @@ class RackFoodController:
                         step=0.005,
                         steps_per=5,
                     )
-                plan, down, pre, centre = self._plan_place(name=name, destination=destination)
+                # A food still pinched but resting on the rack's wires (a pick that
+                # failed) is inside the planner's margin of them: rise out first.
+                plan, down, pre, centre = self.motion.plan_from_clear_start(
+                    make_plan=lambda: self._plan_place(name=name, destination=destination),
+                    held_name=name,
+                    holding=False,
+                    label="food_place_escape",
+                    distance=PLACE_ESCAPE_M,
+                )
                 self._follow(plan=plan, pose=pre, label="food_place")
             self._lower_food(
                 name=name,

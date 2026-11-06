@@ -249,3 +249,38 @@ def test_pick_scraper_from_a_hand_left_over_the_rack_leaves_it_and_picks():
         assert env.backend().held(name="wiper_0")
     finally:
         env.close()
+
+
+EES1_HELD_FOOD_ON_RACK = FIXTURES / "stuck_ees1_held_food_place_start_blocked.json"
+
+
+@pytest.mark.parametrize(
+    "action",
+    [np.array([4.0, 4.0, 0.0, 0.0, 0.0]), np.array([5.0, 4.0, 0.0, 0.0, 0.0])],
+    ids=["PlaceFoodOnTray", "ReturnFoodToRack"],
+)
+def test_a_food_held_resting_on_the_rack_leaves_the_blocked_start(*, action):
+    """rack-80k-32db025 EES seed 1, practice step 18,044: a PickFood(cube_4) ended
+    "not held by bilateral pad contact", yet both closed pads still touch cube_4, so it
+    counts as held, resting on the rack's wires (MuJoCo: 0.09 to 0.24 mm wire
+    contacts, the execution guard clear). Carried rigidly in PyBullet it overlaps
+    three wires by 1.2 mm and sits 5 mm from cube_3, inside the 15 mm planning margin,
+    so no plan could start: every PlaceFoodOnTray and ReturnFoodToRack refused at 0
+    steps, 12 in a row. A blocked start is now left along a checked escape first.
+
+    The pads only touch the food; they do not squeeze it (20 steps of closed-hand
+    settling lose it too), so the escape's first step lifts the hand off it and the
+    skill fails "not held", the hand still closed and the food at rest on the rack.
+    That ends the loop: the food is no longer held, so the next call differs."""
+    env = restored_frozen(fixture=EES1_HELD_FOOD_ON_RACK)
+    try:
+        assert env.backend().held(name="cube_4")
+        steps, error = done_or_refused(env=env, action=action)
+        assert steps > 0, error
+        if error is not None:
+            assert "not held" in error, f"{steps} steps, then: {error}"
+            assert env.rack_controllers().shelf.grip == 1.0, "a failed food skill opened"
+            assert food_in_motion_or_hand(env=env) == {}
+            assert env.backend().location(name="cube_4") == "OnRack"
+    finally:
+        env.close()
