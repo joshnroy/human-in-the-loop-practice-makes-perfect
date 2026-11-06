@@ -19,7 +19,7 @@ def _setup(*, tmp_path: Path, labels: list[str]) -> tuple[Path, Path]:
     states_path = tmp_path / "states.jsonl"
     cases = [
         BenchmarkCase(skill="PickWiper"),
-        BenchmarkCase(skill="SweepShelf", params=[0.0, 0.05]),
+        BenchmarkCase(skill="SweepShelf", cube="cube_0", params=[0.025, 15.0]),
     ]
     states = [
         BenchmarkState(
