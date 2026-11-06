@@ -227,3 +227,25 @@ def test_a_food_lost_from_the_closed_hand_is_waited_for_until_it_rests():
         assert env.rack_controllers().shelf.grip == 1.0
     finally:
         env.close()
+
+
+EES0_PICK_SCRAPER_HAND_OVER_RACK = FIXTURES / "stuck_ees0_pickscraper_hand_over_rack.json"
+
+
+def test_pick_scraper_from_a_hand_left_over_the_rack_leaves_it_and_picks():
+    """rack-80k-32db025 EES seed 0, practice step 11736: a PickFood(cube_0) failed
+    ("not held by bilateral pad contact") and left the closed, empty hand 3 cm above
+    the rack, reaching 0.77 m over the counter from the base's side stance, 11 mm from
+    cube_2 in PyBullet: inside the planner's 15 mm margin, though MuJoCo's guard is
+    clear. Every PickScraper then refused at 0 steps, all 385 stances, 237 of them "No
+    collision-free base path": no base path can start from a configuration the body
+    check rejects. PickFood and ReturnScraper already leave such a start first."""
+    env = restored_frozen(fixture=EES0_PICK_SCRAPER_HAND_OVER_RACK)
+    try:
+        assert not env.backend().held(name="wiper_0")
+        steps, error = done_or_refused(env=env, action=np.array([0.0, 0, 0, 0, 0]))
+        assert steps > 0, error
+        assert error is None, f"{steps} steps, then: {error}"
+        assert env.backend().held(name="wiper_0")
+    finally:
+        env.close()

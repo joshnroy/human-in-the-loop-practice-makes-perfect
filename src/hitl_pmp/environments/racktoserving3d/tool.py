@@ -221,8 +221,9 @@ class TableWiper:
             rotation = pose[:3, :3] @ self.hand_in_body
             grasp = self.grasp_world(pose=pose)
             pre = grasp - PRE_GRASP * rotation[:, 2]
-            try:
-                plan = ScraperMotionPlanner.plan_pick(
+
+            def make_plan() -> Any:
+                return ScraperMotionPlanner.plan_pick(
                     tool=self,
                     grasp=grasp,
                     pre=pre,
@@ -230,8 +231,33 @@ class TableWiper:
                     preferred=self.base,
                     after=self.lift_waypoints(pose=pose),
                 )
+
+            try:
+                plan = make_plan()
             except PlanningRefused as exc:
-                raise SkillFailed(str(exc)) from exc
+                # A food pick that failed can leave the empty hand just above the rack,
+                # within the planner's margin of the food on it, so no base path can
+                # start. Rise straight up out of that start (a line checked as it
+                # goes), as PickFood does, then plan once more; from a start that is
+                # not blocked a refusal moves nothing.
+                if not ScraperMotionPlanner.start_blocked(tool=self, held_name=None):
+                    raise SkillFailed(str(exc)) from exc
+                here = shelf.site_pose()
+                try:
+                    self.line(
+                        position=here[:3, 3] + [0.0, 0.0, ESCAPE_UP_M],
+                        rotation=here[:3, :3],
+                        label="pick_wiper_escape",
+                        holding=False,
+                        step=0.005,
+                        steps_per=5,
+                    )
+                except SkillFailed as refused:
+                    raise SkillFailed(f"{exc}; escape refused: {refused}") from refused
+                try:
+                    plan = make_plan()
+                except PlanningRefused as again:
+                    raise SkillFailed(f"after escaping the start: {again}") from again
             shelf.grip = 0.0
             self.follow_base_path(path=plan.base_path, label="pick_wiper_base")
             self.follow_arm_path(path=plan.arm_after_base, label="pick_wiper_pre")
