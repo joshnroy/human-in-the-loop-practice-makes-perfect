@@ -173,7 +173,7 @@ def test_carried_potsticker_bottom_is_its_lowest_vertex_not_a_box_about_its_fram
         env.close()
 
 
-SIMPLIFIED = ("hull", "hull_crest", "primitives", "pouch_hull", "ellipsoid")
+SIMPLIFIED = ("hull",)
 BODY = {"name": "cube_0", "joint": "j", "mass": 0.02, "friction": "1 0 0", "condim": 6, "index": 0}
 
 
@@ -249,7 +249,7 @@ def test_simplified_collision_keeps_the_potstickers_mass_and_inertia(*, collisio
 
 
 @kinder_only
-@pytest.mark.parametrize("collision", ("full", "primitives"))
+@pytest.mark.parametrize("collision", ("full", "hull"))
 def test_the_configured_collision_reaches_the_scene(*, collision):
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
     from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
@@ -259,6 +259,6 @@ def test_the_configured_collision_reaches_the_scene(*, collision):
     try:
         backend = env.backend()
         counts = {len(backend.body_geoms(name=name)) for name in backend.cube_names}
-        assert counts == ({41} if collision == "full" else {3})
+        assert counts == ({41} if collision == "full" else {1})
     finally:
         env.close()
