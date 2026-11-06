@@ -3,6 +3,8 @@
 import logging
 import math
 import re
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -538,3 +540,59 @@ def test_each_evaluation_skill_is_preceded_by_the_evaluations_number_and_task() 
     env.backend().evaluation_progress(index=4, label="(final)", task=1, num_tasks=5)
     env.backend().reset(seed=0)
     assert written[0] == "eval 4 (final): task 1/5"
+
+
+def test_a_timed_human_reset_shows_the_seconds_so_far_while_waiting_for_done() -> None:
+    """While the person resets, a counter ticks the seconds since their start y (Josh,
+    2026-11-06), so they can see the time being charged. It stops at the done y."""
+    ticks: list[str] = []
+    seen_a_tick = threading.Event()
+    now = iter([100.0, *(100.0 + k for k in range(1, 1000))])
+
+    def read(prompt: str) -> str:  # noqa: PLR0917 -- `TerminalPerson.read`'s callable
+        if "in place" in prompt:
+            assert seen_a_tick.wait(timeout=5)
+        return "y"
+
+    def tick(text: str) -> None:  # noqa: PLR0917 -- `TerminalPerson.tick`'s callable
+        ticks.append(text)
+        seen_a_tick.set()
+
+    person = TerminalPerson(
+        write=lambda _line: None,
+        read=read,
+        time_human_resets=True,
+        clock=lambda: next(now),
+        tick=tick,
+        tick_period_s=0.01,
+    )
+    request = PlacementRequest(
+        kind="human reset",
+        destination=Tossing3DSide.ROBOT,
+        cube=CUBE_SPOT,
+        bin=BIN_SPOTS[Tossing3DSide.ROBOT],
+    )
+    person.place(request=request)
+    assert ticks and all(text.endswith(" s") for text in ticks)
+    assert ticks[0] == "reset timer: 1 s"
+    stopped = len(ticks)
+    time.sleep(0.05)
+    assert len(ticks) == stopped
+
+
+def test_an_untimed_placement_shows_no_counter() -> None:
+    ticks: list[str] = []
+    person = TerminalPerson(
+        write=lambda _line: None,
+        read=lambda _prompt: "y",
+        tick=ticks.append,
+        tick_period_s=0.01,
+    )
+    request = PlacementRequest(
+        kind="human reset",
+        destination=Tossing3DSide.ROBOT,
+        cube=CUBE_SPOT,
+        bin=BIN_SPOTS[Tossing3DSide.ROBOT],
+    )
+    person.place(request=request)
+    assert ticks == []
