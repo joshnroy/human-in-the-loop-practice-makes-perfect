@@ -1240,6 +1240,11 @@ WELDED_HOVER_M = 0.08
 WELDED_HEADINGS = 12
 WELDED_LEANS_DEG = (0.0, 30.0, 45.0, 60.0)
 WELDED_DESCENT_STEP_M = 0.01
+# How far, and in what steps, a snapped dumpling may sit above its held pose so that it
+# starts clear of the fixtures beneath it.
+SNAP_RAISE_M = 0.002
+SNAP_RAISE_STEPS = 15
+SNAP_MARGIN_STEPS = 2
 
 
 class WeldedFoodSkills:
@@ -1406,23 +1411,58 @@ class WeldedFoodSkills:
                 holding=False,
                 step=0.005,
             )
+            self._snap_clear(name=name, hover=hover)
+            food.controllers.held_food = shelf.held_cube = food.carried = name
+            # The fingers close once the hand is back at the hover: closing swings the
+            # pads' tips down, onto a wire or the plate if the hand is still low.
+            motion.line(
+                position=hover[:3, 3],
+                rotation=hover[:3, :3],
+                label="food_lift",
+                holding=False,
+                step=0.005,
+                steps_per=5,
+            )
             shelf.grip = CLOSED_GRIP
             shelf.hold(count=30, label="food_close")
-            WeldedFood.snap_into_hand(backend=backend, shelf=shelf, name=name)
-            food.controllers.held_food = shelf.held_cube = food.carried = name
-            # Closing swings the pads' tips down; one can come to rest on a wire or the
-            # plate, a contact the lift may keep but not deepen, as the physical lift.
-            with motion.departing_from_contacts():
-                motion.depart(label="food_lift_depart")
-                motion.line(
-                    position=hover[:3, 3],
-                    rotation=hover[:3, :3],
-                    label="food_lift",
-                    holding=False,
-                    step=0.005,
-                    steps_per=5,
-                )
             food._require_held(name=name)  # noqa: SLF001
+
+    def _snap_clear(self, *, name: str, hover: np.ndarray) -> None:
+        """Snap `name` into the hand, raised as little as lets it start, and lift
+        to `hover`, clear of the fixtures.
+
+        A descent stopped short by the fixtures leaves the hand higher than a grasp,
+        but the dumpling it holds can still reach into a wire or the rim beneath it,
+        or be dragged across the rim as a leaned hand backs out; the carried-food
+        check then refuses the lift. The lift is checked as `line` checks it.
+        """
+        shelf, motion = self.shelf, self.motion
+        base = shelf.data.qpos[shelf.ba].copy()
+        arm = shelf.data.qpos[shelf.qa].copy()
+        self.food.carried = name
+        try:
+            for step in range(SNAP_RAISE_STEPS + 1):
+                WeldedFood.snap_into_hand(
+                    backend=self.backend, shelf=shelf, name=name, raise_m=step * SNAP_RAISE_M
+                )
+                try:
+                    motion.check_configuration(base=base, arm=arm, holding=False)
+                except SkillFailed:
+                    continue
+                if motion.line_plannable(
+                    position=hover[:3, 3], rotation=hover[:3, :3], holding=False, step=0.005
+                ):
+                    # Tracking error during the lift eats a fraction of a millimetre of
+                    # a planned near miss: the dumpling sits a little higher still.
+                    WeldedFood.snap_into_hand(
+                        backend=self.backend,
+                        shelf=shelf,
+                        name=name,
+                        raise_m=(step + SNAP_MARGIN_STEPS) * SNAP_RAISE_M,
+                    )
+                    return
+        finally:
+            self.food.carried = None
 
     def _plan_place(self, *, name: str, destination: str) -> tuple[Any, dict[str, Any]]:
         food, shelf = self.food, self.shelf
