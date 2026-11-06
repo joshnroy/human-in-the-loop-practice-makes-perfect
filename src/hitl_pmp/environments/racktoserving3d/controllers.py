@@ -509,6 +509,13 @@ class RackControllers:
         4 mm into the rack, beyond the support allowance; with the arm stretched, a
         6 cm vertical raise is near-singular (0.7 rad of joint 4, 3.6 mm IK error).
 
+        "Over the rack or the plate" is the whole area the strokes work in: the
+        rectangle spanning the rack, the plate out to its outer rim, and the gap
+        between them. Only the rack and the plate's well once counted, and a Sweep that
+        failed at the plate left the blade resting on the rim 6 mm outside the well:
+        every later stroke then raised straight up from the rim and refused at 0 steps
+        (Della c6ed1a6 Curtis seed 0: 76 calls in a row).
+
         So when the blade's edge centre is over the rack or the plate and its lowest
         point is within ``EXIT_BAND`` of the rack top or the plate's sweep floor, it
         is first lifted to ``LIFT_OFF_HEIGHT`` above that floor in ``LIFT_OFF_STEP``
@@ -524,32 +531,39 @@ class RackControllers:
         edge = tool.blade_edge()
         low = float(edge[:, 2].min())
         x, y = edge.mean(axis=0)[:2]
-        over = any(
-            region.x_min <= x <= region.x_max and region.y_min <= y <= region.y_max
-            for region in (backend.support(name="rack_0"), backend.support(name="box_0"))
-        )
+        work = self.stroke_geometry()
+        reach = work["plate_radius"]
+        y_min = min(work["rack_y_min"], work["plate_center_y"] - reach)
+        y_max = max(work["rack_y_max"], work["plate_center_y"] + reach)
+        over = work["plate_center_x"] - reach <= x <= work["rack_back"] and y_min <= y <= y_max
         if not over or low >= floor + EXIT_BAND:
             return
         here = shelf.site_pose()
         rise = max(0.0, floor + LIFT_OFF_HEIGHT - low)
-        if rise > 0:
-            tool.line(
-                position=here[:3, 3] + [0.0, 0.0, rise],
-                rotation=here[:3, :3],
-                label=f"{label}_lift_off",
-                holding=True,
-                step=LIFT_OFF_STEP,
-            )
         toward = shelf.data.qpos[shelf.ba][:2] - edge.mean(axis=0)[:2]
         toward /= np.linalg.norm(toward)
-        here = shelf.site_pose()
-        tool.line(
-            position=here[:3, 3] + EXIT_RETREAT * np.r_[toward, 0.0],
-            rotation=here[:3, :3],
-            label=f"{label}_exit_retreat",
-            holding=True,
-            step=EXIT_STEP,
-        )
+        lift = np.array([0.0, 0.0, rise])
+        retreat = EXIT_RETREAT * np.r_[toward, 0.0]
+        moves = [(lift, "lift_off", LIFT_OFF_STEP), (retreat, "exit_retreat", EXIT_STEP)]
+        # From the rear stance the arm reaching the plate is nearly straight: lifting
+        # there asks 0.3 rad of joints 3 and 5 per 2 mm, and IK fails within 2 cm,
+        # while drawing the blade toward the base is well conditioned. So when the
+        # lift cannot be planned where the blade is, the retreat goes first.
+        if rise > 0 and not tool.line_plannable(
+            position=here[:3, 3] + lift, rotation=here[:3, :3], holding=True, step=LIFT_OFF_STEP
+        ):
+            moves.reverse()
+        for offset, name, step in moves:
+            if not offset.any():
+                continue
+            here = shelf.site_pose()
+            tool.line(
+                position=here[:3, 3] + offset,
+                rotation=here[:3, :3],
+                label=f"{label}_{name}",
+                holding=True,
+                step=step,
+            )
 
     def settle_stroke_end(
         self,
