@@ -39,6 +39,15 @@ class RackServingConfig(BaseModel):
 
     surface_kind: Literal["wire", "concept"] = "wire"
     mode: Literal["training", "deployment"] = "training"
+    # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
+    # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
+    # (`RackLayout.lined_up`) for episode starts.
+    sweep_skill: bool = True
+    start_layout: Literal["scattered", "pile2col", "stack", "row"] = "scattered"
+    # scattered only: the probability an episode start or a human batch return places
+    # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,
+    # Josh). At 0 no coin is drawn, so the scattered draws are exactly the old ones.
+    gathered_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
     counter_height: Positive = 0.90
     rack_height: Positive = Field(default=0.025, description="UNVERIFIED height assumption")
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
