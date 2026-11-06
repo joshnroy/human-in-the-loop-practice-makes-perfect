@@ -134,7 +134,7 @@ def test_the_real_toss_is_thrown_from_the_fixed_direction_of_the_bins_side(
         ground_skill=skill, state=state, parameters=REAL_TOSS_PARAMETERS
     )
     assert bounds == REAL_TOSS_PARAMETERS.standoff_bounds
-    params = np.array([1.42, 120.0, 675.0])
+    params = np.array([1.20, 120.0, 675.0])
     assert (
         Tossing3DToss.rejection_reason(
             ground_skill=skill, state=state, params=params, parameters=REAL_TOSS_PARAMETERS
@@ -146,7 +146,7 @@ def test_the_real_toss_is_thrown_from_the_fixed_direction_of_the_bins_side(
     tosses = [args for name, args in robot.calls if name == "toss"]
     assert len(tosses) == 1
     standoff, speed, release_ms, direction = tosses[0]
-    assert (standoff, speed, release_ms) == (1.42, 120.0, 675.0)
+    assert (standoff, speed, release_ms) == (1.20, 120.0, 675.0)
     assert math.remainder(direction - map_direction, math.tau) == pytest.approx(0.0, abs=1e-9)
 
 
@@ -166,7 +166,7 @@ def test_a_server_refusal_is_an_uncharged_failed_toss() -> None:
     # A bin placed past its spot puts the stand across the tape: the robot side refuses.
     robot.bin = (0.24, 1.60, 0.0)
     env.take_action(
-        action=np.array([env.move_to_toss_location_and_toss_id, 1.4, -math.pi / 2, 120, 675])
+        action=np.array([env.move_to_toss_location_and_toss_id, 1.2, -math.pi / 2, 120, 675])
     )
     assert env.last_controller_steps() == (0,)
     assert "refused" in (env.last_skill_error() or "")
