@@ -65,6 +65,14 @@ CHAIN_STEP_DEG = 15.0
 # IKFast samples the Kinova's redundant joint, so even its closest solution to a
 # neighbouring pose can sit about 0.4 rad away; a branch flip is over 2 rad.
 BRANCH_JUMP_RAD = 1.2
+# A planned base path is checked against the MuJoCo guard at most this far apart on
+# every axis (m, rad), finer than the executor's own check (`RackScraper.step`: five
+# configurations across one 15 mm / 0.015 rad base step).
+BASE_PATH_CHECK = 0.001
+# The body-check spacing each base plan is searched at, in turn, until its path passes
+# that check: upstream's (None) first, as nearly every path does; a search at 1 mm
+# costs about ten times one at upstream's 1 cm.
+BASE_REPLAN_STEPS = (None, 0.003, BASE_PATH_CHECK)
 # Base candidates tried per skill before refusing; each costs IK and possibly a BiRRT.
 MAX_STANCES = 400
 
@@ -392,28 +400,59 @@ class ScraperMotionPlanner:
         held: HeldObject | None = None,
         ignore: tuple[str, ...] | None = None,
     ) -> list[np.ndarray]:
+        """A base path from `base` to `target` on which `guard` holds at every
+        configuration at most `BASE_PATH_CHECK` apart, or PlanningRefused.
+
+        Upstream checks the 3-D body 1 cm / 0.01 rad apart, and a chassis corner
+        sweeping past a thin counter leg can collide for less than that between two
+        clear checks; the executor, which checks every few millimetres, then stops
+        mid-path, and a replan from there plans the same grazing segment again. So the
+        path is checked at `BASE_PATH_CHECK`, and if any configuration fails, planned
+        again with the body checked that densely throughout.
+        """
         if np.linalg.norm(target[:2] - base[:2]) < 0.005 and abs(target[2] - base[2]) < 0.005:
             return [base.copy(), target.copy()]
-        path = KitchenMotionPlanner.plan_base(
-            sim=sim,
-            state=state,
-            target=target,
-            arm=arm,
-            what=what,
-            held=held,
-            ignore=(
-                *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
-                *ScraperMotionPlanner.counter_colliders(state=state),
-            ),
-            also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
+        ignored = (
+            *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
+            *ScraperMotionPlanner.counter_colliders(state=state),
         )
-        # Unwrap the heading so the base turns the short way between waypoints.
-        out = [base.copy()]
-        for pose in path[1:]:
-            pose = pose.copy()
-            pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
-            out.append(pose)
-        return out
+        out: list[np.ndarray] = []
+        for step in BASE_REPLAN_STEPS:
+            path = KitchenMotionPlanner.plan_base(
+                sim=sim,
+                state=state,
+                target=target,
+                arm=arm,
+                what=what,
+                held=held,
+                ignore=ignored,
+                also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
+                **(
+                    {}
+                    if step is None
+                    else {"body_check_xy_step": step, "body_check_rot_step": step}
+                ),
+            )
+            # Unwrap the heading so the base turns the short way between waypoints.
+            out = [base.copy()]
+            for pose in path[1:]:
+                pose = pose.copy()
+                pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
+                out.append(pose)
+            if ScraperMotionPlanner.base_path_clear(path=out, guard=guard):
+                return out
+        raise PlanningRefused(f"No base path to {what} clear at {BASE_PATH_CHECK} m spacing")
+
+    @staticmethod
+    def base_path_clear(*, path: list[np.ndarray], guard: Callable[[np.ndarray], bool]) -> bool:
+        """Whether `guard` holds along each straight segment of `path`, at most
+        `BASE_PATH_CHECK` apart on every axis, as `follow_base_path` drives it."""
+        for begin, end in zip(path[:-1], path[1:], strict=True):
+            count = max(1, int(np.ceil(np.max(np.abs(end - begin)) / BASE_PATH_CHECK)))
+            for fraction in np.linspace(0.0, 1.0, count + 1)[1:]:
+                if not guard(begin + fraction * (end - begin)):
+                    return False
+        return True
 
     @staticmethod
     def counter_colliders(*, state: Any) -> tuple[str, ...]:
