@@ -4,6 +4,7 @@ it replaced."""
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
 pytestmark = pytest.mark.xdist_group("rack_food_guard_scene")
@@ -13,7 +14,7 @@ pytestmark = pytest.mark.xdist_group("rack_food_guard_scene")
 def food_motion():
     from hitl_pmp.environments.racktoserving3d.food import RackFoodController
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     env.reset_to_seed(seed=0)
     food = RackFoodController(controllers=env.rack_controllers())
     food.target_geoms = food.backend.body_geoms(name="cube_0")

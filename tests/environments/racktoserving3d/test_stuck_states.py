@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from tests.environments.racktoserving3d.test_planned_food import restored
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -56,7 +57,7 @@ def test_a_transit_starting_just_past_a_joint_stop_recovers():
 
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     try:
         env.reset_to_seed(seed=0)
         controllers = env.rack_controllers()
@@ -182,7 +183,8 @@ def restored_frozen(*, fixture: Path):
 
     plain = json.loads(fixture.read_text())
     config = RackServingConfig.model_validate({
-        k: v for k, v in plain["config"].items() if k in RackServingConfig.model_fields
+        "food_handling": "physical",
+        **{k: v for k, v in plain["config"].items() if k in RackServingConfig.model_fields},
     })
     env = RackServingEnvironment(config=config)
     RackServingTasks(env=env, seed=0).sample_train_task()

@@ -10,6 +10,7 @@ import pytest
 from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObserverFailed
 from hitl_pmp.environments.racktoserving3d import backend as backend_module
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger
@@ -37,7 +38,7 @@ def scene(*, monkeypatch):
     monkeypatch.setattr(backend_module, "install_geometry", Mock())
     monkeypatch.setattr(backend_module, "build_scene", Mock(return_value={}))
     monkeypatch.setattr(RackServingBackend, "data", lambda self: data)
-    backend = RackServingBackend()
+    backend = RackServingBackend(config=RackServingConfig(food_handling="physical"))
     try:
         yield SimpleNamespace(
             backend=backend,
@@ -69,7 +70,7 @@ def rack(*, scene, monkeypatch):
         lambda self: {obj.name: np.zeros(obj.type.dim) for obj in Objects.all_objects()},
     )
     monkeypatch.setattr(RackServingBackend, "held", lambda self, *, name: name in held)
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     env._backend = backend
     shelf = SimpleNamespace(
         ticks=0,
