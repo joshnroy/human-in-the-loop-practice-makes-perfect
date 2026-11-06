@@ -128,11 +128,46 @@ def test_from_a_state_the_reset_already_covered_its_successor_is_unchanged():
     assert _successor(ground=human, atoms=LEGACY_STATE) == expected
 
 
-def test_the_human_reset_keeps_its_name_and_is_not_applicable_with_nothing_to_reset():
+FULLY_RESET: Atoms = frozenset({
+    ("HandEmpty", ("robot",)),
+    ("PitcherHome", ("pitcher",)),
+    ("TrayHome", ("tray",)),
+    *(("InPitcher", (f"potsticker_{i}", "pitcher")) for i in range(3)),
+    *(("Settled", (f"potsticker_{i}",)) for i in range(3)),
+    ("PayloadOrder", ("potsticker_0", "potsticker_1")),
+    ("PayloadOrder", ("potsticker_1", "potsticker_2")),
+    ("ReadyToPour", ()),
+    ("NoSpills", ()),
+})
+
+
+def test_the_human_reset_keeps_its_name():
+    assert _reset(env=KitchenEnvironment()).skill.name == HUMAN_RESET
+
+
+def test_the_human_reset_requires_only_the_constant_payload_order():
     human = _reset(env=KitchenEnvironment())
-    assert human.skill.name == HUMAN_RESET
-    reset_state = frozenset(a for a in LEGACY_STATE if a != ("NeedsReset", ()))
-    assert not _applicable(ground=human, atoms=reset_state)
+    assert {a.predicate.name for a in human.preconditions} == {"PayloadOrder"}
+    assert _applicable(ground=human, atoms=FULLY_RESET)
+    assert _successor(ground=human, atoms=FULLY_RESET) >= FULLY_RESET
+
+
+def test_holding_a_full_jug_with_the_skillet_away_the_reset_restores_both_vessels():
+    human = _reset(env=KitchenEnvironment())
+    atoms = frozenset({
+        ("HoldingPitcher", ("robot", "pitcher")),
+        *(("InPitcher", (f"potsticker_{i}", "pitcher")) for i in range(3)),
+        ("PayloadOrder", ("potsticker_0", "potsticker_1")),
+        ("PayloadOrder", ("potsticker_1", "potsticker_2")),
+    })
+    assert _applicable(ground=human, atoms=atoms)
+    after = _successor(ground=human, atoms=atoms)
+    assert {
+        ("HandEmpty", ("robot",)),
+        ("PitcherHome", ("pitcher",)),
+        ("TrayHome", ("tray",)),
+    } <= after
+    assert ("HoldingPitcher", ("robot", "pitcher")) not in after
 
 
 @needs_kinder
@@ -198,3 +233,68 @@ def test_from_an_empty_hand_and_jug_at_home_the_reset_is_exactly_the_legacy_food
     finally:
         new.close()
         old.close()
+
+
+@needs_kinder
+@pytest.mark.xdist_group("kitchen_human_reset_any_state")
+def test_needs_reset_still_means_only_that_some_dumpling_is_out_of_the_jug():
+    env = KitchenEnvironment(requested_count=1)
+    try:
+        # Symbolic only: NeedsReset reads the dumplings' locations and nothing else.
+        env.controller().held = "pitcher"
+        assert ("NeedsReset", ()) not in env.observe().abstract_atoms
+    finally:
+        env.close()
+
+
+@needs_kinder
+@pytest.mark.xdist_group("kitchen_human_reset_any_state")
+def test_from_the_fully_reset_state_the_reset_is_a_no_op_apart_from_its_cost():
+    env = KitchenEnvironment(requested_count=2)
+    try:
+        c = env.controller()
+        assert c.ready()
+        qpos, qvel, time = c.data.qpos.copy(), c.data.qvel.copy(), c.data.time
+        before = env.observe().abstract_atoms
+        assert _applicable(ground=_reset(env=env), atoms=before)
+        assert env.reset_movables(destination=HUMAN_RESET)
+        assert env.human_interventions == 1
+        assert env.interruption_cost_total == 5
+        np.testing.assert_array_equal(qpos, c.data.qpos)
+        np.testing.assert_array_equal(qvel, c.data.qvel)
+        assert c.data.time == time
+        assert c.held is None
+        assert c.grip == 0
+        assert env.observe().abstract_atoms == before
+    finally:
+        env.close()
+
+
+@needs_kinder
+@pytest.mark.xdist_group("kitchen_human_reset_any_state")
+def test_the_human_stands_a_displaced_skillet_back_at_home():
+    import mujoco
+
+    env = KitchenEnvironment(requested_count=1)
+    try:
+        c = env.controller()
+        tray = c.model.body("tray").id
+        address = int(c.model.jnt_qposadr[c.model.body_jntadr[tray]])
+        home = c.data.qpos[address : address + 7].copy()
+        c.data.qpos[address : address + 3] += [0.0, 0.4, 0.0]
+        mujoco.mj_forward(c.model, c.data)
+        assert not c.vessel_home(name="tray")
+        before = c.data.qpos.copy()
+        atoms = env.observe().abstract_atoms
+        assert ("TrayHome", ("tray",)) not in atoms
+        assert _applicable(ground=_reset(env=env), atoms=atoms)
+        assert env.reset_movables(destination=HUMAN_RESET)
+        np.testing.assert_array_equal(home, c.data.qpos[address : address + 7])
+        assert c.vessel_home(name="tray")
+        assert c.ready()
+        # Nothing else had to move: the jug, its food and the robot stay as they were.
+        others = np.ones(len(before), dtype=bool)
+        others[address : address + 7] = False
+        np.testing.assert_array_equal(before[others], c.data.qpos[others])
+    finally:
+        env.close()
