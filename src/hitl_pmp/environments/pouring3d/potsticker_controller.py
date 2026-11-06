@@ -47,6 +47,10 @@ class PotstickerController(PracticePourController):
     payload_approach_plan: list[tuple[np.ndarray, np.ndarray, str, float]] = Field(
         default_factory=list
     )
+    # Execution speed of planned arm motions (rad/s): the commanded-delta motors track
+    # about 0.2 rad/s. The approach plan is followed at most `APPROACH_SPEED_FRACTION` of it.
+    planned_joint_speed: float = 0.20
+    APPROACH_SPEED_FRACTION: ClassVar[float] = 0.8
     recovery_geometry: Literal["mass_pca", "bounds_local"] = "mass_pca"
     ik_kinematics_only: bool = True
     diagnostic_deadline: float = float("inf")
@@ -252,7 +256,12 @@ class PotstickerController(PracticePourController):
         for base, target, phase, duration in plan:
             start_q, start_base = self.last_q.copy(), self.base_target.copy()
             self.phase = phase
-            count = max(1, int(np.ceil(duration * self.frequency)))
+            count = self.waypoint_ticks(
+                duration=duration,
+                delta=target - start_q,
+                speed=self.planned_joint_speed,
+                frequency=self.frequency,
+            )
             for i in range(1, count + 1):
                 u = i / count
                 self.base_target = start_base + u * (base - start_base)
@@ -263,9 +272,23 @@ class PotstickerController(PracticePourController):
                     break
                 self.motor_step(target_q=target, grip=self.recovery_open_grip)
             else:
-                raise ValueError("Motor tracking failed in descend to shrimp body")
+                raise ValueError(f"Motor tracking failed in {phase}")
         if np.linalg.norm(self.hand_pose()[0] - grasp) > 0.03:
             raise ValueError("Motor tracking failed in descend to shrimp body")
+
+    @staticmethod
+    def waypoint_ticks(
+        *, duration: float, delta: np.ndarray, speed: float, frequency: float
+    ) -> int:
+        """Control ticks for one plan waypoint: its share of the phase, or longer.
+
+        The IK may swing a redundant joint far between two waypoints. A fixed share of the
+        phase then commands it faster than the motors track, and the arm falls behind by
+        more than the settle loop can recover.
+        """
+        per_tick = PotstickerController.APPROACH_SPEED_FRACTION * speed / frequency
+        joint_ticks = float(np.max(np.abs(delta))) / per_tick
+        return max(1, int(np.ceil(duration * frequency)), int(np.ceil(joint_ticks)))
 
     def pick_shrimp(self, *, index: int, location: str) -> None:
         opening, pitch = self.recovery_open_grip, self.recovery_pitch_degrees
@@ -317,6 +340,8 @@ class PotstickerController(PracticePourController):
                             "Physical shrimp grasp lost",
                             "Shrimp grasp lacks",
                             "Shrimp not retained",
+                            "Motor tracking failed in position for shrimp pick",
+                            "Motor tracking failed in approach above raised shrimp",
                             "Motor tracking failed in descend to shrimp body",
                             "Insufficient obstacle clearance in descend to shrimp body",
                             "IK infeasible in descend to shrimp body",
