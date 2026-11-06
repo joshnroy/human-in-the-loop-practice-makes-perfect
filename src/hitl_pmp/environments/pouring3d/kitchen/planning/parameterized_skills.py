@@ -20,6 +20,8 @@ import numpy as np
 import pybullet as p
 from kinder_models.dynamic3d.tossing.parameterized_skills import plan_checked_arm_motion
 from kinder_models.dynamic3d.utils import (
+    BASE_BODY_CHECK_ROT_STEP,
+    BASE_BODY_CHECK_XY_STEP,
     IKFAST_MAX_ATTEMPTS,
     WORLD_X_BOUNDS,
     WORLD_Y_BOUNDS,
@@ -247,11 +249,15 @@ class KitchenMotionPlanner:
         held: HeldObject | None = None,
         ignore: tuple[str, ...] = (),
         also_collides: Callable[[SE2], bool] | None = None,
+        body_check_xy_step: float = BASE_BODY_CHECK_XY_STEP,
+        body_check_rot_step: float = BASE_BODY_CHECK_ROT_STEP,
     ) -> list[np.ndarray]:
         """A base path to `target` (x, y, yaw), the arm (and anything held) carried as
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
         scene. `ignore` names objects with no 2-D footprint, such as one the hand
-        carries above the base. `also_collides` is any further check of a base pose."""
+        carries above the base. `also_collides` is any further check of a base pose.
+        The 3-D checks are at most `body_check_xy_step` / `body_check_rot_step` apart
+        along the path (upstream's spacing unless given)."""
         joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         if held is not None:
@@ -276,6 +282,8 @@ class KitchenMotionPlanner:
             seed=0,
             disable_collision_objects=list(ignore) or None,
             body_collision_fn=body_collides,
+            body_check_xy_step=body_check_xy_step,
+            body_check_rot_step=body_check_rot_step,
         )
         if path is None:
             raise PlanningRefused(f"No collision-free base path to {what}")
