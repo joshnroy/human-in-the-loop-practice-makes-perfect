@@ -7,7 +7,7 @@ initialize_rest writes a live object pose; measured in_hand transforms are
 kinematic bookkeeping, never an attachment.
 """
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from itertools import product
 from typing import Any
@@ -43,9 +43,12 @@ SCRAPER_RETURN_STANDOFF = 0.05
 PLANNED_JOINT_STEP = 0.05
 PLANNED_BASE_FRACTION = 0.8
 PLANNED_JOINT_LAG = 0.03
-# A held tool whose start no plan can leave first backs off this far and rises this far.
+# A start no plan can leave (`BlockedStart`) is left along a checked line this
+# long (straight up first), or a held tool backs off ESCAPE_BACK_M and rises ESCAPE_UP_M;
+# failing every line, the base backs away ESCAPE_BACK_M.
 ESCAPE_BACK_M = 0.10
 ESCAPE_UP_M = 0.06
+ESCAPE_STEP_M = 0.005
 PLANNED_CATCH_UP_STEPS = 20
 
 
@@ -65,6 +68,120 @@ class RackShelfSkills(ShelfSkills):
 
     def wiper_unwatched(self) -> Any:
         return wiper_unwatched(shelf=self)
+
+
+class BlockedStart:
+    """Leaving a start no plan can begin from, shared by every PyBullet-planned skill.
+
+    PyBullet's mirror keeps a 15 mm margin from everything, so a configuration MuJoCo
+    shows clear (a hand left just above the rack, a held dumpling resting on its
+    wires) can be one no plan begins from, and the skill refuses at 0 steps on every
+    call. `tool` is the motion that executes: a `RackScraper` or the food's motion.
+    """
+
+    @staticmethod
+    def plan(
+        *,
+        tool: Any,
+        make_plan: Callable[[], Any],
+        held_name: str | None,
+        holding: bool,
+        label: str,
+        distance: float = ESCAPE_UP_M,
+        back_first: bool = False,
+        prepare: Callable[[], None] | None = None,
+    ) -> Any:
+        """`make_plan()`, or, if it is refused from a start the planner's own checks
+        reject (`ScraperMotionPlanner.start_blocked`, `held_name` included), the plan
+        made once more after `escape`. From a start that is not blocked a refusal
+        moves nothing. `prepare` runs first when an escape is needed (an empty food
+        hand opens)."""
+        from .planning import PlanningRefused, ScraperMotionPlanner
+
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as exc:
+            # Only a planner refusal (raised, or wrapped by the food skills) can be a
+            # blocked start; any other failure (no free placement) stands as it is.
+            refused = isinstance(exc, PlanningRefused) or isinstance(exc.__cause__, PlanningRefused)
+            reason = str(exc)
+            if not refused:
+                raise
+            if not ScraperMotionPlanner.start_blocked(tool=tool, held_name=held_name):
+                raise SkillFailed(reason) from exc
+        if prepare is not None:
+            prepare()
+        BlockedStart.escape(
+            tool=tool,
+            label=label,
+            holding=holding,
+            distance=distance,
+            back_first=back_first,
+            reason=reason,
+        )
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as again:
+            raise SkillFailed(f"after escaping the start: {again}") from again
+
+    @staticmethod
+    def escape(
+        *,
+        tool: Any,
+        label: str,
+        holding: bool,
+        distance: float,
+        back_first: bool,
+        reason: str,
+    ) -> None:
+        """Move the hand, and whatever it holds, out of a blocked start along the first
+        line `line_plannable` accepts (every waypoint's IK and joint segment checked by
+        the execution guard before the first step), keeping the hand's rotation: with
+        `back_first`, back off the base's heading ESCAPE_BACK_M and up ESCAPE_UP_M (a
+        held tool's old escape); then `distance` along each of `directions`. Failing
+        every line, back the base away, checked by the MuJoCo guard. An escape that
+        cannot finish never starts."""
+        from .planning import ScraperMotionPlanner
+
+        shelf = tool.shelf
+        here = shelf.site_pose()
+        rotation = here[:3, :3]
+        base = shelf.data.qpos[shelf.ba].copy()
+        heading = np.array([np.cos(base[2]), np.sin(base[2]), 0.0])
+        offsets = [distance * direction for direction in BlockedStart.directions()]
+        if back_first:
+            offsets.insert(0, -ESCAPE_BACK_M * heading + [0.0, 0.0, ESCAPE_UP_M])
+        for offset in offsets:
+            target = here[:3, 3] + offset
+            if not tool.line_plannable(
+                position=target, rotation=rotation, holding=holding, step=ESCAPE_STEP_M
+            ):
+                continue
+            tool.line(
+                position=target,
+                rotation=rotation,
+                label=label,
+                holding=holding,
+                step=ESCAPE_STEP_M,
+                steps_per=5,
+            )
+            return
+        back = base - ESCAPE_BACK_M * heading
+        arm = shelf.data.qpos[shelf.qa].copy()
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=holding)
+        if not all(ok(base=pose, arm=arm) for pose in segment_samples(start=base, target=back)):
+            raise SkillFailed(f"{reason}; escape refused: no checked line out, nor back-away")
+        tool.follow_base_path(path=[base, back], label=f"{label}_back")
+
+    @staticmethod
+    def directions() -> list[np.ndarray]:
+        """Straight up, then up and away along each of eight headings, then level."""
+        headings = [
+            np.array([np.cos(angle), np.sin(angle), 0.0])
+            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
+        ]
+        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
+        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
 
 
 class TableWiper:
@@ -210,7 +327,7 @@ class TableWiper:
         """Plan the base and the arm to a hover in front of the handle (PyBullet) and
         follow both, then approach the live handle end-on, verify the grasp, lift and
         tilt 45 degrees as scripted contact motions. A refused plan moves nothing."""
-        from .planning import PlanningRefused, ScraperMotionPlanner
+        from .planning import ScraperMotionPlanner
 
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.pads_hold_wiper():
@@ -220,17 +337,23 @@ class TableWiper:
             rotation = pose[:3, :3] @ self.hand_in_body
             grasp = self.grasp_world(pose=pose)
             pre = grasp - PRE_GRASP * rotation[:, 2]
-            try:
-                plan = ScraperMotionPlanner.plan_pick(
+
+            # A food pick that failed can leave the empty hand just above the rack,
+            # within the planner's margin of the food on it, so no base path can start.
+            plan = BlockedStart.plan(
+                tool=self,
+                make_plan=lambda: ScraperMotionPlanner.plan_pick(
                     tool=self,
                     grasp=grasp,
                     pre=pre,
                     rotation=rotation,
                     preferred=self.base,
                     after=self.lift_waypoints(pose=pose),
-                )
-            except PlanningRefused as exc:
-                raise SkillFailed(str(exc)) from exc
+                ),
+                held_name=None,
+                holding=False,
+                label="pick_wiper_escape",
+            )
             shelf.grip = 0.0
             self.follow_base_path(path=plan.base_path, label="pick_wiper_base")
             self.follow_arm_path(path=plan.arm_after_base, label="pick_wiper_pre")
@@ -308,35 +431,6 @@ class TableWiper:
         except WiperLost as exc:
             raise SkillFailed(f"PickWiper: {exc}") from exc
 
-    def escape(self, *, label: str, reason: str) -> None:
-        """Back the held tool away from the base's heading and up, as the scripted
-        return used to before circulating; every waypoint's IK and joint segment is
-        checked before the first step, so an escape that cannot finish never starts."""
-        shelf = self.shelf
-        here = shelf.site_pose()
-        heading = float(shelf.data.qpos[shelf.ba[2]])
-        target = here[:3, 3] + np.array([
-            -ESCAPE_BACK_M * np.cos(heading),
-            -ESCAPE_BACK_M * np.sin(heading),
-            ESCAPE_UP_M,
-        ])
-        arm = shelf.data.qpos[shelf.qa].copy()
-        count = max(1, int(np.ceil(np.linalg.norm(target - here[:3, 3]) / 0.01)))
-        for fraction in np.linspace(0, 1, count + 1)[1:]:
-            previous = arm
-            try:
-                arm = self.ik(
-                    position=(1 - fraction) * here[:3, 3] + fraction * target,
-                    rotation=here[:3, :3],
-                    holding=True,
-                    seed=previous,
-                )
-            except SkillFailed as exc:
-                raise SkillFailed(f"{reason}; escape refused: {exc}") from exc
-            if float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi))) > 0.6:
-                raise SkillFailed(f"{reason}; escape refused: IK branch jump")
-        self.line(position=target, rotation=here[:3, :3], label=label, holding=True)
-
     def lift_waypoints(self, *, pose: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
         """The hand poses the scripted lift and tilt pass through from the grasp of a
         scraper at `pose`, with the nominal grasp, so a stance can be checked for them
@@ -368,7 +462,7 @@ class TableWiper:
         can shift the physical grasp, so it is remeasured before lowering rather than
         commanding a stale tool pose. A refused plan moves nothing.
         """
-        from .planning import PlanningRefused, ScraperMotionPlanner
+        from .planning import ScraperMotionPlanner
 
         shelf = self.shelf
         self.require_held(label="place_wiper_start")
@@ -379,29 +473,22 @@ class TableWiper:
         if self.is_bench_scraper:
             preferred[0] -= SCRAPER_RETURN_STANDOFF
 
-        def make_plan() -> Any:
-            return ScraperMotionPlanner.plan_return(
+        # A sweep that failed mid-stroke leaves the blade on the rack. Back the held
+        # tool away from the base's heading and up first, as the scripted return did.
+        plan_and_hover = BlockedStart.plan(
+            tool=self,
+            make_plan=lambda: ScraperMotionPlanner.plan_return(
                 tool=self,
                 seat=grasp + [0, 0, PLACE_CLEARANCE],
                 rotation=rotation,
                 preferred=preferred,
                 carry_height=float(grasp[2] + LIFT),
-            )
-
-        try:
-            plan_and_hover = make_plan()
-        except PlanningRefused as exc:
-            # A plan cannot start from a configuration its own checks reject (a sweep
-            # that failed mid-stroke leaves the blade on the rack). Leave it along a
-            # straight line checked whole before moving, then plan once more; from a
-            # start that is not blocked, a refusal moves nothing.
-            if not ScraperMotionPlanner.start_blocked(tool=self, held_name="wiper_0"):
-                raise SkillFailed(str(exc)) from exc
-            self.escape(label="place_wiper_escape", reason=str(exc))
-            try:
-                plan_and_hover = make_plan()
-            except PlanningRefused as again:
-                raise SkillFailed(f"after escaping the start: {again}") from again
+            ),
+            held_name="wiper_0",
+            holding=True,
+            label="place_wiper_escape",
+            back_first=True,
+        )
         plan, hover = plan_and_hover
         try:
             self.follow_arm_path(path=plan.arm_before_base, label="place_wiper_raise")
