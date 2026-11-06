@@ -47,16 +47,11 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _control_steps: int = PrivateAttr(default=0)
     _tool_home: Callable[[], bool] | None = PrivateAttr(default=None)
     _rng: Any = PrivateAttr(default=None)
-    _start_sigma: float | None = PrivateAttr(default=None)
     _start_kind: str = PrivateAttr(default="scattered")
 
     def start_kind(self) -> str:
         """This episode's start layout, after any `gathered_fraction` draw."""
         return self._start_kind
-
-    def start_sigma(self) -> float | None:
-        """The spread of this episode's clustered start pile; None for other layouts."""
-        return self._start_sigma
 
     def env(self) -> Any:
         if self._env is None:
@@ -99,7 +94,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
         self._rng = np.random.default_rng(seed)
-        self._start_sigma = None
         self.ledger = RackServingLedger(
             mode=self.config.mode,
             human_interruption_cost=self.config.human_interruption_cost,
@@ -497,14 +491,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
             if start_layout == "scattered":
                 layout = RackLayout.sample(
                     rng=self._rng, rack=rack, count=len(names), others=others
-                )
-            elif start_layout == "clustered":
-                layout, self._start_sigma = RackLayout.clustered(
-                    rng=self._rng,
-                    rack=rack,
-                    count=len(names),
-                    center_y=(tray.y_min + tray.y_max) / 2,
-                    center_y_sigma=self.config.cluster_center_y_sigma,
                 )
             else:
                 layout = RackLayout.lined_up(

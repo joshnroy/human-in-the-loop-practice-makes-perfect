@@ -41,12 +41,9 @@ class RackServingConfig(BaseModel):
     mode: Literal["training", "deployment"] = "training"
     # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
     # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
-    # (`RackLayout.lined_up`, `RackLayout.clustered`) for episode starts.
+    # (`RackLayout.lined_up`) for episode starts.
     sweep_skill: bool = True
-    start_layout: Literal["scattered", "clustered", "pile2col", "stack", "row"] = "scattered"
-    # clustered only: tau (m) of the pile centre's y about the plate centre line; None
-    # keeps the centre uniform over the rack.
-    cluster_center_y_sigma: Positive | None = None
+    start_layout: Literal["scattered", "pile2col", "stack", "row"] = "scattered"
     # scattered only: the probability an episode start or a human batch return places
     # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,
     # Josh). At 0 no coin is drawn, so the scattered draws are exactly the old ones.
