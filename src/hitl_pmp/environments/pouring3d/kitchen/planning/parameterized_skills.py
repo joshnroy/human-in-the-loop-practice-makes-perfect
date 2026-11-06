@@ -18,11 +18,19 @@ from typing import Any
 
 import numpy as np
 import pybullet as p
+from kinder.envs.dynamic3d.object_types import (
+    MujocoDrawerObjectType,
+    MujocoObjectType,
+    MujocoTidyBotRobotObjectType,
+)
 from kinder_models.dynamic3d.tossing.parameterized_skills import plan_checked_arm_motion
 from kinder_models.dynamic3d.utils import (
     IKFAST_MAX_ATTEMPTS,
     WORLD_X_BOUNDS,
     WORLD_Y_BOUNDS,
+    get_bounding_box,
+    get_overhead_kinematic2ds,
+    get_overhead_robot_se2_pose,
     run_base_motion_planning,
 )
 from pybullet_helpers.geometry import Pose
@@ -35,6 +43,8 @@ from pybullet_helpers.link import get_link_state
 from pydantic import BaseModel, ConfigDict
 from scipy.spatial.transform import Rotation
 from spatialmath import SE2
+from tomsgeoms2d.structs import Rectangle
+from tomsgeoms2d.utils import geom2ds_intersect
 
 from .utils import PLANNING_MARGIN_M, UPRIGHT_TILT_LIMIT_DEG, KitchenPyBulletSim
 
@@ -252,6 +262,32 @@ class KitchenMotionPlanner:
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
         scene. `ignore` names objects with no 2-D footprint, such as one the hand
         carries above the base. `also_collides` is any further check of a base pose."""
+        body_collides = KitchenMotionPlanner.body_check(
+            sim=sim, arm=arm, held=held, also_collides=also_collides
+        )
+        path = run_base_motion_planning(
+            state=state,
+            target_base_pose=SE2(float(target[0]), float(target[1]), float(target[2])),
+            x_bounds=WORLD_X_BOUNDS,
+            y_bounds=WORLD_Y_BOUNDS,
+            seed=0,
+            disable_collision_objects=list(ignore) or None,
+            body_collision_fn=body_collides,
+        )
+        if path is None:
+            raise PlanningRefused(f"No collision-free base path to {what}")
+        return [np.array([pose.x, pose.y, pose.theta()]) for pose in path]
+
+    @staticmethod
+    def body_check(
+        *,
+        sim: KitchenPyBulletSim,
+        arm: Any,
+        held: HeldObject | None = None,
+        also_collides: Callable[[SE2], bool] | None = None,
+    ) -> Callable[[SE2], bool]:
+        """Whether the robot's 3-D body, the arm (and anything held) carried as it is,
+        collides with the scene at a base pose, at the full planning margin."""
         joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         if held is not None:
@@ -268,18 +304,41 @@ class KitchenMotionPlanner:
                 distance_threshold=PLANNING_MARGIN_M,
             )
 
-        path = run_base_motion_planning(
-            state=state,
-            target_base_pose=SE2(float(target[0]), float(target[1]), float(target[2])),
-            x_bounds=WORLD_X_BOUNDS,
-            y_bounds=WORLD_Y_BOUNDS,
-            seed=0,
-            disable_collision_objects=list(ignore) or None,
-            body_collision_fn=body_collides,
+        return body_collides
+
+    @staticmethod
+    def base_pose_blocked(
+        *,
+        sim: KitchenPyBulletSim,
+        state: Any,
+        target: np.ndarray,
+        arm: Any,
+        held: HeldObject | None = None,
+    ) -> bool:
+        """Whether the base pose `target` is itself in collision, by the check
+        `run_base_motion_planning` applies to every pose: the 2-D footprint against the
+        obstacle footprints, then the 3-D body. No path can end at a blocked pose."""
+        (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
+        width, height, _ = get_bounding_box(state, robot)
+        geoms = get_overhead_kinematic2ds(state, None)
+        obstacles = [
+            geoms[o.name]
+            for o in state.get_objects(MujocoObjectType)
+            if o.name in geoms and not o.is_instance(MujocoDrawerObjectType)
+        ]
+        moved = state.copy()
+        for feature, value in zip(
+            ("pos_base_x", "pos_base_y", "pos_base_rot"), target, strict=True
+        ):
+            moved.set(robot, feature, float(value))
+        pose = get_overhead_robot_se2_pose(moved, robot)
+        footprint = Rectangle.from_center(
+            pose.x, pose.y, width, height, rotation_about_center=pose.theta()
         )
-        if path is None:
-            raise PlanningRefused(f"No collision-free base path to {what}")
-        return [np.array([pose.x, pose.y, pose.theta()]) for pose in path]
+        if any(geom2ds_intersect(footprint, obstacle) for obstacle in obstacles):
+            return True
+        se2 = SE2(float(target[0]), float(target[1]), float(target[2]))
+        return KitchenMotionPlanner.body_check(sim=sim, arm=arm, held=held)(se2)
 
 
 class PickPitcherController:
@@ -450,10 +509,18 @@ class PlacePitcherController:
     MOVE_ARM_TO_HOVER = "planned arm to jug hover above home"
     # The scripted seat's own alignment height (`move_pitcher`, "align pitcher above table").
     HOVER_M = 0.04
+    # Alternatives to an occupied nominal base pose: offsets along the counter and yaw
+    # changes, alone and combined. At most `MAX_PLANNED_ALTERNATIVES` unoccupied ones
+    # are planned before the refusal stands.
+    ALONG_COUNTER_M = (0.05, 0.10, 0.15, 0.20)
+    YAW_RAD = (0.10, 0.20)
+    MAX_PLANNED_ALTERNATIVES = 6
 
     def __init__(self, *, sim: KitchenPyBulletSim) -> None:
         self.sim = sim
         self.plans: dict[str, list[np.ndarray]] = {}
+        # Where the base stands for the placement: the nominal pose unless it is occupied.
+        self.base_target = np.zeros(3)
 
     def reset(
         self,
@@ -483,24 +550,78 @@ class PlacePitcherController:
             what="the carry pose",
             held=held,
         )
-        base_path = KitchenMotionPlanner.plan_base(
-            sim=sim, state=x, target=base_target, arm=tuck[-1], what="placement", held=held
-        )
-        sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
         # The jug upright over home; the hand where the current grasp puts it.
         jug = home + np.array([0.0, 0.0, self.HOVER_M])
-        self.plans = {
-            self.TUCK: tuck,
-            self.BASE_MOTION: base_path,
-            self.MOVE_ARM_TO_HOVER: KitchenMotionPlanner.plan_arm(
-                sim=sim,
-                start=tuck[-1],
-                position=jug + hand_offset,
-                rotation=rotation_offset,
-                what="the jug hover above home",
-                held=held,
-            ),
-        }
+
+        def plan_from(target: np.ndarray) -> dict[str, list[np.ndarray]]:  # noqa: PLR0917
+            base_path = KitchenMotionPlanner.plan_base(
+                sim=sim, state=x, target=target, arm=tuck[-1], what="placement", held=held
+            )
+            sim.set_robot_base(SE2(float(target[0]), float(target[1]), float(target[2])))
+            return {
+                self.TUCK: tuck,
+                self.BASE_MOTION: base_path,
+                self.MOVE_ARM_TO_HOVER: KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=tuck[-1],
+                    position=jug + hand_offset,
+                    rotation=rotation_offset,
+                    what="the jug hover above home",
+                    held=held,
+                ),
+            }
+
+        self.base_target = np.asarray(base_target, dtype=float).copy()
+        try:
+            self.plans = plan_from(self.base_target)
+            return
+        except PlanningRefused as exc:
+            if not KitchenMotionPlanner.base_pose_blocked(
+                sim=sim, state=x, target=self.base_target, arm=tuck[-1], held=held
+            ):
+                raise
+            refusal = exc
+        # The nominal pose itself is occupied (a dumpling flung onto the floor where the
+        # base must stand), so no path can end there. Place from the nearest pose close
+        # by from which the arm reaches the same hover above home, at the same margins.
+        planned = 0
+        for target in self.alternative_base_targets(nominal=self.base_target):
+            if planned == self.MAX_PLANNED_ALTERNATIVES:
+                break
+            if KitchenMotionPlanner.base_pose_blocked(
+                sim=sim, state=x, target=target, arm=tuck[-1], held=held
+            ):
+                continue
+            planned += 1
+            try:
+                self.plans = plan_from(target)
+            except PlanningRefused:
+                continue
+            self.base_target = target
+            return
+        raise refusal
+
+    @classmethod
+    def alternative_base_targets(cls, *, nominal: np.ndarray) -> list[np.ndarray]:
+        """Base poses near `nominal`, nearest first: offsets along the counter (the
+        nominal pose's lateral axis), small yaw changes and both, never `nominal`."""
+        nominal = np.asarray(nominal, dtype=float)
+        lateral = Rotation.from_euler("z", float(nominal[2])).apply([0.0, 1.0, 0.0])[:2]
+        offsets = (0.0, *(sign * d for d in cls.ALONG_COUNTER_M for sign in (-1, 1)))
+        turns = (0.0, *(sign * d for d in cls.YAW_RAD for sign in (-1, 1)))
+        targets = [
+            np.array([*(nominal[:2] + offset * lateral), nominal[2] + turn])
+            for offset in offsets
+            for turn in turns
+            if offset or turn
+        ]
+        return sorted(targets, key=lambda t: cls.alternative_distance(nominal=nominal, target=t))
+
+    @staticmethod
+    def alternative_distance(*, nominal: np.ndarray, target: np.ndarray) -> float:
+        """The upstream base planner's own pose distance: translation plus |yaw|."""
+        turn = float(np.arctan2(np.sin(target[2] - nominal[2]), np.cos(target[2] - nominal[2])))
+        return float(np.linalg.norm(np.asarray(target[:2]) - nominal[:2])) + abs(turn)
 
 
 class ClearWorkspaceController:
