@@ -1,23 +1,22 @@
 """Ordinary skills and samplers; no kitchen-specific learning algorithm."""
 
 from functools import lru_cache
-from typing import Any
 
 import numpy as np
 from pydantic import model_validator
 
-from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
-from hitl_pmp.core.problem.environment.types import Type
-from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
+from hitl_pmp.core.problem.environment.types import Action, State, Type
+from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 from hitl_pmp.environments.pouring3d.practice.skill_provider import (
     FrozenPourOracle,
     FrozenPourSkillProvider,
 )
-from hitl_pmp.environments.pouring3d.practice.skills import RESET_NAME as LEGACY_RESET
-from hitl_pmp.environments.pouring3d.practice.skills import PourSkills
+from hitl_pmp.environments.pouring3d.practice.skills import SKILL_NAMES
 
 from .environment import HUMAN_RESET, KitchenEnvironment
 from .predicates import KitchenPredicates as P
+from .skills import KitchenSkills
 from .types import ClosedLoopPourParameters
 from .types import KitchenObjects as O
 
@@ -44,60 +43,50 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
     @staticmethod
     @lru_cache(maxsize=1)
     def domain(*, count: int) -> tuple[Skill, ...]:
-        plannable = P.get(name="PickPlannable")
+        """The kitchen's own table (`skills.py`), the human pour-back last."""
+        if count != 3:
+            raise ValueError("The kitchen has three dumplings")
+        return KitchenSkills.build()
 
-        def kitchen(s: Skill) -> Skill:  # noqa: PLR0917
-            # Each dumpling pick requires that it has not already refused to plan
-            # from this pose (see `pick_plannable.py`); the human pour-back
-            # deliberately does not. Skills that move dumplings forget the atom; it is
-            # re-read on observation.
-            pre = s.preconditions
-            if s.name.startswith("PickShrimp"):
-                pre |= {LiftedAtom(predicate=plannable, variables=s.parameters[:2])}
-            ignore = s.ignore_effects
-            if s.name.startswith("Pour") or s.name == LEGACY_RESET:
-                ignore |= {plannable}
-            update: dict[str, Any] = {"preconditions": pre, "ignore_effects": ignore}
-            if s.name.startswith("Pour"):
-                update["param_dim"] = len(ClosedLoopPourParameters.model_fields)
-            return s.model_copy(update=update)
+    def ground(self, *, name: str, request: int | None = None, shrimp: int = 0) -> GroundSkill:
+        """Bind a kitchen skill. A Pour's count is its name; no request object binds."""
+        o = self.env.objects()
+        if name.startswith("Pour") and request not in (None, int(name.removeprefix("Pour"))):
+            raise ValueError(f"{name} has fixed count {name.removeprefix('Pour')}")
+        if not 0 <= shrimp < o.count:
+            raise ValueError("Invalid discrete skill argument")
+        skill = next(s for s in self.domain(count=o.count) if s.name == name)
+        bindings = {
+            "r": o.robot,
+            "p": o.pitcher,
+            "t": o.tray,
+            "s": o.shrimp()[shrimp],
+            **{f"s{i}": obj for i, obj in enumerate(o.shrimp())},
+        }
+        return GroundSkill(skill=skill, objects=tuple(bindings[v.name] for v in skill.parameters))
 
-        # The legacy benchmark's no-op Wait does no work here: EES spent nearly all its
-        # practice on it and it flooded Curtis's search (Josh, 2026-11-05).
-        base = tuple(kitchen(s) for s in PourSkills.build(count=count) if s.name != "Wait")
-        return (*base[:-1], KitchenSkillProvider.human_reset(legacy=base[-1]))
+    def encode(self, *, ground_skill: GroundSkill, params: np.ndarray) -> Action:
+        name = ground_skill.skill.name
+        if not name.startswith("Pour"):
+            return super().encode(ground_skill=ground_skill, params=params)
+        if params.shape != (ground_skill.skill.param_dim,) or not np.isfinite(params).all():
+            raise ValueError("Parameter dimension or values invalid")
+        return np.r_[
+            SKILL_NAMES.index("Pour"),
+            0,
+            int(name.removeprefix("Pour")),
+            self.native_pour_parameters(params=params),
+        ]
 
-    @staticmethod
-    def human_reset(*, legacy: Skill) -> Skill:
-        """The human pour-back, applicable from any practice state (Josh, 2026-11-06).
-
-        The food-only reset required an empty hand, both vessels home and a dumpling
-        out of the jug, so a jug held after a spill, with its placement refused, was a
-        dead end. Here the human also takes the jug or a dumpling from the hand and
-        stands the jug and the skillet at home. Its only precondition is the constant
-        `PayloadOrder` chain. From the states the food-only reset covered, its
-        successor is unchanged; from the fully reset state it changes nothing.
-        """
-        parameters = {v.name: v for v in legacy.parameters}
-        r, p, t = parameters["r"], parameters["p"], parameters["t"]
-        slots = tuple(v for v in legacy.parameters if v.name.startswith("s"))
-
-        def atom(name: str, *variables: Variable) -> LiftedAtom:  # noqa: PLR0917
-            return LiftedAtom(predicate=P.get(name=name), variables=variables)
-
-        restored = {atom("HandEmpty", r), atom("PitcherHome", p), atom("TrayHome", t)}
-        return legacy.model_copy(
-            update={
-                "name": HUMAN_RESET,
-                "preconditions": frozenset(
-                    a for a in legacy.preconditions if a.predicate.name == "PayloadOrder"
-                ),
-                "add_effects": legacy.add_effects | restored,
-                "delete_effects": legacy.delete_effects
-                | {atom("HoldingPitcher", r, p)}
-                | {atom("HoldingShrimp", r, s) for s in slots},
-            }
-        )
+    def compute_action(
+        self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> Action:
+        # A Pour dispatches its own fixed count; every other skill carries the observed
+        # count as metadata only, as the legacy benchmark's non-count skills do.
+        result = super().compute_action(ground_skill=ground_skill, params=params, state=state)
+        if ground_skill.skill.name.startswith("Pour"):
+            result[2] = int(ground_skill.skill.name.removeprefix("Pour"))
+        return result
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if not ground_skill.skill.name.startswith("Pour"):
@@ -129,3 +118,34 @@ class KitchenPourOracle(FrozenPourOracle):
 
     def provider(self) -> FrozenPourSkillProvider:
         return KitchenSkillProvider(env=self.env)
+
+    def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
+        """The legacy recipe on the kitchen's table: with `ReadyToPour` gone, the jug is
+        picked when the hand is empty, the jug is home and every dumpling is in it and
+        settled, which is what `ready()` measured once the skillet is welded."""
+        del goal
+        atoms: frozenset[tuple[str, tuple[str, ...]]] = getattr(
+            state, "abstract_atoms", frozenset()
+        )
+        shrimp = self.env.objects().shrimp()
+        all_in = all(("InPitcher", (o.name, "pitcher")) in atoms for o in shrimp)
+        if ("HoldingPitcher", ("robot", "pitcher")) in atoms:
+            request = int(state.get(obj=O.scene, feature_name="requested_count"))
+            name = f"Pour{request}" if all_in else "PlacePitcherAtHome"
+        elif (
+            all_in
+            and {("HandEmpty", ("robot",)), ("PitcherHome", ("pitcher",))} <= atoms
+            and all(("Settled", (o.name,)) in atoms for o in shrimp)
+        ):
+            name = "PickPitcher"
+        else:
+            return LabeledAction(action=self.env.noop_action(), label="Wait")
+        provider = self.provider()
+        return LabeledAction(
+            action=provider.compute_action(
+                ground_skill=provider.ground(name=name),
+                params=np.array(self.parameters) if name.startswith("Pour") else np.zeros(0),
+                state=state,
+            ),
+            label=name,
+        )
