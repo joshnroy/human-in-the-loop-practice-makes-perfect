@@ -149,7 +149,9 @@ def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, 
     name = Objects.food[0].name
     if skill == "sweep":
         scene.held.add(Objects.scraper.name)
-        scene.supports[name] = {"rack_0"}
+        # A sweep needs every food on the rack; it then promises every food served.
+        for food in Objects.food:
+            scene.supports[food.name] = {"rack_0"}
         ground = GroundSkill(
             skill=Skills.GATHER_AND_SWEEP,
             objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
@@ -163,7 +165,8 @@ def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, 
     assert ground.preconditions <= before
     promised = ground.expected_add_effects(before_atoms=before)
     scene.held.discard(name)
-    scene.supports[name] = {"box_0"}
+    for food in Objects.food:
+        scene.supports[food.name] = {"box_0"}
     scene.data.qvel[scene.addresses[0] + 3] = 0.6
     assert not promised <= _ground_atoms(atoms=scene.backend.abstract_atoms())
     assert not scene.backend.task_succeeded()
