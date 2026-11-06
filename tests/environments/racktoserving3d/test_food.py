@@ -12,6 +12,7 @@ from hitl_pmp.environments.racktoserving3d.food import (
     RackFoodController,
     _FoodMotion,
 )
+from hitl_pmp.environments.racktoserving3d.planning import ScraperMotionPlanner
 from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
@@ -104,9 +105,27 @@ def test_occupied_hand_is_not_opened(*, food):
 
 def test_no_reachable_grasp_does_not_move(*, food):
     food._plan_pick.side_effect = SkillFailed("no collision-free food grasp")
-    with pytest.raises(SkillFailed, match="collision-free"):
+    with (
+        patch.object(ScraperMotionPlanner, "start_blocked", return_value=False),
+        pytest.raises(SkillFailed, match="collision-free"),
+    ):
         food.pick(name="cube_0")
     food.shelf.hold.assert_not_called()
+    food._follow.assert_not_called()
+
+
+def test_a_refusal_from_a_blocked_start_rises_and_plans_once_more(*, food):
+    food._plan_pick.side_effect = SkillFailed("no collision-free food grasp")
+    food.motion.line = Mock()
+    with (
+        patch.object(ScraperMotionPlanner, "start_blocked", return_value=True),
+        pytest.raises(SkillFailed, match="after escaping the start"),
+    ):
+        food.pick(name="cube_0")
+    assert [call.kwargs["label"] for call in food.motion.line.call_args_list] == [
+        "food_pick_escape"
+    ]
+    assert food._plan_pick.call_count == 2
     food._follow.assert_not_called()
 
 
