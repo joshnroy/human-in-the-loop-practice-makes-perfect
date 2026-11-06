@@ -48,6 +48,9 @@ def food():
         held_cube=None,
         hold=Mock(),
         site_pose=Mock(return_value=pose),
+        # No gripper geometry: the pads reach no lower than the food they hold.
+        gripper_geoms=set(),
+        data=None,
         model=SimpleNamespace(
             nu=2,
             actuator=lambda index: SimpleNamespace(
