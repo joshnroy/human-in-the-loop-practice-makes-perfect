@@ -64,7 +64,7 @@ class RackServingDeployment:
                         options.append(("PickScraper", (on_rack, "scraper", False)))
                     if hand == "scraper":
                         options.append(("ReturnScraper", (on_rack, "empty", True)))
-                        if on_rack:
+                        if on_rack == RACK_NUM_FOOD:
                             options.extend(
                                 (name, (0, "scraper", False)) for name in RACK_SWEEP_SKILLS
                             )

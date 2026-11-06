@@ -26,6 +26,7 @@ from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_NUM_FOOD,
     RACK_ROBOT_SKILLS,
     RACK_SERVING_DOMAIN,
+    RACK_SWEEP_SKILLS,
     RackServingDeployment,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -337,3 +338,12 @@ def test_a_provider_without_sweep_drops_its_belief_and_still_values_deployment()
     }
     values = domain.sample_policy_values(beliefs=beliefs, rng=np.random.default_rng(0), count=4)
     np.testing.assert_array_equal(values, np.ones(4))
+
+
+def test_the_deployment_model_sweeps_only_a_full_rack_like_the_operators():
+    # Mirrors `test_a_rack_missing_any_food_cannot_be_swept`: after a partial sweep the
+    # rest is picked, not swept again.
+    moves = RackServingDeployment.transitions()
+    for on_rack in range(RACK_NUM_FOOD):
+        options = {skill for skill, _ in moves[(on_rack, "scraper", False)]}
+        assert not options & set(RACK_SWEEP_SKILLS), on_rack
