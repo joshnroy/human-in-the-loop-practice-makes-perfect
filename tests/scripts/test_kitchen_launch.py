@@ -168,6 +168,7 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
             "Pour3",
         }
         if args.method == "ees":
+            assert (method.prior_alpha, method.prior_beta) == pytest.approx((4.0, 1.0))
             assert method.ees_decision_log == args.output_dir / "ees_decisions.jsonl"
             assert list(method.preview_test_goals) == [
                 (("HandEmpty", ("robot",)), ("PitcherHome", ("pitcher",)), (f"Split{n}", ()))
@@ -178,6 +179,13 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
             assert method.pomdp_search_depth == (
                 None if args.pomdp_solver == "determinized_astar" else 6
             )
+            # Every skill, robot and human, starts at mean 0.8 worth five attempts,
+            # and an untried skill is priced at 500 ticks until its first run.
+            assert (
+                method.pomdp_domain.initial_competence_alpha,
+                method.pomdp_domain.initial_competence_beta,
+            ) == pytest.approx((4.0, 1.0))
+            assert method.skill_cost_prior_steps == 500
             assert method.pomdp_domain.sampler_skills == {"Pour1", "Pour2", "Pour3"}
             assert method.pomdp_domain.human_skill_names == {"human_bulk_pour_back"}
             assert "PickShrimpFromSurface" in dict(method.pomdp_domain.belief_sources)
