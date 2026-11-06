@@ -38,6 +38,11 @@ class RackServingConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
     surface_kind: Literal["wire", "concept"] = "wire"
+    # "welded" (default since 2026-11-06, Josh): PickFood, PlaceFoodOnTray and
+    # ReturnFoodToRack drive and reach for real, but ignore food in planning, never
+    # touch food physically, and take or set down the dumpling by a grasp weld and a
+    # snapped, upright pose (`WeldedFood`). "physical" is the force-closed grasp.
+    food_handling: Literal["physical", "welded"] = "welded"
     mode: Literal["training", "deployment"] = "training"
     # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
     # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
