@@ -8,9 +8,9 @@ short axis, poses are geometric centres). Mass, friction and contact dimension s
 the rack's own configuration; the asset's contact ``priority`` is dropped so the
 rack's surfaces combine with the food as they did with the ellipsoid.
 
-Every other ``collision`` keeps all 41 parts as visual-only geometry, so the piece
-still looks like a potsticker, and collides through a few simpler hidden geoms
-(group 3) instead: 41 colliding parts per piece made contact-rich skills slow. The
+``collision="hull"`` keeps all 41 parts as visual-only geometry, so the piece still
+looks like a potsticker, and collides through one hidden convex hull (group 3)
+instead: 41 colliding parts per piece made contact-rich skills slow. The
 body's mass and inertia are pinned to the full model's, so only contact changes.
 """
 
@@ -20,7 +20,6 @@ from functools import lru_cache
 from typing import Any, ClassVar, Literal
 
 import numpy as np
-from scipy.spatial import ConvexHull
 
 from hitl_pmp.environments.pouring3d.potsticker_shape import ASSETS, shape_xml
 from hitl_pmp.environments.pouring3d.potsticker_shape import (
@@ -28,13 +27,8 @@ from hitl_pmp.environments.pouring3d.potsticker_shape import (
 )
 
 PREFIX = "rack_potsticker_"
-CollisionModel = Literal["full", "hull", "hull_crest", "primitives", "pouch_hull", "ellipsoid"]
-# Hull vertices kept by the decimated pouch; MuJoCo's convex collision and PyBullet's
-# mirror both cost more per vertex, and 48 keep the hull within about a millimetre.
-POUCH_HULL_VERTICES = 48
-# Crest capsules replacing the 16 seam capsules and 8 folds.
-CREST_SEGMENTS = 4
-CREST_RADIUS_M = 0.0015
+CollisionModel = Literal["full", "hull"]
+HULL_MESH = PREFIX + "collision_hull"
 HIDDEN_GROUP = "3"
 
 
@@ -155,90 +149,15 @@ class RackPotsticker:
     @staticmethod
     def collision_geoms(*, collision: CollisionModel) -> list[dict[str, Any]]:
         """MJCF attributes of each simplified collision geom, in the body frame."""
-        half = RackPotsticker.extents() / 2
-        bottom, top = -half[2], half[2]
-        if collision == "ellipsoid":
-            return [{"type": "ellipsoid", "size": half}]
         if collision == "hull":
-            return [{"type": "mesh", "mesh": PREFIX + "collision_hull"}]
-        if collision == "pouch_hull":
-            return [{"type": "mesh", "mesh": PREFIX + "collision_pouch"}]
-        if collision == "hull_crest":
-            crest = RackPotsticker.crest()
-            return [{"type": "mesh", "mesh": PREFIX + "collision_pouch"}] + [
-                {"type": "capsule", "fromto": np.concatenate(pair), "size": [CREST_RADIUS_M]}
-                for pair in zip(crest[:-1], crest[1:], strict=True)
-            ]
-        if collision == "primitives":
-            # A flat-bottomed slab, the rounded belly along the long axis, and the crest.
-            belly = 0.0095
-            belly_z = bottom + 0.0138
-            crest_radius = 0.0025
-            return [
-                {
-                    "type": "box",
-                    "pos": [0, 0, bottom + 0.005],
-                    "size": [0.0075, half[1] - 0.0105, 0.005],
-                },
-                {
-                    "type": "capsule",
-                    "fromto": [0, -(half[1] - belly), belly_z, 0, half[1] - belly, belly_z],
-                    "size": [belly],
-                },
-                {
-                    "type": "capsule",
-                    "fromto": [0, -0.012, top - crest_radius, 0, 0.012, top - crest_radius],
-                    "size": [crest_radius],
-                },
-            ]
+            return [{"type": "mesh", "mesh": HULL_MESH}]
         raise ValueError(f"No simplified collision model {collision!r}")
 
     @staticmethod
-    def collision_support(*, collision: CollisionModel) -> np.ndarray:
-        """Points whose hull bounds the simplified collision geometry."""
-        if collision == "full":
-            return RackPotsticker.support_vertices()
-        signs = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
-        points = []
-        for spec in RackPotsticker.collision_geoms(collision=collision):
-            kind = spec["type"]
-            if kind == "mesh":
-                points.append(RackPotsticker.collision_meshes()[spec["mesh"]])
-            elif kind in {"ellipsoid", "box"}:
-                points.append(np.asarray(spec.get("pos", np.zeros(3))) + signs * spec["size"])
-            elif kind == "capsule":
-                ends = np.asarray(spec["fromto"], dtype=float).reshape(2, 3)
-                points.extend(end + signs * spec["size"][0] for end in ends)
-        return np.concatenate(points)
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def crest() -> np.ndarray:
-        """The seam's chain points, thinned to `CREST_SEGMENTS` capsules whose tops stay
-        at the seam's top."""
-        seams = [
-            g for g in shape_xml().findall("worldbody/body/geom") if g.get("type") == "capsule"
-        ]
-        ends = [np.fromstring(g.attrib["fromto"], sep=" ").reshape(2, 3) for g in seams]
-        chain = RackPotsticker.place(points=np.array([ends[0][0], *(pair[1] for pair in ends)]))
-        picks = np.linspace(0, len(chain) - 1, CREST_SEGMENTS + 1).round().astype(int)
-        drop = CREST_RADIUS_M - float(seams[0].attrib["size"])
-        return chain[picks] - np.array([0, 0, drop])
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def collision_meshes() -> dict[str, np.ndarray]:
-        pouch = shape_xml().find("asset/mesh[@name='pouch']")
-        assert pouch is not None
-        points = RackPotsticker.place(
-            points=np.fromstring(pouch.attrib["vertex"], sep=" ").reshape(-1, 3)
-        )
-        return {
-            PREFIX + "collision_hull": RackPotsticker.support_vertices(),
-            PREFIX + "collision_pouch": _Mjcf.farthest_points(
-                points=points[ConvexHull(points).vertices], count=POUCH_HULL_VERTICES
-            ),
-        }
+    def collision_support(*, collision: CollisionModel) -> np.ndarray:  # noqa: ARG004
+        """Points whose hull bounds the collision geometry. The hull is built from the
+        full model's support vertices, so both models share them."""
+        return RackPotsticker.support_vertices()
 
     @staticmethod
     @lru_cache(maxsize=1)
@@ -290,11 +209,9 @@ class RackPotsticker:
                         f"{value:.10g}" for value in RackPotsticker.place(points=vertices).ravel()
                     ),
                 )
-        if collision in {"hull", "pouch_hull", "hull_crest"}:
-            for mesh, vertices in RackPotsticker.collision_meshes().items():
-                assets.append(
-                    ET.Element("mesh", name=mesh, vertex=_Mjcf.values(values=vertices.ravel()))
-                )
+        if collision == "hull":
+            vertices = RackPotsticker.support_vertices().ravel()
+            assets.append(ET.Element("mesh", name=HULL_MESH, vertex=_Mjcf.values(values=vertices)))
         return assets
 
 
@@ -304,19 +221,3 @@ class _Mjcf:
     @staticmethod
     def values(*, values: np.ndarray) -> str:
         return " ".join(f"{value:.10g}" for value in np.ravel(values))
-
-    @staticmethod
-    def farthest_points(*, points: np.ndarray, count: int) -> np.ndarray:
-        """`count` of `points`, each the farthest from those already chosen, starting from
-        the six axis extremes so the decimated hull keeps the full extents."""
-        chosen = sorted({
-            int(i)
-            for axis in range(3)
-            for i in (np.argmin(points[:, axis]), np.argmax(points[:, axis]))
-        })
-        distance = np.min(np.linalg.norm(points[:, None] - points[chosen][None], axis=2), axis=1)
-        while len(chosen) < count:
-            index = int(np.argmax(distance))
-            chosen.append(index)
-            distance = np.minimum(distance, np.linalg.norm(points - points[index], axis=1))
-        return points[chosen]
