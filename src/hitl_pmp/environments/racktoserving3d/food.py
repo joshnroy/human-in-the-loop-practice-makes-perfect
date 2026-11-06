@@ -23,7 +23,7 @@ from scipy.spatial.transform import Rotation
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
 
 from .semantics import CircularSupport
-from .tool import RackScraper
+from .tool import BlockedStart, RackScraper
 from .transit import geom_half_extents, geoms_half_extents
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
@@ -371,7 +371,7 @@ class _FoodMotion(RackScraper):
         here = shelf.site_pose()
         base = shelf.data.qpos[shelf.ba].copy()
         arm = shelf.data.qpos[shelf.qa].copy()
-        for direction in self.escape_directions():
+        for direction in BlockedStart.directions():
             target = here[:3, 3] + DEPART_M * direction
             checked = self._departs(base=base, arm=arm, position=target, rotation=here[:3, :3])
             if checked is not None:
@@ -735,7 +735,7 @@ class RackFoodController:
         A placement whose retreat failed leaves the open hand down at the plate, within
         the planner's margin of it and of the food on it, so every reach is refused.
         The empty hand opens and leaves that start along a checked escape
-        (`RackScraper.plan_from_clear_start`), then plans once more.
+        (`BlockedStart.plan`), then plans once more.
         """
         shelf = self.shelf
 
@@ -744,7 +744,8 @@ class RackFoodController:
                 shelf.grip = 0.0
                 shelf.hold(count=25, label="food_pick_escape_open")
 
-        plan: tuple[Any, np.ndarray, np.ndarray, np.ndarray] = self.motion.plan_from_clear_start(
+        plan: tuple[Any, np.ndarray, np.ndarray, np.ndarray] = BlockedStart.plan(
+            tool=self.motion,
             make_plan=lambda: self._plan_pick(name=name),
             held_name=None,
             holding=False,
@@ -1140,7 +1141,8 @@ class RackFoodController:
                     )
                 # A food still pinched but resting on the rack's wires (a pick that
                 # failed) is inside the planner's margin of them: rise out first.
-                plan, down, pre, centre = self.motion.plan_from_clear_start(
+                plan, down, pre, centre = BlockedStart.plan(
+                    tool=self.motion,
                     make_plan=lambda: self._plan_place(name=name, destination=destination),
                     held_name=name,
                     holding=False,
