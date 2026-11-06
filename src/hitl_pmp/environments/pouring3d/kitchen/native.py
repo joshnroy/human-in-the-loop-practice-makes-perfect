@@ -213,8 +213,8 @@ class KitchenController(PotstickerController):
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
-    # Execution speeds of planned motions, within what the motors are measured to track.
-    planned_joint_speed: float = 0.20
+    # Execution speeds of planned motions, within what the motors are measured to track
+    # (`planned_joint_speed` is the arm's, on PotstickerController).
     planned_base_speed: float = 0.15
     planned_base_turn_speed: float = 0.30
     # A loaded motion within this of a continuous joint's IK bound fails loudly.

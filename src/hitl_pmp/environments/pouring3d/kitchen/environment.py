@@ -43,6 +43,8 @@ class KitchenEnvironment(FrozenPourEnvironment):
     _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
     # While a dumpling pick runs: its dumpling, starting poses and any finger contact.
     _pick_watch: dict[str, Any] | None = PrivateAttr(default=None)
+    # Each dumpling's last failed pick that was not a refusal: its starting poses and error.
+    _pick_failures: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
     # [skill, dumpling index, requested count, Pour ramp rate (deg/s), 0, 0]. Slots 4-5
     # held the open-loop pour's wiggle and duration; the closed-loop Pour fixes both.
     action_space: ClassVar[Box] = Box(
@@ -70,6 +72,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
     def forget_pick_refusals(self) -> None:
         """Start a held-out task as a fresh instance would: no refusal remembered."""
         self._pick_refusals.clear()
+        self._pick_failures.clear()
 
     def reset_to_seed(self, *, seed: int, requested: int) -> FrozenPourState:
         if self._started:
@@ -144,15 +147,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
             state = super().take_action(action=action)
         finally:
             self._pick_watch = None
+        error = self.last_info.get("error")
         refusal = KitchenPickPlannable.refusal(
-            controller=c,
-            name=name,
-            before=before,
-            error=self.last_info.get("error"),
-            touched=watch["touched"],
+            controller=c, name=name, before=before, error=error, touched=watch["touched"]
+        ) or KitchenPickPlannable.repeated(
+            controller=c, before=before, error=error, previous=self._pick_failures.get(name)
         )
         if refusal is None:
+            if error is not None:
+                self._pick_failures[name] = before.model_copy(update={"error": error})
             return state
+        self._pick_failures.pop(name, None)
         self._pick_refusals[name] = refusal
         self.current_state = self.observe()
         return self.current_state
