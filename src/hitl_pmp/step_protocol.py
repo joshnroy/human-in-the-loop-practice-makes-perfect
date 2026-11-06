@@ -56,6 +56,8 @@ class PracticeClock(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     budget: int = Field(gt=0)
     interval: int = Field(gt=0)
+    # `--extra-measurement-steps`: thresholds measured as well as every interval multiple.
+    extra_thresholds: frozenset[int] = frozenset()
     human_steps: int = Field(default=1, gt=0)
     robot_steps: int = 0
     stop_steps: int = 0
@@ -134,9 +136,11 @@ class PracticeClock(BaseModel):
     def _advanced(self, *, previous: int) -> None:
         # Once per crossed threshold: one increment can cross several (a human
         # invocation longer than the interval) or land past one without touching it.
-        for threshold in range(
-            (previous // self.interval + 1) * self.interval, self.steps + 1, self.interval
-        ):
+        thresholds = set(
+            range((previous // self.interval + 1) * self.interval, self.steps + 1, self.interval)
+        )
+        thresholds |= {t for t in self.extra_thresholds if previous < t <= self.steps}
+        for threshold in sorted(thresholds):
             self._measuring_at = threshold
             try:
                 self.on_measure()
@@ -577,6 +581,8 @@ class StepProtocolResume:
         "evaluation_task_rng": "shared",
         "evaluation_task_timeout_seconds": "None",
         "repeated_stop_limit": "None",
+        "extra_measurement_steps": "[]",
+        "measure_after_learning_updates": "[]",
     }
 
     @staticmethod
@@ -1276,6 +1282,17 @@ class StepPracticeRunner:
         factory built, which no reset touches."""
         evaluate_only = getattr(args, "evaluate_only", False)
         no_early_stop = getattr(args, "no_early_stop", False)
+        # `--measure-after-learning-updates`: the learning-update counts measured right
+        # after, beside the interval's. Only for evaluations spawned beside practice: an
+        # in-process one uses the room, which only `--measure-every-cycles` puts back.
+        measure_after_updates = frozenset(
+            getattr(args, "measure_after_learning_updates", None) or ()
+        )
+        if measure_after_updates and environment.evaluation_pool() is not None:
+            raise ValueError(
+                "--measure-after-learning-updates needs evaluations spawned beside "
+                f"practice, which --env {args.env} does not run; use --measure-every-cycles"
+            )
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
         (output / "snapshots").mkdir(exist_ok=saved is not None)
@@ -1425,6 +1442,7 @@ class StepPracticeRunner:
             # Never spent under `--evaluate-only`, which needs no budget.
             budget=args.practice_step_budget or 1,
             interval=args.measurement_interval_steps,
+            extra_thresholds=frozenset(getattr(args, "extra_measurement_steps", None) or ()),
             human_steps=args.human_skill_steps,
             on_measure=lambda: measure() if clock.measurement_steps < clock.budget else None,
             on_progress=status,
@@ -1576,6 +1594,16 @@ class StepPracticeRunner:
                     "no_early_stop": no_early_stop,
                     "evaluate_only": evaluate_only,
                     "measurement_interval_steps": clock.interval,
+                    **(
+                        {"extra_measurement_steps": sorted(clock.extra_thresholds)}
+                        if clock.extra_thresholds
+                        else {}
+                    ),
+                    **(
+                        {"measure_after_learning_updates": sorted(measure_after_updates)}
+                        if measure_after_updates
+                        else {}
+                    ),
                     "human_skill_steps": clock.human_steps,
                     "evaluation_control_steps": args.evaluation_control_steps,
                     "learning_session_action_limit": args.max_steps_per_interaction,
@@ -2001,6 +2029,9 @@ class StepPracticeRunner:
                     )
                 if due:
                     evaluate_and_restore(completed_cycle=cycle - 1, scene=scene)
+                elif learning_updates in measure_after_updates:
+                    # Spawned beside practice, so no scene to put back.
+                    measure(after_cycle=cycle - 1)
                 status()
             if endpoint == "running":
                 endpoint = "practice_step_budget"

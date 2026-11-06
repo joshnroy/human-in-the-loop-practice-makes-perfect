@@ -34,8 +34,15 @@ STAGES = {
     "pilot": (6400, 6400, 3),
     "overnight": (25600, 6400, 9),
     "long": (200_000, 25_000, 9),
+    "long_learning_early": (200_000, 25_000, 9),
     "dry": (1600, 1600, 3),
 }
+# Learning updates measured right after, beside the interval multiples.
+# `long_learning_early` is `long` plus measurements after updates 1, 2 and 4, so learning
+# shows within the first hours; `long`'s argv is left exactly as it was. A fixed early
+# tick does not do this: the samplers are fitted only at a learning update, and the
+# first came at ~11.1k ticks (Della job 16931554), so 5k and 10k measured unfitted ones.
+LEARNING_UPDATE_MEASUREMENTS = {"long_learning_early": (1, 2, 4)}
 ARMS = ("ees", "curtis", "expectimax")
 SEEDS = (0, 2)
 DELLA = "/scratch/gpfs/TSILVER/jr2860"
@@ -50,7 +57,7 @@ EVALUATION_TASK_TIMEOUT_SECONDS = 4 * 3600
 # holds at most practice plus one evaluation's workers; overnight's 27G peaked at 17.9 GB.
 DELLA_PRACTICE_GB = 3.0
 # Practice keeps 8x the data over `long`'s 200k ticks; its growth is unmeasured.
-DELLA_PRACTICE_GB_BY_STAGE = {"long": 12.0}
+DELLA_PRACTICE_GB_BY_STAGE = {"long": 12.0, "long_learning_early": 12.0}
 DELLA_EVALUATION_PROCESS_GB = 2.0
 DELLA_MEMORY_HEADROOM = 1.25
 # Practice runs alongside the evaluations: 4-7 h for the overnight budget, then the last
@@ -64,6 +71,7 @@ DELLA_TIME = {
     "pilot": "06:00:00",
     "overnight": "12:00:00",
     "long": "48:00:00",
+    "long_learning_early": "48:00:00",
     "dry": "06:00:00",
 }
 DEPENDENCIES = {
@@ -78,6 +86,18 @@ class KitchenLaunch:
     @staticmethod
     def flags(
         *, arm: str, stage: str, seed: int, repo: Path = REPO, evaluation_workers: int = 1
+    ) -> list[str]:
+        updates = LEARNING_UPDATE_MEASUREMENTS.get(stage, ())
+        return [
+            *KitchenLaunch.arm_flags(
+                arm=arm, stage=stage, seed=seed, repo=repo, evaluation_workers=evaluation_workers
+            ),
+            *(["--measure-after-learning-updates", *map(str, updates)] if updates else []),
+        ]
+
+    @staticmethod
+    def arm_flags(
+        *, arm: str, stage: str, seed: int, repo: Path, evaluation_workers: int
     ) -> list[str]:
         budget, interval, tasks = STAGES[stage]
         if arm not in ARMS:
