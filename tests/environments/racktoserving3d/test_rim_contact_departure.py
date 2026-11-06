@@ -38,7 +38,9 @@ HELD_IN_RIM = FIXTURES / "stuck_ees0_held_food_pad_in_rim.json"
 # followed.
 LOCAL_PICK_START = FIXTURES / "local_ees0_pick_food_rim_start.json"
 LOCAL_HELD_IN_RIM = FIXTURES / "local_ees0_held_food_pad_in_rim.json"
-PICK_STARTS = pytest.mark.parametrize("start", [PICK_START, LOCAL_PICK_START], ids=["della", "agni"])
+PICK_STARTS = pytest.mark.parametrize(
+    "start", [PICK_START, LOCAL_PICK_START], ids=["della", "agni"]
+)
 HELD_STARTS = pytest.mark.parametrize(
     "held", [HELD_IN_RIM, LOCAL_HELD_IN_RIM], ids=["della", "agni"]
 )
