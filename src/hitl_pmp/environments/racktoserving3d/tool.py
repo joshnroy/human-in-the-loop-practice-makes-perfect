@@ -698,6 +698,33 @@ class TableWiper:
         if holding:
             self.require_held(label=label)
 
+    def line_plannable(
+        self, *, position: np.ndarray, rotation: np.ndarray, holding: bool, step: float = 0.01
+    ) -> bool:
+        """Whether ``line`` to this pose finds every waypoint's IK, checked as ``ik``
+        checks it, on one branch; nothing moves."""
+        shelf = self.shelf
+        start = shelf.site_pose()
+        distance = float(np.linalg.norm(position - start[:3, 3]))
+        angle = self.rotation_error(actual=start[:3, :3], target=rotation)
+        count = max(1, int(np.ceil(max(distance / step, angle / 3.0))))
+        slerp = Slerp([0, 1], Rotation.from_matrix([start[:3, :3], rotation]))
+        arm = shelf.data.qpos[shelf.qa].copy()
+        for fraction in np.linspace(0, 1, count + 1)[1:]:
+            previous = arm
+            try:
+                arm = self.ik(
+                    position=(1 - fraction) * start[:3, 3] + fraction * position,
+                    rotation=slerp(fraction).as_matrix(),
+                    holding=holding,
+                    seed=previous,
+                )
+            except SkillFailed:
+                return False
+            if float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi))) > 0.6:
+                return False
+        return True
+
     def transit(
         self,
         *,

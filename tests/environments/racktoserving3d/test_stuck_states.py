@@ -12,6 +12,7 @@ failed attempt crept the arm further, to joint 6 at its 2.09 rad limit.
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tests.environments.racktoserving3d.test_planned_food import restored
 
@@ -88,5 +89,132 @@ def test_return_scraper_after_a_sweep_that_failed_mid_stroke_escapes_and_returns
         steps, error = done_or_refused(env=env, action=np.array([2.0, 0, 0, 0, 0]))
         assert error is None, f"{steps} steps, then: {error}"
         assert env.rack_controllers().tool.at_home()
+    finally:
+        env.close()
+
+
+CURTIS0_RIM = FIXTURES / "stuck_curtis0_blade_on_plate_rim.json"
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        np.array([1.0, 0.0, 0.05390138822446226, 0.034378602500964084, 0.10454009583688345]),
+        np.array([6.0, 0.0, 0.0, 0.0, 0.11124104374405863]),
+    ],
+    ids=["GatherAndSweep", "Sweep"],
+)
+def test_a_stroke_from_a_blade_resting_on_the_plate_rim_escapes_before_raising(*, action):
+    """Curtis seed 0 (c6ed1a6), from practice step 17013: 76 consecutive calls refused
+    at 0 steps, "squeeze_plus_y_raise" / "sweep_raise: Cartesian fraction 0.250:
+    axis-clipped joint segment at 0.075 rad: Scraper blade or handle would collide". A
+    Sweep that failed at the plate left the blade resting on the plate's rim, its edge
+    centre 6 mm beyond the plate's well, so `exit_surface` (rack or well only) let the
+    stroke raise straight up from the rim, with the arm nearly straight from the rear
+    stance. These are the run's own two actions. The strokes after the escape may still
+    fail (that is the skill's competence); leaving the rim and raising must not."""
+    env = restored_holding(fixture=CURTIS0_RIM)
+    try:
+        assert env.backend().held(name="wiper_0")
+        steps, error = done_or_refused(env=env, action=action)
+        assert steps > 0, error
+        for phase in ("_exit_retreat", "_lift_off", "_raise"):
+            assert phase not in (error or ""), f"{steps} steps, then: {error}"
+    finally:
+        env.close()
+
+
+EES0_PICK_FOOD = FIXTURES / "stuck_ees0_pick_food_drops.json"
+EES0_FOOD_IN_FLIGHT = FIXTURES / "stuck_ees0_food_in_flight.json"
+
+
+def food_in_motion_or_hand(*, env) -> dict[str, tuple[float, bool]]:
+    """Each food that is still moving or touches the robot: (speed m/s, touching)."""
+    backend = env.backend()
+    model, data = backend.model(), backend.data()
+    robot = env.rack_controllers().shelf.robot_geoms
+    found = {}
+    for name in backend.cube_names:
+        dof = model.jnt_dofadr[model.joint(f"{name}_joint").id]
+        speed = float(np.linalg.norm(data.qvel[dof : dof + 3]))
+        touching = any(
+            g in robot and model.body(model.geom_bodyid[o]).name.startswith(name)
+            for c in data.contact[: data.ncon]
+            for g, o in ((c.geom1, c.geom2), (c.geom2, c.geom1))
+        )
+        if speed > 0.02 or touching:
+            found[name] = (round(speed, 3), touching)
+    return found
+
+
+def test_a_pick_food_that_loses_its_food_leaves_it_at_rest_and_the_scraper_pickable():
+    """EES seed 0 (c6ed1a6), practice step 5272: PickFood(cube_0) lifted, then failed
+    "Food cube_0 is not held by bilateral pad contact" with the hand still closed and
+    the dumpling falling beside it (z 1.07 m, 15 cm above the counter). Physics only
+    advances inside a skill, so every later plan saw it hanging there: 10 PickScraper
+    calls in a row refused at 0 steps, "no stance reaches the scraper (No
+    collision-free base path ...: 239, ...)", about 20 min each on Della. Replayed
+    locally from the PickFood's own start, the same failure and the same refusal,
+    count for count, follow."""
+    env = restored_holding(fixture=EES0_PICK_FOOD)
+    try:
+        steps, error = done_or_refused(env=env, action=np.array([3.0, 0, 0, 0, 0]))
+        assert steps > 0
+        assert error is not None and "not held" in error, error
+        assert food_in_motion_or_hand(env=env) == {}
+        steps, error = done_or_refused(env=env, action=np.array([0.0, 0, 0, 0, 0]))
+        assert steps > 0, error
+        assert error is None, f"{steps} steps, then: {error}"
+    finally:
+        env.close()
+
+
+def restored_frozen(*, fixture: Path):
+    """The recorded motion state exactly, with no settling step: as a zero-step call
+    after the recorded tick saw it."""
+    import json
+
+    import mujoco
+
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
+
+    plain = json.loads(fixture.read_text())
+    config = RackServingConfig.model_validate({
+        k: v for k, v in plain["config"].items() if k in RackServingConfig.model_fields
+    })
+    env = RackServingEnvironment(config=config)
+    RackServingTasks(env=env, seed=0).sample_train_task()
+    backend = env.backend()
+    model, data = backend.model(), backend.data()
+    for joint, value in plain["robot_joints"].items():
+        data.qpos[model.jnt_qposadr[model.joint(joint).id]] = value
+    for name, pose in plain["free_bodies"].items():
+        address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+        data.qpos[address : address + 7] = pose
+    data.qvel[:] = 0.0
+    mujoco.mj_forward(model, data)
+    shelf = env.rack_controllers().shelf
+    shelf.grip = backend.grip = float(plain["grip"])
+    shelf.base_target = data.qpos[shelf.ba].copy()
+    return env
+
+
+def test_a_food_lost_from_the_closed_hand_is_waited_for_until_it_rests():
+    """The exact recorded state the EES loop froze in: cube_0 against the closed
+    hand's right pad, 15 cm above the counter, not held. Losing a food waits, the arm
+    still and the hand as it is, so nothing is left in flight for the next plan."""
+    from hitl_pmp.environments.racktoserving3d.food import RackFoodController
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
+
+    env = restored_frozen(fixture=EES0_FOOD_IN_FLIGHT)
+    try:
+        assert "cube_0" in food_in_motion_or_hand(env=env)
+        food = RackFoodController(controllers=env.rack_controllers())
+        with pytest.raises(SkillFailed, match="not held"):
+            food._require_held(name="cube_0")
+        assert food_in_motion_or_hand(env=env) == {}
+        assert env.rack_controllers().shelf.grip == 1.0
     finally:
         env.close()
