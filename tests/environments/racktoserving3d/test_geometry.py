@@ -108,11 +108,15 @@ def test_counter_and_free_objects_compile_without_hidden_support(
             body = copy.deepcopy(instance.xml_element)
             body.set("pos", " ".join(map(str, position)))
             world.append(body)
-            assert body.find("freejoint") is not None
+            # The rack and the serving object are welded to the counter (2026-11-06):
+            # mocap bodies with no joint. The scraper and the five dumplings are free.
+            welded = name in ("rack_0", "box_0")
+            assert (body.find("freejoint") is None) is welded, name
+            assert (body.get("mocap") == "true") is welded, name
     model = mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
-    assert model.njnt == 8
+    assert model.njnt == 6
     assert model.body("rack_0").mass == pytest.approx(config.rack_mass)
     assert model.body("box_0").mass == pytest.approx(config.tray_mass)
     assert model.body("wiper_0").mass == pytest.approx(config.scraper_mass)
