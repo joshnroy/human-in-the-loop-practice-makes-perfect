@@ -124,7 +124,9 @@ class KitchenLaunch:
             "--evaluation-control-steps", "7500",
             "--skill-step-limit", "2500", "--stop-after-perfect-evaluations", "0",
             "--practice-cost-config", str(repo / COSTS_PATH),
-            "--defer-rendering", "--record-motion", "all" if seed == 0 else "evaluation",
+            # Every seed's practice replays as video. A 200k-tick recording is ~0.5 GB
+            # (Della 16931554 seed 0); `evaluation` kept only end-of-skill states.
+            "--defer-rendering", "--record-motion", "all",
             "--exploration-epsilon", "0.5", "--sampler-max-train-iters", "10000",
             "--record-sampler-draws", "--no-ees-reset-gate", "--goal-pursuit-horizon", "0",
             "--goal-pursuit-interval", "1",
