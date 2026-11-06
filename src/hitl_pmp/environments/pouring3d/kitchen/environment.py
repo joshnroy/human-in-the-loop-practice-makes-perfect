@@ -34,10 +34,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
     skillet_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
     human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
+    # p: the human's true competence at the pour-back (SweepOffShelf3D's
+    # `reset_cubes_success_probability`, #433). Each attempt fully succeeds with
+    # probability p and otherwise changes nothing; it is charged either way.
+    human_reset_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Seeds the human's own draws; the run seed, so a run is fixed by `--seed`.
+    human_seed: int = 0
     human_interventions: int = 0
     interruption_cost_total: float = 0
     episode_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     _started: bool = PrivateAttr(default=False)
+    _human_rng: np.random.Generator | None = PrivateAttr(default=None)
     # Planning refusals of dispatched dumpling picks, by dumpling name; kept for the
     # life of this instance (see `pick_plannable.py`).
     _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
@@ -188,7 +195,28 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.human_interventions += 1
         self.interruption_cost_total += self.human_interruption_cost
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}
-        result = super().reset_movables(destination=LEGACY_RESET)
+        c = self.controller()
+        if not self.human_reset_succeeds():
+            # Attempted and failed: nothing moves. True, so the human oracle reports an
+            # outcome rather than a refusal; the methods score it from the state.
+            self._steps += 1
+            self.last_info.update(
+                human_interventions=1,
+                interruption_cost=self.human_interruption_cost,
+                human_reset_failed=True,
+            )
+            self.current_state = self.observe()
+            return True
+        food_only = (
+            c.held is None
+            and c.vessel_home(name="pitcher")
+            and c.vessel_home(name="tray")
+            and c.scene.cube_locations() != ["pitcher"] * self.payload_count
+        )
+        if food_only:
+            result = super().reset_movables(destination=LEGACY_RESET)
+        else:
+            result = self.reset_from_any_state()
         self.last_info.update(
             skill=HUMAN_RESET,
             success=result,
@@ -196,6 +224,44 @@ class KitchenEnvironment(FrozenPourEnvironment):
             interruption_cost=self.human_interruption_cost,
         )
         return result
+
+    # A fixed tag mixed into the human's seed, so its stream is not the one a method
+    # seeded with the same run seed draws from.
+    HUMAN_RNG_STREAM: ClassVar[int] = 0x68756D616E
+
+    def human_reset_succeeds(self) -> bool:
+        """One draw of the human's own seeded generator: True with probability p.
+        Drawn on every attempt, so p = 1 consumes draws but never fails."""
+        if self._human_rng is None:
+            self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
+        return bool(self._human_rng.random() < self.human_reset_success_probability)
+
+    def reset_from_any_state(self) -> bool:
+        """The human reset from a state the food-only pour-back does not cover (Josh,
+        2026-11-06): the human stands a displaced skillet at home, takes the jug or a
+        dumpling from the hand and stands the jug at home, and returns the dumplings to
+        it if any is out or the jug moved. What is already in place is not touched, so
+        from the fully reset state this changes nothing. Same price, same success test
+        (`ready()`) and zero robot ticks."""
+        c = self.controller()
+        if not c.vessel_home(name="tray"):
+            c.human_stands_vessel_home(name="tray")
+        jug_moved = c.held is not None or not c.vessel_home(name="pitcher")
+        if jug_moved:
+            c.human_takes_jug_home()
+        if jug_moved or c.scene.cube_locations() != ["pitcher"] * self.payload_count:
+            c.scene.respawn_payload_in_pitcher()
+        self._steps += 1
+        self.last_info = {
+            "skill": LEGACY_RESET,
+            "success": c.ready(),
+            "error": None,
+            "human_interventions": 1,
+            "seconds": 0,
+            "controller_steps": 0,
+        }
+        self.current_state = self.observe()
+        return bool(self.last_info["success"])
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""

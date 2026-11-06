@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 from pydantic import model_validator
 
-from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
+from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Type
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.pouring3d.practice.skill_provider import (
@@ -65,7 +65,39 @@ class KitchenSkillProvider(FrozenPourSkillProvider):
         # The legacy benchmark's no-op Wait does no work here: EES spent nearly all its
         # practice on it and it flooded Curtis's search (Josh, 2026-11-05).
         base = tuple(kitchen(s) for s in PourSkills.build(count=count) if s.name != "Wait")
-        return (*base[:-1], base[-1].model_copy(update={"name": HUMAN_RESET}))
+        return (*base[:-1], KitchenSkillProvider.human_reset(legacy=base[-1]))
+
+    @staticmethod
+    def human_reset(*, legacy: Skill) -> Skill:
+        """The human pour-back, applicable from any practice state (Josh, 2026-11-06).
+
+        The food-only reset required an empty hand, both vessels home and a dumpling
+        out of the jug, so a jug held after a spill, with its placement refused, was a
+        dead end. Here the human also takes the jug or a dumpling from the hand and
+        stands the jug and the skillet at home. Its only precondition is the constant
+        `PayloadOrder` chain. From the states the food-only reset covered, its
+        successor is unchanged; from the fully reset state it changes nothing.
+        """
+        parameters = {v.name: v for v in legacy.parameters}
+        r, p, t = parameters["r"], parameters["p"], parameters["t"]
+        slots = tuple(v for v in legacy.parameters if v.name.startswith("s"))
+
+        def atom(name: str, *variables: Variable) -> LiftedAtom:  # noqa: PLR0917
+            return LiftedAtom(predicate=P.get(name=name), variables=variables)
+
+        restored = {atom("HandEmpty", r), atom("PitcherHome", p), atom("TrayHome", t)}
+        return legacy.model_copy(
+            update={
+                "name": HUMAN_RESET,
+                "preconditions": frozenset(
+                    a for a in legacy.preconditions if a.predicate.name == "PayloadOrder"
+                ),
+                "add_effects": legacy.add_effects | restored,
+                "delete_effects": legacy.delete_effects
+                | {atom("HoldingPitcher", r, p)}
+                | {atom("HoldingShrimp", r, s) for s in slots},
+            }
+        )
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if not ground_skill.skill.name.startswith("Pour"):
