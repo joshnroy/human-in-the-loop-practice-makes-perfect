@@ -229,6 +229,18 @@ class Cli:
             "before the first 25,000-step checkpoint. Duplicates are measured once.",
         )
         parser.add_argument(
+            "--measure-after-learning-updates",
+            nargs="+",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=[],
+            metavar="K",
+            help="Step protocol: also measure right after the K-th learning update, for "
+            "each K listed (e.g. 1 2 4), beside every --measurement-interval-steps "
+            "multiple. Unlike a fixed practice step, it never measures a policy no update "
+            "has fitted. Evaluations spawned beside practice only; tossing3d_real has "
+            "--measure-every-cycles.",
+        )
+        parser.add_argument(
             "--human-skill-steps", type=lambda value: Cli.parse_positive_int(value=value), default=1
         )
         parser.add_argument(

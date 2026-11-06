@@ -583,6 +583,7 @@ class StepProtocolResume:
         "repeated_stop_limit": "None",
         "evaluation_max_pour_attempts": "None",
         "extra_measurement_steps": "[]",
+        "measure_after_learning_updates": "[]",
     }
 
     @staticmethod
@@ -1293,6 +1294,17 @@ class StepPracticeRunner:
         factory built, which no reset touches."""
         evaluate_only = getattr(args, "evaluate_only", False)
         no_early_stop = getattr(args, "no_early_stop", False)
+        # `--measure-after-learning-updates`: the learning-update counts measured right
+        # after, beside the interval's. Only for evaluations spawned beside practice: an
+        # in-process one uses the room, which only `--measure-every-cycles` puts back.
+        measure_after_updates = frozenset(
+            getattr(args, "measure_after_learning_updates", None) or ()
+        )
+        if measure_after_updates and environment.evaluation_pool() is not None:
+            raise ValueError(
+                "--measure-after-learning-updates needs evaluations spawned beside "
+                f"practice, which --env {args.env} does not run; use --measure-every-cycles"
+            )
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
         (output / "snapshots").mkdir(exist_ok=saved is not None)
@@ -1597,6 +1609,11 @@ class StepPracticeRunner:
                     **(
                         {"extra_measurement_steps": sorted(clock.extra_thresholds)}
                         if clock.extra_thresholds
+                        else {}
+                    ),
+                    **(
+                        {"measure_after_learning_updates": sorted(measure_after_updates)}
+                        if measure_after_updates
                         else {}
                     ),
                     "human_skill_steps": clock.human_steps,
@@ -2029,6 +2046,9 @@ class StepPracticeRunner:
                     )
                 if due:
                     evaluate_and_restore(completed_cycle=cycle - 1, scene=scene)
+                elif learning_updates in measure_after_updates:
+                    # Spawned beside practice, so no scene to put back.
+                    measure(after_cycle=cycle - 1)
                 status()
             if endpoint == "running":
                 endpoint = "practice_step_budget"
