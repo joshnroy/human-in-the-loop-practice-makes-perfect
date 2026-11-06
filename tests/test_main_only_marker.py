@@ -48,7 +48,7 @@ EXPECTED_MAIN_ONLY = frozenset({
     "tests/environments/sweepoffshelf3d/test_kinder_skills.py::"
     "test_a_turn_in_this_grasp_still_reseats",
     "tests/environments/pouring3d/test_kitchen_position_settled.py::"
-    "test_canonical_pours_are_settled_successes",
+    "test_canonical_pours_are_settled_and_judged_by_what_they_delivered",
     "tests/environments/pouring3d/test_kitchen_position_settled.py::"
     "test_a_fast_ramp_overshoots_pour2_on_the_canonical_seed",
     "tests/environments/racktoserving3d/test_native_control_step_cutoff.py::"
