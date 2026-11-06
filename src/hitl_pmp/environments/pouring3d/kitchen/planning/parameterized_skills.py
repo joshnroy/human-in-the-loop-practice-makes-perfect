@@ -38,6 +38,13 @@ from spatialmath import SE2
 
 from .utils import PLANNING_MARGIN_M, UPRIGHT_TILT_LIMIT_DEG, KitchenPyBulletSim
 
+# An arm motion whose start lies inside the planning margin, but at least this far from
+# everything, first escapes the margin at this margin, then continues at the full one.
+# MuJoCo's IK keeps the same 15 mm in its own robot model, which is under a millimetre
+# off PyBullet's, so a skill can end 14.4 mm from the scene as PyBullet measures it
+# (ees/ees/0 of Della job 16949734); without the escape, BiRRT refuses its own start.
+ESCAPE_MARGIN_M = 0.005
+
 
 class PlanningRefused(ValueError):
     """A planner found no plan; nothing was executed."""
@@ -136,6 +143,10 @@ class KitchenMotionPlanner:
         Holding something, it is carried rigidly, checked against the scene, and kept
         within `tilt_limit_deg` of vertical at every checked configuration. The goal is
         the valid solution closest to `reference` if given, else to `start`.
+
+        A `start` inside `margin` but clear of `ESCAPE_MARGIN_M` is not refused: the
+        motion escapes at `ESCAPE_MARGIN_M` until it is first outside `margin`, and is
+        planned at `margin` from there. A start outside `margin` plans as it always has.
         """
         start_joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=start)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
@@ -150,7 +161,7 @@ class KitchenMotionPlanner:
             )
             constraint = held.upright(sim=sim, limit_deg=limit)
 
-        def collides(q: Any) -> bool:  # noqa: PLR0917 -- upstream's collision callback
+        def within(q: Any, threshold: float) -> bool:  # noqa: PLR0917 -- local helper
             if check_collisions_with_held_object(
                 sim.robot,
                 bodies,
@@ -158,10 +169,27 @@ class KitchenMotionPlanner:
                 None if held is None else held.body,
                 None if held is None else held.base_link_to_held_obj,
                 list(q),
-                distance_threshold=margin,
+                distance_threshold=threshold,
             ):
                 return True
             return constraint is not None and not constraint(q)
+
+        def collides(q: Any) -> bool:  # noqa: PLR0917 -- upstream's collision callback
+            return within(q, margin)
+
+        def checked(a: Any, b: Any, threshold: float) -> list[Any] | None:  # noqa: PLR0917 -- local helper
+            plan = plan_checked_arm_motion(
+                sim.robot,
+                list(a),
+                list(b),
+                collision_bodies=bodies,
+                physics_client_id=sim.physics_client_id,
+                held_object=None if held is None else held.body,
+                base_link_to_held_obj=None if held is None else held.base_link_to_held_obj,
+                distance_threshold=threshold,
+                additional_state_constraint_fn=constraint,
+            )
+            return None if plan is None else list(plan[1])
 
         sim.robot.set_joints(start_joints)
         goal = KitchenMotionPlanner.goal(
@@ -176,21 +204,18 @@ class KitchenMotionPlanner:
         if goal is None:
             upright = " upright" if held is not None else ""
             raise PlanningRefused(f"No collision-free{upright} IK solution for {what}")
-        planned = plan_checked_arm_motion(
-            sim.robot,
-            start_joints,
-            goal,
-            collision_bodies=bodies,
-            physics_client_id=sim.physics_client_id,
-            held_object=None if held is None else held.body,
-            base_link_to_held_obj=None if held is None else held.base_link_to_held_obj,
-            distance_threshold=margin,
-            additional_state_constraint_fn=constraint,
-        )
+        planned = checked(start_joints, goal, margin)
+        if planned is None and collides(start_joints) and not within(start_joints, ESCAPE_MARGIN_M):
+            escape = checked(start_joints, goal, ESCAPE_MARGIN_M)
+            if escape is not None:
+                # The goal itself is outside the margin, so the escape always leaves it.
+                out = next(i for i, q in enumerate(escape) if not collides(q))
+                rest = checked(escape[out], goal, margin) if out < len(escape) - 1 else [goal]
+                planned = None if rest is None else [*escape[: out + 1], *rest[1:]]
         if planned is None:
             upright = " upright" if held is not None else ""
             raise PlanningRefused(f"No collision-free{upright} arm path to {what}")
-        return [np.asarray(q[:7], dtype=float) for q in planned[1]]
+        return [np.asarray(q[:7], dtype=float) for q in planned]
 
     @staticmethod
     def goal(
