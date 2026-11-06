@@ -1,4 +1,4 @@
-"""Native KINDER scene with measured supports, movable rack and explicit human costs."""
+"""Native KINDER scene with measured supports, a welded rack and explicit human costs."""
 
 import json
 import os
@@ -537,10 +537,20 @@ class RackServingBackend(SweepOffShelf3DBackend):
             self._scene_file = None
 
     def motion_state(self) -> dict[str, list[float]]:
-        """The shelf's motion state plus the rack's free-joint pose: unlike the shelf's
-        cupboard, the rack is a movable body a sweep or a pick can push."""
+        """`features` plus every robot joint and, after each body's own features, its
+        pose (x, y, z, qw, qx, qy, qz): each dumpling's and the scraper's free joint, and
+        the rack's and plate's welded pose. Welded since 2026-11-06, so a recording keeps
+        the shape it had when both were free bodies a sweep could push."""
         model, data = self.model(), self.data()
-        out = super().motion_state()
-        address = model.jnt_qposadr[model.joint("rack_0_joint").id]
-        out["rack_0"] += [float(v) for v in data.qpos[address : address + 7]]
+        out = {name: [float(v) for v in values] for name, values in self.features().items()}
+        for name in (*self.cube_names, self.wiper_name):
+            address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+            out[name] += [float(v) for v in data.qpos[address : address + 7]]
+        for name in ("box_0", "rack_0"):
+            position, quaternion = self.core().get_object(name).get_pose()
+            out[name] += [float(v) for v in (*position, *quaternion)]
+        out["robot_joints"] = [
+            float(data.qpos[model.jnt_qposadr[model.joint(joint).id]])
+            for joint in self.ROBOT_JOINTS
+        ]
         return out

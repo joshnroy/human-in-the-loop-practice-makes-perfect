@@ -31,8 +31,8 @@ class RackServingConfig(BaseModel):
     flat round plate, the original rectangular slate, or a wide platter with a
     low continuous lip, selected by ``serving_target``; its position is derived
     to preserve ``gap`` in front of the rack's exit edge, centred on the rack's
-    centre line. Neither the rack nor the serving object is fixed or assumed
-    ungraspable.
+    centre line. Both the rack and the serving object are welded to the counter
+    (Josh, 2026-11-06): no push, sweep or dropped food can move either.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
