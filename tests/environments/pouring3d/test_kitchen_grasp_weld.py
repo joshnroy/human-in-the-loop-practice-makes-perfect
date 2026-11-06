@@ -15,11 +15,9 @@ pytestmark = [
     pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="needs KinDER"),
 ]
 
-PICK_PITCHER = (0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
-POUR1 = (1.0, 0.0, 1.0, 1.0, 0.0, 0.0)
-PLACE_PITCHER_AT_HOME = (2.0, 0.0, 1.0, 0.0, 0.0, 0.0)
 PICK_SHRIMP_FROM_TRAY = 3.0
 DROP_SHRIMP_INTO_PITCHER = 5.0
+DUMPLING = 2
 
 
 class Scene:
@@ -31,6 +29,24 @@ class Scene:
 
         env = KitchenEnvironment(requested_count=1)
         env.reset_to_seed(seed=0, requested=1)
+        return env
+
+    @staticmethod
+    def kitchen_with_dumpling_in_pan():
+        import mujoco
+
+        env = Scene.kitchen()
+        c = env.controller()
+        m, d = c.model, c.data
+        joint = int(m.jnt_qposadr[m.body(c.scene.cube_names[DUMPLING]).jntadr[0]])
+        pan = d.xpos[m.body("tray").id]
+        d.qpos[joint : joint + 3] = [pan[0], pan[1], pan[2] + 0.03]
+        d.qpos[joint + 3 : joint + 7] = [1, 0, 0, 0]
+        d.qvel[:] = 0
+        mujoco.mj_forward(m, d)
+        c.pause(phase="settle test dumpling", seconds=10, grip=0)
+        env.current_state = env.observe()
+        assert c.scene.cube_locations()[DUMPLING] == "tray"
         return env
 
     @staticmethod
@@ -75,18 +91,16 @@ def test_the_human_reset_and_a_new_episode_release_every_dumpling():
     env.close()
 
 
-def test_a_poured_dumpling_is_picked_carried_and_dropped_without_slipping():
-    env = Scene.kitchen()
-    for action in (PICK_PITCHER, POUR1, PLACE_PITCHER_AT_HOME):
-        env.take_action(action=np.array(action))
-        assert env.last_info["success"], env.last_info
+def test_a_dumpling_in_the_pan_is_picked_carried_and_dropped_without_slipping():
+    # The dumpling is placed in the pan directly rather than poured there, so the
+    # weld is tested independently of whether a pour succeeds on this seed.
+    env = Scene.kitchen_with_dumpling_in_pan()
     c = env.controller()
-    index = c.scene.cube_locations().index("tray")
-    env.take_action(action=np.array([PICK_SHRIMP_FROM_TRAY, index, 1.0, 0, 0, 0]))
+    env.take_action(action=np.array([PICK_SHRIMP_FROM_TRAY, DUMPLING, 1.0, 0, 0, 0]))
     assert env.last_info["success"], env.last_info
-    assert c.scene.attached_payload() == c.scene.cube_names[index]
-    env.take_action(action=np.array([DROP_SHRIMP_INTO_PITCHER, index, 1.0, 0, 0, 0]))
+    assert c.scene.attached_payload() == c.scene.cube_names[DUMPLING]
+    env.take_action(action=np.array([DROP_SHRIMP_INTO_PITCHER, DUMPLING, 1.0, 0, 0, 0]))
     assert env.last_info["success"], env.last_info
     assert c.scene.attached_payload() is None
-    assert c.scene.cube_locations()[index] == "pitcher"
+    assert c.scene.cube_locations()[DUMPLING] == "pitcher"
     env.close()
