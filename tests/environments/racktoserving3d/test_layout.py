@@ -89,12 +89,14 @@ def test_every_episode_reset_starts_from_its_seeds_draw_of_the_layout(*, monkeyp
     )
     names = list(RackServingBackend.cube_names)
     # A scattered-only config draws no stack/scattered coin: the seed's own first draw.
-    RackServingBackend(config=RackServingConfig(gathered_fraction=0.0)).reset(seed=seed)
+    RackServingBackend(
+        config=RackServingConfig(food_handling="physical", gathered_fraction=0.0)
+    ).reset(seed=seed)
     assert calls == [(names, "scattered", np.random.default_rng(seed).bit_generator.state)]
     assert committed == [{"sentinel": names}]
     # The default mixture draws its coin first, then places from the same generator.
     calls.clear()
-    RackServingBackend().reset(seed=seed)
+    RackServingBackend(config=RackServingConfig(food_handling="physical")).reset(seed=seed)
     rng = np.random.default_rng(seed)
     kind = "stack" if rng.uniform() < RackServingConfig().gathered_fraction else "scattered"
     assert calls == [(names, kind, rng.bit_generator.state)]
@@ -136,7 +138,7 @@ def layout_backend(*, monkeypatch):
         "corners",
         lambda self, *, name: np.array([centres[name] - 0.01, centres[name] + 0.01]),
     )
-    backend = RackServingBackend()
+    backend = RackServingBackend(config=RackServingConfig(food_handling="physical"))
     backend._rng = np.random.default_rng(3)
     return SimpleNamespace(backend=backend, centres=centres, blocked=blocked, names=names)
 

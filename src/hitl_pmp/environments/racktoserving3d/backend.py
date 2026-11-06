@@ -33,6 +33,7 @@ from .semantics import (
     WellSupport,
     classify_food,
 )
+from .welded_food import WeldedFood
 
 FOOTPRINT_SAMPLES = 64
 MAX_RETURN_LAYOUTS = 300
@@ -87,12 +88,16 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 return result
 
             self._env.step = observed
+            if self.config.food_handling == "welded":
+                WeldedFood.install(core=self.core(), names=tuple(self.cube_names))
         return self._env
 
     def reset(self, *, seed: int) -> None:
         super().reset(seed=seed)
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
+        if self.config.food_handling == "welded":
+            WeldedFood.separate_robot_and_food(model=self.model(), names=tuple(self.cube_names))
         self._rng = np.random.default_rng(seed)
         self.ledger = RackServingLedger(
             mode=self.config.mode,
@@ -150,6 +155,13 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 observer()
             except Exception as error:
                 raise ControlStepObserverFailed() from error
+
+    def held(self, *, name: str) -> bool:
+        """Welded food is held while its grasp weld is engaged; everything else, and
+        all food under physical handling, by both pads' contact."""
+        if self.config.food_handling == "welded" and name in self.cube_names:
+            return WeldedFood.attached(backend=self) == name
+        return super().held(name=name)
 
     def body_geoms(self, *, name: str) -> set[int]:
         model = self.model()
@@ -469,6 +481,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def batch_return(self) -> None:
         self.sync_clock()
         self.ledger = self.ledger.charge_human(intervention="human_batch_return")
+        if self.config.food_handling == "welded":
+            WeldedFood.release(backend=self)
         # The person returns food from the same start mixture an episode starts from.
         self._place_all_food()
 

@@ -25,6 +25,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillF
 from .semantics import CircularSupport
 from .tool import BlockedStart, RackScraper
 from .transit import geom_half_extents, geoms_half_extents
+from .welded_food import CLOSED_GRIP, HELD_CENTRE_M, WeldedFood
 
 # How far behind a stance, along its own heading, a counter circulation may enter it.
 # Hand yaws about world z a placement may set the held food down with, from the grasp's.
@@ -118,6 +119,11 @@ class _FoodMotion(RackScraper):
         self.departing_touch: dict[tuple[int, int], float] = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
+    @property
+    def ignores_food(self) -> bool:
+        """Welded food handling plans and checks against the fixtures alone."""
+        return bool(self.food.backend.config.food_handling == "welded")
+
     def check_configuration(
         self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
     ) -> None:
@@ -138,7 +144,12 @@ class _FoodMotion(RackScraper):
         live_hand = shelf.site_pose()
         target_hand = shelf.site_at(base=base, arm=arm)
         transform = target_hand @ np.linalg.inv(live_hand)
-        obstacles = list(shelf.cupboard_geoms | shelf.box_geoms | set(shelf.wiper_geoms) | foods)
+        obstacles = list(
+            shelf.cupboard_geoms
+            | shelf.box_geoms
+            | set(shelf.wiper_geoms)
+            | (set() if self.ignores_food else foods)
+        )
         # Every obstacle's world box at once: a potsticker carries 41 parts, and the
         # per-pair broad phase in Python dominated placement planning.
         other_centers = scratch.geom_xpos[obstacles]
@@ -819,6 +830,9 @@ class RackFoodController:
 
     def pick(self, *, name: str) -> None:
         """Pick one observed food; verify contact before and throughout lifting."""
+        if self.backend.config.food_handling == "welded":
+            WeldedFoodSkills(food=self).pick(name=name)
+            return
         self._validate_name(name=name)
         backend, shelf = self.backend, self.shelf
         backend.sync_clock()
@@ -1114,6 +1128,9 @@ class RackFoodController:
 
     def place(self, *, name: str, destination: str) -> None:
         """Return to a free live support footprint or fail without releasing early."""
+        if self.backend.config.food_handling == "welded":
+            WeldedFoodSkills(food=self).place(name=name, destination=destination)
+            return
         self._validate_name(name=name)
         if destination not in ("rack_0", "box_0"):
             raise SkillFailed(f"Unknown food destination: {destination}")
@@ -1212,3 +1229,271 @@ class RackFoodController:
                 steps_per=5,
             )
         raise SkillFailed("Measured food lowering failed to converge; retaining grasp")
+
+
+# Welded food handling (`WeldedFood`): how far back along the approach from the hand's
+# grasp or set-down pose it hovers before the straight descent, the base headings
+# around the food a reach plans from, the hand's leans from vertical away from the base
+# (straight down first; food deep on the counter is out of a vertical hand's reach),
+# and the descent's check spacing.
+WELDED_HOVER_M = 0.08
+WELDED_HEADINGS = 12
+WELDED_LEANS_DEG = (0.0, 30.0, 45.0, 60.0)
+WELDED_DESCENT_STEP_M = 0.01
+
+
+class WeldedFoodSkills:
+    """PickFood, PlaceFoodOnTray and ReturnFoodToRack under welded food handling.
+
+    The base and arm are planned and driven for real, checked against the fixtures
+    only (`_FoodMotion.ignores_food`), to a top-down hover above the food or spot that
+    does not depend on how the food lies. The hand descends as far as the fixtures
+    allow, then the food is snapped into it and welded, or snapped onto its spot,
+    upright and at rest, and released.
+    """
+
+    def __init__(self, *, food: RackFoodController) -> None:
+        self.food = food
+        self.backend = food.backend
+        self.shelf = food.shelf
+        self.motion = food.motion
+
+    def _descent(self, *, payload: dict[str, Any]) -> Any:
+        """The candidate's contact check: the hover is reachable, and the vertical
+        descent is followed as far as the fixtures allow (`payload["reached"]`)."""
+        hover, down = payload["hover"], payload["down"]
+
+        def contact(stance: np.ndarray, seed: np.ndarray) -> str | None:  # noqa: PLR0917 -- ReachCandidate callback
+            try:
+                arm = self.food._checked_arm(pose=hover, base=stance, seed=seed)  # noqa: SLF001
+            except SkillFailed as exc:
+                return str(exc)[:70]
+            # Stopped short of the fixtures, the descent ends one check before the
+            # last clear one: tracking error eats a few millimetres of a near miss.
+            clear = [hover]
+            for pose in Frames.line(start=hover, end=down, step=WELDED_DESCENT_STEP_M):
+                try:
+                    following = self.food._checked_arm(pose=pose, base=stance, seed=arm)  # noqa: SLF001
+                    self.motion.check_arm_segment(
+                        start=arm, target=following, base=stance, holding=False
+                    )
+                except SkillFailed:
+                    clear = clear[:-1] or [hover]
+                    break
+                arm = following
+                clear.append(pose)
+            payload["reached"] = clear[-1]
+            return None
+
+        return contact
+
+    def _plan(
+        self,
+        *,
+        targets: list[tuple[np.ndarray, np.ndarray, np.ndarray, Any]],
+        held_name: str | None,
+        carry_height: float,
+        what: str,
+        refusal: str,
+    ) -> tuple[Any, dict[str, Any]]:
+        """Plan a reach to the first reachable (centre, down pose, base forward, extra)
+        target, from stances behind the centre along the forward direction."""
+        from .planning import PlanningRefused, ReachCandidate, ScraperMotionPlanner
+
+        def candidates() -> Generator[Any, None, None]:
+            for centre, down, forward, extra in targets:
+                hover = down.copy()
+                hover[:3, 3] -= WELDED_HOVER_M * down[:3, 2]
+                payload = {"hover": hover, "down": down, "extra": extra}
+                contact = self._descent(payload=payload)
+                for stance in self.food._stances(  # noqa: SLF001
+                    centre=centre, approach=forward, hover=hover[:3, 3]
+                ):
+                    yield ReachCandidate(
+                        stance=stance,
+                        position=hover[:3, 3],
+                        rotation=hover[:3, :3],
+                        contact=contact,
+                        payload=payload,
+                    )
+
+        try:
+            plan, chosen = ScraperMotionPlanner.plan_reach(
+                tool=self.motion,
+                candidates=candidates(),
+                held_name=held_name,
+                carry_height=carry_height,
+                deadline_s=PLAN_DEADLINE_S,
+                what=what,
+                tuck_first=True,
+            )
+        except PlanningRefused as exc:
+            raise SkillFailed(f"{refusal}: {exc}") from exc
+        payload: dict[str, Any] = chosen.payload
+        return plan, payload
+
+    def _headings(self, *, centre: np.ndarray) -> list[float]:
+        """Every base heading toward `centre`, the one from where the base stands first."""
+        base = self.shelf.data.qpos[self.shelf.ba]
+        toward = float(np.arctan2(centre[1] - base[1], centre[0] - base[0]))
+        turns = [
+            (index * 2 * np.pi / WELDED_HEADINGS + np.pi) % (2 * np.pi) - np.pi
+            for index in range(WELDED_HEADINGS)
+        ]
+        return [toward + turn for turn in sorted(turns, key=lambda turn: round(abs(turn), 6))]
+
+    def _plan_pick(self, *, name: str) -> tuple[Any, dict[str, Any]]:
+        centre = self.food._pose(name=name)[:3, 3]  # noqa: SLF001
+        targets = []
+        for heading in self._headings(centre=centre):
+            forward = np.array([np.cos(heading), np.sin(heading), 0.0])
+            for lean in WELDED_LEANS_DEG:
+                rotation = WeldedFood.leaned(heading=heading, lean_deg=lean)
+                position = centre - HELD_CENTRE_M * rotation[:, 2]
+                targets.append((
+                    centre,
+                    Frames.pose(rotation=rotation, position=position),
+                    forward,
+                    None,
+                ))
+        return self._plan(
+            targets=targets,
+            held_name=None,
+            carry_height=0.0,
+            what="the food pre-grasp",
+            # PickPlannable's planning refusal (`pick_plannable.PLANNING_PREFIXES`).
+            refusal="No collision-free food grasp",
+        )
+
+    def pick(self, *, name: str) -> None:
+        food, backend, shelf, motion = self.food, self.backend, self.shelf, self.motion
+        food._validate_name(name=name)  # noqa: SLF001
+        backend.sync_clock()
+        if shelf.in_hand is not None or any(
+            backend.held(name=other) for other in ("wiper_0", *backend.cube_names)
+        ):
+            raise SkillFailed("PickFood requires an empty hand")
+        if not backend.food_available(name=name):
+            raise SkillFailed("Food has no observed pickable support")
+        food.carried = None
+        food.target_geoms = backend.body_geoms(name=name)
+
+        def open_hand() -> None:
+            if shelf.grip > 0.0:
+                shelf.grip = 0.0
+                shelf.hold(count=25, label="food_pick_escape_open")
+
+        with food.controllers.feedback():
+            with motion.departing_from_contacts():
+                plan, payload = BlockedStart.plan(
+                    tool=motion,
+                    make_plan=lambda: self._plan_pick(name=name),
+                    held_name=None,
+                    holding=False,
+                    label="food_pick_escape",
+                    distance=PICK_ESCAPE_M,
+                    prepare=open_hand,
+                )
+                food._limit_grip(newtons=None)  # noqa: SLF001
+                shelf.grip = 0.0
+                shelf.hold(count=10, label="food_open")
+                food._follow(plan=plan, pose=payload["hover"], label="food")  # noqa: SLF001
+            reached, hover = payload["reached"], payload["hover"]
+            motion.line(
+                position=reached[:3, 3],
+                rotation=reached[:3, :3],
+                label="food_approach",
+                holding=False,
+                step=0.005,
+            )
+            shelf.grip = CLOSED_GRIP
+            shelf.hold(count=30, label="food_close")
+            WeldedFood.snap_into_hand(backend=backend, shelf=shelf, name=name)
+            food.controllers.held_food = shelf.held_cube = food.carried = name
+            # Closing swings the pads' tips down; one can come to rest on a wire or the
+            # plate, a contact the lift may keep but not deepen, as the physical lift.
+            with motion.departing_from_contacts():
+                motion.depart(label="food_lift_depart")
+                motion.line(
+                    position=hover[:3, 3],
+                    rotation=hover[:3, :3],
+                    label="food_lift",
+                    holding=False,
+                    step=0.005,
+                    steps_per=5,
+                )
+            food._require_held(name=name)  # noqa: SLF001
+
+    def _plan_place(self, *, name: str, destination: str) -> tuple[Any, dict[str, Any]]:
+        food, shelf = self.food, self.shelf
+        here = shelf.site_pose()
+        offset = here[:3, 3] - food._pose(name=name)[:3, 3]  # noqa: SLF001
+        targets = []
+        for spot, turns in food._placements(  # noqa: SLF001
+            name=name, destination=destination, rotation=here[:3, :3]
+        ):
+            base = shelf.data.qpos[shelf.ba]
+            toward = np.r_[spot[:2] - base[:2], 0.0]
+            for turn in turns:
+                down = Frames.pose(rotation=turn @ here[:3, :3], position=spot + turn @ offset)
+                approach = np.r_[down[:2, 2], 0.0]
+                forward = approach if np.linalg.norm(approach) > 1e-6 else turn @ toward
+                targets.append((spot, down, forward, spot))
+        return self._plan(
+            targets=targets,
+            held_name=name,
+            carry_height=float(here[2, 3] + CARRY_RAISE_M),
+            what="the food pre-placement",
+            refusal="No safe food placement",
+        )
+
+    def place(self, *, name: str, destination: str) -> None:
+        food, backend, shelf, motion = self.food, self.backend, self.shelf, self.motion
+        food._validate_name(name=name)  # noqa: SLF001
+        if destination not in ("rack_0", "box_0"):
+            raise SkillFailed(f"Unknown food destination: {destination}")
+        food._require_held(name=name)  # noqa: SLF001
+        food.carried = name
+        with food.controllers.feedback():
+            with motion.departing_from_contacts():
+                plan, payload = BlockedStart.plan(
+                    tool=motion,
+                    make_plan=lambda: self._plan_place(name=name, destination=destination),
+                    held_name=name,
+                    holding=False,
+                    label="food_place_escape",
+                    distance=PLACE_ESCAPE_M,
+                )
+                food._follow(plan=plan, pose=payload["hover"], label="food_place")  # noqa: SLF001
+            reached, hover, spot = payload["reached"], payload["hover"], payload["extra"]
+            motion.line(
+                position=reached[:3, 3],
+                rotation=reached[:3, :3],
+                label="food_lower",
+                holding=False,
+                step=0.005,
+                steps_per=5,
+            )
+            food._require_held(name=name)  # noqa: SLF001
+            WeldedFood.set_down(
+                backend=backend,
+                name=name,
+                xy=spot[:2],
+                top_z=backend.support(name=destination).top_z,
+            )
+            food.carried = None
+            food.controllers.held_food = shelf.held_cube = None
+            shelf.grip = 0.0
+            food._limit_grip(newtons=None)  # noqa: SLF001
+            shelf.hold(count=20, label="food_release")
+            motion.line(
+                position=hover[:3, 3],
+                rotation=hover[:3, :3],
+                label="food_retreat",
+                holding=False,
+                step=0.005,
+            )
+            shelf.hold(count=20, label="food_rest")
+            expected = "OnRack" if destination == "rack_0" else "OnTray"
+            if backend.location(name=name) != expected:
+                raise SkillFailed("Food did not settle at the requested destination")
