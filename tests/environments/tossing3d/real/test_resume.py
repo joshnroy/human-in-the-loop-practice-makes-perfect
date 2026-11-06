@@ -286,4 +286,5 @@ def test_every_checkpoint_carries_the_zero_step_streak(
     Cli.main(argv=_argv(output=tmp_path / "run"))
     assert payloads
     assert all(isinstance(payload["zero_step_streak"], int) for payload in payloads)
+    assert all(isinstance(payload["zero_step_call_streak"], int) for payload in payloads)
     del room
