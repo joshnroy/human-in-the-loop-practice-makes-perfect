@@ -40,6 +40,10 @@ REGRASP_ATTEMPTS = 2
 # How much a pad-fixture contact present when a lift starts may shrink (measured-state
 # jitter) and still count as the same contact the lift is leaving.
 DEPARTURE_TOLERANCE = 1e-4
+# How far a hand starting with a pad against a fixture first moves to leave it, and how
+# finely that move is checked: the guard checks each step at five fractions.
+DEPART_M = 0.005
+DEPART_SAMPLES = 21
 # Planned food reaches: stances behind the food along the approach, within the arm's
 # reach of the hover from its mount, and how long the search may take.
 STANCE_DISTANCES_M = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90)
@@ -340,6 +344,78 @@ class _FoodMotion(RackScraper):
             yield
         finally:
             self.departing, self.departing_food, self.departing_touch = {}, {}, {}
+
+    def depart(self, *, label: str) -> None:
+        """Leave the departing pad-fixture contacts along a short line on which none deepens.
+
+        A pad resting against the welded plate's thin, tilted rim box is not left by
+        just any short move: straight up, or back along the approach, first presses
+        the pad's corner up to 0.24 mm deeper before clearing the rim, and the guard
+        rejects the line. Each candidate direction, straight up first, is checked as
+        the execution guard checks a step (joint-interpolated), and the first that
+        never deepens a starting contact and ends clear of every one is taken. With no
+        such contact this moves nothing.
+        """
+        if not self.departing:
+            return
+        shelf = self.shelf
+        here = shelf.site_pose()
+        base = shelf.data.qpos[shelf.ba].copy()
+        arm = shelf.data.qpos[shelf.qa].copy()
+        for direction in self._departure_directions():
+            target = here[:3, 3] + DEPART_M * direction
+            if self._departs(base=base, arm=arm, position=target, rotation=here[:3, :3]):
+                self.line(
+                    position=target,
+                    rotation=here[:3, :3],
+                    label=label,
+                    holding=False,
+                    step=0.005,
+                    steps_per=5,
+                )
+                return
+        names = sorted(
+            f"{shelf.model.geom(fixture).name}/{shelf.model.geom(pad).name}"
+            for pad, fixture in self.departing
+        )
+        raise SkillFailed(f"{label}: no departure from {names} leaves them without deepening")
+
+    @staticmethod
+    def _departure_directions() -> list[np.ndarray]:
+        """Straight up, then up and away along each of eight headings, then level."""
+        headings = [
+            np.array([np.cos(angle), np.sin(angle), 0.0])
+            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
+        ]
+        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
+        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
+
+    def _departs(
+        self, *, base: np.ndarray, arm: np.ndarray, position: np.ndarray, rotation: np.ndarray
+    ) -> bool:
+        """Whether the joint-interpolated move to `position` keeps every starting
+        pad-fixture contact no deeper than it began, adds none, and ends clear."""
+        shelf = self.shelf
+        target, _ = shelf.ik(
+            position=position, rotation=rotation, base=base, holding=False, attempts=4, seed=arm
+        )
+        if not np.isfinite(target).all():
+            return False
+        reached = shelf.site_at(base=base, arm=target)
+        if np.linalg.norm(reached[:3, 3] - position) > 0.001:
+            return False
+        delta = (target - arm + np.pi) % (2 * np.pi) - np.pi
+        for fraction in np.linspace(0.0, 1.0, DEPART_SAMPLES):
+            shelf.site_at(base=base, arm=arm + fraction * delta)
+            shelf.mujoco.mj_collision(shelf.model, shelf.ik_data)
+            contacts = self.pad_fixture_contacts()
+            for pair, distance in contacts.items():
+                start = self.departing.get(pair)
+                if start is None or distance < start - DEPARTURE_TOLERANCE:
+                    return False
+            if fraction == 1.0 and contacts:
+                return False
+        return True
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:
@@ -804,6 +880,8 @@ class RackFoodController:
             self._require_held(name=name)
             self.controllers.held_food = shelf.held_cube = self.carried = name
             with self.motion.departing_from_contacts():
+                # A grasp closed beside the plate's rim can leave a pad touching it.
+                self.motion.depart(label="food_lift_depart")
                 self.motion.line(
                     position=pre[:3, 3],
                     rotation=pre[:3, :3],
@@ -935,8 +1013,10 @@ class RackFoodController:
             # contact may persist, not deepen, until the hand is over the target.
             with self.motion.departing_from_contacts():
                 if self.motion.departing or self.motion.departing_food:
-                    # Leave the start contact first, straight up, as the lift does: the
-                    # planner keeps a margin from everything, so it cannot start there.
+                    # Leave the start contact first, then rise straight up, as the lift
+                    # does: the planner keeps a margin from everything, so it cannot
+                    # start there.
+                    self.motion.depart(label="food_place_depart")
                     here = shelf.site_pose()
                     self.motion.line(
                         position=here[:3, 3] + [0.0, 0.0, PLACE_ESCAPE_M],
@@ -965,6 +1045,7 @@ class RackFoodController:
             self.target_geoms = self.backend.body_geoms(name=name)
             # Set down beside a served dumpling, the open hand can rest against it.
             with self.motion.departing_from_contacts():
+                self.motion.depart(label="food_retreat_depart")
                 self.motion.line(
                     position=pre[:3, 3],
                     rotation=pre[:3, :3],
