@@ -136,6 +136,10 @@ class KitchenLaunch:
             "--reproduce-predicators-random-when-stranded",
             "--reproduce-predicators-seen-task-order",
             "--no-reproduce-predicators-skip-perfect",
+            # Every skill, robot and human, starts believed to work 0.8 of the time,
+            # worth five attempts: Beta(4, 1). Launch 16949734's Beta(1, 3) kept Curtis
+            # from ever trying the robot's own recovery.
+            "--competence-prior-mean", "0.8", "--competence-prior-strength", "5",
         ]  # fmt: skip
         if stage in ONE_SHOT_STAGES:
             common += ["--evaluation-max-pour-attempts", "1"]
@@ -159,6 +163,8 @@ class KitchenLaunch:
             "--pomdp-inference-engine", "grid", "--pomdp-num-particles", "1024",
             "--pomdp-observation-probability-weight", "0.01" if arm == "curtis" else "0",
             "--pomdp-solver", "determinized_astar" if arm == "curtis" else "expectimax",
+            # An untried skill, the human reset included, costs 500 ticks until it runs.
+            "--skill-cost-prior-steps", "500",
         ]  # fmt: skip
         if arm == "curtis":
             planner += [
