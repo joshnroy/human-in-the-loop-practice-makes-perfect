@@ -52,6 +52,10 @@ PLAN_DEADLINE_S = 60.0
 CARRY_RAISE_M = 0.10
 # A held-food skill starting in contact first rises this far before it plans.
 PLACE_ESCAPE_M = 0.04
+# A food lost from the hand is waited for, the arm still, for at most this many control
+# steps, until no food moves faster than this or touches the robot.
+SETTLE_LOST_FOOD_STEPS = 60
+SETTLED_FOOD_M_S = 0.02
 
 
 class CarriedGeom:
@@ -299,6 +303,43 @@ class _FoodMotion(RackScraper):
         if self.food.carried is not None:
             self.food._require_held(name=self.food.carried)
 
+    def settle_lost_food(self) -> None:
+        """Hold the arm still, the hand as it is, until no food is moving or touching
+        the robot, for at most ``SETTLE_LOST_FOOD_STEPS`` control steps.
+
+        Physics advances only inside a skill. A PickFood that lost its dumpling
+        during the lift used to return the moment it noticed, the dumpling falling
+        beside the closed hand 15 cm above the counter, and every later plan saw it
+        hang there: Della c6ed1a6 EES seed 0 refused PickScraper at 0 steps 10 times
+        in a row, "no stance reaches the scraper". The hand is not opened: a failed
+        food skill never releases. With no food moving or touching the robot, as when
+        a skill refuses before it moves, this takes no step.
+        """
+        shelf = self.shelf
+        arm = shelf.data.qpos[shelf.qa].copy()
+        for _ in range(SETTLE_LOST_FOOD_STEPS):
+            if not self.food_unsettled():
+                return
+            shelf.step(arm=arm, label="food_lost_settle")
+
+    def food_unsettled(self) -> bool:
+        """Whether any food moves faster than ``SETTLED_FOOD_M_S`` or touches the robot."""
+        backend, shelf = self.food.backend, self.shelf
+        model, data = shelf.model, shelf.data
+        foods: set[int] = set()
+        for name in backend.cube_names:
+            dof = model.jnt_dofadr[model.joint(f"{name}_joint").id]
+            if float(np.linalg.norm(data.qvel[dof : dof + 3])) > SETTLED_FOOD_M_S:
+                return True
+            foods |= backend.body_geoms(name=name)
+        for contact in data.contact[: data.ncon]:
+            a, b = int(contact.geom1), int(contact.geom2)
+            if contact.dist <= 0 and (
+                (a in shelf.robot_geoms and b in foods) or (b in shelf.robot_geoms and a in foods)
+            ):
+                return True
+        return False
+
     def check_arm_clearance(self, *, base: np.ndarray, arm: np.ndarray) -> None:
         """Reserve five millimeters for tracking error on non-gripper robot links."""
         shelf = self.shelf
@@ -364,6 +405,7 @@ class RackFoodController:
             self.shelf.held_cube = None
             self.carried = None
             self._limit_grip(newtons=None)
+            self.motion.settle_lost_food()
             raise SkillFailed(f"Food {name} is not held by bilateral pad contact")
 
     def restore_gripper_force(self) -> None:
