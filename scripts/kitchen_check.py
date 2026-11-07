@@ -205,10 +205,11 @@ def check(
                 ):
                     raise ValueError("Individual cold recovery failed")
             before = c.data.qpos.copy()
-            ok = env.reset_movables(destination=HUMAN_RESET)
+            env.reset_movables(destination=HUMAN_RESET)
             rows.append(dict(env.last_info))
             capture()
-            if not ok:
+            # True means attempted; whether it worked is `last_info["success"]`.
+            if not env.last_info["success"]:
                 raise ValueError("Human bulk reset failed")
             c.pause(phase="cold practice reset complete", seconds=2)
         try:
