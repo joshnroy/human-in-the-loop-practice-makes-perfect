@@ -11,6 +11,7 @@ import numpy as np
 from pydantic import Field
 from scipy.spatial.transform import Rotation
 
+from hitl_pmp.core.control_steps import SimulatorDiverged
 from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv, PotstickerScene
 
@@ -103,10 +104,63 @@ class KitchenScene(PotstickerScene):
         super().respawn_payload_in_pitcher()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
+        _, data = self._model_and_data()
+        time, warnings = float(data.time), self.instability_warnings()
         result = super().step(action)
+        self.scene_steps += 1
+        self.check_simulator_stable(time=time, warnings=warnings)
         # Observation only: recording reads qpos and never changes the trajectory.
         self.record_payload_rest()
         return result
+
+    # The warnings MuJoCo's guard raises just before it calls `mj_resetData`: every
+    # body to `qpos0`, every equality (the skillet weld) to its default, time to 0.
+    # The simulation then carries on from that wiped scene, which no skill caused.
+    INSTABILITY_WARNINGS: ClassVar[tuple[str, ...]] = (
+        "mjWARN_BADQPOS",
+        "mjWARN_BADQVEL",
+        "mjWARN_BADQACC",
+    )
+    scene_steps: int = 0
+
+    def instability_warnings(self) -> tuple[int, ...]:
+        import mujoco
+
+        _, data = self._model_and_data()
+        return tuple(
+            int(data.warning[int(getattr(mujoco.mjtWarning, name))].number)
+            for name in self.INSTABILITY_WARNINGS
+        )
+
+    def check_simulator_stable(self, *, time: float, warnings: tuple[int, ...]) -> None:
+        """Raise `SimulatorDiverged` if the guard fired during the step from `time`.
+
+        Read-only. `mj_resetData` clears the warning counters before the guard counts
+        its own warning again, so a count that changed at all, or time that went
+        backwards, means it fired."""
+        import mujoco
+
+        model, data = self._model_and_data()
+        after = self.instability_warnings()
+        if after == warnings and float(data.time) >= time:
+            return
+        changed = [i for i, (a, b) in enumerate(zip(after, warnings, strict=True)) if a != b]
+        name = self.INSTABILITY_WARNINGS[changed[-1] if changed else -1]
+        index = int(data.warning[int(getattr(mujoco.mjtWarning, name))].lastinfo)
+        if name == "mjWARN_BADQPOS":
+            # `lastinfo` is a qpos address; the joint is the last one starting at or before it.
+            joint = int(np.searchsorted(model.jnt_qposadr, index, side="right")) - 1
+            body_id = int(model.jnt_bodyid[joint]) if joint >= 0 else -1
+        else:
+            body_id = int(model.dof_bodyid[index]) if 0 <= index < model.nv else -1
+        raise SimulatorDiverged(
+            time=time,
+            time_after_reset=float(data.time),
+            warning=name,
+            index=index,
+            body=model.body(body_id).name if body_id >= 0 else None,
+            scene_step=self.scene_steps,
+        )
 
     def payload_positions(self) -> np.ndarray:
         # qpos, not xpos: mj_step leaves derived poses at the preceding instant.
