@@ -240,17 +240,6 @@ class KitchenEnvironment(FrozenPourEnvironment):
             self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
         return bool(self._human_rng.random() < self.human_reset_success_probability)
 
-    # A fixed tag mixed into the human's seed, so its stream is not the one a method
-    # seeded with the same run seed draws from.
-    HUMAN_RNG_STREAM: ClassVar[int] = 0x68756D616E
-
-    def human_reset_succeeds(self) -> bool:
-        """One draw of the human's own seeded generator: True with probability p.
-        Drawn on every attempt, so p = 1 consumes draws but never fails."""
-        if self._human_rng is None:
-            self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
-        return bool(self._human_rng.random() < self.human_reset_success_probability)
-
     def reset_from_any_state(self) -> bool:
         """The human reset from a state the food-only pour-back does not cover (Josh,
         2026-11-06): the human takes the jug or a dumpling from the hand and stands the
