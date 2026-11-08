@@ -99,6 +99,10 @@ _RUN_OR_SKIP: Final[dict[str, bool]] = {"y": True, "yes": True, "s": False, "ski
 CUBE_HALF_SIZE_M = 0.025
 
 _UNKNOWN = math.nan
+# How far a placed bin may sit from its spot before the person is asked to move it:
+# the live bin overlay calls 2 cm and 3 deg in place; a toss stand moves with the bin.
+BIN_PLACEMENT_TOLERANCE_M: Final = 0.05
+BIN_PLACEMENT_TOLERANCE_RAD: Final = math.radians(10.0)
 
 
 # One sim tick of the tossing env's controllers, in seconds (10 Hz): a real skill is
@@ -285,6 +289,13 @@ class TerminalPerson(BaseModel):
         """After y. A real person has already done it; a fake one does it here."""
         del request
 
+    def move_bin(self, *, request: PlacementRequest, problem: str) -> None:
+        """The cameras saw the bin off its spot: say how far, and wait for a y once it
+        is moved (n ends the run)."""
+        self.write(problem)
+        self._yes(question="Moved the bin onto its spot?", declined="bin placement")
+        self.placed(request=request)
+
     def wants_evaluation(self, *, label: str) -> bool:
         """Before an evaluation: y runs it, s skips it and practice carries on (Josh,
         2026-11-09). Each evaluation is ten scenes the person sets up."""
@@ -470,20 +481,49 @@ class RealTossingBackend(BaseModel):
     ) -> Tossing3DObservation:
         """`cube` is a restore's exact spot; otherwise the cube goes anywhere on the
         robot's side (nominally `CUBE_SPOT`)."""
-        self.person.place(
-            request=PlacementRequest(
-                kind=kind,
-                destination=destination,
-                cube=CUBE_SPOT if cube is None else cube,
-                bin=BIN_SPOTS[destination],
-                gripper_note=gripper_note,
-                cube_exact=cube is not None,
-            )
+        request = PlacementRequest(
+            kind=kind,
+            destination=destination,
+            cube=CUBE_SPOT if cube is None else cube,
+            bin=BIN_SPOTS[destination],
+            gripper_note=gripper_note,
+            cube_exact=cube is not None,
         )
+        self.person.place(request=request)
         self._seen = None
         observation = self.observe()
+        while (problem := self._bin_placement_problem(spot=request.bin)) is not None:
+            self.person.move_bin(request=request, problem=problem)
+            self._seen = None
+            observation = self.observe()
         self._say(line="planning the next skill ...")
         return observation
+
+    def _bin_placement_problem(self, *, spot: BinSpot) -> str | None:
+        """How far the bin the cameras just saw is from `spot`, in words, or None when it
+        is within `BIN_PLACEMENT_TOLERANCE_M` and `BIN_PLACEMENT_TOLERANCE_RAD` (or not
+        seen: the skills report a missing bin themselves). A bin off its spot moves every
+        toss stand with it, and a stand past the tape is refused only at the first toss."""
+        assert self._last is not None
+        seen = self._last.reply.bin
+        if seen is None:
+            return None
+        frame = self.frame
+        at_x, at_y = frame.to_domain(x=seen.x, y=seen.y)
+        to_x, to_y = frame.to_domain(x=spot.center[0], y=spot.center[1])
+        distance = math.hypot(at_x - to_x, at_y - to_y)
+        # The bin is symmetric end for end: a yaw is only defined modulo a half turn.
+        turn = math.remainder(seen.yaw - spot.yaw, math.pi)
+        if distance <= BIN_PLACEMENT_TOLERANCE_M and abs(turn) <= BIN_PLACEMENT_TOLERANCE_RAD:
+            return None
+        across = abs(at_x) - abs(to_x)
+        toward = "toward" if across > 0 else "away from"
+        return (
+            f"the bin is {100 * distance:.0f} cm from its spot: move it "
+            f"{100 * abs(across):.0f} cm {toward} the tape and "
+            f"{100 * abs(at_y - to_y):.0f} cm along it, and turn it "
+            f"{math.degrees(abs(turn)):.0f} deg (bin overlay: tidybot-final/bin-placement)"
+        )
 
     def drain_measured_seconds(self) -> float | None:
         """The wall-clock seconds of the last robot skill or timed human reset, once
