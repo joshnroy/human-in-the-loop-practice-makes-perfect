@@ -242,7 +242,8 @@ def test_wall_clock_costs_are_what_the_planner_observes(
     """`--wall-clock-cost-per-second r`: each robot skill's observed cost is r times its
     measured seconds (the camera look after it excluded), and a human reset's is r times
     the person's timed seconds, weighted by the costs file's `human_weight`. The step
-    budget still counts the sim's ticks."""
+    budget counts the same seconds as sim ticks of 0.1 s, so a real session's length is
+    the robot time a sim session of that many steps simulates."""
     seconds = iter(float(n) for n in range(1, 10_000))
     monkeypatch.setattr(WallClock, "now", staticmethod(lambda: next(seconds)))
     output = tmp_path / "run"
@@ -258,7 +259,7 @@ def test_wall_clock_costs_are_what_the_planner_observes(
     robot = [e for e in events if e["event"] == "robot" and e["end_step"] > e["start_step"]]
     assert robot and all(e["seconds"] > 0 for e in robot)
     assert all(e["observed_cost"] == pytest.approx(0.1 * e["seconds"]) for e in robot)
-    assert all(e["end_step"] - e["start_step"] in (1, 90, 119, 680) for e in robot)
+    assert all(e["end_step"] - e["start_step"] == max(1, round(e["seconds"] / 0.1)) for e in robot)
     humans = [e for e in events if e["event"] == "human"]
     weight = json.loads((output / "practice_costs.json").read_text())["human_weight"]
     assert all(e["cost"] == pytest.approx(weight * 0.1 * e["seconds"]) for e in humans)

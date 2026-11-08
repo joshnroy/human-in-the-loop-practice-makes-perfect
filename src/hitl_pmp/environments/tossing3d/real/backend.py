@@ -23,12 +23,15 @@ The side atoms (`CubeOnRobotSide`, `BinOnRobotSide` and their opposites) and the
 are the sim's own predicates over the flat state. Anything not seen is NaN, never a guess, and no
 predicate holds of a NaN.
 
-## One skill is one robot call, charged its average sim tick count
+## One skill is one robot call, charged its sim ticks
 
 `before` runs once before the robot moves (an exhausted budget stops the skill from
-starting) and `after` once per charged step when it returns (`RealSkillStepCosts`). A
-refused skill -- outside the parameter set, or refused by the robot side, which owns
-every geometry and safety check -- moved nothing and is charged nothing.
+starting) and `after` once per charged step when it returns. With `tick_seconds` (the
+CLI's `--wall-clock-cost-per-second`) a skill that moved is charged its own measured
+seconds in sim ticks, held, missed or aborted alike, as a sim skill is charged the ticks
+it ran; without it, a fixed average (`RealSkillStepCosts`). A refused skill -- outside
+the parameter set, or refused by the robot side, which owns every geometry and safety
+check -- moved nothing and is charged nothing.
 
 ## A human reset is a prompt
 
@@ -352,6 +355,9 @@ class RealTossingBackend(BaseModel):
     parameters: TossParameterSet
     frame: RealRoomFrame = ROOM_FRAME
     step_costs: RealSkillStepCosts = RealSkillStepCosts()
+    # The length of one sim tick in seconds: when set, a skill that moved is charged its
+    # measured seconds / `tick_seconds` steps instead of `step_costs`.
+    tick_seconds: float | None = Field(default=None, gt=0)
     # The person says y at the terminal before the robot drives home at a task's start
     # (each placement is a y too); with `confirm_each_skill`, also before every skill.
     confirm_start: bool = False
@@ -683,6 +689,10 @@ class RealTossingBackend(BaseModel):
         outcome = "ok" if run.error is None else run.error
         # The skill's own time: the look that follows is not part of it.
         self._skill_seconds = WallClock.now() - started
+        if self.tick_seconds is not None and run.steps > 0:
+            run = run.model_copy(
+                update={"steps": max(1, round(self._skill_seconds / self.tick_seconds))}
+            )
         self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
         self._seen = None
         self.observe()

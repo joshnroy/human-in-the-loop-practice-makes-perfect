@@ -36,6 +36,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
     tossing_robot: TossingRobot
     person: Any
     step_costs: RealSkillStepCosts = RealSkillStepCosts()
+    tick_seconds: float | None = None
     toss_parameters: TossParameterSet | None = REAL_TOSS_PARAMETERS
     # Evaluation's episodes each open with `reset_to_task`, which asks for the scene, so
     # its `hard_reset` would ask for the same scene once more for nothing.
@@ -51,6 +52,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             person=self.person,
             parameters=self.toss_parameters or REAL_TOSS_PARAMETERS,
             step_costs=self.step_costs,
+            tick_seconds=self.tick_seconds,
             confirm_start=self.confirm_start,
             confirm_each_skill=self.confirm_each_skill,
         )
