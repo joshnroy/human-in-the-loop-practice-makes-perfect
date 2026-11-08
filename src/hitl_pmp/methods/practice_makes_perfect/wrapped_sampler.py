@@ -523,7 +523,12 @@ class LearnedSkillSampler(BaseModel):
             # competence *should* fall, and suppressing the update here would pin a
             # never-successful skill at its prior forever.
             index = int(self._rng.integers(0, len(candidates)))
-            return SamplerChoice(params=candidates[index], was_random=False, was_informed=False)
+            return SamplerChoice(
+                params=candidates[index],
+                was_random=False,
+                was_informed=False,
+                score=SamplerChoice.finite_score(score=scores[index]),
+            )
         # Deviation 7: break the remaining ties uniformly rather than at the lowest
         # index, which would be the caller's draw order.
         index = int(best[self._rng.integers(0, len(best))])
@@ -532,7 +537,10 @@ class LearnedSkillSampler(BaseModel):
             index = int(self._rng.integers(0, len(candidates)))
             was_random = True
         return SamplerChoice(
-            params=candidates[index], was_random=was_random, was_informed=not was_random
+            params=candidates[index],
+            was_random=was_random,
+            was_informed=not was_random,
+            score=SamplerChoice.finite_score(score=scores[index]),
         )
 
 
@@ -567,6 +575,14 @@ class SamplerChoice(BaseModel):
     params: np.ndarray
     was_random: bool
     was_informed: bool
+    # The classifier's score for the chosen candidate, already computed to rank the
+    # batch. A diagnostic only: nothing downstream of `sample` reads it.
+    score: float | None = None
+
+    @staticmethod
+    def finite_score(*, score: float) -> float | None:
+        """`None` for a NaN score, which a JSON log cannot carry as a number."""
+        return float(score) if np.isfinite(score) else None
 
     @property
     def consultation(self) -> SamplerConsultation:
