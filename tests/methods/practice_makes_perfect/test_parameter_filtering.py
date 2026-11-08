@@ -416,3 +416,100 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     assert set(caught.value.diagnostics.rejection_reasons) == {NO_FEASIBLE_TOSS_DIRECTION_REJECTION}
     TossDirectionSelector.clear_plan_cache()
     assert env._backend is None  # noqa: SLF001 (no live training environment read)
+
+
+@pytest.mark.parametrize(
+    "explore,discriminating,was_random,was_informed",
+    [
+        (True, True, True, False),
+        (False, True, False, True),
+        (False, False, False, False),
+    ],
+)
+def test_pomdp_parameter_sampling_event_records_how_the_sampler_chose(
+    *, monkeypatch, tmp_path, explore, discriminating, was_random, was_informed
+) -> None:
+    """A real run could only infer which throws were epsilon-greedy exploration: the
+    `parameter_sampling` event carried the batch but not the branch that picked from it."""
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env),
+        num_candidates=2,
+        max_proposals_per_candidate=2,
+        exploration_epsilon=1.0,
+        pomdp_num_particles=16,
+        decision_log=tmp_path / "decisions.jsonl",
+    )
+    ground = GroundSkill(
+        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        objects=(env.robot, env.bin, env.cube, env.barrier),
+    )
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    monkeypatch.setattr(
+        Tossing3DSkillProvider, "parameter_rejection_reason", lambda self, **kwargs: None
+    )
+    monkeypatch.setattr(
+        TossDirectionSelector,
+        "select_for_state",
+        lambda **kwargs: TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        ),
+    )
+    scores = [0.25, 0.75] if discriminating else [0.5, 0.5]
+    monkeypatch.setattr(LearnedSkillSampler, "score_inputs", lambda self, *, sampler_inputs: scores)
+    _, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=explore)
+    assert record is not None
+    events = [json.loads(line) for line in (tmp_path / "decisions.jsonl").read_text().splitlines()]
+    (sampling,) = [event for event in events if event["event"] == "parameter_sampling"]
+    assert sampling["explore"] is explore
+    assert sampling["was_random"] is was_random is record.was_random_exploration
+    assert sampling["was_informed"] is was_informed is record.was_informed_choice
+    if discriminating and not explore:
+        assert sampling["chosen_score"] == 0.75
+    else:
+        assert sampling["chosen_score"] in scores
+
+
+def test_pomdp_parameter_sampling_event_without_a_choice_leaves_the_fields_null(
+    *, monkeypatch, tmp_path
+) -> None:
+    """An empty batch never reaches a sampler, so there is no branch to report."""
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env),
+        num_candidates=2,
+        max_proposals_per_candidate=2,
+        pomdp_num_particles=16,
+        decision_log=tmp_path / "decisions.jsonl",
+    )
+    ground = GroundSkill(
+        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        objects=(env.robot, env.bin, env.cube, env.barrier),
+    )
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    monkeypatch.setattr(
+        Tossing3DSkillProvider, "parameter_rejection_reason", lambda self, **kwargs: "blocked"
+    )
+    monkeypatch.setattr(
+        TossDirectionSelector,
+        "select_for_state",
+        lambda **kwargs: TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        ),
+    )
+    with pytest.raises(NoFeasibleParametersError):
+        method.execute_ground_skill(ground_skill=ground, state=state, explore=True)
+    events = [json.loads(line) for line in (tmp_path / "decisions.jsonl").read_text().splitlines()]
+    (sampling,) = [event for event in events if event["event"] == "parameter_sampling"]
+    assert sampling["accepted_candidates"] == 0
+    assert sampling["was_random"] is None
+    assert sampling["was_informed"] is None
+    assert sampling["chosen_score"] is None

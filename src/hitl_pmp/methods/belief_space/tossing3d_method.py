@@ -24,6 +24,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     STOP_SKILL,
     EesMethod,
 )
+from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import SamplerChoice
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
@@ -557,15 +558,19 @@ class Tossing3DPomdpMethod(EesMethod):
         ground_skill: GroundSkill,
         explore: bool,
         diagnostics: ParameterSamplingDiagnostics,
+        choice: SamplerChoice | None = None,
     ) -> None:
         super().record_parameter_sampling(
-            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
+            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics, choice=choice
         )
         self.record_diagnostic(
             event="parameter_sampling",
             skill=ground_skill.skill.name,
             explore=explore,
             **diagnostics.model_dump(mode="json"),
+            was_random=None if choice is None else choice.was_random,
+            was_informed=None if choice is None else choice.was_informed,
+            chosen_score=None if choice is None else choice.score,
         )
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
