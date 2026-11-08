@@ -648,7 +648,22 @@ class _MisplacesTheBinOnce(FakePerson):
         super().placed(request=request)
 
 
-@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_a_bin_put_off_the_close_spot_is_accepted_there() -> None:
+    """Only the far spot's placement matters (Josh, 2026-11-08)."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.0, 0.0))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.offset, person.misplaced = (0.07, 0.21), 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination="robot_side")
+    assert not [line for line in written if line.startswith("the bin is")]
+    assert [name for name, _ in robot.calls].count("observe") == 1
+
+
+@pytest.mark.parametrize("destination", ["opposite_side"])
 def test_a_bin_put_off_its_spot_is_reported_and_the_person_asked_to_move_it(
     *, destination: str
 ) -> None:
