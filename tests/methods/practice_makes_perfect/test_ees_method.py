@@ -2250,3 +2250,56 @@ def test_without_the_flag_a_failed_goal_plan_falls_through_to_practice() -> None
     method, trace = _unreachable_goal_episode(flag=False)
     assert not any(random_mode for _label, random_mode in trace)
     assert method.selections >= 1
+
+
+class _UnreachableFirstEesMethod(EesMethod):
+    """Every candidate but the last is unreachable, and each pricing is counted, so a
+    test can see how often one practice choice re-prices every ground skill."""
+
+    candidates: list[GroundSkill] = []
+    skill_costs_calls: int = 0
+    plan_costs: list[dict[GroundSkill, float]] = []
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        return list(self.candidates)
+
+    def skill_costs(self) -> dict[GroundSkill, float]:
+        self.skill_costs_calls += 1
+        return super().skill_costs()
+
+    def plan_to(
+        self,
+        *,
+        init_atoms: frozenset[GroundAtom],
+        goal: frozenset[GroundAtom],
+        costs: dict[GroundSkill, float],
+        practicing: bool = False,
+    ) -> list[GroundSkill]:
+        self.plan_costs.append(costs)
+        if goal != self.candidates[-1].preconditions:
+            raise PlanningFailure("unreachable")
+        return []
+
+
+def test_one_practice_choice_prices_the_ground_skills_once_however_many_are_unreachable() -> None:
+    """Nothing is executed or observed between candidates, so their costs cannot
+    change; re-pricing per candidate made a 9,393-grounding rack choice quadratic."""
+    env = LightSwitchEnvironment(grid_size=4)
+    cells = env.get_cells()
+    unreachable = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[i], cells[i - 1]))
+        for i in (3, 2, 1)
+    ]
+    method = _UnreachableFirstEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        candidates=[*unreachable, _turn_on_light(env=env)],
+    )
+
+    plan = _practice_episode(method=method)._practice_plan(true_atoms=frozenset())
+
+    assert plan == [_turn_on_light(env=env)]
+    assert len(method.plan_costs) == 4
+    assert method.skill_costs_calls == 1
+    assert all(costs == method.plan_costs[0] for costs in method.plan_costs)
