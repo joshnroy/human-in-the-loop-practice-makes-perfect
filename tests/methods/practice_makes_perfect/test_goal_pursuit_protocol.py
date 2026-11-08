@@ -115,37 +115,6 @@ def test_evaluation_ignores_training_horizon_and_does_not_collect_outcomes(
     assert not method._all_attempt_outcomes
 
 
-@pytest.mark.parametrize("score_humans", (True, False))
-def test_human_scoring_flag_reaches_ees_method_factory(
-    *, score_humans: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    built = []
-
-    def capture(*, method_factory, **kwargs):
-        env = Tossing3DEnvironment(scene_bg=False)
-        built.append(
-            method_factory(
-                DomainContext(
-                    env=env,
-                    skill_provider=Tossing3DSkillProvider(env=env),
-                    oracle=Tossing3DOracle(env=env),
-                )
-            )
-        )
-
-    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(capture))
-    argv = [
-        "--env",
-        "tossing3d",
-        "--method",
-        "ees",
-        "--ees-score-human-skills" if score_humans else "--no-ees-score-human-skills",
-    ]
-    CostFixtures.dispatch(argv=argv)
-    assert len(built) == 1
-    assert built[0].score_human_skills is score_humans
-
-
 def test_ees_decision_logging_factory_path(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

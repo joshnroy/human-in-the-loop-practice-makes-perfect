@@ -1408,24 +1408,12 @@ class _CubeBinCapableSkillProvider(LightSwitchSkillProvider):
 
 
 def _cube_bin_reset_build(
-    *,
-    reset_price: float = 0.01,
-    grid_size: int = 3,
-    seed: int = 0,
-    reset_cost_gate: bool = True,
+    *, reset_price: float = 0.01, grid_size: int = 3, seed: int = 0
 ) -> tuple[EesMethod, LightSwitchEnvironment]:
-    """`score_human_skills=False`: these tests pin the affordability gate against the
-    reset's bare price. Scored, the reset also pays `-log(competence)` (~0.095 from
-    the prior), which moves every threshold below; test_ees_human_skills.py covers
-    that pricing."""
+    """The price is what the harness charges a dispatched reset; EES plans the reset at
+    `-log(competence)` and never sees it."""
     env = LightSwitchEnvironment(grid_size=grid_size)
-    method = EesMethod(
-        env=env,
-        skill_provider=_CubeBinCapableSkillProvider(env=env),
-        seed=seed,
-        reset_cost_gate=reset_cost_gate,
-        score_human_skills=False,
-    )
+    method = EesMethod(env=env, skill_provider=_CubeBinCapableSkillProvider(env=env), seed=seed)
     method.configure_practice_accounting(
         accounting=CostFixtures.accounting(human={ASK_FOR_RESET_CUBE_BIN_ONLY_NAME: reset_price})
     )
@@ -1448,11 +1436,7 @@ def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_
     (`Adjacent(cell0, cell0)`, reflexive and false in every real init state) is
     achievable if and only if plan_to actually added the injected ground skill to
     the planner's candidate set -- see _CubeBinCapableSkillProvider's own docstring
-    for why no ordinary LightSwitch skill could ever produce it.
-
-    0.01, not 0.1: this must clear plan_to's own shared cost ceiling (default_cost()
-    when nothing has been observed yet, ~0.095) to test injection rather than
-    affordability -- see the dedicated affordability tests below for that."""
+    for why no ordinary LightSwitch skill could ever produce it."""
     method, env = _cube_bin_reset_build(reset_price=0.01)
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     init_atoms = method.abstract_state(state=task.initial_state)
@@ -1487,82 +1471,19 @@ def test_plan_to_does_not_offer_the_cube_bin_reset_skill_when_not_practicing() -
         method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
 
 
-def test_an_unaffordable_cube_bin_reset_is_rejected_even_as_the_only_route_to_the_goal() -> None:
-    """The bug this guards against, reproduced and closed: classical cost-optimal
-    planning has no price for "give up", so PlanningFailure is not a competing
-    finite-cost alternative -- offering ask_for_reset_cube_bin_only unconditionally
-    means ANY configured cost is preferred over reporting no plan, however large.
-    Verified against a probe sweeping 0.001 through 1,000,000 before this fix
-    existed: every one of them produced a plan through the reset. This is the same
-    goal as test_plan_to_offers_the_cube_bin_reset_skill_..., the ONLY route to
-    which is the reset -- but priced far above any of this run's own competence-
-    derived costs, so plan_to's shared ceiling (see plan_to's own docstring) declines
-    it and re-requests with no reset offered at all. The goal is genuinely unreachable
-    without it, so PlanningFailure propagates from Fast Downward itself -- there is
-    no cube-bin-specific message to match anymore, since there is no cube-bin-
-    specific code path left to produce one."""
-    method, env = _cube_bin_reset_build(reset_price=1_000_000.0)
-    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    init_atoms = method.abstract_state(state=task.initial_state)
-    cell0 = env.get_cells()[0]
-    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
-
-    with pytest.raises(PlanningFailure):
-        method.plan_to(
+def test_a_stranded_state_plans_through_the_reset_whatever_its_price() -> None:
+    """The reset is the only route to the goal: EES takes it, however much the
+    environment charges for it, since EES never sees that price."""
+    for price in (0.001, 5.0, 1_000_000.0):
+        method, env = _cube_bin_reset_build(reset_price=price)
+        task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+        init_atoms = method.abstract_state(state=task.initial_state)
+        cell0 = env.get_cells()[0]
+        goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+        plan = method.plan_to(
             init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
         )
-
-
-def test_an_affordable_cube_bin_reset_still_clears_the_threshold() -> None:
-    """The companion to the test above: the fix must not make the skill unusable --
-    a genuinely cheap reset (well under default_cost(), the fallback threshold
-    before anything has been observed) still gets used when it is the only route to
-    the goal."""
-    method, env = _cube_bin_reset_build(reset_price=0.001)
-    assert method.default_cost() > 0.001, "the fixture must actually be cheap"
-    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    init_atoms = method.abstract_state(state=task.initial_state)
-    cell0 = env.get_cells()[0]
-    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
-
-    plan = method.plan_to(
-        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
-    )
-    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
-
-
-def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_fixed_constant() -> (
-    None
-):
-    """Self-calibrating, not a second flag to tune: the same configured reset cost
-    is rejected when nothing has depressed any skill's competence yet, and accepted
-    once some OTHER ground skill's own competence-derived cost has risen above it --
-    "the same order of magnitude as EES's own competence-derived skill costs",
-    read directly off method.skill_costs() rather than a constant invented here."""
-    reset_cost = 0.3
-    method, env = _cube_bin_reset_build(reset_price=reset_cost)
-    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    init_atoms = method.abstract_state(state=task.initial_state)
-    cell0 = env.get_cells()[0]
-    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
-    assert reset_cost > method.default_cost(), "the fixture must start unaffordable"
-
-    with pytest.raises(PlanningFailure):
-        method.plan_to(
-            init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
-        )
-
-    # Depress TURN_ON_LIGHT's competence (repeated failures) until its own
-    # competence-derived cost clears reset_cost -- nothing about this reset itself
-    # changed, only what this run now believes about a DIFFERENT skill.
-    turn_on = _turn_on_light(env=env)
-    for _ in range(20):
-        method.observe_outcome(ground_skill=turn_on, success=False)
-    costs_now = method.skill_costs()
-    assert max(costs_now.values()) > reset_cost, "the fixture must depress competence enough"
-
-    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=costs_now, practicing=True)
-    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+        assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 
 class _ShortcutResetSkillProvider(LightSwitchSkillProvider):
@@ -1601,20 +1522,18 @@ class _ShortcutResetSkillProvider(LightSwitchSkillProvider):
         )
 
 
-def _shortcut_reset_plan(*, reset_price: float) -> list[str]:
-    """Unscored, like `_cube_bin_reset_build`: only the fixed-price port plans with the
-    reset's price; scored, a human skill is planned at `-log(competence)` alone."""
+def _shortcut_reset_plan(*, reset_failures: int) -> list[str]:
+    """Which route EES plans to cell 2 after every reset has failed `reset_failures`
+    times: a reset is planned at its own `-log(competence)`."""
     env = LightSwitchEnvironment(grid_size=4)
-    method = EesMethod(
-        env=env,
-        skill_provider=_ShortcutResetSkillProvider(env=env),
-        seed=0,
-        reset_cost_gate=False,
-        score_human_skills=False,
-    )
+    provider = _ShortcutResetSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
     method.configure_practice_accounting(
-        accounting=CostFixtures.accounting(human={ASK_FOR_RESET_CUBE_BIN_ONLY_NAME: reset_price})
+        accounting=CostFixtures.accounting(human={ASK_FOR_RESET_CUBE_BIN_ONLY_NAME: 5.0})
     )
+    for reset in provider.human_cube_bin_reset_skills():
+        for _ in range(reset_failures):
+            method.human_competence_model(ground_skill=reset).observe(success=False)
     init_atoms = method.abstract_state(
         state=env.build_initial_state(light_level=0.0, light_target=0.5)
     )
@@ -1626,54 +1545,17 @@ def _shortcut_reset_plan(*, reset_price: float) -> list[str]:
     return [ground.skill.name for ground in plan]
 
 
-def test_the_reset_cost_gate_is_on_by_default() -> None:
-    """Default on, so every existing run keeps the gate it was measured under."""
-    method, _env = _cube_bin_reset_build()
-    assert method.reset_cost_gate is True
+def test_a_reset_as_likely_to_succeed_as_a_move_beats_two_moves() -> None:
+    """At the shared prior the reset is one step as likely to succeed as each of two
+    MoveRobots, so the one-step plan wins, whatever the reset's price."""
+    assert _shortcut_reset_plan(reset_failures=0) == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 
-def test_with_the_gate_on_a_reset_at_cost_5_is_declined_when_it_is_the_only_route() -> None:
-    """EXP-17's configuration: cost 5 is far above every competence-derived cost, so
-    the gate declines it and the stranded robot stays stuck."""
-    method, env = _cube_bin_reset_build(reset_price=5.0)
-    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    init_atoms = method.abstract_state(state=task.initial_state)
-    cell0 = env.get_cells()[0]
-    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
-
-    with pytest.raises(PlanningFailure):
-        method.plan_to(
-            init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
-        )
-
-
-def test_with_the_gate_off_a_stranded_state_plans_through_a_reset_at_cost_5() -> None:
-    """Same stranded fixture as above, gate off: the reset is the only route, so it is
-    taken regardless of its price."""
-    method, env = _cube_bin_reset_build(reset_price=5.0, reset_cost_gate=False)
-    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    init_atoms = method.abstract_state(state=task.initial_state)
-    cell0 = env.get_cells()[0]
-    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
-    assert max(method.skill_costs().values(), default=method.default_cost()) < 5.0
-
-    plan = method.plan_to(
-        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
-    )
-    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
-
-
-def test_with_the_gate_off_a_reset_free_plan_still_beats_a_reset_at_cost_5() -> None:
-    """Turning the gate off must not make the reset free: Fast Downward still
-    minimises total cost, so two cheap MoveRobots beat one reset at 5."""
-    assert _shortcut_reset_plan(reset_price=5.0) == ["MoveRobot", "MoveRobot"]
-
-
-def test_with_the_gate_off_a_reset_cheaper_than_the_reset_free_plan_wins() -> None:
-    """The companion to the test above, so it cannot pass merely because the reset is
-    never chosen when an alternative exists: price the reset below two moves and it
-    wins. The choice is made by cost, in both directions."""
-    assert _shortcut_reset_plan(reset_price=0.001) == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+def test_a_reset_that_keeps_failing_loses_to_two_moves() -> None:
+    """The companion: once the reset's own failures make it less likely to succeed
+    than two moves together, the robot moves itself. The choice is made by
+    competence, in both directions."""
+    assert _shortcut_reset_plan(reset_failures=20) == ["MoveRobot", "MoveRobot"]
 
 
 def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_reset() -> None:

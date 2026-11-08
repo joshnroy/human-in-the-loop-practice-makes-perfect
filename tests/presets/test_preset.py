@@ -102,7 +102,6 @@ def test_without_the_preset_the_observation_weight_default_stays_point_one() -> 
             "pomdp_observation_probability_weight",
             0.1,
         ),
-        (["--ees-reset-gate"], "ees_reset_gate", True),
         (["--pomdp-num-particles", "20000"], "pomdp_num_particles", 20000),
         (["--max-steps-per-interaction", "4"], "max_steps_per_interaction", 4),
         (["--practice-cost-config", "mine.json"], "practice_cost_config", Path("mine.json")),

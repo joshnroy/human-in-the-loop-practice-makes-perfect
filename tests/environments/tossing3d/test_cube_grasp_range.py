@@ -136,9 +136,7 @@ def test_both_planners_follow_the_dry_run_near_the_barrier(*, plannable: bool) -
         assert valid <= _RESET_NAMES
 
     ees = CostFixtures.priced(
-        method=EesMethod(
-            env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0, reset_cost_gate=False
-        )
+        method=EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
     )
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = ees.plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
