@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import Field
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.types import (
     AbstractAtom,
     FlatBarrier,
@@ -22,6 +23,7 @@ from hitl_pmp.environments.tossing3d.types import (
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import SIM_TOSS_PARAMETERS
 
 from .backend import OPPOSITE_SIDE, KitchenKinderBackend
+from .bin_regions import KITCHEN_BIN_REGION_BY_SIDE
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
 
@@ -78,5 +80,7 @@ class KitchenRecycling3DEnvironment(Tossing3DEnvironment):
         return state
 
     def bin_reset_region(self, *, destination: str | None) -> dict[str, object] | None:
-        """The kitchen's two human placements stand in for Tossing3D's regions."""
-        return {"kitchen_side": destination or OPPOSITE_SIDE}
+        """The destination side, beside its probe-certified region (`bin_regions.py`)."""
+        side = destination or OPPOSITE_SIDE
+        region = KITCHEN_BIN_REGION_BY_SIDE[Tossing3DSide(side)].model_dump(mode="json")
+        return {"kitchen_side": side, **region}

@@ -17,10 +17,12 @@ import numpy as np
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend, TossSettlingController
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.skill_timing import SkillTiming
 from hitl_pmp.environments.tossing3d.types import ControllerRun, Tossing3DObservation
 
 from .bin_geometry import TaperedBin, TaperedBinCollision
+from .bin_regions import KitchenBinRegions
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
 from .placement import KitchenHumanPlacement
@@ -277,37 +279,53 @@ class KitchenKinderBackend(KinderBackend):
     def reset_cube_and_bin(
         self, *, bin_region: dict[str, object] | None = None
     ) -> Tossing3DObservation:
-        """A human puts the bin on `bin_region["kitchen_side"]` and the cube on the
-        kitchen floor; the robot stays where it is.
+        """A human puts the bin in `bin_region["kitchen_side"]`'s region and the cube on
+        the kitchen floor; the robot stays where it is.
 
-        The robot side is the kitchen floor beside the robot (the clear spot nearest
-        the fixed near position); the opposite side is the bin's target on the mats.
-        The cube goes to the first seeded spot where, with the bin already placed,
-        `PickPlannable` holds -- the same reach gate and pick dry run the planner reads
-        -- so a reset never hands the planner a cube it must reset again.
+        The bin's spot is drawn from that side's probe-certified region
+        (`bin_regions.py`) by scene seed and reset count, clear of the robot and the
+        furniture. The cube goes to the first seeded spot where, with the bin already
+        placed, `PickPlannable` holds -- the same reach gate and pick dry run the planner
+        reads -- so a reset never hands the planner a cube it must reset again.
         """
         with SkillTiming.phase_of(timing=self._timing, name="reset_cube_and_bin"):
             side = OPPOSITE_SIDE if bin_region is None else str(bin_region["kitchen_side"])
             return self._place_cube_and_bin(side=side)
 
+    def _bin_destination(self, *, side: str, state: Any) -> tuple[float, float, float]:
+        if side not in (ROBOT_SIDE, OPPOSITE_SIDE):
+            raise ValueError(f"unknown kitchen reset side {side!r}")
+        robot = state.get_object_from_name(self.robot_name)
+        robot_xy = (state.get(robot, "pos_base_x"), state.get(robot, "pos_base_y"))
+        furniture = [
+            tuple(float(state.get(obj, key)) for key in ("x", "y", "bb_x", "bb_y"))
+            for obj in state
+            if obj.type.name == "mujoco_static_collider"
+        ]
+        return KitchenBinRegions.human_destination(
+            config=self.kitchen_config,
+            side=Tossing3DSide(side),
+            robot=robot_xy,
+            furniture=furniture,
+            seed=self._scene_seed or 0,
+            index=self._placements,
+        )
+
     def _place_cube_and_bin(self, *, side: str) -> Tossing3DObservation:
         config = self.kitchen_config
         state = self._require_state().copy()
+        try:
+            bin_xyz = self._bin_destination(side=side, state=state)
+        except ValueError:
+            if side not in (ROBOT_SIDE, OPPOSITE_SIDE):
+                raise
+            # The robot covers every robot-side spot: it steps back to its scene-start
+            # pose, as it would for a person resetting the scene (Tossing3D's rule).
+            self._move_robot_to_start_pose()
+            state = self._require_state().copy()
+            bin_xyz = self._bin_destination(side=side, state=state)
         robot = state.get_object_from_name(self.robot_name)
         robot_xy = np.array([state.get(robot, "pos_base_x"), state.get(robot, "pos_base_y")])
-        if side == ROBOT_SIDE:
-            furniture = [
-                tuple(float(state.get(obj, key)) for key in ("x", "y", "bb_x", "bb_y"))
-                for obj in state
-                if obj.type.name == "mujoco_static_collider"
-            ]
-            bin_xyz = KitchenHumanPlacement.near_bin_destination(
-                config=config, robot=robot_xy, items=[], furniture=furniture
-            )
-        elif side == OPPOSITE_SIDE:
-            bin_xyz = config.bin_position
-        else:
-            raise ValueError(f"unknown kitchen reset side {side!r}")
         spec = config.objects[0]
         for attempt, cube_xy in enumerate(
             self._recovery_positions(robot_xy=robot_xy, bin_xyz=bin_xyz)

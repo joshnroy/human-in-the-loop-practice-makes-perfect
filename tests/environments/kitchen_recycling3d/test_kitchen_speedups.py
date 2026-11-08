@@ -275,7 +275,7 @@ class MujocoScene:
             state = env.get_current_state()
             env.take_action(
                 action=Tossing3DToss.compute_action(
-                    params=np.array((1.34, 160.0, 750.0)), state=state
+                    params=np.array((1.45, 160.0, 740.0)), state=state
                 )
             )
         finally:

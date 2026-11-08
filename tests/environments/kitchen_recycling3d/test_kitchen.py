@@ -52,10 +52,10 @@ def test_multi_object_configs_are_refused():
         KitchenRecycling3DEnvironment(kitchen_config=KitchenConfig()).build_backend()
 
 
-def test_resets_map_to_the_two_kitchen_placements():
+def test_resets_name_the_kitchen_side_they_place_the_bin_on():
     env = KitchenRecycling3DEnvironment(kitchen_config=config())
-    assert env.bin_reset_region(destination="robot_side") == {"kitchen_side": "robot_side"}
-    assert env.bin_reset_region(destination="opposite_side") == {"kitchen_side": "opposite_side"}
+    for side in ("robot_side", "opposite_side"):
+        assert env.bin_reset_region(destination=side)["kitchen_side"] == side
 
 
 def test_pick_reach_is_the_drive_zones_not_the_barrier_plane():
