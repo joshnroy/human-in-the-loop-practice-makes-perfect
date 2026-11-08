@@ -111,7 +111,7 @@ def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice
     Cli.main(
         argv=[
             *FAKE_RUN,
-            *("--practice-step-budget", "1500", "--measure-every-cycles", "1"),
+            *("--practice-step-budget", "4500", "--measure-every-cycles", "1"),
             # Short cycles, so a small budget holds several.
             *("--max-steps-per-interaction", "4"),
             # Cycle-end measurements only; the step-0 one is `test_baseline_first.py`'s.

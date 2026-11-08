@@ -23,7 +23,7 @@ from hitl_pmp.step_protocol import (
 
 pytestmark = pytest.mark.xdist_group("tossing3d_real_resume")
 
-BUDGET = "1500"
+BUDGET = "4500"
 ROBOT_ACTIONS = ("pick", "toss", "open_gripper")
 
 

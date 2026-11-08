@@ -23,15 +23,15 @@ The side atoms (`CubeOnRobotSide`, `BinOnRobotSide` and their opposites) and the
 are the sim's own predicates over the flat state. Anything not seen is NaN, never a guess, and no
 predicate holds of a NaN.
 
-## One skill is one robot call, charged its sim ticks
+## One skill is one robot call, charged its measured seconds as sim ticks
 
 `before` runs once before the robot moves (an exhausted budget stops the skill from
-starting) and `after` once per charged step when it returns. With `tick_seconds` (the
-CLI's `--wall-clock-cost-per-second`) a skill that moved is charged its own measured
-seconds in sim ticks, held, missed or aborted alike, as a sim skill is charged the ticks
-it ran; without it, a fixed average (`RealSkillStepCosts`). A refused skill -- outside
-the parameter set, or refused by the robot side, which owns every geometry and safety
-check -- moved nothing and is charged nothing.
+starting) and `after` once per charged step when it returns. A skill that moved --
+held, missed or aborted alike -- is charged its own wall-clock seconds (the camera look
+after it excluded) in sim ticks of `SIM_TICK_SECONDS`, as a sim skill is charged the
+ticks it ran, so a session of N steps is the robot time a sim session of N steps
+simulates. A refused skill -- outside the parameter set, or refused by the robot side,
+which owns every geometry and safety check -- moved nothing and is charged nothing.
 
 ## A human reset is a prompt
 
@@ -91,24 +91,11 @@ CUBE_HALF_SIZE_M = 0.025
 _UNKNOWN = math.nan
 
 
-class RealSkillStepCosts(BaseModel):
-    """What one real skill costs against the step budget: its average sim tick count.
-
-    Measured from the per-tick state logs of the 18 completed runs of
-    `hitl-pmp-results/coded-sampler-20261014/full` (barrier layout, canonical seed 125),
-    pooled over every execution and rounded: `PickCube` 118.53 (n=12695),
-    `MoveToTossLocationAndToss` 90.06 (n=12651), `OpenGripper` 1.00 (n=43). No run of
-    that sweep poured, so `PourCubeOutOfBin` is the barrier-layout sim pour of the four
-    `pick_plannable/exp22_*` scenes, 667-700 ticks, mean 679.5 (n=4, 2026-11-02). A sim
-    controller change moves these means; re-measure then.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    pick_cube: int = Field(default=119, gt=0)
-    move_to_toss_location_and_toss: int = Field(default=90, gt=0)
-    open_gripper: int = Field(default=1, gt=0)
-    pour_bin: int = Field(default=680, gt=0)
+# One sim tick of the tossing env's controllers, in seconds (10 Hz): a real skill is
+# charged its measured seconds in these ticks, as a sim skill is charged the ticks it ran.
+SIM_TICK_SECONDS: Final = 0.1
+# A skill's provisional step count once it has moved, replaced by its measured ticks.
+_MOVED: Final = 1
 
 
 class PracticeProgress(BaseModel):
@@ -354,10 +341,10 @@ class RealTossingBackend(BaseModel):
     person: Any
     parameters: TossParameterSet
     frame: RealRoomFrame = ROOM_FRAME
-    step_costs: RealSkillStepCosts = RealSkillStepCosts()
-    # The length of one sim tick in seconds: when set, a skill that moved is charged its
-    # measured seconds / `tick_seconds` steps instead of `step_costs`.
-    tick_seconds: float | None = Field(default=None, gt=0)
+    tick_seconds: float = Field(default=SIM_TICK_SECONDS, gt=0)
+    # Where a skill's seconds are read; None is the wall clock. A robot-free dry run
+    # passes its fake robot's clock, so its skills take their real durations.
+    clock: Callable[[], float] | None = None
     # The person says y at the terminal before the robot drives home at a task's start
     # (each placement is a y too); with `confirm_each_skill`, also before every skill.
     confirm_start: bool = False
@@ -596,16 +583,16 @@ class RealTossingBackend(BaseModel):
                     steps=0, terminated=True, error=f"pick refused: {reply.reason}"
                 )
             error = None if reply.held else f"pick did not hold: {reply.note}"
-            return ControllerRun(steps=self.step_costs.pick_cube, terminated=True, error=error)
+            return ControllerRun(steps=_MOVED, terminated=True, error=error)
 
-        return self._skill(action="PickCube", act=act, cost=self.step_costs.pick_cube)
+        return self._skill(action="PickCube", act=act)
 
     def run_open_gripper(self) -> ControllerRun:
         def act() -> ControllerRun:
             self.robot.open_gripper()
-            return ControllerRun(steps=self.step_costs.open_gripper, terminated=True)
+            return ControllerRun(steps=_MOVED, terminated=True)
 
-        return self._skill(action="OpenGripper", act=act, cost=self.step_costs.open_gripper)
+        return self._skill(action="OpenGripper", act=act)
 
     def run_move_to_toss_location_and_toss(
         self,
@@ -622,7 +609,6 @@ class RealTossingBackend(BaseModel):
         )
         if refusal is not None:
             return ControllerRun(steps=0, terminated=True, error=f"toss refused: {refusal}")
-        cost = self.step_costs.move_to_toss_location_and_toss
 
         def act() -> ControllerRun:
             reply = TossReply.model_validate(
@@ -637,19 +623,18 @@ class RealTossingBackend(BaseModel):
                 return ControllerRun(
                     steps=0, terminated=True, error=f"toss not executed: {reply.note}"
                 )
-            return ControllerRun(steps=cost, terminated=True)
+            return ControllerRun(steps=_MOVED, terminated=True)
 
         action = (
             f"MoveToTossLocationAndToss(standoff {distance:.2f} m, "
             f"{release_speed_deg_s:.0f} deg/s, release {gripper_release_ms:.0f} ms)"
         )
-        return self._skill(action=action, act=act, cost=cost)
+        return self._skill(action=action, act=act)
 
     def run_pour_bin(self) -> ControllerRun:
         """`dump_bin`: grasp the bin's side wall, lift, turn, roll it over onto the floor
         beside it, set it back down and let go. A dump that moved and did not empty the
         bin is charged in full, as a pick that missed."""
-        cost = self.step_costs.pour_bin
 
         def act() -> ControllerRun:
             reply = DumpReply.model_validate(self.robot.dump_bin())
@@ -658,11 +643,11 @@ class RealTossingBackend(BaseModel):
                     steps=0, terminated=True, error=f"dump refused: {reply.reason}"
                 )
             error = None if reply.dumped else f"dump did not empty the bin: {reply.note}"
-            return ControllerRun(steps=cost, terminated=True, error=error)
+            return ControllerRun(steps=_MOVED, terminated=True, error=error)
 
-        return self._skill(action="PourCubeOutOfBin", act=act, cost=cost)
+        return self._skill(action="PourCubeOutOfBin", act=act)
 
-    def _skill(self, *, action: str, act: Callable[[], ControllerRun], cost: int) -> ControllerRun:
+    def _skill(self, *, action: str, act: Callable[[], ControllerRun]) -> ControllerRun:
         """One robot skill, one fresh observation, then its charged steps.
 
         A `ValueError` is the robot side refusing before it moved: uncharged. Any other
@@ -673,7 +658,7 @@ class RealTossingBackend(BaseModel):
         if self.confirm_each_skill:
             self.person.confirm(action=action)
         self._say(line=f"running {action} ...")
-        started = WallClock.now()
+        started = self._now()
         if self._before is not None:
             self._before()
         try:
@@ -682,14 +667,14 @@ class RealTossingBackend(BaseModel):
             run = ControllerRun(steps=0, terminated=True, error=f"refused: {error}")
         except Exception as error:  # noqa: BLE001 -- recorded as the skill's failure
             run = ControllerRun(
-                steps=cost, terminated=False, error=f"aborted: {type(error).__name__}: {error}"
+                steps=_MOVED, terminated=False, error=f"aborted: {type(error).__name__}: {error}"
             )
         # Observed before the steps are charged, so a goal check made at each charged
         # step (evaluation's) sees the scene the skill left, as a sim tick would.
         outcome = "ok" if run.error is None else run.error
         # The skill's own time: the look that follows is not part of it.
-        self._skill_seconds = WallClock.now() - started
-        if self.tick_seconds is not None and run.steps > 0:
+        self._skill_seconds = self._now() - started
+        if run.steps > 0:
             run = run.model_copy(
                 update={"steps": max(1, round(self._skill_seconds / self.tick_seconds))}
             )
@@ -702,6 +687,9 @@ class RealTossingBackend(BaseModel):
             for _ in range(run.steps):
                 self._after()
         return run
+
+    def _now(self) -> float:
+        return WallClock.now() if self.clock is None else self.clock()
 
     def practice_progress(
         self, *, cycle: int, action: int, max_actions: int, steps: int, budget: int

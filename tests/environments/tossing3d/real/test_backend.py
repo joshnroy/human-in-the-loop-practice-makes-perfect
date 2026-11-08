@@ -20,12 +20,15 @@ from hitl_pmp.environments.tossing3d.predicates import (
 from hitl_pmp.environments.tossing3d.real.backend import (
     PlacementRequest,
     PracticeScene,
-    RealSkillStepCosts,
     TerminalPerson,
     WallClock,
 )
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
-from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
+from hitl_pmp.environments.tossing3d.real.fake_robot import (
+    FAKE_SKILL_SECONDS,
+    FakePerson,
+    FakeTossingRobot,
+)
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME
 from hitl_pmp.environments.tossing3d.real.session_log import RealSessionLog
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
@@ -41,7 +44,7 @@ def _env(*, written: list[str] | None = None) -> tuple[RealTossing3DEnvironment,
     robot = FakeTossingRobot()
     lines = written if written is not None else []
     person = FakePerson(robot=robot, write=lines.append)
-    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
     env.hard_reset()
     return env, robot
 
@@ -176,7 +179,7 @@ def test_a_server_refusal_is_an_uncharged_failed_toss() -> None:
     assert robot.holding
 
 
-def test_each_real_skill_is_charged_its_sim_mean_ticks_after_one_before_check() -> None:
+def test_a_real_skill_is_charged_its_seconds_as_sim_ticks_after_one_before_check() -> None:
     env, _ = _env()
     counts = {"before": 0, "after": 0}
 
@@ -188,24 +191,19 @@ def test_each_real_skill_is_charged_its_sim_mean_ticks_after_one_before_check() 
 
     env.set_control_step_observers(before=before, after=after)
     env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
-    assert counts == {"before": 1, "after": RealSkillStepCosts().pick_cube}
-    assert RealSkillStepCosts() == RealSkillStepCosts(
-        pick_cube=119, move_to_toss_location_and_toss=90, open_gripper=1, pour_bin=680
-    )
+    assert counts == {"before": 1, "after": round(FAKE_SKILL_SECONDS["pick"] / 0.1)}
 
 
 def test_a_timed_real_skill_uses_up_its_measured_seconds_as_sim_ticks(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With `tick_seconds`, a skill that moved -- held, missed or aborted mid-motion --
-    is charged its own wall-clock seconds in sim ticks, as a sim skill is charged the
-    ticks it ran; a refused one moved nothing and stays uncharged."""
+    """A skill that moved -- held, missed or aborted mid-motion -- is charged its own
+    wall-clock seconds in sim ticks, as a sim skill is charged the ticks it ran; a
+    refused one moved nothing and stays uncharged."""
     clock = iter([100.0, 136.4, 200.0, 207.25, 300.0, 300.5])
     monkeypatch.setattr(WallClock, "now", staticmethod(lambda: next(clock)))
     robot = FakeTossingRobot()
-    env = RealTossing3DEnvironment(
-        tossing_robot=robot, person=FakePerson(robot=robot), tick_seconds=0.1
-    )
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=FakePerson(robot=robot))
     env.hard_reset()
     env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
     assert env.last_controller_steps() == (364,)

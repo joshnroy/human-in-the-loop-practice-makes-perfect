@@ -24,7 +24,7 @@ def _argv(*, output: Path, resume: bool = False, extra: tuple[str, ...] = ()) ->
     return [
         *("--env", "tossing3d_real", "--method", "pomdp", "--preset", "tossing3d-canonical"),
         *("--robot", "fake", "--num-test-tasks", "1", "--seed", "0"),
-        *("--practice-step-budget", "1500", "--max-steps-per-interaction", "4"),
+        *("--practice-step-budget", "4500", "--max-steps-per-interaction", "4"),
         *("--measure-every-cycles", "1", "--output-dir", str(output)),
         *(["--resume", str(output)] if resume else []),
         *extra,
