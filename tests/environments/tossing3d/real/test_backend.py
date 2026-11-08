@@ -624,3 +624,58 @@ def test_an_untimed_placement_shows_no_counter() -> None:
     )
     person.place(request=request)
     assert ticks == []
+
+
+class _MisplacesTheBinOnce(FakePerson):
+    """A FakePerson who first puts the bin `offset` (map frame) from its spot, and on
+    the spot when asked to move it."""
+
+    offset: tuple[float, float] = (0.0, 0.0)
+    misplaced: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        if self.misplaced == 0:
+            self.misplaced += 1
+            spot = request.bin.center
+            self.robot.put(
+                cube=request.cube,
+                bin_center=(spot[0] + self.offset[0], spot[1] + self.offset[1]),
+                bin_yaw=request.bin.yaw,
+            )
+            return
+        super().placed(request=request)
+
+
+@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_a_bin_put_off_its_spot_is_reported_and_the_person_asked_to_move_it(
+    *, destination: str
+) -> None:
+    """Trial 3 on 2026-11-08 started with the far bin 21 cm across the tape from its spot,
+    and the first toss was refused; the run should say so before any skill instead."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.0, 0.0))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.offset, person.misplaced = (0.07, 0.21), 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    (problem,) = [line for line in written if line.startswith("the bin is")]
+    assert "22 cm from its spot" in problem
+    assert "Moved the bin onto its spot? [y/n]" in "\n".join(written)
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert not MOTION & {name for name, _ in robot.calls}
+    spot = BIN_SPOTS[Tossing3DSide(destination)].center
+    assert robot.observe()["bin"]["x"] == pytest.approx(spot[0])
+    assert robot.observe()["bin"]["y"] == pytest.approx(spot[1])
+
+
+def test_a_bin_within_a_few_centimetres_of_its_spot_is_accepted_as_placed() -> None:
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.02, -0.02))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert not [line for line in written if line.startswith("the bin is")]
+    assert [name for name, _ in robot.calls].count("observe") == 1
