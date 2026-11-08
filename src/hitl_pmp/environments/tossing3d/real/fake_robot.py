@@ -10,7 +10,7 @@ beside it when the rim grip holds (`dump_grips`).
 """
 
 import math
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,8 +35,20 @@ _SERVER_TOSS_BOUNDS = TossParameterSet(
 )
 
 
+# What each skill takes on the robot, in seconds, so a dry run's budget runs out as a
+# real one's does: pick and toss are the 2026-11-06 means (#763), the dump the middle
+# of its 52-66 s, and opening the gripper the sim's 39 ticks (never timed on the robot).
+FAKE_SKILL_SECONDS: Final[dict[str, float]] = {
+    "pick": 36.4,
+    "toss": 28.3,
+    "dump_bin": 59.0,
+    "open_gripper": 3.9,
+}
+
+
 class FakeTossingRobot(BaseModel):
-    """`TossingRobot` with no robot. `calls` records every call, in order."""
+    """`TossingRobot` with no robot. `calls` records every call, in order; `seconds` is
+    its own clock, advanced by each skill's `FAKE_SKILL_SECONDS` (`now`)."""
 
     robot: tuple[float, float, float] = (1.326, -0.493, -3.132)
     cube: tuple[float, float, float] | None = None
@@ -46,6 +58,10 @@ class FakeTossingRobot(BaseModel):
     barrier_enabled: bool = True
     dump_grips: bool = True
     calls: list[tuple[str, tuple[Any, ...]]] = Field(default_factory=list)
+    seconds: float = 0.0
+
+    def now(self) -> float:
+        return self.seconds
 
     def put(
         self, *, cube: tuple[float, float], bin_center: tuple[float, float], bin_yaw: float
@@ -108,6 +124,7 @@ class FakeTossingRobot(BaseModel):
         return {"feasible": True, "note": None}
 
     def pick(self) -> dict[str, Any]:
+        self.seconds += FAKE_SKILL_SECONDS["pick"]
         self.calls.append(("pick", ()))
         check = self._pick_check()
         if not check["feasible"]:
@@ -137,6 +154,7 @@ class FakeTossingRobot(BaseModel):
     def toss(
         self, *, standoff: float, speed: float, release_ms: float, direction: float
     ) -> dict[str, Any]:
+        self.seconds += FAKE_SKILL_SECONDS["toss"]
         self.calls.append(("toss", (standoff, speed, release_ms, direction)))
         refusal = _SERVER_TOSS_BOUNDS.violation(params=(standoff, speed, release_ms))
         if refusal is not None:
@@ -179,6 +197,7 @@ class FakeTossingRobot(BaseModel):
         return abs(speed - suited) <= 10.0 and 550.0 <= release_ms <= 800.0
 
     def dump_bin(self) -> dict[str, Any]:
+        self.seconds += FAKE_SKILL_SECONDS["dump_bin"]
         self.calls.append(("dump_bin", ()))
         reply: dict[str, Any] = {
             "dumped": False,
@@ -207,6 +226,7 @@ class FakeTossingRobot(BaseModel):
         return reply | {"dumped": True, "gripper": 0.93}
 
     def open_gripper(self) -> None:
+        self.seconds += FAKE_SKILL_SECONDS["open_gripper"]
         self.calls.append(("open_gripper", ()))
         if self.holding:
             heading = self.robot[2]

@@ -10,11 +10,12 @@ The same domain, methods, preset (observation weight 0) and step protocol as
 and the human, who is the person at this terminal (`TerminalPerson`). Simulated
 execution of the same domain is `--env tossing3d`.
 
-Budgets are in the sim's control steps: a real skill is charged its mean sim tick count
-(`RealSkillStepCosts`). Evaluations run in this process, since each evaluation task is
-a scene a person sets up and the robot cannot practise and be evaluated at once: the
-untrained policy's (step 0) before any practice, and the final one; the interval
-defaults past any budget, so no step-interval evaluation runs between them.
+Budgets are in the sim's control steps: a real skill is charged its measured seconds as
+sim ticks of 0.1 s (`SIM_TICK_SECONDS`), a dry run's at its fake robot's durations.
+Evaluations run in this process, since each evaluation task is a scene a person sets up
+and the robot cannot practise and be evaluated at once: the untrained policy's (step 0)
+before any practice, and the final one; the interval defaults past any budget, so no
+step-interval evaluation runs between them.
 `--measure-every-cycles K` adds an evaluation after every K-th learning update, for a
 learning curve. After every evaluation but the final one -- the step-0 one included --
 the person puts practice's scene back. The step-0 one is checkpointed, so a run that
@@ -42,10 +43,6 @@ from .tasks import RealTossing3DTasks
 
 # Past any practice budget a real run could have, so only the final measurement runs.
 END_ONLY_MEASUREMENT_INTERVAL = 10**9
-
-
-# One sim tick of the tossing env's controllers, in seconds (10 Hz).
-SIM_TICK_SECONDS = 0.1
 
 
 class Tossing3DRealCli:
@@ -93,9 +90,7 @@ class Tossing3DRealCli:
             help="Price what the planner observes in wall-clock seconds at this rate: a "
             "robot skill's measured time (the camera look after it excluded), and a human "
             "reset's time from the person's start y to their done y (weighted by the "
-            "costs file's human_weight). The step budget counts the same seconds as sim "
-            "ticks of SIM_TICK_SECONDS, so a session of N steps is the robot time a sim "
-            "session of N steps simulates.",
+            "costs file's human_weight).",
         )
         parser.add_argument(
             "--measure-every-cycles",
@@ -146,10 +141,12 @@ class Tossing3DRealCli:
     def build_problem(*, args: argparse.Namespace, evaluation: bool) -> Tossing3DProblem:
         robot: FakeTossingRobot | SkillServerClient
         person: TerminalPerson
+        clock: Callable[[], float] | None = None
         if getattr(args, "output_dir", None) is not None:
             RealSessionLog.configure(output_dir=Path(args.output_dir))
         if args.robot == "fake":
             fake = FakeTossingRobot()
+            clock = fake.now
             robot, person = (
                 fake,
                 FakePerson(
@@ -172,7 +169,7 @@ class Tossing3DRealCli:
             confirm_each_skill=args.robot == "real" and args.robot_confirm_each_skill,
             canonical_seed=args.canonical_seed,
             evaluation=evaluation,
-            tick_seconds=None if args.wall_clock_cost_per_second is None else SIM_TICK_SECONDS,
+            clock=clock,
         )
         tasks = RealTossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset

@@ -7,6 +7,7 @@ toss's parameter set (the real swing's), and what a human reset hands the backen
 named spot instead of a sampled region).
 """
 
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import ConfigDict
@@ -23,7 +24,7 @@ from hitl_pmp.environments.tossing3d.types import (
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
-from .backend import PracticeScene, RealSkillStepCosts, RealTossingBackend
+from .backend import PracticeScene, RealTossingBackend
 from .contract import TossingRobot
 
 
@@ -35,8 +36,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
 
     tossing_robot: TossingRobot
     person: Any
-    step_costs: RealSkillStepCosts = RealSkillStepCosts()
-    tick_seconds: float | None = None
+    clock: Callable[[], float] | None = None
     toss_parameters: TossParameterSet | None = REAL_TOSS_PARAMETERS
     # Evaluation's episodes each open with `reset_to_task`, which asks for the scene, so
     # its `hard_reset` would ask for the same scene once more for nothing.
@@ -51,8 +51,7 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
             robot=self.tossing_robot,
             person=self.person,
             parameters=self.toss_parameters or REAL_TOSS_PARAMETERS,
-            step_costs=self.step_costs,
-            tick_seconds=self.tick_seconds,
+            clock=self.clock,
             confirm_start=self.confirm_start,
             confirm_each_skill=self.confirm_each_skill,
         )

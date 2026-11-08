@@ -6,10 +6,14 @@ import math
 import numpy as np
 
 from hitl_pmp.environments.tossing3d.predicates import IN_BIN, ON_GROUND
-from hitl_pmp.environments.tossing3d.real.backend import PlacementRequest, RealSkillStepCosts
+from hitl_pmp.environments.tossing3d.real.backend import PlacementRequest
 from hitl_pmp.environments.tossing3d.real.contract import DumpReply
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
-from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
+from hitl_pmp.environments.tossing3d.real.fake_robot import (
+    FAKE_SKILL_SECONDS,
+    FakePerson,
+    FakeTossingRobot,
+)
 from hitl_pmp.environments.tossing3d.real.frame import BIN_SPOTS, ROOM_FRAME
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -29,7 +33,7 @@ class _PutsTheBottleInTheBin(FakePerson):
 def _env() -> tuple[RealTossing3DEnvironment, FakeTossingRobot]:
     robot = FakeTossingRobot()
     person = _PutsTheBottleInTheBin(robot=robot, write=lambda _line: None)
-    env = RealTossing3DEnvironment(tossing_robot=robot, person=person)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
     env.hard_reset()
     return env, robot
 
@@ -59,7 +63,7 @@ def test_the_real_env_offers_the_pour_where_the_sim_does() -> None:
     assert "PourCubeOutOfBin" in {s.skill.name for s in applicable}
 
 
-def test_a_pour_is_one_dump_bin_call_charged_its_sim_mean_ticks() -> None:
+def test_a_pour_is_one_dump_bin_call_charged_its_seconds_as_sim_ticks() -> None:
     env, robot = _env()
     _bottle_in_the_robot_side_bin(env=env, robot=robot)
     counts = {"after": 0}
@@ -74,7 +78,7 @@ def test_a_pour_is_one_dump_bin_call_charged_its_sim_mean_ticks() -> None:
     # makes for `PickPlannable`).
     assert [name for name, _ in robot.calls if name not in {"observe", "can_pick"}] == ["dump_bin"]
     assert env.last_skill_error() is None
-    assert counts["after"] == RealSkillStepCosts().pour_bin == 680
+    assert counts["after"] == round(FAKE_SKILL_SECONDS["dump_bin"] / 0.1) == 590
     state = env.get_current_state()
     assert not IN_BIN.holds(state=state, objects=(env.cube, env.bin))
     assert ON_GROUND.holds(state=state, objects=(env.cube,))
@@ -94,7 +98,7 @@ def test_a_dump_that_moved_but_did_not_empty_the_bin_is_a_charged_failure() -> N
     _bottle_in_the_robot_side_bin(env=env, robot=robot)
     robot.dump_grips = False  # closed on nothing at the rim: let go and withdrew
     _pour(env=env)
-    assert env.last_controller_steps() == (RealSkillStepCosts().pour_bin,)
+    assert env.last_controller_steps() == (590,)
     assert "did not empty" in (env.last_skill_error() or "")
     assert IN_BIN.holds(state=env.get_current_state(), objects=(env.cube, env.bin))
 
