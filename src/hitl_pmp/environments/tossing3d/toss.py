@@ -17,6 +17,9 @@ the throw's outcome by side. Where the robot happened to be *before* driving say
 nothing about the landing, and it differs systematically between practice (same-side
 bins) and evaluation (far-side bins), so it made evaluation rows look unlike practice
 rows for no physical reason.
+
+A parameter set may narrow it further (`TossParameterSet.classifier_inputs`): the real
+robot's row is `[1, speed, release]`, because its standoff is fixed.
 """
 
 import math
@@ -233,8 +236,10 @@ class Tossing3DToss:
         )
 
     @staticmethod
-    def feature_row(*, params: np.ndarray) -> list[float]:
-        return [1.0, *(float(value) for value in params)]
+    def feature_row(
+        *, params: np.ndarray, parameters: TossParameterSet = SIM_TOSS_PARAMETERS
+    ) -> list[float]:
+        return [1.0, *parameters.classifier_features(params=params)]
 
     @staticmethod
     def action_annotations(*, action: Any) -> dict[str, float]:

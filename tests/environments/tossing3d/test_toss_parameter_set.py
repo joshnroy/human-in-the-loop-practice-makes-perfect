@@ -13,7 +13,11 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
-from hitl_pmp.environments.tossing3d.toss_direction import TossStandoffBand
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    TossDirectionChoice,
+    TossDirectionSelector,
+    TossStandoffBand,
+)
 from hitl_pmp.environments.tossing3d.types import TossFeasibilityGeometry, TossParameterSet
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     REAL_TOSS_PARAMETERS,
@@ -23,6 +27,9 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     WIDE_TOSS_STANDOFF_BOUNDS,
     WideLongRangeTossProposal,
 )
+from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import LearnedSkillSampler
+
+from .observations import state
 
 
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
@@ -112,3 +119,92 @@ def test_the_robot_side_band_follows_the_parameter_set() -> None:
         TossStandoffBand.robot_side_bounds(geometry=geometry, parameters=REAL_TOSS_PARAMETERS)
         == REAL_TOSS_PARAMETERS.standoff_bounds
     )
+
+
+def _toss_row(*, env: Tossing3DEnvironment, params: np.ndarray) -> list[float]:
+    row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
+        ground_skill=_toss(env=env), state=state(env=env), params=params
+    )
+    assert row is not None
+    return row
+
+
+def test_the_real_set_learns_speed_and_release_only() -> None:
+    # The real standoff is fixed at 1.20 m; its +-5 mm band is a placeholder interval,
+    # and min/max normalisation would stretch it to the span of the other two inputs.
+    assert REAL_TOSS_PARAMETERS.classifier_inputs == ("speed", "release_ms")
+
+
+def test_the_sim_set_learns_all_three() -> None:
+    assert SIM_TOSS_PARAMETERS.classifier_inputs == ("standoff", "speed", "release_ms")
+
+
+def test_a_real_classifier_row_ignores_the_standoff() -> None:
+    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
+    rows = [
+        _toss_row(env=env, params=np.array([standoff, 114.72, 729.37]))
+        for standoff in (1.195, 1.200, 1.202, 1.205)
+    ]
+    assert rows == [[1.0, 114.72, 729.37]] * 4
+
+
+def test_two_real_candidates_differing_only_in_standoff_score_identically() -> None:
+    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
+    sampler = LearnedSkillSampler(
+        skill_name="MoveToTossLocationAndToss", param_dim=3, seed=0, max_train_iters=200
+    )
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        params = WideLongRangeTossProposal.sample(rng=rng, parameters=REAL_TOSS_PARAMETERS)
+        sampler.observe(sampler_input=_toss_row(env=env, params=params), success=params[1] < 120)
+    sampler.fit()
+    assert sampler.is_fitted
+    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.195, 1.205)]
+    low, high = sampler.score_inputs(sampler_inputs=rows)
+    assert low == high
+
+
+def test_the_executed_real_action_still_carries_the_drawn_standoff(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def select_for_state(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", select_for_state)
+    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
+    candidates = [np.array([1.196, 114.72, 729.37]), np.array([1.204, 114.72, 729.37])]
+    rows = [_toss_row(env=env, params=candidate) for candidate in candidates]
+    assert rows[0] == rows[1]
+    sampler = LearnedSkillSampler(skill_name="MoveToTossLocationAndToss", param_dim=3, seed=0)
+    chosen = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=False).params
+    assert any(chosen is candidate for candidate in candidates)
+    action = Tossing3DSkillProvider(env=env).compute_action(
+        ground_skill=_toss(env=env), params=chosen, state=state(env=env)
+    )
+    assert action[1] == pytest.approx(chosen[0])
+
+
+def test_the_sim_classifier_row_is_unchanged_byte_for_byte() -> None:
+    env = Tossing3DEnvironment()
+    rng = np.random.default_rng(11)
+    for _ in range(50):
+        params = WideLongRangeTossProposal.sample(rng=rng)
+        row = _toss_row(env=env, params=params)
+        # What `Tossing3DToss.feature_row` built before classifier inputs were declared.
+        expected = [1.0, *(float(value) for value in params)]
+        assert [type(value) for value in row] == [float] * 4
+        assert np.array(row).tobytes() == np.array(expected).tobytes()
+
+
+def test_classifier_inputs_must_be_a_nonempty_ordered_subset() -> None:
+    for bad in ((), ("speed", "speed"), ("release_ms", "speed"), ("yaw",)):
+        with pytest.raises(ValueError):
+            TossParameterSet(
+                standoff_bounds=(1.0, 1.4),
+                speed_bounds=(100.0, 140.0),
+                release_ms_bounds=(500.0, 850.0),
+                classifier_inputs=bad,
+            )

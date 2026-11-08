@@ -82,6 +82,9 @@ REAL_TOSS_PARAMETERS = TossParameterSet(
     standoff_bounds=(1.195, 1.205),
     speed_bounds=(100.0, 140.0),
     release_ms_bounds=(500.0, 850.0),
+    # A fixed standoff is not something to learn (Josh, 2026-11-08): normalised, the
+    # placeholder jitter alone moved one throw's score from 1.0 to 0.0.
+    classifier_inputs=("speed", "release_ms"),
 )
 
 
