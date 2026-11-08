@@ -694,12 +694,14 @@ def test_the_belief_space_planner_skips_goal_pursuit_by_default() -> None:
 def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_planner() -> None:
     """Under --reproduce-predicators-random-when-stranded EES goes random when its goal
     plan fails; our planner keeps its own behaviour and falls through to practice
-    selection (here a depth-0 search, which stops)."""
+    selection (here a depth-0 search, which stops). No human reset is offered: one
+    would make the goal plan succeed through the reset rather than fail."""
     method = _build(
         pomdp_search_depth=0,
         goal_pursuit_horizon=100,
         reproduce_predicators_random_when_stranded=True,
     )
+    object.__setattr__(method, "offered_partial_resets", lambda: ())
     method.configure_practice_accounting(accounting=PracticeAccounting())
     state = Tossing3DState(
         data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
