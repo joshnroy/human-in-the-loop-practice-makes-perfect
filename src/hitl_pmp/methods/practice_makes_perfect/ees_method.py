@@ -396,6 +396,9 @@ class EesMethod(Method):
     # every robot-side toss proposal infeasible, and each starvation raised
     # InteractionComplete).
     _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
+    # Control steps the host measured for the robot skill dispatched last, or None when
+    # none was reported since that dispatch (any harness but the step protocol).
+    _dispatched_skill_steps: int | None = PrivateAttr(default=None)
     # Practice periods started so far; the cycle index the goal-pursuit schedule reads.
     _practice_periods: int = PrivateAttr()
     # Under score_human_skills only: one competence model per human ground skill, kept
@@ -587,10 +590,35 @@ class EesMethod(Method):
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         self._execution_ground_skill = ground_skill
+        self._dispatched_skill_steps = None
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
-        """Receive host-measured execution cost independently of outcome learning."""
-        del cost, steps, complete
+        """Receive host-measured execution cost independently of outcome learning. The
+        step count is kept only to recognize a refusal (see `observe_refusal`)."""
+        del cost, complete
+        self._dispatched_skill_steps = steps
+
+    def observe_refusal(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        before_atoms: frozenset[GroundAtom],
+        after_atoms: frozenset[GroundAtom],
+    ) -> None:
+        """A robot skill that ran 0 control steps and left the state unchanged refused:
+        it is not applicable from `before_atoms`, so deselect it there for the rest of
+        the session, exactly like a starved parameter pool. Without this, EES scored the
+        refusal as an ordinary failure whose forecast gain stayed the top practice score,
+        and redispatched it from the same stuck state for whole sessions (Della, EES
+        p=0.5 seed 0, 2026-11-06). Its competence observation is left unchanged.
+
+        EES's own selector only: DP and the belief-space planners choose differently."""
+        if (
+            self._uses_ees_selector()
+            and self._dispatched_skill_steps == 0
+            and after_atoms == before_atoms
+        ):
+            self.record_starved_parameter_pool(ground_skill=ground_skill, true_atoms=before_atoms)
 
     def current_competences(self) -> dict[GroundSkill, float]:
         """Every already-instantiated ground skill's `get_current_competence()` --
@@ -2044,6 +2072,11 @@ class _EesEpisode:
                 after_atoms=true_atoms,
                 success=success,
                 was_random_exploration=attempt is not None and attempt.was_random_exploration,
+            )
+            self._method.observe_refusal(
+                ground_skill=self._pending,
+                before_atoms=self._pending_before_atoms,
+                after_atoms=true_atoms,
             )
             # `records_training_row`, not `attempt is not None`: a record now exists for
             # every sampler-backed execution, but only an exploring one is training
