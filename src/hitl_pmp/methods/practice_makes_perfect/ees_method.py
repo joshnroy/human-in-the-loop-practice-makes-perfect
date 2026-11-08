@@ -2076,6 +2076,10 @@ class _EesEpisode:
         starved = method.starved_ground_skills(true_atoms=true_atoms)
         if self._random_mode:
             return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
+        # Priced once per choice: nothing between candidates executes or observes a
+        # skill, and re-pricing per unreachable candidate made this loop quadratic in
+        # the grounding count.
+        costs: dict[GroundSkill, float] | None = None
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
                 raise InteractionComplete(planner_stop=True)
@@ -2091,11 +2095,13 @@ class _EesEpisode:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 method.begin_practice_attempt(ground_skill=candidate)
                 return [candidate]
+            if costs is None:
+                costs = method.skill_costs()
             try:
                 prefix = method.plan_to(
                     init_atoms=true_atoms,
                     goal=candidate.preconditions,
-                    costs=method.skill_costs(),
+                    costs=costs,
                     # Only ever reached while practicing -- _next_plan only calls
                     # _practice_plan when self._practicing (see that method) -- so
                     # this is always True here; passed explicitly rather than
