@@ -474,13 +474,14 @@ class EesMethod(Method):
         return self.human_competence_model(ground_skill=ground_skill).get_current_competence()
 
     def human_skill_cost(self, *, ground_skill: GroundSkill) -> float:
-        """The plan cost of a human skill: its price alone by default (the paper's
-        always-successful rescue); under `score_human_skills` the price plus
-        `-log(competence)`, exactly as a robot skill is priced."""
-        price = self.practice_action_cost(ground_skill=ground_skill)
+        """The plan cost of a human skill. Under `score_human_skills`, `-log(competence)`
+        alone, exactly as a robot skill is priced: a plan's cost is its chance of
+        failing, and what a skill costs to execute is not something EES estimates
+        (Josh, 2026-11-08). Off, the port's fixed price (the paper's always-successful
+        rescue)."""
         if not self.score_human_skills:
-            return price
-        return price - math.log(max(self.human_skill_competence(ground_skill=ground_skill), 1e-12))
+            return self.practice_action_cost(ground_skill=ground_skill)
+        return -math.log(max(self.human_skill_competence(ground_skill=ground_skill), 1e-12))
 
     def record_human_skill_dispatch(
         self, *, ground_skill: GroundSkill, before_atoms: frozenset[GroundAtom]
