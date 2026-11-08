@@ -44,6 +44,10 @@ from .tasks import RealTossing3DTasks
 END_ONLY_MEASUREMENT_INTERVAL = 10**9
 
 
+# One sim tick of the tossing env's controllers, in seconds (10 Hz).
+SIM_TICK_SECONDS = 0.1
+
+
 class Tossing3DRealCli:
     """A static-method container, never instantiated."""
 
@@ -89,7 +93,9 @@ class Tossing3DRealCli:
             help="Price what the planner observes in wall-clock seconds at this rate: a "
             "robot skill's measured time (the camera look after it excluded), and a human "
             "reset's time from the person's start y to their done y (weighted by the "
-            "costs file's human_weight). The step budget still counts the sim's ticks.",
+            "costs file's human_weight). The step budget counts the same seconds as sim "
+            "ticks of SIM_TICK_SECONDS, so a session of N steps is the robot time a sim "
+            "session of N steps simulates.",
         )
         parser.add_argument(
             "--measure-every-cycles",
@@ -166,6 +172,7 @@ class Tossing3DRealCli:
             confirm_each_skill=args.robot == "real" and args.robot_confirm_each_skill,
             canonical_seed=args.canonical_seed,
             evaluation=evaluation,
+            tick_seconds=None if args.wall_clock_cost_per_second is None else SIM_TICK_SECONDS,
         )
         tasks = RealTossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset

@@ -22,6 +22,7 @@ from hitl_pmp.environments.tossing3d.real.backend import (
     PracticeScene,
     RealSkillStepCosts,
     TerminalPerson,
+    WallClock,
 )
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakePerson, FakeTossingRobot
@@ -191,6 +192,35 @@ def test_each_real_skill_is_charged_its_sim_mean_ticks_after_one_before_check() 
     assert RealSkillStepCosts() == RealSkillStepCosts(
         pick_cube=119, move_to_toss_location_and_toss=90, open_gripper=1, pour_bin=680
     )
+
+
+def test_a_timed_real_skill_uses_up_its_measured_seconds_as_sim_ticks(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `tick_seconds`, a skill that moved -- held, missed or aborted mid-motion --
+    is charged its own wall-clock seconds in sim ticks, as a sim skill is charged the
+    ticks it ran; a refused one moved nothing and stays uncharged."""
+    clock = iter([100.0, 136.4, 200.0, 207.25, 300.0, 300.5])
+    monkeypatch.setattr(WallClock, "now", staticmethod(lambda: next(clock)))
+    robot = FakeTossingRobot()
+    env = RealTossing3DEnvironment(
+        tossing_robot=robot, person=FakePerson(robot=robot), tick_seconds=0.1
+    )
+    env.hard_reset()
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    assert env.last_controller_steps() == (364,)
+
+    def lost(self: FakeTossingRobot) -> dict[str, object]:  # noqa: PLR0917
+        raise ConnectionError("lost")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(FakeTossingRobot, "pick", lost)
+        env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    assert env.last_controller_steps() == (72,)
+    assert "aborted" in (env.last_skill_error() or "")
+    robot.cube = (0.24, 1.40, 0.0)  # across the tape: the robot side refuses
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    assert env.last_controller_steps() == (0,)
 
 
 def test_a_reply_without_a_barrier_is_refused() -> None:
