@@ -566,20 +566,21 @@ class KitchenController(PotstickerController):
         self.data.qvel[[int(self.model.jnt_dofadr[j]) for j in self.finger_joints()]] = 0.0
         self.human_stands_vessel_home(name="pitcher")
 
-    def continuous_turns(self) -> np.ndarray:
+    def continuous_turns(self, *, threshold: float = 2 * np.pi) -> np.ndarray:
         """Whole turns each continuous arm joint has wound away from its neutral angle.
 
-        Hysteresis: a joint less than a full turn from neutral counts as unwound, so
-        one resting near +-180 deg (the wrist after a pour) never flips back and forth.
+        Hysteresis: by default a joint less than a full turn from neutral counts as
+        unwound, so one resting near +-180 deg (the wrist after a pour) never flips back
+        and forth. PickPitcher passes half a turn (`pick_pitcher`).
         """
         continuous = self.lower == -12
         offset = self.data.qpos[self.arm_q] - self.arm_neutral_q
-        wound = continuous & (np.abs(offset) >= 2 * np.pi)
+        wound = continuous & (np.abs(offset) >= threshold)
         turns = np.zeros(len(offset), dtype=int)
         turns[wound] = np.round(offset[wound] / (2 * np.pi)).astype(int)
         return turns
 
-    def unwind_continuous_joints(self) -> None:
+    def unwind_continuous_joints(self, *, threshold: float = 2 * np.pi) -> None:
         """Rotate each wound continuous joint back by whole turns, empty hand only.
 
         IK resolves each continuous joint to the equivalent nearest the previous
@@ -591,7 +592,7 @@ class KitchenController(PotstickerController):
         """
         if self.held is not None:
             raise ValueError("Unwinding requires an empty hand")
-        turns = self.continuous_turns()
+        turns = self.continuous_turns(threshold=threshold)
         if not turns.any():
             return
         start = self.data.qpos[self.arm_q].copy()
@@ -628,7 +629,9 @@ class KitchenController(PotstickerController):
 
         if self.held is not None:
             raise ValueError("Pitcher pick requires an empty hand")
-        self.unwind_continuous_joints()
+        # The pick, carry and pour each move the arm before the next unwind is possible,
+        # so they start within half a turn of neutral, not merely within a full one.
+        self.unwind_continuous_joints(threshold=np.pi)
         if not self.ready():
             raise ValueError("Pitcher pick requires a ready scene")
         self.shrimp_recovery_active = False
@@ -796,6 +799,7 @@ class KitchenController(PotstickerController):
                 rotation_offset=self.rotation_offset,
                 home=self.home.copy(),
                 riders=riders,
+                neutral=self.arm_neutral_q.copy(),
             )
         finally:
             sim.close()
@@ -965,6 +969,7 @@ class KitchenController(PotstickerController):
                 start=center,
                 start_rotation=self.pour_orientation(angle=0) * self.rotation_offset,
                 riders=riders,
+                neutral=self.arm_neutral_q.copy(),
             )
         finally:
             sim.close()
