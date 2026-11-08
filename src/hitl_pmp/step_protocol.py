@@ -1727,9 +1727,12 @@ class StepPracticeRunner:
                 if wall_clock_rate is not None:
                     seconds = environment.drain_measured_seconds(problem=problem)
                     if seconds is not None:
-                        # The person's timed seconds are the reset's charge, weighted
-                        # by `human_weight` in the total like any human cost.
-                        charge = charge.model_copy(update={"cost": wall_clock_rate * seconds})
+                        # A reset costs its configured charge per ask plus the person's
+                        # timed seconds, so a fast reset is never close to free; both
+                        # are weighted by `human_weight` in the total like any human cost.
+                        charge = charge.model_copy(
+                            update={"cost": charge.cost + wall_clock_rate * seconds}
+                        )
                 clock.human_invoked(charge=charge)
                 cost = accounting.total_cost - before_cost if accounting else request_cost
                 metrics.record_human_intervention(cost=cost)
