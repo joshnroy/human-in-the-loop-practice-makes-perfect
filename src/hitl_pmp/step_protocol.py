@@ -1914,7 +1914,7 @@ class StepPracticeRunner:
                             if seconds is not None and observed_steps > 0:
                                 # The planner prices a skill from its observed step
                                 # count, so the measured cost goes in as the steps it
-                                # would buy; the budget still counts the sim's ticks.
+                                # would buy (the same count the real backend charges the budget).
                                 observed_cost = wall_clock_rate * seconds
                                 charged = observed_cost
                                 observed_steps = max(
