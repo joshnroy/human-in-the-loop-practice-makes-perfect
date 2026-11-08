@@ -63,7 +63,6 @@ class DpMethod(EesMethod):
     dp_max_allocations: int = Field(default=200_000, ge=1)
     dp_max_states: int = Field(default=4096, ge=1)
     skill_cost_prior_steps: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
-    score_human_skills: bool = True
 
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
@@ -83,9 +82,7 @@ class DpMethod(EesMethod):
     _dp_prior_sha256: str | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
-    def _human_skills_are_first_class(self) -> "DpMethod":
-        if not self.score_human_skills:
-            raise ValueError("DpMethod needs score_human_skills: human skills are first-class")
+    def _budget_and_calibration_are_consistent(self) -> "DpMethod":
         if self.dp_budget_unit == "episodes" and not self.dp_budget.is_integer():
             raise ValueError("DP's episode budget must be an integer number of target rollouts")
         if self.dp_prior_calibration is not None:

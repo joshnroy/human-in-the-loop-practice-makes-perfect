@@ -755,10 +755,7 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
         assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
         assert rim in reset.delete_effects
-        # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
-        method = CostFixtures.priced(
-            method=EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
-        )
+        method = CostFixtures.priced(method=EesMethod(env=env, skill_provider=provider, seed=0))
         method.configure_practice_accounting(
             accounting=CostFixtures.accounting(
                 human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}

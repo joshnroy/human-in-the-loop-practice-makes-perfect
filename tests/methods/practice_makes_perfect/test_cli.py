@@ -145,68 +145,36 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
-@pytest.mark.parametrize(
-    ("argv", "expected"),
-    [([], True), (["--ees-reset-gate"], True), (["--no-ees-reset-gate"], False)],
-)
-def test_the_ees_reset_gate_flag_parses_and_reaches_ees(
-    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("flag", ["--ees-reset-gate", "--no-ees-score-human-skills"])
+def test_a_removed_ees_mode_is_refused_when_parsed(
+    *, flag: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Parsed by --method ees and handed to the EesMethod the factory builds, so
-    --no-ees-reset-gate is not silently dropped between argparse and plan_to."""
-    from types import SimpleNamespace
-
-    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
-    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
-
-    args = _build_ees_parser().parse_args(argv)
-    assert args.ees_reset_gate is expected
-    captured: dict[str, object] = {}
-
-    def _capture(**kwargs: object) -> None:
-        captured.update(kwargs)
-
-    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
-    EesCli.run(args=args, env_cli=LightSwitchCli)
-    env = LightSwitchEnvironment(grid_size=3)
-    method = captured["method_factory"](  # type: ignore[operator]
-        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
-    )
-    assert isinstance(method, EesMethod)
-    assert method.reset_cost_gate is expected
+    """The reset gate and unscored human skills were removed (Josh, 2026-11-08): asking
+    for either fails loudly rather than running something else under its name."""
+    with pytest.raises(SystemExit):
+        _build_ees_parser().parse_args([flag])
+    assert "removed" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
-    ("argv", "expected"),
-    [([], True), (["--ees-score-human-skills"], True), (["--no-ees-score-human-skills"], False)],
+    ("argv", "gate", "score"),
+    [([], False, None), (["--no-ees-reset-gate", "--ees-score-human-skills"], False, True)],
 )
-def test_the_ees_score_human_skills_flag_parses_and_reaches_ees(
-    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+def test_the_surviving_spellings_still_parse(
+    *, argv: list[str], gate: bool, score: bool | None
 ) -> None:
-    """On by default, since human skills are first-class; the negative flag restores
-    the paper's always-successful rescue, which every EES run before the flip used."""
-    from types import SimpleNamespace
+    """Every launch so far passed --no-ees-reset-gate and --ees-score-human-skills, so
+    their argv must keep parsing to the behaviour EES now always has."""
+    args = _build_ees_parser().parse_args(argv)
+    assert (args.ees_reset_gate, args.ees_score_human_skills) == (gate, score)
 
-    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+
+def test_ees_has_no_reset_gate_or_unscored_mode() -> None:
+    from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
-    args = _build_ees_parser().parse_args(argv)
-    assert args.ees_score_human_skills is (expected if argv else None)
-    captured: dict[str, object] = {}
-
-    def _capture(**kwargs: object) -> None:
-        captured.update(kwargs)
-
-    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
-    EesCli.run(args=args, env_cli=LightSwitchCli)
-    # Resolved in place, so the config snapshot records what the run used.
-    assert args.ees_score_human_skills is expected
-    env = LightSwitchEnvironment(grid_size=3)
-    method = captured["method_factory"](  # type: ignore[operator]
-        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
-    )
-    assert isinstance(method, EesMethod)
-    assert method.score_human_skills is expected
+    for method in (EesMethod, DpMethod):
+        assert not {"reset_cost_gate", "score_human_skills"} & set(method.model_fields)
 
 
 @pytest.mark.parametrize(
@@ -344,13 +312,12 @@ def test_pomdp_accepts_linear_cost_coefficient() -> None:
     assert args.pomdp_linear_cost_lambda == pytest.approx(0.03)
 
 
-@pytest.mark.parametrize("flag", ["--ees-score-human-skills", "--no-ees-score-human-skills"])
-def test_pomdp_rejects_the_ees_score_human_skills_flag(*, flag: str) -> None:
+def test_pomdp_rejects_the_ees_score_human_skills_flag() -> None:
     """The belief-space method already scores every non-deterministic human skill;
-    the EES flag, either way, would otherwise be parsed and silently ignored."""
+    the EES flag would otherwise be parsed and silently ignored."""
     parser = argparse.ArgumentParser()
     Tossing3DPomdpCli.add_arguments(parser=parser)
-    args = parser.parse_args([flag])
+    args = parser.parse_args(["--ees-score-human-skills"])
     with pytest.raises(ValueError, match="ees-score-human-skills"):
         Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
 
@@ -883,7 +850,6 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
     assert method.dp_max_states == 123
     assert method.prior_alpha == pytest.approx(2.0)
     assert method.exploration_epsilon == pytest.approx(0.3)
-    assert method.score_human_skills is True
 
 
 @pytest.mark.parametrize("flag", ["--dp-smoothing", "--dp-budget"])

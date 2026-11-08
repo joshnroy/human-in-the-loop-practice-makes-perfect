@@ -115,18 +115,6 @@ def _two_skill_setup(*, monkeypatch, budget: float = 100.0, always_ask: bool = F
     return method, pick, back, cube
 
 
-def test_human_skills_are_scored_by_default_and_must_be():
-    assert DpMethod.model_fields["score_human_skills"].default is True
-    env = SweepOffShelf3DEnvironment()
-    with pytest.raises(ValidationError, match="score_human_skills"):
-        DpMethod(
-            env=env,
-            skill_provider=SweepOffShelf3DSkillProvider(env=env),
-            dp_budget=1.0,
-            score_human_skills=False,
-        )
-
-
 def test_curriculum_follows_dependencies_and_excludes_zero_allocations(*, monkeypatch):
     method, pick, back, cube = _two_skill_setup(monkeypatch=monkeypatch)
     ranked = method.choose_practice_target()

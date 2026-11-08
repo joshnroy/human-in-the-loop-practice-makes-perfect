@@ -1,6 +1,5 @@
-"""EES with `score_human_skills`: a human skill is scored, tracked and priced like a
-robot skill. On by default; off preserves the port's earlier fixed-price resets.
-Neither audited reference explorer defines a human-reset pricing model.
+"""EES scores a human skill, tracks it and plans it at -log(competence), like a robot
+skill. Neither audited reference explorer defines a human-reset pricing model.
 
 Built on SweepOffShelf3D's symbolic layer only; nothing here touches the simulator.
 """
@@ -25,13 +24,9 @@ from tests.practice_cost_fixtures import CostFixtures
 PRICE = 2.0
 
 
-def _build(*, score_human_skills: bool) -> EesMethod:
+def _build() -> EesMethod:
     env = SweepOffShelf3DEnvironment()
-    method = EesMethod(
-        env=env,
-        skill_provider=SweepOffShelf3DSkillProvider(env=env),
-        score_human_skills=score_human_skills,
-    )
+    method = EesMethod(env=env, skill_provider=SweepOffShelf3DSkillProvider(env=env))
     method.configure_practice_accounting(
         accounting=CostFixtures.accounting(human={"reset_cubes": PRICE, "reset_wiper": PRICE})
     )
@@ -79,35 +74,22 @@ def _offered_costs(*, method: EesMethod, monkeypatch: pytest.MonkeyPatch) -> dic
     return captured
 
 
-def test_scoring_human_skills_is_on_by_default():
-    assert EesMethod.model_fields["score_human_skills"].default is True
-
-
-def test_off_a_human_skill_is_never_scored_and_costs_its_price(*, monkeypatch):
-    method = _build(score_human_skills=False)
-    _dispatch_and_grant(method=method, after=_state(on_shelf=(), in_box=O.cubes))
-    assert "reset_cubes" not in method.practice_outcomes()
-    assert method.current_competences() == {}
-    reset = _reset_cubes(method=method)
-    assert _offered_costs(method=method, monkeypatch=monkeypatch)[reset] == PRICE
-
-
 def test_a_successful_human_skill_is_scored_a_success():
-    method = _build(score_human_skills=True)
+    method = _build()
     _dispatch_and_grant(method=method, after=_state(on_shelf=O.cubes, in_box=()))
     tally = method.practice_outcomes()["reset_cubes"]
     assert (tally.num_successes, tally.num_attempts) == (1, 1)
 
 
 def test_a_human_skill_that_moved_nothing_is_scored_a_failure():
-    method = _build(score_human_skills=True)
+    method = _build()
     _dispatch_and_grant(method=method, after=_state(on_shelf=(), in_box=O.cubes))
     tally = method.practice_outcomes()["reset_cubes"]
     assert (tally.num_successes, tally.num_attempts) == (0, 1)
 
 
 def test_a_human_skill_competence_is_tracked_from_the_robots_own_prior():
-    method = _build(score_human_skills=True)
+    method = _build()
     reset = _reset_cubes(method=method)
     prior = method.prior_alpha / (method.prior_alpha + method.prior_beta)
     assert method.human_skill_competence(ground_skill=reset) == pytest.approx(prior)
@@ -121,7 +103,7 @@ def test_a_human_skill_is_planned_at_minus_log_competence_alone(*, monkeypatch):
     """Planning cost is -log(competence), exactly as for a robot skill. What a skill
     costs to execute is not something EES estimates (Josh, 2026-11-08), so the cost
     file's human price never reaches EES's plans."""
-    method = _build(score_human_skills=True)
+    method = _build()
     reset = _reset_cubes(method=method)
     _dispatch_and_grant(method=method, after=_state(on_shelf=(), in_box=O.cubes))
     competence = method.human_skill_competence(ground_skill=reset)
@@ -130,7 +112,7 @@ def test_a_human_skill_is_planned_at_minus_log_competence_alone(*, monkeypatch):
 
 
 def test_the_human_price_does_not_change_a_human_skills_planning_cost(*, monkeypatch):
-    cheap, dear = _build(score_human_skills=True), _build(score_human_skills=True)
+    cheap, dear = _build(), _build()
     dear.configure_practice_accounting(
         accounting=CostFixtures.accounting(human={"reset_cubes": 50.0, "reset_wiper": 50.0})
     )
@@ -143,7 +125,7 @@ def test_the_human_price_does_not_change_a_human_skills_planning_cost(*, monkeyp
 def test_a_human_skill_is_never_a_practice_target():
     """The robot cannot practise the human; scoring the human must not make it a
     candidate EES chooses to practise."""
-    method = _build(score_human_skills=True)
+    method = _build()
     _dispatch_and_grant(method=method, after=_state(on_shelf=O.cubes, in_box=()))
     assert _reset_cubes(method=method) not in method.choose_practice_target()
 
@@ -158,7 +140,7 @@ def test_a_configured_human_price_is_looked_up_by_the_shelf_skills_own_name():
         PracticeCosts,
     )
 
-    method = _build(score_human_skills=False)
+    method = _build()
     method.configure_practice_accounting(
         accounting=PracticeAccounting(
             costs=PracticeCosts(
