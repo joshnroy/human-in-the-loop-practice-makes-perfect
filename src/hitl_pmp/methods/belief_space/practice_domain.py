@@ -11,6 +11,14 @@ things are not, and a `PracticeDomain` supplies them:
   skill, whose effects are checked and whose competence is learned like a robot's;
 - the value of the deployment policy -- the probability a held-out task is solved,
   with no human -- as a function of the skills' competences.
+
+A domain may also charge what deployment costs. The model sets `deployment_cost_lambda`
+(its own linear-cost lambda) and `robot_step_price` (the run's price of one robot step,
+in practice-cost units); a domain that models deployment cost then returns, from all
+three value methods, E[solved] - deployment_cost_lambda * E[deployment cost per task],
+the cost in those same practice-cost units, and reports the cost alone from
+`expected_deployment_cost`. Both default to zero, and a domain that does not opt in
+ignores them: its value is P(solve) exactly as before.
 """
 
 import abc
@@ -72,6 +80,15 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (object_symmetry.py, `Tossing3DPracticeModel.search_cache_key`). Off by default,
     # so a domain that has never been checked for it searches exactly as before.
     reduce_expectimax_search: bool = False
+    # Set by Tossing3DPracticeModel, never by a domain itself (see the module docstring).
+    deployment_cost_lambda: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    robot_step_price: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+
+    def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
+        """E[cost of one evaluation task] in practice-cost units, under the policy the
+        value methods assume. Zero for a domain that does not model it."""
+        del beliefs
+        return 0.0
 
     def belief_name(self, *, skill_name: str) -> str | None:
         shared = dict(self.shared_beliefs)
