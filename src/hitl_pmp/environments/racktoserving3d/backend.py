@@ -492,7 +492,24 @@ class RackServingBackend(SweepOffShelf3DBackend):
         """Place `names` on the rack as one draw of the shared layout distribution,
         conditioned on every other dumpling's current centre; a layout that collides
         with anything else in the scene is redrawn whole. A lined-up `start_layout`
-        draws all five from `RackLayout.lined_up` instead."""
+        draws all five from `RackLayout.lined_up` instead.
+
+        A lined-up pile has one place, against the rack's front edge on the plate's
+        centre line. When something the person does not move blocks every draw of it
+        (a scraper the robot still holds there, as on Della curtis-p025 seed 1), the
+        person scatters the five over the free rack instead, and `start_kind` says so."""
+        placed = self._draw_food_placements(names=names, start_layout=start_layout)
+        if placed is None and start_layout != "scattered":
+            self._start_kind = "scattered"
+            placed = self._draw_food_placements(names=names, start_layout="scattered")
+        if placed is None:
+            raise RuntimeError("no collision-free food return placement")
+        return placed
+
+    def _draw_food_placements(
+        self, *, names: list[str], start_layout: str
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+        """`food_placements`' draws, or None when every one collides."""
         import mujoco
 
         model, scratch, addresses, _ = self._scratch(names=names)
@@ -525,7 +542,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 for name in names
             ):
                 return placed
-        raise RuntimeError("no collision-free food return placement")
+        return None
 
     def rack_put_back_draws(self, *, name: str, count: int) -> list[tuple[float, float]]:
         """`count` independent draws of where the robot puts `name` back: the shared
