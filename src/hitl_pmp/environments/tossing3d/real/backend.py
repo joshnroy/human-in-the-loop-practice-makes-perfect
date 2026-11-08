@@ -466,7 +466,13 @@ class RealTossingBackend(BaseModel):
         self.person.place(request=request)
         self._seen = None
         observation = self.observe()
-        while (problem := self._bin_placement_problem(spot=request.bin)) is not None:
+        # Only the far spot is checked: the test tasks throw at it from a stand fixed by
+        # the bin, so where it sits is part of the task (Josh, 2026-11-08); the close
+        # spot only has to be on the robot's side.
+        while (
+            destination is Tossing3DSide.OPPOSITE
+            and (problem := self._bin_placement_problem(spot=request.bin)) is not None
+        ):
             self.person.move_bin(request=request, problem=problem)
             self._seen = None
             observation = self.observe()
