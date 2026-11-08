@@ -3,6 +3,10 @@
 import numpy as np
 import pytest
 
+from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
 from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
 from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN, TOSSING3D_DOMAIN
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
@@ -11,6 +15,7 @@ from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SKILL_STEPS,
     RackServingDeployment,
 )
+from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     make_default_tossing3d_belief,
@@ -145,3 +150,26 @@ def test_rack_failure_costs_are_charged_on_a_failed_attempt():
     attempt = 0.5 * success + 0.5 * failure
     expected = RACK_SKILL_STEPS["PickScraper"][0] + sum(0.5**k * attempt for k in range(11))
     assert float(steps[0]) == pytest.approx(expected)
+
+
+def test_step_accounting_turns_rack_deployment_cost_on_at_the_cost_files_lambda():
+    env = RackServingEnvironment(config=RackServingConfig())
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=RackServingSkillProvider(env=env),
+        pomdp_domain=RACK_SERVING_DOMAIN,
+        pomdp_solver="determinized_astar",
+        pomdp_num_particles=32,
+        pomdp_inference_engine="grid",
+        pomdp_grid_competence_bins=9,
+        pomdp_grid_learning_rate_bins=4,
+    )
+    assert method._pomdp_model.valued_domain().deployment_cost_lambda == 0.0
+    costs = PracticeCosts.model_validate({
+        "robot_step": {"value": PRICE},
+        "objective_lambda": LAMBDA,
+    })
+    method.configure_practice_accounting(accounting=PracticeAccounting(costs=costs))
+    valued = method._pomdp_model.valued_domain()
+    assert (valued.deployment_cost_lambda, valued.robot_step_price) == (LAMBDA, PRICE)
+    assert env._backend is None
