@@ -1475,6 +1475,15 @@ class StepPracticeRunner:
             nonlocal learning_updates
             method.end_cycle()
             learning_updates += 1
+            # Every update's policy, so a cycle no evaluation measured can be evaluated
+            # later. Only beside in-process evaluations: a sim run's snapshot is ~700 kB
+            # and it has hundreds of updates. Written before the event and the checkpoint
+            # that count it, so a resume that redoes this cycle rewrites it whole.
+            if measure_every_cycles is not None:
+                path = output / "snapshots" / f"after-update-{learning_updates:04d}.pickle"
+                partial = path.with_suffix(".partial")
+                partial.write_bytes(DeploymentSnapshot.encode(method=method))
+                partial.replace(path)
             StepFiles.event(
                 path=events,
                 event="learning_update",
