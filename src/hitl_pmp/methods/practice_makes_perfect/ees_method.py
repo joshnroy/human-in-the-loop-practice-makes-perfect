@@ -42,7 +42,7 @@ from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import PARAMETERIZED_SKILL, STOP_ONLY_SESSION, STRANDED, AlwaysAskReset
 from .competence_models import OptimisticSkillCompetenceModel
-from .wrapped_sampler import LearnedSkillSampler
+from .wrapped_sampler import LearnedSkillSampler, SamplerChoice
 
 logger = logging.getLogger(__name__)
 
@@ -1216,8 +1216,14 @@ class EesMethod(Method):
         ground_skill: GroundSkill,
         explore: bool,
         diagnostics: ParameterSamplingDiagnostics,
+        choice: SamplerChoice | None = None,
     ) -> None:
-        """Observe proposal rejection separately from real execution outcomes."""
+        """Observe proposal rejection separately from real execution outcomes.
+
+        `choice` is how the learned sampler picked from this batch, or `None` when no
+        learned sampler picked: an empty batch, a random-mode draw, or a caller that
+        only wanted the candidates."""
+        del choice
         if self.draw_recorder is not None:
             self.draw_recorder.record_proposals(
                 skill_name=ground_skill.skill.name, explore=explore, diagnostics=diagnostics
@@ -1233,6 +1239,23 @@ class EesMethod(Method):
         empty batch is an explicit inability to construct an action, not a
         failed skill execution or a claim that practice has no value.
         """
+        candidates, diagnostics = self._draw_parameter_candidates(
+            ground_skill=ground_skill, state=state
+        )
+        self.record_parameter_sampling(
+            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
+        )
+        if not candidates:
+            raise NoFeasibleParametersError(
+                skill_name=ground_skill.skill.name, diagnostics=diagnostics
+            )
+        return candidates
+
+    def _draw_parameter_candidates(
+        self, *, ground_skill: GroundSkill, state: State
+    ) -> tuple[list[np.ndarray], ParameterSamplingDiagnostics]:
+        """`sample_parameter_candidates` without recording or raising, so a caller
+        that goes on to choose can record the batch together with the choice."""
         candidates: list[np.ndarray] = []
         rejected: dict[str, int] = {}
         max_proposals = self.num_candidates * self.max_proposals_per_candidate
@@ -1256,14 +1279,7 @@ class EesMethod(Method):
             max_proposals=max_proposals,
             rejection_reasons=rejected,
         )
-        self.record_parameter_sampling(
-            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
-        )
-        if not candidates:
-            raise NoFeasibleParametersError(
-                skill_name=ground_skill.skill.name, diagnostics=diagnostics
-            )
-        return candidates
+        return candidates, diagnostics
 
     def sampler(self, *, skill_name: str, param_dim: int) -> LearnedSkillSampler:
         if skill_name not in self._samplers:
@@ -1507,9 +1523,14 @@ class EesMethod(Method):
             params: np.ndarray = np.zeros(0)
             record = None
         else:
-            candidates = self.sample_parameter_candidates(
-                ground_skill=ground_skill, state=state, explore=explore
+            candidates, diagnostics = self._draw_parameter_candidates(
+                ground_skill=ground_skill, state=state
             )
+            if not candidates:
+                self.record_parameter_sampling(
+                    ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
+                )
+                raise NoFeasibleParametersError(skill_name=skill.name, diagnostics=diagnostics)
             sampler_inputs = [
                 self.sampler_input_row(ground_skill=ground_skill, state=state, params=candidate)
                 for candidate in candidates
@@ -1517,6 +1538,9 @@ class EesMethod(Method):
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
             choice = sampler.sample(
                 sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
+            )
+            self.record_parameter_sampling(
+                ground_skill=ground_skill, explore=explore, diagnostics=diagnostics, choice=choice
             )
             params = choice.params
             record = _SkillAttempt(
