@@ -21,6 +21,8 @@ GUROBI_PYTHONPATH = "/scratch/gpfs/TSILVER/jr2860/launch/dp-gurobi-preflight-202
 PRACTICE_STEP_BUDGET = 160000
 EVALUATION_WORKERS = 1
 TEST_TASKS = 10
+# Seeds 0..SEEDS-1 per cost and arm; recorded in the manifest only when not this default.
+SEEDS = 3
 # The two human resets every row's cost file prices, and their full-contract price.
 RESET_NAMES = ("ResetCubeBinSameSide", "ResetCubeBinOppositeSide")
 HUMAN_RESET_COST = 5
@@ -242,6 +244,12 @@ def main() -> None:
     )
     parser.add_argument("--practice-step-budget", type=int, default=PRACTICE_STEP_BUDGET)
     parser.add_argument(
+        "--seeds",
+        type=int,
+        default=SEEDS,
+        help="Run seeds 0..N-1 for every cost and arm (default 3).",
+    )
+    parser.add_argument(
         "--evaluation-workers",
         type=int,
         default=EVALUATION_WORKERS,
@@ -418,6 +426,8 @@ def main() -> None:
         parser.error("--human-reset-costs must be distinct, non-negative numbers")
     if args.repeated_stop_limit is not None and args.repeated_stop_limit <= 0:
         parser.error("--repeated-stop-limit must be a positive integer")
+    if args.seeds <= 0:
+        parser.error("--seeds must be a positive number of seeds")
     if args.practice_step_budget <= 0 or args.practice_step_budget % 1000:
         parser.error("--practice-step-budget must be a positive whole number of thousands")
     if not args.tag.startswith("kitchen-recycling-") or any(
@@ -440,8 +450,8 @@ def main() -> None:
             )
             cost_files[cost] = name
     # Seed-major, then cost in the order given, then arm: one seed's full sweep finishes
-    # first. Without a sweep this is the nine seed-major runs.
-    for seed in range(3):
+    # first. Without a sweep or --seeds this is the nine seed-major runs.
+    for seed in range(args.seeds):
         for cost in costs if costs is not None else [None]:
             for arm in arms:
                 limit = args.dp_repeated_stop_limit if arm == "dp" else args.repeated_stop_limit
@@ -513,6 +523,7 @@ def main() -> None:
             if args.practice_step_budget != PRACTICE_STEP_BUDGET
             else {}
         ),
+        **({"seeds": args.seeds} if args.seeds != SEEDS else {}),
         **(
             {"evaluation_workers": args.evaluation_workers}
             if args.evaluation_workers != EVALUATION_WORKERS

@@ -452,6 +452,54 @@ class PackagingTests(unittest.TestCase):
             [(0, 0, "ees"), (0, 0, "expectimax"), (0, 0, "curtis"), (5, 1, "ees")],
         )
 
+    def test_seeds_sets_how_many_seeds_each_cost_and_arm_runs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = prepared(
+                directory=directory,
+                extra=("--seeds", "5", "--human-reset-costs", "0", "5", "--max-parallel", "30"),
+            )
+            manifest = json.loads((output / "manifest.json").read_text())
+            self.assertEqual(manifest["seeds"], 5)
+            self.assertEqual(
+                [(row["seed"], row["human_reset_cost"], row["arm"]) for row in manifest["runs"]],
+                [(seed, cost, arm) for seed in range(5) for cost in (0, 5) for arm in prepare.ARMS],
+            )
+            self.assertEqual(
+                [(r.get("human_reset_cost"), r["seed"], r["arm"]) for r in manifest["runs"]],
+                worker.expected_rows(manifest=manifest),
+            )
+            self.assertIn("--array=0-29%30\n", (output / "full.sbatch").read_text())
+
+    def test_the_default_seed_count_is_not_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = json.loads((prepared(directory=directory) / "manifest.json").read_text())
+            self.assertNotIn("seeds", manifest)
+            self.assertEqual({row["seed"] for row in manifest["runs"]}, {0, 1, 2})
+
+    def test_seeds_must_be_positive(self):
+        for seeds in ("0", "-1"):
+            with (
+                self.subTest(seeds=seeds),
+                tempfile.TemporaryDirectory() as directory,
+                self.assertRaises(subprocess.CalledProcessError),
+            ):
+                prepared(directory=directory, extra=("--seeds", seeds))
+
+    def test_worker_expects_the_manifests_seed_count(self):
+        rows = worker.expected_rows(manifest={"seeds": 5})
+        self.assertEqual(len(rows), 5 * len(worker.ARMS))
+        self.assertEqual({seed for _, seed, _ in rows}, set(range(5)))
+
+    def test_worker_rejects_rows_short_of_the_manifests_seeds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launch = Path(directory)
+            runs = [
+                {"arm": arm, "seed": seed, "argv": []} for seed in range(3) for arm in worker.ARMS
+            ]
+            (launch / "manifest.json").write_text(json.dumps({"seeds": 5, "runs": runs}))
+            with self.assertRaisesRegex(ValueError, r"Only the 15 seed-major kitchen runs \(5 "):
+                worker.verify(launch=launch, full=False)
+
     def test_worker_checks_each_rows_reset_cost(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "costs.json"
