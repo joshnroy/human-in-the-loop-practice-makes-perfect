@@ -272,8 +272,7 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     provider = Tossing3DSkillProvider(env=env)
-    # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
-    method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
     method.configure_practice_accounting(
         accounting=CostFixtures.accounting(
             human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}
@@ -353,8 +352,7 @@ def test_ees_plans_a_reset_to_either_side_only_while_practicing(*, destination: 
 
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
-    # Bare-price reset: scored, it also pays -log(competence), and the gate declines it.
-    method = EesMethod(env=env, skill_provider=provider, seed=0, score_human_skills=False)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
     method.configure_practice_accounting(
         accounting=CostFixtures.accounting(
             human={"reset_cube_far": 0.001, "reset_cube_and_bin_near": 0.001}

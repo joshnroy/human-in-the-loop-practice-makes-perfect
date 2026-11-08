@@ -177,7 +177,6 @@ def test_shared_robot_controllers_and_human_practice_resets_are_preserved(
     assert method.offered_partial_resets() == (() if always_ask else resets)
     for reset in resets:
         assert method.human_skill_competence(ground_skill=reset) == pytest.approx(10 / 11)
-    assert method.score_human_skills
     assert (method.always_ask_reset is not None) is always_ask
 
 
@@ -320,7 +319,7 @@ def test_calibrated_once_allocation_is_not_exhausted_after_two_trials(*, calibra
         update={"dp_budget_unit": "episodes", "dp_allocation_schedule": "once"}
     )
     method.dp_prior_calibration = path
-    method._human_skills_are_first_class()
+    method._budget_and_calibration_are_consistent()
     pick = _ground(method=method, name="PickWiper")
     monkeypatch.setattr(
         DpTaskModel,
@@ -345,7 +344,7 @@ def test_calibrated_mode_refuses_unmeasured_deployment_skills(*, calibration, mo
     path, _report = calibration
     method = _build()
     method.dp_prior_calibration = path
-    method._human_skills_are_first_class()
+    method._budget_and_calibration_are_consistent()
     method._dp_skill_priors.pop("ReturnWiper")
     back = _ground(method=method, name="ReturnWiper")
     monkeypatch.setattr(

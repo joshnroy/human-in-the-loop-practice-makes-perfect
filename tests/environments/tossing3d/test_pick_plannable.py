@@ -405,9 +405,7 @@ def _ees_method(*, env: Tossing3DEnvironment | None = None) -> Any:
 
     env = Tossing3DEnvironment(scene_bg=False) if env is None else env
     provider = Tossing3DSkillProvider(env=env)
-    return CostFixtures.priced(
-        method=EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
-    )
+    return CostFixtures.priced(method=EesMethod(env=env, skill_provider=provider, seed=0))
 
 
 def test_ees_plans_through_the_reset_when_the_pick_is_unplannable() -> None:

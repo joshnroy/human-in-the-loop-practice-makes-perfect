@@ -61,6 +61,27 @@ class EesCli:
     --method ees. A static-method container, never instantiated, same as every
     other business-logic class in this project."""
 
+    class RemovedMode(argparse.Action):
+        """A two-spelling flag whose other spelling named a removed mode: the surviving
+        spelling still parses, so every launch's recorded argv replays, and the removed
+        one is refused rather than silently running something else under its name."""
+
+        def __init__(self, *, removed: str, value: bool, **kwargs: Any) -> None:
+            super().__init__(nargs=0, **kwargs)
+            self.removed = removed
+            self.value = value
+
+        def __call__(  # noqa: PLR0917
+            self,
+            parser: argparse.ArgumentParser,
+            namespace: argparse.Namespace,
+            values: str | Sequence[Any] | None,
+            option_string: str | None = None,
+        ) -> None:
+            if option_string == self.removed:
+                parser.error(f"{option_string} was removed (2026-11-08). {self.help}")
+            setattr(namespace, self.dest, self.value)
+
     @staticmethod
     def positive_float(*, value: str) -> float:
         parsed = float(value)
@@ -191,12 +212,15 @@ class EesCli:
         )
         parser.add_argument(
             "--ees-reset-gate",
-            action=argparse.BooleanOptionalAction,
-            default=EesMethod.model_fields["reset_cost_gate"].default,
-            help="Decline a practice plan whose human reset costs more than the "
-            "priciest ordinary skill (default on). --no-... accepts any reset-using "
-            "plan, so Fast Downward's cost minimisation alone chooses between a reset "
-            "and a reset-free route. Evaluation never offers the reset either way.",
+            "--no-ees-reset-gate",
+            dest="ees_reset_gate",
+            action=EesCli.RemovedMode,
+            removed="--ees-reset-gate",
+            value=False,
+            default=False,
+            help="EES has no reset gate: it declined a reset priced above the costliest "
+            "robot skill, and EES no longer sees a reset's price. --no-ees-reset-gate "
+            "is accepted and changes nothing.",
         )
         for name, field in (("alpha", "prior_alpha"), ("beta", "prior_beta")):
             parser.add_argument(
@@ -209,16 +233,18 @@ class EesCli:
             )
         parser.add_argument(
             "--ees-score-human-skills",
-            action=argparse.BooleanOptionalAction,
-            # None, not the method's default, so --method pomdp can tell a flag it
-            # would ignore from no flag at all.
+            "--no-ees-score-human-skills",
+            dest="ees_score_human_skills",
+            action=EesCli.RemovedMode,
+            removed="--no-ees-score-human-skills",
+            value=True,
+            # None, not True, so --method pomdp can tell a flag it would ignore from no
+            # flag at all.
             default=None,
-            help="Score each human skill's outcome against its effects, track its "
-            "competence and price it at its human cost plus -log(competence), like a "
-            "robot skill (default on: human skills are first-class, a deviation from "
-            "the paper). --no-ees-score-human-skills restores the paper's EES, whose "
-            "human rescue always succeeds, as every EES run before 2026-10-25 used "
-            "unless it passed this flag.",
+            help="EES always scores each human skill against its effects and plans it at "
+            "-log(competence), like a robot skill; the unscored, always-successful human "
+            "of the paper is gone. --ees-score-human-skills is accepted and changes "
+            "nothing.",
         )
         parser.add_argument(
             "--ees-preview-test-goals",
@@ -270,9 +296,10 @@ class EesCli:
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        # Resolved in place, so the config snapshot records the value the run used.
+        # Resolved in place, so the config snapshot records what the run used: EES
+        # always scores human skills.
         if args.ees_score_human_skills is None:
-            args.ees_score_human_skills = EesMethod.model_fields["score_human_skills"].default
+            args.ees_score_human_skills = True
         # Built here rather than inside the factory lambda so a missing --output-dir is
         # rejected before the environment is constructed, and so it is built exactly
         # once even if a caller ever invokes the factory more than once (two recorders
@@ -320,9 +347,7 @@ class EesCli:
             planning_timeout=args.planning_timeout,
             competence_window_size=args.competence_window_size,
             competence_recency_size=args.competence_recency_size,
-            reset_cost_gate=args.ees_reset_gate,
             always_ask_reset=EesCli.always_ask_reset(args=args),
-            score_human_skills=args.ees_score_human_skills,
             prior_alpha=args.ees_prior_alpha,
             prior_beta=args.ees_prior_beta,
             reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
@@ -630,7 +655,6 @@ class Tossing3DPomdpCli(EesCli):
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
-                reset_cost_gate=args.ees_reset_gate,
                 always_ask_reset=EesCli.always_ask_reset(args=args),
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
@@ -688,8 +712,7 @@ class Tossing3DPomdpCli(EesCli):
 class DpCli(EesCli):
     """Plugs DpMethod, the Deliberate Practice baseline, into the global CLI under
     --method dp. It is EES with a different practice-target choice, so it takes every
-    EES flag (its priors seed DP's competence models too) plus its own. Human skills
-    are always scored: DpMethod requires it, whatever --ees-score-human-skills says."""
+    EES flag (its priors seed DP's competence models too) plus its own."""
 
     class SkillValues(argparse.Action):
         """Collects repeated SKILL=VALUE floats into one dict, refusing a repeated skill."""
@@ -853,10 +876,7 @@ class DpCli(EesCli):
         env_cli.run_method(
             args=args,
             method_factory=lambda ctx: DpMethod(
-                **{
-                    **EesCli.method_kwargs(args=args, ctx=ctx, draw_recorder=draw_recorder),
-                    "score_human_skills": True,
-                },
+                **EesCli.method_kwargs(args=args, ctx=ctx, draw_recorder=draw_recorder),
                 dp_budget=args.dp_budget,
                 dp_budget_unit=args.dp_budget_unit,
                 dp_allocation_schedule=args.dp_allocation_schedule,

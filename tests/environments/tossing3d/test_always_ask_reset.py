@@ -35,7 +35,6 @@ def test_every_toss_is_followed_by_one_human_reset() -> None:
         always_ask_reset=rule,
         # EXP-22c's EES settings, under which the toss is practised early; with EES's
         # defaults a short period can practise only the pick, wrapped or not.
-        reset_cost_gate=False,
         goal_pursuit_horizon=0,
         reproduce_predicators_explore_target_only=True,
         reproduce_predicators_random_when_stranded=True,
