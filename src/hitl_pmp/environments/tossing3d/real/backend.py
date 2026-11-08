@@ -48,9 +48,12 @@ robot's if it was held, and the bin's side) and put back after
 method chose, and is charged nothing.
 """
 
+import contextlib
 import math
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from pathlib import Path
 from typing import Any, Final
 
 import numpy as np
@@ -229,6 +232,11 @@ class TerminalPerson(BaseModel):
     # restore is the experiment's own setup: one y, never timed.
     time_human_resets: bool = False
     clock: Callable[[], float] = time.monotonic
+    # While a timed reset waits for its done y, the seconds since the start y are
+    # redrawn every `tick_period_s` (`ResetTimerLine.draw`), so the person sees the
+    # time being charged (Josh, 2026-11-06).
+    tick: Callable[[str], None] = lambda text: ResetTimerLine.draw(text=text)
+    tick_period_s: float = 1.0
 
     _seconds: float | None = PrivateAttr(default=None)
 
@@ -240,12 +248,33 @@ class TerminalPerson(BaseModel):
         if timed:
             self._yes(question="Starting it now? (y as you start)", declined=request.kind)
             started = self.clock()
-        self._yes(question="Are the cube and the bin in place?", declined=request.kind)
+        if timed:
+            self.write("reset timer: 0 s")
+            with self._ticking(started=started):
+                self._yes(question="Are the cube and the bin in place?", declined=request.kind)
+        else:
+            self._yes(question="Are the cube and the bin in place?", declined=request.kind)
         if timed:
             self._seconds = self.clock() - started
             self.write(f"human reset: {self._seconds:.0f} s")
         self.write("observing the scene (the cameras take up to ~30 s) ...")
         self.placed(request=request)
+
+    @contextlib.contextmanager
+    def _ticking(self, *, started: float) -> Generator[None]:
+        stop = threading.Event()
+
+        def loop() -> None:
+            while not stop.wait(self.tick_period_s):
+                self.tick(f"reset timer: {self.clock() - started:.0f} s")
+
+        thread = threading.Thread(target=loop, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join(timeout=1.0)
 
     def drain_seconds(self) -> float | None:
         """The last timed human reset's seconds, once."""
@@ -268,6 +297,23 @@ class TerminalPerson(BaseModel):
                 self.write(f"{answer!r}: please type y or n.")
         if not _ANSWERS[answer]:
             raise KeyboardInterrupt(f"the person declined: {declined}")
+
+
+class ResetTimerLine:
+    """Redraws the line just above the done prompt (the "reset timer" line) in place.
+
+    Written to the terminal itself, not stdout: the run's stdout is `tee`d into its log,
+    which should keep the one "reset timer: 0 s" line and not a redraw per second. The
+    cursor is saved, moved up a line, and restored, so a y being typed is kept."""
+
+    @staticmethod
+    def draw(*, text: str) -> None:
+        try:
+            with Path("/dev/tty").open("w", encoding="utf-8") as tty:
+                tty.write(f"\0337\033[1A\r\033[2K{RealSessionLog.stamp()} {text}\0338")
+                tty.flush()
+        except OSError:
+            pass  # no terminal (a test, a detached run): nothing to show
 
 
 class RealSceneSnapshot(FixedTossDirection):
