@@ -51,3 +51,21 @@ def test_the_kitchen_oracle_throws_from_the_fixed_standoff():
     parser = argparse.ArgumentParser()
     KitchenRecyclingCli.add_arguments(parser=parser)
     assert parser.parse_args([]).oracle_throw_standoff == KITCHEN_TOSS_STANDOFF_M
+
+
+def test_the_kitchen_classifier_learns_speed_and_release_only():
+    # The 1 cm band around 1.45 m is a placeholder interval; min/max normalisation
+    # would stretch it to the span of speed and release (Josh, 2026-11-08).
+    assert KITCHEN_TOSS_PARAMETERS.classifier_inputs == ("speed", "release_ms")
+
+
+def test_a_kitchen_classifier_row_ignores_the_standoff():
+    env = KitchenRecycling3DEnvironment()
+    rows = [
+        Tossing3DToss.feature_row(
+            params=np.array([standoff, 150.0, 720.0]),
+            parameters=Tossing3DToss.parameters_of(env=env),
+        )
+        for standoff in (1.445, 1.450, 1.455)
+    ]
+    assert rows == [[1.0, 150.0, 720.0]] * 3
