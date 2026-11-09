@@ -18,6 +18,9 @@ from .skillet import CastIronSkillet
 
 
 class PracticePourController(FeedbackPourController):
+    # A held dumpling this close to the release point above the jug is let go there;
+    # whether it lands inside is still checked. Was 10 mm.
+    DROP_RELEASE_RADIUS_M: ClassVar[float] = 0.03
     station_pour_height_drop: ClassVar[float] = 0.16
     station_pour_base_offset: ClassVar[float] = 0.70
     active_pour_count: int = 0
@@ -856,20 +859,27 @@ class PracticePourController(FeedbackPourController):
         for attempt in range(3):
             point, _ = self.body_pose(name=name)
             hand, _ = self.hand_pose()
-            self.move(
-                position=hand + destination - point,
-                rotation=down,
-                seconds=5 if attempt == 0 else 2,
-                grip=1,
-                phase="center held shrimp over pitcher",
-            )
+            try:
+                self.move(
+                    position=hand + destination - point,
+                    rotation=down,
+                    seconds=5 if attempt == 0 else 2,
+                    grip=1,
+                    phase="center held shrimp over pitcher",
+                )
+            except ValueError as exc:
+                # Pick and place are assumed to work (Josh, 2026-11-08): a centring move
+                # the arm cannot finish ends centring; the release below decides.
+                if not str(exc).startswith(("IK infeasible", "Discontinuous IK")):
+                    raise
+                break
             self.pause(phase="stabilize shrimp before release", seconds=0.5, grip=1)
             if np.linalg.norm(self.body_pose(name=name)[0] - destination) < 0.004:
                 break
         if len(self.finger_contacts(name=name)) != 2:
             self.held = None
             raise ValueError("Shrimp lost before release")
-        if np.linalg.norm(self.body_pose(name=name)[0] - destination) >= 0.01:
+        if np.linalg.norm(self.body_pose(name=name)[0] - destination) >= self.DROP_RELEASE_RADIUS_M:
             raise ValueError("Held shrimp did not converge above pitcher")
         self.held = None
         self.pause(phase="release shrimp into pitcher", seconds=3, grip=0)
