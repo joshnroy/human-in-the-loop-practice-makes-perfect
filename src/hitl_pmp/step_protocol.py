@@ -928,6 +928,13 @@ class StepEvaluation:
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
+                        # A task's one attempt at its goal (a real toss) ends it either
+                        # way: a large budget buys pick retries, never a second throw.
+                        if not clock.solved and (
+                            final := environment.final_attempt_reason(action=action.action)
+                        ):
+                            reason = final
+                            break
                         # A one-shot skill (a Pour) that failed at deployment is
                         # committed: past the allowed attempts the task ends unsolved.
                         if max_one_shot is not None and error is not None and not clock.solved:

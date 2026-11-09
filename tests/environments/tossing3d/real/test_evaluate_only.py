@@ -11,6 +11,7 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.tossing3d.real import cli as real_cli
 from hitl_pmp.environments.tossing3d.real.fake_robot import FakeTossingRobot
+from hitl_pmp.environments.tossing3d.real.frame import CUBE_SPOT
 from hitl_pmp.step_protocol import CHECKPOINT_FILENAME, PREVIOUS_CHECKPOINT_FILENAME
 
 pytestmark = pytest.mark.xdist_group("tossing3d_real_evaluate_only")
@@ -108,3 +109,33 @@ def test_evaluate_only_refuses_resume(*, tmp_path: Path) -> None:
             ]
         )
     assert not output.exists()
+
+
+def test_a_held_out_task_ends_after_its_one_throw_however_large_its_budget(
+    *, room: FakeTossingRobot, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A budget large enough for three pick retries (Josh, 2026-11-09) must not also
+    let a task pick the bottle back up and throw again after a miss: every evaluation
+    has been one throw per task."""
+    # Every throw misses and the bottle bounces back onto the robot's side, where it
+    # can be picked again: the case a large budget would turn into a second throw.
+    throw = FakeTossingRobot.toss
+
+    def miss_back_onto_our_side(self: FakeTossingRobot, **kwargs: Any) -> dict[str, Any]:  # noqa: PLR0917
+        reply = throw(self, **kwargs)
+        self.cube = (CUBE_SPOT[0], CUBE_SPOT[1], 0.0)
+        return {**reply, "landed": list(CUBE_SPOT), "in_bin": False, "inside_bin": False}
+
+    monkeypatch.setattr(FakeTossingRobot, "lands_in_bin", staticmethod(lambda **_: False))
+    monkeypatch.setattr(FakeTossingRobot, "toss", miss_back_onto_our_side)
+    output = tmp_path / "one-throw"
+    Cli.main(
+        argv=[
+            *BASE,
+            *("--num-test-tasks", "3", "--evaluate-only", "--output-dir", str(output)),
+            *("--evaluation-control-steps", "5000"),
+        ]
+    )
+    assert [name for name, _ in room.calls].count("toss") == 3
+    progress = json.loads((output / "evaluations" / "0000" / "progress.json").read_text())
+    assert [task["reason"] for task in progress["tasks"]] == ["toss_missed"] * 3
