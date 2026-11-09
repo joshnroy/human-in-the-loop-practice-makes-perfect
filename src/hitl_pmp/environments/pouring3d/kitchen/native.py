@@ -904,7 +904,12 @@ class KitchenController(PotstickerController):
 
     def active_obstacle_pairs(self) -> list[tuple[int, int]]:
         pairs = super().active_obstacle_pairs()
-        if self.held is None and self.phase == "withdraw empty gripper above pitcher":
+        # After a drop the unwind starts beside the jug: a whole turn of the wrist can
+        # sweep the fingers through it.
+        if self.held is None and self.phase in {
+            "withdraw empty gripper above pitcher",
+            "unwind continuous arm joints",
+        }:
             pairs = pairs + self.pitcher_pairs
         return pairs
 
