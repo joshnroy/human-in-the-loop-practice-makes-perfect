@@ -79,7 +79,9 @@ REAL_TOSS_PARAMETERS = TossParameterSet(
     # throw reached only the near bin's near rim, so the robot stands 1.20 m from either
     # bin and searches speed and release alone. A set's bounds must be an interval, so
     # +-5 mm stands in for "fixed".
-    standoff_bounds=(1.195, 1.205),
+    # 1.30 m since 2026-11-09 (Josh): at 1.20 m random throws scored ~5/10 into the
+    # cardboard box, so the box moved 10 cm further out to leave practice room to show.
+    standoff_bounds=(1.295, 1.305),
     speed_bounds=(100.0, 140.0),
     release_ms_bounds=(500.0, 850.0),
     # A fixed standoff is not something to learn (Josh, 2026-11-08): normalised, the

@@ -48,7 +48,7 @@ def test_the_sim_set_is_the_constants_every_sim_run_used() -> None:
 def test_the_real_set_is_the_real_swings() -> None:
     # One 1.20 m standoff for both bins (Josh, 2026-11-05), +-5 mm because a set's bounds
     # must be an interval; the robot side's own bounds are 0.9-1.45 m.
-    assert REAL_TOSS_PARAMETERS.standoff_bounds == (1.195, 1.205)
+    assert REAL_TOSS_PARAMETERS.standoff_bounds == (1.295, 1.305)
     assert REAL_TOSS_PARAMETERS.speed_bounds == (100.0, 140.0)
     assert REAL_TOSS_PARAMETERS.release_ms_bounds == (500.0, 850.0)
 
@@ -90,11 +90,11 @@ def test_a_real_environment_draws_only_inside_the_real_set() -> None:
 
 
 def test_violation_names_the_parameter_and_the_bound() -> None:
-    assert REAL_TOSS_PARAMETERS.violation(params=(1.2, 120.0, 600.0)) is None
-    assert "speed" in str(REAL_TOSS_PARAMETERS.violation(params=(1.2, 150.0, 600.0)))
+    assert REAL_TOSS_PARAMETERS.violation(params=(1.3, 120.0, 600.0)) is None
+    assert "speed" in str(REAL_TOSS_PARAMETERS.violation(params=(1.3, 150.0, 600.0)))
     assert "standoff" in str(REAL_TOSS_PARAMETERS.violation(params=(2.0, 120.0, 600.0)))
     assert "standoff" in str(REAL_TOSS_PARAMETERS.violation(params=(1.0, 120.0, 600.0)))
-    assert "release" in str(REAL_TOSS_PARAMETERS.violation(params=(1.2, 120.0, 900.0)))
+    assert "release" in str(REAL_TOSS_PARAMETERS.violation(params=(1.3, 120.0, 900.0)))
 
 
 def test_a_parameter_set_refuses_an_empty_or_inverted_range() -> None:
@@ -159,7 +159,7 @@ def test_two_real_candidates_differing_only_in_standoff_score_identically() -> N
         sampler.observe(sampler_input=_toss_row(env=env, params=params), success=params[1] < 120)
     sampler.fit()
     assert sampler.is_fitted
-    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.195, 1.205)]
+    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.295, 1.305)]
     low, high = sampler.score_inputs(sampler_inputs=rows)
     assert low == high
 
