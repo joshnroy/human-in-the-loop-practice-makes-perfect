@@ -2,6 +2,7 @@
 
 import logging
 import math
+import pickle
 import re
 import threading
 import time
@@ -903,3 +904,53 @@ def test_a_far_bin_the_cameras_do_not_see_is_reported_and_the_person_asked_to_pl
     assert [name for name, _ in robot.calls].count("observe") == 2
     spot = BIN_SPOTS[Tossing3DSide.OPPOSITE].center
     assert robot.observe()["bin"]["x"] == pytest.approx(spot[0])
+
+
+def _scene_with_the_cube_in_the_close_bin(
+    *, env: RealTossing3DEnvironment, robot: FakeTossingRobot
+) -> PracticeScene:
+    """2026-11-08: practice left the cube in the bin at the close spot."""
+    spot = BIN_SPOTS[Tossing3DSide.ROBOT]
+    robot.put(cube=spot.center, bin_center=spot.center, bin_yaw=spot.yaw)
+    backend = env.real_backend()
+    backend._seen = None  # The person moved things: the next look is a new one.
+    backend.observe()
+    return backend.practice_scene()
+
+
+def test_a_practice_scene_remembers_a_cube_in_the_bin() -> None:
+    env, robot = _env()
+    assert not env.backend().practice_scene().cube_in_bin
+    assert _scene_with_the_cube_in_the_close_bin(env=env, robot=robot).cube_in_bin
+
+
+def test_restoring_a_cube_in_the_bin_asks_for_it_in_the_bin_not_at_floor_coordinates() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = _scene_with_the_cube_in_the_close_bin(env=env, robot=robot)
+    # The evaluation moved everything: the bin to the far spot, the cube on the floor.
+    far = BIN_SPOTS[Tossing3DSide.OPPOSITE]
+    robot.put(cube=CUBE_SPOT, bin_center=far.center, bin_yaw=far.yaw)
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert request == (
+        "restore practice: SAME (bin at the close spot, our side of the tape); "
+        "cube in the bin; do not move the robot"
+    )
+    # The robot's saved state and the scene as placed agree: the cube is in the bin.
+    assert env.backend().snapshot().reply.cube_in_bin
+
+
+def test_a_practice_scene_pickled_before_it_recorded_the_bin_restores_a_floor_cube() -> None:
+    """A checkpoint written before `cube_in_bin` existed still resumes."""
+    written: list[str] = []
+    env, _ = _env(written=written)
+    scene = PracticeScene(cube=(0.66, -0.98), holding=False, bin_side=Tossing3DSide.ROBOT)
+    del scene.__dict__["cube_in_bin"]  # As the older class pickled it.
+    old = pickle.loads(pickle.dumps(scene))
+    assert old.cube_in_bin is False
+    written.clear()
+    env.restore_practice_scene(scene=old)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert "cube at (0.66, -0.98) on our side" in request
