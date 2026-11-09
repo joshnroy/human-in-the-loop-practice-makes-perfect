@@ -333,6 +333,10 @@ class EesMethod(Method):
     # Running at the paper config's 100000 reproduces predicators' own score
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
+    # L2 penalty on each skill classifier's weights. 0 is predicators' setting; on the
+    # tossing env's noisy toss labels an unpenalized 32x32 net fits every label and
+    # scores untried parameters near 1.0 next to one lucky success (Josh, 2026-11-08).
+    sampler_weight_decay: float = 0.0
 
     _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
@@ -1290,6 +1294,7 @@ class EesMethod(Method):
                 exploration_epsilon=self.exploration_epsilon,
                 seed=self.seed,
                 max_train_iters=self.sampler_max_train_iters,
+                weight_decay=self.sampler_weight_decay,
             )
         return self._samplers[skill_name]
 

@@ -892,3 +892,31 @@ def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
     argv = ["--dp-budget", "1", flag, value]
     with pytest.raises(SystemExit):
         _build_dp_parser().parse_args(argv)
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"), [([], 0.0), (["--sampler-weight-decay", "0.01"], 0.01)]
+)
+def test_the_sampler_weight_decay_flag_reaches_every_learned_sampler(
+    *, argv: list[str], expected: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Parsed by --method ees, handed to the EesMethod, and on to each skill's
+    classifier; the default stays predicators' weight_decay = 0."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+
+    args = _build_ees_parser().parse_args(argv)
+    assert args.sampler_weight_decay == expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert method.sampler(skill_name="TurnOnLight", param_dim=1).weight_decay == expected

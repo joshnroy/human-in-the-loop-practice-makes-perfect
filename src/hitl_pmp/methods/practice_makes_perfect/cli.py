@@ -129,6 +129,13 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
+        parser.add_argument(
+            "--sampler-weight-decay",
+            type=float,
+            default=EesMethod.model_fields["sampler_weight_decay"].default,
+            help="L2 weight decay for each skill's success classifier. The default 0 "
+            "matches predicators' settings.py.",
+        )
         # Each default is the EesMethod field's; see that field for why it is what it
         # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
@@ -374,6 +381,7 @@ class EesCli:
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
+            sampler_weight_decay=args.sampler_weight_decay,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
             goal_pursuit_interval=args.goal_pursuit_interval,
@@ -677,6 +685,7 @@ class Tossing3DPomdpCli(EesCli):
                 draw_recorder=draw_recorder,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                sampler_weight_decay=args.sampler_weight_decay,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 goal_pursuit_interval=args.goal_pursuit_interval,
