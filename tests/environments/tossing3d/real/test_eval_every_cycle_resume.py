@@ -145,3 +145,41 @@ def test_a_resume_re_runs_only_an_unfinished_evaluation_then_restores_practice(
     assert session.count("restore practice:") == sum(
         e["event"] == "practice_scene_restored" for e in _events(output=output)
     )
+
+
+def test_a_resume_may_change_the_number_of_test_tasks_and_every_evaluation_after_uses_it(
+    *, room: FakeTossingRobot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Josh, 2026-11-08: trial 3's next evaluation at 10 tasks instead of 20. The
+    evaluation pending at the interruption is re-run from its first task at the new
+    count; the ones recorded before keep theirs."""
+    del room
+    output = tmp_path / "run"
+    with monkeypatch.context() as patch:
+        _interrupt_after(monkeypatch=patch, event="measurement", after_cycle=1)
+        with pytest.raises(KeyboardInterrupt):
+            Cli.main(argv=_argv(output=output))
+    Cli.main(argv=_argv(output=output, resume=True, extra=("--num-test-tasks", "2")))
+    totals = [(after, total) for after, _, _, total in _curve(output=output)]
+    pending = totals.index((1, 2))  # re-run at the new count
+    assert totals[:pending] == [(None, 1), (0, 1)]  # recorded before the interruption
+    assert len(totals) > pending + 1
+    assert all(total == 2 for _, total in totals[pending:])
+    resumes = [e for e in _events(output=output) if e["event"] == "resume"]
+    assert resumes[0]["num_test_tasks"] == {"recorded": "1", "now": "2"}
+
+
+def test_a_resume_that_changes_another_flag_besides_the_task_count_still_refuses(
+    *, room: FakeTossingRobot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del room
+    output = tmp_path / "run"
+    with monkeypatch.context() as patch:
+        _interrupt_after(monkeypatch=patch, event="measurement", after_cycle=1)
+        with pytest.raises(KeyboardInterrupt):
+            Cli.main(argv=_argv(output=output))
+    with pytest.raises(ValueError, match="seed") as refused:
+        Cli.main(
+            argv=_argv(output=output, resume=True, extra=("--num-test-tasks", "2", "--seed", "1"))
+        )
+    assert "num_test_tasks" not in str(refused.value)

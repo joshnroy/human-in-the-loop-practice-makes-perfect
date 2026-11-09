@@ -604,17 +604,31 @@ class StepProtocolResume:
         "evaluation_policy": "None",
     }
 
+    # Flags a resume may change. `--num-test-tasks` (Josh, 2026-11-08: a real run's
+    # later evaluations at 10 tasks instead of 20): every evaluation the resumed process
+    # runs, the pending one included, uses the new count from its first task; each
+    # evaluation's own `results.json` records how many it ran (`num_total`).
+    MAY_CHANGE: ClassVar[frozenset[str]] = frozenset({"num_test_tasks"})
+
     @staticmethod
     def comparable(*, arguments: dict[str, str]) -> dict[str, str]:
-        """The resolved flags a resume must repeat: all but `--resume` itself, and the
-        output directory, which `prepare` has already matched as a path."""
+        """The resolved flags a resume must repeat: all but `--resume` itself, the
+        output directory, which `prepare` has already matched as a path, and
+        `MAY_CHANGE`."""
+        skipped = {"resume", "output_dir", "stop_after_cycles", *StepProtocolResume.MAY_CHANGE}
         return {
             **StepProtocolResume.ADDED_DEFAULTS,
-            **{
-                k: v
-                for k, v in arguments.items()
-                if k not in {"resume", "output_dir", "stop_after_cycles"}
-            },
+            **{k: v for k, v in arguments.items() if k not in skipped},
+        }
+
+    @staticmethod
+    def changed(*, args: argparse.Namespace, output: Path) -> dict[str, dict[str, str]]:
+        """The `MAY_CHANGE` flags this resume changed, as recorded and as now."""
+        recorded = json.loads((output / "config_snapshot.json").read_text())["args"]
+        return {
+            key: {"recorded": recorded[key], "now": str(getattr(args, key))}
+            for key in sorted(StepProtocolResume.MAY_CHANGE)
+            if key in recorded and recorded[key] != str(getattr(args, key))
         }
 
     @staticmethod
@@ -1375,6 +1389,8 @@ class StepPracticeRunner:
             interrupted_last_line=last_line,
             git_commit=snapshot.git_commit,
             git_dirty=snapshot.git_dirty,
+            # config_snapshot.json stays as the first process wrote it.
+            **StepProtocolResume.changed(args=args, output=events.parent),
         )
 
     @staticmethod
