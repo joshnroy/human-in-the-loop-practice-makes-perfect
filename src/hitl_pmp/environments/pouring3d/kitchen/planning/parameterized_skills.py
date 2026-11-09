@@ -68,6 +68,10 @@ RETURN_CHECK_RAD = 0.02
 RETURN_WAYPOINT_RAD = 0.2
 
 
+# MuJoCo's joint limits are soft: an arm resting at one sits slightly past it.
+EXECUTED_LIMIT_SLACK_RAD = 0.02
+
+
 class PlanningRefused(ValueError):
     """A planner found no plan; nothing was executed."""
 
@@ -81,10 +85,17 @@ class HeldObject(BaseModel):
     base_link_to_held_obj: Pose
     # Bodies that move with the held one (dumplings in the jug); never obstacles to it.
     riders: tuple[int, ...] = ()
+    # The jug must stay upright while carried; a welded dumpling may take any orientation.
+    keep_upright: bool = True
 
     @staticmethod
     def grasped(
-        *, sim: KitchenPyBulletSim, arm: Any, name: str, riders: tuple[str, ...]
+        *,
+        sim: KitchenPyBulletSim,
+        arm: Any,
+        name: str,
+        riders: tuple[str, ...],
+        keep_upright: bool = True,
     ) -> "HeldObject":
         """Freeze the current hand-to-object transform, as upstream's pick does.
 
@@ -107,6 +118,7 @@ class HeldObject(BaseModel):
             body=sim.mirrored_id(name=name),
             base_link_to_held_obj=Pose((x, y, z), (qx, qy, qz, qw)),
             riders=tuple(sim.mirrored_id(name=r) for r in riders),
+            keep_upright=keep_upright,
         )
 
     def obstacles(self, *, sim: KitchenPyBulletSim) -> set[int]:
@@ -171,10 +183,18 @@ class KitchenMotionPlanner:
         motion escapes at `ESCAPE_MARGIN_M` until it is first outside `margin`, and is
         planned at `margin` from there. A start outside `margin` plans as it always has.
         """
+        if sim.executed_arm_limits is not None:
+            # An arm resting at a soft MuJoCo limit sits slightly past it; plan from the
+            # limit itself, never further out.
+            lower, upper = sim.executed_arm_limits
+            arm_now = np.asarray(start[:7], dtype=float)
+            inside = np.clip(arm_now, lower, upper)
+            if np.max(np.abs(inside - arm_now)) <= EXECUTED_LIMIT_SLACK_RAD:
+                start = inside
         start_joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=start)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         constraint = None
-        if held is not None:
+        if held is not None and held.keep_upright:
             # A compliant grasp can leave the jug hanging past the limit when a skill
             # starts (measured 10.2 deg after a pour's return to upright). Never tilt it
             # further than it starts; plan towards upright.
@@ -184,7 +204,23 @@ class KitchenMotionPlanner:
             )
             constraint = held.upright(sim=sim, limit_deg=limit)
 
+        limits = sim.executed_arm_limits
+        if limits is not None:
+            upright_only = constraint
+
+            def executable(q: Any) -> bool:  # noqa: PLR0917 -- upstream callback signature
+                arm_q = np.asarray(q[:7], dtype=float)
+                if np.any(arm_q < limits[0]) or np.any(arm_q > limits[1]):
+                    return False
+                return upright_only is None or upright_only(q)
+
+            constraint = executable
+
         def within(q: Any, threshold: float) -> bool:  # noqa: PLR0917 -- local helper
+            if limits is not None:
+                arm_q = np.asarray(q[:7], dtype=float)
+                if np.any(arm_q < limits[0]) or np.any(arm_q > limits[1]):
+                    return True
             if check_collisions_with_held_object(
                 sim.robot,
                 bodies,
@@ -225,7 +261,7 @@ class KitchenMotionPlanner:
             else KitchenMotionPlanner.with_fingers(sim=sim, arm=reference),
         )
         if goal is None:
-            upright = " upright" if held is not None else ""
+            upright = " upright" if constraint is not None else ""
             raise PlanningRefused(f"No collision-free{upright} IK solution for {what}")
         planned = checked(start_joints, goal, margin)
         if planned is None and collides(start_joints) and not within(start_joints, ESCAPE_MARGIN_M):
@@ -236,7 +272,7 @@ class KitchenMotionPlanner:
                 rest = checked(escape[out], goal, margin) if out < len(escape) - 1 else [goal]
                 planned = None if rest is None else [*escape[: out + 1], *rest[1:]]
         if planned is None:
-            upright = " upright" if held is not None else ""
+            upright = " upright" if constraint is not None else ""
             raise PlanningRefused(f"No collision-free{upright} arm path to {what}")
         path = KitchenMotionPlanner.unwrapped(path=planned)
         if neutral is not None:
@@ -766,6 +802,116 @@ class PlacePitcherController:
         """The upstream base planner's own pose distance: translation plus |yaw|."""
         turn = float(np.arctan2(np.sin(target[2] - nominal[2]), np.cos(target[2] - nominal[2])))
         return float(np.linalg.norm(np.asarray(target[:2]) - nominal[:2])) + abs(turn)
+
+
+class DropShrimpController:
+    """Carry a held dumpling from wherever it was picked to a hover above the jug.
+
+    Planned before anything moves, as the jug's carries are: the arm tucks the dumpling
+    into the carry pose; the base drives to the drop pose; the arm brings the dumpling
+    above the jug's mouth. The dumpling is welded to the hand, so unlike the jug it may
+    take any orientation on the way: the hand orientations in `CARRY_TURNS_DEG` (turns of
+    the grasp's own orientation about vertical) are tried in order until one plans. The
+    centring and release over the mouth stay the scripted contact motion.
+    """
+
+    TUCK = "planned tuck held shrimp for carry"
+    BASE_MOTION = "planned carry shrimp to drop pose"
+    MOVE_ARM_TO_HOVER = "planned arm to shrimp hover above jug"
+    CARRY_HAND_IN_BASE = CarryToPourController.CARRY_HAND_IN_BASE
+    CARRY_TURNS_DEG = (0.0, 90.0, -90.0, 180.0)
+    HOVER_DOWN_YAWS_DEG = (0.0, 90.0, 180.0, 270.0)
+
+    def __init__(self, *, sim: KitchenPyBulletSim) -> None:
+        self.sim = sim
+        self.plans: dict[str, list[np.ndarray]] = {}
+        self.hand_rotation = Rotation.identity()
+
+    def reset(
+        self,
+        *,
+        x: Any,
+        arm: np.ndarray,
+        base: np.ndarray,
+        base_target: np.ndarray,
+        name: str,
+        hand_rotation: Rotation,
+        payload_in_hand: np.ndarray,
+        hover: np.ndarray,
+    ) -> None:
+        """`payload_in_hand` is the dumpling's offset from the hand in the hand's frame;
+        `hover` is where the dumpling itself should end, above the mouth."""
+        sim = self.sim
+        sim.set_state(x)
+        sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+        held = HeldObject.grasped(sim=sim, arm=arm, name=name, riders=(), keep_upright=False)
+        carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler("z", float(base[2])).apply(
+            self.CARRY_HAND_IN_BASE
+        )
+        refusals: list[str] = []
+        carried: tuple[list[np.ndarray], list[np.ndarray]] | None = None
+        for turn in self.CARRY_TURNS_DEG:
+            rotation = Rotation.from_euler("z", turn, degrees=True) * hand_rotation
+            sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+            try:
+                tuck = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=arm,
+                    position=carry,
+                    rotation=rotation,
+                    what="the shrimp carry pose",
+                    held=held,
+                )
+                base_path = KitchenMotionPlanner.plan_base(
+                    sim=sim,
+                    state=x,
+                    target=base_target,
+                    arm=tuck[-1],
+                    what="the drop pose",
+                    held=held,
+                    ignore=(name,),
+                )
+            except PlanningRefused as exc:
+                refusals.append(f"carry turned {turn:+.0f} deg: {exc}")
+                continue
+            carried = (tuck, base_path)
+            break
+        if carried is None:
+            raise PlanningRefused("; ".join(refusals))
+        tuck, base_path = carried
+        # The hand may turn again between the carry and the hover: the weld holds. The
+        # grasp's own orientation (turned about vertical) first, then the hand pointing
+        # straight down, for a grasp too tilted to reach over the mouth.
+        sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
+        down = Rotation.from_euler("x", 180, degrees=True)
+        hovers = [
+            *(
+                Rotation.from_euler("z", t, degrees=True) * hand_rotation
+                for t in self.CARRY_TURNS_DEG
+            ),
+            *(Rotation.from_euler("z", t, degrees=True) * down for t in self.HOVER_DOWN_YAWS_DEG),
+        ]
+        for turn, rotation in enumerate(hovers):
+            try:
+                hover_arm = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=tuck[-1],
+                    position=hover - rotation.apply(payload_in_hand),
+                    rotation=rotation,
+                    what="the shrimp hover above the jug",
+                    held=held,
+                )
+            except PlanningRefused as exc:
+                refusals.append(f"hover orientation {turn}: {exc}")
+                continue
+            self.hand_rotation = rotation
+            self.plans = {
+                self.TUCK: tuck,
+                self.BASE_MOTION: base_path,
+                self.MOVE_ARM_TO_HOVER: hover_arm,
+            }
+            return
+        raise PlanningRefused("; ".join(refusals))
 
 
 class ClearWorkspaceController:
