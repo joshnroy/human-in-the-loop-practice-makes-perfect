@@ -192,6 +192,7 @@ class KitchenMotionPlanner:
             margin=margin,
             held=held,
             target=(position, rotation, reference),
+            neutral=neutral,
         )
 
     @staticmethod
@@ -221,6 +222,7 @@ class KitchenMotionPlanner:
         held: HeldObject | None,
         target: tuple[np.ndarray, Rotation, Any | None] | None = None,
         joints: Any | None = None,
+        neutral: Any | None = None,
     ) -> list[np.ndarray]:
         """`plan_arm` and `plan_arm_to_joints`: to the IK solution for `target` (hand
         position, rotation, reference), or to the arm configuration `joints`."""
