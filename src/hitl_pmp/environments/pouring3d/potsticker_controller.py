@@ -490,7 +490,7 @@ class PotstickerController(PracticePourController):
         for seed in seeds:
             fit = least_squares(residual, seed, bounds=(lower, upper), max_nfev=180)
             error = np.linalg.norm(residual(fit.x)[:6])
-            if error < 0.008 and np.max(self.obstacle_residual(), initial=0) <= 0.005:
+            if error < self.IK_TOLERANCE_M and np.max(self.obstacle_residual(), initial=0) <= 0.005:
                 self.last_q = fit.x.copy()
                 self.bounded_ik_recoveries += 1
                 return fit.x
