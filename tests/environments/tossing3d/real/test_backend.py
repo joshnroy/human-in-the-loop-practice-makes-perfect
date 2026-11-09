@@ -1074,3 +1074,39 @@ def test_restoring_a_cube_that_had_scored_accepts_it_in_the_bin() -> None:
     env.restore_practice_scene(scene=scene)
     assert CUBE_IN_BIN_PROMPT not in written
     assert env.backend().snapshot().reply.cube_in_bin
+
+
+def test_a_practice_progress_line_shows_the_cycles_throws_in_the_bin_so_far() -> None:
+    """Josh, 2026-11-09: practice's line shows how many of this cycle's throws went in,
+    as an evaluation's does; a new cycle starts its count again."""
+    written: list[str] = []
+    env, robot = _env(written=written)
+    backend = env.backend()
+    # The stand this checkout throws from, and a speed the fake scores from there.
+    distance = sum(REAL_TOSS_PARAMETERS.standoff_bounds) / 2
+    scores = round(100.0 + 40.0 * (distance - 0.9) / 0.55)
+    assert FakeTossingRobot.lands_in_bin(standoff=distance, speed=scores, release_ms=600.0)
+    assert not FakeTossingRobot.lands_in_bin(standoff=distance, speed=scores - 20, release_ms=600.0)
+    throws = [(scores, 600.0), (scores - 20, 600.0), (scores, 620.0)]
+    for action, (speed, release) in enumerate(throws, start=1):
+        backend.practice_progress(cycle=0, action=2 * action, max_actions=20, steps=0, budget=99)
+        backend.run_pick_cube()
+        backend.practice_progress(
+            cycle=0, action=2 * action + 1, max_actions=20, steps=0, budget=99
+        )
+        backend.run_move_to_toss_location_and_toss(
+            distance=distance,
+            rotation=math.pi,
+            release_speed_deg_s=speed,
+            gripper_release_ms=release,
+        )
+        assert robot.bin is not None
+        robot.put(cube=CUBE_SPOT, bin_center=robot.bin[:2], bin_yaw=robot.bin[2])
+    written.clear()
+    backend.practice_progress(cycle=0, action=8, max_actions=20, steps=0, budget=99)
+    backend.run_pick_cube()
+    backend.practice_progress(cycle=1, action=1, max_actions=20, steps=0, budget=99)
+    backend.run_pick_cube()
+    cycle_lines = [line for line in written if line.startswith("cycle ")]
+    assert cycle_lines[0].endswith(" · throws 2/3 in")
+    assert not cycle_lines[1].endswith("in")
