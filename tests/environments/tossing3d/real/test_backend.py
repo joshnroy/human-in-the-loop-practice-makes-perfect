@@ -904,3 +904,31 @@ def test_an_evaluations_progress_line_shows_its_score_so_far() -> None:
     assert progress[1] == "eval 1 after cycle 2: task 2/4 · 1/1 in the bin so far"
     assert progress[2] == "eval 1 after cycle 2: task 3/4 · 1/2 in the bin so far"
     assert progress[3] == "eval 1 after cycle 2: task 4/4 · 2/3 in the bin so far"
+
+
+class _BinUnseenOnce(FakePerson):
+    """A FakePerson whose first placement leaves no bin the cameras can see."""
+
+    hidden: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.hidden == 0:
+            self.hidden += 1
+            self.robot.bin = None
+
+
+def test_a_far_bin_the_cameras_do_not_see_is_reported_and_the_person_asked_to_place_it() -> None:
+    """Trial 5's evaluation task 10 on 2026-11-08: the scene look found no box, and the
+    task went on to no throw rather than asking for the bin."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _BinUnseenOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    (problem,) = [line for line in written if line.startswith("the cameras see no bin")]
+    assert "far spot" in problem
+    assert "Moved the bin onto its spot? [y/n]" in "\n".join(written)
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    spot = BIN_SPOTS[Tossing3DSide.OPPOSITE].center
+    assert robot.observe()["bin"]["x"] == pytest.approx(spot[0])
