@@ -5,7 +5,7 @@ Human intervention is handled separately by Environment.reset_movables().
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,6 +22,10 @@ class PourParameters(BaseModel):
 
 
 class NativePouringController(BaseModel):
+    # How far the hand may land from an IK target (pose residual, metres). Pick and place
+    # are assumed to work in this project (Josh, 2026-11-08); 8 mm stranded dumplings on
+    # near misses of 8.2-9.3 mm.
+    IK_TOLERANCE_M: ClassVar[float] = 0.010
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     env: Any
@@ -174,7 +178,7 @@ class NativePouringController(BaseModel):
         delta = fit.x[continuous] - self.last_q[continuous]
         fit.x[continuous] = self.last_q[continuous] + np.arctan2(np.sin(delta), np.cos(delta))
         error = float(np.linalg.norm(residual(fit.x)[:6]))
-        if error > 0.008 or np.max(np.abs(fit.x - self.last_q)) > 0.5:
+        if error > self.IK_TOLERANCE_M or np.max(np.abs(fit.x - self.last_q)) > 0.5:
             # Search redundant configurations in scratch state, never physical outcomes.
             candidates = []
             for joint in (0, 2, 4, 6):
@@ -192,12 +196,13 @@ class NativePouringController(BaseModel):
                         np.sin(delta), np.cos(delta)
                     )
                     candidate_error = float(np.linalg.norm(residual(candidate.x)[:6]))
-                    if candidate_error < 0.008 and np.max(np.abs(candidate.x - self.last_q)) <= 0.5:
+                    step = np.max(np.abs(candidate.x - self.last_q))
+                    if candidate_error < self.IK_TOLERANCE_M and step <= 0.5:
                         candidates.append((np.linalg.norm(candidate.x - self.last_q), candidate))
             if candidates:
                 fit = min(candidates, key=lambda entry: entry[0])[1]
                 error = float(np.linalg.norm(residual(fit.x)[:6]))
-        if error > 0.008:
+        if error > self.IK_TOLERANCE_M:
             raise ValueError(
                 f"IK infeasible in {self.phase}: residual {error:.4f}; "
                 f"joint degrees {np.round(np.rad2deg(fit.x), 1).tolist()}"
