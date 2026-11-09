@@ -14,7 +14,7 @@ feed-forward and per-tick observers that upstream's kp=2 action loop does not ha
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pybullet as p
@@ -153,6 +153,8 @@ class KitchenMotionPlanner:
     """A static-method container, never instantiated."""
 
     tilt_limit_deg: float = UPRIGHT_TILT_LIMIT_DEG
+    # The Gen3's continuous joints (1, 3, 5, 7), as MuJoCo models them.
+    CONTINUOUS_JOINTS: ClassVar[list[int]] = [0, 2, 4, 6]
 
     @staticmethod
     def with_fingers(*, sim: KitchenPyBulletSim, arm: Any) -> list[float]:
@@ -183,6 +185,45 @@ class KitchenMotionPlanner:
         motion escapes at `ESCAPE_MARGIN_M` until it is first outside `margin`, and is
         planned at `margin` from there. A start outside `margin` plans as it always has.
         """
+        return KitchenMotionPlanner.plan_arm_motion(
+            sim=sim,
+            start=start,
+            what=what,
+            margin=margin,
+            held=held,
+            target=(position, rotation, reference),
+        )
+
+    @staticmethod
+    def plan_arm_to_joints(
+        *,
+        sim: KitchenPyBulletSim,
+        start: Any,
+        goal: Any,
+        what: str,
+        margin: float = PLANNING_MARGIN_M,
+    ) -> list[np.ndarray]:
+        """`plan_arm` to a given arm configuration rather than a hand pose: the goal is a
+        configuration another model has already checked (the pan pick's hover, from which
+        MuJoCo's IK reaches the grasp). Continuous joints are taken the short way round,
+        as `follow_arm_path` executes them; the goal must be clear at `margin`."""
+        return KitchenMotionPlanner.plan_arm_motion(
+            sim=sim, start=start, what=what, margin=margin, held=None, joints=goal
+        )
+
+    @staticmethod
+    def plan_arm_motion(
+        *,
+        sim: KitchenPyBulletSim,
+        start: Any,
+        what: str,
+        margin: float,
+        held: HeldObject | None,
+        target: tuple[np.ndarray, Rotation, Any | None] | None = None,
+        joints: Any | None = None,
+    ) -> list[np.ndarray]:
+        """`plan_arm` and `plan_arm_to_joints`: to the IK solution for `target` (hand
+        position, rotation, reference), or to the arm configuration `joints`."""
         if sim.executed_arm_limits is not None:
             # An arm resting at a soft MuJoCo limit sits slightly past it; plan from the
             # limit itself, never further out.
@@ -253,15 +294,25 @@ class KitchenMotionPlanner:
             return None if plan is None else list(plan[1])
 
         sim.robot.set_joints(start_joints)
-        goal = KitchenMotionPlanner.goal(
-            sim=sim,
-            position=position,
-            rotation=rotation,
-            valid=collides,
-            reference=None
-            if reference is None
-            else KitchenMotionPlanner.with_fingers(sim=sim, arm=reference),
-        )
+        if target is not None:
+            position, rotation, reference = target
+            goal = KitchenMotionPlanner.goal(
+                sim=sim,
+                position=position,
+                rotation=rotation,
+                valid=collides,
+                reference=None
+                if reference is None
+                else KitchenMotionPlanner.with_fingers(sim=sim, arm=reference),
+            )
+        else:
+            arm_goal = np.asarray(joints, dtype=float)[:7].copy()
+            continuous = KitchenMotionPlanner.CONTINUOUS_JOINTS
+            turn = arm_goal[continuous] - np.asarray(start_joints, dtype=float)[continuous]
+            arm_goal[continuous] -= turn - np.arctan2(np.sin(turn), np.cos(turn))
+            goal = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm_goal)
+            if collides(goal):
+                raise PlanningRefused(f"No collision-free{upright} configuration for {what}")
         if goal is None:
             raise PlanningRefused(f"No collision-free{upright} IK solution for {what}")
         planned = checked(start_joints, goal, margin)
@@ -603,6 +654,112 @@ class PickPitcherController:
     def tucked(cls, *, arm: np.ndarray, home: np.ndarray) -> bool:
         delta = np.asarray(arm, dtype=float) - cls.nearest(home=home, arm=arm)
         return bool(np.max(np.abs(delta)) < cls.TUCKED_RAD)
+
+
+class PickShrimpController:
+    """The free-space part of a dumpling pick from the pan: tuck the empty arm if the
+    base cannot move with it as it is, drive the base to the pick pose, then move the arm
+    to a hover above the dumpling. The vertical descent, pinch and lift that follow stay
+    the pick's own contact motions (`KitchenController.pick_from_pan`).
+
+    The hover is a configuration, not a hand pose: the one MuJoCo's IK reached from the
+    grasp going straight up, so the descent from it is known to reach the grasp. The
+    caller offers hovers for each grasp orientation in turn (`plan_hover`); the tuck and
+    base path are planned once (`plan_base`), since the pick pose depends only on where
+    the dumpling lies along the counter.
+    """
+
+    TUCK = "planned tuck arm before shrimp pick"
+    BASE_MOTION = "planned base to shrimp pick pose"
+    MOVE_ARM_TO_HOVER = "planned arm to shrimp hover"
+    # Tuck orientations after the caller's own: the hand down, then tilted 30 and 60 deg,
+    # turned about vertical in 45 deg steps. The hand is empty, so any of them will do.
+    TUCK_PITCHES_DEG = (0.0, 30.0, 60.0)
+    TUCK_YAWS_DEG = (-90.0, 0.0, 90.0, 180.0, -45.0, 45.0, 135.0, -135.0)
+
+    def __init__(self, *, sim: KitchenPyBulletSim) -> None:
+        self.sim = sim
+        self.plans: dict[str, list[np.ndarray]] = {}
+        # The arm as the base motion carries it: as it was, or tucked.
+        self.carried = np.zeros(7)
+
+    def plan_base(
+        self,
+        *,
+        x: Any,
+        arm: np.ndarray,
+        base: np.ndarray,
+        base_target: np.ndarray,
+        rotations: list[Rotation],
+        home: np.ndarray,
+    ) -> None:
+        """Plan the base to `base_target` with the arm as it is, else after a tuck into
+        the carry pose at the first of `rotations` (then `TUCK_*`) from which it plans."""
+        sim = self.sim
+        sim.set_state(x)
+        sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+        self.plans = {}
+        self.carried = np.asarray(arm, dtype=float).copy()
+        if (
+            np.linalg.norm(base_target[:2] - base[:2]) < 0.01
+            and abs(base_target[2] - base[2]) < 0.01
+        ):
+            self.plans[self.BASE_MOTION] = [base.copy(), base_target.copy()]
+            return
+        try:
+            self.plans[self.BASE_MOTION] = KitchenMotionPlanner.plan_base(
+                sim=sim, state=x, target=base_target, arm=arm, what="the shrimp pick pose"
+            )
+            return
+        except PlanningRefused as exc:
+            refusals = [f"arm as it is: {exc}"]
+        carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler("z", float(base[2])).apply(
+            CarryToPourController.CARRY_HAND_IN_BASE
+        )
+        down = Rotation.from_euler("y", np.pi)
+        options = [
+            *rotations,
+            *(
+                Rotation.from_euler("z", yaw, degrees=True)
+                * Rotation.from_euler("x", pitch, degrees=True)
+                * down
+                for pitch in self.TUCK_PITCHES_DEG
+                for yaw in self.TUCK_YAWS_DEG
+            ),
+        ]
+        for rotation in options:
+            sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+            try:
+                tuck = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=arm,
+                    position=carry,
+                    rotation=rotation,
+                    what="the tucked arm",
+                    reference=home,
+                )
+                path = KitchenMotionPlanner.plan_base(
+                    sim=sim, state=x, target=base_target, arm=tuck[-1], what="the shrimp pick pose"
+                )
+            except PlanningRefused as exc:
+                refusals.append(str(exc))
+                continue
+            self.plans = {self.TUCK: tuck, self.BASE_MOTION: path}
+            self.carried = tuck[-1]
+            return
+        raise PlanningRefused(
+            f"No base path to the shrimp pick pose with the arm tucked in any of "
+            f"{len(options)} orientations ({refusals[0]}; then {refusals[-1]})"
+        )
+
+    def plan_hover(self, *, hover: np.ndarray, base_target: np.ndarray) -> None:
+        """Plan the arm, from where the base motion leaves it, to the configuration
+        `hover` at `base_target`."""
+        sim = self.sim
+        sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
+        self.plans[self.MOVE_ARM_TO_HOVER] = KitchenMotionPlanner.plan_arm_to_joints(
+            sim=sim, start=self.carried, goal=hover, what="the shrimp hover"
+        )
 
 
 class CarryToPourController:

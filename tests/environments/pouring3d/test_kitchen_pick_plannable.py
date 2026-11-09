@@ -10,13 +10,13 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.pouring3d.kitchen.config import KitchenGeometry
 from hitl_pmp.environments.pouring3d.kitchen.environment import HUMAN_RESET, KitchenEnvironment
+from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
 from hitl_pmp.environments.pouring3d.kitchen.pick_plannable import (
     PICK_PLANNABLE,
     KitchenPickPlannable,
 )
 from hitl_pmp.environments.pouring3d.kitchen.predicates import KitchenPredicates as P
 from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
-from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 
 pytestmark = pytest.mark.xdist_group("kitchen_pick_plannable")
 
@@ -47,6 +47,7 @@ def test_every_dumpling_pick_requires_the_atom_but_the_human_reset_does_not():
     ("error", "planning"),
     [
         ("No feasible continuation from prepared arm postures", True),
+        ("No planned pick from the pan: yaw +0 pitch 0: no grasp IK within 10 mm", True),
         ("No collision-free empty-arm preparation path: residual 0.0410, reachable poses 0", True),
         ("IK infeasible in prepare arm in clear aisle: residual 0.0120; joint degrees []", True),
         ("IK infeasible in position for shrimp pick: residual 0.0120; joint degrees []", True),
@@ -178,7 +179,7 @@ class Scenes:
             self.pause(phase="position for shrimp pick", seconds=0.5, grip=0)
             raise ValueError(error)
 
-        monkeypatch.setattr(PotstickerController, "pick_payload_with_retry", pick)
+        monkeypatch.setattr(KitchenController, "pick_payload_with_retry", pick)
 
 
 @pytest.fixture

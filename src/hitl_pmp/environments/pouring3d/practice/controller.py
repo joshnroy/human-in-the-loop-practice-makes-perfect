@@ -659,6 +659,25 @@ class PracticePourController(FeedbackPourController):
                 else None,
             )
         self.move_to_payload_grasp(grasp=grasp, point=point, down=down, elevated=elevated)
+        self.pinch_shrimp(name=name)
+        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
+        lift_rotation = down
+        if self.recovery_lift_from_actual:
+            hand, lift_rotation = self.hand_pose()
+            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
+        self.move(
+            position=lift_position,
+            rotation=lift_rotation,
+            seconds=4,
+            grip=1,
+            phase="lift shrimp",
+        )
+        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
+            self.held = None
+            raise ValueError("Shrimp not retained through lift")
+
+    def pinch_shrimp(self, *, name: str) -> None:
+        """Close on the dumpling at the grasp and take it: the hand is open around it."""
         self.pause(phase="settle shrimp approach", seconds=1, grip=self.recovery_open_grip)
         self.phase = "pinch shrimp"
         self.payload_hold_grip = 1.0
@@ -675,21 +694,6 @@ class PracticePourController(FeedbackPourController):
         self.held, self.lost_contacts = name, 0
         if self.recovery_contact_close and self.payload_grip_force > 0:
             self.pause(phase="secure shrimp grasp", seconds=2, grip=1)
-        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
-        lift_rotation = down
-        if self.recovery_lift_from_actual:
-            hand, lift_rotation = self.hand_pose()
-            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
-        self.move(
-            position=lift_position,
-            rotation=lift_rotation,
-            seconds=4,
-            grip=1,
-            phase="lift shrimp",
-        )
-        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
-            self.held = None
-            raise ValueError("Shrimp not retained through lift")
 
     def move_to_payload_grasp(
         self,
