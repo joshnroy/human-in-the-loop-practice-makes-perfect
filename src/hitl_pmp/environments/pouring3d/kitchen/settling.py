@@ -38,6 +38,13 @@ class PayloadRestWindow(BaseModel):
     def clear(self) -> None:
         self.samples.clear()
 
+    def covers(self, *, time: float) -> bool:
+        """Whether the recorded history spans the whole window ending at `time`."""
+        if any(t > time + TIME_TOLERANCE_S for t, _ in self.samples):
+            return False
+        start = time - self.window_seconds
+        return any(t <= start + TIME_TOLERANCE_S for t, _ in self.samples)
+
     def settled(self, *, time: float, positions: np.ndarray) -> bool:
         return bool(self.resting(time=time, positions=positions).all())
 
