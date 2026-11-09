@@ -66,6 +66,15 @@ CONTINUOUS_LIMIT_MARGIN_RAD = float(np.deg2rad(20.0))
 # per-joint step between the waypoints it is returned as (the remap distance, 0.2).
 RETURN_CHECK_RAD = 0.02
 RETURN_WAYPOINT_RAD = 0.2
+# A base whose 2-D footprint starts overlapping an obstacle's, but whose footprint inset
+# by this on every side is clear (and whose body is clear at `ESCAPE_MARGIN_M`), first
+# escapes in a straight line, then plans as usual. The recorded dead end (EES seed 2 of
+# pouring-threefix-20261109) overlapped the stovetop's by 3 to 5 cm; without the escape,
+# BiRRT refuses its own start and no skill or human reset moves the base.
+BASE_ESCAPE_INSET_M = 0.05
+BASE_ESCAPE_MAX_M = 0.20
+BASE_ESCAPE_STEP_M = 0.01
+BASE_ESCAPE_DIRECTIONS = 16
 
 
 # MuJoCo's joint limits are soft: an arm resting at one sits slightly past it.
@@ -486,10 +495,39 @@ class KitchenMotionPlanner:
         """A base path to `target` (x, y, yaw), the arm (and anything held) carried as
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
         scene. `ignore` names objects with no 2-D footprint, such as one the hand
-        carries above the base. `also_collides` is any further check of a base pose."""
+        carries above the base. `also_collides` is any further check of a base pose.
+
+        A start that fails those checks is not refused outright, as upstream's BiRRT
+        refuses its own start: if the footprint inset by `BASE_ESCAPE_INSET_M` and the
+        body at `ESCAPE_MARGIN_M` are clear, the base first escapes in the shortest
+        straight line (`base_escape`) to a pose that passes them, and is planned from
+        there. A start that passes them plans exactly as it always has."""
         body_collides = KitchenMotionPlanner.body_check(
             sim=sim, arm=arm, held=held, also_collides=also_collides
         )
+        (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
+        pose = get_overhead_robot_se2_pose(state, robot)
+        start = np.array([pose.x, pose.y, pose.theta()])
+        escape: list[np.ndarray] = []
+        if KitchenMotionPlanner.footprint_blocked(
+            state=state, target=start, ignore=ignore
+        ) or body_collides(pose):
+            escape = KitchenMotionPlanner.base_escape(
+                state=state,
+                start=start,
+                body_collides=body_collides,
+                escape_collides=KitchenMotionPlanner.body_check(
+                    sim=sim,
+                    arm=arm,
+                    held=held,
+                    also_collides=also_collides,
+                    margin=ESCAPE_MARGIN_M,
+                ),
+                ignore=ignore,
+            )
+            if not escape:
+                raise PlanningRefused(f"No collision-free base path to {what}")
+            state = KitchenMotionPlanner.with_base(state=state, base=escape[-1])
         path = run_base_motion_planning(
             state=state,
             target_base_pose=SE2(float(target[0]), float(target[1]), float(target[2])),
@@ -501,7 +539,49 @@ class KitchenMotionPlanner:
         )
         if path is None:
             raise PlanningRefused(f"No collision-free base path to {what}")
-        return [np.array([pose.x, pose.y, pose.theta()]) for pose in path]
+        planned = [np.array([pose.x, pose.y, pose.theta()]) for pose in path]
+        return [*escape[:-1], *planned] if escape else planned
+
+    @staticmethod
+    def base_escape(
+        *,
+        state: Any,
+        start: np.ndarray,
+        body_collides: Callable[[SE2], bool],
+        escape_collides: Callable[[SE2], bool],
+        ignore: tuple[str, ...] = (),
+    ) -> list[np.ndarray]:
+        """The shortest straight base translation, heading held, from a `start` inside
+        the planning checks to the first pose that passes them (`[start, pose]`), every
+        `BASE_ESCAPE_STEP_M` on the way clear of the escape checks: the footprint inset by
+        `BASE_ESCAPE_INSET_M`, the body at `ESCAPE_MARGIN_M`. Empty when the start itself
+        fails the escape checks (in contact, or nearly) or no direction escapes within
+        `BASE_ESCAPE_MAX_M`."""
+
+        def escapable(pose: np.ndarray) -> bool:  # noqa: PLR0917 -- local helper
+            return not KitchenMotionPlanner.footprint_blocked(
+                state=state, target=pose, inset=BASE_ESCAPE_INSET_M, ignore=ignore
+            ) and not escape_collides(SE2(*(float(v) for v in pose)))
+
+        if not escapable(start):
+            return []
+        headings = 2 * np.pi * np.arange(BASE_ESCAPE_DIRECTIONS) / BASE_ESCAPE_DIRECTIONS
+        alive = list(range(BASE_ESCAPE_DIRECTIONS))
+        steps = round(BASE_ESCAPE_MAX_M / BASE_ESCAPE_STEP_M)
+        for step in range(1, steps + 1):
+            for k in list(alive):
+                shift = (
+                    step * BASE_ESCAPE_STEP_M * np.array([np.cos(headings[k]), np.sin(headings[k])])
+                )
+                pose = start + np.r_[shift, 0.0]
+                if not escapable(pose):
+                    alive.remove(k)
+                    continue
+                if not KitchenMotionPlanner.footprint_blocked(
+                    state=state, target=pose, ignore=ignore
+                ) and not body_collides(SE2(*(float(v) for v in pose))):
+                    return [start.copy(), pose]
+        return []
 
     @staticmethod
     def with_base(*, state: Any, base: np.ndarray) -> Any:
@@ -519,9 +599,10 @@ class KitchenMotionPlanner:
         arm: Any,
         held: HeldObject | None = None,
         also_collides: Callable[[SE2], bool] | None = None,
+        margin: float = PLANNING_MARGIN_M,
     ) -> Callable[[SE2], bool]:
         """Whether the robot's 3-D body, the arm (and anything held) carried as it is,
-        collides with the scene at a base pose, at the full planning margin."""
+        collides with the scene at a base pose, at `margin` (the full planning margin)."""
         joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=arm)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         if held is not None:
@@ -535,28 +616,37 @@ class KitchenMotionPlanner:
                 joints,
                 held_object=None if held is None else held.body,
                 collision_bodies=bodies,
-                distance_threshold=PLANNING_MARGIN_M,
+                distance_threshold=margin,
             )
 
         return body_collides
 
     @staticmethod
-    def footprint_blocked(*, state: Any, target: np.ndarray) -> bool:
-        """Whether the robot's 2-D footprint at base pose `target` overlaps an
-        obstacle's footprint: `run_base_motion_planning`'s own 2-D check."""
+    def footprint_blocked(
+        *, state: Any, target: np.ndarray, inset: float = 0.0, ignore: tuple[str, ...] = ()
+    ) -> bool:
+        """Whether the robot's 2-D footprint at base pose `target`, inset by `inset` on
+        every side, overlaps an obstacle's footprint: `run_base_motion_planning`'s own
+        2-D check, objects named in `ignore` left out as it leaves them out."""
         (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
         width, height, _ = get_bounding_box(state, robot)
         geoms = get_overhead_kinematic2ds(state, None)
         obstacles = [
             geoms[o.name]
             for o in state.get_objects(MujocoObjectType)
-            if o.name in geoms and not o.is_instance(MujocoDrawerObjectType)
+            if o.name in geoms
+            and o.name not in ignore
+            and not o.is_instance(MujocoDrawerObjectType)
         ]
         pose = get_overhead_robot_se2_pose(
             KitchenMotionPlanner.with_base(state=state, base=target), robot
         )
         footprint = Rectangle.from_center(
-            pose.x, pose.y, width, height, rotation_about_center=pose.theta()
+            pose.x,
+            pose.y,
+            width - 2 * inset,
+            height - 2 * inset,
+            rotation_about_center=pose.theta(),
         )
         return any(geom2ds_intersect(footprint, obstacle) for obstacle in obstacles)
 
