@@ -892,3 +892,37 @@ def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
     argv = ["--dp-budget", "1", flag, value]
     with pytest.raises(SystemExit):
         _build_dp_parser().parse_args(argv)
+
+
+def test_the_sampler_model_flags_parse_and_reach_ees(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    defaults = _build_ees_parser().parse_args([])
+    assert (defaults.sampler_model, defaults.gp_ucb_kappa, defaults.gp_eval) == ("mlp", 2.0, "mean")
+    args = _build_ees_parser().parse_args([
+        "--sampler-model",
+        "gp",
+        "--gp-ucb-kappa",
+        "3.0",
+        "--gp-eval",
+        "lcb",
+    ])
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        LightSwitchCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
+    )
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert (method.sampler_model, method.gp_ucb_kappa, method.gp_eval) == ("gp", 3.0, "lcb")
+    assert EesCli.sampler_model_kwargs(args=args) == {
+        "sampler_model": "gp",
+        "gp_ucb_kappa": 3.0,
+        "gp_eval": "lcb",
+    }

@@ -67,6 +67,7 @@ import contextlib
 import copy
 import math
 from collections.abc import Generator
+from typing import Literal
 
 import numpy as np
 import torch
@@ -74,6 +75,8 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr, model_validator
 from torch import nn
 
 from hitl_pmp.core.method.types import SamplerConsultation
+
+from .robust_choice import LaplaceGpClassifier
 
 
 class SingleThreadedTorch:
@@ -345,6 +348,15 @@ class LearnedSkillSampler(BaseModel):
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
     balance_data: bool = False
+    # `gp` replaces the MLP with `LaplaceGpClassifier` over the columns that
+    # `gp_input_bounds` gives bounds for (`None` drops a column, e.g. the bias). The GP
+    # refits after every observation; practice takes the UCB argmax on its latent
+    # (no epsilon branch), evaluation the argmax of predictive P(success) or, with
+    # `gp_eval="lcb"`, of the kappa=1 lower bound. Unfitted, it draws uniformly.
+    sampler_model: Literal["mlp", "gp"] = "mlp"
+    gp_ucb_kappa: float = 2.0
+    gp_eval: Literal["mean", "lcb"] = "mean"
+    gp_input_bounds: tuple[tuple[float, float] | None, ...] | None = None
 
     # default_factory, not a bare [] -- pydantic would deep-copy a mutable default
     # per instance in current versions, but relying on that is exactly the trap this
@@ -354,6 +366,15 @@ class LearnedSkillSampler(BaseModel):
     _labels: list[int] = PrivateAttr(default_factory=list)
     _classifier: MlpBinaryClassifier = PrivateAttr()
     _rng: np.random.Generator = PrivateAttr()
+    _gp: LaplaceGpClassifier | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _a_gp_needs_bounds(self) -> "LearnedSkillSampler":
+        if self.sampler_model == "gp" and not any(
+            bound is not None for bound in self.gp_input_bounds or ()
+        ):
+            raise ValueError(f"{self.skill_name}: sampler_model='gp' needs gp_input_bounds.")
+        return self
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -388,6 +409,8 @@ class LearnedSkillSampler(BaseModel):
 
     @property
     def is_fitted(self) -> bool:
+        if self.sampler_model == "gp":
+            return self._gp is not None
         return self._classifier.is_fitted
 
     @property
@@ -423,6 +446,8 @@ class LearnedSkillSampler(BaseModel):
         """
         self._inputs.append(list(sampler_input))
         self._labels.append(int(success))
+        if self.sampler_model == "gp":
+            self.fit()
 
     def fit(self) -> None:
         """Refit the classifier from scratch on every observation ever made.
@@ -434,6 +459,17 @@ class LearnedSkillSampler(BaseModel):
         harness can fit unconditionally every cycle.
         """
         if not self._labels:
+            return
+        if self.sampler_model == "gp":
+            gp = LaplaceGpClassifier(
+                lower=tuple(bound[0] for bound in self._gp_bounds()),
+                upper=tuple(bound[1] for bound in self._gp_bounds()),
+            )
+            gp.fit(
+                x_data=self._gp_columns(rows=self._inputs),
+                y_data=np.array(self._labels, dtype=np.float64),
+            )
+            self._gp = gp
             return
         self._classifier = MlpBinaryClassifier(
             seed=self.seed,
@@ -458,8 +494,58 @@ class LearnedSkillSampler(BaseModel):
             raise ValueError(f"{self.skill_name}: scoring requires at least one input row.")
         if not self.is_fitted:
             return [0.5] * len(sampler_inputs)
+        if self._gp is not None:
+            return [float(p) for p in self._gp_eval_scores(rows=sampler_inputs)]
         x_data = np.array(sampler_inputs, dtype=np.float64)
         return [float(p) for p in self._classifier.predict_proba(x_data=x_data)]
+
+    def ucb_scores(self, *, sampler_inputs: list[list[float]]) -> list[float]:
+        """The GP's practice score per row: latent mean + kappa * latent std."""
+        if self._gp is None:
+            raise RuntimeError(f"{self.skill_name}: ucb_scores needs a fitted GP sampler.")
+        mean, variance = self._gp.latent(x_data=self._gp_columns(rows=sampler_inputs))
+        return [float(v) for v in mean + self.gp_ucb_kappa * np.sqrt(variance)]
+
+    def _gp_eval_scores(self, *, rows: list[list[float]]) -> np.ndarray:
+        assert self._gp is not None
+        x_data = self._gp_columns(rows=rows)
+        if self.gp_eval == "lcb":
+            return self._gp.lower_confidence_bound(x_data=x_data, kappa=1.0)
+        return self._gp.predict_proba(x_data=x_data)
+
+    def _gp_bounds(self) -> list[tuple[float, float]]:
+        return [bound for bound in self.gp_input_bounds or () if bound is not None]
+
+    def _gp_columns(self, *, rows: list[list[float]]) -> np.ndarray:
+        keep = [i for i, bound in enumerate(self.gp_input_bounds or ()) if bound is not None]
+        return np.array(rows, dtype=np.float64)[:, keep]
+
+    def _sample_gp(
+        self, *, sampler_inputs: list[list[float]], candidates: list[np.ndarray], explore: bool
+    ) -> "SamplerChoice":
+        """GP selection: UCB argmax in practice, predictive argmax in evaluation, and
+        a uniform uninformed draw before any data. Never `was_random`, so every
+        practice outcome counts toward competence."""
+        if self._gp is None:
+            index = int(self._rng.integers(0, len(candidates)))
+            return SamplerChoice(params=candidates[index], was_random=False, was_informed=False)
+        scores = np.asarray(
+            self.ucb_scores(sampler_inputs=sampler_inputs)
+            if explore
+            else self._gp_eval_scores(rows=sampler_inputs),
+            dtype=np.float64,
+        )
+        best = np.flatnonzero(scores == scores.max())
+        if len(best) == 0:
+            index = int(self._rng.integers(0, len(candidates)))
+            return SamplerChoice(params=candidates[index], was_random=False, was_informed=False)
+        index = int(best[self._rng.integers(0, len(best))])
+        return SamplerChoice(
+            params=candidates[index],
+            was_random=False,
+            was_informed=True,
+            score=SamplerChoice.finite_score(score=scores[index]),
+        )
 
     def sample(
         self,
@@ -509,6 +595,10 @@ class LearnedSkillSampler(BaseModel):
                     f"{self.skill_name}: expected candidates of shape ({self.param_dim},), "
                     f"got {candidate.shape}."
                 )
+        if self.sampler_model == "gp":
+            return self._sample_gp(
+                sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
+            )
         scores = np.asarray(self.score_inputs(sampler_inputs=sampler_inputs), dtype=np.float64)
         # The candidates attaining the maximum. An unfitted sampler (all 0.5) and the
         # single-class shortcut (all 0.0 or all 1.0) both put every candidate in here.

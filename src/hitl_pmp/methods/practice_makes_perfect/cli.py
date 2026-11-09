@@ -90,6 +90,15 @@ class EesCli:
         return alpha, strength - alpha
 
     @staticmethod
+    def sampler_model_kwargs(*, args: argparse.Namespace) -> dict[str, Any]:
+        """The GP-sampler flags, shared by every EesMethod factory."""
+        return {
+            "sampler_model": args.sampler_model,
+            "gp_ucb_kappa": args.gp_ucb_kappa,
+            "gp_eval": args.gp_eval,
+        }
+
+    @staticmethod
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
@@ -120,6 +129,26 @@ class EesCli:
             default=EesMethod.model_fields["exploration_epsilon"].default,
             help="Epsilon-greedy exploration rate for the practice-time sampler "
             "(the paper uses 0.5).",
+        )
+        parser.add_argument(
+            "--sampler-model",
+            choices=("mlp", "gp"),
+            default=EesMethod.model_fields["sampler_model"].default,
+            help="Toss sampler classifier: the MLP (epsilon-greedy practice) or a Laplace "
+            "GP classifier (UCB practice, refit after every outcome).",
+        )
+        parser.add_argument(
+            "--gp-ucb-kappa",
+            type=float,
+            default=EesMethod.model_fields["gp_ucb_kappa"].default,
+            help="With --sampler-model gp: practice score = latent mean + kappa * std.",
+        )
+        parser.add_argument(
+            "--gp-eval",
+            choices=("mean", "lcb"),
+            default=EesMethod.model_fields["gp_eval"].default,
+            help="With --sampler-model gp: evaluation takes the argmax of predictive "
+            "P(success) (mean) or of its kappa=1 lower bound (lcb).",
         )
         parser.add_argument(
             "--sampler-max-train-iters",
@@ -373,6 +402,7 @@ class EesCli:
             ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
+            **EesCli.sampler_model_kwargs(args=args),
             sampler_max_train_iters=args.sampler_max_train_iters,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -676,6 +706,7 @@ class Tossing3DPomdpCli(EesCli):
                 seed=args.seed,
                 draw_recorder=draw_recorder,
                 exploration_epsilon=args.exploration_epsilon,
+                **EesCli.sampler_model_kwargs(args=args),
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,

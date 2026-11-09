@@ -120,6 +120,15 @@ class SkillProvider(BaseModel, abc.ABC):
         function of `(ground_skill, state, params)`."""
         return None
 
+    def sampler_input_bounds(
+        self, *, skill_name: str
+    ) -> tuple[tuple[float, float] | None, ...] | None:
+        """Per-column `(low, high)` of this skill's sampler input row, `None` for a
+        column a GP sampler should ignore (the bias, a fixed parameter); `None`
+        overall when unknown, in which case the skill keeps the MLP sampler."""
+        del skill_name
+        return None
+
     def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
         """Named values `compute_action` chose itself rather than took from the sampled
         parameters, so logs can carry them as their own fields (Tossing3D's stand
