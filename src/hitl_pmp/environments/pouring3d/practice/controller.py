@@ -800,11 +800,10 @@ class PracticePourController(FeedbackPourController):
     def floor_carry_rotation(self, *, hand: np.ndarray, rotation: Rotation) -> Rotation:
         return rotation * Rotation.from_euler("x", self.recovery_floor_carry_angle, degrees=True)
 
-    def drop_shrimp(self, *, index: int) -> None:
-        name = self.scene.cube_names[index]
-        if self.held != name or not self.vessel_home(name="pitcher"):
-            raise ValueError("Drop requires held shrimp and home pitcher")
-        pitcher, _ = self.body_pose(name="pitcher")
+    def carry_held_shrimp_to_pitcher(self, *, name: str, pitcher: np.ndarray) -> Rotation:
+        """Bring the held dumpling near the release point above the jug; return the hand
+        orientation the centring keeps. Scripted here; the kitchen plans it."""
+        del name
         _, down = self.hand_pose()
         elevated = "prep_table" in self.scene._fixtures_dict
         hand, down = self.hand_pose()
@@ -853,6 +852,14 @@ class PracticePourController(FeedbackPourController):
             phase="position for shrimp drop",
             seconds=5,
         )
+        return down
+
+    def drop_shrimp(self, *, index: int) -> None:
+        name = self.scene.cube_names[index]
+        if self.held != name or not self.vessel_home(name="pitcher"):
+            raise ValueError("Drop requires held shrimp and home pitcher")
+        pitcher, _ = self.body_pose(name="pitcher")
+        down = self.carry_held_shrimp_to_pitcher(name=name, pitcher=pitcher)
         # Center the observed payload rather than assuming its offset from the
         # wrist is constant across differently oriented curled-piece grasps.
         destination = pitcher + [0, 0, self.scene.get_object("pitcher").height + 0.07]
