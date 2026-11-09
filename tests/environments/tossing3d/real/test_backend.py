@@ -723,3 +723,85 @@ def test_practice_scenes_and_restores_still_drive_home_every_time() -> None:
     names = [name for name, _ in robot.calls]
     assert names.count("go_home") == 3
     assert names.count("open_gripper") == 3
+
+
+class _LosesTheCubeOnToss(FakeTossingRobot):
+    """A toss after which no camera sees the cube (`lost` looks), then it is seen."""
+
+    lost: int = 0
+
+    def toss(
+        self, *, standoff: float, speed: float, release_ms: float, direction: float
+    ) -> dict[str, object]:
+        reply = super().toss(
+            standoff=standoff, speed=speed, release_ms=release_ms, direction=direction
+        )
+        self.cube = None
+        return reply
+
+    def observe(self) -> dict[str, object]:
+        reply = super().observe()
+        if self.lost > 0:
+            self.lost -= 1
+        elif self.cube is None:
+            self.cube = (0.7, -0.6, 0.0)
+            reply = super().observe()
+            self.calls.pop()
+        return reply
+
+
+class _Answers(FakePerson):
+    """A FakePerson who answers the lost-cube question from `answers`, in order."""
+
+    answers: list[str]
+
+    def model_post_init(self, __context: object) -> None:
+        self.read = lambda prompt: self._answer(prompt=prompt)
+
+    def _answer(self, *, prompt: str) -> str:
+        answer = self.answers.pop(0) if prompt.startswith("Where is it?") else "y"
+        self.write(f"{prompt}{answer}")
+        return answer
+
+    def locate_lost_cube(self) -> str:
+        return TerminalPerson.locate_lost_cube(self)
+
+
+def _lost_after_toss(*, answers: list[str]) -> tuple[Tossing3DObservation, list[str], int]:
+    written: list[str] = []
+    robot = _LosesTheCubeOnToss()
+    person = _Answers(robot=robot, write=written.append, answers=answers)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    robot.calls.clear()
+    written.clear()
+    robot.lost = 1
+    env.backend().run_move_to_toss_location_and_toss(
+        distance=1.2, rotation=math.pi, release_speed_deg_s=103.0, gripper_release_ms=590.0
+    )
+    looks = [name for name, _ in robot.calls].count("observe")
+    return env.backend().observe(), written, looks
+
+
+def test_a_cube_no_camera_sees_after_a_skill_is_asked_about_and_in_the_bin_scores() -> None:
+    """Josh, 2026-11-08 (the cardboard box): when the bottle is seen neither on the floor
+    nor in the bin, ask where it is rather than take it as gone."""
+    seen, written, looks = _lost_after_toss(answers=["b"])
+    assert any("the cameras do not see the cube" in line for line in written)
+    assert seen.solved
+    assert looks == 1
+
+
+def test_a_lost_cube_out_of_the_workspace_stays_unseen() -> None:
+    seen, _written, looks = _lost_after_toss(answers=["o"])
+    assert not seen.solved
+    assert looks == 1
+
+
+def test_look_again_looks_and_a_cube_then_seen_asks_no_more() -> None:
+    seen, written, looks = _lost_after_toss(answers=["x", "l"])
+    assert "'x': please type b, o, l or n." in written
+    assert looks == 2
+    assert not seen.solved
+    assert sum(line.startswith("Where is it?") for line in written) == 2

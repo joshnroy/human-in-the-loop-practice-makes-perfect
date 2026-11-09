@@ -275,5 +275,8 @@ class FakePerson(TerminalPerson):
         self.write(f"{prompt}y")
         return "y"
 
+    def locate_lost_cube(self) -> str:
+        return "out"
+
     def placed(self, *, request: PlacementRequest) -> None:
         self.robot.put(cube=request.cube, bin_center=request.bin.center, bin_yaw=request.bin.yaw)

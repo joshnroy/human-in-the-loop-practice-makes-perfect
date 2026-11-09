@@ -95,6 +95,7 @@ GRIPPER_OPEN_COMMAND_TOLERANCE = 1e-3
 GRIPPER_CLOSED_COMMAND: Final = 1.0
 # The only answers a y/n prompt takes; anything else is asked again.
 _ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
+_WHERE: Final[dict[str, str | None]] = {"b": "bin", "o": "out", "l": "look", "n": None}
 CUBE_HALF_SIZE_M = 0.025
 
 _UNKNOWN = math.nan
@@ -283,6 +284,22 @@ class TerminalPerson(BaseModel):
     def placed(self, *, request: PlacementRequest) -> None:
         """After y. A real person has already done it; a fake one does it here."""
         del request
+
+    def locate_lost_cube(self) -> str:
+        """No camera sees the cube after a skill: "bin", "out" (of the workspace) or
+        "look" (look again, once it is moved into view); n ends the run."""
+        self.write("the cameras do not see the cube: not on the floor, not in the bin, not held")
+        question = (
+            "Where is it? [b = in the bin / o = out of the workspace / "
+            "l = look again (move it into view first) / n = stop] "
+        )
+        while (answer := self.read(question).strip().lower()) not in _WHERE:
+            if answer:
+                self.write(f"{answer!r}: please type b, o, l or n.")
+        where = _WHERE[answer]
+        if where is None:
+            raise KeyboardInterrupt("the person declined: locating the lost cube")
+        return where
 
     def confirm(self, *, action: str) -> None:
         """Before a skill moves the robot (see `_yes`)."""
@@ -743,6 +760,7 @@ class RealTossingBackend(BaseModel):
             self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
             self._seen = None
             self.observe()
+            self._ask_if_lost()
         else:
             self._say(
                 line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); "
@@ -755,6 +773,28 @@ class RealTossingBackend(BaseModel):
             for _ in range(run.steps):
                 self._after()
         return run
+
+    def _ask_if_lost(self) -> None:
+        """A cube seen nowhere -- not on the floor, in the bin or held -- is asked about
+        (Josh, 2026-11-08): the person's "in the bin" scores it, "out" keeps the look."""
+        while self._last is not None:
+            reply = self._last.reply
+            if reply.cube is not None or reply.holding or reply.cube_in_bin:
+                return
+            where = self.person.locate_lost_cube()
+            RealSessionLog.detail(line=f"lost cube: the person says {where}")
+            if where == "look":
+                self._seen = None
+                self.observe()
+                continue
+            if where == "bin":
+                center = None if reply.bin is None else (reply.bin.x, reply.bin.y, 0.0)
+                self._adopt(
+                    reply=reply.model_copy(
+                        update={"cube": center, "cube_in_bin": True, "cube_inside_bin": True}
+                    )
+                )
+            return
 
     def _now(self) -> float:
         return WallClock.now() if self.clock is None else self.clock()
