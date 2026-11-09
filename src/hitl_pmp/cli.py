@@ -448,6 +448,13 @@ class Cli:
 
     @staticmethod
     def parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
+        parser = Cli.build_parser(argv=argv)
+        args = parser.parse_args(argv)
+        return Cli.resolve(args=args, parser=parser)
+
+    @staticmethod
+    def build_parser(*, argv: list[str] | None = None) -> argparse.ArgumentParser:
+        """The full parser for the `--env`/`--method`/`--preset` that `argv` names."""
         # --env/--method determine which other flags are valid, so they can't all
         # be registered up front. A plain two-pass parse_known_args here would exit
         # early on --help before ever reaching those specific flags (argparse's
@@ -475,7 +482,12 @@ class Cli:
             CliPreset.load(name=known_args.preset).apply(
                 parser=parser, env=known_args.env, method=known_args.method
             )
-        args = parser.parse_args(argv)
+        return parser
+
+    @staticmethod
+    def resolve(*, args: argparse.Namespace, parser: argparse.ArgumentParser) -> argparse.Namespace:
+        """What `parse_args` applies after argparse: defaults that depend on other flags,
+        and the refusals argparse cannot express."""
         # An environment may name the expectimax depth its runs default to (the real
         # robot's canonical 6). Expectimax only: determinized A* refuses any depth.
         environment_depth = getattr(ENVIRONMENTS.get(args.env), "EXPECTIMAX_SEARCH_DEPTH", None)
