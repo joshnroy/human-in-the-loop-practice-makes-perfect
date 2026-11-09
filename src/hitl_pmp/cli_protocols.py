@@ -184,6 +184,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        """The end reason (e.g. `toss_missed`) of a held-out task still unsolved after
+        `action`, if `action` is the task's one attempt at its goal; None otherwise."""
+        ...
+
+    @staticmethod
     def one_shot_failure_reason(*, action: Action) -> str | None:
         """The end reason (e.g. `pour_failed`) of a held-out task whose `action` failed,
         if `action` dispatches a one-shot skill -- one whose failure at deployment is
@@ -255,6 +261,12 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def one_shot_failure_reason(*, action: Action) -> str | None:
         """By default a domain has no one-shot skill: every failure may be retried."""
+        del action
+        return None
+
+    @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        """By default a held-out task keeps acting until it is solved or out of budget."""
         del action
         return None
 

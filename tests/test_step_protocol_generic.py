@@ -147,6 +147,12 @@ class FakeStepProtocol:
         return {"skill": "fake"}
 
     @staticmethod
+    def final_attempt_reason(*, action: Any) -> str | None:
+        """A Light Switch task keeps acting until solved or out of budget."""
+        del action
+        return None
+
+    @staticmethod
     def drain_execution_timing(*, problem: Any) -> dict[str, Any] | None:
         del problem
         return None
