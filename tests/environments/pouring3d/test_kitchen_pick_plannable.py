@@ -24,8 +24,9 @@ DUMPLING = 2
 PICK = 3  # PickShrimpFromTray in practice.skills.SKILL_NAMES
 REFUSAL = "No feasible continuation from prepared arm postures"
 PICK_ACTION = np.array([PICK, DUMPLING, 1, 0, 0, 0], dtype=float)
-# At a 0.84 m hob a dumpling 6 cm from the pan centre, on the -y side, has no
-# collision-free hover for any of the four grasp candidates (measured 2026-11-02).
+# At a 0.84 m hob a dumpling 6 cm from the pan centre, on the -y side, had no
+# collision-free hover for any of the scripted pick's four grasp candidates (measured
+# 2026-11-02). The planned pick reaches it, and every other pan pose tried since.
 UNPLANNABLE_OFFSET = (0.0, -0.06)
 
 
@@ -195,8 +196,10 @@ def test_an_untried_dumpling_is_plannable_wherever_it_is(*, in_pan):
     assert {(PICK_PLANNABLE, ("robot", n)) for n in names} <= fresh.observe().abstract_atoms
 
 
-def test_a_real_planning_refusal_makes_the_atom_false():
+def test_a_real_planning_refusal_makes_the_atom_false(*, monkeypatch):
     env = Scenes.dumpling_in_pan(hob=0.84, offset=UNPLANNABLE_OFFSET)
+    # No grasp orientation left to try: the real planner refuses, through the real path.
+    monkeypatch.setattr(KitchenController, "PAN_PICK_YAW_TURNS_DEG", ())
     assert Scenes.plannable(env=env)
     env.take_action(action=PICK_ACTION)
     assert env.last_info["success"] is False
