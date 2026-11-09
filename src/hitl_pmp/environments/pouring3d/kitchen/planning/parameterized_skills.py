@@ -194,6 +194,8 @@ class KitchenMotionPlanner:
         start_joints = KitchenMotionPlanner.with_fingers(sim=sim, arm=start)
         bodies = sim.get_collision_bodies() if held is None else held.obstacles(sim=sim)
         constraint = None
+        # Named in a refusal only when it binds: a welded dumpling has no upright limit.
+        upright = " upright" if held is not None and held.keep_upright else ""
         if held is not None and held.keep_upright:
             # A compliant grasp can leave the jug hanging past the limit when a skill
             # starts (measured 10.2 deg after a pour's return to upright). Never tilt it
@@ -261,7 +263,6 @@ class KitchenMotionPlanner:
             else KitchenMotionPlanner.with_fingers(sim=sim, arm=reference),
         )
         if goal is None:
-            upright = " upright" if constraint is not None else ""
             raise PlanningRefused(f"No collision-free{upright} IK solution for {what}")
         planned = checked(start_joints, goal, margin)
         if planned is None and collides(start_joints) and not within(start_joints, ESCAPE_MARGIN_M):
@@ -272,7 +273,6 @@ class KitchenMotionPlanner:
                 rest = checked(escape[out], goal, margin) if out < len(escape) - 1 else [goal]
                 planned = None if rest is None else [*escape[: out + 1], *rest[1:]]
         if planned is None:
-            upright = " upright" if constraint is not None else ""
             raise PlanningRefused(f"No collision-free{upright} arm path to {what}")
         path = KitchenMotionPlanner.unwrapped(path=planned)
         if neutral is not None:
