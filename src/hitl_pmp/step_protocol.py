@@ -716,6 +716,14 @@ class EvaluationTaskRng:
             task_index=task_index,
             task_seed=task_seed,
         )
+        EvaluationTaskRng.reseed(method=method, sequence=sequence)
+        environment.isolate_evaluation_task(problem=problem)
+        return method
+
+    @staticmethod
+    def reseed(*, method: EesMethod, sequence: np.random.SeedSequence) -> None:
+        """Every RNG a deployment draws from, reseeded from `sequence`: the method's own,
+        each sampler's, and the process-global numpy, `random` and torch RNGs."""
         own, numpy_global, random_global, torch_global, samplers = sequence.spawn(5)
         method._rng = np.random.default_rng(own)
         np.random.seed(int(numpy_global.generate_state(1)[0]))  # noqa: NPY002
@@ -734,8 +742,6 @@ class EvaluationTaskRng:
                     )
                 },
             )
-        environment.isolate_evaluation_task(problem=problem)
-        return method
 
 
 class StepEvaluation:
@@ -749,14 +755,25 @@ class StepEvaluation:
         checkpoint: int | None = None,
         label: str = "(final)",
         task_indices: list[int] | None = None,
+        sampling_seed: int | None = None,
     ) -> dict[str, Any]:
         """`label` names the update measured, for the person watching (`after cycle 3`).
 
         `task_indices` runs only those of the evaluation's test tasks (all of them are
         still sampled, so each keeps its place in the sequence): a part of a parallel
-        evaluation (`TaskParallelEvaluation`)."""
+        evaluation (`TaskParallelEvaluation`).
+
+        `sampling_seed` reseeds every RNG the restored deployment draws from
+        (`EvaluationTaskRng.reseed`) before the first task, in place of the snapshot's
+        RNG state: a later re-run of a snapshot (`hitl_pmp.evaluate_snapshot`). None
+        draws from the snapshot's state, as every evaluation during a run does."""
         args = argparse.Namespace(**configuration)
         per_task = EvaluationTaskRng.of(args=args) == EvaluationTaskRng.PER_TASK
+        if sampling_seed is not None and per_task:
+            raise ValueError(
+                "a sampling seed replaces the snapshot's RNG state for the evaluation, "
+                "but --evaluation-task-rng per-task reseeds every task from that state"
+            )
         directory = Path(output)
         directory.mkdir(parents=True, exist_ok=False)
         raw = Path(snapshot).read_bytes()
@@ -774,6 +791,10 @@ class StepEvaluation:
                 env=problem.env,
                 provider=environment.evaluation_skill_provider(problem=problem),
             )
+            if sampling_seed is not None:
+                EvaluationTaskRng.reseed(
+                    method=method, sequence=np.random.SeedSequence(sampling_seed)
+                )
             for index, task in enumerate(tasks):
                 if task_indices is not None and index not in task_indices:
                     continue
