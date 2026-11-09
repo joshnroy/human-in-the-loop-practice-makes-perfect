@@ -212,6 +212,21 @@ class Tossing3DSkillProvider(SkillProvider):
             params=params, parameters=Tossing3DToss.parameters_of(env=self.env)
         )
 
+    def sampler_input_bounds(
+        self, *, skill_name: str
+    ) -> tuple[tuple[float, float] | None, ...] | None:
+        """The toss row `[1, *classifier_inputs]`: the bias dropped, each learned
+        parameter bounded by the proposal's own range."""
+        if skill_name != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS.name:
+            return None
+        parameters = Tossing3DToss.parameters_of(env=self.env)
+        bounds = {
+            "standoff": parameters.standoff_bounds,
+            "speed": parameters.speed_bounds,
+            "release_ms": parameters.release_ms_bounds,
+        }
+        return (None, *(bounds[name] for name in parameters.classifier_inputs))
+
     def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return {}

@@ -946,3 +946,23 @@ def test_bin_pouring_observations_update_only_its_own_competence() -> None:
         belief=before.skill_beliefs[POUR_BIN_SKILL]
     )
     assert after.pending_examples.get(POUR_BIN_SKILL, 0) == 1
+
+
+def test_sampler_model_gp_builds_a_gp_toss_sampler_over_the_toss_parameters() -> None:
+    from hitl_pmp.environments.tossing3d.wide_long_range_proposal import SIM_TOSS_PARAMETERS
+
+    method = _build(sampler_model="gp", gp_ucb_kappa=3.0, gp_eval="lcb")
+    sampler = method.sampler(skill_name=TOSS_SKILL, param_dim=3)
+    assert sampler.sampler_model == "gp"
+    assert (sampler.gp_ucb_kappa, sampler.gp_eval) == (3.0, "lcb")
+    params = SIM_TOSS_PARAMETERS
+    bounds = {
+        "standoff": params.standoff_bounds,
+        "speed": params.speed_bounds,
+        "release_ms": params.release_ms_bounds,
+    }
+    assert sampler.gp_input_bounds == (
+        None,
+        *(bounds[name] for name in params.classifier_inputs),
+    )
+    assert _build().sampler(skill_name=TOSS_SKILL, param_dim=3).sampler_model == "mlp"
