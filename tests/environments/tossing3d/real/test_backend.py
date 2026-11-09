@@ -875,3 +875,32 @@ def test_look_again_looks_and_a_cube_then_seen_asks_no_more() -> None:
     assert looks == 2
     assert not seen.solved
     assert sum(line.startswith("Where is it?") for line in written) == 2
+
+
+def test_an_evaluations_progress_line_shows_its_score_so_far() -> None:
+    """Josh, 2026-11-08: each task's line carries the robot's in-bin count of the tasks
+    before it, so the score is visible during an evaluation."""
+    robot = FakeTossingRobot()
+    lines: list[str] = []
+    evaluation = RealTossing3DEnvironment(
+        tossing_robot=robot,
+        person=FakePerson(robot=robot, write=lambda _line: None),
+        evaluation=True,
+    )
+    backend = evaluation.backend()
+    backend._say = lambda *, line: lines.append(line)  # type: ignore[method-assign]
+    landed_in_bin = [True, False, True]
+    for task, in_bin in enumerate(landed_in_bin, start=1):
+        backend.evaluation_progress(index=1, label="after cycle 2", task=task, num_tasks=4)
+        backend.reset(seed=0)
+        if in_bin:
+            robot.cube = (robot.bin[0], robot.bin[1], 0.0)
+        backend._seen = None
+        backend.observe()
+    backend.evaluation_progress(index=1, label="after cycle 2", task=4, num_tasks=4)
+    backend.reset(seed=0)
+    progress = [line for line in lines if line.startswith("eval 1")]
+    assert progress[0] == "eval 1 after cycle 2: task 1/4"
+    assert progress[1] == "eval 1 after cycle 2: task 2/4 · 1/1 in the bin so far"
+    assert progress[2] == "eval 1 after cycle 2: task 3/4 · 1/2 in the bin so far"
+    assert progress[3] == "eval 1 after cycle 2: task 4/4 · 2/3 in the bin so far"
