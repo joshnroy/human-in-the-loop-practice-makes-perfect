@@ -323,6 +323,16 @@ class TerminalPerson(BaseModel):
         self._yes(question="Moved the bin onto its spot?", declined="bin placement")
         self.placed(request=request)
 
+    def take_cube_out(self, *, request: PlacementRequest) -> None:
+        """The cameras saw the cube in the bin where none was asked for: wait for a y
+        once it is out and the person is clear of the bin (n ends the run)."""
+        self.write(
+            "the cameras see the cube in the bin: take it out, put it on our side, step "
+            "away from the bin, then y"
+        )
+        self._yes(question="Cube out and you away from the bin?", declined="cube placement")
+        self.placed(request=request)
+
     def locate_lost_cube(self) -> str:
         """No camera sees the cube after a skill: "bin", "out" (of the workspace) or
         "look" (look again, once it is moved into view); n ends the run."""
@@ -534,18 +544,32 @@ class RealTossingBackend(BaseModel):
         self.person.place(request=request)
         self._seen = None
         observation = self.observe()
-        # Only the far spot is checked: the test tasks throw at it from a stand fixed by
-        # the bin, so where it sits is part of the task (Josh, 2026-11-08); the close
-        # spot only has to be on the robot's side.
-        while (
-            destination is Tossing3DSide.OPPOSITE
-            and (problem := self._bin_placement_problem(spot=request.bin)) is not None
-        ):
-            self.person.move_bin(request=request, problem=problem)
+        while True:
+            # A cube the look reads in the bin when none was asked for there would start
+            # the task solved, with no throw: seed 7's evaluation 0, task 7 (2026-11-09),
+            # where the person standing beside the box was read as the cube inside it.
+            if not request.cube_in_bin and self._cube_seen_in_bin():
+                self.person.take_cube_out(request=request)
+            # Only the far spot is checked: the test tasks throw at it from a stand fixed
+            # by the bin, so where it sits is part of the task (Josh, 2026-11-08); the
+            # close spot only has to be on the robot's side.
+            elif (
+                destination is Tossing3DSide.OPPOSITE
+                and (problem := self._bin_placement_problem(spot=request.bin)) is not None
+            ):
+                self.person.move_bin(request=request, problem=problem)
+            else:
+                break
             self._seen = None
             observation = self.observe()
         self._say(line="planning the next skill ...")
         return observation
+
+    def _cube_seen_in_bin(self) -> bool:
+        """Whether the look just taken puts the cube in the bin, scored or not."""
+        assert self._last is not None
+        reply = self._last.reply
+        return reply.cube_in_bin or reply.cube_inside_bin
 
     def _bin_placement_problem(self, *, spot: BinSpot) -> str | None:
         """How far the bin the cameras just saw is from `spot`, in words, or None when it
