@@ -165,7 +165,59 @@ def test_expected_attempt_cost_is_a_running_mean_from_a_one_step_prior():
     _execute(method=method, ground=pick, cost=1.5)
     _execute(method=method, ground=human, cost=2.0)
     assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(1.0)
-    assert method.dp_expected_attempt_cost(ground_skill=human) == pytest.approx(2.0)
+    # The human's charge is the experiment's true price, never the baseline's estimate.
+    assert method.dp_expected_attempt_cost(ground_skill=human) == pytest.approx(0.0, abs=1e-9)
+
+
+def _priced(*, human_price: float, always_ask: bool) -> DpMethod:
+    """`_build`, with every human skill charged `human_price` by the cost file."""
+    method = _build(always_ask=always_ask)
+    names = {
+        method.skill_provider.human_skill_name(ground_skill=ground)
+        for ground in method.skill_provider.human_cube_bin_reset_skills()
+    }
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                robot_step=ChargeFunction(value=STEP_PRICE),
+                human_skills={
+                    name: HumanCharge(cost=ChargeFunction(value=human_price))
+                    for name in {*names, "reset_to_sampled_start"}
+                },
+            )
+        )
+    )
+    return method
+
+
+@pytest.mark.parametrize("always_ask", [False, True])
+def test_dp_estimates_every_attempt_cost_blind_to_the_human_price(*, always_ask):
+    """Josh, 2026-11-08: a baseline never plans with a human skill's cost; the cost
+    file's human price is charged to the run, not read by DP's allocation."""
+    estimates = []
+    for price in (0.0, 5.0, 500.0):
+        method = _priced(human_price=price, always_ask=always_ask)
+        sweep = _ground(method=method, name="SweepShelf")
+        back = _ground(method=method, name="ReturnWiper")
+        human = _human(method=method)
+        untried = {g: method.dp_expected_attempt_cost(ground_skill=g) for g in (sweep, back)}
+        _execute(method=method, ground=sweep, cost=3.0)
+        if always_ask:
+            method.record_forced_reset(
+                reason=PARAMETERIZED_SKILL, cost=price, consecutive_stranded=0
+            )
+            method.observe_execution_cost(cost=price, steps=1, complete=True)
+        method.begin_practice_attempt(ground_skill=back)
+        method.record_action_cost(ground_skill=human)
+        method.observe_execution_cost(cost=price, steps=1, complete=True)
+        _execute(method=method, ground=back, cost=1.0)
+        estimates.append((
+            untried,
+            method.dp_expected_attempt_cost(ground_skill=sweep),
+            method.dp_expected_attempt_cost(ground_skill=back),
+        ))
+    assert estimates[0] == estimates[1] == estimates[2]
+    assert estimates[0][1:] == (pytest.approx(3.0), pytest.approx(1.0))
 
 
 def test_incomplete_execution_spending_is_retained_until_target_completes():
@@ -180,25 +232,23 @@ def test_incomplete_execution_spending_is_retained_until_target_completes():
     assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(10.0)
 
 
-def test_a_forced_reset_is_charged_to_the_skill_that_last_ran():
+def test_a_forced_reset_adds_nothing_to_the_skill_that_last_ran():
     method = _build(always_ask=True)
     sweep = _ground(method=method, name="SweepShelf")
     _execute(method=method, ground=sweep, cost=3.0)
     method.record_forced_reset(reason=PARAMETERIZED_SKILL, cost=5.0, consecutive_stranded=0)
     method.observe_execution_cost(cost=5.0, steps=1, complete=True)
-    # One attempt costing 3 + 5, not two attempts averaging 4.
-    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(8.0)
+    # One attempt costing 3, not 3 + 5, and not two attempts averaging 4.
+    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(3.0)
 
 
-def test_under_always_ask_a_triggering_skills_prior_includes_the_forced_reset():
+def test_under_always_ask_a_triggering_skills_prior_omits_the_forced_reset():
     method = _build(always_ask=True)
     sweep = _ground(method=method, name="SweepShelf")
     pick = _ground(method=method, name="PickWiper")
     assert sweep.skill.param_dim > 0
     assert pick.skill.param_dim == 0
-    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(
-        STEP_PRICE + START_RESET_PRICE
-    )
+    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(STEP_PRICE)
     assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(STEP_PRICE)
 
 
@@ -243,7 +293,8 @@ def test_setup_costs_and_incidental_skills_belong_to_target_not_allocation(*, mo
     for ground, cost in [(human, 5), (pick, 2), (back, 3)]:
         method.record_action_cost(ground_skill=ground)
         method.observe_execution_cost(cost=cost, steps=1, complete=True)
-    assert method.dp_expected_attempt_cost(ground_skill=back) == pytest.approx(10)
+    # The human's 5 is the run's charge, not part of the attempt DP prices.
+    assert method.dp_expected_attempt_cost(ground_skill=back) == pytest.approx(5)
     assert method.dp_remaining_allocation()[pick] == 4
     assert method.dp_remaining_allocation()[back] == 0
     assert method.dp_expected_attempt_cost(ground_skill=pick) == STEP_PRICE
@@ -263,7 +314,7 @@ def test_failed_setup_costs_survive_reselection_and_are_amortized():
     assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(1)
 
 
-def test_forced_reset_during_setup_is_charged_once_to_the_target():
+def test_forced_reset_during_setup_adds_nothing_to_the_target():
     method = _build(always_ask=True)
     sweep = _ground(method=method, name="SweepShelf")
     back = _ground(method=method, name="ReturnWiper")
@@ -274,8 +325,8 @@ def test_forced_reset_during_setup_is_charged_once_to_the_target():
     method.observe_execution_cost(cost=5, steps=1, complete=True)
     method.record_action_cost(ground_skill=back)
     method.observe_execution_cost(cost=1, steps=1, complete=True)
-    assert method.dp_expected_attempt_cost(ground_skill=back) == pytest.approx(9)
-    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(5.01)
+    assert method.dp_expected_attempt_cost(ground_skill=back) == pytest.approx(4)
+    assert method.dp_expected_attempt_cost(ground_skill=sweep) == pytest.approx(STEP_PRICE)
 
 
 def test_consumed_allocation_stops_period_without_zero_target_fallback(*, monkeypatch):
