@@ -1251,6 +1251,27 @@ class StepPracticeRunner:
             return ("error", repr(error))
 
     @staticmethod
+    def evaluation_wanted(*, completed_cycle: int) -> bool:
+        """Whether to run the evaluation due after `completed_cycle`. Always yes unless
+        HITL_ASK_BEFORE_EVAL=1, in which case the person at the robot decides (2026-11-09:
+        Josh watches the learning before spending a 10-task evaluation). An environment
+        variable rather than a flag, so a run can be resumed with it on or off without
+        changing its resolved config."""
+        if os.environ.get("HITL_ASK_BEFORE_EVAL") != "1":
+            return True
+        while True:
+            answer = (
+                input(
+                    f"The evaluation after cycle {completed_cycle} is due. Run it now? "
+                    "[y = evaluate / s = skip it and keep practising] "
+                )
+                .strip()
+                .lower()
+            )
+            if answer in ("y", "s"):
+                return answer == "y"
+
+    @staticmethod
     def evaluation_status(
         *,
         records: list[dict[str, Any]],
@@ -1880,7 +1901,9 @@ class StepPracticeRunner:
                 # The checkpoint's cycle-end evaluation, if it never finished, then the
                 # person puts practice's scene back as the checkpoint remembered it.
                 pending_evaluation = saved.get("pending_evaluation")
-                if pending_evaluation is not None:
+                if pending_evaluation is not None and StepPracticeRunner.evaluation_wanted(
+                    completed_cycle=pending_evaluation
+                ):
                     evaluate_and_restore(
                         completed_cycle=pending_evaluation, scene=saved["practice_scene"]
                     )
@@ -2168,7 +2191,12 @@ class StepPracticeRunner:
                         practice_scene=scene,
                         pending_evaluation=cycle - 1 if due else None,
                     )
-                if due:
+                if due and not StepPracticeRunner.evaluation_wanted(completed_cycle=cycle - 1):
+                    # Skipped by the person (HITL_ASK_BEFORE_EVAL): practice's scene is
+                    # untouched, so carry on; the checkpoint no longer owes this one.
+                    if checkpoint_cycles:
+                        checkpoint(completed_cycle=cycle - 1, practice_scene=scene)
+                elif due:
                     evaluate_and_restore(completed_cycle=cycle - 1, scene=scene)
                 elif learning_updates in measure_after_updates:
                     # Spawned beside practice, so no scene to put back.
