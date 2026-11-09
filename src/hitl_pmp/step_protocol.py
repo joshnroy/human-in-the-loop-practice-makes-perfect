@@ -774,6 +774,26 @@ class EvaluationTaskRng:
         environment.isolate_evaluation_task(problem=problem)
         return method
 
+    # Mixed into an in-process evaluation's seed, so its stream is never practice's.
+    IN_PROCESS_SALT: ClassVar[int] = int.from_bytes(b"evaluation", "big")
+
+    @staticmethod
+    def in_process(*, method: EesMethod) -> np.random.SeedSequence:
+        """An in-process evaluation's own stream (`StepEvaluation.run`), from every RNG
+        state its restored deployment holds and a fixed salt: practice carries on from
+        those same states, so drawing from them would replay practice's next draws."""
+        states = {
+            "method": method._rng.bit_generator.state,
+            "samplers": {
+                name: RngStates.capture(owner=sampler) for name, sampler in method._samplers.items()
+            },
+        }
+        encoded = json.dumps(states, sort_keys=True, default=lambda value: value.tolist())
+        digest = hashlib.sha256(encoded.encode()).digest()
+        return np.random.SeedSequence(
+            entropy=[int.from_bytes(digest[:16], "big"), EvaluationTaskRng.IN_PROCESS_SALT]
+        )
+
     @staticmethod
     def reseed(*, method: EesMethod, sequence: np.random.SeedSequence) -> None:
         """Every RNG a deployment draws from, reseeded from `sequence`: the method's own,
@@ -820,9 +840,14 @@ class StepEvaluation:
         `sampling_seed` reseeds every RNG the restored deployment draws from
         (`EvaluationTaskRng.reseed`) before the first task, in place of the snapshot's
         RNG state: a later re-run of a snapshot (`hitl_pmp.evaluate_snapshot`). None
-        draws from the snapshot's state, as every evaluation during a run does."""
+        draws from the snapshot's state, as every spawned evaluation during a run does;
+        an in-process one (the real robot) draws from a stream salted away from it
+        (`EvaluationTaskRng.in_process`), and leaves the process-global RNGs as practice
+        left them, so practice never replays or loses a draw to an evaluation."""
         args = argparse.Namespace(**configuration)
         per_task = EvaluationTaskRng.of(args=args) == EvaluationTaskRng.PER_TASK
+        in_process = environment.evaluation_pool() is not None
+        practice_globals = RngStates.capture_global() if in_process else None
         if sampling_seed is not None and per_task:
             raise ValueError(
                 "a sampling seed replaces the snapshot's RNG state for the evaluation, "
@@ -848,6 +873,10 @@ class StepEvaluation:
             if sampling_seed is not None:
                 EvaluationTaskRng.reseed(
                     method=method, sequence=np.random.SeedSequence(sampling_seed)
+                )
+            elif in_process and not per_task:
+                EvaluationTaskRng.reseed(
+                    method=method, sequence=EvaluationTaskRng.in_process(method=method)
                 )
             for index, task in enumerate(tasks):
                 if task_indices is not None and index not in task_indices:
@@ -979,6 +1008,8 @@ class StepEvaluation:
         finally:
             writer.close()
             problem.env.close()
+            if practice_globals is not None:
+                RngStates.restore_global(states=practice_globals)
 
 
 class TaskParallelEvaluation:
