@@ -810,17 +810,26 @@ class DropShrimpController:
     Planned before anything moves, as the jug's carries are: the arm tucks the dumpling
     into the carry pose; the base drives to the drop pose; the arm brings the dumpling
     above the jug's mouth. The dumpling is welded to the hand, so unlike the jug it may
-    take any orientation on the way: the hand orientations in `CARRY_TURNS_DEG` (turns of
-    the grasp's own orientation about vertical) are tried in order until one plans. The
-    centring and release over the mouth stay the scripted contact motion.
+    take any orientation on the way: the grasp's own orientation turned about vertical
+    (`CARRY_TURNS_DEG`), then the hand straight down (`HOVER_DOWN_YAWS_DEG`), at each
+    carry pose in `CARRY_HANDS_IN_BASE` in turn, until one plans. The centring and
+    release over the mouth stay the scripted contact motion.
     """
 
     TUCK = "planned tuck held shrimp for carry"
     BASE_MOTION = "planned carry shrimp to drop pose"
     MOVE_ARM_TO_HOVER = "planned arm to shrimp hover above jug"
-    CARRY_HAND_IN_BASE = CarryToPourController.CARRY_HAND_IN_BASE
+    # The jug's carry pose first. Holding the jug by its handle the hand is level there;
+    # holding a dumpling it points down, and a downward hand reaches only about 0.97 m at
+    # that distance. The lower pose is also nearer the base, so at the drop pose the
+    # hanging dumpling stops short of the jug's rim. The base path checks the arm and the
+    # dumpling in 3-D against the scene (worktops at 0.74 m).
+    CARRY_HANDS_IN_BASE = (CarryToPourController.CARRY_HAND_IN_BASE, (0.35, 0.0, 0.95))
     CARRY_TURNS_DEG = (0.0, 90.0, -90.0, 180.0)
     HOVER_DOWN_YAWS_DEG = (0.0, 90.0, 180.0, 270.0)
+    # From the drop pose the hover is about 0.5 m ahead and 1 m up, out of a vertical
+    # hand's reach; a hand tilted toward the jug reaches it.
+    HOVER_TILTS_TOWARD_JUG_DEG = (20.0, 40.0)
 
     def __init__(self, *, sim: KitchenPyBulletSim) -> None:
         self.sim = sim
@@ -845,37 +854,50 @@ class DropShrimpController:
         sim.set_state(x)
         sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
         held = HeldObject.grasped(sim=sim, arm=arm, name=name, riders=(), keep_upright=False)
-        carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler("z", float(base[2])).apply(
-            self.CARRY_HAND_IN_BASE
-        )
+        down = Rotation.from_euler("x", 180, degrees=True)
+        orientations = [
+            *(
+                (f"turned {t:+.0f} deg", Rotation.from_euler("z", t, degrees=True) * hand_rotation)
+                for t in self.CARRY_TURNS_DEG
+            ),
+            *(
+                (f"down at yaw {t:.0f} deg", Rotation.from_euler("z", t, degrees=True) * down)
+                for t in self.HOVER_DOWN_YAWS_DEG
+            ),
+        ]
         refusals: list[str] = []
         carried: tuple[list[np.ndarray], list[np.ndarray]] | None = None
-        for turn in self.CARRY_TURNS_DEG:
-            rotation = Rotation.from_euler("z", turn, degrees=True) * hand_rotation
-            sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
-            try:
-                tuck = KitchenMotionPlanner.plan_arm(
-                    sim=sim,
-                    start=arm,
-                    position=carry,
-                    rotation=rotation,
-                    what="the shrimp carry pose",
-                    held=held,
-                )
-                base_path = KitchenMotionPlanner.plan_base(
-                    sim=sim,
-                    state=x,
-                    target=base_target,
-                    arm=tuck[-1],
-                    what="the drop pose",
-                    held=held,
-                    ignore=(name,),
-                )
-            except PlanningRefused as exc:
-                refusals.append(f"carry turned {turn:+.0f} deg: {exc}")
-                continue
-            carried = (tuck, base_path)
-            break
+        for hand_in_base in self.CARRY_HANDS_IN_BASE:
+            carry = np.array([base[0], base[1], 0.0]) + Rotation.from_euler(
+                "z", float(base[2])
+            ).apply(hand_in_base)
+            for label, rotation in orientations:
+                sim.set_robot_base(SE2(float(base[0]), float(base[1]), float(base[2])))
+                try:
+                    tuck = KitchenMotionPlanner.plan_arm(
+                        sim=sim,
+                        start=arm,
+                        position=carry,
+                        rotation=rotation,
+                        what="the shrimp carry pose",
+                        held=held,
+                    )
+                    base_path = KitchenMotionPlanner.plan_base(
+                        sim=sim,
+                        state=x,
+                        target=base_target,
+                        arm=tuck[-1],
+                        what="the drop pose",
+                        held=held,
+                        ignore=(name,),
+                    )
+                except PlanningRefused as exc:
+                    refusals.append(f"carry at {hand_in_base[2]:.2f} m, {label}: {exc}")
+                    continue
+                carried = (tuck, base_path)
+                break
+            if carried is not None:
+                break
         if carried is None:
             raise PlanningRefused("; ".join(refusals))
         tuck, base_path = carried
@@ -883,13 +905,18 @@ class DropShrimpController:
         # grasp's own orientation (turned about vertical) first, then the hand pointing
         # straight down, for a grasp too tilted to reach over the mouth.
         sim.set_robot_base(SE2(float(base_target[0]), float(base_target[1]), float(base_target[2])))
-        down = Rotation.from_euler("x", 180, degrees=True)
+        ahead = np.array([hover[0] - base_target[0], hover[1] - base_target[1], 0.0])
+        ahead /= np.linalg.norm(ahead)
+        toward_jug = np.cross(ahead, [0.0, 0.0, 1.0])
         hovers = [
+            *(rotation for _, rotation in orientations),
             *(
-                Rotation.from_euler("z", t, degrees=True) * hand_rotation
-                for t in self.CARRY_TURNS_DEG
+                Rotation.from_rotvec(np.deg2rad(tilt) * toward_jug)
+                * Rotation.from_euler("z", t, degrees=True)
+                * down
+                for tilt in self.HOVER_TILTS_TOWARD_JUG_DEG
+                for t in self.HOVER_DOWN_YAWS_DEG
             ),
-            *(Rotation.from_euler("z", t, degrees=True) * down for t in self.HOVER_DOWN_YAWS_DEG),
         ]
         for turn, rotation in enumerate(hovers):
             try:
