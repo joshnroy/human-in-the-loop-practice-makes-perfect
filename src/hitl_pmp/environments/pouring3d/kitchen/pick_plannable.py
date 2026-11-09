@@ -58,12 +58,13 @@ from .types import PickRefusal, Pose
 PICK_PLANNABLE = "PickPlannable"
 # `pick_payload_with_retry` already treats the first two as planning (it skips the
 # physical retreat after them): no motion beyond the aisle base move was executed. The
-# planned pick from the pan (`KitchenController.pick_from_pan`) refuses with the third
-# before any motion at all.
+# planned picks from the pan and the floor (`KitchenController.pick_from_pan`,
+# `pick_from_floor`) refuse with the third and fourth before any motion at all.
 PLANNING_MESSAGES = (
     "No feasible continuation from prepared arm postures",
     "No collision-free empty-arm preparation path",
     "No planned pick from the pan",
+    "No planned pick from the floor",
 )
 # Phases of the pick before the fingers reach the dumpling. An IK or clearance
 # rejection here is a refusal of the planned target, not a contact outcome.
