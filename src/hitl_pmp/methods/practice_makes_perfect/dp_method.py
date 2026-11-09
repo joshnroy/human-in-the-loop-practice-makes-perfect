@@ -60,6 +60,11 @@ class DpMethod(EesMethod):
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
     dp_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
+    # A floor on every fitted Delta the allocator sees; None keeps them signed. Under
+    # per-period reallocation a negative Delta fitted from a few noisy outcomes makes
+    # practising that skill look harmful, so a re-solve allocates it nothing and no
+    # outcome ever corrects the fit. Not from the paper, which is silent on both.
+    dp_min_learning_rate: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     dp_max_skills: int = Field(default=8, ge=1)
     dp_max_allocations: int = Field(default=200_000, ge=1)
     dp_max_states: int = Field(default=4096, ge=1)
@@ -319,7 +324,11 @@ class DpMethod(EesMethod):
             )
             model = self._linear_model(history=history, ground_skill=candidate)
             competences[candidate] = model.get_current_competence()
-            learning_rates[candidate] = model.learning_rate()
+            learning_rates[candidate] = (
+                model.learning_rate()
+                if self.dp_min_learning_rate is None
+                else max(model.learning_rate(), self.dp_min_learning_rate)
+            )
         costs = {
             candidate: 1.0
             if self.dp_budget_unit == "episodes"

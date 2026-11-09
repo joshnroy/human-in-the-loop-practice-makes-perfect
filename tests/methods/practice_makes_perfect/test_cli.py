@@ -790,6 +790,7 @@ def test_dp_flags_parse_with_their_defaults() -> None:
     assert args.dp_solver == "gurobi"
     assert args.dp_budget_unit == "cost"
     assert args.dp_allocation_schedule == "period"
+    assert args.dp_min_learning_rate is None
     # EES's own flags, inherited.
     assert args.exploration_epsilon == 0.5
 
@@ -816,6 +817,8 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
         "0.2",
         "--dp-smoothing",
         "0.25",
+        "--dp-min-learning-rate",
+        "0.0001",
         "--dp-max-skills",
         "5",
         "--dp-max-allocations",
@@ -845,6 +848,7 @@ def test_dp_cli_builds_a_dp_method_with_its_knobs(*, monkeypatch: pytest.MonkeyP
     assert method.dp_solver_time_limit == 30
     assert method.dp_initial_learning_rate == pytest.approx(0.2)
     assert method.dp_smoothing == pytest.approx(0.25)
+    assert method.dp_min_learning_rate == pytest.approx(1e-4)
     assert method.dp_max_skills == 5
     assert method.dp_max_allocations == 999
     assert method.dp_max_states == 123
