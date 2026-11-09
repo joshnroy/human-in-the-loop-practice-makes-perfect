@@ -143,7 +143,7 @@ def test_the_real_toss_is_thrown_from_the_fixed_direction_of_the_bins_side(
         ground_skill=skill, state=state, parameters=REAL_TOSS_PARAMETERS
     )
     assert bounds == REAL_TOSS_PARAMETERS.standoff_bounds
-    params = np.array([1.30, 120.0, 675.0])
+    params = np.array([1.40, 120.0, 675.0])
     assert (
         Tossing3DToss.rejection_reason(
             ground_skill=skill, state=state, params=params, parameters=REAL_TOSS_PARAMETERS
@@ -155,7 +155,7 @@ def test_the_real_toss_is_thrown_from_the_fixed_direction_of_the_bins_side(
     tosses = [args for name, args in robot.calls if name == "toss"]
     assert len(tosses) == 1
     standoff, speed, release_ms, direction = tosses[0]
-    assert (standoff, speed, release_ms) == (1.30, 120.0, 675.0)
+    assert (standoff, speed, release_ms) == (1.40, 120.0, 675.0)
     assert math.remainder(direction - map_direction, math.tau) == pytest.approx(0.0, abs=1e-9)
 
 
@@ -849,7 +849,7 @@ def _lost_after_toss(*, answers: list[str]) -> tuple[Tossing3DObservation, list[
     written.clear()
     robot.lost = 1
     env.backend().run_move_to_toss_location_and_toss(
-        distance=1.3, rotation=math.pi, release_speed_deg_s=103.0, gripper_release_ms=590.0
+        distance=1.4, rotation=math.pi, release_speed_deg_s=103.0, gripper_release_ms=590.0
     )
     looks = [name for name, _ in robot.calls].count("observe")
     return env.backend().observe(), written, looks
