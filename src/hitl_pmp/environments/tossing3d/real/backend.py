@@ -524,13 +524,17 @@ class RealTossingBackend(BaseModel):
 
     def _bin_placement_problem(self, *, spot: BinSpot) -> str | None:
         """How far the bin the cameras just saw is from `spot`, in words, or None when it
-        is within `BIN_PLACEMENT_TOLERANCE_M` and `BIN_PLACEMENT_TOLERANCE_RAD` (or not
-        seen: the skills report a missing bin themselves). A bin off its spot moves every
-        toss stand with it, and a stand past the tape is refused only at the first toss."""
+        is within `BIN_PLACEMENT_TOLERANCE_M` and `BIN_PLACEMENT_TOLERANCE_RAD`. A bin off
+        its spot moves every toss stand with it, and a stand past the tape is refused only
+        at the first toss. An unseen bin is a problem too: a task that starts without one
+        ends with no throw (trial 5, evaluation task 10, 2026-11-08)."""
         assert self._last is not None
         seen = self._last.reply.bin
         if seen is None:
-            return None
+            return (
+                "the cameras see no bin: put it on the far spot, upright and in view "
+                "(bin overlay: tidybot-final/bin-placement)"
+            )
         frame = self.frame
         at_x, at_y = frame.to_domain(x=seen.x, y=seen.y)
         to_x, to_y = frame.to_domain(x=spot.center[0], y=spot.center[1])
