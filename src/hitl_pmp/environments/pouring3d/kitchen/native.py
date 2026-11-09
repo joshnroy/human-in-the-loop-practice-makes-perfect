@@ -201,6 +201,15 @@ class KitchenScene(PotstickerScene):
         _, data = self._model_and_data()
         return self.payload_rest.settled(time=float(data.time), positions=self.payload_positions())
 
+    def payload_resting(self) -> np.ndarray | None:
+        """Per piece, whether its centre stayed within the rest threshold over the
+        window; None until the recorded history spans the whole window."""
+        _, data = self._model_and_data()
+        time = float(data.time)
+        if not self.payload_rest.covers(time=time):
+            return None
+        return self.payload_rest.resting(time=time, positions=self.payload_positions())
+
     def _check_goals(self) -> bool:
         locations = self.cube_locations()
         return (
