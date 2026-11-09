@@ -954,3 +954,64 @@ def test_a_practice_scene_pickled_before_it_recorded_the_bin_restores_a_floor_cu
     env.restore_practice_scene(scene=old)
     (request,) = [line for line in written if line.startswith("restore practice:")]
     assert "cube at (0.66, -0.98) on our side" in request
+
+
+class _CubeReadInTheBinOnce(FakePerson):
+    """A FakePerson whose first placement leaves the cameras reading the cube in the
+    bin (2026-11-09: Josh standing beside the box, read as the bottle inside it)."""
+
+    misread: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.misread == 0:
+            self.misread += 1
+            self.robot.cube = (request.bin.center[0], request.bin.center[1], 0.0)
+
+
+CUBE_IN_BIN_PROMPT = (
+    "the cameras see the cube in the bin: take it out, put it on our side, step away "
+    "from the bin, then y"
+)
+
+
+@pytest.mark.parametrize("destination", ["opposite_side", "robot_side"])
+def test_a_scene_look_that_sees_the_cube_in_the_bin_asks_for_it_out_and_looks_again(
+    *, destination: str
+) -> None:
+    """Seed 7's evaluation 0, task 7 (2026-11-09) ended solved with no throw: the scene
+    look read the cube as already in the bin."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeReadInTheBinOnce(robot=robot, write=written.append, misread=1)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.misread = 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    assert CUBE_IN_BIN_PROMPT in written
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert not MOTION & {name for name, _ in robot.calls}
+    assert not env.backend().snapshot().reply.cube_in_bin
+    assert _side(env=env, obj=env.cube) == {"robot_side"}
+
+
+def test_a_task_scene_that_sees_the_cube_in_the_bin_does_not_start_solved() -> None:
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeReadInTheBinOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert written.count(CUBE_IN_BIN_PROMPT) == 1
+    assert not env.backend().snapshot().reply.cube_in_bin
+
+
+def test_restoring_a_cube_that_had_scored_accepts_it_in_the_bin() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = _scene_with_the_cube_in_the_close_bin(env=env, robot=robot)
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    assert CUBE_IN_BIN_PROMPT not in written
+    assert env.backend().snapshot().reply.cube_in_bin
