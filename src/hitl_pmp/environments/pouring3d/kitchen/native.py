@@ -116,6 +116,10 @@ class KitchenScene(PotstickerScene):
     def respawn_payload_in_pitcher(self) -> None:
         self.release_payloads()
         super().respawn_payload_in_pitcher()
+        # A respawn moves every piece in zero sim time: positions from before it are not
+        # this trajectory's past, so rest by position starts again (Settled falls back
+        # to the speed rule until the window refills).
+        self.payload_rest.clear()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
         _, data = self._model_and_data()
