@@ -504,6 +504,15 @@ class KitchenMotionPlanner:
         return [np.array([pose.x, pose.y, pose.theta()]) for pose in path]
 
     @staticmethod
+    def with_base(*, state: Any, base: np.ndarray) -> Any:
+        """A copy of `state` with the robot's base at `base` (x, y, yaw)."""
+        (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
+        moved = state.copy()
+        for feature, value in zip(("pos_base_x", "pos_base_y", "pos_base_rot"), base, strict=True):
+            moved.set(robot, feature, float(value))
+        return moved
+
+    @staticmethod
     def body_check(
         *,
         sim: KitchenPyBulletSim,
@@ -532,6 +541,26 @@ class KitchenMotionPlanner:
         return body_collides
 
     @staticmethod
+    def footprint_blocked(*, state: Any, target: np.ndarray) -> bool:
+        """Whether the robot's 2-D footprint at base pose `target` overlaps an
+        obstacle's footprint: `run_base_motion_planning`'s own 2-D check."""
+        (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
+        width, height, _ = get_bounding_box(state, robot)
+        geoms = get_overhead_kinematic2ds(state, None)
+        obstacles = [
+            geoms[o.name]
+            for o in state.get_objects(MujocoObjectType)
+            if o.name in geoms and not o.is_instance(MujocoDrawerObjectType)
+        ]
+        pose = get_overhead_robot_se2_pose(
+            KitchenMotionPlanner.with_base(state=state, base=target), robot
+        )
+        footprint = Rectangle.from_center(
+            pose.x, pose.y, width, height, rotation_about_center=pose.theta()
+        )
+        return any(geom2ds_intersect(footprint, obstacle) for obstacle in obstacles)
+
+    @staticmethod
     def base_pose_blocked(
         *,
         sim: KitchenPyBulletSim,
@@ -543,24 +572,7 @@ class KitchenMotionPlanner:
         """Whether the base pose `target` is itself in collision, by the check
         `run_base_motion_planning` applies to every pose: the 2-D footprint against the
         obstacle footprints, then the 3-D body. No path can end at a blocked pose."""
-        (robot,) = state.get_objects(MujocoTidyBotRobotObjectType)
-        width, height, _ = get_bounding_box(state, robot)
-        geoms = get_overhead_kinematic2ds(state, None)
-        obstacles = [
-            geoms[o.name]
-            for o in state.get_objects(MujocoObjectType)
-            if o.name in geoms and not o.is_instance(MujocoDrawerObjectType)
-        ]
-        moved = state.copy()
-        for feature, value in zip(
-            ("pos_base_x", "pos_base_y", "pos_base_rot"), target, strict=True
-        ):
-            moved.set(robot, feature, float(value))
-        pose = get_overhead_robot_se2_pose(moved, robot)
-        footprint = Rectangle.from_center(
-            pose.x, pose.y, width, height, rotation_about_center=pose.theta()
-        )
-        if any(geom2ds_intersect(footprint, obstacle) for obstacle in obstacles):
+        if KitchenMotionPlanner.footprint_blocked(state=state, target=target):
             return True
         se2 = SE2(float(target[0]), float(target[1]), float(target[2]))
         return KitchenMotionPlanner.body_check(sim=sim, arm=arm, held=held)(se2)
