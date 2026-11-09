@@ -33,6 +33,10 @@ ticks it ran, so a session of N steps is the robot time a sim session of N steps
 simulates. A refused skill -- outside the parameter set, or refused by the robot side,
 which owns every geometry and safety check -- moved nothing and is charged nothing.
 
+Every skill is followed by a camera look, except a pick that held the cube (Josh,
+2026-11-08): its reply already says what that look would (`_held_look`), so the next
+observation is the last look updated with it.
+
 ## A human reset is a prompt
 
 `reset` (a task's scene) and `reset_cube_and_bin` (the planner's paid reset) tell the
@@ -85,6 +89,10 @@ BARRIER_NAME = "cuboid_barrier"
 
 # Upstream's `GRIPPER_OPEN_COMMAND_TOLERANCE`, copied so this path imports no KINDER.
 GRIPPER_OPEN_COMMAND_TOLERANCE = 1e-3
+# What the robot side's observe reports as `gripper_command` after a pick that held: its
+# `pick.top_down.close_position`. A pick's reply does not carry it; 233/233 looks after
+# a held pick in the 2026-11-05..08 real runs reported exactly this.
+GRIPPER_CLOSED_COMMAND: Final = 1.0
 # The only answers a y/n prompt takes; anything else is asked again.
 _ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
 CUBE_HALF_SIZE_M = 0.025
@@ -479,7 +487,10 @@ class RealTossingBackend(BaseModel):
     def observe(self) -> Tossing3DObservation:
         if self._seen is not None:
             return self._seen
-        reply = ObserveReply.model_validate(self.robot.observe())
+        return self._adopt(reply=ObserveReply.model_validate(self.robot.observe()))
+
+    def _adopt(self, *, reply: ObserveReply) -> Tossing3DObservation:
+        """Make `reply` the scene as last seen, a look's or `_held_look`'s."""
         if reply.barrier is None:
             raise ValueError(
                 "the robot reports no barrier: the real experiment needs the tape enabled "
@@ -584,8 +595,11 @@ class RealTossingBackend(BaseModel):
     # --- skills -------------------------------------------------------------------------
 
     def run_pick_cube(self) -> ControllerRun:
+        replies: list[PickReply] = []
+
         def act() -> ControllerRun:
             reply = PickReply.model_validate(self.robot.pick())
+            replies.append(reply)
             if reply.refused:
                 return ControllerRun(
                     steps=0, terminated=True, error=f"pick refused: {reply.reason}"
@@ -593,7 +607,38 @@ class RealTossingBackend(BaseModel):
             error = None if reply.held else f"pick did not hold: {reply.note}"
             return ControllerRun(steps=_MOVED, terminated=True, error=error)
 
-        return self._skill(action="PickCube", act=act)
+        return self._skill(
+            action="PickCube",
+            act=act,
+            known=lambda run: (
+                self._held_look(pick=replies[0]) if replies and not run.error else None
+            ),
+        )
+
+    def _held_look(self, *, pick: PickReply) -> ObserveReply | None:
+        """What a look right after a pick that held would report, from its reply and the
+        look before it; None (look) when the pick did not hold or did not say where it
+        stood. The robot side's `holding` is the held reading with the cube out of view,
+        and the base stands where the pick drove it. The bin is the pick's own fit (the
+        look's it planned from), so a bin the pick pushed is seen only at the next look:
+        in the 2026-11-05..08 real runs a fresh look after a held pick found the bin
+        within 6 mm, the base within 3 cm of `stand`, over 233/233 picks."""
+        if not pick.held or pick.stand is None or self._last is None:
+            return None
+        return self._last.reply.model_copy(
+            update={
+                "robot": tuple(pick.stand),
+                "cube": None,
+                "bin": pick.bin if pick.bin is not None else self._last.reply.bin,
+                "holding": True,
+                "gripper": pick.gripper,
+                "gripper_command": GRIPPER_CLOSED_COMMAND,
+                "cube_upright": False,
+                "cube_in_bin": False,
+                "cube_inside_bin": False,
+                "can_pick": None,
+            }
+        )
 
     def run_open_gripper(self) -> ControllerRun:
         def act() -> ControllerRun:
@@ -655,8 +700,15 @@ class RealTossingBackend(BaseModel):
 
         return self._skill(action="PourCubeOutOfBin", act=act)
 
-    def _skill(self, *, action: str, act: Callable[[], ControllerRun]) -> ControllerRun:
-        """One robot skill, one fresh observation, then its charged steps.
+    def _skill(
+        self,
+        *,
+        action: str,
+        act: Callable[[], ControllerRun],
+        known: Callable[[ControllerRun], ObserveReply | None] | None = None,
+    ) -> ControllerRun:
+        """One robot skill, one fresh observation, then its charged steps. `known` is
+        what the skill's own reply says a look would see, if it can: then no look.
 
         A `ValueError` is the robot side refusing before it moved: uncharged. Any other
         error from the call (a stopped or busy skill, a lost connection) may have come
@@ -686,9 +738,17 @@ class RealTossingBackend(BaseModel):
             run = run.model_copy(
                 update={"steps": max(1, round(self._skill_seconds / self.tick_seconds))}
             )
-        self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
-        self._seen = None
-        self.observe()
+        seen = None if known is None else known(run)
+        if seen is None:
+            self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
+            self._seen = None
+            self.observe()
+        else:
+            self._say(
+                line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); "
+                "holding the cube, no look needed"
+            )
+            self._adopt(reply=seen)
         self._say(line="planning the next skill ...")
         self._ticks.append(self.snapshot())
         if self._after is not None:
