@@ -324,24 +324,32 @@ class KitchenKinderBackend(KinderBackend):
             self._move_robot_to_start_pose()
             state = self._require_state().copy()
             bin_xyz = self._bin_destination(side=side, state=state)
-        robot = state.get_object_from_name(self.robot_name)
-        robot_xy = np.array([state.get(robot, "pos_base_x"), state.get(robot, "pos_base_y")])
         spec = config.objects[0]
-        for attempt, cube_xy in enumerate(
-            self._recovery_positions(robot_xy=robot_xy, bin_xyz=bin_xyz)
-        ):
-            cube_xyz = (*cube_xy, spec.dimensions[2] / 2 + 0.002)
-            self._write_placement(
-                state=state, placements=((self.bin_name, bin_xyz), (self.cube_name, cube_xyz))
-            )
-            if self._pick_plannable_here():
-                self.reset_rejections.append(attempt)
-                self._placements += 1
-                return self.observe()
-            if self._timing is not None:
-                self._timing.count(name="reset_cube_unpickable_rejected")
-            if attempt + 1 >= self.RESET_CANDIDATES:
-                break
+        # A robot parked where it blocks every pickable cube spot steps back to its
+        # scene-start pose too, and the reset is drawn again from there.
+        for stepped_back in (False, True):
+            if stepped_back:
+                self._move_robot_to_start_pose()
+                state = self._require_state().copy()
+                bin_xyz = self._bin_destination(side=side, state=state)
+            robot = state.get_object_from_name(self.robot_name)
+            robot_xy = np.array([state.get(robot, "pos_base_x"), state.get(robot, "pos_base_y")])
+            for attempt, cube_xy in enumerate(
+                self._recovery_positions(robot_xy=robot_xy, bin_xyz=bin_xyz)
+            ):
+                cube_xyz = (*cube_xy, spec.dimensions[2] / 2 + 0.002)
+                self._write_placement(
+                    state=state,
+                    placements=((self.bin_name, bin_xyz), (self.cube_name, cube_xyz)),
+                )
+                if self._pick_plannable_here():
+                    self.reset_rejections.append(attempt)
+                    self._placements += 1
+                    return self.observe()
+                if self._timing is not None:
+                    self._timing.count(name="reset_cube_unpickable_rejected")
+                if attempt + 1 >= self.RESET_CANDIDATES:
+                    break
         raise ValueError(
             f"No {side} reset placement among {self.RESET_CANDIDATES} seeded candidates "
             "where the pick dry run succeeds"
