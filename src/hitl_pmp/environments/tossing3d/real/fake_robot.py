@@ -74,11 +74,7 @@ class FakeTossingRobot(BaseModel):
     def observe(self) -> dict[str, Any]:
         self.calls.append(("observe", ()))
         cube = None if self.holding or self.cube is None else list(self.cube)
-        bin_ = (
-            None
-            if self.bin is None
-            else {"x": self.bin[0], "y": self.bin[1], "yaw": self.bin[2], **_BIN}
-        )
+        bin_ = self._bin_reply()
         return {
             "robot": list(self.robot),
             "cube": cube,
@@ -102,6 +98,11 @@ class FakeTossingRobot(BaseModel):
             "cube_inside_bin": cube is not None and self._in_bin(xy=(cube[0], cube[1]), margin=0.0),
             "toss_direction": None if self.bin is None else self.toss_direction(),
         }
+
+    def _bin_reply(self) -> dict[str, float] | None:
+        if self.bin is None:
+            return None
+        return {"x": self.bin[0], "y": self.bin[1], "yaw": self.bin[2], **_BIN}
 
     def toss_direction(self) -> float:
         """The robot side's fixed azimuth: from +x of a bin on the robot's side, from -y
@@ -148,6 +149,8 @@ class FakeTossingRobot(BaseModel):
             "refused": False,
             "reason": None,
             "cube": found,
+            "bin": self._bin_reply(),
+            "stand": list(self.robot),
             "attempts": [],
         }
 
