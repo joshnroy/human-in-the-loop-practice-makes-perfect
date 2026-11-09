@@ -6,7 +6,6 @@ import math
 import numpy as np
 
 from hitl_pmp.environments.tossing3d.predicates import IN_BIN, ON_GROUND
-from hitl_pmp.environments.tossing3d.real.backend import PlacementRequest
 from hitl_pmp.environments.tossing3d.real.contract import DumpReply
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.fake_robot import (
@@ -22,17 +21,9 @@ from hitl_pmp.planning.grounding import SkillGrounder
 ROBOT_SPOT = BIN_SPOTS[Tossing3DSide.ROBOT]
 
 
-class _PutsTheBottleInTheBin(FakePerson):
-    """Puts the bin where asked, and the bottle in it rather than on the floor."""
-
-    def placed(self, *, request: PlacementRequest) -> None:
-        center = request.bin.center
-        self.robot.put(cube=center, bin_center=center, bin_yaw=request.bin.yaw)
-
-
 def _env() -> tuple[RealTossing3DEnvironment, FakeTossingRobot]:
     robot = FakeTossingRobot()
-    person = _PutsTheBottleInTheBin(robot=robot, write=lambda _line: None)
+    person = FakePerson(robot=robot, write=lambda _line: None)
     env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
     env.hard_reset()
     return env, robot
@@ -41,8 +32,14 @@ def _env() -> tuple[RealTossing3DEnvironment, FakeTossingRobot]:
 def _bottle_in_the_robot_side_bin(
     *, env: RealTossing3DEnvironment, robot: FakeTossingRobot
 ) -> None:
+    """The bin at the close spot and the bottle in it. A placement look that finds the
+    bottle in the bin asks for it out, so it goes in after the reset, as a toss would
+    put it, and the environment carries on from a fresh look (`reobserve`)."""
     env.reset_movables(destination=Tossing3DSide.ROBOT.value)
     assert robot.bin is not None and robot.bin[:2] == ROBOT_SPOT.center
+    robot.put(cube=ROBOT_SPOT.center, bin_center=ROBOT_SPOT.center, bin_yaw=ROBOT_SPOT.yaw)
+    env.real_backend()._seen = None  # noqa: SLF001 -- the bottle moved: look again.
+    env.reobserve(state=env.get_current_state())
 
 
 def _pour(*, env: RealTossing3DEnvironment) -> None:
