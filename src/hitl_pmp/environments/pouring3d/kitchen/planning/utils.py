@@ -49,6 +49,8 @@ class KitchenPyBulletSim(VisionBraceletPyBulletSim):
     fixtures: ClassVar[tuple[str, ...]] = MIRRORED_FIXTURES
     movables: ClassVar[tuple[str, ...]] = MIRRORED_MOVABLES
     movable_prefix: ClassVar[str] = "potsticker"
+    # The executing MuJoCo arm's joint limits (lower, upper), set by `from_controller`.
+    executed_arm_limits: tuple[np.ndarray, np.ndarray] | None = None
 
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state)
@@ -72,6 +74,12 @@ class KitchenPyBulletSim(VisionBraceletPyBulletSim):
         c = controller
         state = c.scene._get_object_centric_state()
         sim = cls(state, model=c.model, data=c.data, base_q=c.base_q)
+        # The arm MuJoCo executes is narrower than PyBullet's model (joint 6: 119.7 deg
+        # against 127.8): a plan must stay inside the limits it will be executed under.
+        sim.executed_arm_limits = (
+            np.asarray(c.lower, dtype=float),
+            np.asarray(c.upper, dtype=float),
+        )
         sim.set_state(state)
         return sim
 
