@@ -747,6 +747,12 @@ class KitchenController(PotstickerController):
     # The hover above the grasp, and how finely the vertical descent and lift are solved.
     PAN_PICK_HOVER_M: ClassVar[float] = 0.16
     PAN_PICK_STEP_M: ClassVar[float] = 0.01
+    # A straight rise that stops short of the hover (the wrist at its limit) is kept if it
+    # clears the dumpling by this much; the planner takes the lift from there.
+    PAN_PICK_MIN_STRAIGHT_M: ClassVar[float] = 0.04
+    # The planned remainder of the lift: the grasp's own orientation, then tilted away
+    # from the base by these.
+    PAN_LIFT_TILTS_DEG: ClassVar[tuple[float, ...]] = (0.0, 20.0, 40.0)
     # Grasp yaws, as turns of the yaw across the dumpling's long axis: that yaw and its
     # 180 deg equivalent first, then turned 45 and 90 deg (pinching more along the piece).
     PAN_PICK_YAW_TURNS_DEG: ClassVar[tuple[float, ...]] = (0.0, 180.0, 45.0, -45.0, 90.0, 225.0)
@@ -798,7 +804,11 @@ class KitchenController(PotstickerController):
         `base`, or why there are none. Solved in scratch upwards from a multi-start grasp
         solution with the descent's own IK and clearance (pads may touch the pan, the arm
         and wrist keep their margin), so the descent replayed downwards reaches the grasp
-        on the branch it was checked on, and the lift replays it upwards."""
+        on the branch it was checked on, and the lift replays it upwards.
+
+        When no grasp solution rises straight all the way, the longest straight rise that
+        clears `PAN_PICK_MIN_STRAIGHT_M` is returned short of the hover, for the planner
+        to complete (`plan_pick_from_pan`)."""
         saved = (self.last_q.copy(), self.base_target.copy(), self.phase, self.posture)
         steps = round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M)
         heights = self.PAN_PICK_STEP_M * np.arange(1, steps + 1, dtype=float)
@@ -821,6 +831,7 @@ class KitchenController(PotstickerController):
             continuous = self.lower == -12
             best, reason = float("inf"), ""
             chains: list[list[np.ndarray]] = []
+            partial: list[list[np.ndarray]] = []
             for start in range(self.PAN_PICK_IK_STARTS):
                 self.scratch.qpos[:] = self.data.qpos
                 self.scratch.qpos[self.base_q] = self.base_target
@@ -848,20 +859,28 @@ class KitchenController(PotstickerController):
                 if any(np.linalg.norm(q - chain[0]) < 0.05 for chain in chains):
                     continue
                 self.last_q = q.copy()
+                rise: list[np.ndarray] = []
                 try:
-                    rise = [
-                        self.inverse_kinematics(position=grasp + [0, 0, h], rotation=rotation)
-                        for h in heights
-                    ]
+                    for h in heights:
+                        rise.append(
+                            self.inverse_kinematics(position=grasp + [0, 0, h], rotation=rotation)
+                        )
                 except ValueError as exc:
                     reason = f"; no straight rise from a grasp solution ({exc})"
+                    if len(rise) * self.PAN_PICK_STEP_M >= self.PAN_PICK_MIN_STRAIGHT_M - 1e-9:
+                        partial.append([q, *rise])
                     continue
                 chains.append([q, *rise])
+            # The branch nearest the episode-initial arm: the one the drop's carry and
+            # the other skills start from. A flipped elbow or wrist reaches the same
+            # grasp, but the welded carry and the in-place release fail from it.
             if chains:
-                # The branch nearest the episode-initial arm: the one the drop's carry and
-                # the other skills start from. A flipped elbow or wrist reaches the same
-                # grasp, but the welded carry and the in-place release fail from it.
                 return min(chains, key=lambda chain: float(np.linalg.norm(chain[0] - neutral)))
+            if partial:
+                return min(
+                    partial,
+                    key=lambda chain: (-len(chain), float(np.linalg.norm(chain[0] - neutral))),
+                )
             return f"no grasp IK within {self.IK_TOLERANCE_M * 1000:.0f} mm (best {best:.4f})" + (
                 reason
             )
@@ -888,6 +907,20 @@ class KitchenController(PotstickerController):
                 if isinstance(chain, str):
                     refusals.append(f"{label}: {chain}")
                     continue
+                if len(chain) - 1 < round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M):
+                    try:
+                        chain = chain + self.planned_pan_lift(
+                            sim=sim,
+                            chain=chain,
+                            grasp=grasp,
+                            rotation=rotation,
+                            base_target=base_target,
+                            name=name,
+                        )
+                    except PlanningRefused as exc:
+                        straight = (len(chain) - 1) * self.PAN_PICK_STEP_M * 100
+                        refusals.append(f"{label}: straight rise {straight:.0f} cm, then {exc}")
+                        continue
                 if not based:
                     # The tuck, when one is needed, first tries this grasp's orientation.
                     try:
@@ -911,6 +944,52 @@ class KitchenController(PotstickerController):
         finally:
             sim.close()
         raise PlanningRefused(f"{self.PAN_PICK_REFUSAL}: " + "; ".join(refusals))
+
+    def planned_pan_lift(
+        self,
+        *,
+        sim: Any,
+        chain: list[np.ndarray],
+        grasp: np.ndarray,
+        rotation: Rotation,
+        base_target: np.ndarray,
+        name: str,
+    ) -> list[np.ndarray]:
+        """The rest of a lift whose straight rise stopped short of the hover: planned
+        from the top of the straight rise to the hover, the dumpling carried as it will
+        be once welded. The descent replays it downwards before the grasp, inside the
+        same swept volume."""
+        from spatialmath import SE2
+
+        from .planning.parameterized_skills import (
+            HeldObject,
+            KitchenMotionPlanner,
+            PlanningRefused,
+        )
+
+        sim.set_state(self.scene._get_object_centric_state())
+        sim.set_robot_base(SE2(*(float(v) for v in base_target)))
+        held = HeldObject.grasped(sim=sim, arm=chain[0], name=name, riders=(), keep_upright=False)
+        # The hover can lie at the edge of the grasp orientation's reach; the welded
+        # dumpling allows the hand to tilt away from the base, which extends it.
+        away = np.array([grasp[0] - base_target[0], grasp[1] - base_target[1], 0.0])
+        axis = np.cross(away / np.linalg.norm(away), [0.0, 0.0, 1.0])
+        refusals: list[str] = []
+        for tilt in self.PAN_LIFT_TILTS_DEG:
+            try:
+                path = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=chain[-1],
+                    position=grasp + [0, 0, self.PAN_PICK_HOVER_M],
+                    rotation=Rotation.from_rotvec(np.deg2rad(tilt) * axis) * rotation,
+                    what="the lift above the pan",
+                    held=held,
+                )
+            except PlanningRefused as exc:
+                refusals.append(f"tilted {tilt:.0f} deg: {exc}")
+                continue
+            return [np.asarray(q, dtype=float) for q in path[1:]]
+        raise PlanningRefused(", ".join(refusals))
 
     def pick_from_pan(self, *, index: int) -> None:
         """Pick a dumpling from the pan with planned free-space motion, as the jug's
