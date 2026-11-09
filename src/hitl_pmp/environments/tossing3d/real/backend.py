@@ -147,6 +147,10 @@ class PracticeScene(BaseModel):
     holding: bool
     # The bin's side of the tape (SAME or FAR), `None` if the last look saw no bin.
     bin_side: Tossing3DSide | None
+    # The cube scored in the bin (the robot side's `cube_in_bin`). Its `cube` is then a
+    # point inside the bin, which is floor once the bin goes back on its spot, so a
+    # restore asks for it in the bin instead (2026-11-08).
+    cube_in_bin: bool = False
 
     @staticmethod
     def of(*, snapshot: "RealSceneSnapshot") -> "PracticeScene":
@@ -160,7 +164,17 @@ class PracticeScene(BaseModel):
         if reply.bin is not None:
             bin_x, _ = frame.to_domain(x=reply.bin.x, y=reply.bin.y)
             side = Tossing3DSide.ROBOT if bin_x < 0.0 else Tossing3DSide.OPPOSITE
-        return PracticeScene(cube=cube, holding=reply.holding, bin_side=side)
+        return PracticeScene(
+            cube=cube,
+            holding=reply.holding,
+            bin_side=side,
+            cube_in_bin=not reply.holding and reply.cube_in_bin,
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:  # noqa: PLR0917
+        # A checkpoint pickled before `cube_in_bin` existed resumes with its default.
+        state["__dict__"].setdefault("cube_in_bin", False)
+        super().__setstate__(state)
 
 
 # The bin's spot as the person is told it: on the robot's side of the tape, or across.
@@ -183,6 +197,8 @@ class PlacementRequest(BaseModel):
     gripper_note: str | None = None
     # The cube goes at `cube` exactly (a restore), not anywhere on the robot's side.
     cube_exact: bool = False
+    # The cube goes in the bin (a restore of a cube that had scored); `cube` is unused.
+    cube_in_bin: bool = False
 
     def instructions(self) -> str:
         """One line: the bin's spot by name, and the cube anywhere on the robot's side
@@ -191,12 +207,14 @@ class PlacementRequest(BaseModel):
         if self.destination is Tossing3DSide.OPPOSITE:
             spot = "the far spot, across the tape"
         note = "" if self.gripper_note is None else f"; {self.gripper_note}"
-        cube = "anywhere"
-        if self.cube_exact:
-            cube = f"at ({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+        cube = "cube anywhere on our side, on a face"
+        if self.cube_in_bin:
+            cube = "cube in the bin"
+        elif self.cube_exact:
+            cube = f"cube at ({self.cube[0]:.2f}, {self.cube[1]:.2f}) on our side, on a face"
         return (
             f"{self.kind}: {SPOT_NAMES[self.destination]} (bin at {spot}); "
-            f"cube {cube} on our side, on a face; do not move the robot{note}"
+            f"{cube}; do not move the robot{note}"
         )
 
     def details(self) -> str:
@@ -204,8 +222,12 @@ class PlacementRequest(BaseModel):
         return (
             f"{self.kind} {SPOT_NAMES[self.destination]} (robot map frame, metres): bin "
             f"centred at ({self.bin.center[0]:.2f}, {self.bin.center[1]:.2f}), yaw "
-            f"{self.bin.yaw:.2f}: {self.bin.description}; cube nominally at "
-            f"({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+            f"{self.bin.yaw:.2f}: {self.bin.description}; "
+            + (
+                "cube in the bin"
+                if self.cube_in_bin
+                else f"cube nominally at ({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+            )
         )
 
 
@@ -404,10 +426,12 @@ class RealTossingBackend(BaseModel):
             notes.append("the last look saw no cube: put it where it was")
         if scene.bin_side is None:
             notes.append("the last look saw no bin: put it at the far spot")
+        in_bin = scene.cube_in_bin
         return self._placed(
             kind="restore practice",
             destination=scene.bin_side or Tossing3DSide.OPPOSITE,
-            cube=scene.cube,
+            cube=None if in_bin else scene.cube,
+            cube_in_bin=in_bin,
             gripper_note="; ".join(notes) or None,
         )
 
@@ -441,9 +465,10 @@ class RealTossingBackend(BaseModel):
         destination: Tossing3DSide,
         gripper_note: str | None = None,
         cube: tuple[float, float] | None = None,
+        cube_in_bin: bool = False,
     ) -> Tossing3DObservation:
-        """`cube` is a restore's exact spot; otherwise the cube goes anywhere on the
-        robot's side (nominally `CUBE_SPOT`)."""
+        """`cube` is a restore's exact spot, `cube_in_bin` a restore's cube in the bin;
+        otherwise the cube goes anywhere on the robot's side (nominally `CUBE_SPOT`)."""
         self.person.place(
             request=PlacementRequest(
                 kind=kind,
@@ -452,6 +477,7 @@ class RealTossingBackend(BaseModel):
                 bin=BIN_SPOTS[destination],
                 gripper_note=gripper_note,
                 cube_exact=cube is not None,
+                cube_in_bin=cube_in_bin,
             )
         )
         self._seen = None
