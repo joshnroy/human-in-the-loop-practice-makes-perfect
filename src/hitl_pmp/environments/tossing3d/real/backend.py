@@ -41,7 +41,8 @@ and that the cube goes anywhere on the robot's side; the coordinates go to the s
 log only (`real/session_log.py`). They wait for y and observe what was actually placed.
 Nothing is checked or retried: the planner sees the scene as placed. A human reset moves
 no robot; a task's scene drives home first and opens the gripper, as the sim's reset
-restores it open.
+restores it open. An evaluation drives home before its first task only: each later task
+starts where the one before left the robot, the gripper still opened (Josh, 2026-11-08).
 
 An evaluation in the middle of practice (`--measure-every-cycles`) uses the room, so
 practice's scene is remembered first (`practice_scene`: the cube's map spot, or the
@@ -359,26 +360,32 @@ class RealTossingBackend(BaseModel):
     _skill_seconds: float | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
     _progress: PracticeProgress | EvaluationProgress | None = PrivateAttr(default=None)
+    # The evaluation task (1-based) the backend was last told is running; None outside
+    # an evaluation.
+    _evaluation_task: int | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
     def reset(self, *, seed: int) -> Tossing3DObservation:
         """A task's scene: the robot at home and the bin across the tape, as in the sim.
-        There is one spot per side, so `seed` names the same scene for every task."""
+        There is one spot per side, so `seed` names the same scene for every task.
+        An evaluation's later tasks start where the robot is (module docstring)."""
         del seed
         self._say_progress()
-        self._home_and_open()
+        later_task = self._evaluation_task is not None and self._evaluation_task > 1
+        self._home_and_open(drive_home=not later_task)
         return self._placed(
             kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
         )
 
-    def _home_and_open(self) -> None:
+    def _home_and_open(self, *, drive_home: bool = True) -> None:
         # The robot starts each task at its home, the close-side toss stand, as the
         # sim's does; it drives there before the person sets the scene around it.
-        if self.confirm_start:
-            self.person.confirm(action="GoHome (drive to the close-side toss stand)")
-        self._say(line="driving home ...")
-        self.robot.go_home()
+        if drive_home:
+            if self.confirm_start:
+                self.person.confirm(action="GoHome (drive to the close-side toss stand)")
+            self._say(line="driving home ...")
+            self.robot.go_home()
         # The sim's scene reset restores the gripper open. Practice can end on a pick
         # with the cube held, and a gripper still commanded closed leaves `HandEmpty`
         # false for the whole task (run 9's evaluation: no plan at step 0).
@@ -393,6 +400,7 @@ class RealTossingBackend(BaseModel):
         """After an in-process evaluation: home and open, as a task's scene starts, then
         the person puts the cube and the bin back as practice left them. The person's
         job, not a reset the method chose: nothing is charged."""
+        self._evaluation_task = None
         self._home_and_open()
         notes = []
         if scene.holding:
@@ -699,12 +707,15 @@ class RealTossingBackend(BaseModel):
         self._progress = PracticeProgress(
             cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
         )
+        self._evaluation_task = None
 
     def evaluation_progress(self, *, index: int, label: str, task: int, num_tasks: int) -> None:
-        """Which evaluation and task is running, shown before its scene and each skill."""
+        """Which evaluation and task is running, shown before its scene and each skill;
+        `task` (1-based) also decides whether its scene drives home (`reset`)."""
         self._progress = EvaluationProgress(
             index=index, label=label, task=task, num_tasks=num_tasks
         )
+        self._evaluation_task = task
 
     def _say_progress(self) -> None:
         if self._progress is not None:

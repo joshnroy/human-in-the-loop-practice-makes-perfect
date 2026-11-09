@@ -624,3 +624,37 @@ def test_an_untimed_placement_shows_no_counter() -> None:
     )
     person.place(request=request)
     assert ticks == []
+
+
+def test_an_evaluation_drives_home_only_before_its_first_task() -> None:
+    """Josh, 2026-11-08: a later task starts where the one before left the robot; the
+    gripper is still opened before every task."""
+    robot = FakeTossingRobot()
+    evaluation = RealTossing3DEnvironment(
+        tossing_robot=robot,
+        person=FakePerson(robot=robot, write=lambda _line: None),
+        evaluation=True,
+    )
+    backend = evaluation.backend()
+    for task in range(1, 5):
+        backend.evaluation_progress(index=2, label="after cycle 2", task=task, num_tasks=4)
+        backend.reset(seed=0)
+        backend.evaluation_progress(index=2, label="after cycle 2", task=task, num_tasks=4)
+        backend.run_pick_cube()
+    names = [name for name, _ in robot.calls]
+    assert names.count("go_home") == 1
+    assert names.count("open_gripper") == 4
+    assert names.index("go_home") < names.index("open_gripper") < names.index("pick")
+
+
+def test_practice_scenes_and_restores_still_drive_home_every_time() -> None:
+    env, robot = _env()
+    robot.calls.clear()
+    env.backend().reset(seed=0)
+    env.backend().reset(seed=0)
+    env.restore_practice_scene(
+        scene=PracticeScene(cube=CUBE_SPOT, holding=False, bin_side=Tossing3DSide.OPPOSITE)
+    )
+    names = [name for name, _ in robot.calls]
+    assert names.count("go_home") == 3
+    assert names.count("open_gripper") == 3
