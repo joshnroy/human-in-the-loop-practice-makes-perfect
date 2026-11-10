@@ -1,0 +1,1 @@
+cd /home/josh/Documents/repos/research/hitl-pmp-results/realrobot-preflight-20261105/pin-wt/reference/prpl-tidybot && PRPL_REPO_DIR='~/prpl-tidybot-ce25bae-octenv' ./scripts/run_remote.sh tidybot-nuc-prpl python -m prpl_tidybot.third_party.base_server

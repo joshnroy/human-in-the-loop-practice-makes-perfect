@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/step_protocol.py", line 1901, in run
+    evaluate_and_restore(
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/step_protocol.py", line 1611, in evaluate_and_restore
+    restore_practice(scene=scene)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/step_protocol.py", line 1576, in restore_practice
+    restored = environment.restore_practice_scene(problem=problem, scene=scene)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/step_protocol.py", line 138, in restore_practice_scene
+    env.restore_practice_scene(scene=scene)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/environment.py", line 94, in restore_practice_scene
+    self.real_backend().restore_practice_scene(scene=scene)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/backend.py", line 503, in restore_practice_scene
+    return self._placed(
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/backend.py", line 554, in _placed
+    self.person.place(request=request)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/backend.py", line 288, in place
+    self._yes(question="Are the cube and the bin in place?", declined=request.kind)
+  File "/home/josh/Documents/repos/research/hitl-pmp-results/agent-wt/launch-20261109e/src/hitl_pmp/environments/tossing3d/real/backend.py", line 373, in _yes
+    raise KeyboardInterrupt(f"the person declined: {declined}")
+KeyboardInterrupt: the person declined: restore practice

@@ -1,0 +1,217 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 0,
+    "clock_steps": 0,
+    "robot_steps": 0,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 0,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_file_sha256": "2e66d9b5edfdbe13315dbc31e621fb5ff7f9ad33cac6e20361e0592738cfeba5",
+    "robot_cost": 0,
+    "human_cost": 0,
+    "physical_cost": 0.0,
+    "human_steps": 0,
+    "human_invocations_by_skill": {},
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 964711593,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 543,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 1,
+        "seed": 1535035104,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 568,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 2,
+        "seed": 134770626,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 537,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 3,
+        "seed": 1351777031,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 584,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 4,
+        "seed": 2145824591,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 554,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 5,
+        "seed": 726890682,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 562,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 6,
+        "seed": 340070937,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 569,
+        "reason": "goal"
+      },
+      {
+        "task": 7,
+        "seed": 780901251,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 553,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 8,
+        "seed": 496931793,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 563,
+        "reason": "goal"
+      },
+      {
+        "task": 9,
+        "seed": 651078323,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 569,
+        "reason": "toss_missed"
+      }
+    ],
+    "num_solved": 2,
+    "num_total": 10,
+    "elapsed_seconds": 778.0384457159671
+  },
+  {
+    "index": 1,
+    "practice_steps": 6478,
+    "clock_steps": 6478,
+    "robot_steps": 6477,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 19,
+    "learning_updates": 1,
+    "session_index": 1,
+    "policy_file_sha256": "1a4fe1338d27c9ec42cdb96d1c09b1d2d9442de554dd1a897109bcd34ff123d7",
+    "robot_cost": 64.76999999999623,
+    "human_cost": 6.81531938520493,
+    "physical_cost": 132.92319385204553,
+    "human_steps": 1,
+    "human_invocations_by_skill": {
+      "reset_cube_and_bin_near": 1
+    },
+    "after_cycle": 0,
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 964711593,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 582,
+        "reason": "toss_missed"
+      },
+      {
+        "task": 1,
+        "seed": 1535035104,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 584,
+        "reason": "goal"
+      },
+      {
+        "task": 2,
+        "seed": 134770626,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 614,
+        "reason": "goal"
+      },
+      {
+        "task": 3,
+        "seed": 1351777031,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 596,
+        "reason": "goal"
+      },
+      {
+        "task": 4,
+        "seed": 2145824591,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 638,
+        "reason": "goal"
+      },
+      {
+        "task": 5,
+        "seed": 726890682,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 682,
+        "reason": "goal"
+      },
+      {
+        "task": 6,
+        "seed": 340070937,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 626,
+        "reason": "goal"
+      },
+      {
+        "task": 7,
+        "seed": 780901251,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 586,
+        "reason": "goal"
+      },
+      {
+        "task": 8,
+        "seed": 496931793,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 594,
+        "reason": "goal"
+      },
+      {
+        "task": 9,
+        "seed": 651078323,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": true,
+        "steps": 673,
+        "reason": "goal"
+      }
+    ],
+    "num_solved": 9,
+    "num_total": 10,
+    "elapsed_seconds": 799.6163409150322
+  }
+]

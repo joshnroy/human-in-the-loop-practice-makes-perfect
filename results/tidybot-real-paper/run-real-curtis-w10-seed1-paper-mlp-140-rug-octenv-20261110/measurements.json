@@ -1,0 +1,45 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 0,
+    "clock_steps": 0,
+    "robot_steps": 0,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 0,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_file_sha256": "2e66d9b5edfdbe13315dbc31e621fb5ff7f9ad33cac6e20361e0592738cfeba5",
+    "robot_cost": 0,
+    "human_cost": 0,
+    "physical_cost": 0.0,
+    "human_steps": 0,
+    "human_invocations_by_skill": {}
+  },
+  {
+    "index": 1,
+    "practice_steps": 6478,
+    "clock_steps": 6478,
+    "robot_steps": 6477,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 19,
+    "learning_updates": 1,
+    "session_index": 1,
+    "policy_file_sha256": "1a4fe1338d27c9ec42cdb96d1c09b1d2d9442de554dd1a897109bcd34ff123d7",
+    "robot_cost": 64.76999999999623,
+    "human_cost": 6.81531938520493,
+    "physical_cost": 132.92319385204553,
+    "human_steps": 1,
+    "human_invocations_by_skill": {
+      "reset_cube_and_bin_near": 1
+    },
+    "after_cycle": 0
+  }
+]
