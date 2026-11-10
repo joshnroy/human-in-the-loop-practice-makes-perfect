@@ -1602,12 +1602,15 @@ class _ShortcutResetSkillProvider(LightSwitchSkillProvider):
 
 
 def _shortcut_reset_plan(*, reset_price: float) -> list[str]:
+    """Unscored, like `_cube_bin_reset_build`: only the fixed-price port plans with the
+    reset's price; scored, a human skill is planned at `-log(competence)` alone."""
     env = LightSwitchEnvironment(grid_size=4)
     method = EesMethod(
         env=env,
         skill_provider=_ShortcutResetSkillProvider(env=env),
         seed=0,
         reset_cost_gate=False,
+        score_human_skills=False,
     )
     method.configure_practice_accounting(
         accounting=CostFixtures.accounting(human={ASK_FOR_RESET_CUBE_BIN_ONLY_NAME: reset_price})

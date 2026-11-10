@@ -117,13 +117,27 @@ def test_a_human_skill_competence_is_tracked_from_the_robots_own_prior():
     assert method.current_competences()[reset] == pytest.approx(failed)
 
 
-def test_a_human_skill_is_priced_by_competence_plus_the_human_price(*, monkeypatch):
+def test_a_human_skill_is_planned_at_minus_log_competence_alone(*, monkeypatch):
+    """Planning cost is -log(competence), exactly as for a robot skill. What a skill
+    costs to execute is not something EES estimates (Josh, 2026-11-08), so the cost
+    file's human price never reaches EES's plans."""
     method = _build(score_human_skills=True)
     reset = _reset_cubes(method=method)
     _dispatch_and_grant(method=method, after=_state(on_shelf=(), in_box=O.cubes))
     competence = method.human_skill_competence(ground_skill=reset)
     offered = _offered_costs(method=method, monkeypatch=monkeypatch)[reset]
-    assert offered == pytest.approx(PRICE - math.log(competence))
+    assert offered == pytest.approx(-math.log(competence))
+
+
+def test_the_human_price_does_not_change_a_human_skills_planning_cost(*, monkeypatch):
+    cheap, dear = _build(score_human_skills=True), _build(score_human_skills=True)
+    dear.configure_practice_accounting(
+        accounting=CostFixtures.accounting(human={"reset_cubes": 50.0, "reset_wiper": 50.0})
+    )
+    reset = _reset_cubes(method=cheap)
+    assert _offered_costs(method=cheap, monkeypatch=monkeypatch)[reset] == pytest.approx(
+        _offered_costs(method=dear, monkeypatch=monkeypatch)[reset]
+    )
 
 
 def test_a_human_skill_is_never_a_practice_target():
