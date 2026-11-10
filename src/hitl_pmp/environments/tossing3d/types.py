@@ -68,6 +68,9 @@ from hitl_pmp.core.problem.environment.types import Object, State  # noqa: F401
 # nothing downstream has to know about it.
 AbstractAtom = tuple[str, tuple[str, ...]]
 
+TossParameterName = Literal["standoff", "speed", "release_ms"]
+TOSS_PARAMETER_NAMES: tuple[TossParameterName, ...] = ("standoff", "speed", "release_ms")
+
 
 class PlanarCollisionBox(BaseModel):
     """A controller's overhead collision rectangle, expressed without KINDER types."""
@@ -96,11 +99,31 @@ class TossParameterSet(BaseModel):
     standoff_bounds: tuple[float, float]
     speed_bounds: tuple[float, float]
     release_ms_bounds: tuple[float, float]
+    # The parameters the toss classifier sees, in parameter order. A parameter that is
+    # fixed in practice -- its bounds only a placeholder interval -- is left out: the
+    # classifier min/max-normalises each column, so a few millimetres of jitter would
+    # carry as much weight as the whole speed range. Every parameter is still drawn and
+    # executed; this only selects the classifier's input columns.
+    classifier_inputs: tuple[TossParameterName, ...] = TOSS_PARAMETER_NAMES
 
     def model_post_init(self, __context: object) -> None:
         for name, (low, high) in self._named():
             if not low < high:
                 raise ValueError(f"{name} bounds must be an interval low < high, got {(low, high)}")
+        ordered = tuple(name for name in TOSS_PARAMETER_NAMES if name in self.classifier_inputs)
+        if not self.classifier_inputs or ordered != self.classifier_inputs:
+            raise ValueError(
+                "classifier_inputs must be a non-empty subset of "
+                f"{TOSS_PARAMETER_NAMES} in that order, got {self.classifier_inputs}"
+            )
+
+    def classifier_features(self, *, params: np.ndarray) -> list[float]:
+        """The `classifier_inputs` columns of a `(standoff, speed, release_ms)` row."""
+        return [
+            float(value)
+            for name, value in zip(TOSS_PARAMETER_NAMES, params, strict=True)
+            if name in self.classifier_inputs
+        ]
 
     def violation(self, *, params: tuple[float, float, float]) -> str | None:
         """Why `(standoff, speed, release_ms)` is outside this set, or `None`."""

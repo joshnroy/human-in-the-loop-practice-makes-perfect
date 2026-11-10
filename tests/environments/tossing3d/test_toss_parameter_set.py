@@ -24,6 +24,8 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     WideLongRangeTossProposal,
 )
 
+from .observations import state
+
 
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
@@ -112,3 +114,53 @@ def test_the_robot_side_band_follows_the_parameter_set() -> None:
         TossStandoffBand.robot_side_bounds(geometry=geometry, parameters=REAL_TOSS_PARAMETERS)
         == REAL_TOSS_PARAMETERS.standoff_bounds
     )
+
+
+def _toss_row(*, env: Tossing3DEnvironment, params: np.ndarray) -> list[float]:
+    row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
+        ground_skill=_toss(env=env), state=state(env=env), params=params
+    )
+    assert row is not None
+    return row
+
+
+def test_the_real_set_learns_speed_and_release_only() -> None:
+    # The real standoff is fixed at 1.20 m; its +-5 mm band is a placeholder interval,
+    # and min/max normalisation would stretch it to the span of the other two inputs.
+    assert REAL_TOSS_PARAMETERS.classifier_inputs == ("speed", "release_ms")
+
+
+def test_the_sim_set_learns_all_three() -> None:
+    assert SIM_TOSS_PARAMETERS.classifier_inputs == ("standoff", "speed", "release_ms")
+
+
+def test_a_real_classifier_row_ignores_the_standoff() -> None:
+    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
+    rows = [
+        _toss_row(env=env, params=np.array([standoff, 114.72, 729.37]))
+        for standoff in (1.195, 1.200, 1.202, 1.205)
+    ]
+    assert rows == [[1.0, 114.72, 729.37]] * 4
+
+
+def test_the_sim_classifier_row_is_unchanged_byte_for_byte() -> None:
+    env = Tossing3DEnvironment()
+    rng = np.random.default_rng(11)
+    for _ in range(50):
+        params = WideLongRangeTossProposal.sample(rng=rng)
+        row = _toss_row(env=env, params=params)
+        # What `Tossing3DToss.feature_row` built before classifier inputs were declared.
+        expected = [1.0, *(float(value) for value in params)]
+        assert [type(value) for value in row] == [float] * 4
+        assert np.array(row).tobytes() == np.array(expected).tobytes()
+
+
+def test_classifier_inputs_must_be_a_nonempty_ordered_subset() -> None:
+    for bad in ((), ("speed", "speed"), ("release_ms", "speed"), ("yaw",)):
+        with pytest.raises(ValueError):
+            TossParameterSet(
+                standoff_bounds=(1.0, 1.4),
+                speed_bounds=(100.0, 140.0),
+                release_ms_bounds=(500.0, 850.0),
+                classifier_inputs=bad,
+            )

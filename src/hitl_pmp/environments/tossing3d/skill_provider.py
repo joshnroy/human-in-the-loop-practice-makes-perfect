@@ -203,11 +203,14 @@ class Tossing3DSkillProvider(SkillProvider):
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
-        """`[1, standoff, speed, release]` -- see `toss.py` for why nothing else."""
+        """`[1, standoff, speed, release]`, less any parameter the environment's set
+        does not learn -- see `toss.py` for why nothing else."""
         del state
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
-        return Tossing3DToss.feature_row(params=params)
+        return Tossing3DToss.feature_row(
+            params=params, parameters=Tossing3DToss.parameters_of(env=self.env)
+        )
 
     def action_annotations(self, *, ground_skill: GroundSkill, action: Action) -> dict[str, float]:
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
