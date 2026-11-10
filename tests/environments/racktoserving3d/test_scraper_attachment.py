@@ -50,10 +50,11 @@ def test_home_constraint_lifecycle_preserves_collision_masks_and_refuses_failed_
         env.close()
 
 
-def test_home_weld_pick_and_return_execute():
+@pytest.mark.parametrize("mode", ["home_weld", "grasp_weld"])
+def test_weld_pick_and_return_execute(*, mode):
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
-    env = RackServingEnvironment(config=RackServingConfig(scraper_attachment="home_weld"))
+    env = RackServingEnvironment(config=RackServingConfig(scraper_attachment=mode))
     try:
         env.reset_to_seed(seed=861111389)
         backend = env.backend()
@@ -62,10 +63,43 @@ def test_home_weld_pick_and_return_execute():
         assert env.last_skill_error() is None
         assert not backend.data().eq_active[weld]
         assert backend.held(name="wiper_0")
+        if mode == "grasp_weld":
+            shelf, tool = env.rack_controllers().shelf, env.rack_controllers().tool
+            assert ScraperAttachment.grasped(model=backend.model(), data=backend.data())
+            with patch(
+                "hitl_pmp.environments.sweepoffshelf3d.scripted_skills.ShelfSkills.pads_hold_wiper",
+                return_value=False,
+            ):
+                assert shelf.pads_hold_wiper()
+                tool.require_held(label="test_welded_hold")
+            recorded = backend.motion_state()["scraper_attachment_state"]
+            ScraperAttachment.release_grasp(model=backend.model(), data=backend.data())
+            assert not backend.held(name="wiper_0")
+            ScraperAttachment.restore(model=backend.model(), data=backend.data(), state=recorded)
+            assert backend.held(name="wiper_0")
+            shelf.hold(count=50, label="test_welded_hold")
         env.take_action(action=np.array([2.0, 0.0, 0.0, 0.0, 0.0]))
         assert env.last_skill_error() is None
         assert backend.data().eq_active[weld]
         assert env.rack_controllers().tool.at_home()
         assert not backend.held(name="wiper_0")
+    finally:
+        env.close()
+
+
+def test_failed_grasp_keeps_home_anchor_and_does_not_attach_to_hand():
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+    env = RackServingEnvironment(config=RackServingConfig(scraper_attachment="grasp_weld"))
+    try:
+        env.reset_to_seed(seed=861111389)
+        backend, tool = env.backend(), env.rack_controllers().tool
+        with patch.object(tool, "pads_hold_grip", return_value=False):
+            env.take_action(action=np.array([0.0, 0.0, 0.0, 0.0, 0.0]))
+        assert "both pads" in env.last_skill_error()
+        assert backend.data().eq_active[ScraperAttachment.home_id(model=backend.model())]
+        assert not backend.held(name="wiper_0")
+        tool.initialize_rest()
+        assert not ScraperAttachment.grasped(model=backend.model(), data=backend.data())
     finally:
         env.close()

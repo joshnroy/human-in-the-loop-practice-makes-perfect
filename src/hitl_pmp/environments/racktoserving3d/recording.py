@@ -25,6 +25,7 @@ from hitl_pmp.recording.run_record.types import PlainState
 from .backend import RackServingBackend
 from .config import RackServingConfig
 from .objects import RackServing3DObjects as Objects
+from .scraper_attachment import ScraperAttachment
 
 MOVABLES = (*(food.name for food in Objects.food), "wiper_0", "box_0", "rack_0")
 # Welded to the counter since 2026-11-06: placed by pose, not by a free joint. A
@@ -76,6 +77,10 @@ class RackServingReplayRenderer(SweepOffShelf3DReplayRenderer):
         for joint, value in zip(names, state["robot_joints"], strict=True):
             data.qpos[model.jnt_qposadr[model.joint(joint).id]] = float(value)
         backend.grip = float(state[Objects.robot.name][3])
+        if "scraper_attachment_state" in state:
+            ScraperAttachment.restore(
+                model=model, data=data, state=state["scraper_attachment_state"]
+            )
         for name in MOVABLES:
             pose = np.asarray(state[name][-7:], dtype=float)
             if name in WELDED:

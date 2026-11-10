@@ -66,10 +66,19 @@ def wiper_unwatched(*, shelf: ShelfSkills) -> Generator[None, None, None]:
 
 
 class RackShelfSkills(ShelfSkills):
-    """Optional compatibility subclass; existing ShelfSkills instances also work."""
+    """Shelf servo aware of an optional rigid scraper grasp."""
+
+    scraper_attachment: str = "physical"
 
     def wiper_unwatched(self) -> Any:
         return wiper_unwatched(shelf=self)
+
+    def pads_hold_wiper(self) -> bool:
+        if self.scraper_attachment == "grasp_weld" and ScraperAttachment.grasped(
+            model=self.model, data=self.data
+        ):
+            return True
+        return super().pads_hold_wiper()
 
 
 class BlockedStart:
@@ -279,6 +288,7 @@ class TableWiper:
     def release_attachments(self) -> None:
         if self.attachment != "physical":
             ScraperAttachment.release_home(model=self.model, data=self.data)
+            ScraperAttachment.release_grasp(model=self.model, data=self.data)
 
     def anchor_home(self) -> None:
         if self.attachment != "physical":
@@ -287,6 +297,8 @@ class TableWiper:
     def accept_grasp(self) -> None:
         """Only called after bilateral handle contact has verified the physical grasp."""
         self.release_attachments()
+        if self.attachment == "grasp_weld":
+            ScraperAttachment.attach_grasp(model=self.model, data=self.data)
 
     def park_after_seating(self) -> None:
         """Anchor only a completed return with support and a pose close to its seat."""
@@ -974,7 +986,8 @@ class RackScraper(TableWiper):
     Configuration is duck typed: counter_height, counter_front_x and tool_rest_y
     default to 0.9, 0.98 and -0.34 respectively. Explicit home_top, home_front,
     rest_y and base take precedence. top/front retain the rack's sweep geometry;
-    rest_pose is the setup callback and initialize_rest is the only pose writer.
+    rest_pose is the setup callback; optional attachment snaps only setup, human
+    recovery and a verified return to this pose.
     The backend owns the actual two-box blade/full-width-handle geometry.
     """
 
@@ -995,6 +1008,10 @@ class RackScraper(TableWiper):
             shelf=shelf, rest_y=rest_y, home_top=home_top, home_front=home_front, base=base
         )
         self.attachment = getattr(config, "scraper_attachment", "physical")
+        if isinstance(shelf, RackShelfSkills):
+            shelf.scraper_attachment = self.attachment
+        elif self.attachment == "grasp_weld":
+            raise ValueError("grasp_weld requires RackShelfSkills for held-tool monitoring")
         if not self.is_bench_scraper:
             raise SkillFailed("RackScraper requires a physical box blade and full-width handle")
         self.point = self.end_in_body + 0.010 * self.handle_axis
@@ -1015,7 +1032,11 @@ class RackScraper(TableWiper):
             )
 
     def pads_hold_grip(self) -> bool:
-        """Require bilateral handle contact, not an accidental blade pinch."""
+        """Require bilateral handle contact until a verified grasp is welded."""
+        if self.attachment == "grasp_weld" and ScraperAttachment.grasped(
+            model=self.model, data=self.data
+        ):
+            return True
         shelf = self.shelf
         touched = [False] * len(shelf.pad_sides)
         for contact in shelf.data.contact[: shelf.data.ncon]:
