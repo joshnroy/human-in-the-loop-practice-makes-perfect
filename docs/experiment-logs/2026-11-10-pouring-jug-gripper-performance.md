@@ -6,6 +6,10 @@ the table-plus-gripper-weld candidate delivered all three. Both pickups and plac
 succeeded, and both outcomes settled. This is a measured overshoot, not a setup failure.
 The candidate remains an uncalibrated draft; the learning sweep uses the table-weld baseline.
 
+**Update (16:42 EST):** the first 9 matched Della cases have identical success/failure
+outcomes (8/9 in each variant), including success in the local pilot's failed setting.
+See the Della checkpoint and cross-runtime qualification below before interpreting the local pilot.
+
 ## Frozen versions and protocol
 
 - Baseline: `fb217820056873797918e23651c7e06633c3eeeb` (parked jug weld).
@@ -68,3 +72,49 @@ Only completed matched cases will enter comparisons. The analyzer checks every r
 main SHA, dependency pins, harness hash and case values; no missing outcome is imputed.
 Full results and per-seed ramp plots will be appended here when available. No retuning or
 promotion of the held-jug candidate has been performed.
+
+## Della checkpoint: 2026-11-10 16:42 EST
+
+**The local Pour2 overshoot did not reproduce in the same Della case.** At this checkpoint,
+14/30 baseline cases and 9/30 candidate cases have completed, yielding
+9/30 matched cases. Exact pour success is **8/9 baseline and 8/9 candidate**; every
+matched case has the same success/failure outcome. All 9 setups and placements succeeded
+per variant, all outcomes settled, and neither variant spilled outside the jug and pan.
+All 9 fresh initial physical snapshots match exactly between variants.
+
+For seed 0, Pour2 succeeds at 0.25 and 1 degree/s and overshoots to three at 5 degrees/s
+in both Della variants. The local candidate's 1 degree/s overshoot therefore must not be
+presented as a reproduced Della regression. The two local pilot records above remain
+unchanged and are not pooled with the Della observations.
+
+![Completed matched Della cases, including means with one seed](../figures/pouring-jug-gripper-della-checkpoint-1642-20261110.png)
+
+The plot includes only completed matched cases. Marker shape identifies seed; horizontal
+offsets keep the two variants visible. Lines connect measured settings rather than fitting
+a continuous success curve. Counts give the actual available denominator, including one
+seed. Missing settings are omitted. Robot-reset cases have not completed at this checkpoint.
+
+[Checkpoint summary](2026-11-10-pouring-jug-gripper-performance/della-checkpoint-1642.json) includes the exact matched case IDs.
+[Raw completed records](2026-11-10-pouring-jug-gripper-performance/della-records.jsonl)
+preserve every field, with one case per JSON line; only the matched subset enters comparisons.
+The candidate remains a draft, and the remaining cases continue to run.
+This small partial matrix does not establish equivalence or a calibrated success rate.
+
+### Cross-runtime qualification
+
+The local and Della candidate Pour2/rate1 cases have identical source pins, harness hash,
+initial physical state and pickup action summary (284 controller ticks). Yet the jug
+position differs by about 18 micrometres along its largest differing axis after pickup,
+and the food state has diverged by the start of the pour ramp. The result is cross-runtime
+trajectory sensitivity; its cause has not been isolated.
+
+Both runtimes report MuJoCo 3.3.7, NumPy 1.26.4 and SciPy 1.14.0. Python patch/compiler,
+platform and numerical thread settings differ: Della caps the numerical libraries at one
+thread; the local pilot inherited unset thread limits. KINDER distribution metadata also
+differs, although both imports use the explicitly verified source checkout at the same pin.
+These differences are possible contributors, not a demonstrated causal explanation.
+
+Evidence: [local runtime](2026-11-10-pouring-jug-gripper-performance/local-runtime.json),
+[Della runtime](2026-11-10-pouring-jug-gripper-performance/della-runtime.json), and
+[cross-runtime comparison](2026-11-10-pouring-jug-gripper-performance/cross-runtime-audit.json).
+The same-host Della matrix is the primary comparison for the proposed Della learning runs.
