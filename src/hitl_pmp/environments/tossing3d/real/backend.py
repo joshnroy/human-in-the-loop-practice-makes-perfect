@@ -334,6 +334,16 @@ class TerminalPerson(BaseModel):
         self._yes(question="Cube out and you away from the bin?", declined="cube placement")
         self.placed(request=request)
 
+    def put_cube_in_view(self, *, request: PlacementRequest) -> None:
+        """The scene look saw no cube: wait for a y once it is back in view (n ends the
+        run)."""
+        self.write(
+            "the cameras do not see the cube: put it on our side, on a face and in view, "
+            "step away, then y"
+        )
+        self._yes(question="Cube in view and you away from it?", declined="cube placement")
+        self.placed(request=request)
+
     def locate_lost_cube(self) -> str:
         """No camera sees the cube after a skill: "bin", "out" (of the workspace) or
         "look" (look again, once it is moved into view); n ends the run."""
@@ -560,6 +570,10 @@ class RealTossingBackend(BaseModel):
             # where the person standing beside the box was read as the cube inside it.
             if not request.cube_in_bin and self._cube_seen_in_bin():
                 self.person.take_cube_out(request=request)
+            # A task that starts with no cube seen plans no pick and ends with no throw,
+            # scored a miss: seed 2's evaluation 1, task 3 (2026-11-10).
+            elif not request.cube_in_bin and self._cube_unseen():
+                self.person.put_cube_in_view(request=request)
             # Only the far spot is checked: the test tasks throw at it from a stand fixed
             # by the bin, so where it sits is part of the task (Josh, 2026-11-08); the
             # close spot only has to be on the robot's side.
@@ -580,6 +594,11 @@ class RealTossingBackend(BaseModel):
         assert self._last is not None
         reply = self._last.reply
         return reply.cube_in_bin or reply.cube_inside_bin
+
+    def _cube_unseen(self) -> bool:
+        """Whether the look just taken saw no cube at all."""
+        assert self._last is not None
+        return self._last.reply.cube is None
 
     def _bin_placement_problem(self, *, spot: BinSpot) -> str | None:
         """How far the bin the cameras just saw is from `spot`, in words, or None when it
