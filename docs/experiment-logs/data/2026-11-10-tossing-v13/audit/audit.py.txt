@@ -1,0 +1,258 @@
+"""Read-only replication audit of the completed Tossing v13 local mirror.
+
+This performs no new hypothesis tests and never loads a policy pickle. Inputs are
+unchanged. Run through scripts/with_env.sh; JSON output is written beside this file.
+"""
+
+import hashlib
+import json
+import math
+from collections import Counter
+from pathlib import Path
+
+import numpy as np
+from scipy import stats
+
+RESULTS = Path("/home/josh/Documents/repos/research/hitl-pmp-results")
+MIRROR = RESULTS / "della-v13-mirror"
+ANALYSIS = RESULTS / "tossing-v13-progress"
+OUTPUT = Path(__file__).resolve().parent
+
+
+def read(*, path):
+    return json.loads(path.read_text())
+
+
+def source(*, key):
+    cost, arm, seed = key.split("/")
+    if arm == "dpperiod":
+        tree, source_arm = "results-v13c-dp-period-floor", "dp"
+    elif int(seed) >= 5 or (arm in {"expectimax", "curtis"} and cost == "10000" and int(seed) >= 2):
+        tree, source_arm = "results-v13d", arm
+    elif arm in {"ees", "dp"}:
+        tree, source_arm = "results-v13b", arm
+    else:
+        tree, source_arm = "results", arm
+    return tree, MIRROR / tree / f"reset-cost-{cost}" / source_arm / seed
+
+
+def main():
+    curves = read(path=ANALYSIS / "curves50.json")
+    data = read(path=ANALYSIS / "data.json")
+    costs = read(path=ANALYSIS / "costs.json")
+    saved_tests = read(path=ANALYSIS / "paired_tests10.json")
+    errors = []
+    findings = []
+    counts = Counter()
+    by_tree = Counter()
+    runs = []
+    raw_curves = {}
+    baseline_groups = {}
+
+    def check(*, condition, kind, **details):
+        counts[kind + "_checked"] += 1
+        if not condition:
+            errors.append({"check": kind, **details})
+
+    for key in sorted(data["phase"]):
+        tree, run = source(key=key)
+        measurements = read(path=run / "measurements.json")
+        final = measurements[-1]
+        status = read(path=run / "status.json")
+        eval_path = run / "step_evaluations.json"
+        evaluations = read(path=eval_path) if eval_path.exists() else []
+        eval_by_index = {row["index"]: row for row in evaluations}
+        expected_indices = [row["index"] for row in measurements]
+        for field in ["robot_cost", "human_cost", "human_invocations", "practice_steps"]:
+            check(
+                condition=math.isclose(costs[key][field], final[field], abs_tol=1e-8),
+                kind="cached_final_measurement",
+                key=key,
+                field=field,
+                cached=costs[key][field],
+                raw=final[field],
+            )
+        check(
+            condition=len(data["resets"][key]) == final["human_invocations"],
+            kind="reset_count",
+            key=key,
+        )
+        if key.split("/")[1] in {"ees", "dp", "dpperiod"}:
+            _, arm, seed = key.split("/")
+            baseline_groups.setdefault((arm, seed), []).append((
+                key,
+                data["prog"][key],
+                data["resets"][key],
+                data["dumps"][key],
+            ))
+        if key in curves:
+            rescored = []
+            for index in expected_indices:
+                rescore_path = (
+                    MIRROR
+                    / "rescore-50"
+                    / tree
+                    / run.relative_to(MIRROR / tree)
+                    / f"{index:04d}"
+                    / "results.json"
+                )
+                check(condition=rescore_path.exists(), kind="rescore_exists", key=key, index=index)
+                if not rescore_path.exists():
+                    continue
+                scored = read(path=rescore_path)
+                tasks = scored["tasks"]
+                check(
+                    condition=scored["num_total"] == len(tasks) == 50
+                    and scored["num_solved"] == sum(t["solved"] for t in tasks),
+                    kind="rescore_totals",
+                    key=key,
+                    index=index,
+                )
+                check(
+                    condition=scored["snapshot"] == index
+                    and Path(scored["run"]).parts[-4:] == run.parts[-4:],
+                    kind="rescore_identity",
+                    key=key,
+                    index=index,
+                )
+                measurement = next(m for m in measurements if m["index"] == index)
+                policy = run / "snapshots" / f"{index:04d}.pickle"
+                check(
+                    condition=policy.exists()
+                    and hashlib.sha256(policy.read_bytes()).hexdigest()
+                    == measurement["policy_file_sha256"],
+                    kind="snapshot_hash",
+                    key=key,
+                    index=index,
+                )
+                original = eval_by_index.get(index)
+                if original is None or not original.get("complete"):
+                    path = run / "evaluations" / f"{index:04d}" / "results.json"
+                    original = read(path=path) if path.exists() else None
+                if original and len(original.get("tasks", [])) == 10:
+                    fields = ["seed", "solved", "steps", "reason"]
+                    check(
+                        condition=all(
+                            all(a.get(f) == b.get(f) for f in fields)
+                            for a, b in zip(tasks[:10], original["tasks"], strict=True)
+                        ),
+                        kind="first_ten_task_parity",
+                        key=key,
+                        index=index,
+                    )
+                else:
+                    counts["first_ten_unavailable"] += 1
+                    findings.append({
+                        "kind": "original_ten_task_eval_unavailable",
+                        "key": key,
+                        "index": index,
+                    })
+                rescored.append([index, scored["num_solved"]])
+                by_tree[tree] += 1
+            raw_curves[key] = rescored
+            check(condition=rescored == sorted(curves[key]), kind="cached_curve", key=key)
+            check(
+                condition=expected_indices == [index for index, _ in sorted(curves[key])],
+                kind="all_measurement_snapshots_scored",
+                key=key,
+            )
+        if status["phase"] != "complete":
+            findings.append({
+                "kind": "noncomplete_status",
+                "key": key,
+                "phase": status["phase"],
+                "stop_marker": (run / "STOPPED_PRACTISING.json").exists(),
+                "last_measured_step": final["practice_steps"],
+                "live_status_step": status.get("practice_steps"),
+            })
+        runs.append({"key": key, "tree": tree, "measurements": len(measurements)})
+
+    for (arm, seed), rows in baseline_groups.items():
+        check(
+            condition=len(rows) == 6 and all(row[1:] == rows[0][1:] for row in rows),
+            kind="baseline_cost_blindness",
+            arm=arm,
+            seed=seed,
+        )
+
+    # Replicate the already specified 84-test family; do not add or select tests.
+    replicated = []
+    for row in saved_tests:
+        a, b = [], []
+        for seed in range(row["n"]):
+            values = []
+            for arm in [row["ours"], row["base"]]:
+                key = f"{row['cost']}/{arm}/{seed}"
+                if row["metric"] == "resets":
+                    value = len(data["resets"][key])
+                elif row["metric"] == "total":
+                    value = costs[key]["robot_cost"] + costs[key]["human_cost"]
+                else:
+                    value = np.mean([n for _, n in raw_curves[key][-3:]])
+                values.append(value)
+            a.append(values[0])
+            b.append(values[1])
+        differences = np.array(a) - np.array(b)
+        t_p = 1.0 if np.all(differences == 0) else float(stats.ttest_rel(a, b).pvalue)
+        w_p = 1.0 if np.all(differences == 0) else float(stats.wilcoxon(a, b).pvalue)
+        check(
+            condition=np.allclose(differences, row["diffs"], atol=1e-8, rtol=0)
+            and math.isclose(t_p, row["t_p"], abs_tol=1e-12)
+            and math.isclose(w_p, row["w_p"], abs_tol=1e-12),
+            kind="existing_paired_test",
+            ours=row["ours"],
+            base=row["base"],
+            cost=row["cost"],
+            metric=row["metric"],
+        )
+        replicated.append({"t_p": t_p, "w_p": w_p})
+    check(condition=len(replicated) == 84, kind="existing_test_family_size")
+    for source_field, adjusted in [("t_p", "holm_p"), ("w_p", "holm_w")]:
+        running = 0
+        for rank, i in enumerate(np.argsort([r[source_field] for r in replicated])):
+            running = max(running, min(1, (len(replicated) - rank) * replicated[i][source_field]))
+            check(
+                condition=math.isclose(running, saved_tests[i][adjusted], abs_tol=1e-12),
+                kind="existing_holm",
+                field=adjusted,
+                row=int(i),
+            )
+
+    raw_files = list((MIRROR / "rescore-50").rglob("results.json"))
+    summary = {
+        "inputs": {"mirror": str(MIRROR), "analysis": str(ANALYSIS)},
+        "scope": "Replication and provenance only; no new hypothesis tests or simulations.",
+        "constraints": [
+            {
+                "source": str(
+                    Path("/home/josh/.claude/projects")
+                    / "-home-josh-Documents-repos-research-human-in-the-loop-practice-makes-perfect"
+                    / "954690ff-50c6-4e88-bf86-7b1ca32d6343.jsonl"
+                ),
+                "line": 21453,
+                "utc": "2026-11-10T14:45:10.756Z",
+                "et": "2026-11-10 09:45 ET",
+                "human_text": "Not now",
+                "context": "Assistant line 21459 confirms early-learning test stays on hold.",
+            }
+        ],
+        "snapshot_count_correction": {
+            "handoff_headline": 9760,
+            "raw_run_rescores": sum(by_tree.values()),
+            "cached_curve_points": sum(map(len, curves.values())),
+            "all_results_json_including_test": len(raw_files),
+            "by_tree": dict(by_tree),
+        },
+        "counts": dict(counts),
+        "errors": errors,
+        "findings": findings,
+        "runs": runs,
+    }
+    (OUTPUT / "audit.json").write_text(json.dumps(summary, indent=2) + "\n")
+    print(
+        json.dumps({k: v for k, v in summary.items() if k not in {"runs", "constraints"}}, indent=2)
+    )
+
+
+if __name__ == "__main__":
+    main()

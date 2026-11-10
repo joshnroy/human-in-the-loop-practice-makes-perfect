@@ -1,0 +1,20 @@
+import json, sys
+import numpy as np, matplotlib
+matplotlib.use("Agg"); import matplotlib.pyplot as plt
+d = json.load(open(sys.argv[2] if len(sys.argv) > 2 else "solved50.json")); stamp = sys.argv[1]
+arms = [("expectimax", "expectimax (ours)", "#0072B2"), ("curtis", "Curtis", "#CC79A7"), ("ees", "EES", "#009E73")]
+costs = ["0", "5", "10", "20", "100", "10000"]; xs = np.arange(len(costs))
+fig, ax = plt.subplots(figsize=(9, 5))
+for j, (arm, name, col) in enumerate(arms):
+    means = []
+    for x, c in zip(xs, costs):
+        v = [np.mean([n for _, n, _ in sorted(d[f"{c}/{arm}/{s}"])[-3:]]) for s in "0123456789" if f"{c}/{arm}/{s}" in d]
+        ax.scatter(np.full(len(v), x + (j - 1) * 0.15), v, color=col, alpha=0.4, s=16, edgecolor="none")
+        means.append((np.mean(v), len(v)))
+    ax.plot(xs + (j - 1) * 0.15, [m for m, _ in means], color=col, lw=2.3, marker="o",
+            label=f"{name} — mean, n={means[0][1]} seeds" + (f" (cost 10000: n={means[-1][1]})" if means[-1][1] != means[0][1] else ""))
+ax.set_xticks(xs, costs); ax.set_xlabel("human reset cost"); ax.set_ylabel("solved per seed")
+ax.set_ylim(0, 51); ax.grid(alpha=0.3); ax.legend(fontsize=8, frameon=False, loc="lower left")
+ax.set_title("held-out tasks solved (of 50), mean of the last 3 snapshots; cost 10000 for ours: 2 seeds, stopped practising", fontsize=9)
+fig.suptitle(f"Tossing env v13 — solved re-scored on 50 tasks, seeds 0-9 where re-scored (DP not re-scored) — {stamp}", fontsize=10)
+fig.tight_layout(); fig.savefig("tossing-v13-solved50.png", dpi=120)

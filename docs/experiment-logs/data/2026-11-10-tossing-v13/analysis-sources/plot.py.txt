@@ -1,0 +1,66 @@
+import json, sys, numpy as np, matplotlib
+matplotlib.use("Agg"); import matplotlib.pyplot as plt
+D=sys.argv[1]; d=json.load(open(D+"/data.json")); stamp=sys.argv[2]; nseeds=sys.argv[3] if len(sys.argv)>3 else "seeds 0-4, partial"
+arms=[("expectimax","expectimax (ours)","#0072B2"),("curtis","Curtis","#CC79A7"),("ees","EES","#009E73"),("dp","DP","#E69F00"),("dpperiod","DP, re-plans each period (rate floor 1e-4)","#F0E442")]
+costs=["0","5","10","20","100","10000"]; grid=np.arange(0,200001,1000)
+# Cancelled 2026-11-08 (Josh): at cost 10000 these arms STOP every cycle after ~3k steps,
+# so practice has ended and the policy no longer changes; drawn flat from their last eval.
+STOPPED={f"10000/{m}/{s}" for m in ("expectimax","curtis") for s in "0123456789"}
+def done(k): return d["steps"].get(k,0)>=200000 or k in STOPPED or d["phase"].get(k)=="complete"
+def cum(steps,end):
+    c=np.searchsorted(np.sort(np.array(steps,float)),grid,side="right").astype(float); c[grid>end]=np.nan; return c
+for c in costs:
+    ks_all=[k for k in d["prog"] if k.startswith(c+"/")]
+    if not ks_all: continue
+    fig,axes=plt.subplots(1,3,figsize=(17,6.2))
+    for m,name,col in arms:
+        ks=[f"{c}/{m}/{s}" for s in "0123456789" if f"{c}/{m}/{s}" in d["prog"] and d["prog"][f"{c}/{m}/{s}"]]
+        if not ks: continue
+        n=len(ks)
+        # Solved panel: each run on the common eval grid (every 3200 steps). A stopped
+        # run holds its last eval flat to 200k; one cut before any post-practice eval is
+        # left out of this panel. The bold mean is drawn only where every run has a value.
+        eg=np.arange(0,200001,3200); rows=[]; kept=[]
+        for k in ks:
+            r=np.array(d["prog"][k],float)
+            if k in STOPPED and len(r)<2: continue
+            v=np.full(len(eg),np.nan); idx=(r[:,0]//3200).astype(int); v[idx]=r[:,1]
+            if k in STOPPED: v[idx.max():]=r[-1,1]
+            rows.append(v); kept.append(k)
+            axes[0].plot(eg/1000,v,color=col,alpha=0.16,lw=0.8)
+        if rows:
+            M=np.array(rows); mean=np.where(np.isnan(M).any(0),np.nan,np.nanmean(M,0))
+            nd=sum(done(k) for k in kept); nk=len(kept)
+            lab=f"{name} — mean, n={nk} ({nd}/{nk} finished)"
+            if any(k in STOPPED for k in kept):
+                lab=f"{name} — mean, n={nk}; stopped practising ~3k steps, last eval held flat"
+                if nk<n: lab+=f" ({n-nk} cut before an eval: omitted)"
+            axes[0].plot(eg/1000,mean,color=col,lw=2.3,label=lab)
+        for ax,key in [(axes[1],"resets"),(axes[2],"dumps")]:
+            curves=[]
+            for k in ks:
+                ev=d[key][k]; st=[e[0] for e in ev] if key=="resets" else ev
+                cu=cum(st,d["steps"][k]); curves.append(cu); ax.plot(grid/1000,cu,color=col,alpha=0.16,lw=0.8)
+            tot="/".join(str(int(np.nanmax(x))) for x in curves)
+            ax.plot(grid/1000,np.where(np.isnan(np.array(curves)).any(0),np.nan,np.nanmean(curves,0)),color=col,lw=2.3,label=f"{name} — mean, n={n} (per seed {tot})")
+    axes[0].set_title("held-out tasks solved (of 10)",fontsize=10); axes[0].set_ylabel("solved per seed"); axes[0].set_ylim(0,10.5)
+    axes[1].set_title("human resets (both sides)",fontsize=10); axes[1].set_ylabel("cumulative human resets per seed")
+    axes[2].set_title("dumping (PourCubeOutOfBin)",fontsize=10); axes[2].set_ylabel("cumulative dumps per seed")
+    for a in axes: a.set_xlabel("practice steps (thousands)"); a.set_xlim(0,200); a.grid(alpha=0.3); a.legend(fontsize=7.5,frameon=False,loc="upper center",bbox_to_anchor=(0.5,-0.16),ncol=1)
+    fig.suptitle(f"Tossing env v13 (standoff dropped from the toss classifier; ours: Della 17111067; EES/DP cost-blind rerun: 17141758; DP-period (floor 1e-4): 17146362), human reset cost {c} — {nseeds} — {stamp}",fontsize=10)
+    fig.tight_layout(); fig.savefig(f"{D}/tossing-v13-cost-{c}.png",dpi=120); plt.close(fig)
+xs=np.arange(len(costs)); fig,axes=plt.subplots(1,3,figsize=(16,4.6))
+for m,name,col in arms:
+    for ax,fn in [(axes[0],lambda k:d["prog"][k][-1][1] if k in STOPPED else np.mean([p[1] for p in d["prog"][k][-3:]])),(axes[1],lambda k:len(d["resets"][k])),(axes[2],lambda k:len(d["dumps"][k]))]:
+        means=[]
+        for i,c in enumerate(costs):
+            vals=[fn(f"{c}/{m}/{s}") for s in "0123456789" if f"{c}/{m}/{s}" in d["prog"] and done(f"{c}/{m}/{s}") and not (f"{c}/{m}/{s}" in STOPPED and len(d["prog"][f"{c}/{m}/{s}"])<2)]
+            if vals: ax.scatter(np.full(len(vals),i),vals,color=col,alpha=0.35,s=14)
+            means.append(np.mean(vals) if vals else np.nan)
+        ax.plot(xs,means,color=col,lw=2.3,marker="o",label=f"{name} — finished runs only")
+axes[0].set_title("solved (of 10), mean of last 3 evaluations\n(cost-10000 expectimax/Curtis: last eval before they stopped practising)",fontsize=10); axes[0].set_ylabel("solved per seed"); axes[0].set_ylim(0,10.5)
+axes[1].set_title("human resets over 200k steps",fontsize=10); axes[1].set_ylabel("human resets per seed")
+axes[2].set_title("dumps over 200k steps",fontsize=10); axes[2].set_ylabel("dumps per seed")
+for a in axes: a.set_xticks(xs,costs); a.set_xlabel("human reset cost"); a.grid(alpha=0.3); a.legend(fontsize=7.5,frameon=False)
+fig.suptitle(f"Tossing env v13 (EES/DP: cost-blind rerun 17141758) — finished 200k-step runs against reset cost ({nseeds}) — {stamp}",fontsize=10)
+fig.tight_layout(); fig.savefig(f"{D}/tossing-v13-summary.png",dpi=120)

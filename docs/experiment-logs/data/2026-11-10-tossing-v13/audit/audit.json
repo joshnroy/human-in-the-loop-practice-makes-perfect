@@ -1,0 +1,1489 @@
+{
+  "inputs": {
+    "mirror": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror",
+    "analysis": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress"
+  },
+  "scope": "Replication and provenance only; no new hypothesis tests or simulations.",
+  "constraints": [
+    {
+      "source": "/home/josh/.claude/projects/-home-josh-Documents-repos-research-human-in-the-loop-practice-makes-perfect/954690ff-50c6-4e88-bf86-7b1ca32d6343.jsonl",
+      "line": 21453,
+      "utc": "2026-11-10T14:45:10.756Z",
+      "et": "2026-11-10 09:45 ET",
+      "human_text": "Not now",
+      "context": "Assistant line 21459 confirms early-learning test stays on hold."
+    }
+  ],
+  "snapshot_count_correction": {
+    "handoff_headline": 9760,
+    "raw_run_rescores": 10280,
+    "cached_curve_points": 10280,
+    "all_results_json_including_test": 10281,
+    "by_tree": {
+      "results": 3208,
+      "results-v13d": 5152,
+      "results-v13b": 1920
+    }
+  },
+  "counts": {
+    "cached_final_measurement_checked": 960,
+    "reset_count_checked": 240,
+    "rescore_exists_checked": 10280,
+    "rescore_totals_checked": 10280,
+    "rescore_identity_checked": 10280,
+    "snapshot_hash_checked": 10280,
+    "first_ten_task_parity_checked": 10264,
+    "cached_curve_checked": 180,
+    "all_measurement_snapshots_scored_checked": 180,
+    "first_ten_unavailable": 16,
+    "baseline_cost_blindness_checked": 20,
+    "existing_paired_test_checked": 84,
+    "existing_test_family_size_checked": 1,
+    "existing_holm_checked": 168
+  },
+  "errors": [],
+  "findings": [
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/0",
+      "phase": "running",
+      "stop_marker": false,
+      "last_measured_step": 3200,
+      "live_status_step": 5805
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/1",
+      "phase": "running",
+      "stop_marker": false,
+      "last_measured_step": 3200,
+      "live_status_step": 3890
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/2",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/2",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3201
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/3",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/3",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3220
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/4",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/4",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3202
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/5",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/5",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3228
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/6",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/6",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3201
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/7",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/7",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3260
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/8",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/8",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3214
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/curtis/9",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/curtis/9",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3226
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/0",
+      "phase": "running",
+      "stop_marker": false,
+      "last_measured_step": 3200,
+      "live_status_step": 5173
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/1",
+      "phase": "running",
+      "stop_marker": false,
+      "last_measured_step": 3200,
+      "live_status_step": 3664
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/2",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/2",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3202
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/3",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/3",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3204
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/4",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/4",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3209
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/5",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/5",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3206
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/6",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/6",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3204
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/7",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/7",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3218
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/8",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/8",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3201
+    },
+    {
+      "kind": "original_ten_task_eval_unavailable",
+      "key": "10000/expectimax/9",
+      "index": 1
+    },
+    {
+      "kind": "noncomplete_status",
+      "key": "10000/expectimax/9",
+      "phase": "running",
+      "stop_marker": true,
+      "last_measured_step": 3200,
+      "live_status_step": 3206
+    }
+  ],
+  "runs": [
+    {
+      "key": "0/curtis/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "0/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "0/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "0/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "0/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "0/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "0/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "10/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "100/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "100/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "100/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "100/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "100/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "100/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/curtis/0",
+      "tree": "results",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/1",
+      "tree": "results",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/2",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/3",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/4",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10000/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10000/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10000/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "10000/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "10000/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "10000/expectimax/0",
+      "tree": "results",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/1",
+      "tree": "results",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/2",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/3",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/4",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "10000/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 2
+    },
+    {
+      "key": "20/curtis/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "20/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "20/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "20/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "20/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "20/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "20/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/curtis/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/dp/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/dp/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/dp/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/dp/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/dp/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/dpperiod/0",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "5/dpperiod/1",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "5/dpperiod/2",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "5/dpperiod/3",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 53
+    },
+    {
+      "key": "5/dpperiod/4",
+      "tree": "results-v13c-dp-period-floor",
+      "measurements": 52
+    },
+    {
+      "key": "5/ees/0",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/1",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/2",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/3",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/4",
+      "tree": "results-v13b",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/ees/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/0",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/1",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/2",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/3",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/4",
+      "tree": "results",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/5",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/6",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/7",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/8",
+      "tree": "results-v13d",
+      "measurements": 64
+    },
+    {
+      "key": "5/expectimax/9",
+      "tree": "results-v13d",
+      "measurements": 64
+    }
+  ]
+}

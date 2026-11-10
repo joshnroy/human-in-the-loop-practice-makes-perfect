@@ -1,0 +1,58 @@
+{
+  "binding": {
+    "manifest.json": "9a325991ab64345d13416947583c6a81ad9b44aa11300e218603ac5ccf0794f2",
+    "snapshot.json": "eaab04fabee4b70ac00f5db8e95b7f506430d3889c9feb3c43664d1d54d1fb0f",
+    "runtime-lock.json": "ee78fc9df07f10d05d6c8cff48044fcf162c282e06817bf32bb0b49e5cf14a26"
+  },
+  "selected_object": "cube_control",
+  "selected_object_pickup": {
+    "passed": true,
+    "path": "evidence/physics-tests.json",
+    "sha256": "9adfac256cfffff5b3f588c5a977ff0720db43def27799f12d4dfad8baad5d0c",
+    "rationale": "v13 Della live-scene tests: pick plannability by the kitchen pick controller, every human reset leaves the cube pickable, a known throw scored in the tapered bin by KINDER's classifier; local v13 scatter: all 200 scene seeds within pick reach."
+  },
+  "single_object_train_eval": {
+    "passed": true,
+    "path": "cluster-smoke-audit.json",
+    "sha256": "96ee46e4e73fe259c39fc3a832fbf8111d29703388c88bc24e25b2914a1133c1"
+  },
+  "seeded_scatter_reproducible": {
+    "passed": true,
+    "path": "evidence/physics-tests.json",
+    "sha256": "9adfac256cfffff5b3f588c5a977ff0720db43def27799f12d4dfad8baad5d0c",
+    "rationale": "v13-source replay of seeds 0-29 twice, reproducible; identical to v12's replay: True; local live reset reproduces seed 0."
+  },
+  "scatter_across_kitchen": {
+    "passed": true,
+    "path": "evidence/physics-tests.json",
+    "sha256": "9adfac256cfffff5b3f588c5a977ff0720db43def27799f12d4dfad8baad5d0c",
+    "rationale": "v13 replay spans 1.54 m (x) and 4.19 m (y), all inside kitchen bounds."
+  },
+  "training_deployment_isolation": {
+    "passed": true,
+    "path": "evidence/isolation-evidence.json",
+    "sha256": "b922c7ce53f43e997f123bdb6d0fbbc4d4896593c336f9cb6af518c679e44168",
+    "rationale": "Inherited step-protocol/Tossing3D CLI isolation tests (140 passed in 87.42s (0:01:27)) and a kitchen-class probe over all 120 argvs, both on v13 source on Della. Not v4's kitchen-specific tests, which no longer exist."
+  },
+  "kitchen_costs_approved": {
+    "passed": true,
+    "path": "evidence/approved-cost-contract.json",
+    "sha256": "8bd1f9fc891700079e69731c40e491009a3e4d68494641a93c66e673e883f6d9",
+    "rationale": "Josh approved the 5-per-reset table (\"ok cool\"), relayed by main; costs.json in the snapshot matches it."
+  },
+  "dependency_resolution": {
+    "passed": true,
+    "path": "runtime-evidence.json",
+    "sha256": "62f6e9b1b398a827ff2a2c0eaf125984d5a9061a3afddb91f23f7b76bf8634f8"
+  },
+  "deployment_no_human_actions": {
+    "passed": true,
+    "path": "cluster-smoke-audit.json",
+    "sha256": "96ee46e4e73fe259c39fc3a832fbf8111d29703388c88bc24e25b2914a1133c1"
+  },
+  "final_refit_evaluation": {
+    "passed": true,
+    "path": "cluster-smoke-audit.json",
+    "sha256": "96ee46e4e73fe259c39fc3a832fbf8111d29703388c88bc24e25b2914a1133c1"
+  }
+}
