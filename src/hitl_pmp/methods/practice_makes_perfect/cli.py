@@ -98,6 +98,7 @@ class EesCli:
             "gp_eval": args.gp_eval,
             "gp_random_warmup": args.gp_random_warmup,
             "gp_prior_rate": args.gp_prior_rate,
+            "num_candidates": args.num_candidates,
         }
 
     @staticmethod
@@ -151,6 +152,14 @@ class EesCli:
             default=EesMethod.model_fields["gp_eval"].default,
             help="With --sampler-model gp: evaluation takes the argmax of predictive "
             "P(success) (mean) or of its kappa=1 lower bound (lcb).",
+        )
+        parser.add_argument(
+            "--num-candidates",
+            type=int,
+            default=EesMethod.model_fields["num_candidates"].default,
+            help="Candidate parameter vectors the toss sampler scores per choice. 100 "
+            "matches predicators; a GP scores thousands in milliseconds, and a narrow "
+            "learned peak needs them to be drawn at all.",
         )
         parser.add_argument(
             "--gp-random-warmup",
