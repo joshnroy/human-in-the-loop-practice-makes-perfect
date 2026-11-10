@@ -30,12 +30,14 @@ from .drive_zone import KitchenDriveZone
 # The kitchen sim throws from one standoff, as the real TidyBot does: the real robot pins
 # its standoff with a 1 cm band (`REAL_TOSS_PARAMETERS`), so only speed and release are
 # learned, and the kitchen sim does the same at its own 1.45 m (Josh, 2026-11-07). Speed
-# and release keep the simulator's ranges. Original Tossing3D's set is untouched.
+# and release keep the simulator's ranges, and are the classifier's only inputs, as on the
+# real robot (Josh, 2026-11-08). Original Tossing3D's set is untouched.
 KITCHEN_TOSS_STANDOFF_M = 1.45
 KITCHEN_TOSS_PARAMETERS = TossParameterSet(
     standoff_bounds=(1.445, 1.455),
     speed_bounds=SIM_TOSS_PARAMETERS.speed_bounds,
     release_ms_bounds=SIM_TOSS_PARAMETERS.release_ms_bounds,
+    classifier_inputs=("speed", "release_ms"),
 )
 
 
