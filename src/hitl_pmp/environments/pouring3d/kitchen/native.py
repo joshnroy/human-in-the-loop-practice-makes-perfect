@@ -56,6 +56,7 @@ class KitchenScene(PotstickerScene):
         result = super().reset(seed=seed, options=options)
         self.release_payloads()
         self.weld_skillet()
+        self.weld_pitcher_home()
         return result
 
     # The skillet is welded to the stove where the episode placed it (Josh, 2026-11-06),
@@ -63,6 +64,30 @@ class KitchenScene(PotstickerScene):
     # equality to the world rather than #726's mocap body: the skillet keeps its free
     # joint, so qpos keeps its layout and every recorded state still restores.
     SKILLET_WELD: ClassVar[str] = "skillet_weld"
+    PITCHER_HOME_WELD: ClassVar[str] = "pitcher_home_weld"
+
+    def weld_pitcher_home(self) -> None:
+        """Anchor the jug at its measured parked pose, without assigning qpos.
+
+        The controller admits this only at initial reset, after human replacement,
+        or after a measured home landing. Pick-and-place support is assumed reliable;
+        this constraint is disabled from verified handle grasp through pouring.
+        """
+        import mujoco
+
+        model, data = self._model_and_data()
+        mujoco.mj_forward(model, data)
+        weld = model.equality(self.PITCHER_HOME_WELD).id
+        jug = model.body("pitcher").id
+        model.eq_data[weld, :3] = 0.0
+        model.eq_data[weld, 3:6] = data.xpos[jug]
+        model.eq_data[weld, 6:10] = data.xquat[jug]
+        data.eq_active[weld] = 1
+        mujoco.mj_forward(model, data)
+
+    def release_pitcher_home(self) -> None:
+        model, data = self._model_and_data()
+        data.eq_active[model.equality(self.PITCHER_HOME_WELD).id] = 0
 
     def weld_skillet(self) -> None:
         import mujoco
@@ -253,6 +278,15 @@ class KitchenScene(PotstickerScene):
             name=self.SKILLET_WELD,
             body1="world",
             body2="tray",
+            active="false",
+            solref="0.002 1",
+        )
+        ET.SubElement(
+            equality,
+            "weld",
+            name=self.PITCHER_HOME_WELD,
+            body1="world",
+            body2="pitcher",
             active="false",
             solref="0.002 1",
         )
@@ -579,6 +613,7 @@ class KitchenController(PotstickerController):
         self.data.qpos[self.finger_qpos()] = self.open_finger_qpos
         self.data.qvel[[int(self.model.jnt_dofadr[j]) for j in self.finger_joints()]] = 0.0
         self.human_stands_vessel_home(name="pitcher")
+        self.scene.weld_pitcher_home()
 
     def continuous_turns(self, *, threshold: float = 2 * np.pi) -> np.ndarray:
         """Whole turns each continuous arm joint has wound away from its neutral angle.
@@ -676,6 +711,21 @@ class KitchenController(PotstickerController):
             grip=self.pitcher_open_grip,
         )
         self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
+
+    def pitcher_grasp_acquired(self) -> None:
+        """Release the parked jug only after both fingers reached its handle."""
+        self.scene.release_pitcher_home()
+
+    def anchor_parked_pitcher(self) -> None:
+        """Anchor a landed, home-aligned jug before the empty gripper withdraws."""
+        position, _ = self.body_pose(name="pitcher")
+        if (
+            self.held == "pitcher"
+            or not self.vessel_home(name="pitcher")
+            or abs(position[2] - self.home[2]) > 0.003
+        ):
+            raise ValueError("Cannot anchor a pitcher that has not landed at home")
+        self.scene.weld_pitcher_home()
 
     def level_hand_rotation(self) -> Rotation:
         """The hand orientation that, with the current grasp, holds the jug upright at
@@ -1286,6 +1336,7 @@ class KitchenController(PotstickerController):
         self.base_target = self.data.qpos[self.base_q].copy()
         self.held = None
         self.pause(phase="release pitcher", seconds=2, grip=0)
+        self.anchor_parked_pitcher()
         hand, orientation = self.hand_pose()
         self.move(
             phase="withdraw gripper",
