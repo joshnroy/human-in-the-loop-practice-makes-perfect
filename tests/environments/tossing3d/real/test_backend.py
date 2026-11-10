@@ -1036,6 +1036,36 @@ def test_a_task_scene_that_sees_the_cube_in_the_bin_does_not_start_solved() -> N
     assert not env.backend().snapshot().reply.cube_in_bin
 
 
+class _CubeUnseenOnce(FakePerson):
+    """A FakePerson whose first placement leaves no camera seeing the cube."""
+
+    unseen: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.unseen == 0:
+            self.unseen += 1
+            self.robot.cube = None
+
+
+CUBE_UNSEEN_PROMPT = (
+    "the cameras do not see the cube: put it on our side, on a face and in view, step away, then y"
+)
+
+
+def test_a_task_scene_whose_look_sees_no_cube_asks_for_it_and_looks_again() -> None:
+    """Seed 2's evaluation 1, task 3 (2026-11-10): the look right after the y saw no
+    cube, no pick was planned, and the task was scored a miss with no throw."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeUnseenOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert written.count(CUBE_UNSEEN_PROMPT) == 1
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert env.backend().snapshot().reply.cube is not None
+
+
 def test_restoring_a_cube_that_had_scored_accepts_it_in_the_bin() -> None:
     written: list[str] = []
     env, robot = _env(written=written)
