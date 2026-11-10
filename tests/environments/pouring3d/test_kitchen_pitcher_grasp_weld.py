@@ -119,7 +119,9 @@ def test_an_episode_reset_clears_the_grasp_and_anchoring_rejects_a_held_weld():
         assert not _anchored(controller=c)
         c.scene.reset(seed=0)
         assert not c.scene.pitcher_attached()
-        assert _anchored(controller=c)
+        # Reset replaces the native simulation; the old controller holds stale data.
+        model, data = c.scene._model_and_data()
+        assert data.eq_active[model.equality("pitcher_home_weld").id]
     finally:
         env.close()
 
