@@ -1,0 +1,107 @@
+"""Paired-by-seed tests at 10 seeds: ours (expectimax, Curtis) vs EES on seeds 0-9, and vs
+DP / DP-period on seeds 0-4 (DP seeds 5-9 on hold). Metrics: human resets, total practice
+cost (robot_cost + human_cost), and solved on 50 held-out tasks (mean of the last 3
+re-scored snapshots). Two-sided paired t-test, Holm over every test; exact two-sided
+Wilcoxon signed-rank alongside (n=10: smallest p 0.002; n=5: 0.0625)."""
+
+import json
+import sys
+
+import matplotlib
+import numpy as np
+from scipy import stats
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+stamp = sys.argv[1]
+d = json.load(open("data.json"))
+cost = json.load(open("costs.json"))
+c50 = json.load(open("curves50.json"))
+OURS = [("expectimax", "expectimax (ours)"), ("curtis", "Curtis")]
+BASE = [("ees", "EES", "#009E73", "0123456789"), ("dp", "DP", "#E69F00", "01234"),
+        ("dpperiod", "DP-period", "#F0E442", "01234")]
+COSTS = ["0", "5", "10", "20", "100", "10000"]
+METRICS = [("resets", "human resets"), ("total", "total practice cost"),
+           ("solved50", "solved (of 50), mean of last 3 snapshots")]
+
+
+def value(key, metric):
+    if metric == "resets":
+        return float(len(d["resets"][key]))
+    if metric == "total":
+        return float(cost[key]["robot_cost"] + cost[key]["human_cost"])
+    v = c50.get(key)
+    if not v:
+        return np.nan
+    return float(np.mean([n for _, n in sorted(v)[-3:]]))
+
+
+rows = []
+for ours, _ in OURS:
+    for base, _, _, seeds in BASE:
+        for c in COSTS:
+            for metric, _ in METRICS:
+                if metric == "solved50" and base != "ees":
+                    continue  # DP not re-scored
+                a = np.array([value(f"{c}/{ours}/{s}", metric) for s in seeds])
+                b = np.array([value(f"{c}/{base}/{s}", metric) for s in seeds])
+                ok = ~(np.isnan(a) | np.isnan(b))
+                a, b = a[ok], b[ok]
+                diff = a - b
+                if len(diff) < 3:
+                    continue
+                if np.all(diff == 0):
+                    t_p = w_p = 1.0
+                else:
+                    t_p = float(stats.ttest_rel(a, b).pvalue)
+                    w_p = float(stats.wilcoxon(a, b).pvalue)
+                rows.append(dict(ours=ours, base=base, cost=c, metric=metric, n=len(diff),
+                                 ours_mean=a.mean(), base_mean=b.mean(), diffs=diff.tolist(),
+                                 lower=int((diff < 0).sum()), higher=int((diff > 0).sum()),
+                                 t_p=t_p, w_p=w_p))
+m = len(rows)
+order = np.argsort([r["t_p"] for r in rows]); run = 0.0
+for rank, i in enumerate(order):
+    run = max(run, min(1.0, (m - rank) * rows[i]["t_p"])); rows[i]["holm_p"] = run
+order = np.argsort([r["w_p"] for r in rows]); run = 0.0
+for rank, i in enumerate(order):
+    run = max(run, min(1.0, (m - rank) * rows[i]["w_p"])); rows[i]["holm_w"] = run
+json.dump(rows, open("paired_tests10.json", "w"), indent=1)
+
+fig, axes = plt.subplots(2, 3, figsize=(19, 9.5))
+xs = np.arange(len(COSTS))
+for r_i, (ours, oname) in enumerate(OURS):
+    for c_i, (metric, mname) in enumerate(METRICS):
+        ax = axes[r_i, c_i]
+        for b_i, (base, bname, col, seeds) in enumerate(BASE):
+            sel = [r for r in rows if r["ours"] == ours and r["base"] == base and r["metric"] == metric]
+            if not sel:
+                continue
+            off = (b_i - 1) * 0.22
+            for r in sel:
+                x = COSTS.index(r["cost"]) + off
+                ax.scatter(np.full(len(r["diffs"]), x), r["diffs"], color=col, alpha=0.45, s=14, edgecolor="none")
+                ax.plot([x - 0.08, x + 0.08], [np.mean(r["diffs"])] * 2, color=col, lw=2.3)
+                if r["holm_p"] < 0.05:
+                    ax.annotate("*", (x, max(r["diffs"])), ha="center", va="bottom", fontsize=12, color=col)
+            ax.plot([], [], color=col, lw=2.3, label=f"vs {bname} — mean difference, n={sel[0]['n']} seeds")
+        ax.axhline(0, color="#999999", lw=1, ls=":")
+        ax.set_xticks(xs, COSTS); ax.set_xlabel("human reset cost")
+        ax.set_ylabel(f"{oname} minus baseline"); ax.set_title(f"{oname}: {mname}", fontsize=10)
+        if metric == "total":
+            ax.set_yscale("symlog", linthresh=100)
+        ax.grid(alpha=0.3); ax.legend(fontsize=7.5, frameon=False, loc="lower left")
+fig.suptitle("Tossing env v13 — per-seed paired differences, ours minus each cost-blind baseline "
+             f"(* = Holm-corrected paired t p<0.05 over {m} tests; below 0 = ours lower) — {stamp}", fontsize=10)
+fig.tight_layout(); fig.savefig("tossing-v13-paired-differences-10seeds.png", dpi=120)
+
+print(f"{m} tests")
+for metric, _ in METRICS:
+    print(f"\n== {metric}")
+    for ours, _ in OURS:
+        for base, *_ in BASE:
+            cells = [f"c{r['cost']}: {r['ours_mean']:.1f} vs {r['base_mean']:.1f} n={r['n']} lower {r['lower']} higher {r['higher']} holm_t={r['holm_p']:.2g} holm_W={r['holm_w']:.2g}"
+                     for r in rows if r["ours"] == ours and r["base"] == base and r["metric"] == metric]
+            if cells:
+                print(f"{ours} vs {base}: " + " | ".join(cells))

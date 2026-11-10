@@ -1,0 +1,64 @@
+"""Learning curves (held-out tasks solved vs practice steps), one panel per reset cost.
+Figure 1: the runs' own 10-task scorings, all arms, seeds 0-4 (complete).
+Figure 2: the 50-task re-scoring of the same snapshots, so far (expectimax, Curtis, EES)."""
+import json, sys
+import numpy as np, matplotlib
+matplotlib.use("Agg"); import matplotlib.pyplot as plt
+stamp = sys.argv[1]
+d = json.load(open("data.json")); c50 = json.load(open("curves50.json"))
+ARMS = [("expectimax", "expectimax (ours)", "#0072B2"), ("curtis", "Curtis", "#CC79A7"),
+        ("ees", "EES", "#009E73"), ("dp", "DP", "#E69F00"), ("dpperiod", "DP, re-plans each period (floor 1e-4)", "#F0E442")]
+COSTS = ["0", "5", "10", "20", "100", "10000"]
+
+
+def steps(i):
+    return min(3200 * i, 200000) / 1000
+
+
+def panel_set(series, denom, arms, title, fname, note, partial=False, seeds="0123456789"):
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharey=True)
+    for ax, c in zip(axes.flat, COSTS):
+        for arm, name, col in arms:
+            runs = {s: series(f"{c}/{arm}/{s}") for s in seeds}
+            runs = {s: r for s, r in runs.items() if r}
+            if not runs:
+                continue
+            for r in runs.values():
+                xs, ys = zip(*r)
+                ax.plot([steps(i) for i in xs], ys, color=col, lw=0.8,
+                        **({"ls": "none", "marker": ".", "ms": 3, "alpha": 0.3} if partial else {"alpha": 0.16}))
+            common = sorted(set.intersection(*[{i for i, _ in r} for r in runs.values()]))
+            if common:
+                mean = [np.mean([dict(r)[i] for r in runs.values()]) for i in common]
+                ax.plot([steps(i) for i in common], mean, color=col, lw=2.3,
+                        **({"ls": "none", "marker": "o", "ms": 4} if partial or len(common) <= 3 else {}),
+                        label=f"{name} — mean, n={len(runs)}")
+            else:
+                ax.plot([], [], color=col, lw=2.3, label=f"{name} — n={len(runs)}, no common points yet")
+        ax.set_title(f"human reset cost {c} — tasks (of {denom})", fontsize=10)
+        ax.set_xlim(0, 200); ax.set_ylim(0, denom * 1.05); ax.grid(alpha=0.3)
+        ax.set_xlabel("practice steps (thousands)"); ax.set_ylabel("solved per seed")
+        ax.legend(fontsize=7, frameon=False, loc="lower right")
+    fig.suptitle(f"Tossing env v13 — {title} — {note} — {stamp}", fontsize=11)
+    fig.tight_layout(); fig.savefig(fname, dpi=110); plt.close(fig)
+
+
+def ten(key):
+    p = d["prog"].get(key)
+    if not p or len(p) < 2:
+        return None
+    return [(int(round(x / 3200)) if x < 200000 else 63, y) for x, y, *_ in p]
+
+
+def fifty(key):
+    return c50.get(key)
+
+
+panel_set(ten, 10, ARMS, "learning curves on the runs' own 10 held-out tasks", "tossing-v13-curves-10.png",
+          "seeds 0-9 (5-9 partial); cost-10000 expectimax/Curtis stopped practising early")
+panel_set(fifty, 50, ARMS[:3], "learning curves re-scored on 50 held-out tasks", "tossing-v13-curves-50.png",
+          "seeds 0-9, every snapshot scored; cost-10000 expectimax/Curtis stopped practising early; DP not re-scored")
+
+panel_set(fifty, 50, ARMS[:3], "learning curves re-scored on 50 held-out tasks", "tossing-v13-curves-50-seeds0-4.png",
+          "seeds 0-4, every snapshot scored; cost-10000 expectimax/Curtis stopped practising early (seeds 0-1 here); DP not re-scored",
+          seeds="01234")

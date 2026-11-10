@@ -1,0 +1,33 @@
+"""Kill a cost-10000 run once it has stopped practising: at least 50 consecutive
+practice sessions with no robot or human action, and a measurement since its last
+practice action (the same endpoint seeds 0-1 were cut at by hand)."""
+import json, os, signal, sys, time
+
+events, pid, marker = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+while True:
+    time.sleep(60)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        sys.exit(0)
+    if not os.path.exists(events):
+        continue
+    run = 0; last_action = -1; last_meas = -1; i = -1; acted = False
+    for i, line in enumerate(open(events)):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            break
+        ev = e.get("event")
+        if ev == "session_start":
+            run = run + 1 if not acted else 1
+            acted = False
+        elif ev in ("robot", "human"):
+            acted = True; run = 0; last_action = i
+        elif ev == "measurement":
+            last_meas = i
+    if run >= 50 and last_meas > last_action:
+        json.dump({"stopped_practising": True, "consecutive_stop_sessions": run,
+                   "time": time.time()}, open(marker, "w"))
+        os.kill(pid, signal.SIGTERM)
+        sys.exit(0)

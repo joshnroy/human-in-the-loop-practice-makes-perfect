@@ -1,0 +1,280 @@
+{
+  "scope": "Local simulation experiment record; existing results and figures copied unchanged. No simulation, rescoring, hypothesis testing, or family changes performed.",
+  "original_record_assembly_base": "c507b7976",
+  "record_checkout_base": "3f7da5606fc662fb799ba90e46ed5e6bded14d13",
+  "record_branch": "codex/tossing-v13-experiment-record",
+  "authoritative_results_root": "/home/josh/Documents/repos/research/hitl-pmp-results",
+  "della_root": "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/kitchen-recycling-20261108-v13-nostandoff",
+  "mirror_root": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror",
+  "entries": [
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis/data.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/data.json",
+      "bytes": 2657026,
+      "sha256": "aec79c1e4e649cf3dfebac554a2bfc36951af84724925ed663d858a4cf20deac"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis/costs.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/costs.json",
+      "bytes": 46061,
+      "sha256": "93ed929e3a21186b8bd22adaca337f81faa9db2bedb28e757fccbe19f1320dd1"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis/curves50.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/curves50.json",
+      "bytes": 104107,
+      "sha256": "651438a9c716cb5d3d6585826fdfe32ec703cc71143bba32e81504105c48b1fc"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis/paired_tests10.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/paired_tests10.json",
+      "bytes": 35114,
+      "sha256": "2045786dc52018371976b7b3feb0f4e7f13f43cfc666bf6f5cfb11069579510b"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis/solved50-all.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/solved50-all.json",
+      "bytes": 88543,
+      "sha256": "b142af085fda1893033c98a49a2065110efdee7b495e03c2bc25cde043076f44"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis-sources/plot.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/plot.py",
+      "bytes": 5465,
+      "sha256": "fb6de48b3cc0286fa64610b1d0ca6a1d49253918662b63f4ecf7de5ecd9f4537"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis-sources/plot_curves.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/plot_curves.py",
+      "bytes": 3390,
+      "sha256": "65baf32f2962cc98b7548712c80bfaa665eb79542fb876a2b003d18170ffa8cb"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis-sources/plot_solved50.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/plot_solved50.py",
+      "bytes": 1549,
+      "sha256": "14a5055e540ecde5bf3347369a9298d2e17ece421ebdfff2df944f66efd61260"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/analysis-sources/paired_tests10.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/paired_tests10.py",
+      "bytes": 5128,
+      "sha256": "fd556e9df7a40f055f7078323c1585874b630e3e37a4ff102e8e8c6619241333"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-0.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-0.png",
+      "bytes": 401821,
+      "sha256": "ca6a292eed3c3297573ee6eb9819bfe082a0d3b335c21cb5a99e318de623b5da"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-10.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-10.png",
+      "bytes": 438115,
+      "sha256": "3eeefe2fea0c7f1f141206206f0c776b65b7fc34865a35d94b14a3264011df6c"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-100.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-100.png",
+      "bytes": 451305,
+      "sha256": "e1504964f55cf30e0906ddfd8bfad4b141c367e6276812b81bd178af1d19e980"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-10000.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-10000.png",
+      "bytes": 333750,
+      "sha256": "79a9df9bb54e59ce2cb4e7f501c59c286ffc9d28218778c77016e0d71f5cedc1"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-20.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-20.png",
+      "bytes": 466553,
+      "sha256": "de3e5be2802bb3a58f350885d1bd6cdd4ce57fd06f3d18d2dd968e1a9fa390ad"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-cost-5.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-cost-5.png",
+      "bytes": 401165,
+      "sha256": "d4cf243afc0550f00fd9c9f2eee91029da5768a88cddff85b1c92b0aee280e09"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-curves-10.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-curves-10.png",
+      "bytes": 1037445,
+      "sha256": "d1628e61d430869eff40d4585cf2f3a2756b52a4f45a19d02ed6cebd116a5c29"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-curves-50-seeds0-4.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-curves-50-seeds0-4.png",
+      "bytes": 646226,
+      "sha256": "3654b860af6f5bfdcae49d14092aac294cfa38cfc0624efe2e8669cfe194c2fc"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-curves-50.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-curves-50.png",
+      "bytes": 848276,
+      "sha256": "4f914eb5ca632a4e50fa3382cb4fa838d8898f25938c33853139e7737f68272e"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-paired-differences-10seeds.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-paired-differences-10seeds.png",
+      "bytes": 221580,
+      "sha256": "c3b974763ceab3ee73255688630586252cf623ae965a185a241c0a65c22947c7"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-solved50.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-solved50.png",
+      "bytes": 74540,
+      "sha256": "861bba7dda136c8fd2b8381b98883122491342970786f42785283edcc1502348"
+    },
+    {
+      "path": "2026-11-10-tossing-v13-summary.png",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/tossing-v13-progress/tossing-v13-summary.png",
+      "bytes": 181824,
+      "sha256": "66a00f78398134174014d5d42611c06ee4cb1a9218fecd13d1fc9b70845d4546"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/audit/audit.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing-v13-resume-audit-20261110/audit.py",
+      "bytes": 10437,
+      "sha256": "b82d3fb07d8fde2b792fa9c2afcc3465e54365edcb647e282f97ec709a39c3ea"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/audit/audit.json",
+      "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing-v13-resume-audit-20261110/audit.json",
+      "bytes": 30757,
+      "sha256": "2b20f036eae89ac5de5160beb427ca5432a3fef8f6785d6dfc2108f975d7981d"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/audit/pr-status.json",
+      "source_path": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing-v13-resume-audit-20261110/pr-status.json",
+      "bytes": 4792,
+      "sha256": "46d0ec6ee53e8c16e36242c8b79f81850472adfbfed4709dbea8b1001f691ada"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/HANDOFF-20261110.md",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/HANDOFF.md",
+      "bytes": 12615,
+      "sha256": "b4645cd5c560decb761422db289c341535429d78cad2a850a18a7420701fb999"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/manifest.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/manifest.json",
+      "bytes": 294672,
+      "sha256": "9a325991ab64345d13416947583c6a81ad9b44aa11300e218603ac5ccf0794f2"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/authorization.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/authorization.json",
+      "bytes": 342,
+      "sha256": "179c7dd7f3dbbd1b12e590966f8d9f4d40bc908e56c445b8b6142f6867f32744"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/authorization-provenance.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/authorization-provenance.json",
+      "bytes": 14985,
+      "sha256": "d32c9de16c1a686c0782f484ff651966f351cbaa081a82dfe1791cb82274763c"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/snapshot.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/snapshot.json",
+      "bytes": 1083335,
+      "sha256": "eaab04fabee4b70ac00f5db8e95b7f506430d3889c9feb3c43664d1d54d1fb0f"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/runtime-lock.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/runtime-lock.json",
+      "bytes": 99301,
+      "sha256": "ee78fc9df07f10d05d6c8cff48044fcf162c282e06817bf32bb0b49e5cf14a26"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/readiness.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/readiness.json",
+      "bytes": 2820,
+      "sha256": "1aee664c5988c029f6c11c8215479b9826e0966abd82c2fc7dfbe2df87820a87"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/submission-full.receipt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/submission-full.receipt",
+      "bytes": 9,
+      "sha256": "d4592eee5230a459a3bbf3203728b4eb80c0131c189ff138bc9a3d75ae34f36d"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/launch/v13-params.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/launch/v13-params.json",
+      "bytes": 1171,
+      "sha256": "86ac2078e6e33a9cac862c422733e5986635f140ed4077ce49c75aac1a7aa329"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/v13d-tasks.json",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/v13d/tasks.json",
+      "bytes": 173764,
+      "sha256": "254907c4136fd8d10e0e8756fd1ffb5914900e707e128015a21dc24d51f8389e"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/stopwatch.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/v13d/stopwatch.py",
+      "bytes": 1222,
+      "sha256": "14a0471bf40ab8bf0050abf9f54110e5f16db249989af7f5c0ef236c87f83804"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/rescore.py.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/rescore/rescore.py",
+      "bytes": 3269,
+      "sha256": "1a6b55e55c587288acd9f58600b274e56675c5bddce1ba7520ea451e836ebe91"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/baselines-fix/LAUNCH_COMMIT",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/baselines-fix/LAUNCH_COMMIT",
+      "bytes": 41,
+      "sha256": "f8327780d02239ce8667609cdf3117d94fbdda1ef4e034be6723d8fed1bbaf7d"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/baselines-fix/run.sbatch",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/baselines-fix/run.sbatch",
+      "bytes": 2640,
+      "sha256": "681e0552668bf7feee819cb29ba97744d73414196e211dc6ae64bf17ab0dfb3d"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/baselines-fix-dpfloor/LAUNCH_COMMIT",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/baselines-fix-dpfloor/LAUNCH_COMMIT",
+      "bytes": 41,
+      "sha256": "23d0d4130dbe64bc1ca3016f5c578a29bda76a41e2e4ca21488e8fb99e80edc8"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/baselines-fix-dpfloor/run.sbatch",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/della-v13-mirror/baselines-fix-dpfloor/run.sbatch",
+      "bytes": 2875,
+      "sha256": "0aa23d3d4a7c277ccde77d4ae995a493fe7f861014a90e2470fc168eae678865"
+    },
+    {
+      "path": "data/2026-11-10-tossing-v13/provenance/DECISIONS-excerpts.txt",
+      "source_path": "/home/josh/Documents/repos/research/hitl-pmp-results/DECISIONS.md",
+      "source_line_ranges": [
+        [
+          2062,
+          2073
+        ],
+        [
+          2080,
+          2082
+        ],
+        [
+          2084,
+          2088
+        ],
+        [
+          2113,
+          2113
+        ],
+        [
+          2190,
+          2190
+        ]
+      ],
+      "source_sha256": "b39c64fc4ecf4c9ae40387bed30b9b87d8e8b0d6911b8042f97cb9fbcbcd807b",
+      "bytes": 7505,
+      "sha256": "261e2d0aad7dc26be36c94c1840d4ea3c03ce43db8e0fc7ded30a8564e2d3b13"
+    }
+  ]
+}

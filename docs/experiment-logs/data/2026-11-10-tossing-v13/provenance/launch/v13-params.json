@@ -1,0 +1,18 @@
+{
+  "snapshot_head": "ee1e8c1d88a76c3a3e7219c8bd932aa1e3800c6c",
+  "source_stack": "local launch branch kitchen-v13-launch ee1e8c1d8 (not pushed) = kitchen-v12-launch 3156c6ccf (v12's exact code, base main a40812030) + 76d3c8e35 (d68b13165 cherry-picked, #768: TossParameterSet.classifier_inputs) + 541c31b6f (8d3d6d243 cherry-picked, #769: KITCHEN_TOSS_PARAMETERS.classifier_inputs = speed, release_ms) + ee1e8c1d8 (prepare.py --seeds N; worker.expected_rows reads the manifest's seed count)",
+  "expected_passed": {
+    "cluster": 131,
+    "kitchen": 20,
+    "packaging": 41,
+    "isolation": 140
+  },
+  "equivalence_waiver": "toss classifier drops standoff (#768/#769, Josh 2026-11-08)",
+  "josh_words": [
+    {
+      "date": "2026-11-08",
+      "context": "v13 relaunch (relayed by the coordinator, ~14:45 ET)",
+      "answer": "relaunch as v13 = v12 + #769 (classifier without standoff), 5 seeds (0-4), 200k steps, DP budget 600 (round number; was 578), all else as v12 (incl. #759/#761 Curtis eval-cost objective); code = kitchen-v12-launch + #768 + #769 cherry-picks, not rebased onto main; 120 rows, seed-major (\"yes, relaunch\", \"yep go for it\")"
+    }
+  ]
+}

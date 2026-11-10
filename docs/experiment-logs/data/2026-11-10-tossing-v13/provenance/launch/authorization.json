@@ -1,0 +1,9 @@
+{
+  "binding": {
+    "manifest.json": "9a325991ab64345d13416947583c6a81ad9b44aa11300e218603ac5ccf0794f2",
+    "snapshot.json": "eaab04fabee4b70ac00f5db8e95b7f506430d3889c9feb3c43664d1d54d1fb0f",
+    "runtime-lock.json": "ee78fc9df07f10d05d6c8cff48044fcf162c282e06817bf32bb0b49e5cf14a26"
+  },
+  "authorized_by": "main",
+  "submit_full": true
+}

@@ -1,0 +1,63 @@
+"""Re-score a saved deployment snapshot on more held-out tasks, without retraining.
+
+    rescore.py RUN_DIR SNAPSHOT_INDEX OUT_DIR NUM_TASKS WORKERS
+
+Reads RUN_DIR/config_snapshot.json's args (the run's own configuration), sets
+num_test_tasks=NUM_TASKS, and evaluates RUN_DIR/snapshots/NNNN.pickle with the step
+protocol's own StepEvaluation, split into WORKERS fresh processes by task index
+(per-task RNG, so a task's result depends only on snapshot and task). Writes
+OUT_DIR/results.json with every task in order. The first tasks are the same tasks the
+run itself scored (task sampling is sequential), which check.py verifies."""
+import json
+import multiprocessing as mp
+import sys
+from pathlib import Path
+
+MANIFEST = "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/kitchen-recycling-20261108-v13-nostandoff/launch/manifest.json"
+
+
+def part(job):
+    from hitl_pmp.cli import STEP_PROTOCOL_ENVIRONMENTS
+    from hitl_pmp.step_protocol import StepEvaluation
+    snapshot, configuration, output, indices = job
+    environment = STEP_PROTOCOL_ENVIRONMENTS[configuration["env"]]
+    return StepEvaluation.run(snapshot=snapshot, configuration=configuration, output=output,
+                              environment=environment, checkpoint=None,
+                              label="rescore", task_indices=indices)
+
+
+def main():
+    run, index, out, n, workers = sys.argv[1], int(sys.argv[2]), Path(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+    # The run's own argv, re-parsed by the CLI it was launched with (config_snapshot.json
+    # keeps every value as a string): the manifest row for its (cost, arm), --seed set.
+    from hitl_pmp.cli import Cli
+    c, arm, seed = run.rstrip("/").split("/")[-3:]
+    rows = json.load(open(MANIFEST))["runs"]
+    row = next(r for r in rows if r["arm"] == arm and r["seed"] == 0
+               and str(r["human_reset_cost"]) == c.removeprefix("reset-cost-"))
+    argv = list(row["argv"]); argv[argv.index("--seed") + 1] = seed
+    cfg = vars(Cli.parse_args(argv=argv + ["--output-dir", run])).copy()
+    saved = json.load(open(f"{run}/config_snapshot.json"))["args"]
+    for key in ("seed", "evaluation_control_steps", "num_test_tasks", "practice_cost_config"):
+        assert str(cfg[key]) == str(saved[key]), (key, cfg[key], saved[key])
+    cfg["num_test_tasks"] = n
+    cfg["evaluation_workers"] = 1
+    assert cfg.get("evaluation_task_rng") == "per-task", cfg.get("evaluation_task_rng")
+    snapshot = f"{run}/snapshots/{index:04d}.pickle"
+    out.mkdir(parents=True, exist_ok=True)
+    chunks = [list(range(n))[w::workers] for w in range(workers)]
+    jobs = [(snapshot, cfg, str(out / f"part{w:02d}"), c) for w, c in enumerate(chunks)]
+    with mp.get_context("spawn").Pool(workers) as pool:
+        pool.map(part, jobs, chunksize=1)
+    tasks = []
+    for w in range(workers):
+        tasks += json.load(open(out / f"part{w:02d}" / "results.json"))["tasks"]
+    tasks.sort(key=lambda t: t["task"])
+    assert [t["task"] for t in tasks] == list(range(n)), [t["task"] for t in tasks]
+    json.dump({"run": run, "snapshot": index, "num_total": n,
+               "num_solved": sum(t["solved"] for t in tasks), "tasks": tasks},
+              open(out / "results.json", "w"), indent=1)
+
+
+if __name__ == "__main__":
+    main()

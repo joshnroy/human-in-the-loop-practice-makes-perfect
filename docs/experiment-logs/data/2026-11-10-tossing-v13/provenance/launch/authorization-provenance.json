@@ -1,0 +1,188 @@
+{
+  "authorized_by_person": "Josh (user)",
+  "date": "2026-11-02 (v5 launch words), 2026-11-03 (v6, v7 and v8 relaunches), 2026-11-04 (v9, v10)",
+  "where": "main orchestrating session (coordinator), relayed to the v10b deployment agent",
+  "josh_words": [
+    {
+      "question": "If the stack is green and smokes are clean overnight, launch the Della array from an integration branch",
+      "answer": "Launch when ready, no review"
+    },
+    {
+      "answer": "do make sure to launch these thigns overnight unless there are real blockers pls"
+    },
+    {
+      "date": "2026-11-03",
+      "context": "v5 superseded by PR #652 (tapered Rubbermaid bin, complementary mat-edge sides, pickable human resets)",
+      "answer": "then we'll merge and re-launch"
+    },
+    {
+      "date": "2026-11-03",
+      "context": "v6 cancelled: the PyBullet planning bin kept 16 of its 17 panels (createCollisionShapeArray truncates silently), dropping the robot-facing (-y) top strip; 44/103 PickCube attempts against that wall timed out in MOVE_ARM_TO_HOVER_OVER_CUBE",
+      "answer": "yeah - cancel + fix + relaunch pls"
+    },
+    {
+      "date": "2026-11-03",
+      "context": "main contains #650 (determinized A* refuses --pomdp-search-depth); drop the flag from the Curtis rows only, keep it for expectimax",
+      "answer": "yeah good with me"
+    },
+    {
+      "date": "2026-11-03",
+      "context": "v7 (array 16757050, cancelled 17:02): near-wall PickCube aborts with the bracelet on the bin rim; the PyBullet planning robot wore bracelet_no_vision_link while MuJoCo and the real TidyBot carry bracelet_with_vision_link. #659 fixes it and is merged (origin/main e5a65a0b1)",
+      "answer": "merged - can you kill and re-launch?"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v9: minimise iteration time",
+      "answer": "ok so really I care about the iteration time, I'm trying to min iteration time"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "launch v9 now as a ~64k-step iteration run?",
+      "answer": "yeah that's fine. make it a nice number like 65k though"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "future kitchen launches: parallel evaluation and EES test-goal preview",
+      "answer": "yes, future should use"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "the 160k contract lives in frozen worker.py/prepare.py; land the minimal repo diff (#665)",
+      "answer": "Yes, small PR"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "--ees-preview-test-goals raises on kitchen_recycling3d (it enumerates no test goals)",
+      "answer": "Drop it for v9"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "deploy v9 from main + #665 without waiting for CI/merge",
+      "answer": "anything we can do to launch earlier? make an launch branch?"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "include the kitchen speedup PR in the v9 package",
+      "answer": "wait I do want the speedup in the v9 package"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v9 (array 16834759) cancelled by Josh; v10 design",
+      "answer": "we need to do a sweep of costs for v10. let's include the speedups, the fix to the predicates, and the sweep ... give me the prs for those as well as assemble the launch branch and give me a list of all the runs"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v10 sweep: human reset cost 0, 5, 10, 20, 100, 10000 on both resets; 3 arms x seeds 0-2 x 6 costs = 54 runs; 65k steps; 4 evaluation workers, per-task RNG; no EES preview; Della --constraint=genoa (measured ~2.2-2.75x faster than cascade, identical results across 5 node types)",
+      "answer": "Josh's choices, relayed"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "POMDP arms forecast a reset at 0.01 until they observe one (learn the price from experience)",
+      "answer": "Keep, matches Tossing3D"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v10 row order",
+      "answer": "seed-major, then run major. basically to be able to get full results for one seed as early as possible"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "launch v10 without the expectimax search PR (lands in v11)",
+      "answer": "eh let's do without them"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "memory per job, after v9's smoke peaked at 5.8 GB",
+      "answer": "12 GB"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v10 go",
+      "answer": "Launch now"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v10 array 16840531: expectimax/Curtis at costs 100 and 10000 (12/54 rows) refused at construction by COST_MAX = 20 (#673 passed --human-reset-practice-cost C); fix #676 keeps the cost in the cost file only",
+      "answer": "see v10b-params.json launch_branch_note (Josh's go for this relaunch)"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "v10b gate 16843971 failed: the smoke audit's allow-list rejected the POMDP arms' STOP at cost 100 (array 16843972 cancelled by --kill-on-invalid-dep). Option (b): allow STOP in practice (one charged step), new gate writing smoke-checks-2.json, re-gate the existing smoke 16843970, resubmit the 12 rows",
+      "answer": "Fix audit, resubmit (Rec.)"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "add a Deliberate Practice arm to the kitchen (tossing env) launcher",
+      "answer": "add the DP arm and launch it through the path"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "DP settings (relayed by the coordinator, ~21:40)",
+      "answer": "episodes / once / gurobi; B a single integer from v10's EES completed target attempts; 65k ceiling; DP rows --repeated-stop-limit 100; v10 grid on genoa; v10 equivalence reference + DP waiver"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "DP priors (relayed, ~23:15)",
+      "answer": "drop the calibration port; starting competence per robot skill from v10's early EES attempts, disclosed"
+    },
+    {
+      "date": "2026-11-04",
+      "context": "coordinator's decisions while Josh slept (~23:40)",
+      "answer": "--dp-initial-competence flag (mutually exclusive with --dp-prior-calibration); toss 0.1 (3/30, exact); PickCube/OpenGripper/Pour 0.99 (30/30, 21/21, 22/22 atom-rebuilt, approximate, capped); Delta 0.1; launch unless the smoke allocation is degenerate"
+    },
+    {
+      "date": "2026-11-05",
+      "context": "v11d priors: toss competence 0.1, toss Delta 0.001, others default; expected allocation PickCube 1 + toss 187",
+      "answer": "ok cool let's try this one"
+    },
+    {
+      "date": "2026-11-08",
+      "context": "v12 launch (relayed by main)",
+      "answer": "launch as soon as it is ready, from a local launch branch, without waiting for his approval or for any PR merge; 4 arms ees/expectimax/curtis/dp; costs 0 5 10 20 100 10000; seeds 0-2; 200k counted steps; DP B 578 (188 x 200k/65k), repeated-stop-limit 100, toss competence 0.1 and Delta 0.001; Gurobi as v11d; 6 CPUs / 24G / genoa; equivalence waived"
+    },
+    {
+      "date": "2026-11-08",
+      "context": "v13 relaunch (relayed by the coordinator, ~14:45 ET)",
+      "answer": "relaunch as v13 = v12 + #769 (classifier without standoff), 5 seeds (0-4), 200k steps, DP budget 600 (round number; was 578), all else as v12 (incl. #759/#761 Curtis eval-cost objective); code = kitchen-v12-launch + #768 + #769 cherry-picks, not rebased onto main; 120 rows, seed-major (\"yes, relaunch\", \"yep go for it\")"
+    }
+  ],
+  "scope": "one deployment root kitchen-recycling-20261108-v13-nostandoff; one setup job (which binds the smoke readiness and writes smoke-authorization.json at its end); one smoke submission afterok on the setup (rows 0-3: seed 0, cost 0, EES/expectimax/Curtis/DP); one gate job afterok on the smoke, which writes authorization.json itself after its checks pass; one full-array submission of all 120 rows (--array=0-119%120) afterok on the gate, all --kill-on-invalid-dep=yes. Not: resubmission of others' jobs, cancelling, holding or renicing other jobs, changing settings, deleting, GitHub.",
+  "launch_commit": "ee1e8c1d88a76c3a3e7219c8bd932aa1e3800c6c",
+  "source_stack_v10b": "local launch branch kitchen-v10b-launch c56c4b5cd = v10's launch branch 1523dd399 (main 746f77732 + #666, #671, #674, #672, #670, #673) + PR #676 85532c4ba cherry-picked (-x): the swept reset cost only in the cost file, --human-reset-practice-cost at its default 5; the tree differs from v10's only in scripts/kitchen_recycling/{prepare.py,worker.py,README.md,test_packaging.py} and tests/scripts/test_kitchen_recycling_prepare.py",
+  "source_stack": "local launch branch kitchen-v13-launch ee1e8c1d8 (not pushed) = kitchen-v12-launch 3156c6ccf (v12's exact code, base main a40812030) + 76d3c8e35 (d68b13165 cherry-picked, #768: TossParameterSet.classifier_inputs) + 541c31b6f (8d3d6d243 cherry-picked, #769: KITCHEN_TOSS_PARAMETERS.classifier_inputs = speed, release_ms) + ee1e8c1d8 (prepare.py --seeds N; worker.expected_rows reads the manifest's seed count)",
+  "v13_changes": "toss classifier inputs speed and release only (#768/#769; the standoff is still drawn in [1.445, 1.455] and executed); seeds 0-4 (was 0-2): 120 rows seed-major; DP B 600 (was 578); prepare.py --seeds / worker seed count (ee1e8c1d8); everything else as v12",
+  "source_stack_v12": "local launch branch kitchen-v12-launch 3156c6ccf (not pushed) = main a40812030 + d1a9a8d72 (fixed 1.45 m toss standoff) + 0f07903d7 (bin drawn per side from probe-certified regions; together draft PR #765) + bbbd38ef4 (draft #759's deployment-cost hook, 9e2418a65 cherry-picked, rack opt-in dropped) + 6958e88f4 (draft #761: Curtis/expectimax charge lambda * E[eval cost per task] in the stopping value) + 5ace4bf30 (rack-only tests removed)",
+  "v12_changes": "fixed 1.45 m toss standoff; bin drawn per side from probe-certified regions (far x [1.79, 2.16], y [-1.90, 0.10]; robot side x [-0.65, 0.95], y [1.10, 1.90]); Curtis/expectimax stopping value net of lambda * E[eval cost per task]; 200k counted steps (was 65k); DP B 578 (was 188); all four arms submitted; equivalence waived",
+  "equivalence_waiver": "toss classifier drops standoff (#768/#769, Josh 2026-11-08)",
+  "equivalence_waiver_v12": "v12 changes the environment by design (fixed 1.45 m toss standoff, randomized per-side bin regions) and Curtis's objective (expected eval cost); no prior run is a valid reference",
+  "source_stack_v11dp": "branch dp-kitchen-arm-episodes 227e4e31c (PR #694, draft) = origin/main 91f912f31 + five commits: the opt-in DP arm (scripts/kitchen_recycling); the equivalence guard ignoring #681's three removed decision-log fields; --dp-initial-competence; a packaging-test fix; --dp-initial-learning-rate-for (src/hitl_pmp/methods/practice_makes_perfect/{dp_method.py,cli.py}, a check_args hook in src/hitl_pmp/cli.py) with tests and launcher passthrough",
+  "launch_branch_v11dp": "Integration launch from PR #694's commit. Josh 2026-11-05 09:40 approved this relaunch (\"ok cool let's try this one\"): toss starting competence 0.1 (3/30, v10 EES first 10 non-random toss attempts, seeds 0-2) and Delta prior 0.001; every other skill EES's default Beta(10,1) and Delta 0.1; episodes, B=188, once, Gurobi, --repeated-stop-limit 100 on DP rows, 18 DP rows, genoa, v10 equivalence reference with the #681 normalisation and DP waived. Expected allocation PickCube 1 + toss 187 (unique optimum); array submitted only if the smoke's allocation is that and OPTIMAL (Josh pre-approved the array submission in that case). Scope: this one v11d-dp root.",
+  "v11dp_changes": "a DP arm (--method dp --dp-budget-unit episodes --dp-allocation-schedule once --dp-solver gurobi --dp-budget 188, no prior calibration, --repeated-stop-limit 100) beside v10's three arms; DP rows only submitted",
+  "launch_branch_v10b": "Launch-branch relaunch authorized by Josh (relayed by the coordinator, 2026-11-04): \"sure, go for it.\" v10 launch 1523dd399f210e5b293ec3fbd580f70f892ec2db; #676 85532c4ba39ccf59618acf1cd6e55461c6a24bd9; v10b launch c56c4b5cd912c375ddbe9cc678a5bb5bfb29225e (local only). Scope: this one v10b root and one setup -> smoke -> gate (afterok, writes authorization.json) -> array of the 12 failed POMDP rows (--array=1,2,4,5,7,8,10,11,13,14,16,17%12, afterok, --kill-on-invalid-dep=yes); genoa; nothing in v10's root is touched.",
+  "v10b_changes": "only v10's 12 failed rows (expectimax/Curtis x seeds 0-2 x costs 100, 10000); --human-reset-practice-cost dropped (#676), the cost in the cost file only; otherwise v10's argv",
+  "v10_changes": "the human reset cost swept over 5, 10, 20, 100, 10000, 0 on both resets (per-cost costs file + --human-reset-practice-cost, #673); rows seed-major, then cost, then arm; --constraint genoa; 12G; otherwise v9's argv",
+  "v9_changes": "--practice-step-budget 65000 (was 160000); --evaluation-workers 4 --evaluation-task-rng per-task (#656, via #665's prepare.py); 6 CPUs / 24G per job; no --ees-preview-test-goals (Josh: drop it for v9); every other token as v8",
+  "pr_650_note": "main contains #650, so the Curtis rows drop --pomdp-search-depth 6 (Josh: \"yeah good with me\"); expectimax keeps it. Behaviour-neutral for Curtis: determinized A* never read the depth. v8's argv was byte-identical to v7's manifest apart from the tag (setup.sbatch asserts it).",
+  "parallel_full_submission": {
+    "josh_words": "yeah that's fine, we can do in parallel with the smoke and cancel if the smoke finds a problem",
+    "context": "Josh (2026-11-03), replying to main's offer to submit the v6 full array in parallel with smoke 16745977; the coordinator applies it to v7, v8, v9 and v10 the same way",
+    "chained_gate": "The coordinator (main) authorized a chained Slurm gate: a gate job (afterok:<smoke>) runs check_smoke_v10b, audit_smoke_v10b and this script's full phase, which writes authorization.json automatically once every gate passes; the full array is submitted afterok:<gate>. A failing smoke or gate leaves the array unstarted."
+  },
+  "note": "authorization files say authorized_by=main because worker.verify requires that literal for full submission and main directed it for smoke too; main acts on Josh's explicit go.",
+  "phase": "full",
+  "binding": {
+    "manifest.json": "9a325991ab64345d13416947583c6a81ad9b44aa11300e218603ac5ccf0794f2",
+    "snapshot.json": "eaab04fabee4b70ac00f5db8e95b7f506430d3889c9feb3c43664d1d54d1fb0f",
+    "runtime-lock.json": "ee78fc9df07f10d05d6c8cff48044fcf162c282e06817bf32bb0b49e5cf14a26"
+  },
+  "equivalence": {
+    "binding": {
+      "manifest.json": "9a325991ab64345d13416947583c6a81ad9b44aa11300e218603ac5ccf0794f2",
+      "snapshot.json": "eaab04fabee4b70ac00f5db8e95b7f506430d3889c9feb3c43664d1d54d1fb0f",
+      "runtime-lock.json": "ee78fc9df07f10d05d6c8cff48044fcf162c282e06817bf32bb0b49e5cf14a26"
+    },
+    "passed": false,
+    "waived": true,
+    "waiver": "toss classifier drops standoff (#768/#769, Josh 2026-11-08)"
+  }
+}
