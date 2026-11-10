@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from analysis.tossing_paper_figures import ARMS, COSTS, FrozenSweep
+from analysis.tossing_paper_figures import ARMS, COSTS, FrozenSweep, ResetHistory
 
 
 @pytest.fixture
@@ -72,3 +72,37 @@ def test_missing_run_coverage_is_rejected(*, synthetic_inputs: Path) -> None:
     path.write_text(json.dumps(costs))
     with pytest.raises(ValueError, match="240 run summaries"):
         FrozenSweep.load(input_dir=synthetic_inputs)
+
+
+def test_cumulative_resets_count_both_requests_without_extending_ended_run() -> None:
+    history = ResetHistory(
+        resets={"10000/expectimax/0": [(120, "same-side"), (2500, "opposite-side")]},
+        steps={"10000/expectimax/0": 3500},
+    )
+    steps, counts = history.trace(key="10000/expectimax/0")
+    assert steps.tolist() == [0, 1000, 2000, 3000, 3500]
+    assert counts.tolist() == [0, 1, 1, 2, 2]
+
+
+def test_cumulative_mean_uses_all_seeds_only_where_every_run_was_observed() -> None:
+    history = ResetHistory(
+        resets={"20/dp/0": [(100, "reset")], "20/dp/1": [(1500, "reset")]},
+        steps={"20/dp/0": 1200, "20/dp/1": 2000},
+    )
+    steps, rows = history.shared_curve(cost="20", arm="dp", n=2)
+    assert steps.tolist() == [0, 1000, 1200]
+    assert rows.tolist() == [[0, 1, 1], [0, 0, 0]]
+
+
+def test_reset_history_rejects_event_totals_inconsistent_with_summary(
+    *, synthetic_inputs: Path
+) -> None:
+    sweep = FrozenSweep.load(input_dir=synthetic_inputs)
+    progress = {
+        "steps": {key: int(value["practice_steps"]) for key, value in sweep.costs.items()},
+        "resets": {key: [] for key in sweep.costs},
+    }
+    path = synthetic_inputs / "data.json"
+    path.write_text(json.dumps(progress))
+    with pytest.raises(ValueError, match="request count"):
+        ResetHistory.load(path=path, sweep=sweep)
