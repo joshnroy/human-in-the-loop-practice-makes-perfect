@@ -13,7 +13,6 @@ from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
-from .always_ask_reset import AlwaysAskReset
 from .competence_models import LinearSkillCompetenceModel, OptimisticSkillCompetenceModel
 from .dp_allocator import DpAllocator
 from .dp_gurobi import DpAllocationResult, DpGurobiAllocator, DpOptimizationError
@@ -32,9 +31,11 @@ class DpMethod(EesMethod):
 
     The episode-budget/allocate-once and cost-budget/reallocate arms share the
     existing EES samplers and execution protocol, not CMA-ES. Cost-mode attempt
-    prices include setup, failed setup, human assistance and
-    trailing forced resets. These are empirical cost estimates, not our
-    state-dependent belief-space lookahead over future practice resets.
+    prices include setup and failed setup but no human charge: a baseline never
+    plans with a human skill's cost, which only our methods learn (Josh,
+    2026-11-08). The cost file's human price is still charged to the run and its
+    budget. These are empirical cost estimates, not our state-dependent
+    belief-space lookahead over future practice resets.
 
     The curriculum follows the optimized policy's predecessor order, executing
     positive allocations only. Gurobi must certify the task-value optimum;
@@ -67,7 +68,6 @@ class DpMethod(EesMethod):
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
     _dp_active_target: GroundSkill | None = PrivateAttr(default=None)
-    _dp_last_attempt: tuple[GroundSkill, int] | None = PrivateAttr(default=None)
     _dp_unassigned_cost: float = PrivateAttr(default=0.0)
     _dp_forced_reset_pending: bool = PrivateAttr(default=False)
     _dp_allocation: dict[GroundSkill, int] = PrivateAttr(default_factory=dict)
@@ -201,7 +201,6 @@ class DpMethod(EesMethod):
     def get_practice_policy(self, *, task: Task) -> Policy:
         policy = super().get_practice_policy(task=task)
         self._dp_active_target = None
-        self._dp_last_attempt = None
         remaining = self._remaining_budget()
         if remaining > 0 and self._needs_allocation():
             self._solve(budget=remaining)
@@ -226,17 +225,16 @@ class DpMethod(EesMethod):
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
         super().observe_execution_cost(cost=cost, steps=steps, complete=complete)
-        target = self._dp_active_target
         if self._dp_forced_reset_pending:
+            # A forced reset is the human's, so its charge is never DP's estimate.
             self._dp_forced_reset_pending = False
-            if target is None and self._dp_last_attempt is not None:
-                ground, index = self._dp_last_attempt
-                self._dp_costs[ground][index] += cost
-                return
-        elif target is not None and complete and self._execution_ground_skill == target:
+            return
+        if self._execution_ground_skill in self.skill_provider.human_cube_bin_reset_skills():
+            cost = 0.0
+        target = self._dp_active_target
+        if target is not None and complete and self._execution_ground_skill == target:
             costs = self._dp_costs.setdefault(target, [])
             costs.append(self._dp_pending_costs.pop(target, 0.0) + cost)
-            self._dp_last_attempt = (target, len(costs) - 1)
             self._dp_active_target = None
             self._dp_episodes += 1
             self._dp_executed_since_solve[target] = self._dp_executed_since_solve.get(target, 0) + 1
@@ -259,8 +257,6 @@ class DpMethod(EesMethod):
             return max(1e-12, (sum(observed) + pending) / len(observed))
         accounting = self._require_accounting()
         prior = self.skill_cost_prior_steps * accounting.robot_charge().cost
-        if self.always_ask_reset is not None and AlwaysAskReset.triggers(ground_skill=ground_skill):
-            prior += self.start_reset_cost()
         return max(1e-12, prior + pending)
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
