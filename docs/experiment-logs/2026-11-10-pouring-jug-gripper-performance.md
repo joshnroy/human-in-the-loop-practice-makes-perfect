@@ -1,10 +1,12 @@
 # Jug gripper weld: paired pour-performance check
 
+**Completed Della matrix (2026-11-10 17:14 EST):** all 30/30 pairs are available; fresh-start success is 23/27 baseline and 22/27 candidate. See the completed-matrix section below for setup separation, the full parameter grid and limitations.
+
 The gripper weld changes pour performance in the first matched pilot. With seed 0,
 Pour2 and a 1 degree/s ramp, the table-weld baseline delivered exactly two dumplings;
 the table-plus-gripper-weld candidate delivered all three. Both pickups and placements
 succeeded, and both outcomes settled. This is a measured overshoot, not a setup failure.
-The candidate remains an uncalibrated draft; the learning sweep uses the table-weld baseline.
+This initial pilot did not calibrate the candidate; the learning sweep uses the table-weld baseline.
 
 **Update (16:42 EST):** the first 9 matched Della cases have identical success/failure
 outcomes (8/9 in each variant), including success in the local pilot's failed setting.
@@ -117,4 +119,73 @@ These differences are possible contributors, not a demonstrated causal explanati
 Evidence: [local runtime](2026-11-10-pouring-jug-gripper-performance/local-runtime.json),
 [Della runtime](2026-11-10-pouring-jug-gripper-performance/della-runtime.json), and
 [cross-runtime comparison](2026-11-10-pouring-jug-gripper-performance/cross-runtime-audit.json).
-The same-host Della matrix is the primary comparison for the proposed Della learning runs.
+The within-Della matrix is the primary comparison for the proposed Della learning runs; paired cases share the conda environment and genoa constraint but may run on different compute nodes.
+
+## Completed Della matrix: 2026-11-10 17:14 EST
+
+All **30/30 pairs** completed: 27 fresh starts and three robot-reset starts per variant. Fresh-start exact pour success is **23/27 baseline and 22/27 candidate**. The following tables separate setup completion from the conditional pour outcome. The local pilots and earlier partial checkpoint above are preserved and are not added to these denominators.
+
+| Setup | Variant | Setups reaching Pour / initializations | Exact successes / Pour attempts | Exact pour and placement / initializations | Spilled trials / Pour attempts |
+| --- | --- | ---: | ---: | ---: | ---: |
+| fresh | Table weld | 27/27 | 23/27 | 23/27 | 0/27 |
+| fresh | Table + gripper weld | 27/27 | 22/27 | 22/27 | 1/27 |
+| robot | Table weld | 3/3 | 3/3 | 3/3 | 0/3 |
+| robot | Table + gripper weld | 3/3 | 3/3 | 3/3 | 0/3 |
+
+### Fresh-start parameter grid
+
+Each entry is exact pour successes / completed matched initializations. Setup failures, if any, remain distinguishable in the preceding table; no failed setup is silently treated as an attempted pour.
+
+| Requested | Ramp (degrees/s) | Table weld | Table + gripper weld |
+| --- | ---: | ---: | ---: |
+| Pour1 | 0.25 | 3/3 | 3/3 |
+| Pour1 | 1 | 3/3 | 3/3 |
+| Pour1 | 5 | 2/3 | 2/3 |
+| Pour2 | 0.25 | 3/3 | 3/3 |
+| Pour2 | 1 | 3/3 | 3/3 |
+| Pour2 | 5 | 0/3 | 0/3 |
+| Pour3 | 0.25 | 3/3 | 3/3 |
+| Pour3 | 1 | 3/3 | 2/3 |
+| Pour3 | 5 | 3/3 | 3/3 |
+
+![Completed paired Della calibration with individual seeds and exact counts](../figures/pouring-jug-gripper-della-final-20261110.png)
+
+### Interpretation of the completed grid
+
+The added gripper weld retains usable tested settings and a ramp-rate effect. At 0.25
+degree/s both variants succeed in 9/9 fresh cases; at 5 degrees/s both succeed in 5/9.
+At 1 degree/s the baseline succeeds in 9/9 and the candidate in 8/9, with one candidate
+Pour3 spill. This is a small descriptive grid, not evidence of uniform improvement or
+uniform degradation. Two cases succeed only in the baseline; one succeeds only with
+the gripper weld. Robot-reset cases succeed in 3/3 per variant at the tested 1 degree/s.
+
+The coarse check therefore supports retaining the gripper-weld draft for review: grasp
+motion is reduced and the learned parameter still matters. It does not establish a
+precise deployment success probability. The existing pour controller and its parameter
+range were not retuned, and no learning run was promoted to the gripper-weld candidate.
+
+### Discordant pairs
+
+The following cases differ in exact pour outcome. These are descriptive matched cases, not a pooled significance test; rates and counts reuse the same three initialization seeds.
+
+| Case | Seed | Requested | Ramp | Setup | Table weld | Table + gripper weld |
+| --- | ---: | --- | ---: | --- | --- | --- |
+| 12 | 1 | Pour1 | 5 | fresh | success; 1 pan, 2 jug | failure; 2 pan, 1 jug |
+| 17 | 1 | Pour3 | 1 | fresh | success; 3 pan, 0 jug | failure; 2 pan, 0 jug, 1 floor |
+| 21 | 2 | Pour1 | 5 | fresh | failure; 3 pan, 0 jug | success; 1 pan, 2 jug |
+
+### Grasp retention and provenance
+
+Fresh initial physical snapshots match exactly in 27/27 pairs. The robot-reset cases deliberately use the state produced by each variant's preceding Pour3 and physical robot put-backs; they measure that whole setup path rather than enforcing identical post-reset poses.
+
+The largest measured endpoint grasp-translation change is 6.574 mm for the table weld and 0.248 mm with the added gripper weld. The largest endpoint rotation changes are 3.103 and 1.642 degrees, respectively. These are post-pick to post-Pour endpoint changes, not transient peaks.
+
+Placement failures after an attempted pour: 0/30 baseline and 0/30 candidate. Unsettled outcomes after an attempted pour: 0/30 baseline and 0/30 candidate. Post-placement location changes: 0/30 baseline and 0/30 candidate. Any controller error is retained in the raw record and final summary.
+
+[Final summary](2026-11-10-pouring-jug-gripper-performance/della-final-summary.json), [complete raw records](2026-11-10-pouring-jug-gripper-performance/della-records.jsonl), and [final launch provenance](2026-11-10-pouring-jug-gripper-performance/della-final-manifest.json). Every record passed exact source-pin, harness-hash and case-identity checks. The original local evidence and partial checkpoint remain unchanged.
+
+This is a small calibration grid, with only three initialization seeds per fresh setting and one robot-reset seed per requested count. It measures changed behavior and parameter sensitivity; it does not establish deployment reliability. No pour controller, cost, planner, human-reset model or learning run was changed during the comparison.
+
+[Runtime collection note](2026-11-10-pouring-jug-gripper-performance/runtime-provenance-note.json): Della package versions were queried from the shared conda environment on its login host; the saved platform string is not a per-case compute-node capture. Calibration jobs share the genoa constraint and numerical thread settings but may run on different compute nodes.
+
+[Final Slurm accounting](2026-11-10-pouring-jug-gripper-performance/della-final-accounting.txt) confirms 60/60 tasks completed with exit code 0:0. Physical pour failures are recorded outcomes, not crashed jobs.
