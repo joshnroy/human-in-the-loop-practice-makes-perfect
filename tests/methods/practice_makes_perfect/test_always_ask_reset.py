@@ -598,7 +598,10 @@ def test_real_ees_selection_and_planning_are_unchanged_by_the_wrapper(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The real selector, sampler and Fast Downward: wrapped and unwrapped EES take the
-    same actions, so the wrapper's per-step stranded check perturbs nothing."""
+    same actions, so the wrapper's per-step stranded check perturbs nothing. The
+    wrapper never offers a partial reset, so neither run does here: that difference is
+    the wrapper's by design, not a perturbation."""
+    monkeypatch.setattr(EesMethod, "offered_partial_resets", lambda self: ())
     start = _shelf_start()
     plain = _symbolic_run(
         domain=_shelf(wrapped=False), start=start, steps=12, monkeypatch=monkeypatch

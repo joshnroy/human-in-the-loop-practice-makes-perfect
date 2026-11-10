@@ -44,7 +44,6 @@ def test_dp_cli_wires_budget_schedule_and_practice_groundings(*, unit, schedule,
     assert method.practice_groundings == "all"
     assert method.dp_budget_unit == unit
     assert method.dp_allocation_schedule == schedule
-    assert method.score_human_skills is True
     assert not method.pursues_goal_in_period(period=0)
 
 

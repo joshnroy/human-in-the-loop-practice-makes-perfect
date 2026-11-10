@@ -122,16 +122,15 @@ class EesMethod(Method):
     configuration belong to that domain. Providers that return `None` do not offer
     `ask_for_reset_cube_bin_only`.
 
-    5. **Local extension, on by default since 2026-10-25:**
-       `score_human_skills`. Neither audited explorer defines human-reset skills
-       or their price/outcome semantics. Both modes here are local extensions.
-       With the flag on, a human skill is first-class, judged like a robot skill -- did
-       its promised effects hold afterwards -- and its competence is tracked by the
-       same optimistic model, from the same prior, and priced the same way,
-       `-log(competence)`, on top of the human price. It is never a practice target:
-       the robot cannot practise the human. Off (`--no-ees-score-human-skills`)
-       retains this port's earlier fixed-price, unobserved reset behavior; it
-       does not establish fidelity to a reference human-reset model."""
+    5. **Local extension, always on since 2026-11-08: human skills are scored.**
+       Neither audited explorer defines human-reset skills or their outcome
+       semantics. A human skill is first-class, judged like a robot skill -- did its
+       promised effects hold afterwards -- and its competence is tracked by the same
+       optimistic model, from the same prior, and planned the same way, at
+       `-log(competence)` alone. It is never a practice target: the robot cannot
+       practise the human. The port's earlier unscored, fixed-price human and its
+       reset gate were removed (Josh, 2026-11-08): a reset's price is the
+       environment's true cost, which EES does not know."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -159,12 +158,6 @@ class EesMethod(Method):
     # CFG.active_sampler_learning_exploration_epsilon -- the paper: "epsilon-greedy
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
-    # Whether plan_to declines a practice plan whose human reset costs more than the
-    # priciest ordinary skill (see plan_to). Off, any reset-using plan is accepted and
-    # Fast Downward's own cost minimisation is the only thing choosing between a reset
-    # and a reset-free route -- so a robot stranded with no reset-free plan resets at
-    # whatever the reset costs, rather than staying stuck.
-    reset_cost_gate: bool = True
     # CFG.active_sampler_learning_num_samples
     num_candidates: int = Field(default=100, gt=0)
     # Keep the original iid proposal distribution, conditioning only on the
@@ -239,10 +232,6 @@ class EesMethod(Method):
     # covers the assigned-task goal as well -- see `goal_failure_enters_random_mode`,
     # which a subclass can decline.
     reproduce_predicators_random_when_stranded: bool = False
-    # Deviation 5 in the class docstring: score, track and price the human's skills like
-    # robot skills, rather than assuming they always succeed. On by default because human
-    # skills are first-class; off restores this port's earlier fixed-price resets.
-    score_human_skills: bool = True
     # The always-ask reset wrapper (`--always-ask-reset`): when set, a human full reset
     # to a freshly sampled start state is forced after every skill with continuous
     # parameters, and whenever the goal is unreachable without a human. The planner --
@@ -398,7 +387,7 @@ class EesMethod(Method):
     _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
     # Practice periods started so far; the cycle index the goal-pursuit schedule reads.
     _practice_periods: int = PrivateAttr()
-    # Under score_human_skills only: one competence model per human ground skill, kept
+    # One competence model per human ground skill, kept
     # apart from `_competence_models` so a human skill is never a practice candidate
     # and never enters the UCB totals; and the dispatched human skill awaiting its
     # outcome, with the atoms it started from.
@@ -461,7 +450,7 @@ class EesMethod(Method):
     def human_competence_model(
         self, *, ground_skill: GroundSkill
     ) -> OptimisticSkillCompetenceModel:
-        """The human skill's competence, under `score_human_skills`: the same model
+        """The human skill's competence: the same model
         and prior as a robot skill's, held apart from the practice candidates."""
         if ground_skill not in self._human_competence_models:
             self._human_competence_models[ground_skill] = self._new_competence_model()
@@ -471,22 +460,17 @@ class EesMethod(Method):
         return self.human_competence_model(ground_skill=ground_skill).get_current_competence()
 
     def human_skill_cost(self, *, ground_skill: GroundSkill) -> float:
-        """The plan cost of a human skill. Under `score_human_skills`, `-log(competence)`
-        alone, exactly as a robot skill is priced: a plan's cost is its chance of
-        failing, and what a skill costs to execute is not something EES estimates
-        (Josh, 2026-11-08). Off, the port's fixed price (the paper's always-successful
-        rescue)."""
-        if not self.score_human_skills:
-            return self.practice_action_cost(ground_skill=ground_skill)
+        """The plan cost of a human skill: `-log(competence)` alone, exactly as a robot
+        skill is priced. A plan's cost is its chance of failing; what a skill costs to
+        execute is not something EES estimates (Josh, 2026-11-08)."""
         return -math.log(max(self.human_skill_competence(ground_skill=ground_skill), 1e-12))
 
     def record_human_skill_dispatch(
         self, *, ground_skill: GroundSkill, before_atoms: frozenset[GroundAtom]
     ) -> None:
         """Remember a dispatched human skill so `observe_help_granted` can score it."""
-        if self.score_human_skills:
-            self._pending_human_skill = ground_skill
-            self._pending_human_before_atoms = before_atoms
+        self._pending_human_skill = ground_skill
+        self._pending_human_before_atoms = before_atoms
 
     def competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
         """Lazily created per ground skill, so the candidate set is exactly "every
@@ -685,66 +669,33 @@ class EesMethod(Method):
         this uses a per-run `TranslationCache` (costs are patched post-translation,
         so caching can't change the plan).
 
-        During practice, a provider-supplied `ask_for_reset_cube_bin_only` is added
-        to `skills`/`ground_skill_costs` at its required provider-owned cost.
+        During practice, each provider-supplied human reset is added to
+        `skills`/`ground_skill_costs` at `-log(competence)`, like a robot skill.
         `practicing` defaults to False, so a robot being scored must
         never get to ask a human for help, so `get_task_policy`'s evaluation
         episodes (`practicing=False`, unlike `get_practice_policy`'s) and
         `refresh_planning_progress_plans`' speculative scoring pass (never a real
         dispatch -- see that method) both withhold it, regardless of how affordable
-        the configured cost is. Unlike the deleted `ask_for_reset_task_initial`/
+        the reset is. Unlike the deleted `ask_for_reset_task_initial`/
         `ask_for_reset_random_task`, this skill's effects don't depend on
         per-episode state, so `practicing` -- not a per-episode `task_initial_atoms`
-        -- is the only thing this gate needs.
+        -- is the only thing this needs.
 
-        A reset that clears the search isn't automatically accepted: classical
-        cost-minimizing search can't weigh "no plan" against any finite cost, so an
-        offered reset would otherwise be taken at any magnitude (confirmed
-        empirically, costs 0.001-1e6). So when the plan uses the reset skill, its cost
-        is checked against `max(costs.values(), default=self.default_cost())` --
-        the priciest ordinary skill already in scope, so the bar tracks the robot's
-        own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
-        with no reset offered, so a real cheaper alternative still wins and a truly
-        unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
-        unrescued" possible. `reset_cost_gate=False` skips that check: a reset-using
-        plan is returned as planned, whatever the reset costs."""
+        Fast Downward's cost minimisation alone chooses between a reset and a
+        reset-free route, so a robot with no reset-free plan resets rather than staying
+        stuck."""
         skills = self.skills()
         ground_skill_costs = costs
-        cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
-        if practicing:
-            cube_bin_ground_skills = self.offered_partial_resets()
-            if cube_bin_ground_skills:
-                # One lifted skill per kind of human reset the domain offers.
-                skills = (*skills, *dict.fromkeys(g.skill for g in cube_bin_ground_skills))
-                ground_skill_costs = {
-                    **ground_skill_costs,
-                    **{
-                        ground: self.human_skill_cost(ground_skill=ground)
-                        for ground in cube_bin_ground_skills
-                    },
-                }
-
-        plan = self._plan_or_raise(
-            skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
-        )
-        if not cube_bin_ground_skills or not self.reset_cost_gate:
-            return plan
-        reset_set = set(cube_bin_ground_skills)
-        used = [ground_skill for ground_skill in plan if ground_skill in reset_set]
-        if not used:
-            return plan
-        # Position doesn't matter for the ceiling check, only that a reset
-        # appears; `used[0]` is representative (a second reset back-to-back
-        # would itself be pure waste, so at most one is ever load-bearing).
-        reset_cost = self.human_skill_cost(ground_skill=used[0])
-        ceiling = max(costs.values(), default=self.default_cost())
-        if reset_cost <= ceiling:
-            return plan
-        # DECLINE: re-request with no reset skill offered at all, so a real (possibly
-        # pricier) alternative still wins if one exists, and PlanningFailure still
-        # propagates -- unrescued and stuck -- if none does.
+        resets = self.offered_partial_resets() if practicing else ()
+        if resets:
+            # One lifted skill per kind of human reset the domain offers.
+            skills = (*skills, *dict.fromkeys(g.skill for g in resets))
+            ground_skill_costs = {
+                **ground_skill_costs,
+                **{ground: self.human_skill_cost(ground_skill=ground) for ground in resets},
+            }
         return self._plan_or_raise(
-            skills=self.skills(), init_atoms=init_atoms, goal=goal, ground_skill_costs=costs
+            skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
         )
 
     def _plan_or_raise(
@@ -755,10 +706,8 @@ class EesMethod(Method):
         goal: frozenset[GroundAtom],
         ground_skill_costs: dict[GroundSkill, float],
     ) -> list[GroundSkill]:
-        """The sole place `plan_to` asks the planner for something -- it may call
-        this twice per call (offering a reset, then again without one if declined).
-        Both count as a real ask (`planning_outcomes` cares about FastDownward
-        invocations, not `plan_to` calls)."""
+        """The sole place `plan_to` asks the planner for something; each call counts as
+        a real ask (`planning_outcomes` cares about FastDownward invocations)."""
         self._planning_attempts += 1
         try:
             return FastDownwardPlanner.plan(
@@ -868,8 +817,8 @@ class EesMethod(Method):
 
     def observe_help_granted(self, *, state: State) -> None:
         """A movables reset re-placed the cube and bin, so the starved pools recorded
-        at the old placement no longer describe the scene. Under
-        `score_human_skills` the human skill is also scored here, like a robot skill:
+        at the old placement no longer describe the scene. The human skill is also
+        scored here, like a robot skill:
         a success exactly when its promised effects hold in `state`."""
         self.clear_starved_parameter_pools()
         human = self._pending_human_skill
@@ -1943,9 +1892,8 @@ class _EesEpisode:
             method.record_human_skill_dispatch(ground_skill=ground_skill, before_atoms=true_atoms)
             self._record_dispatch(ground_skill=ground_skill, true_atoms=true_atoms, human=True)
         # Dispatch to the human, not execute_ground_skill -- the robot has no
-        # controller for it. self._pending stays untouched: the human's outcome, if
-        # scored at all (score_human_skills), is scored by observe_help_granted once
-        # the harness hands back its result.
+        # controller for it. self._pending stays untouched: the human's outcome is
+        # scored by observe_help_granted once the harness hands back its result.
         raise HumanCubeBinResetRequested(
             cost=method.practice_action_cost(ground_skill=ground_skill),
             destination=method.skill_provider.movables_reset_destination(ground_skill=ground_skill),

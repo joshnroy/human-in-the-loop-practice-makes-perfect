@@ -352,9 +352,7 @@ def test_ees_plans_through_the_reset_from_a_tipped_bin() -> None:
 
     env = Tossing3DEnvironment(scene_bg=False)
     provider = Tossing3DSkillProvider(env=env)
-    method = CostFixtures.priced(
-        method=EesMethod(env=env, skill_provider=provider, seed=0, reset_cost_gate=False)
-    )
+    method = CostFixtures.priced(method=EesMethod(env=env, skill_provider=provider, seed=0))
     goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
     tipped = _pickable_atoms(provider=provider)
 
@@ -433,7 +431,6 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
                 env=env,
                 skill_provider=Tossing3DSkillProvider(env=env),
                 seed=0,
-                reset_cost_gate=False,
             )
         )
         # The tipped state already scores: the cube lies inside the bin's region and

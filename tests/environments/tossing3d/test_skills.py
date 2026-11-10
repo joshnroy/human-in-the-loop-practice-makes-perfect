@@ -551,12 +551,16 @@ def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
     from .observations import HOLDING_ATOMS
 
     # This tests the pick retrieval path in the pour-disabled ablation. With
-    # pouring enabled, EES may legitimately select either feasible action.
+    # pouring enabled, EES may legitimately select either feasible action. No human
+    # reset is offered: EES no longer sees a reset's price, so at -log(competence) it
+    # ties the robot's own retrieval and Fast Downward may plan the reset instead,
+    # which is not the path this test pins.
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE, enable_bin_pouring=False)
     provider = Tossing3DSkillProvider(env=env)
     method = CostFixtures.priced(
         method=EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
     )
+    object.__setattr__(method, "offered_partial_resets", lambda: ())
     same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}
     floor = state(env=env, abstract_atoms=INITIAL_ATOMS, **same_side_pose)
     holding = state(env=env, abstract_atoms=HOLDING_ATOMS, **same_side_pose)
