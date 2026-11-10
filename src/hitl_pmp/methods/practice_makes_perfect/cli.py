@@ -889,6 +889,15 @@ class DpCli(EesCli):
             "[0, 1] (default 0.5; the paper gives no experimental value).",
         )
         parser.add_argument(
+            "--dp-min-learning-rate",
+            type=lambda value: EesCli.positive_float(value=value),
+            default=fields["dp_min_learning_rate"].default,
+            help="Floor every fitted Delta the allocator sees at this positive value "
+            "(default: none, rates stay signed). Under --dp-allocation-schedule period a "
+            "Delta fitted negative from a few noisy outcomes otherwise writes a skill off "
+            "for the rest of the run. Not from the paper, which is silent on it.",
+        )
+        parser.add_argument(
             "--dp-max-skills",
             type=lambda value: DpCli.positive_int(value=value),
             default=fields["dp_max_skills"].default,
@@ -956,6 +965,7 @@ class DpCli(EesCli):
                 ),
                 dp_initial_learning_rate=args.dp_initial_learning_rate,
                 dp_smoothing=args.dp_smoothing,
+                dp_min_learning_rate=args.dp_min_learning_rate,
                 dp_max_skills=args.dp_max_skills,
                 dp_max_allocations=args.dp_max_allocations,
                 dp_max_states=args.dp_max_states,

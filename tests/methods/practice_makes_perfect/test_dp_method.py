@@ -550,3 +550,62 @@ def test_solver_log_records_candidates_and_physical_attempts(*, monkeypatch, tmp
             "attempts": 1,
         }
     ]
+
+
+def _allocated_learning_rates(*, method: DpMethod, monkeypatch) -> dict:
+    captured: dict = {}
+    original = DpAllocator.allocate
+
+    def capture(**kwargs):
+        captured.update(kwargs["learning_rates"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(capture))
+    method.choose_practice_target()
+    return captured
+
+
+def _fitted_rates(*, monkeypatch) -> None:
+    """pick_wiper's fitted Delta comes out negative, as a few noisy outcomes can make
+    it; every other skill keeps a positive one."""
+    from hitl_pmp.methods.practice_makes_perfect.competence_models import (
+        LinearSkillCompetenceModel,
+    )
+
+    weak = 10 / 16
+
+    def rate(self) -> float:  # noqa: PLR0917
+        return -0.03 if self.get_current_competence() == pytest.approx(weak) else 0.002
+
+    monkeypatch.setattr(LinearSkillCompetenceModel, "learning_rate", rate)
+
+
+def test_a_negative_learning_rate_reaches_the_allocator_signed_by_default(*, monkeypatch):
+    method, pick, back, _cube = _two_skill_setup(monkeypatch=monkeypatch)
+    _fitted_rates(monkeypatch=monkeypatch)
+    rates = _allocated_learning_rates(method=method, monkeypatch=monkeypatch)
+    assert rates[pick] == pytest.approx(-0.03)
+    assert rates[back] == pytest.approx(0.002)
+
+
+def test_a_learning_rate_floor_lifts_only_the_rates_below_it(*, monkeypatch):
+    """With --dp-min-learning-rate a skill a few noisy outcomes made look harmful to
+    practise is still predicted to improve a little, so a re-solve never writes it
+    off for the rest of the run."""
+    method, pick, back, _cube = _two_skill_setup(monkeypatch=monkeypatch)
+    method.dp_min_learning_rate = 1e-4
+    _fitted_rates(monkeypatch=monkeypatch)
+    rates = _allocated_learning_rates(method=method, monkeypatch=monkeypatch)
+    assert rates[pick] == pytest.approx(1e-4)
+    assert rates[back] == pytest.approx(0.002)
+
+
+def test_the_learning_rate_floor_must_be_positive():
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValidationError):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=10.0,
+            dp_min_learning_rate=0.0,
+        )
