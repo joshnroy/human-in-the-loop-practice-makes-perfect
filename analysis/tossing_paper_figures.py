@@ -44,7 +44,7 @@ ARMS = (
     ("dp", "DP", "#E69F00", 5),
     ("dpperiod", "DP-period", "#F0E442", 5),
 )
-Metric = Literal["solved", "resets", "total_cost"]
+Metric = Literal["solved", "resets", "total_cost", "practice_steps"]
 
 
 class PaperFigures:
@@ -67,7 +67,8 @@ class PaperFigures:
             "axes.spines.right": False,
             "pdf.use14corefonts": True,
         })
-        PaperFigures.reset_summary(sweep=sweep, output_dir=output_dir)
+        for metric in ("resets", "practice_steps"):
+            PaperFigures.budget_summary(sweep=sweep, output_dir=output_dir, metric=metric)
         PaperFigures.learning(sweep=sweep, output_dir=output_dir)
         PaperFigures.tradeoff(sweep=sweep, output_dir=output_dir)
         PaperFigures.table(sweep=sweep, output_dir=output_dir)
@@ -82,6 +83,9 @@ class PaperFigures:
             "uncertainty": "one sample standard error across independent learning seeds",
             "solved_summary": "mean of last up to three snapshots, initial included",
             "stopped_curves": "end at last actual measurement; no extrapolation",
+            "practice_steps": (
+                "last measured checkpoint in costs.json; excludes later STOP-only cycles"
+            ),
         }
         if progress_file is not None:
             history = ResetHistory.load(path=progress_file, sweep=sweep)
@@ -92,13 +96,15 @@ class PaperFigures:
         (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     @staticmethod
-    def reset_summary(*, sweep: "FrozenSweep", output_dir: Path) -> None:
+    def budget_summary(
+        *, sweep: "FrozenSweep", output_dir: Path, metric: Literal["resets", "practice_steps"]
+    ) -> None:
         fig, ax = plt.subplots(figsize=(3.4, 2.0))
         for index, (arm, label, color, n) in enumerate(ARMS):
             x = np.arange(len(COSTS)) + (index - 2) * 0.075
-            rows = np.stack(
-                [sweep.summary(cost=c, arm=arm, metric="resets") for c in COSTS], axis=1
-            )
+            rows = np.stack([sweep.summary(cost=c, arm=arm, metric=metric) for c in COSTS], axis=1)
+            if metric == "practice_steps":
+                rows = rows / 1000
             for seed in range(n):
                 ax.scatter(x, rows[seed], color=color, s=7, alpha=0.32, edgecolors="none")
             mean, sem = PaperFigures.mean_sem(rows=rows)
@@ -115,8 +121,18 @@ class PaperFigures:
             )
         ax.set_xticks(range(len(COSTS)), ["0", "5", "10", "20", "100", "10,000"])
         ax.set_xlabel("Human-reset cost c")
-        ax.set_ylabel("Total human resets")
+        ax.set_ylabel("Total human resets" if metric == "resets" else "Practice steps (thousands)")
         ax.set_ylim(bottom=0)
+        if metric == "practice_steps":
+            ax.set_ylim(0, 215)
+            ax.set_yticks([0, 100, 200])
+            ax.annotate(
+                "Ours: first session only",
+                xy=(5, 3.2),
+                xytext=(2.1, 38),
+                fontsize=6.5,
+                arrowprops={"arrowstyle": "->", "lw": 0.6},
+            )
         ax.grid(alpha=0.18, lw=0.5)
         handles, labels = ax.get_legend_handles_labels()
         fig.legend(
@@ -130,7 +146,8 @@ class PaperFigures:
             handlelength=1.6,
         )
         fig.subplots_adjust(left=0.155, right=0.97, bottom=0.23, top=0.65)
-        PaperFigures.save(fig=fig, output_dir=output_dir, stem="tossing-reset-summary")
+        stem = "tossing-reset-summary" if metric == "resets" else "tossing-practice-steps"
+        PaperFigures.save(fig=fig, output_dir=output_dir, stem=stem)
 
     @staticmethod
     def cumulative_resets(*, history: "ResetHistory", output_dir: Path) -> None:
@@ -293,8 +310,8 @@ class PaperFigures:
                     "-dBATCH",
                     "-dNOPAUSE",
                     "-dSAFER",
-                "-sDEVICE=pdfwrite",
-                "-dCompatibilityLevel=1.5",
+                    "-sDEVICE=pdfwrite",
+                    "-dCompatibilityLevel=1.5",
                     "-dEmbedAllFonts=true",
                     "-dSubsetFonts=true",
                     "-dOmitInfoDate=true",
@@ -445,6 +462,8 @@ class FrozenSweep(BaseModel):
                 values.append(float(np.mean([score for _, score in self.curves[key][-3:]])))
             elif metric == "resets":
                 values.append(self.costs[key]["human_invocations"])
+            elif metric == "practice_steps":
+                values.append(self.costs[key]["practice_steps"])
             else:
                 measured = self.costs[key]
                 values.append(measured["robot_cost"] + measured["human_cost"])

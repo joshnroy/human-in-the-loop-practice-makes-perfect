@@ -74,6 +74,19 @@ def test_missing_run_coverage_is_rejected(*, synthetic_inputs: Path) -> None:
         FrozenSweep.load(input_dir=synthetic_inputs)
 
 
+def test_practice_duration_uses_measured_steps_instead_of_checkpoint_index(
+    *, synthetic_inputs: Path
+) -> None:
+    sweep = FrozenSweep.load(input_dir=synthetic_inputs)
+    # A budget-limited baseline can end between the learning-curve checkpoints.
+    sweep.costs["10000/dpperiod/0"]["practice_steps"] = 161234
+    assert sweep.summary(cost="10000", arm="dpperiod", metric="practice_steps")[0] == 161234
+    for arm in ("expectimax", "curtis"):
+        assert sweep.summary(cost="10000", arm=arm, metric="practice_steps").tolist() == [3200] * 10
+        assert sweep.summary(cost="100", arm=arm, metric="practice_steps").tolist() == [200000] * 10
+    assert sweep.summary(cost="10000", arm="ees", metric="practice_steps").tolist() == [200000] * 10
+
+
 def test_cumulative_resets_count_both_requests_without_extending_ended_run() -> None:
     history = ResetHistory(
         resets={"10000/expectimax/0": [(120, "same-side"), (2500, "opposite-side")]},
