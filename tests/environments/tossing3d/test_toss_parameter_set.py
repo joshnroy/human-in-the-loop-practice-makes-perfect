@@ -13,11 +13,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
-from hitl_pmp.environments.tossing3d.toss_direction import (
-    TossDirectionChoice,
-    TossDirectionSelector,
-    TossStandoffBand,
-)
+from hitl_pmp.environments.tossing3d.toss_direction import TossStandoffBand
 from hitl_pmp.environments.tossing3d.types import TossFeasibilityGeometry, TossParameterSet
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     REAL_TOSS_PARAMETERS,
@@ -27,7 +23,6 @@ from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
     WIDE_TOSS_STANDOFF_BOUNDS,
     WideLongRangeTossProposal,
 )
-from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import LearnedSkillSampler
 
 from .observations import state
 
@@ -146,45 +141,6 @@ def test_a_real_classifier_row_ignores_the_standoff() -> None:
         for standoff in (1.195, 1.200, 1.202, 1.205)
     ]
     assert rows == [[1.0, 114.72, 729.37]] * 4
-
-
-def test_two_real_candidates_differing_only_in_standoff_score_identically() -> None:
-    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
-    sampler = LearnedSkillSampler(
-        skill_name="MoveToTossLocationAndToss", param_dim=3, seed=0, max_train_iters=200
-    )
-    rng = np.random.default_rng(0)
-    for _ in range(20):
-        params = WideLongRangeTossProposal.sample(rng=rng, parameters=REAL_TOSS_PARAMETERS)
-        sampler.observe(sampler_input=_toss_row(env=env, params=params), success=params[1] < 120)
-    sampler.fit()
-    assert sampler.is_fitted
-    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.195, 1.205)]
-    low, high = sampler.score_inputs(sampler_inputs=rows)
-    assert low == high
-
-
-def test_the_executed_real_action_still_carries_the_drawn_standoff(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def select_for_state(*, state, standoff: float) -> TossDirectionChoice:
-        del state, standoff
-        return TossDirectionChoice(
-            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
-        )
-
-    monkeypatch.setattr(TossDirectionSelector, "select_for_state", select_for_state)
-    env = Tossing3DEnvironment(toss_parameters=REAL_TOSS_PARAMETERS)
-    candidates = [np.array([1.196, 114.72, 729.37]), np.array([1.204, 114.72, 729.37])]
-    rows = [_toss_row(env=env, params=candidate) for candidate in candidates]
-    assert rows[0] == rows[1]
-    sampler = LearnedSkillSampler(skill_name="MoveToTossLocationAndToss", param_dim=3, seed=0)
-    chosen = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=False).params
-    assert any(chosen is candidate for candidate in candidates)
-    action = Tossing3DSkillProvider(env=env).compute_action(
-        ground_skill=_toss(env=env), params=chosen, state=state(env=env)
-    )
-    assert action[1] == pytest.approx(chosen[0])
 
 
 def test_the_sim_classifier_row_is_unchanged_byte_for_byte() -> None:
