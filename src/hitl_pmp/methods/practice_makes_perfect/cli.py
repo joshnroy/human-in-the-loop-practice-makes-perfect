@@ -96,6 +96,8 @@ class EesCli:
             "sampler_model": args.sampler_model,
             "gp_ucb_kappa": args.gp_ucb_kappa,
             "gp_eval": args.gp_eval,
+            "gp_random_warmup": args.gp_random_warmup,
+            "gp_prior_rate": args.gp_prior_rate,
         }
 
     @staticmethod
@@ -149,6 +151,20 @@ class EesCli:
             default=EesMethod.model_fields["gp_eval"].default,
             help="With --sampler-model gp: evaluation takes the argmax of predictive "
             "P(success) (mean) or of its kappa=1 lower bound (lcb).",
+        )
+        parser.add_argument(
+            "--gp-random-warmup",
+            type=int,
+            default=EesMethod.model_fields["gp_random_warmup"].default,
+            help="With --sampler-model gp: practice draws uniformly until this many "
+            "outcomes are labelled, then UCB.",
+        )
+        parser.add_argument(
+            "--gp-prior-rate",
+            type=float,
+            default=EesMethod.model_fields["gp_prior_rate"].default,
+            help="With --sampler-model gp: the success rate the GP assumes for unexplored "
+            "settings (0.5 = neutral). Default: the smoothed overall rate so far.",
         )
         parser.add_argument(
             "--sampler-max-train-iters",

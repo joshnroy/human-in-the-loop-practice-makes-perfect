@@ -70,6 +70,10 @@ class LaplaceGpClassifier(BaseModel):
     length_scales: tuple[float, ...] = (0.08, 0.12, 0.18, 0.27, 0.4)
     signal_stds: tuple[float, ...] = (1.0, 2.0, 3.0)
     newton_iters: int = 50
+    # A fixed prior success rate for unexplored space (e.g. 0.5, neutral), instead of the
+    # smoothed overall rate, which a run of early misses drags down until untried
+    # settings look worse than a mediocre tried one (2026-11-09: stuck in a corner).
+    prior_rate: float | None = None
 
     _x: np.ndarray | None = PrivateAttr(default=None)
     _prior_mean: float = PrivateAttr(default=0.0)
@@ -90,7 +94,7 @@ class LaplaceGpClassifier(BaseModel):
     def fit(self, *, x_data: np.ndarray, y_data: np.ndarray) -> None:
         x = self._normalize(x_data=x_data)
         y = np.asarray(y_data, dtype=np.float64)
-        rate = (y.sum() + 1.0) / (len(y) + 2.0)
+        rate = (y.sum() + 1.0) / (len(y) + 2.0) if self.prior_rate is None else self.prior_rate
         self._prior_mean = float(np.log(rate / (1.0 - rate)))
         self._x = x
         best: tuple[float, float, float] | None = None

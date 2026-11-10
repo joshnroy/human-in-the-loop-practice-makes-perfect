@@ -164,6 +164,8 @@ class EesMethod(Method):
     sampler_model: Literal["mlp", "gp"] = "mlp"
     gp_ucb_kappa: float = 2.0
     gp_eval: Literal["mean", "lcb"] = "mean"
+    gp_random_warmup: int = 0
+    gp_prior_rate: float | None = None
     # Whether plan_to declines a practice plan whose human reset costs more than the
     # priciest ordinary skill (see plan_to). Off, any reset-using plan is accepted and
     # Fast Downward's own cost minimisation is the only thing choosing between a reset
@@ -1304,6 +1306,8 @@ class EesMethod(Method):
                 gp_ucb_kappa=self.gp_ucb_kappa,
                 gp_eval=self.gp_eval,
                 gp_input_bounds=bounds,
+                gp_random_warmup=self.gp_random_warmup,
+                gp_prior_rate=self.gp_prior_rate,
             )
         return self._samplers[skill_name]
 

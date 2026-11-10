@@ -115,3 +115,31 @@ def test_gp_sampler_pickles_and_scores_identically() -> None:
     np.testing.assert_allclose(
         restored.ucb_scores(sampler_inputs=rows), sampler.ucb_scores(sampler_inputs=rows)
     )
+
+
+def test_random_warmup_draws_uninformed_until_enough_labels() -> None:
+    sampler = _sampler(gp_random_warmup=3)
+    rows, candidates = _grid()
+    for k in range(3):
+        choice = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=True)
+        assert not choice.was_informed
+        sampler.observe(sampler_input=_row(speed=110.0 + k, release=600.0), success=k == 0)
+    assert sampler.sample(sampler_inputs=rows, candidates=candidates, explore=True).was_informed
+    # evaluation is never held back by the practice warm-up
+    fresh = _sampler(gp_random_warmup=99)
+    fresh.observe(sampler_input=_row(speed=130.0, release=700.0), success=True)
+    assert fresh.sample(sampler_inputs=rows, candidates=candidates, explore=False).was_informed
+
+
+def test_neutral_prior_keeps_unexplored_space_near_one_half() -> None:
+    misses = [(100.0, 520.0), (100.0, 840.0), (140.0, 840.0), (120.0, 520.0)]
+    far: dict[float | None, float] = {}
+    for prior in (None, 0.5):
+        sampler = _sampler(gp_prior_rate=prior)
+        for speed, release in misses:
+            sampler.observe(sampler_input=_row(speed=speed, release=release), success=False)
+        sampler.observe(sampler_input=_row(speed=140.0, release=500.0), success=True)
+        far[prior] = sampler.score_inputs(sampler_inputs=[_row(speed=120.0, release=700.0)])[0]
+    # far from data: the neutral prior says about one half, the default the low run rate
+    assert abs(far[0.5] - 0.5) < 0.1
+    assert far[None] < far[0.5] - 0.1
