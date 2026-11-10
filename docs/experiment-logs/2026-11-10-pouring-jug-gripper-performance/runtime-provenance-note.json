@@ -1,0 +1,8 @@
+{
+  "della_package_metadata_collection": "Read through the frozen candidate with_env.sh on the Della login host, using the same absolute shared conda environment path as the Slurm jobs.",
+  "della_platform_metadata_collection": "The platform string in della-runtime.json describes that login host, not a per-case compute-node capture.",
+  "della_compute_constraint": "genoa",
+  "della_shared_environment": "/scratch/gpfs/TSILVER/jr2860/envs/hitl-pmp",
+  "della_thread_settings": "All five numerical thread environment variables set to1 in array.sbatch.",
+  "comparison_scope": "Within-Della paired cases use the same shared software environment and CPU constraint but may run on different compute nodes. They are not claimed to run on one identical physical host."
+}
