@@ -1,0 +1,29 @@
+{
+  "baseline": {
+    "main_sha": "fb217820056873797918e23651c7e06633c3eeeb",
+    "array_id": 17260868
+  },
+  "candidate": {
+    "main_sha": "c669e6e229c6a78c27cb5b2ed89c7f1dd5f7c8f1",
+    "array_id": 17261239
+  },
+  "harness_sha256": "6aec33fee91e6b6cf96fd8799c9402fb9629089d5d2838af4322181c7102c20a",
+  "cases_sha256": "0421c299767d2be8f74a6c8addabd78549df3c9ceef191106a7479525351107b",
+  "della_launch_directory": "/scratch/gpfs/TSILVER/jr2860/launches/pouring-jug-weld-calibration-20261110",
+  "cases_per_variant": 30,
+  "fresh_cases": 27,
+  "after_robot_reset_cases": 3,
+  "resources_per_case": {
+    "cpus": 1,
+    "memory_gb": 6,
+    "slurm_reservation_hours": 3,
+    "actual_process_timeout_minutes": 55
+  },
+  "concurrency_per_array": 10,
+  "superseded_unstarted_arrays": [
+    17260443,
+    17260655
+  ],
+  "qos_note": "Della automatically selected the two-job test QOS for 1h reservations even with explicit short QOS; pending arrays replaced with 3h reservations, actual process lifetime capped55min.",
+  "local_pilots": "One separate seed0/Pour2/rate1 fresh case per variant, under6GB scopes; excluded from main Della matrix."
+}
