@@ -43,6 +43,7 @@ class RackServingConfig(BaseModel):
     # touch food physically, and take or set down the dumpling by a grasp weld and a
     # snapped, upright pose (`WeldedFood`). "physical" is the force-closed grasp.
     food_handling: Literal["physical", "welded"] = "welded"
+    scraper_attachment: Literal["physical", "home_weld"] = "physical"
     mode: Literal["training", "deployment"] = "training"
     # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
     # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout

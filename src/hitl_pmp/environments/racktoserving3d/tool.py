@@ -2,9 +2,9 @@
 
 TableWiper is ported from scratch/prototypes/sweeptable-kitchen/src/hitl_pmp/
 environments/sweeptable3d/wiper.py. RackScraper adds counter-home configuration
-and full-box clearance without modifying the source benchmark. Only
-initialize_rest writes a live object pose; measured in_hand transforms are
-kinematic bookkeeping, never an attachment.
+and full-box clearance without modifying the source benchmark. Optional home
+attachment anchors the parked scraper; only setup, human reset and a completed
+return may write its home pose. Physical handling remains available.
 """
 
 from collections.abc import Callable, Generator
@@ -21,6 +21,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
     WiperLost,
 )
 
+from .scraper_attachment import ScraperAttachment
 from .servo import JointStep
 from .transit import (
     ArmTransit,
@@ -188,8 +189,8 @@ class BlockedStart:
 class TableWiper:
     """Attach to one live ShelfSkills without resetting it or replacing its recorder.
 
-    Only initialize_rest writes an object pose, for scene setup or a human reset.
-    Pick and place command the robot exclusively through ShelfSkills control steps.
+    Pick and place drive the robot through ShelfSkills control steps. Optional
+    attachment can snap a completed return to its verified seat.
     """
 
     def __init__(
@@ -201,6 +202,7 @@ class TableWiper:
         home_front: float | None = None,
         base: np.ndarray | None = None,
     ) -> None:
+        self.attachment = "physical"
         self.shelf = shelf
         self.core = shelf.core
         self.model = shelf.model
@@ -262,6 +264,7 @@ class TableWiper:
 
     def initialize_rest(self) -> None:
         """Set up the rest pose; privileged setup/human reset only, never a skill."""
+        self.release_attachments()
         pose = self.rest_pose()
         quaternion = Rotation.from_matrix(pose[:3, :3]).as_quat()[[3, 0, 1, 2]]
         obj = self.core.get_object("wiper_0")
@@ -270,7 +273,39 @@ class TableWiper:
         self.shelf.in_hand = None
         self.shelf.grip = 0.0
         self.shelf.sim.forward()
+        self.anchor_home()
         self.shelf.hold(count=20, label="wiper_initialize_rest")
+
+    def release_attachments(self) -> None:
+        if self.attachment != "physical":
+            ScraperAttachment.release_home(model=self.model, data=self.data)
+
+    def anchor_home(self) -> None:
+        if self.attachment != "physical":
+            ScraperAttachment.anchor_home(model=self.model, data=self.data)
+
+    def accept_grasp(self) -> None:
+        """Only called after bilateral handle contact has verified the physical grasp."""
+        self.release_attachments()
+
+    def park_after_seating(self) -> None:
+        """Anchor only a completed return with support and a pose close to its seat."""
+        if self.attachment == "physical":
+            return
+        pose, home = self.wiper_pose(), self.rest_pose()
+        if (
+            not self.table_support()
+            or np.linalg.norm(pose[:3, 3] - home[:3, 3]) > 0.005
+            or self.rotation_error(actual=pose[:3, :3], target=home[:3, :3]) > 5.0
+        ):
+            raise SkillFailed("PlaceWiper: scraper has not reached its home seat")
+        self.release_attachments()
+        quaternion = Rotation.from_matrix(home[:3, :3]).as_quat()[[3, 0, 1, 2]]
+        obj = self.core.get_object("wiper_0")
+        obj.set_pose(home[:3, 3], quaternion)
+        obj.set_velocity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        self.shelf.sim.forward()
+        self.anchor_home()
 
     def at_home(self) -> bool:
         """Read live support, orientation, overhang, velocity and robot clearance."""
@@ -386,6 +421,7 @@ class TableWiper:
             shelf.hold(count=40, label="pick_wiper_close")
             if not self.pads_hold_grip():
                 raise SkillFailed("PickWiper: both pads must hold the handle before lifting")
+            self.accept_grasp()
             shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
             lifted = grasp + [0, 0, LIFT]
             self.line(
@@ -518,6 +554,7 @@ class TableWiper:
             )
             if self.is_bench_scraper:
                 self.seat_scraper(position=grasp + [0, 0, PLACE_CLEARANCE], rotation=rotation)
+            self.park_after_seating()
             with wiper_unwatched(shelf=shelf):
                 shelf.grip = 0.0
                 shelf.hold(count=30, label="place_wiper_release")
@@ -957,6 +994,7 @@ class RackScraper(TableWiper):
         super().__init__(
             shelf=shelf, rest_y=rest_y, home_top=home_top, home_front=home_front, base=base
         )
+        self.attachment = getattr(config, "scraper_attachment", "physical")
         if not self.is_bench_scraper:
             raise SkillFailed("RackScraper requires a physical box blade and full-width handle")
         self.point = self.end_in_body + 0.010 * self.handle_axis

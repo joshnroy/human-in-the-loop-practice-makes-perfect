@@ -21,6 +21,7 @@ from .layout import RackLayout
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom, RackServing3DAtoms
 from .scene import build_scene
+from .scraper_attachment import ScraperAttachment
 from .semantics import (
     CircularSupport,
     FoodLocation,
@@ -88,6 +89,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 return result
 
             self._env.step = observed
+            if self.config.scraper_attachment != "physical":
+                ScraperAttachment.install(core=self.core())
             if self.config.food_handling == "welded":
                 WeldedFood.install(core=self.core(), names=tuple(self.cube_names))
         return self._env
