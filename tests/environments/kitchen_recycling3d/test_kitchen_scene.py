@@ -10,11 +10,12 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.kitchen_recycling3d.bin_geometry import TaperedBin
+from hitl_pmp.environments.kitchen_recycling3d.bin_regions import KitchenBinRegions
 from hitl_pmp.environments.kitchen_recycling3d.controllers import RecyclingPickController
 from hitl_pmp.environments.kitchen_recycling3d.domain import KitchenConfig
 from hitl_pmp.environments.kitchen_recycling3d.environment import KitchenRecycling3DEnvironment
-from hitl_pmp.environments.kitchen_recycling3d.placement import NEAR_BIN_POSITION
 from hitl_pmp.environments.tossing3d.predicates import HOLDING, IN_BIN, PICK_PLANNABLE
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
@@ -47,12 +48,29 @@ def toss_skill(*, env: KitchenRecycling3DEnvironment) -> GroundSkill:
     )
 
 
-def test_the_far_bins_standoff_band_starts_at_the_drive_zone_edge(*, env):
+def bin_xy(*, env: KitchenRecycling3DEnvironment) -> tuple[float, float]:
+    state = env.get_current_state()
+    return (
+        state.get(obj=env.bin, feature_name="x"),
+        state.get(obj=env.bin, feature_name="y"),
+    )
+
+
+def in_region(*, xy: tuple[float, float], side: Tossing3DSide, atol: float = 0.02) -> bool:
+    x0, y0, x1, y1 = KitchenBinRegions.rectangle(side=side)
+    return x0 - atol <= xy[0] <= x1 + atol and y0 - atol <= xy[1] <= y1 + atol
+
+
+def test_the_far_bins_standoff_band_is_the_fixed_band_cut_at_the_drive_zone_edge(*, env):
     state = env.reset_to_seed(seed=SEED)
     assert state.drive_zone == env.drive_zone()
-    low, high = Tossing3DToss.standoff_bounds(ground_skill=toss_skill(env=env), state=state)
-    assert low == pytest.approx(2.05 - 0.71, abs=1e-4)
-    assert high == 2.6
+    low, high = Tossing3DToss.standoff_bounds(
+        ground_skill=toss_skill(env=env),
+        state=state,
+        parameters=Tossing3DToss.parameters_of(env=env),
+    )
+    assert low == pytest.approx(max(1.445, bin_xy(env=env)[0] - 0.71), abs=1e-4)
+    assert high == 1.455
 
 
 def test_pick_plannable_is_the_kitchen_pick_controllers_verdict(*, env):
@@ -70,9 +88,9 @@ def test_pick_plannable_is_the_kitchen_pick_controllers_verdict(*, env):
 
 @pytest.mark.parametrize(
     ("destination", "params"),
-    # Measured against the 0.384 m tapered bin; the old 0.165 m bin's known throw,
-    # (1.6, 180, 650), no longer clears the rim.
-    [(None, (1.34, 160.0, 750.0)), ("robot_side", (1.25, 260.0, 650.0))],
+    # The probe's known-good pairs at the fixed 1.45 m standoff
+    # (`scripts/kitchen_recycling/bin_region_probe.py`).
+    [(None, (1.45, 160.0, 740.0)), ("robot_side", (1.45, 170.0, 720.0))],
 )
 def test_a_known_throw_lands_in_the_bin_by_kinders_classifier(*, env, destination, params):
     env.reset_to_seed(seed=SEED)
@@ -90,7 +108,7 @@ def test_same_side_reset_brings_the_bin_beside_the_robot(*, env):
     env.reset_to_seed(seed=SEED)
     env.reset_movables(destination="robot_side")
     state = env.get_current_state()
-    assert np.allclose(state.data[env.bin][:2], NEAR_BIN_POSITION[:2], atol=0.02)
+    assert in_region(xy=bin_xy(env=env), side=Tossing3DSide.ROBOT)
     assert state.data[env.cube][0] < 1.15
 
 
@@ -99,7 +117,7 @@ def test_opposite_side_reset_restores_the_bin_target_on_the_mats(*, env):
     env.reset_movables(destination="robot_side")
     env.reset_movables(destination="opposite_side")
     state = env.get_current_state()
-    assert np.allclose(state.data[env.bin][:2], (2.05, 0.0), atol=0.02)
+    assert in_region(xy=bin_xy(env=env), side=Tossing3DSide.OPPOSITE)
     assert state.data[env.cube][0] < 1.15
 
 
@@ -131,10 +149,13 @@ def cube_at(*, x: float, y: float, z: float = 0.03) -> dict[str, dict[str, float
 def test_cubes_anywhere_inside_the_tapered_bin_score(*, env):
     env.reset_to_seed(seed=SEED)
     backend = env.kinder_backend()
-    bin_x, bin_y = 2.05, 0.0
-    # Centre, 12 cm off-centre (outside the old +-0.10 m box), and against each sloped
-    # wall and corner at the floor.
-    for dx, dy in ((0, 0), (0.12, 0), (-0.12, 0), (0.115, 0.065), (0, 0.068), (-0.11, -0.065)):
+    bin_x, bin_y = bin_xy(env=env)
+    # Centre, 11.5 cm off-centre (outside the old +-0.10 m box), and against each sloped
+    # wall and corner at the floor. Not 12 cm: a cube teleported there touches the narrow
+    # base's wall (base half-length 0.145 m = 0.12 + the cube's half-width), and MuJoCo
+    # ejects it at some bin poses -- measured at seed 3's drawn bin (2.149, -0.619) and at
+    # (2.05, 0) after a bin teleport; the old fixed scene start happened not to.
+    for dx, dy in ((0, 0), (0.115, 0), (-0.115, 0), (0.115, 0.065), (0, 0.068), (-0.11, -0.065)):
         place(env=env, objects=cube_at(x=bin_x + dx, y=bin_y + dy, z=0.04))
         state = env._observed_state(seed=SEED, steps_taken=0)
         cube = state.data[env.cube]
@@ -145,9 +166,10 @@ def test_cubes_anywhere_inside_the_tapered_bin_score(*, env):
 def test_a_cube_beside_the_bin_under_its_rim_never_scores(*, env):
     env.reset_to_seed(seed=SEED)
     backend = env.kinder_backend()
+    bin_x, bin_y = bin_xy(env=env)
     # Against the outside of the narrow base: inside the rim's footprint, outside the bin.
     for dx, dy in ((0.175, 0.0), (-0.175, 0.0), (0.0, 0.125), (0.0, -0.125)):
-        place(env=env, objects=cube_at(x=2.05 + dx, y=dy, z=0.026))
+        place(env=env, objects=cube_at(x=bin_x + dx, y=bin_y + dy, z=0.026))
         state = env._observed_state(seed=SEED, steps_taken=0)
         assert not backend.check_goals(), (dx, dy, state.data[env.cube][:3])
         assert not IN_BIN.holds(state, (env.cube, env.bin))
@@ -173,6 +195,11 @@ def test_a_reset_never_leaves_the_cube_where_the_pick_dry_run_refuses(*, env, mo
         yield from seeded(*args, **kwargs)
 
     monkeypatch.setattr(type(backend), "_recovery_positions", recorded_first)
+    # The recorded reset put the bin at the former fixed near spot; keep it there.
+    recorded_bin = (RECORDED["bin_0"]["x"], RECORDED["bin_0"]["y"], 0.0)
+    monkeypatch.setattr(
+        KitchenBinRegions, "human_destination", staticmethod(lambda **_: recorded_bin)
+    )
     env.reset_movables(destination="robot_side")
     state = env.get_current_state()
     assert backend.reset_rejections[-1] >= 1

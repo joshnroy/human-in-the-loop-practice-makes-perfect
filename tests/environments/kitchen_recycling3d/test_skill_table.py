@@ -72,11 +72,15 @@ def test_predicates_types_and_objects_match_tossing3d():
     assert kitchen.objects() == tossing.objects()
 
 
-def test_continuous_bounds_match_tossing3d():
+def test_speed_and_release_bounds_match_tossing3d_and_the_standoff_is_the_kitchens_own():
     tossing, kitchen = providers()
-    assert Tossing3DToss.parameters_of(env=kitchen.env) == Tossing3DToss.parameters_of(
-        env=tossing.env
+    ours = Tossing3DToss.parameters_of(env=kitchen.env)
+    theirs = Tossing3DToss.parameters_of(env=tossing.env)
+    assert (ours.speed_bounds, ours.release_ms_bounds) == (
+        theirs.speed_bounds,
+        theirs.release_ms_bounds,
     )
+    assert ours.standoff_bounds == (1.445, 1.455)
 
 
 def test_one_belief_per_skill_no_context_copies():

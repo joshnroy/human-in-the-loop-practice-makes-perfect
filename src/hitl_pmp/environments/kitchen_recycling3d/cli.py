@@ -11,13 +11,12 @@ from pathlib import Path
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
 from .domain import KitchenConfig
-from .environment import KitchenRecycling3DEnvironment
+from .environment import KITCHEN_TOSS_STANDOFF_M, KitchenRecycling3DEnvironment
 from .problem import KitchenRecyclingProblem
 from .skill_provider import KitchenRecyclingSkillProvider
 from .tasks import KitchenRecyclingTasks
@@ -57,7 +56,7 @@ class KitchenRecyclingCli:
             layout=Tossing3DLayout.BARRIER,
             variant="o1",
             canonical_seed=KitchenRecycling3DEnvironment.model_fields["canonical_seed"].default,
-            oracle_throw_standoff=ORACLE_THROW_STANDOFF,
+            oracle_throw_standoff=KITCHEN_TOSS_STANDOFF_M,
             skill_timing=True,
         )
 

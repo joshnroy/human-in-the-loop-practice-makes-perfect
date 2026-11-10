@@ -8,6 +8,7 @@ from typing import Any, cast
 import numpy as np
 
 from .bin_geometry import TaperedBin
+from .bin_regions import KitchenBinRegions
 from .domain import BOTTLE_CAP_HEIGHT, BOTTLE_CAP_RADIUS_FACTOR, KitchenConfig
 
 GOAL_REGION = "blocks_goal_region"
@@ -167,11 +168,13 @@ def initial_positions(*, config: KitchenConfig, seed: int) -> list[tuple[float, 
 
 def scene_config(*, config: KitchenConfig, seed: int = 0) -> dict:
     left, bottom, right, top = config.mat_bounds
+    # The far region, by scene seed (`bin_regions.py`), so evaluation tasks vary the bin.
+    bin_start = KitchenBinRegions.scene_start(seed=seed)
     regions = {
         "robot_start": {"target": "ground", "ranges": [[0, 0, 0, 0]], "yaw_ranges": [[0, 0]]},
         "bin_start": {
             "target": "ground",
-            "ranges": [[*config.bin_position, *config.bin_position]],
+            "ranges": [[*bin_start, *bin_start]],
             "yaw_ranges": [[0, 0]],
         },
         "boundary_start": {

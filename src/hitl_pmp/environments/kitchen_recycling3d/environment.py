@@ -13,15 +13,35 @@ from typing import Any
 from pydantic import Field
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.types import AbstractAtom, FlatBarrier, Tossing3DState
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
+from hitl_pmp.environments.tossing3d.types import (
+    AbstractAtom,
+    FlatBarrier,
+    Tossing3DState,
+    TossParameterSet,
+)
+from hitl_pmp.environments.tossing3d.wide_long_range_proposal import SIM_TOSS_PARAMETERS
 
 from .backend import OPPOSITE_SIDE, KitchenKinderBackend
+from .bin_regions import KITCHEN_BIN_REGION_BY_SIDE
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
+
+# The kitchen sim throws from one standoff, as the real TidyBot does: the real robot pins
+# its standoff with a 1 cm band (`REAL_TOSS_PARAMETERS`), so only speed and release are
+# learned, and the kitchen sim does the same at its own 1.45 m (Josh, 2026-11-07). Speed
+# and release keep the simulator's ranges. Original Tossing3D's set is untouched.
+KITCHEN_TOSS_STANDOFF_M = 1.45
+KITCHEN_TOSS_PARAMETERS = TossParameterSet(
+    standoff_bounds=(1.445, 1.455),
+    speed_bounds=SIM_TOSS_PARAMETERS.speed_bounds,
+    release_ms_bounds=SIM_TOSS_PARAMETERS.release_ms_bounds,
+)
 
 
 class KitchenRecycling3DEnvironment(Tossing3DEnvironment):
     kitchen_config: KitchenConfig = Field(default_factory=KitchenConfig)
+    toss_parameters: TossParameterSet | None = KITCHEN_TOSS_PARAMETERS
     canonical_seed: int = 0
     # False only for a scene that will never be rendered (`KitchenKinderBackend`).
     visual_furniture: bool = True
@@ -60,5 +80,7 @@ class KitchenRecycling3DEnvironment(Tossing3DEnvironment):
         return state
 
     def bin_reset_region(self, *, destination: str | None) -> dict[str, object] | None:
-        """The kitchen's two human placements stand in for Tossing3D's regions."""
-        return {"kitchen_side": destination or OPPOSITE_SIDE}
+        """The destination side, beside its probe-certified region (`bin_regions.py`)."""
+        side = destination or OPPOSITE_SIDE
+        region = KITCHEN_BIN_REGION_BY_SIDE[Tossing3DSide(side)].model_dump(mode="json")
+        return {"kitchen_side": side, **region}
