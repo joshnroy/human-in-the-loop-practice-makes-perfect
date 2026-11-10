@@ -55,6 +55,7 @@ class KitchenScene(PotstickerScene):
         self.payload_rest.clear()
         result = super().reset(seed=seed, options=options)
         self.release_payloads()
+        self.release_pitcher_grasp()
         self.weld_skillet()
         self.weld_pitcher_home()
         return result
@@ -76,6 +77,8 @@ class KitchenScene(PotstickerScene):
         import mujoco
 
         model, data = self._model_and_data()
+        if self.pitcher_attached():
+            raise ValueError("Cannot anchor a jug that is welded to the gripper")
         mujoco.mj_forward(model, data)
         weld = model.equality(self.PITCHER_HOME_WELD).id
         jug = model.body("pitcher").id
@@ -88,6 +91,19 @@ class KitchenScene(PotstickerScene):
     def release_pitcher_home(self) -> None:
         model, data = self._model_and_data()
         data.eq_active[model.equality(self.PITCHER_HOME_WELD).id] = 0
+
+    def attach_pitcher(self) -> None:
+        """Transfer the verified handle grasp from home support to the hand."""
+        self.release_pitcher_home()
+        self.attach_payload(name="pitcher")
+
+    def pitcher_attached(self) -> bool:
+        _, data = self._model_and_data()
+        return bool(data.eq_active[self.grasp_weld(name="pitcher")])
+
+    def release_pitcher_grasp(self) -> None:
+        _, data = self._model_and_data()
+        data.eq_active[self.grasp_weld(name="pitcher")] = 0
 
     def weld_skillet(self) -> None:
         import mujoco
@@ -290,7 +306,7 @@ class KitchenScene(PotstickerScene):
             active="false",
             solref="0.002 1",
         )
-        for name in self.cube_names:
+        for name in (*self.cube_names, "pitcher"):
             ET.SubElement(
                 equality,
                 "weld",
@@ -608,6 +624,7 @@ class KitchenController(PotstickerController):
         stand the jug upright at its episode-initial pose, at rest. The robot's base and
         arm are not moved; the food is respawned in the jug afterwards (`respawn_...`)."""
         self.scene.release_payloads()
+        self.scene.release_pitcher_grasp()
         self.held = None
         self.grip = 0.0
         self.data.qpos[self.finger_qpos()] = self.open_finger_qpos
@@ -713,8 +730,20 @@ class KitchenController(PotstickerController):
         self.grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
 
     def pitcher_grasp_acquired(self) -> None:
-        """Release the parked jug only after both fingers reached its handle."""
-        self.scene.release_pitcher_home()
+        """Retain a verified handle grasp throughout lifting, carrying and pouring."""
+        self.scene.attach_pitcher()
+
+    def grasp_and_lift_pitcher(
+        self, *, handle: np.ndarray, down: Rotation, origin: np.ndarray
+    ) -> None:
+        try:
+            super().grasp_and_lift_pitcher(handle=handle, down=down, origin=origin)
+        finally:
+            if self.held != "pitcher":
+                self.scene.release_pitcher_grasp()
+                position, _ = self.body_pose(name="pitcher")
+                if self.vessel_home(name="pitcher") and abs(position[2] - self.home[2]) <= 0.003:
+                    self.anchor_parked_pitcher()
 
     def anchor_parked_pitcher(self) -> None:
         """Anchor a landed, home-aligned jug before the empty gripper withdraws."""
@@ -1334,6 +1363,7 @@ class KitchenController(PotstickerController):
             self.events.append({"event": "seat fallback", "error": str(exc)})
         self.last_q = self.data.qpos[self.arm_q].copy()
         self.base_target = self.data.qpos[self.base_q].copy()
+        self.scene.release_pitcher_grasp()
         self.held = None
         self.pause(phase="release pitcher", seconds=2, grip=0)
         self.anchor_parked_pitcher()
@@ -1439,6 +1469,8 @@ class KitchenController(PotstickerController):
         )
 
     def finger_contacts(self, *, name: str, handle_only: bool = False) -> set[str]:
+        if name == "pitcher" and self.scene.pitcher_attached():
+            return {"left", "right"}
         if name in self.scene.cube_names:
             if self.scene.attached_payload() == name:
                 return {"left", "right"}
