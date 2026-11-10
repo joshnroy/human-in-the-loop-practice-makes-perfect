@@ -164,6 +164,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        """Whether to run the evaluation `label` names (`after cycle 3`, `(final)`), asked
+        before it starts. False skips it: nothing is measured and practice carries on."""
+        ...
+
+    @staticmethod
     def practice_scene(*, problem: Problem) -> Any:
         """Practice's scene, as plain data, before an in-process evaluation uses the room
         (`--measure-every-cycles`)."""
@@ -232,6 +238,11 @@ class SimulatedStepProtocolHooks:
         *, problem: Problem, index: int, label: str, task: int, num_tasks: int
     ) -> None:
         del problem, index, label, task, num_tasks
+
+    @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        del problem, label
+        return True
 
     @staticmethod
     def practice_scene(*, problem: Problem) -> Any:
