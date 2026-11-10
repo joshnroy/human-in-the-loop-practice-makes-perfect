@@ -45,12 +45,21 @@ def arms(*, manifest: dict) -> tuple[str, ...]:
 
 
 def expected_rows(*, manifest: dict) -> list[tuple]:
-    """(reset cost, seed, arm) per row: seed-major, then each swept cost in the manifest's
-    order, then arm (`None`: no sweep, the nine runs at the cost file's 5)."""
+    """(reset cost, seed, arm) per row: seed-major over the manifest's seeds (absent, the
+    three every package had before `--seeds`), then each swept cost in the manifest's
+    order, then arm (`None`: no sweep, the runs at the cost file's 5)."""
     costs = manifest.get("human_reset_costs", [None])
     return [
-        (cost, seed, arm) for seed in range(3) for cost in costs for arm in arms(manifest=manifest)
+        (cost, seed, arm)
+        for seed in range(seeds(manifest=manifest))
+        for cost in costs
+        for arm in arms(manifest=manifest)
     ]
+
+
+def seeds(*, manifest: dict) -> int:
+    """How many seeds per cost and arm; absent, the three every package had before."""
+    return manifest.get("seeds", 3)
 
 
 def check_dp_row(*, parsed: argparse.Namespace, manifest: dict, row: dict) -> None:
@@ -210,7 +219,10 @@ def verify(*, launch: Path, full: bool) -> dict:
     rows = manifest["runs"]
     expected = expected_rows(manifest=manifest)
     if [(row.get("human_reset_cost"), row["seed"], row["arm"]) for row in rows] != expected:
-        raise ValueError("Only the nine seed-major kitchen runs (per swept cost) are permitted")
+        raise ValueError(
+            f"Only the {len(expected)} seed-major kitchen runs ({seeds(manifest=manifest)} "
+            "seeds per swept cost and arm) are permitted"
+        )
     if len({output(row=row) for row in rows}) != len(rows):
         raise ValueError("Every run needs its own output directory")
     snapshot = read(path=launch / "snapshot.json")
