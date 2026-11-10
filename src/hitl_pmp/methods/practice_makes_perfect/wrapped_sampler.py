@@ -357,6 +357,11 @@ class LearnedSkillSampler(BaseModel):
     gp_ucb_kappa: float = 2.0
     gp_eval: Literal["mean", "lcb"] = "mean"
     gp_input_bounds: tuple[tuple[float, float] | None, ...] | None = None
+    # Practice draws uniformly (uninformed) until this many outcomes are labelled, then
+    # UCB: the warm start the 2026-11-09 offline simulation assumed.
+    gp_random_warmup: int = 0
+    # See `LaplaceGpClassifier.prior_rate`; None keeps the smoothed overall rate.
+    gp_prior_rate: float | None = None
 
     # default_factory, not a bare [] -- pydantic would deep-copy a mutable default
     # per instance in current versions, but relying on that is exactly the trap this
@@ -464,6 +469,7 @@ class LearnedSkillSampler(BaseModel):
             gp = LaplaceGpClassifier(
                 lower=tuple(bound[0] for bound in self._gp_bounds()),
                 upper=tuple(bound[1] for bound in self._gp_bounds()),
+                prior_rate=self.gp_prior_rate,
             )
             gp.fit(
                 x_data=self._gp_columns(rows=self._inputs),
@@ -526,7 +532,7 @@ class LearnedSkillSampler(BaseModel):
         """GP selection: UCB argmax in practice, predictive argmax in evaluation, and
         a uniform uninformed draw before any data. Never `was_random`, so every
         practice outcome counts toward competence."""
-        if self._gp is None:
+        if self._gp is None or (explore and len(self._labels) < self.gp_random_warmup):
             index = int(self._rng.integers(0, len(candidates)))
             return SamplerChoice(params=candidates[index], was_random=False, was_informed=False)
         scores = np.asarray(
