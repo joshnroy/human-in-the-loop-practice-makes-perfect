@@ -597,7 +597,11 @@ class StepProtocolResume:
         output directory, which `prepare` has already matched as a path."""
         return {
             **StepProtocolResume.ADDED_DEFAULTS,
-            **{k: v for k, v in arguments.items() if k not in {"resume", "output_dir"}},
+            **{
+                k: v
+                for k, v in arguments.items()
+                if k not in {"resume", "output_dir", "stop_after_cycles"}
+            },
         }
 
     @staticmethod
@@ -1083,6 +1087,10 @@ class StepProtocolValidation:
                 "'shared' a task's draws depend on the tasks before it, so tasks run apart "
                 "would not reproduce the evaluation"
             )
+        if getattr(args, "stop_after_cycles", None) and not getattr(
+            args, "checkpoint_cycles", False
+        ):
+            raise ValueError("--stop-after-cycles requires --checkpoint-cycles")
         cost_path = args.practice_cost_config
         if args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
@@ -1132,10 +1140,12 @@ class StepProtocolEntry:
                 raise ValueError(
                     f"--measure-every-cycles needs in-process evaluations ({args.env})"
                 )
-            if resuming or getattr(args, "checkpoint_cycles", False):
+            if (resuming or getattr(args, "checkpoint_cycles", False)) and not getattr(
+                environment, "simulation_checkpoints", False
+            ):
                 raise ValueError(
                     f"--checkpoint-cycles and --resume need in-process evaluations, which "
-                    f"--env {args.env} does not run; only --env tossing3d_real resumes"
+                    f"--env {args.env} does not run; this simulation backend cannot resume"
                 )
 
         # Method CLI factories remain authoritative for all algorithm configuration.
@@ -1394,7 +1404,12 @@ class StepPracticeRunner:
             )
         else:
             # Before anything is written: a domain that cannot re-observe refuses here.
-            environment.resume_practice_environment(problem=problem, state=saved["env_state"])
+            if "simulation_state" in saved:
+                environment.restore_checkpoint_environment(  # type: ignore[attr-defined]
+                    problem=problem, checkpoint=saved["simulation_state"]
+                )
+            else:
+                environment.resume_practice_environment(problem=problem, state=saved["env_state"])
             RngStates.restore(owner=problem.tasks, states=saved["rngs"]["tasks"])
             RngStates.restore(owner=problem.env, states=saved["rngs"]["env"])
             RngStates.restore_global(states=saved["rngs"]["global"])
@@ -1584,6 +1599,13 @@ class StepPracticeRunner:
             for field, value in saved["clock"].items():
                 setattr(clock, field, value)
         checkpoint_cycles = getattr(args, "checkpoint_cycles", False)
+        simulation_checkpoints = (
+            checkpoint_cycles
+            and environment.evaluation_pool() is None
+            and getattr(environment, "simulation_checkpoints", False)
+        )
+        invocation_start_cycle = cycle
+        stop_after_cycles = getattr(args, "stop_after_cycles", None)
         live = PracticeCheckpoint.live_objects(
             problem=problem, skill_provider=getattr(method, "skill_provider", None)
         )
@@ -1596,6 +1618,11 @@ class StepPracticeRunner:
         ) -> None:
             """`practice_scene` is what a restore prompt asks for (a resume asks for it
             too); `pending_evaluation` the cycle whose evaluation is due and not yet run."""
+            if simulation_checkpoints:
+                # A process future is never pickled. Settle every earlier measurement,
+                # preserving failures as outcomes too, before committing a safe boundary.
+                for _, future in futures:
+                    StepPracticeRunner.outcome(future=future)
             pending = sum(not future.done() for _, future in futures)
             if pending:
                 raise RuntimeError(
@@ -1659,6 +1686,15 @@ class StepPracticeRunner:
                         }
                     ),
                     "env_state": problem.get_current_state(),
+                    **(
+                        {
+                            "simulation_state": environment.checkpoint_practice_environment(  # type: ignore[attr-defined]
+                                problem=problem
+                            )
+                        }
+                        if simulation_checkpoints
+                        else {}
+                    ),
                     "rngs": {
                         "tasks": RngStates.capture(owner=problem.tasks),
                         "env": RngStates.capture(owner=problem.env),
@@ -1856,6 +1892,8 @@ class StepPracticeRunner:
             elif getattr(args, "initial_measurement", True) and saved is None:
                 if environment.evaluation_pool() is None:  # Spawned beside practice.
                     measure(before_practice=True)
+                    if simulation_checkpoints:
+                        checkpoint(completed_cycle=-1)
                 else:
                     # In this process, it uses the room practice's reset just set up. As a
                     # cycle-end evaluation is, it is checkpointed before the restore, so a
@@ -2149,7 +2187,7 @@ class StepPracticeRunner:
                 scene = (
                     environment.practice_scene(problem=problem) if measure_every_cycles else None
                 )
-                if checkpoint_cycles:
+                if checkpoint_cycles and not simulation_checkpoints:
                     checkpoint(
                         completed_cycle=cycle - 1,
                         practice_scene=scene,
@@ -2160,7 +2198,15 @@ class StepPracticeRunner:
                 elif learning_updates in measure_after_updates:
                     # Spawned beside practice, so no scene to put back.
                     measure(after_cycle=cycle - 1)
+                if simulation_checkpoints:
+                    checkpoint(completed_cycle=cycle - 1)
                 status()
+                if (
+                    stop_after_cycles is not None
+                    and cycle - invocation_start_cycle >= stop_after_cycles
+                ):
+                    endpoint = "paused"
+                    break
             if endpoint == "running":
                 endpoint = "practice_step_budget"
         except BaseException:
@@ -2178,7 +2224,7 @@ class StepPracticeRunner:
                 and records[-1]["learning_updates"] == learning_updates
             )
             if (
-                endpoint not in {"failed", "evaluate_only"}
+                endpoint not in {"failed", "evaluate_only", "paused"}
                 and not unchanged
                 and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
@@ -2242,6 +2288,8 @@ class StepPracticeRunner:
                 if endpoint == "failed"
                 else "evaluation_failed"
                 if evaluation_failures
+                else "paused"
+                if endpoint == "paused"
                 else "complete"
             )
             status()

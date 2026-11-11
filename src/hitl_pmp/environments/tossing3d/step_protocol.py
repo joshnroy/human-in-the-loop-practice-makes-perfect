@@ -24,6 +24,18 @@ class Tossing3DStepProtocol(SimulatedStepProtocolHooks):
     """A static-method container, never instantiated. Takes any `Problem`, as the
     protocol does, and narrows it to this domain's environment."""
 
+    simulation_checkpoints = True
+
+    @staticmethod
+    def checkpoint_practice_environment(*, problem: Problem) -> Any:
+        return Tossing3DStepProtocol.env(problem=problem).simulation_checkpoint()
+
+    @staticmethod
+    def restore_checkpoint_environment(*, problem: Problem, checkpoint: Any) -> None:
+        Tossing3DStepProtocol.env(problem=problem).restore_simulation_checkpoint(
+            checkpoint=checkpoint
+        )
+
     @staticmethod
     def env(*, problem: Problem) -> Tossing3DEnvironment:
         assert isinstance(problem.env, Tossing3DEnvironment)

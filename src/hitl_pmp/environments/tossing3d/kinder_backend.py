@@ -357,6 +357,7 @@ class KinderBackend(BaseModel):
     _before_control_step: Callable[[], None] | None = PrivateAttr(default=None)
     _after_control_step: Callable[[], None] | None = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
+    _scene_seed: int | None = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
     # The robot's base pose right after the seeded scene reset: where a movables reset
     # sends the robot when it stands on every clear bin placement (see
@@ -487,6 +488,7 @@ class KinderBackend(BaseModel):
             self._abstractor = Tossing3DStateAbstractor(object_centric)
         self._sync_recording_wrapper()
         observation, _ = self._env.reset(seed=seed)
+        self._scene_seed = seed
         self._state = self._env.observation_space.devectorize(observation)
         self._robot_name = next(iter(self._state.get_objects(self.api().robot_type))).name
         robot = self._state.get_object_from_name(self._robot_name)
@@ -663,6 +665,63 @@ class KinderBackend(BaseModel):
         if self._env is not None:
             self._env.before_control_step = before
             self._env.after_control_step = after
+
+    def _checkpoint_owners(self) -> list[Any]:
+        """The actual Gym wrapper chain, then KINDER's scene and robot runtime."""
+        owners = []
+        current = self._raw_env
+        while current is not None:
+            owners.append(current)
+            current = vars(current).get("env")
+        scene = self._object_centric()
+        for owner in (scene, scene._robot_env):  # noqa: SLF001
+            if all(owner is not existing for existing in owners):
+                owners.append(owner)
+        return owners
+
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        """Full engine continuation at a skill boundary; never a flat observation."""
+        from .simulation_checkpoint import capture_engine, capture_runtime
+
+        if self._scene_seed is None:
+            raise RuntimeError("simulation checkpoint requires a seeded scene reset")
+        scene = self._object_centric()
+        sim = scene._robot_env.sim  # noqa: SLF001
+        return {
+            "seed": self._scene_seed,
+            "engine": capture_engine(model=sim.model.mj_model, data=sim.data.mj_data),
+            "runtime": [
+                (type(owner).__module__, type(owner).__qualname__, capture_runtime(owner=owner))
+                for owner in self._checkpoint_owners()
+            ],
+            "state": self._require_state().copy(),
+            "scene_state": scene._current_state.copy(),  # noqa: SLF001
+            "start_robot_pose": self._start_robot_pose,
+            "pick_plan_failures": self._pick_plan_failures.copy(),
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        """Rebuild the same seeded model, then restore float64 engine state and RNGs."""
+        from .simulation_checkpoint import restore_engine, restore_runtime
+
+        self.reset(seed=checkpoint["seed"])
+        scene = self._object_centric()
+        sim = scene._robot_env.sim  # noqa: SLF001
+        owners = self._checkpoint_owners()
+        runtime = checkpoint["runtime"]
+        if [(type(o).__module__, type(o).__qualname__) for o in owners] != [
+            (module, name) for module, name, _ in runtime
+        ]:
+            raise ValueError("simulation checkpoint Gym/KINDER runtime topology differs")
+        restore_engine(
+            model=sim.model.mj_model, data=sim.data.mj_data, checkpoint=checkpoint["engine"]
+        )
+        for owner, (_, _, state) in zip(owners, runtime, strict=True):
+            restore_runtime(owner=owner, checkpoint=state)
+        self._state = checkpoint["state"].copy()
+        scene._current_state = checkpoint["scene_state"].copy()  # noqa: SLF001
+        self._start_robot_pose = checkpoint["start_robot_pose"]
+        self._pick_plan_failures = checkpoint["pick_plan_failures"].copy()
 
     def snapshot(self) -> Any:
         """An opaque handle to the live simulator state, restorable by `restore`.
