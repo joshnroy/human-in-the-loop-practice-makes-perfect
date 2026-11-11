@@ -1430,6 +1430,8 @@ class StepPracticeRunner:
             zero_step_streak = saved.get("zero_step_streak", 0)
             no_robot_action_streak = saved.get("no_robot_action_streak", 0)
             started -= saved["elapsed_seconds"]
+            if getattr(method, "draw_recorder", None) is not None:
+                method.draw_recorder.restore_checkpoint_files()
             StepPracticeRunner.record_resume(args=args, events=events, saved=saved)
         recorder = recorder or RunRecordWriter.disabled()
         if not evaluate_only:  # A practice segment needs the scene no reset observed.

@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from hitl_pmp.core.method.types import SamplerConsultation
+from hitl_pmp.sampler_draws import SamplerDrawRecorder
 from hitl_pmp.step_protocol import (
     CHECKPOINT_FILENAME,
     DeploymentSnapshot,
@@ -61,6 +63,7 @@ class Method:
         self._rng = np.random.default_rng(12)
         self.updates = 0
         self.costs = []
+        self.draw_recorder = None
 
     def configure_practice_accounting(self, *, accounting):
         self.accounting = accounting
@@ -69,9 +72,20 @@ class Method:
         return False
 
     def get_practice_policy(self, *, task):
-        return lambda state: SimpleNamespace(
-            action=np.array([float(self._rng.integers(1, 3))]), label="skill"
-        )
+        def policy(state):  # noqa: PLR0917 -- positional Policy API
+            action = float(self._rng.integers(1, 3))
+            if self.draw_recorder is not None:
+                self.draw_recorder.record(
+                    skill_name="fake",
+                    consultation=SamplerConsultation.INFORMED,
+                    success=True,
+                    params=[action],
+                    state=state,
+                    objects=(),
+                )
+            return SimpleNamespace(action=np.array([action]), label="skill")
+
+        return policy
 
     def observe_practice_action_budget(self, **kwargs):
         pass
@@ -81,6 +95,8 @@ class Method:
 
     def end_cycle(self):
         self.updates += 1
+        if self.draw_recorder is not None:
+            self.draw_recorder.end_cycle()
 
 
 class Evaluations:
@@ -127,6 +143,7 @@ def test_resumed_simulation_continues_identically_without_duplicate_eval0(
         np.random.seed(24)
         problem = Simulation()
         method = Method(env=problem.env)
+        method.draw_recorder = SamplerDrawRecorder(output_path=output / "sampler_draws.jsonl")
         args = _step_args(
             output_dir=output,
             budget=8,
@@ -185,6 +202,14 @@ def test_resumed_simulation_continues_identically_without_duplicate_eval0(
     rows = json.loads((tmp_path / "resumed" / "step_evaluations.json").read_text())
     assert [r["index"] for r in rows] == list(range(4))
     assert all(r["complete"] for r in rows)
+
+    def draws(*, output):
+        return [
+            {k: v for k, v in json.loads(line).items() if k not in {"timestamp", "elapsed_seconds"}}
+            for line in (output / "sampler_draws.jsonl").read_text().splitlines()
+        ]
+
+    assert draws(output=tmp_path / "resumed") == draws(output=tmp_path / "alone")
 
 
 def test_pause_is_operational_resume_flag():
