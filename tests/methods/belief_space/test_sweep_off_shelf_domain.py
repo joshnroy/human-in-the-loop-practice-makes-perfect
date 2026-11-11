@@ -22,9 +22,10 @@ def _value(*, horizon=4, **competence):
     return float(SweepOffShelfDeployment.values(competences=competences, horizon=horizon)[0])
 
 
-def test_a_perfect_sweep_solves_in_two_skills():
-    assert _value(horizon=2, PickWiper=1.0, SweepShelf=1.0) == 1.0
-    assert _value(horizon=1, PickWiper=1.0, SweepShelf=1.0) == 0.0
+def test_a_perfect_sweep_solves_in_six_skills():
+    """One stroke per cube: the wiper, then five sweeps."""
+    assert _value(horizon=6, PickWiper=1.0, SweepShelf=1.0) == 1.0
+    assert _value(horizon=5, PickWiper=1.0, SweepShelf=1.0) == 0.0
 
 
 def test_perfect_pick_and_place_needs_ten_skills():
@@ -42,11 +43,12 @@ def test_the_policy_takes_the_better_route():
 
 
 def test_retries_raise_the_value_of_an_unreliable_sweep():
-    assert _value(horizon=4, PickWiper=1.0, SweepShelf=0.5) == pytest.approx(1 - 0.5**3)
+    # Six sweeps for five cubes: at least five of six succeed.
+    assert _value(horizon=7, PickWiper=1.0, SweepShelf=0.5) == pytest.approx(7 * 0.5**6)
 
 
 def test_every_shelf_skill_updates_its_own_belief():
-    sweep = GroundSkill(skill=S.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, *O.cubes))
+    sweep = GroundSkill(skill=S.SWEEP_SHELF, objects=(O.robot, O.wiper, O.box, O.cubes[0]))
     model = skill_belief_model(ground_skill=sweep, domain=SWEEP_OFF_SHELF_DOMAIN)
     assert model.belief_name == "SweepShelf"
     assert model.example_source == PracticeExampleSource.SAMPLER
@@ -86,7 +88,10 @@ def test_an_untrained_shelf_skill_is_believed_to_work_one_time_in_four():
     )
     for name in ("SweepShelf", "PickCubeFromShelf", "reset_cubes"):
         assert belief.skill_beliefs[name].mean_competence() == pytest.approx(0.25, abs=0.02)
-    assert 0.4 < SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=belief.skill_beliefs) < 0.7
+    # 0.116 with one stroke per cube (0.555 when one sweep cleared the shelf): five
+    # sweeps or five carries at a prior competence of 1/4 rarely finish in 12 skills.
+    value = SWEEP_OFF_SHELF_DOMAIN.expected_policy_value(beliefs=belief.skill_beliefs)
+    assert 0.08 < value < 0.16
 
 
 def _shelf_atoms(*, on_shelf, in_box, wiper_home=True):

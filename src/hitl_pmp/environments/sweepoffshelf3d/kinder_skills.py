@@ -91,7 +91,9 @@ FINAL_STEP_LIMIT = 600
 BASE_STEP_LIMIT = 600
 FOLLOW_STEP_LIMIT = 60
 RETRACT_TOLERANCE = 0.05
-# The box's collision model in the planner: KINDER's own Bin primitive dimensions.
+# The box's collision model in the planner: KINDER's own Bin primitive, its dimensions
+# (these keys) read from the live box, so a box resized in the task JSON is planned
+# around as it is. The values are today's task's, for reference only.
 BOX_DIMENSIONS = {"length": 0.25, "width": 0.5, "height": 0.2, "wall_thickness": 0.01}
 # Where the held cube is let go over the shelf, above the board: a short drop, not a
 # set-down, since the leaned wrist cannot reach lower without meeting the board above.
@@ -695,7 +697,9 @@ class KinderSkills:
             tuple(x.get(box, k) for k in ("x", "y", "z")),
             tuple(x.get(box, k) for k in ("qx", "qy", "qz", "qw")),
         )
-        sim.add_bin(name=BOX, pose=pose, **BOX_DIMENSIONS)
+        live = self.core._objects_dict[BOX]  # noqa: SLF001 -- the scene's own box
+        dims = {k: float(getattr(live, k)) for k in BOX_DIMENSIONS}
+        sim.add_bin(name=BOX, pose=pose, **dims)
         if target != WIPER and not self.wiper_on_robot():
             self.add_wiper_obstacle(sim=sim)
         return sim
@@ -1977,11 +1981,9 @@ class KinderSkills:
         cubes' positions."""
         (x0, y0, x1, y1), _ = self.core.box_interior()
         near, far = BOX_DROP_X_MARGINS
-        xs = self.grid(low=x0 + near, high=x1 - far, step=BOX_DROP_GRID)
-        ys = self.grid(low=y0 + BOX_DROP_Y_MARGIN, high=y1 - BOX_DROP_Y_MARGIN, step=BOX_DROP_GRID)
-        centre = np.array([(x0 + near + x1 - far) / 2, (y0 + y1) / 2])
-        if not xs or not ys:
-            return [(float(centre[0]), float(centre[1]))]
+        xs = self.drop_axis(low=x0, high=x1, margins=(near, far))
+        ys = self.drop_axis(low=y0, high=y1, margins=(BOX_DROP_Y_MARGIN, BOX_DROP_Y_MARGIN))
+        centre = np.array([(xs[0] + xs[-1]) / 2, (ys[0] + ys[-1]) / 2])
         inside = [
             np.asarray(self.core.get_object(c).get_pose()[0][:2], dtype=float)
             for c in (f"cube_{i}" for i in range(5))
@@ -2107,6 +2109,14 @@ class KinderSkills:
         return out
 
     @staticmethod
+    def drop_axis(*, low: float, high: float, margins: tuple[float, float]) -> list[float]:
+        """One axis of the box drop region: the `BOX_DROP_GRID` points `margins` inside
+        the inner walls; in a box too small for those margins, the interior's centre on
+        that axis (the drop region follows the live box rather than a fixed offset)."""
+        points = KinderSkills.grid(low=low + margins[0], high=high - margins[1], step=BOX_DROP_GRID)
+        return points or [float((low + high) / 2)]
+
+    @staticmethod
     def grid(*, low: float, high: float, step: float = SHELF_DROP_GRID) -> list[float]:
         """`step`-spaced values from `low` to `high`, centred in that range: the shelf
         drop region's (`SHELF_DROP_GRID`, the default) and the box's (`BOX_DROP_GRID`)."""
@@ -2116,10 +2126,10 @@ class KinderSkills:
         start = (low + high) / 2 - count * step / 2
         return [float(start + i * step) for i in range(count + 1)]
 
-    def sweep_shelf(self, *, height: float, speed: float) -> None:
+    def sweep_shelf(self, *, cube: str, offset: float, angle: float) -> None:
         if self.shelf.in_hand is None:
             raise SkillFailed("sweep_shelf: the wiper is not in hand")
-        self.shelf.sweep_shelf(height=height, speed=speed)
+        self.shelf.sweep_shelf(cube=cube, offset=offset, angle=angle)
 
     def return_wiper(self) -> None:
         """`ShelfSkills.return_wiper`, except that once the wiper is back on its shelf

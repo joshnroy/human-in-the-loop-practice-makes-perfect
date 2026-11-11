@@ -115,7 +115,7 @@ class SkillBenchmarkPage:
         ax.set_yticks(range(len(names)))
         ax.set_yticklabels(names, fontsize=7)
         ax.set_xlabel("parameter settings that succeeded")
-        ax.set_title("SweepOffShelf3D, SweepShelf: succeeding settings per benchmark state")
+        ax.set_title("SweepOffShelf3D, SweepShelf: succeeding settings per state and target cube")
         fig.tight_layout()
         fig.savefig(path, dpi=130)
         plt.close(fig)
@@ -185,9 +185,9 @@ found no route), <b>plan_blocked</b> (planned in PyBullet, refused by the MuJoCo
 <img src="{FIGURE}" alt="Runs per skill, stacked by outcome label">
 <div class="wrap"><table><tr><th>skill</th><th>target</th><th>gated success</th><th>reported-only success</th><th>verdict</th><th>PyBullet planned</th><th>labels</th></tr>
 {"".join(verdict_rows)}</table></div>
-<h2>SweepShelf: succeeding settings per state</h2>
-<img src="{SWEEP_FIGURE}" alt="Succeeding sweep settings per state">
-<div class="wrap"><table><tr><th>skill</th><th>state</th><th>settings succeeded</th></tr>{"".join(sweep_rows)}</table></div>
+<h2>SweepShelf: succeeding settings per state and target cube</h2>
+<img src="{SWEEP_FIGURE}" alt="Succeeding sweep settings per state and target cube">
+<div class="wrap"><table><tr><th>skill</th><th>state/target cube</th><th>settings succeeded</th></tr>{"".join(sweep_rows)}</table></div>
 <h2>By state family</h2>
 <div class="wrap"><table><tr><th>family</th><th>success</th></tr>{"".join(family_rows)}</table></div>
 <h2>Every failure</h2>

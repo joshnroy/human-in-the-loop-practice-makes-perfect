@@ -36,7 +36,8 @@ class BenchmarkReport(BaseModel):
 
 class SkillVerdict(BaseModel):
     skill: str
-    # "every state" | "some setting per state" | "at least x/y" (| " of <families>")
+    # "every state" | "some setting per state and target cube" | "at least x/y"
+    # (| " of <families>") | "some setting for at least x/y (state, target cube) pairs"
     target: str
     passed: bool
     # Every valid run of the skill, gated or not.
@@ -52,8 +53,11 @@ class SkillVerdict(BaseModel):
     reason: str = ""
     # Per simulator-attribution label, how many runs ended there.
     labels: dict[str, int] = Field(default_factory=dict)
-    # Continuous-parameter skills only: per state, settings that succeeded / tried.
+    # Continuous-parameter skills only: per "<state>/<target cube>", settings that
+    # succeeded / tried; and how many of those pairs had some setting succeed.
     per_state: dict[str, list[int]] = Field(default_factory=dict)
+    gated_pairs: int = 0
+    gated_pairs_total: int = 0
     # Runs whose skill planned in KINDER's PyBullet scene at every stage it reached
     # (None for a skill that does not plan there).
     pybullet_planned: int | None = None
@@ -76,6 +80,23 @@ class SkillThreshold(BaseModel):
         if self.families is None:
             return line
         return f"{line} of {', '.join(sorted(self.families))}"
+
+
+class SettingThreshold(BaseModel):
+    """A continuous-parameter skill passes when at least `min_pairs` of its (state,
+    target cube) pairs have some setting that succeeds, and only if exactly `out_of`
+    pairs ran: a different count means the state set changed under the threshold, which
+    is refused rather than rescaled."""
+
+    model_config = ConfigDict(frozen=True)
+
+    min_pairs: int
+    out_of: int
+
+    def target(self) -> str:
+        return (
+            f"some setting for at least {self.min_pairs}/{self.out_of} (state, target cube) pairs"
+        )
 
 
 class CaseResult(BaseModel):
@@ -123,8 +144,9 @@ class BenchmarkCase(BaseModel):
 
     skill: str
     cube: str | None = None
-    # SweepShelf only: [height, speed]. A continuous-parameter skill's cases are its
-    # grid over the allowed range (`verdicts.SWEEP_GRID`), one case per setting.
+    # SweepShelf only: [offset, speed]. A continuous-parameter skill's cases are its
+    # grid over the allowed range (`verdicts.SWEEP_GRID`), one case per setting and
+    # target cube.
     params: list[float] = Field(default_factory=list)
 
     def case_id(self, *, state_id: str) -> str:
