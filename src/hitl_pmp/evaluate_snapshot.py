@@ -272,7 +272,11 @@ class ConfigReplay:
     @staticmethod
     def tokens(*, action: argparse.Action, value: str) -> list[str]:
         flag = max(action.option_strings, key=len)
-        if isinstance(action, argparse.BooleanOptionalAction):
+        if isinstance(action, argparse.BooleanOptionalAction) or (
+            action.nargs == 0
+            and any(o.startswith("--no-") for o in action.option_strings)
+            and any(not o.startswith("--no-") for o in action.option_strings)
+        ):
             if value == "None":
                 return []
             positive = next(o for o in action.option_strings if not o.startswith("--no-"))
