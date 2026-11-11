@@ -1007,20 +1007,28 @@ class EesMethod(Method):
 
     # ------------------------------------------------- extrapolate + situate (score)
 
-    def score_ground_skill(self, *, ground_skill: GroundSkill) -> float:
+    def score_ground_skill(
+        self, *, ground_skill: GroundSkill, base_costs: dict[GroundSkill, float] | None = None
+    ) -> float:
         """Planning progress: how much cheaper do the seen tasks' plans get if
         *this* skill improves by one cycle's worth of practice? Ported from
         predicators' `_score_ground_op_planning_progress`. Returns `-inf` only under
         `reproduce_predicators_skip_perfect`, for a skill whose measured success rate
         is exactly 1.0 -- before any planning, as predicators returns before
-        `_get_task_plan_for_task`."""
+        `_get_task_plan_for_task`.
+
+        `base_costs` is a `skill_costs()` table the caller already priced in this
+        same state; it is copied, never mutated. Scoring changes no competence, so
+        one table serves a whole ranking, and rebuilding it per candidate made a
+        ranking quadratic in the number of groundings (every entry hashes a deep
+        frozen GroundSkill)."""
         if (
             self.reproduce_predicators_skip_perfect
             and self.measured_success_rate(ground_skill=ground_skill) == 1.0
         ):
             return -math.inf
         gain = self.forecast_competence_gain(ground_skill=ground_skill)
-        costs = self.skill_costs()
+        costs = self.skill_costs() if base_costs is None else dict(base_costs)
         current = self.competence_model(ground_skill=ground_skill).get_current_competence()
         costs[ground_skill] = -math.log(max(min(1.0, current + gain), 1e-12))
 
@@ -1072,8 +1080,13 @@ class EesMethod(Method):
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
-        for candidate in self.practice_candidates():
-            score = self.score_ground_skill(ground_skill=candidate)
+        candidates = self.practice_candidates()
+        # Priced once, before any candidate: under "all" this is what lazily creates
+        # every grounding's model, in the same grounding order the first candidate's
+        # own pricing used to create them.
+        base_costs = self.skill_costs()
+        for candidate in candidates:
+            score = self.score_ground_skill(ground_skill=candidate, base_costs=base_costs)
             self.record_practice_target(
                 name=candidate.skill.name,
                 field="declined_perfect" if score == -math.inf else "scored",
