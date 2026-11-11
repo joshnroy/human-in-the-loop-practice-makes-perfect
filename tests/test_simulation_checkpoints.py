@@ -119,7 +119,7 @@ def test_resumed_simulation_continues_identically_without_duplicate_eval0(
     monkeypatch.setattr(
         DeploymentSnapshot,
         "encode",
-        staticmethod(lambda *, method: str((method.updates, method.costs)).encode()),
+        staticmethod(lambda *, method, **_: str((method.updates, method.costs)).encode()),
     )
 
     def run(*, output, stop=None, resume=False):
