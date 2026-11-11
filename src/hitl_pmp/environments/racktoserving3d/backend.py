@@ -21,6 +21,7 @@ from .layout import RackLayout
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom, RackServing3DAtoms
 from .scene import build_scene
+from .scraper_attachment import ScraperAttachment
 from .semantics import (
     CircularSupport,
     FoodLocation,
@@ -88,6 +89,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 return result
 
             self._env.step = observed
+            if self.config.scraper_attachment != "physical":
+                ScraperAttachment.install(core=self.core())
             if self.config.food_handling == "welded":
                 WeldedFood.install(core=self.core(), names=tuple(self.cube_names))
         return self._env
@@ -157,8 +160,10 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 raise ControlStepObserverFailed() from error
 
     def held(self, *, name: str) -> bool:
-        """Welded food is held while its grasp weld is engaged; everything else, and
-        all food under physical handling, by both pads' contact."""
+        """Welded food and scraper are held while their grasp weld is engaged;
+        physical handling requires both pads' contact."""
+        if self.config.scraper_attachment == "grasp_weld" and name == "wiper_0":
+            return ScraperAttachment.grasped(model=self.model(), data=self.data())
         if self.config.food_handling == "welded" and name in self.cube_names:
             return WeldedFood.attached(backend=self) == name
         return super().held(name=name)
@@ -584,4 +589,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
             float(data.qpos[model.jnt_qposadr[model.joint(joint).id]])
             for joint in self.ROBOT_JOINTS
         ]
+        if self.config.scraper_attachment != "physical":
+            out["scraper_attachment_state"] = ScraperAttachment.state(model=model, data=data)
         return out
