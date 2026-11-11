@@ -51,7 +51,12 @@ from pydantic import BaseModel, ConfigDict
 
 from .kinder_backend import KinderBackend
 from .parameter_feasibility import TossParameterFeasibility
-from .types import PlanarCollisionBox, TossFeasibilityGeometry, TossParameterSet
+from .types import (
+    PlanarCollisionBox,
+    TossFeasibilityGeometry,
+    TossParameterSet,
+    TossPlanningScene,
+)
 from .wide_long_range_proposal import SIM_TOSS_PARAMETERS, WideLongRangeTossProposal
 
 TOSS_DIRECTIONS_DEG = (0, 90, 180, 270)
@@ -301,11 +306,14 @@ class TossDirectionInvariantError(RuntimeError):
 class TossDirectionSelector:
     """The direction rule above. A static-method container, never instantiated."""
 
-    # Keyed on the full planner geometry, so two states that differ in anything the
-    # base planner reads never share an entry.
-    _plan_cache: ClassVar[OrderedDict[tuple[TossFeasibilityGeometry, int, float], str | None]] = (
-        OrderedDict()
-    )
+    # Keyed on the planar geometry, the scene and the snapshot's exact bytes, so two
+    # states that differ in anything the base planner reads never share an entry.
+    _plan_cache: ClassVar[
+        OrderedDict[
+            tuple[TossFeasibilityGeometry, str | None, str | None, int, float],
+            str | None,
+        ]
+    ] = OrderedDict()
     planner_calls: ClassVar[int] = 0
     planner_seconds: ClassVar[float] = 0.0
 
@@ -315,13 +323,18 @@ class TossDirectionSelector:
         snapshot: Any,
         distance: float,
         rotation: float,
-        drive_zone: tuple[float, float, float, float] | None = None,
+        scene: TossPlanningScene | None = None,
     ) -> str | None:
-        """The one swappable feasibility check: `None` if the real base motion planner
-        finds a path to this stand, else a reason. Replace this function to change what
-        "plannable" means; nothing else in the rule depends on how it is decided."""
+        """The one swappable feasibility check: `None` if the dispatched toss controller's
+        own base planning finds a path to this stand, else a reason. Replace this function
+        to change what "plannable" means; nothing else in the rule depends on how it is
+        decided."""
         return KinderBackend.toss_base_plan_failure(
-            snapshot=snapshot, distance=distance, rotation=rotation, drive_zone=drive_zone
+            snapshot=snapshot,
+            distance=distance,
+            rotation=rotation,
+            # Only when set: Tossing3D makes exactly the old call.
+            **({} if scene is None else {"scene": scene}),
         )
 
     @staticmethod
@@ -347,11 +360,20 @@ class TossDirectionSelector:
                 "cannot choose a toss direction: the state carries no base-planner "
                 "geometry (not a simulator-backed Tossing3DState)"
             )
-        return TossDirectionSelector.select(geometry=geometry, snapshot=snapshot, standoff=standoff)
+        return TossDirectionSelector.select(
+            geometry=geometry,
+            snapshot=snapshot,
+            standoff=standoff,
+            scene=getattr(state, "toss_scene", None),
+        )
 
     @staticmethod
     def select(
-        *, geometry: TossFeasibilityGeometry, snapshot: Any, standoff: float
+        *,
+        geometry: TossFeasibilityGeometry,
+        snapshot: Any,
+        standoff: float,
+        scene: TossPlanningScene | None = None,
     ) -> TossDirectionChoice:
         ranked = sorted(
             TOSS_DIRECTIONS_DEG,
@@ -379,7 +401,11 @@ class TossDirectionSelector:
             )
             if reason is None:
                 reason = TossDirectionSelector._cached_plan_failure(
-                    geometry=geometry, snapshot=snapshot, standoff=standoff, direction=direction
+                    geometry=geometry,
+                    snapshot=snapshot,
+                    standoff=standoff,
+                    direction=direction,
+                    scene=scene,
                 )
             if reason is not None:
                 reasons[direction] = reason
@@ -442,12 +468,25 @@ class TossDirectionSelector:
 
     @staticmethod
     def _cached_plan_failure(
-        *, geometry: TossFeasibilityGeometry, snapshot: Any, standoff: float, direction: int
+        *,
+        geometry: TossFeasibilityGeometry,
+        snapshot: Any,
+        standoff: float,
+        direction: int,
+        scene: TossPlanningScene | None = None,
     ) -> str | None:
         rounded_standoff = round(
             round(standoff / PLANNER_STANDOFF_RESOLUTION_M) * PLANNER_STANDOFF_RESOLUTION_M, 6
         )
-        key = (geometry, direction, rounded_standoff)
+        # The planner's 3-D check reads what the planar geometry does not -- the arm, the
+        # held cube's grasp, heights and tilts -- so the whole snapshot is in the key.
+        key = (
+            geometry,
+            None if scene is None else scene.model_dump_json(),
+            KinderBackend.snapshot_digest(snapshot=snapshot),
+            direction,
+            rounded_standoff,
+        )
         cache = TossDirectionSelector._plan_cache
         if key in cache:
             cache.move_to_end(key)
@@ -457,7 +496,7 @@ class TossDirectionSelector:
             snapshot=snapshot,
             distance=rounded_standoff,
             rotation=TossDirectionSelector.rotation(direction_deg=direction),
-            **({} if geometry.drive_zone is None else {"drive_zone": geometry.drive_zone}),
+            **({} if scene is None else {"scene": scene}),
         )
         TossDirectionSelector.planner_calls += 1
         TossDirectionSelector.planner_seconds += time.perf_counter() - started

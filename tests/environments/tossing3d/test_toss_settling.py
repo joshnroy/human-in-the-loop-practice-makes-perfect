@@ -91,8 +91,12 @@ def test_wait_holds_pose_and_preserves_gripper_command(*, delta, dimensions):
         np.testing.assert_array_equal(action[11:], np.zeros(7))
 
 
-def test_backend_wraps_the_native_toss_controller(*, monkeypatch):
+def test_backend_wraps_the_dispatched_toss_controller(*, monkeypatch):
     toss = _Toss()
+    monkeypatch.setattr(
+        "hitl_pmp.environments.tossing3d.toss_controller.Tossing3DTossController",
+        lambda *args, **kwargs: toss,
+    )
     api = SimpleNamespace(
         tossing_controllers=lambda *args, **kwargs: {
             "move_to_toss_location_and_toss": SimpleNamespace(ground=lambda objects: toss)
@@ -100,7 +104,8 @@ def test_backend_wraps_the_native_toss_controller(*, monkeypatch):
         shelf_controllers=None,
     )
     backend = KinderBackend()
-    backend._env = SimpleNamespace(action_space=None)
+    backend._env = SimpleNamespace(action_space=SimpleNamespace(shape=(11,)))
+    backend._raw_env = backend._env
     monkeypatch.setattr(KinderBackend, "api", lambda self: api)  # noqa: PLR0917
     controller = backend._ground_controller(
         module="tossing",
@@ -110,6 +115,7 @@ def test_backend_wraps_the_native_toss_controller(*, monkeypatch):
     )
     assert isinstance(controller, TossSettlingController)
     assert controller.controller is toss
+    assert toss.ACTION_DIM == 11
 
 
 def test_upstream_failure_is_reported_without_a_settling_delay():

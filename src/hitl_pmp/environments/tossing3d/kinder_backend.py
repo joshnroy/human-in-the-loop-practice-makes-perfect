@@ -92,6 +92,7 @@ renderer for.
 """
 
 import copy
+import hashlib
 import json
 import logging
 import os
@@ -112,12 +113,12 @@ from hitl_pmp.core.control_steps import ControlStepLimitReached, ControlStepObse
 from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
 from .skill_timing import SkillTiming
 from .types import (
-    DRIVE_ZONE_TOLERANCE_M,
     AbstractAtom,
     ControllerRun,
     PlanarCollisionBox,
     TossFeasibilityGeometry,
     Tossing3DObservation,
+    TossPlanningScene,
 )
 
 logger = logging.getLogger(__name__)
@@ -840,62 +841,65 @@ class KinderBackend(BaseModel):
         snapshot: Any,
         distance: float,
         rotation: float,
-        drive_zone: tuple[float, float, float, float] | None = None,
+        scene: TossPlanningScene | None = None,
     ) -> str | None:
-        """Ask pinned KINDER's own base planner for a path to a toss stand.
+        """Ask for a base plan to a toss stand exactly as the dispatched toss controller
+        plans one: its own `base_motion_arguments` (`toss_controller.py`), in a planning
+        scene built from `snapshot` as the scene's dispatch builds it -- the 3-D check of
+        the carried arm and cube, the scene's bounding boxes and static obstacles, its
+        sampling bounds and drive zone -- so a stand this accepts is one the controller's
+        `reset` plans. `scene` is the state's `toss_scene`; `None` is Tossing3D's own.
 
-        Mirrors `MoveToTossLocationAndTossController._plan_base_motion` exactly -- the
-        float32 parameter cast, `get_target_robot_pose_from_parameters`, the world
-        sampling bounds, `seed=0` and the held cube excluded from collision -- so a
-        stand this accepts is one the controller's own `reset` will plan. Returns `None`
-        when a plan exists, else the reason.
+        Only smoothing differs: it runs once a path is found, and this discards the path,
+        so it cannot change the verdict. Returns `None` when a plan exists, else why not.
         """
-        from kinder_models.dynamic3d.utils import (
-            WORLD_X_BOUNDS,
-            WORLD_Y_BOUNDS,
-            get_overhead_object_se2_pose,
-            get_target_robot_pose_from_parameters,
-            run_base_motion_planning,
-        )
+        from kinder_models.dynamic3d.utils import run_base_motion_planning
 
-        controller_params = np.asarray([distance, rotation], dtype=np.float32)
-        bin_pose = get_overhead_object_se2_pose(
-            snapshot, snapshot.get_object_from_name(KinderBackend.bin_name)
+        controller = KinderBackend._toss_check_controller(snapshot=snapshot, scene=scene)
+        arguments = controller.base_motion_arguments(
+            x=snapshot, params=np.asarray([distance, rotation], dtype=np.float32)
         )
-        target = get_target_robot_pose_from_parameters(
-            bin_pose, controller_params[0], controller_params[1]
-        )
-        x_bounds, y_bounds = WORLD_X_BOUNDS, WORLD_Y_BOUNDS
-        outside: Callable[[Any], bool] | None = None
-        if drive_zone is not None:
-            # As a drive-zone scene's own toss controller plans: sampled in the zone,
-            # and any pose outside it a collision.
-            zone = drive_zone
-            x_bounds, y_bounds = (zone[0], zone[2]), (zone[1], zone[3])
-
-            def outside(pose: Any) -> bool:  # noqa: PLR0917 (upstream callback)
-                slack = DRIVE_ZONE_TOLERANCE_M
-                return not (
-                    zone[0] - slack <= pose.x <= zone[2] + slack
-                    and zone[1] - slack <= pose.y <= zone[3] + slack
-                )
-
         # Every candidate stand of one state shares that state's footprints.
         with OverheadFootprints.installed():
-            plan = run_base_motion_planning(
-                state=snapshot,
-                target_base_pose=target,
-                x_bounds=x_bounds,
-                y_bounds=y_bounds,
-                seed=0,
-                disable_collision_objects=[KinderBackend.cube_name]
-                + ([] if drive_zone is None else [KinderBackend.barrier_name]),
-                body_collision_fn=outside,
-                # Smoothing runs only once a path is found and this check discards the path,
-                # so it cannot change the verdict. The controller still smooths what it drives.
-                smooth_amt=0,
-            )
+            plan = run_base_motion_planning(**arguments, smooth_amt=0)
         return None if plan is not None else "base_motion_plan_failed"
+
+    # The last toss check's controller, keyed on its scene and the exact snapshot bytes:
+    # every stand of one decision is asked about one state, so its planning scene is built
+    # once per state, not once per stand. Its sim is closed when the next state replaces it.
+    toss_check_cache: ClassVar[tuple[Any, Any] | None] = None
+
+    @staticmethod
+    def _toss_check_controller(*, snapshot: Any, scene: TossPlanningScene | None) -> Any:
+        key = (scene, KinderBackend.snapshot_digest(snapshot=snapshot))
+        cached = KinderBackend.toss_check_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        if cached is not None and cached[1]._pybullet_sim is not None:  # noqa: SLF001
+            cached[1]._pybullet_sim.close()  # noqa: SLF001
+        if scene is None:
+            from .toss_controller import Tossing3DTossController
+
+            controller = Tossing3DTossController.for_snapshot(snapshot=snapshot)
+        else:
+            controller = scene.toss_controller(snapshot=snapshot)
+        KinderBackend.toss_check_cache = (key, controller)
+        return controller
+
+    @staticmethod
+    def snapshot_digest(*, snapshot: Any) -> str | None:
+        """A digest of every object's name and exact feature bytes; `None` for none, and
+        only the identity of an opaque stand-in that is not a state at all."""
+        if snapshot is None:
+            return None
+        try:
+            objects = sorted(snapshot, key=lambda obj: obj.name)
+        except TypeError:
+            return f"id:{id(snapshot)}"
+        digest = hashlib.sha256()
+        for obj in objects:
+            digest.update(obj.name.encode() + b"\0" + np.asarray(snapshot[obj]).tobytes())
+        return digest.hexdigest()
 
     def restore_for_replay(
         self, *, plain: dict[str, list[float]], dtype: type[np.floating] = np.float64
@@ -1698,9 +1702,15 @@ class KinderBackend(BaseModel):
         if key not in lifted:
             raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
         objects = tuple(state.get_object_from_name(name) for name in object_names)
-        controller = lifted[key].ground(objects)
         if module == "tossing" and key == "move_to_toss_location_and_toss":
-            return TossSettlingController(backend=self, controller=controller)
+            # Upstream's controller with its base plan's arguments built where the toss
+            # feasibility check builds them (`toss_base_plan_failure`).
+            from .toss_controller import Tossing3DTossController
+
+            toss = Tossing3DTossController(objects, pybullet_sim=pybullet_sim)
+            vars(toss)["ACTION_DIM"] = int(self._raw_env.action_space.shape[0])
+            return TossSettlingController(backend=self, controller=toss)
+        controller = lifted[key].ground(objects)
         if module == "tossing" and key == "open_gripper":
             return ClearReleaseController(
                 backend=self,
@@ -1925,7 +1935,9 @@ class OverheadFootprints:
             + np.asarray(state[obj]).tobytes()
             for obj in sorted(state, key=lambda obj: obj.name)
         ]
-        boxes = None if bounding_boxes is None else sorted(bounding_boxes.items())
+        # Upstream reads `None` and `{}` alike (it only asks `name in bounding_boxes`),
+        # and the toss check passes its sim's empty `{}` where the geometry passes `None`.
+        boxes = sorted(bounding_boxes.items()) if bounding_boxes else None
         return b"\1".join(parts) + b"\2" + repr(boxes).encode()
 
     @staticmethod

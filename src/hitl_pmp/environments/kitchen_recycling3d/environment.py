@@ -1,11 +1,11 @@
 """The kitchen as a Tossing3D scene: Tossing3D's state, skills and symbols, kitchen geometry.
 
 `KitchenRecycling3DEnvironment` is a `Tossing3DEnvironment` whose backend loads the
-kitchen (`backend.KitchenKinderBackend`). Its states carry the kitchen drive zone, which
-Tossing3D's toss planning reads off the state, so every throw stand it proposes is one
-the robot may drive to. The barrier is the mat edge: the robot's side is the kitchen
-floor, the opposite side the mats, and an object on the robot's side only when its
-whole footprint is off the mats.
+kitchen (`backend.KitchenKinderBackend`). Its states carry the kitchen drive zone and
+planning scene, which Tossing3D's toss planning reads off the state, so every throw
+stand it proposes is one the kitchen's own toss controller plans. The barrier is the
+mat edge: the robot's side is the kitchen floor, the opposite side the mats, and an
+object on the robot's side only when its whole footprint is off the mats.
 """
 
 from typing import Any
@@ -22,7 +22,7 @@ from hitl_pmp.environments.tossing3d.types import (
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import SIM_TOSS_PARAMETERS
 
-from .backend import OPPOSITE_SIDE, KitchenKinderBackend
+from .backend import OPPOSITE_SIDE, KitchenKinderBackend, KitchenPlanningScene
 from .bin_regions import KITCHEN_BIN_REGION_BY_SIDE
 from .domain import KitchenConfig
 from .drive_zone import KitchenDriveZone
@@ -77,6 +77,7 @@ class KitchenRecycling3DEnvironment(Tossing3DEnvironment):
             abstract_atoms=abstract_atoms,
         )
         state.drive_zone = self.drive_zone()
+        state.toss_scene = KitchenPlanningScene(kitchen_config=self.kitchen_config)
         # The mat edge is flat: an object not wholly on the kitchen floor is on the mats.
         state.flat_barrier = FlatBarrier(bin_half_extent_x=self.kitchen_config.bin_outside[0] / 2)
         return state
