@@ -525,6 +525,19 @@ class RngStates:
             getattr(owner, name).bit_generator.state = state
 
     @staticmethod
+    def seed_global(*, seed: int) -> None:
+        """Independent global streams for the new opt-in simulation checkpoint contract.
+
+        Historical practice did not seed these process-global RNGs. Leave that default
+        alone; checkpointed simulations need independent same-seed fresh processes to
+        start from the same complete RNG state as well as their own seeded generators.
+        """
+        numpy_global, random_global, torch_global = np.random.SeedSequence(seed).spawn(3)
+        np.random.seed(int(numpy_global.generate_state(1)[0]))  # noqa: NPY002
+        random.seed(int(random_global.generate_state(1, np.uint64)[0]))
+        torch.manual_seed(int(torch_global.generate_state(1, np.uint64)[0]))
+
+    @staticmethod
     def capture_global() -> dict[str, Any]:
         return {
             "numpy": np.random.get_state(),
@@ -1152,6 +1165,16 @@ class StepProtocolEntry:
                     f"--checkpoint-cycles and --resume need in-process evaluations, which "
                     f"--env {args.env} does not run; this simulation backend cannot resume"
                 )
+
+        if (
+            not resuming
+            and getattr(args, "checkpoint_cycles", False)
+            and environment.evaluation_pool() is None
+            and getattr(environment, "simulation_checkpoints", False)
+        ):
+            # Before constructing the method or simulator. Resume restores the saved
+            # global states instead; in-process and historical/default runs are unchanged.
+            RngStates.seed_global(seed=args.seed)
 
         # Method CLI factories remain authoritative for all algorithm configuration.
         def run_method(*, args: Any, method_factory: Any, **unused: Any) -> None:
