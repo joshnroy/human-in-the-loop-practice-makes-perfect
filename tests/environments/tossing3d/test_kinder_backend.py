@@ -412,9 +412,12 @@ def _backend_whose_controller_raises(
 
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderApi
 
-    lifted = {
-        "move_to_toss_location_and_toss": _StubLifted(controller=_StubController(error=error))
-    }
+    controller = _StubController(error=error)
+    lifted = {"move_to_toss_location_and_toss": _StubLifted(controller=controller)}
+    monkeypatch.setattr(
+        "hitl_pmp.environments.tossing3d.toss_controller.Tossing3DTossController",
+        lambda *args, **kwargs: controller,
+    )
 
     def factory(  # noqa: PLR0917
         action_space, *, init_constant_state=None, pybullet_sim=None
@@ -435,7 +438,8 @@ def _backend_whose_controller_raises(
     backend = KinderBackend()
     backend._robot_name = "robot_test"  # noqa: SLF001
     backend._state = _StubKinderState()  # noqa: SLF001
-    backend._env = SimpleNamespace(action_space=None)  # noqa: SLF001
+    backend._env = SimpleNamespace(action_space=SimpleNamespace(shape=(11,)))  # noqa: SLF001
+    backend._raw_env = backend._env  # noqa: SLF001
     return backend
 
 
@@ -565,7 +569,7 @@ class _StubStepEnv:
     def __init__(self) -> None:
         from types import SimpleNamespace
 
-        self.action_space = None
+        self.action_space = SimpleNamespace(shape=(11,))
         self.observation_space = SimpleNamespace(devectorize=lambda obs: obs)
 
     def step(self, action):  # noqa: PLR0917
@@ -578,6 +582,10 @@ def _backend_driving(*, monkeypatch: pytest.MonkeyPatch, controller) -> KinderBa
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderApi
 
     lifted = {"move_to_toss_location_and_toss": _StubLifted(controller=controller)}
+    monkeypatch.setattr(
+        "hitl_pmp.environments.tossing3d.toss_controller.Tossing3DTossController",
+        lambda *args, **kwargs: controller,
+    )
 
     def factory(  # noqa: PLR0917
         action_space, *, init_constant_state=None, pybullet_sim=None
@@ -598,6 +606,7 @@ def _backend_driving(*, monkeypatch: pytest.MonkeyPatch, controller) -> KinderBa
     backend._robot_name = "robot_test"  # noqa: SLF001
     backend._state = _StubKinderState()  # noqa: SLF001
     backend._env = _StubStepEnv()  # noqa: SLF001
+    backend._raw_env = backend._env  # noqa: SLF001
     return backend
 
 
