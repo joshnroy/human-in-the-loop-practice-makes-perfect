@@ -691,4 +691,3 @@ def test_the_step_guard_checks_the_command_the_servo_will_send():
         moved = configuration - arm
         np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)
     tool.shelf.step.assert_called_once()
-
