@@ -38,8 +38,10 @@ class DpMethod(EesMethod):
     belief-space lookahead over future practice resets.
 
     The curriculum follows the optimized policy's predecessor order, executing
-    positive allocations only. Gurobi must certify the task-value optimum;
-    enumeration is an explicitly selected reference, never a silent fallback.
+    positive allocations only. As in the paper, a Gurobi solve that hits its time
+    limit returns its feasible incumbent with the gap recorded, and one with no
+    incumbent raises; enumeration is an explicitly selected reference, never a
+    silent fallback.
     """
 
     # The Beta strength alpha + beta of a directly set initial competence: the same weak

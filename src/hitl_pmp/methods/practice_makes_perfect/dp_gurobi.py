@@ -16,6 +16,9 @@ optimization objective or the independent certification checks.
 Dual feasibility must be tightened alongside primal feasibility and MIP gaps:
 small learning gains can fall below the default reduced-cost tolerance, yielding
 a suboptimal allocation and an understated solver bound that agree with each other.
+
+As in the paper, a solve that hits its time limit with a feasible incumbent returns
+that incumbent, bounded-suboptimal, with its status, bound and gap recorded.
 """
 
 import math
@@ -175,7 +178,7 @@ class DpGurobiAllocator:
                 )
                 model.setObjective(reward, gp.GRB.MAXIMIZE)
                 model.optimize()
-                DpGurobiAllocator._require_optimal(model=model, phase="task_value")
+                status = DpGurobiAllocator._accepted_status(model=model, phase="task_value")
                 allocation = {skill: int(round(counts[skill].X)) for skill in costs}
                 value = DpAllocator.predicted_success(
                     mdp=mdp,
@@ -187,7 +190,8 @@ class DpGurobiAllocator:
                 theoretical_bound, _ = mdp.solve(competences=maximum_competences)
                 bound = min(model.ObjBound, theoretical_bound)
                 spent = sum(costs[skill] * count for skill, count in allocation.items())
-                if spent > max(0, budget) + 1e-7 or bound - value > 1e-7:
+                certifies = status == "OPTIMAL"
+                if spent > max(0, budget) + 1e-7 or (certifies and bound - value > 1e-7):
                     raise DpOptimizationError(
                         diagnostics={
                             "phase": "primary_independent_verification",
@@ -196,18 +200,29 @@ class DpGurobiAllocator:
                             "objective_bound": bound,
                             "spent": spent,
                             "budget": budget,
+                            "status": status,
                         }
                     )
                 return DpAllocationResult(
                     allocation=allocation,
                     solver="gurobi",
-                    status="OPTIMAL",
+                    status=status,
                     objective=value,
                     objective_bound=bound,
                     relative_gap=max(0, bound - value) / max(abs(value), 1e-12),
                     absolute_gap=max(0, bound - value),
                     runtime_seconds=time.monotonic() - started,
                 )
+
+    @staticmethod
+    def _accepted_status(*, model: Any, phase: str) -> str:
+        """OPTIMAL, or TIME_LIMIT with a feasible incumbent; anything else raises."""
+        import gurobipy as gp
+
+        if model.Status == gp.GRB.TIME_LIMIT and model.SolCount > 0:
+            return "TIME_LIMIT"
+        DpGurobiAllocator._require_optimal(model=model, phase=phase)
+        return "OPTIMAL"
 
     @staticmethod
     def _require_optimal(*, model: Any, phase: str) -> None:

@@ -846,8 +846,8 @@ class DpCli(EesCli):
             "--dp-solver-time-limit",
             type=lambda value: EesCli.positive_float(value=value),
             default=fields["dp_solver_time_limit"].default,
-            help="Total Gurobi seconds per allocation, including least-cost tie breaking; "
-            "failure to certify optimality raises instead of silently proceeding.",
+            help="Gurobi seconds per allocation. On the limit the best feasible incumbent is "
+            "used and its gap logged; with no incumbent the solve raises.",
         )
         parser.add_argument(
             "--dp-prior-calibration",
