@@ -1,0 +1,30 @@
+{
+  "robot_step": {
+    "value": 0.01,
+    "function": null
+  },
+  "human_skills": {
+    "reset_cube_far": {
+      "cost": {
+        "value": 5.0,
+        "function": null
+      },
+      "duration": {
+        "value": 1.0,
+        "function": null
+      }
+    },
+    "reset_cube_and_bin_near": {
+      "cost": {
+        "value": 5.0,
+        "function": null
+      },
+      "duration": {
+        "value": 1.0,
+        "function": null
+      }
+    }
+  },
+  "human_weight": 10.0,
+  "objective_lambda": 0.00012
+}

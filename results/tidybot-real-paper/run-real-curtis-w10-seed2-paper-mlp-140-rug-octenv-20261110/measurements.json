@@ -1,0 +1,46 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 0,
+    "clock_steps": 0,
+    "robot_steps": 0,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 0,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_file_sha256": "33df6a394c0bf4e3292f223e8895ed535ef4f2d11fe147f2d9f7e1a89d4f1630",
+    "robot_cost": 0,
+    "human_cost": 0,
+    "physical_cost": 0.0,
+    "human_steps": 0,
+    "human_invocations_by_skill": {}
+  },
+  {
+    "index": 1,
+    "practice_steps": 3881,
+    "clock_steps": 3881,
+    "robot_steps": 3875,
+    "human_invocations": 6,
+    "human_resets_by_destination": {
+      "robot_side": 2,
+      "opposite_side": 4
+    },
+    "robot_invocations": 14,
+    "learning_updates": 1,
+    "session_index": 1,
+    "policy_file_sha256": "f172f68570349259c0ecdf188ebe46d20d1e583e46d4bb6836d0216e8a23763e",
+    "robot_cost": 38.75000000000086,
+    "human_cost": 46.95058151989942,
+    "physical_cost": 508.2558151989951,
+    "human_steps": 6,
+    "human_invocations_by_skill": {
+      "reset_cube_and_bin_near": 2,
+      "reset_cube_far": 4
+    },
+    "after_cycle": 0
+  }
+]

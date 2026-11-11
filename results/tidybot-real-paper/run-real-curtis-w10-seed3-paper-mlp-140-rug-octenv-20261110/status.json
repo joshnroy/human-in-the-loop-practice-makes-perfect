@@ -1,0 +1,24 @@
+{
+  "phase": "failed",
+  "updated_unix": 1794326641.6701932,
+  "practice_steps": 4557,
+  "robot_steps": 4554,
+  "human_invocations": 3,
+  "human_resets_by_destination": {
+    "robot_side": 2,
+    "opposite_side": 1
+  },
+  "learning_updates": 1,
+  "session_index": 1,
+  "measurement_snapshots": 2,
+  "evaluations_completed": 2,
+  "elapsed_seconds": 2533.970414687996,
+  "robot_cost": 45.53999999999951,
+  "human_cost": 22.87306222229963,
+  "physical_cost": 274.2706222229958,
+  "human_steps": 3,
+  "human_invocations_by_skill": {
+    "reset_cube_and_bin_near": 2,
+    "reset_cube_far": 1
+  }
+}
