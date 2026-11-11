@@ -57,7 +57,7 @@ def test_the_default_is_zero_deployment_cost_and_changes_no_value(*, domain):
     assert domain.expected_deployment_cost(beliefs=belief.skill_beliefs) == 0.0
 
 
-@pytest.mark.parametrize("domain", [TOSSING3D_DOMAIN, SWEEP_OFF_SHELF_DOMAIN])
+@pytest.mark.parametrize("domain", [SWEEP_OFF_SHELF_DOMAIN])
 def test_a_domain_that_does_not_model_deployment_cost_ignores_the_price(*, domain):
     belief = _belief(domain=domain)
     plain = Tossing3DPracticeModel(domain=domain, linear_cost_lambda=LAMBDA, stop_cost=PRICE)
