@@ -5,9 +5,29 @@ sweeptable3d/servo.py; torque-only feedback, with no object attachment or pose e
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
+
+
+class JointStep:
+    """The arm increment one control period commands, for the servo and its guards.
+
+    Every joint's wrapped error is scaled by one common factor, so the largest moves
+    ``LIMIT`` and the step stays on the straight joint segment to the target. Clipping
+    each joint on its own instead bends the step whenever one joint needs more than
+    ``LIMIT`` and the others less: at the +y Gather stance that rolled a clear blade
+    2.7 deg into the rack slab between a clear pose and a clear target, 3.76 mm deep
+    against the 3 mm allowance, and the guard refused the stroke.
+    """
+
+    LIMIT: ClassVar[float] = 0.1
+
+    @staticmethod
+    def toward(*, current: np.ndarray, target: np.ndarray) -> np.ndarray:
+        delta = (target - current + np.pi) % (2 * np.pi) - np.pi
+        largest = float(np.max(np.abs(delta)))
+        return current + delta * min(1.0, JointStep.LIMIT / largest if largest else 1.0)
 
 
 class SweepServo:
@@ -123,8 +143,7 @@ class SweepServo:
             self._control_update()
         if self._target is None or self._latched_tick != shelf.ticks:
             current = shelf.data.qpos[shelf.qa].copy()
-            error = (shelf.arm_reference - current + np.pi) % (2 * np.pi) - np.pi
-            self._target = current + np.clip(error, -0.1, 0.1)
+            self._target = JointStep.toward(current=current, target=shelf.arm_reference)
             self._latched_tick = shelf.ticks
             self._period_tick = 0
             if self._wiper is not None:

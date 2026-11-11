@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from hitl_pmp.environments.racktoserving3d.servo import SweepServo
+from hitl_pmp.environments.racktoserving3d.servo import JointStep, SweepServo
 from hitl_pmp.environments.racktoserving3d.tool import (
     BODY_REST,
     RackScraper,
@@ -622,3 +622,84 @@ def test_tool_clear_matches_the_reference_on_the_shipped_fixtures():
                     pose[:3, 3] = [x, 0, 0]
                     pose[2, 3] += tool.top + lift - tool.capsule_bottom(pose=pose)
                     assert tool.tool_clear(pose=pose) == reference_tool_clear(tool=tool, pose=pose)
+
+
+# The captured `gather_plus_y_push` refusal: one joint needs 0.1623 rad, the rest less.
+UNEQUAL_ERROR = np.array([0.1623, 0.05, -0.08, 0.02, 0.0, -0.01, 0.04])
+
+
+def test_a_joint_step_scales_every_joint_together_and_keeps_its_direction():
+    current = np.linspace(-0.3, 0.3, 7)
+    target = JointStep.toward(current=current, target=current + UNEQUAL_ERROR)
+    step = target - current
+    assert np.max(np.abs(step)) == pytest.approx(JointStep.LIMIT)
+    np.testing.assert_allclose(step, UNEQUAL_ERROR * (JointStep.LIMIT / 0.1623))
+    near = current + 0.5 * UNEQUAL_ERROR
+    np.testing.assert_allclose(JointStep.toward(current=current, target=near), near)
+    wrapped = JointStep.toward(current=np.full(7, 3.1), target=np.full(7, -3.1))
+    np.testing.assert_allclose(wrapped - 3.1, np.full(7, 2 * np.pi - 6.2))
+
+
+def test_servo_commands_the_direction_preserving_joint_step():
+    robot = SimpleNamespace(
+        _update_ctrl=Mock(),
+        _compute_arm_torques=Mock(return_value=np.zeros(7)),
+        ARM_TORQUE_LIMITS=np.full(7, 2.0),
+    )
+    shelf = SimpleNamespace(
+        core=SimpleNamespace(_robot_env=robot),
+        model=SimpleNamespace(nv=7, site_bodyid=np.array([0])),
+        data=SimpleNamespace(qpos=np.zeros(7)),
+        site=0,
+        qa=np.arange(7),
+        arm_reference=UNEQUAL_ERROR.copy(),
+        ticks=0,
+    )
+    compute = robot._compute_arm_torques
+    with SweepServo(shelf=shelf, max_normal_force_n=0):
+        robot._update_ctrl(np.zeros(11))
+    np.testing.assert_allclose(
+        compute.call_args.kwargs["target_positions"],
+        JointStep.toward(current=np.zeros(7), target=UNEQUAL_ERROR),
+    )
+
+
+def _guarded_scraper(*, arm, base):
+    tool = RackScraper.__new__(RackScraper)
+    tool.shelf = SimpleNamespace(
+        in_hand=None,
+        data=SimpleNamespace(qpos=np.r_[base, arm]),
+        ba=np.arange(3),
+        qa=np.arange(3, 10),
+        base_target=base.copy(),
+        base_step_limit=0.015,
+        step=Mock(),
+    )
+    tool.check_configuration = Mock()
+    return tool
+
+
+def test_the_step_guard_checks_the_command_the_servo_will_send():
+    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
+    tool = _guarded_scraper(arm=arm, base=base)
+    tool.step(arm=arm + UNEQUAL_ERROR, label="gather_plus_y_push")
+    checked = [call.kwargs["arm"] for call in tool.check_configuration.call_args_list]
+    np.testing.assert_allclose(
+        checked[-1], JointStep.toward(current=arm, target=arm + UNEQUAL_ERROR)
+    )
+    for configuration in checked:
+        moved = configuration - arm
+        np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)
+    tool.shelf.step.assert_called_once()
+
+
+def test_an_arm_segment_is_checked_along_the_straight_path_the_servo_follows():
+    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
+    tool = _guarded_scraper(arm=arm, base=base)
+    tool.check_arm_segment(start=arm, target=arm + UNEQUAL_ERROR, base=base, holding=False)
+    checked = [call.kwargs["arm"] for call in tool.check_configuration.call_args_list]
+    np.testing.assert_allclose(checked[-1], arm + UNEQUAL_ERROR)
+    assert len(checked) >= 7
+    for configuration in checked:
+        moved = configuration - arm
+        np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)

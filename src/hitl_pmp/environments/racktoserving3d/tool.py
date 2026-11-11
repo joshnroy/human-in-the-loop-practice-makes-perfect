@@ -21,6 +21,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
     WiperLost,
 )
 
+from .servo import JointStep
 from .transit import (
     ArmTransit,
     geom_half_extents,
@@ -990,7 +991,7 @@ class RackScraper(TableWiper):
     def check_arm_segment(
         self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
     ) -> None:
-        """Check the same wrapped, axis-clipped joint path used by ShelfSkills.step."""
+        """Check the wrapped, straight joint path `JointStep` drives the arm along."""
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
         for fraction in np.linspace(0, 1, count + 1):
@@ -998,17 +999,6 @@ class RackScraper(TableWiper):
                 self.check_configuration(base=base, arm=start + fraction * delta, holding=holding)
             except SkillFailed as exc:
                 raise SkillFailed(f"straight joint segment fraction {fraction:.3f}: {exc}") from exc
-        for distance in np.arange(0, np.max(np.abs(delta)), 0.025):
-            try:
-                self.check_configuration(
-                    base=base,
-                    arm=start + np.sign(delta) * np.minimum(np.abs(delta), distance),
-                    holding=holding,
-                )
-            except SkillFailed as exc:
-                raise SkillFailed(
-                    f"axis-clipped joint segment at {distance:.3f} rad: {exc}"
-                ) from exc
 
     def ik(
         self,
@@ -1036,8 +1026,7 @@ class RackScraper(TableWiper):
             self.require_held(label=label)
         current_arm = shelf.data.qpos[shelf.qa].copy()
         current_base = shelf.data.qpos[shelf.ba].copy()
-        delta = (arm - current_arm + np.pi) % (2 * np.pi) - np.pi
-        next_arm = current_arm + np.clip(delta, -0.1, 0.1)
+        next_arm = JointStep.toward(current=current_arm, target=arm)
         next_base = current_base + np.clip(
             shelf.base_target - current_base, -shelf.base_step_limit, shelf.base_step_limit
         )
