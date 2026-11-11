@@ -1,0 +1,80 @@
+import argparse
+import pickle
+
+import pytest
+
+from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+from hitl_pmp.methods.deployment import SnapshotDeployment
+from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from hitl_pmp.step_protocol import DeploymentSnapshot, StepPracticeRunner
+
+
+@pytest.mark.parametrize("env", ["tossing3d", "kitchen_recycling3d"])
+def test_simulation_uses_its_method_policy_by_default(*, env):
+    assert StepPracticeRunner.method_specific_evaluation(args=argparse.Namespace(env=env))
+    assert not StepPracticeRunner.method_specific_evaluation(
+        args=argparse.Namespace(env=env, evaluation_policy="shared-ees")
+    )
+
+
+def test_real_retains_its_evaluation_default():
+    assert not StepPracticeRunner.method_specific_evaluation(
+        args=argparse.Namespace(env="tossing3d_real")
+    )
+
+
+def test_dp_snapshot_retains_policy_and_unobserved_skill_priors():
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=5,
+        dp_solver="enumeration",
+        dp_initial_competence={provider.skills()[0].name: 0.2},
+        dp_max_states=100,
+    )
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(raw=raw, env=env, provider=provider)
+    assert isinstance(restored, SnapshotDeployment)
+    assert restored.deployment_policy.kind == "dp_mdp"
+    assert restored.deployment_policy.max_states == 100
+    assert restored.deployment_policy.dp_priors == method._dp_skill_priors  # noqa: SLF001
+    assert restored._competence_models == {}  # noqa: SLF001 -- encoding never fills training priors
+    assert method._competence_models == {}  # noqa: SLF001
+
+
+def test_legacy_snapshot_still_uses_shared_ees_and_unknown_version_fails():
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    raw = DeploymentSnapshot.encode(method=EesMethod(env=env, skill_provider=provider))
+    payload = pickle.loads(raw)
+    payload.pop("version", None)
+    payload.pop("deployment_policy", None)
+    restored = DeploymentSnapshot.restore(raw=pickle.dumps(payload), env=env, provider=provider)
+    assert type(restored) is EesMethod
+    payload["version"] = 9000
+    with pytest.raises(ValueError, match="snapshot version"):
+        DeploymentSnapshot.restore(raw=pickle.dumps(payload), env=env, provider=provider)
+
+
+@pytest.mark.parametrize(
+    "variant,solver", [("curtis", "determinized_astar"), ("algorithm3", "expectimax")]
+)
+def test_belief_method_snapshot_records_its_valued_deployment_policy(*, variant, solver):
+    from tests.methods.belief_space.test_tossing3d_method import _build
+
+    method = _build(pomdp_determinized_variant=variant, pomdp_solver=solver, pomdp_num_particles=32)
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(raw=raw, env=method.env, provider=method.skill_provider)
+    assert restored.deployment_policy.kind == "tossing_canonical"
+    assert restored.deployment_policy.source_method == f"{variant}/{solver}"
+    assert restored.deployment_policy.horizon == method.pomdp_domain.deployment_horizon
+    # Explicit historical EES replay remains possible without changing hardware.
+    legacy = DeploymentSnapshot.encode(method=method, method_specific=False)
+    historical = DeploymentSnapshot.restore(
+        raw=legacy, env=method.env, provider=method.skill_provider
+    )
+    assert historical.deployment_policy.kind == "shared_ees"

@@ -274,6 +274,15 @@ class Cli:
             "every RNG from the snapshot and the task before each task.",
         )
         parser.add_argument(
+            "--evaluation-policy",
+            choices=("method", "shared-ees"),
+            default=None,
+            help="Step protocol: the deployment policy encoded in new snapshots. "
+            "Default for Tossing simulation: method (DP's absorbing-failure task MDP; "
+            "Curtis/expectimax's finite-horizon pick/open/toss policy; EES's planner). "
+            "Other environments retain shared-ees. Old snapshots retain their saved policy.",
+        )
+        parser.add_argument(
             "--evaluation-task-timeout-seconds",
             type=lambda value: Cli.parse_positive_float(value=value),
             default=None,
