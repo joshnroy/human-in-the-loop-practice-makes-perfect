@@ -477,6 +477,9 @@ def _applicable(*, env: Tossing3DEnvironment, atoms: frozenset[GroundAtom]) -> l
     ]
 
 
+_PLANNING_TIES = {"exp22 gpon global_curve 0"}
+
+
 @pytest.mark.time_limit(seconds=120)
 @_NEEDS_KINDER
 @pytest.mark.parametrize("label", list(_STUCK_STATES))
@@ -509,6 +512,11 @@ def test_a_known_stuck_state_offers_pouring_for_an_in_bin_refusal(
     goal = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
     plan = _ees_method(env=env).plan_to(init_atoms=atoms, goal=goal, costs={}, practicing=True)
     recovery = "PourCubeOutOfBin" if pourable else "HumanReset"
+    if label in _PLANNING_TIES:
+        # No competence observed yet: dumping and the human reset cost the same
+        # -log(competence) to EES. Josh (2026-11-08) left the tie to Fast Downward,
+        # which plans the human reset here.
+        recovery = "HumanReset"
     assert [_plan_name(ground=ground) for ground in plan] == [recovery, "PickCube"]
 
     # What the predicate predicts: the dispatched pick is refused before it moves.
