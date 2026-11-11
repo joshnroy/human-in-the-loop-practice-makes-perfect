@@ -413,3 +413,60 @@ def test_counter_compiles_wooden_so_the_white_plate_stands_out(*, registry: Any)
     )
     plate = model.geom("box_0_well").id
     assert model.geom_rgba[plate][:3].min() > model.geom_rgba[top][:3].max()
+
+
+def test_wire_solid_keeps_wire_visuals_and_replaces_their_collision(*, registry: Any) -> None:
+    import mujoco
+
+    solid = RackServingConfig(surface_kind="wire_solid")
+    wire = RackServingConfig(surface_kind="wire")
+    model, data = _compiled_scene(registry=registry, config=solid)
+    old, _ = _compiled_scene(registry=registry, config=wire)
+    rack = model.body("rack_0").id
+    assert model.body_mass[rack] == pytest.approx(old.body("rack_0").mass)
+    np.testing.assert_allclose(model.body_inertia[rack], old.body("rack_0").inertia)
+    assert model.body_mocapid[rack] >= 0
+    contacts = []
+    for geom in np.flatnonzero(model.geom_bodyid == rack):
+        name = model.geom(geom).name
+        if "wire_" in name:
+            previous = old.geom(name).id
+            assert model.geom_contype[geom] == model.geom_conaffinity[geom] == 0
+            for attribute in ("geom_type", "geom_size", "geom_pos", "geom_quat", "geom_rgba"):
+                np.testing.assert_array_equal(
+                    getattr(model, attribute)[geom], getattr(old, attribute)[previous]
+                )
+        if model.geom_contype[geom] or model.geom_conaffinity[geom]:
+            contacts.append(name)
+    assert set(contacts) == {"rack_0_support", *(f"rack_0_foot_{i}" for i in range(4))}
+    slab = model.geom("rack_0_support").id
+    assert model.geom_type[slab] == mujoco.mjtGeom.mjGEOM_BOX
+    assert model.geom_rgba[slab, 3] == 0
+    np.testing.assert_allclose(
+        model.geom_size[slab], [solid.rack_depth / 2, solid.rack_width / 2, solid.rack_wire_radius]
+    )
+    assert data.geom_xpos[slab, 2] + model.geom_size[slab, 2] == pytest.approx(solid.rack_top_z)
+    np.testing.assert_allclose(model.geom_friction[slab], solid.rack_friction)
+    assert model.geom_condim[slab] == solid.support_contact_dimension
+
+
+def test_native_food_rests_on_the_invisible_support(*, registry: Any) -> None:
+    import mujoco
+
+    config = RackServingConfig(surface_kind="wire_solid")
+    model, data = _compiled_scene(registry=registry, config=config)
+    model.opt.timestep = 0.0005
+    for _ in range(6000):
+        mujoco.mj_step(model, data)
+    slab = model.geom("rack_0_support").id
+    supported = set()
+    for contact in data.contact[: data.ncon]:
+        if slab in (contact.geom1, contact.geom2):
+            other = contact.geom2 if contact.geom1 == slab else contact.geom1
+            supported.add(model.body(model.geom_bodyid[other]).name)
+    assert supported == {f"cube_{i}" for i in range(5)}
+    for name in supported:
+        body = model.body(name).id
+        assert data.xpos[body, 2] > config.rack_top_z
+        velocity = model.jnt_dofadr[model.body_jntadr[body]]
+        assert np.linalg.norm(data.qvel[velocity : velocity + 3]) < 0.001

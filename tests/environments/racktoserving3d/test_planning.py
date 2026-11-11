@@ -79,3 +79,43 @@ def test_pick_scraper_holds_the_scraper_from_the_counter():
         assert env.backend().held(name="wiper_0")
     finally:
         env.close()
+
+
+def test_solid_rack_mirrors_the_slab_and_feet_without_visual_wires(*, rack):
+    import pybullet as p
+
+    env, shelf, sim = rack
+    model = shelf.model
+    assert env.config.surface_kind == "wire_solid"
+    wires = [g for g in range(model.ngeom) if model.geom(g).name.startswith("rack_0_wire_")]
+    assert wires
+    assert all(model.geom_contype[g] == model.geom_conaffinity[g] == 0 for g in wires)
+    assert sim.mirrored_geom_count(name="rack_0") == 5
+    client = sim.physics_client_id
+    collision = p.createCollisionShape(p.GEOM_SPHERE, radius=0.001, physicsClientId=client)
+    probe = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=collision, physicsClientId=client)
+    try:
+        # This point is between the decorative wires, but still has a solid support.
+        centre = shelf.data.xpos[model.body("rack_0").id]
+        top = centre[2] + env.config.rack_height
+        p.resetBasePositionAndOrientation(
+            probe,
+            (centre[0] + 0.007, centre[1] + 0.007, top + 0.0005),
+            (0, 0, 0, 1),
+            physicsClientId=client,
+        )
+        contacts = p.getClosestPoints(
+            probe, sim.named_collision_bodies()["rack_0"], distance=0, physicsClientId=client
+        )
+        assert contacts and min(point[8] for point in contacts) < 0
+        p.resetBasePositionAndOrientation(
+            probe,
+            (centre[0] + env.config.rack_depth / 2 + 0.005, centre[1], top),
+            (0, 0, 0, 1),
+            physicsClientId=client,
+        )
+        assert not p.getClosestPoints(
+            probe, sim.named_collision_bodies()["rack_0"], distance=0, physicsClientId=client
+        )
+    finally:
+        p.removeBody(probe, physicsClientId=client)

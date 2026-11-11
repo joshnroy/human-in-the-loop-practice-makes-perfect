@@ -28,6 +28,8 @@ def restored(*, fixture: Path):
 
     plain = json.loads(fixture.read_text())
     config = RackServingConfig.model_validate({
+        # These recorded states predate the solid collision surface.
+        "surface_kind": "wire",
         "food_handling": "physical",
         **{k: v for k, v in plain.get("config", {}).items() if k in RackServingConfig.model_fields},
     })

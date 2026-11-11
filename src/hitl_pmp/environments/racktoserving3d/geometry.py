@@ -1,8 +1,9 @@
 """Task-local native MuJoCo geometry; no KINDER defaults or classes are patched.
 
-Wire mode has round crossing wires and open gaps. Concept mode has a flat
-rectangular-web perforated platform. Neither has a hidden supporting plate or
-raised front lip. Both have four feet and frictional support. The rack and every
+The default wire_solid mode keeps the round crossing wires as visual geometry
+and uses one invisible solid support slab. Historical wire mode collides with the
+wires and leaves open gaps. Concept mode is a rectangular-web perforated platform.
+All three retain four feet, frictional support and no raised front lip. The rack and every
 serving object are welded to the counter (`CounterWeld`). Hardware properties are
 assumptions documented in :mod:`.config`.
 """
@@ -205,14 +206,14 @@ def install_geometry() -> None:
     if RACK_TYPE not in REGISTERED_OBJECTS:
 
         class CoolingRack(CounterWeld, Cuboid):
-            """Bottom-origin rack welded to the counter, with wire or perforation colliders."""
+            """Bottom-origin rack with visual wires and selectable support geometry."""
 
             def _create_xml_element(self) -> ET.Element:
                 config = RackServingConfig.model_validate(self.options["rack_serving_config"])
                 body = ET.Element("body", name=self.name)
                 self.weld(body=body)
                 radius = config.rack_wire_radius
-                wire = config.surface_kind == "wire"
+                wire = config.surface_kind != "concept"
                 thickness = 2 * radius if wire else config.concept_thickness
                 web_width = 2 * radius if wire else config.concept_web_width
                 pitch = config.rack_wire_spacing if wire else config.concept_pitch
@@ -285,6 +286,27 @@ def install_geometry() -> None:
                     geom.set("friction", _values(values=config.rack_friction))
                     geom.set("condim", str(config.support_contact_dimension))
                     geom.set("rgba", "0.65 0.68 0.71 1")
+                if config.surface_kind == "wire_solid":
+                    for geom in geoms:
+                        if "_wire_" in geom.get("name", ""):
+                            geom.set("contype", "0")
+                            geom.set("conaffinity", "0")
+                    # Keep the original visible geometry's mass and inertia. Only
+                    # contact changes: the slab's top is exactly the wire-top plane.
+                    ET.SubElement(
+                        body,
+                        "geom",
+                        name=f"{self.name}_support",
+                        type="box",
+                        size=_values(values=(config.rack_depth / 2, config.rack_width / 2, radius)),
+                        pos=_values(values=(0, 0, surface_z)),
+                        mass="0",
+                        contype="1",
+                        conaffinity="1",
+                        friction=_values(values=config.rack_friction),
+                        condim=str(config.support_contact_dimension),
+                        rgba="0 0 0 0",
+                    )
                 return body
 
             @staticmethod

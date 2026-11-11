@@ -6,6 +6,8 @@ manufacturer specifications. All other hardware dimensions, masses and friction
 below are modeling assumptions requiring physical calibration.
 The food is Pouring3D's rigid frozen potsticker (`potsticker.py`), whose extents
 are read from its shape, not configured; it is not a deformable or thermal model.
+``wire_solid`` renders the wire rack with one invisible solid support slab;
+``wire`` retains the original wire contact geometry for historical replays.
 ``concept`` denotes an invented perforated platform, not the specified wire rack.
 """
 
@@ -37,7 +39,7 @@ class RackServingConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    surface_kind: Literal["wire", "concept"] = "wire"
+    surface_kind: Literal["wire_solid", "wire", "concept"] = "wire_solid"
     # "welded" (default since 2026-11-06, Josh): PickFood, PlaceFoodOnTray and
     # ReturnFoodToRack drive and reach for real, but ignore food in planning, never
     # touch food physically, and take or set down the dumpling by a grasp weld and a

@@ -38,7 +38,7 @@ def test_cli_defaults_match_config_with_step_protocol_registered():
     for field in RackServingConfig.model_fields:
         if field != "mode":
             assert getattr(args, field) == getattr(defaults, field)
-    assert args.surface_kind == "wire"
+    assert args.surface_kind == "wire_solid"
     assert not hasattr(args, "cooling_seconds")
     assert args.human_interruption_cost == 5
     assert args.skill_step_limit == 12000

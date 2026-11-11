@@ -42,6 +42,15 @@ dimensions are recorded as supplied; they have not been independently researched
 converted into a replacement specification, or verified against delivered hardware.
 The model assigns 0.375 m to width (world y) and 0.255 m to depth (world x).
 
+**Simulation update (2026-11-11):** the default is now
+`surface_kind="wire_solid"`: it renders exactly the same wires and feet, but the
+wires are visual-only and one invisible solid slab supplies contact across the
+rack footprint. The slab top matches the old wire-top height, its thickness is
+the wire diameter, and it uses the same friction and contact dimension. The
+feet and counter weld remain. Both MuJoCo and the motion planner use the slab;
+no controller or collision allowance changes. Historical wire runs below retain
+the original wire collision model and must be replayed with `surface_kind="wire"`.
+
 `surface_kind="wire"` uses individual round wire colliders with open gaps and four
 feet. Wire radius, spacing, foot geometry, friction, **rack height (0.025 m)**, and
 **rack mass (0.5 kg)** are configurable assumptions. In particular, height and mass
@@ -50,7 +59,7 @@ before interpreting simulation behavior as hardware evidence.
 
 `surface_kind="concept"` is a separate, invented perforated-platform concept with
 flat rectangular webs and actual openings. It is not another name for the purchased
-wire rack and must not inherit claims about that rack. Neither variant contains a
+wire rack and must not inherit claims about that rack. Neither historical variant contains a
 hidden solid supporting plate or a raised front lip.
 
 The scraper defaults to a 0.25 m-wide, 0.12 m-high blade, 0.001 m blade thickness,
