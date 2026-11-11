@@ -286,7 +286,16 @@ def _settling_controller(*, lag):
         ik=Mock(side_effect=lambda **kwargs: kwargs["position"].copy()),
         step=Mock(side_effect=step),
     )
-    controller.shelf = SimpleNamespace(base_target=None)
+    controller.shelf = SimpleNamespace(
+        base_target=None, data=SimpleNamespace(qpos=np.zeros(7)), qa=np.arange(7)
+    )
+    controller.metrics = {}
+    controller.tool.wiper_pose = Mock(
+        side_effect=lambda: np.block([
+            [np.eye(3), edge["now"].reshape(3, 1)],
+            [np.zeros((1, 3)), np.ones((1, 1))],
+        ])
+    )
     controller.hand_for_tool = lambda *, body: body
     body = np.eye(4)
     body[:3, 3] = stroke.start
@@ -337,3 +346,43 @@ def test_stroke_end_settle_never_presses_the_blade_down_into_the_rack():
     )
     commanded = [call.kwargs["position"] for call in controller.tool.ik.call_args_list]
     assert min(position[2] for position in commanded) >= stroke.end[2] - 0.002 - 1e-12
+
+
+def test_optional_settling_backtracks_a_guarded_correction_before_moving():
+    controller, stroke, body, steps = _settling_controller(lag=np.array([0.0, 0.0075, 0.0]))
+    calls = []
+
+    def guarded_ik(**kwargs):
+        calls.append(kwargs["position"].copy())
+        if len(calls) == 1:
+            raise SkillFailed("axis-clipped joint segment would collide")
+        return kwargs["position"].copy()
+
+    controller.tool.ik.side_effect = guarded_ik
+    controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert steps
+    assert abs(calls[1][1] - stroke.end[1]) < abs(calls[0][1] - stroke.end[1])
+    assert controller.metrics["settling_corrections"][0]["fraction"] == 0.5
+
+
+def test_optional_settling_leaves_blocked_corrections_unexecuted():
+    controller, stroke, body, steps = _settling_controller(lag=np.array([0.0, 0.0075, 0.0]))
+    controller.tool.ik.side_effect = SkillFailed("fixture blocks correction")
+    before, after = controller.settle_stroke_end(
+        stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+    )
+    assert not steps
+    assert before == after
+    assert controller.metrics["settling_corrections"][0]["fraction"] == 0
+    assert "fixture blocks" in controller.metrics["settling_corrections"][0]["reason"]
+
+
+def test_optional_settling_does_not_swallow_execution_failure():
+    controller, stroke, body, _ = _settling_controller(lag=np.array([0.0, 0.0075, 0.0]))
+    controller.tool.step.side_effect = SkillFailed("lost held scraper during execution")
+    with pytest.raises(SkillFailed, match="lost held scraper"):
+        controller.settle_stroke_end(
+            stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
+        )
