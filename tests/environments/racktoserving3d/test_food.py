@@ -70,6 +70,7 @@ def food():
         plan_base=Mock(),
         check_arm_clearance=Mock(),
         departing_from_contacts=Mock(side_effect=nullcontext),
+        settle_lost_food=Mock(),
         departing={},
         departing_food={},
     )
@@ -246,6 +247,7 @@ def test_lost_food_clears_bookkeeping_without_opening_hand(*, food):
         food._require_held(name="cube_0")
     assert food.carried is food.controllers.held_food is food.shelf.held_cube is None
     assert food.shelf.grip == 1.0
+    food.motion.settle_lost_food.assert_called_once_with()
 
 
 def test_successful_pick_requires_contact_after_lift(*, food):
