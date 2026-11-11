@@ -130,6 +130,11 @@ class LightSwitchEvaluationProtocol:
         del problem, action
 
     @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        del action
+        return None
+
+    @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
         del problem
         return None
