@@ -53,6 +53,7 @@ def _rebuild_holding_jug(*, env: KitchenEnvironment) -> None:
     c.data.time = state["time"]
     mujoco.mj_forward(c.model, c.data)
     # The recording carries MuJoCo state only; the run held the jug, closed, here.
+    c.pitcher_grasp_acquired()
     c.held, c.grip = "pitcher", 1.0
     c.last_q = c.data.qpos[c.arm_q].copy()
     c.base_target = c.data.qpos[c.base_q].copy()
