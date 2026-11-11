@@ -596,6 +596,16 @@ class Tossing3DPomdpCli(EesCli):
             "coefficient. Omit to use hard-budget G with B=20 instead.",
         )
         parser.add_argument(
+            "--pomdp-competence-prior",
+            type=float,
+            nargs=2,
+            metavar=("ALPHA", "BETA"),
+            default=None,
+            help="Beta(ALPHA, BETA) competence prior for every skill the practice domain "
+            "infers, robot and human alike, in place of the domain's own (Beta(1, 3) for "
+            "Tossing3D, SweepOffShelf3D and RackServing3D).",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -674,6 +684,16 @@ class Tossing3DPomdpCli(EesCli):
                 "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
             )
         competence_prior = EesCli.competence_prior(args=args)
+        if args.pomdp_competence_prior is not None:
+            alpha, beta = args.pomdp_competence_prior
+            if not (alpha > 0 and beta > 0):
+                raise ValueError("--pomdp-competence-prior needs positive ALPHA and BETA")
+            prior = {"initial_competence_alpha": alpha, "initial_competence_beta": beta}
+            if isinstance(domain, PracticeDomain):
+                domain = domain.model_copy(update=prior)
+            else:
+                build = domain
+                domain = lambda provider: build(provider).model_copy(update=prior)  # noqa: E731
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
             # Resolved here so config_snapshot.json records the depth actually searched.
             # Determinized A* searches no depth, so its snapshot records None.
