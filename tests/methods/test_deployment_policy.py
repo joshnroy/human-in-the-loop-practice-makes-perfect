@@ -8,7 +8,7 @@ import pytest
 from hitl_pmp.core.method.types import LabeledAction, LiftedAtom, Skill
 from hitl_pmp.core.problem.environment.types import Object, State  # noqa: F401 -- pydantic resolves State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate, Task
-from hitl_pmp.methods.belief_space.tossing3d_deployment_model import evaluate_deployment_policy
+from hitl_pmp.methods.belief_space.tossing3d_deployment_model import Tossing3DDeployment
 from hitl_pmp.methods.deployment import DeploymentPolicy
 from hitl_pmp.methods.practice_makes_perfect.competence_models import OptimisticSkillCompetenceModel
 
@@ -113,9 +113,14 @@ def test_executed_tossing_policy_has_the_value_used_by_practice(*, horizon):
         )
 
     assert value(history=[], state="ready") == pytest.approx(
-        evaluate_deployment_policy(
-            pick_competence=0.4, open_competence=0.7, toss_competence=0.6, horizon=horizon
-        )
+        Tossing3DDeployment.values(
+            competences={
+                "PickCube": np.array([0.4]),
+                "OpenGripper": np.array([0.7]),
+                "MoveToTossLocationAndToss": np.array([0.6]),
+            },
+            horizon=horizon,
+        )[0]
     )
 
 

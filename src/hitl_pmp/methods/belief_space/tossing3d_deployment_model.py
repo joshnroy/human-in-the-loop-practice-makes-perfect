@@ -1,15 +1,22 @@
 """Deployment-policy value calculation for Tossing3D."""
 
 import math
+from collections.abc import Mapping
+from functools import cache
+from typing import ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
 
+from .deployment_value_iteration import DeploymentOption, DeploymentValueIteration
+from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, TOSS_SKILL
 from .types.skill_belief import SkillBelief
 
 
 class DeploymentPolicyExpectation:
-    """Integrate the canonical deployment policy over independent skill beliefs."""
+    """Integrate `Tossing3DDeployment`'s value over independent skill beliefs, in
+    closed form: an exact expectation, where a sample mean's noise would be much
+    larger than the cost differences the planner compares stopping values by."""
 
     @staticmethod
     def evaluate(
@@ -38,45 +45,38 @@ class DeploymentPolicyExpectation:
         return toss.mean_competence() * ready_probability
 
 
-def evaluate_deployment_policies(
-    *,
-    toss_competences: NDArray[np.float64],
-    pick_competences: NDArray[np.float64],
-    open_competences: NDArray[np.float64],
-    horizon: int,
-) -> NDArray[np.float64]:
-    """Evaluate a batch of sampled deployment models together."""
-    ready_values = np.zeros_like(toss_competences)
-    holding_values = np.zeros_like(toss_competences)
-    closed_gripper_values = np.zeros_like(toss_competences)
-    for _ in range(horizon):
-        previous_ready = ready_values
-        previous_holding = holding_values
-        previous_closed_gripper = closed_gripper_values
-        holding_values = toss_competences
-        ready_values = (
-            pick_competences * previous_holding + (1.0 - pick_competences) * previous_closed_gripper
-        )
-        closed_gripper_values = (
-            open_competences * previous_ready + (1.0 - open_competences) * previous_closed_gripper
-        )
-    return ready_values
+class Tossing3DDeployment:
+    """The held-out solve probability for Tossing3D, given each skill's competence:
+    pick, toss, and open the gripper to try again after a failed pick. A
+    static-method container.
 
+    Each state has one action, so nothing is chosen, and unlike the shelf and the rack
+    a failure moves the state: a failed pick leaves the gripper closed on nothing, a
+    failed open leaves it closed, and a toss ends the episode either way. No human
+    reset exists at test time.
+    """
 
-def evaluate_deployment_policy(
-    *, toss_competence: float, pick_competence: float, open_competence: float, horizon: int
-) -> float:
-    """Solve the canonical deployment MDP; human reset is unavailable at test."""
-    ready_value = holding_value = closed_gripper_value = 0.0
-    for _ in range(horizon):
-        previous_ready = ready_value
-        previous_holding = holding_value
-        previous_closed_gripper = closed_gripper_value
-        holding_value = toss_competence
-        ready_value = (
-            pick_competence * previous_holding + (1.0 - pick_competence) * previous_closed_gripper
+    START = "ready"
+    TERMINAL_VALUES: ClassVar[dict[str, float]] = {"success": 1.0, "failure": 0.0}
+
+    @staticmethod
+    @cache
+    def transitions() -> dict[str, tuple[DeploymentOption, ...]]:
+        return {
+            "ready": ((PICK_SKILL, "holding", "closed_gripper"),),
+            "holding": ((TOSS_SKILL, "success", "failure"),),
+            "closed_gripper": ((OPEN_GRIPPER_SKILL, "ready", "closed_gripper"),),
+        }
+
+    @staticmethod
+    def values(
+        *, competences: Mapping[str, NDArray[np.float64]], horizon: int
+    ) -> NDArray[np.float64]:
+        """Batch value at the start state (cube on the ground, gripper open)."""
+        return DeploymentValueIteration.values(
+            transitions=Tossing3DDeployment.transitions(),
+            terminal_values=Tossing3DDeployment.TERMINAL_VALUES,
+            competences=competences,
+            horizon=horizon,
+            start=Tossing3DDeployment.START,
         )
-        closed_gripper_value = (
-            open_competence * previous_ready + (1.0 - open_competence) * previous_closed_gripper
-        )
-    return ready_value

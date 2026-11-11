@@ -12,7 +12,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     PICK_SKILL,
     TOSS_SKILL,
 )
-from hitl_pmp.methods.belief_space.tossing3d_deployment_model import evaluate_deployment_policies
+from hitl_pmp.methods.belief_space.tossing3d_deployment_model import Tossing3DDeployment
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import refit_belief_state
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
@@ -122,8 +122,9 @@ def test_experiment_beliefs_match_cartesian_support_integration(
         float(
             np.sum(
                 joint_weights
-                * evaluate_deployment_policies(
-                    pick_competences=pick, toss_competences=toss, open_competences=opened, horizon=8
+                * Tossing3DDeployment.values(
+                    competences={PICK_SKILL: pick, TOSS_SKILL: toss, OPEN_GRIPPER_SKILL: opened},
+                    horizon=8,
                 )
             )
         )
