@@ -17,6 +17,26 @@ import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REFUSED = sorted(FIXTURES.glob("refused_pick_*.json"))
+# Starts welded PickFood itself failed from on 8adcf4a55 (replay of the 80 overnight
+# refusals): a pad grazing the counter or a wire while the base drives (ees0 107, ees1
+# 42), the lift after the weld (ees0 18, ees2 32), the scraper's handle resting inside
+# the robot's base (ees1 11), and a refusal after the blocked-start escape (ees1 111).
+WELDED_FAILURES = sorted(FIXTURES.glob("welded_failure_*.json"))
+STILL_REFUSED = (
+    "ees1 seq 111: the robot stands beside the counter's +y side with its arm over the "
+    "counter; the tuck to the carry pose and every base path from there are refused. "
+    "Not yet fixed (follow-up)."
+)
+STARTS = [
+    pytest.param(
+        path,
+        id=path.stem,
+        marks=[pytest.mark.xfail(reason=STILL_REFUSED, strict=True)]
+        if "refused_after_escape" in path.stem
+        else [],
+    )
+    for path in REFUSED + WELDED_FAILURES
+]
 PICK, PLACE, RETURN = 3.0, 4.0, 5.0
 
 
@@ -49,6 +69,9 @@ def restored(*, fixture: Path, food_handling: str = "welded"):
     shelf = env.rack_controllers().shelf
     shelf.grip = backend.grip = float(plain["grip"])
     shelf.base_target = data.qpos[shelf.ba].copy()
+    # The arm is commanded where it was recorded, as the run's last skill left it; a
+    # stale reference (the reset's home) would drag it there on the first hold.
+    shelf.arm_reference = data.qpos[shelf.qa].copy()
     return env, plain["target"]
 
 
@@ -74,7 +97,7 @@ def upright(*, env, name: str) -> float:
     return float(data.xmat[model.body(name).id].reshape(3, 3)[2, 2])
 
 
-@pytest.mark.parametrize("fixture", REFUSED, ids=[path.stem for path in REFUSED])
+@pytest.mark.parametrize("fixture", STARTS)
 def test_a_pick_refused_under_physical_handling_executes_and_lifts(*, fixture):
     env, target = restored(fixture=fixture)
     try:
