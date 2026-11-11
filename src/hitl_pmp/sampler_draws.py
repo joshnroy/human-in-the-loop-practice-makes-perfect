@@ -38,7 +38,7 @@ it off, asserted end-to-end through the real CLI."""
 
 import argparse
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -71,6 +71,56 @@ class SamplerDrawRecorder(BaseModel):
     _handle: TextIO | None = PrivateAttr(default=None)
     _proposal_handle: TextIO | None = PrivateAttr(default=None)
     _cycle: int = PrivateAttr(default=0)
+    _checkpoint_positions: dict[str, tuple[int, bool]] | None = PrivateAttr(default=None)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Serialize stream positions, never process-local open handles.
+
+        Deserialization alone is read-only. The practice runner explicitly commits
+        file rollback after validating and restoring the checkpoint's simulator.
+        """
+        state = super().__getstate__()
+        private = dict(state["__pydantic_private__"])
+        positions = {}
+        for name in ("_handle", "_proposal_handle"):
+            handle = getattr(self, name)
+            opened = handle is not None and not handle.closed
+            if opened:
+                handle.flush()
+            positions[name] = (handle.tell() if opened else 0, opened)
+            private[name] = None
+        private["_checkpoint_positions"] = (
+            self._checkpoint_positions if self._checkpoint_positions is not None else positions
+        )
+        state["__pydantic_private__"] = private
+        return state
+
+    def restore_checkpoint_files(self) -> None:
+        """Keep the checkpointed prefixes and append from their exact byte offsets."""
+        if self._checkpoint_positions is None:
+            return
+        paths = {
+            "_handle": self.output_path,
+            "_proposal_handle": self.output_path.with_name(SAMPLER_PROPOSALS_FILENAME),
+        }
+        # Validate both before mutating either file.
+        for name, (offset, _) in self._checkpoint_positions.items():
+            path = paths[name]
+            size = path.stat().st_size if path.exists() else 0
+            if size < offset:
+                raise ValueError(f"sampler checkpoint file {path} is shorter than offset {offset}")
+        for name, (offset, opened) in self._checkpoint_positions.items():
+            path = paths[name]
+            if not path.exists():
+                continue
+            handle = path.open("r+", encoding="utf-8")
+            handle.truncate(offset)
+            handle.seek(0, 2)
+            if opened:
+                setattr(self, name, handle)
+            else:
+                handle.close()
+        self._checkpoint_positions = None
 
     @staticmethod
     def open_if_requested(*, args: argparse.Namespace) -> "SamplerDrawRecorder | None":
@@ -113,6 +163,7 @@ class SamplerDrawRecorder(BaseModel):
         Keeping it separate preserves the practice-execution row count of draws.
         `explore` is the sampler mode, not the phase: practice setup can be greedy.
         """
+        self.restore_checkpoint_files()
         if self._proposal_handle is None:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
             path = self.output_path.with_name(SAMPLER_PROPOSALS_FILENAME)
@@ -180,6 +231,7 @@ class SamplerDrawRecorder(BaseModel):
         """Opened on first write rather than at construction, so a run that never
         consults a sampler leaves no stray empty file to misread as "recorded, and
         nothing happened"."""
+        self.restore_checkpoint_files()
         if self._handle is None:
             self.output_path.parent.mkdir(parents=True, exist_ok=True)
             self._handle = self.output_path.open("w", encoding="utf-8")

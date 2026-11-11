@@ -61,6 +61,20 @@ class KitchenKinderBackend(KinderBackend):
     # Per human reset, how many unpickable seeded spots were rejected before one passed.
     reset_rejections: list[int] = Field(default_factory=list)
 
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        if self._planning_scenes is not None and self._planning_scenes.lent:
+            raise RuntimeError("simulation checkpoint requires every planning scene returned")
+        return {
+            **super().simulation_checkpoint(),
+            "kitchen_placements": self._placements,
+            "kitchen_reset_rejections": list(self.reset_rejections),
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        super().restore_simulation_checkpoint(checkpoint=checkpoint)
+        self._placements = checkpoint["kitchen_placements"]
+        self.reset_rejections = list(checkpoint["kitchen_reset_rejections"])
+
     def drive_zone(self) -> tuple[float, float, float, float]:
         lower, upper = KitchenDriveZone.bounds(config=self.kitchen_config)
         return (float(lower[0]), float(lower[1]), float(upper[0]), float(upper[1]))

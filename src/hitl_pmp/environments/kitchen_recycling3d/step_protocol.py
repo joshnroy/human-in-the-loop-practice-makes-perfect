@@ -18,6 +18,11 @@ from .skill_provider import RESET_NAMES, KitchenRecyclingSkillProvider
 
 class KitchenRecyclingStepProtocol(Tossing3DStepProtocol):
     @staticmethod
+    def resolve_configuration(*, args: argparse.Namespace) -> None:
+        """Freeze the current input JSON before resume validates resolved metadata."""
+        KitchenRecyclingCli.config(args=args)
+
+    @staticmethod
     def kitchen_env(*, problem: Problem) -> KitchenRecycling3DEnvironment:
         assert isinstance(problem.env, KitchenRecycling3DEnvironment)
         return problem.env

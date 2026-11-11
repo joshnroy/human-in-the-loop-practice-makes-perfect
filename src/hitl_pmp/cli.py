@@ -171,7 +171,15 @@ class Cli:
             default=False,
             help="Write <output-dir>/checkpoint.pickle at the end of every practice cycle "
             "(step protocol), so an interrupted run can be resumed with --resume. On by "
-            "default for --env tossing3d_real, the one domain that can resume.",
+            "default for --env tossing3d_real; simulated Tossing and kitchen recycling opt in.",
+        )
+        parser.add_argument(
+            "--stop-after-cycles",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            help="Pause after this many additional complete practice cycles, settling "
+            "evaluations and writing a resumable checkpoint. Requires --checkpoint-cycles. "
+            "Operational only: omit or change this flag on --resume; keep the original budget.",
         )
         parser.add_argument(
             "--resume",
@@ -181,7 +189,8 @@ class Cli:
             help="Carry on the interrupted step-protocol run in OUTPUT_DIR from its last "
             "cycle checkpoint. Pass the original command's flags too: a resolved config "
             "that differs from OUTPUT_DIR/config_snapshot.json is refused. The scene is "
-            "re-observed, not restored, and a cycle cut off part-way is discarded.",
+            "re-observed on the real robot; supported simulators restore full engine state. "
+            "A cycle cut off part-way is discarded.",
         )
         parser.add_argument(
             "--stop-on-no-practice-action",

@@ -716,6 +716,23 @@ class Tossing3DEnvironment(Environment):
         scene rebuild."""
         self.backend().set_control_step_observers(before=before, after=after)
 
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        """Exact simulator continuation, separately from lossy fidelity snapshots."""
+        return {
+            "backend": self.kinder_backend().simulation_checkpoint(),
+            "state": self.get_current_state().model_copy(deep=True),
+            "pickup_blocked": self._pickup_blocked,
+            "last_skill_error": self._last_skill_error,
+            "last_controller_steps": self._last_controller_steps,
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        self.kinder_backend().restore_simulation_checkpoint(checkpoint=checkpoint["backend"])
+        self._pickup_blocked = checkpoint["pickup_blocked"]
+        self._last_skill_error = checkpoint["last_skill_error"]
+        self._last_controller_steps = checkpoint["last_controller_steps"]
+        self._adopt(state=checkpoint["state"].model_copy(deep=True))
+
     def snapshot(self) -> "Tossing3DSnapshot":
         """A restorable handle to the live simulator, including mid-episode.
 
