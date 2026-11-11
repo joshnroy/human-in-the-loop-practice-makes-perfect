@@ -11,7 +11,7 @@ from hitl_pmp.environments.racktoserving3d.scene import build_scene
 
 def test_default_layout_and_semantics() -> None:
     config = RackServingConfig()
-    assert config.surface_kind == "wire"
+    assert config.surface_kind == "wire_solid"
     assert config.mode == "training"
     assert not {"cooling_seconds", "initial_elapsed_seconds", "wait_seconds"} & set(
         RackServingConfig.model_fields
