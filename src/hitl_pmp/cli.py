@@ -216,6 +216,17 @@ class Cli:
             "charge is not a control step; a STOP-only session is left to repeated_stop.",
         )
         parser.add_argument(
+            "--repeated-zero-step-call-limit",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=20,
+            metavar="K",
+            help="End practice as repeated_zero_step_calls after K robot skill calls in a "
+            "row that execute no control step, with no human reset and no moving robot "
+            "call between them, counted across session boundaries (step protocol). STOP "
+            "decisions are not robot calls: they neither extend nor break the count. Off "
+            "under --no-early-stop. --repeated-zero-step-limit still counts sessions.",
+        )
+        parser.add_argument(
             "--practice-cost-config",
             type=Path,
             default=None,
