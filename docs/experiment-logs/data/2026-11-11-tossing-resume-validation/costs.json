@@ -1,0 +1,25 @@
+{
+  "robot_step": {
+    "value": 0.01
+  },
+  "human_skills": {
+    "ResetCubeBinSameSide": {
+      "cost": {
+        "value": 5
+      },
+      "duration": {
+        "value": 1
+      }
+    },
+    "ResetCubeBinOppositeSide": {
+      "cost": {
+        "value": 5
+      },
+      "duration": {
+        "value": 1
+      }
+    }
+  },
+  "human_weight": 1,
+  "objective_lambda": 0.0003
+}

@@ -1,0 +1,125 @@
+{
+  "fields_compared": 95,
+  "different_fields": [
+    "_pomdp_state",
+    "_practice_episode",
+    "_translation_cache"
+  ],
+  "difference_count": 14,
+  "cost_values": {
+    "resumed": {
+      "PickCube(robot,cube_0,cuboid_barrier,bin_0)": 1.92,
+      "MoveToTossLocationAndToss(robot,bin_0,cube_0,cuboid_barrier)": 0.99,
+      "OpenGripper(robot,cube_0,bin_0)": 0.01,
+      "PourCubeOutOfBin(robot,cube_0,bin_0,cuboid_barrier)": 0.01,
+      "ResetCubeBinSameSide(robot,cube_0,bin_0,cuboid_barrier)": 5.0,
+      "ResetCubeBinOppositeSide(robot,cube_0,bin_0,cuboid_barrier)": 0.01
+    },
+    "reference": {
+      "PickCube(robot,cube_0,cuboid_barrier,bin_0)": 1.92,
+      "MoveToTossLocationAndToss(robot,bin_0,cube_0,cuboid_barrier)": 0.99,
+      "OpenGripper(robot,cube_0,bin_0)": 0.01,
+      "PourCubeOutOfBin(robot,cube_0,bin_0,cuboid_barrier)": 0.01,
+      "ResetCubeBinSameSide(robot,cube_0,bin_0,cuboid_barrier)": 5.0,
+      "ResetCubeBinOppositeSide(robot,cube_0,bin_0,cuboid_barrier)": 0.01
+    }
+  },
+  "belief_state_fields": {
+    "skill_beliefs": {
+      "resumed": "a84b5a3a0f6c0105e7858ae3d275e3a0b1591a61064f3a64ac4ce8dc4f3179cd",
+      "reference": "a84b5a3a0f6c0105e7858ae3d275e3a0b1591a61064f3a64ac4ce8dc4f3179cd"
+    },
+    "pending_examples": {
+      "resumed": "34731c2ae12367d697459d02280f06b6eb2ab834093ede04623e7a78d6f50d7c",
+      "reference": "34731c2ae12367d697459d02280f06b6eb2ab834093ede04623e7a78d6f50d7c"
+    },
+    "sampler_training": {
+      "resumed": "12ce91191266bc89cfeb18f8d72cbf5df500feb49a1fcf242a046dba75dd5a87",
+      "reference": "12ce91191266bc89cfeb18f8d72cbf5df500feb49a1fcf242a046dba75dd5a87"
+    },
+    "accumulated_cost": {
+      "resumed": "20197b044b9541cf2102e3dcb51dca4f309f2c8c7b677f04cb27c9256be1843d",
+      "reference": "20197b044b9541cf2102e3dcb51dca4f309f2c8c7b677f04cb27c9256be1843d"
+    }
+  },
+  "samplers": {
+    "MoveToTossLocationAndToss": {
+      "resumed": "a389b5a1bb030e677c5e2a9b4db13f52138c4e2471b77ad9c10b354c1010b91f",
+      "reference": "a389b5a1bb030e677c5e2a9b4db13f52138c4e2471b77ad9c10b354c1010b91f"
+    }
+  },
+  "translation_entries": [
+    {
+      "key_sha256": "309a64a60adfac818e96928e95e1fcf64e2ae6c6dbf4791eb2775e0bbc25466e",
+      "sas_identical": true,
+      "resumed_sas": "94ca82242b128de40c57bce3f96158c925936f7f59d43b3e319eed05f076898c",
+      "reference_sas": "94ca82242b128de40c57bce3f96158c925936f7f59d43b3e319eed05f076898c",
+      "raw_fd_output_identical": false
+    },
+    {
+      "key_sha256": "0d8023b86e7d9f061e492a116208a46fcf6725b082e196053498d1f234b99d35",
+      "sas_identical": true,
+      "resumed_sas": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "reference_sas": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "raw_fd_output_identical": false
+    }
+  ],
+  "different_leaf_paths": [
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='MoveToTossLocationAndToss', parameters=(Variable(n",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='MoveToTossLocationAndToss', parameters=(Variable(n",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='OpenGripper', parameters=(Variable(name='robot', t",
+      "suffix": "n', feature_names=('x', 'y', 'z', 'x_min', 'y_min', 'z_min', 'x_max', 'y_max', 'z_max'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='OpenGripper', parameters=(Variable(name='robot', t",
+      "suffix": "n', feature_names=('x', 'y', 'z', 'x_min', 'y_min', 'z_min', 'x_max', 'y_max', 'z_max'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='PickCube', parameters=(Variable(name='robot', type",
+      "suffix": "n', feature_names=('x', 'y', 'z', 'x_min', 'y_min', 'z_min', 'x_max', 'y_max', 'z_max'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='PickCube', parameters=(Variable(name='robot', type",
+      "suffix": "n', feature_names=('x', 'y', 'z', 'x_min', 'y_min', 'z_min', 'x_max', 'y_max', 'z_max'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='PourCubeOutOfBin', parameters=(Variable(name='robo",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='PourCubeOutOfBin', parameters=(Variable(name='robo",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='ResetCubeBinOppositeSide', parameters=(Variable(na",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='ResetCubeBinOppositeSide', parameters=(Variable(na",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='ResetCubeBinSameSide', parameters=(Variable(name='",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._pomdp_state.state.expected_execution_costs.skill=Skill(name='ResetCubeBinSameSide', parameters=(Variable(name='",
+      "suffix": "oid_barrier', type=Type(name='tossing3d_barrier', feature_names=('x', 'y', 'z', 'bb_x'))))"
+    },
+    {
+      "prefix": "$.state._translation_cache.state._results.[\"seq-opt-lmcut\", \"(define (domain hitlpmp)\\n  (:requirements :typing :conditi",
+      "suffix": "sing3d_barrier tossing3d_bin tossing3d_cube tossing3d_robot)\\n\\n  (:predic.state.fd_output"
+    },
+    {
+      "prefix": "$.state._translation_cache.state._results.[\"seq-opt-lmcut\", \"(define (domain hitlpmp)\\n  (:requirements :typing :conditi",
+      "suffix": "sing3d_barrier tossing3d_bin tossing3d_cube tossing3d_robot)\\n\\n  (:predic.state.fd_output"
+    }
+  ]
+}

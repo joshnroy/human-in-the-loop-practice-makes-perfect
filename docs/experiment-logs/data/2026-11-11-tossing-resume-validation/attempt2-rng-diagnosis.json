@@ -1,0 +1,61 @@
+{
+  "checkpoint_sources": {
+    "reference_cycle1": "results/reference/pomdp/0/checkpoint.previous.pickle",
+    "reference_cycle2": "reference-checkpoint.pickle",
+    "resumed_cycle1": "cycle1-checkpoint.pickle",
+    "resumed_cycle2": "cycle2-checkpoint.pickle"
+  },
+  "comparator_modified": false,
+  "comparison_differing_fields": [
+    "method",
+    "rngs"
+  ],
+  "comparison_matching_fields": [
+    "accounting",
+    "clock",
+    "cycle",
+    "env_state",
+    "evaluation_json",
+    "evaluations",
+    "events",
+    "learning_updates",
+    "metrics",
+    "no_robot_action_streak",
+    "records",
+    "reset_counts",
+    "robot_invocations",
+    "sampler_draws.jsonl",
+    "sampler_proposals.jsonl",
+    "simulation_state",
+    "stop_streak",
+    "zero_step_streak"
+  ],
+  "diagnosis": "Checkpoint restore preserves globals exactly. Fresh practice processes did not initialize NumPy legacy, Python random or torch global RNGs from the run seed; independent reference started with different entropy. These three global states remain unchanged from cycle1 to cycle2 within each execution.",
+  "environment_rngs_exact": true,
+  "fix_commit": "7462f2a98",
+  "fix_scope": "Fresh supported simulated --checkpoint-cycles runs only: initialize three independent SeedSequence(seed).spawn(3) global streams before method/simulator construction. Resume restores saved global states; historical/default simulation and in-process real behavior stay unchanged.",
+  "global_rng_sha256": {
+    "numpy": {
+      "reference_cycle1": "398c4d171fe0c13a6ea5184010a4ded0200cb8cdaaef2f5df01b005c5266dff4",
+      "reference_cycle2": "398c4d171fe0c13a6ea5184010a4ded0200cb8cdaaef2f5df01b005c5266dff4",
+      "resumed_cycle1": "a83ff232b536f50a9359d93da2033571ad57c9412948f9dc2a2c88cf11683063",
+      "resumed_cycle2": "a83ff232b536f50a9359d93da2033571ad57c9412948f9dc2a2c88cf11683063"
+    },
+    "random": {
+      "reference_cycle1": "93342d3e5eef47e3df3d6fb5f9cd338fdd6dda3c8496efc519c57815211323f7",
+      "reference_cycle2": "93342d3e5eef47e3df3d6fb5f9cd338fdd6dda3c8496efc519c57815211323f7",
+      "resumed_cycle1": "e4c3ec001f0eb3604b14d133a52d24e96ebe2efc21743a9a26cdff82769064b1",
+      "resumed_cycle2": "e4c3ec001f0eb3604b14d133a52d24e96ebe2efc21743a9a26cdff82769064b1"
+    },
+    "torch": {
+      "reference_cycle1": "98071dd89bddb19d2eb1b8bf506c6e01a33ab5159b486ea81606c6ee3eed7d73",
+      "reference_cycle2": "98071dd89bddb19d2eb1b8bf506c6e01a33ab5159b486ea81606c6ee3eed7d73",
+      "resumed_cycle1": "60faf41819ea1fb4f2b517b7e848a36b1d2bc2ee73889c2948cb55b340450ffd",
+      "resumed_cycle2": "60faf41819ea1fb4f2b517b7e848a36b1d2bc2ee73889c2948cb55b340450ffd"
+    }
+  },
+  "independent_runs_globals_differ": true,
+  "task_rngs_exact": true,
+  "within_reference_cycle1_to_cycle2_exact": true,
+  "within_resumed_cycle1_to_cycle2_exact": true
+}
