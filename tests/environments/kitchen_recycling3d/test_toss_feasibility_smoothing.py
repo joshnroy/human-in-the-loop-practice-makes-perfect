@@ -77,7 +77,7 @@ def check(*, state: Any, stand: dict[str, Any]) -> str | None:
         snapshot=state.object_centric,
         distance=stand["distance"],
         rotation=TossDirectionSelector.rotation(direction_deg=stand["direction_deg"]),
-        drive_zone=state.drive_zone,
+        scene=state.toss_scene,
     )
 
 
