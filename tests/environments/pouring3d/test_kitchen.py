@@ -79,8 +79,9 @@ def test_reset_cost_and_deployment_boundary_without_native_dependencies():
     # Enforced before native state construction, including a direct call.
     with pytest.raises(ValueError, match="forbidden"):
         deployment.reset_movables(destination=HUMAN_RESET)
+    assert KitchenEnvironment(human_interruption_cost=0).human_interruption_cost == 0
     with pytest.raises(ValueError):
-        KitchenEnvironment(human_interruption_cost=0)
+        KitchenEnvironment(human_interruption_cost=-1)
     deployment._started = True
     with pytest.raises(ValueError, match="No free"):
         deployment.hard_reset()
