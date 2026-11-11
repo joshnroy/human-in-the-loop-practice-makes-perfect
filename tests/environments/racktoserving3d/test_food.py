@@ -22,7 +22,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillF
 def food():
     pose = Frames.pose(rotation=np.eye(3), position=[1.2, 0, 1.1])
     backend = SimpleNamespace(
-        config=RackServingConfig(),
+        config=RackServingConfig(food_handling="physical"),
         cube_names=("cube_0", "cube_1"),
         sync_clock=Mock(),
         ledger=SimpleNamespace(ready=True),
@@ -165,7 +165,7 @@ def test_failed_contact_does_not_claim_or_lift_food(*, food):
 
 
 def test_food_closure_uses_configured_calibration_without_changing_grasp_semantics(*, food):
-    food.backend.config = RackServingConfig(food_grip_command=0.85)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_command=0.85)
     with pytest.raises(SkillFailed, match="bilateral"):
         food.pick(name="cube_0")
     assert food.shelf.grip == 0.85
@@ -177,7 +177,7 @@ def _closing_limit(*, food) -> float:
 
 
 def test_pick_closes_force_limited_and_stays_limited_through_the_lift(*, food):
-    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_force=20.0)
     food.backend.held.side_effect = [False, False, False, True, True]
     seen = []
     food.motion.line = Mock(
@@ -199,7 +199,7 @@ def test_losing_the_food_restores_the_grippers_own_force_limit(*, food):
 
 
 def test_release_restores_the_grippers_own_force_limit(*, food):
-    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_force=20.0)
     food._limit_grip(newtons=20.0)
     food.shelf.grip = 1.0
     food.backend.held.side_effect = [True, True, False]
@@ -269,7 +269,11 @@ def test_payload_uses_ellipsoid_support_not_bounding_box(*, depth, blocked):
     motion.food = SimpleNamespace(
         carried="cube_0",
         target_geoms={0},
-        backend=SimpleNamespace(cube_names=("cube_0",), body_geoms=Mock(return_value={0})),
+        backend=SimpleNamespace(
+            cube_names=("cube_0",),
+            body_geoms=Mock(return_value={0}),
+            config=RackServingConfig(food_handling="physical"),
+        ),
     )
     with patch.object(RackScraper, "check_configuration"):
         if blocked:
@@ -581,6 +585,7 @@ def test_carried_food_collides_by_ellipsoid_shape_not_bounding_box(*, gap, block
         target_geoms={0},
         backend=SimpleNamespace(
             cube_names=("cube_0", "cube_1"),
+            config=RackServingConfig(food_handling="physical"),
             body_geoms=lambda *, name: {0} if name == "cube_0" else {1},
         ),
     )

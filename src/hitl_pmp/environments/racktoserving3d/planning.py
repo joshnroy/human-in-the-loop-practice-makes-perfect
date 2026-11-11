@@ -212,10 +212,24 @@ class RackPyBulletSim(KitchenPyBulletSim):
             held, self._chassis, distance=margin, physicsClientId=client
         )
 
+    # Welded food handling plans against the fixtures alone (`WeldedFood`).
+    ignores_food: bool = False
+
+    def get_collision_bodies(self, held_object: int | None = None) -> set[int]:  # noqa: PLR0917 -- upstream signature
+        bodies = super().get_collision_bodies(held_object=held_object)
+        if self.ignores_food:
+            bodies -= {
+                body
+                for name, body in self._mirrored.items()
+                if name.startswith(self.movable_prefix)
+            }
+        return bodies
+
     @classmethod
-    def from_shelf(cls, *, shelf: Any) -> "RackPyBulletSim":
+    def from_shelf(cls, *, shelf: Any, ignores_food: bool = False) -> "RackPyBulletSim":
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
         sim = cls(state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        sim.ignores_food = ignores_food
         sim.set_state(state)
         return sim
 
@@ -709,6 +723,7 @@ class ScraperMotionPlanner:
         carry_height: float,
         deadline_s: float,
         what: str,
+        tuck_first: bool = False,
     ) -> tuple[ScraperPlan, ReachCandidate]:
         """The first candidate stance whose hover is collision-free, whose scripted
         contact motion its own `contact` check accepts from that hover, and to which a
@@ -716,6 +731,8 @@ class ScraperMotionPlanner:
 
         Before the base moves the arm keeps its configuration, or (if the base cannot
         move with it) tucks: holding, up to `carry_height`; empty, to the home arm.
+        `tuck_first` tries the tuck first: a hand left low over the counter can graze
+        it from tracking error while the base drives under a path checked clear.
         `held_name`, when given, is carried rigidly (HeldObject) and has no footprint.
         """
         from time import monotonic
@@ -724,7 +741,8 @@ class ScraperMotionPlanner:
         lower, upper = ScraperMotionPlanner.limits(shelf=shelf)
         arm = shelf.data.qpos[shelf.qa].copy()
         base = shelf.data.qpos[shelf.ba].copy()
-        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        ignores_food = bool(getattr(tool, "ignores_food", False))
+        sim = RackPyBulletSim.from_shelf(shelf=shelf, ignores_food=ignores_food)
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
         ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=False)
         deadline = monotonic() + deadline_s
@@ -736,7 +754,13 @@ class ScraperMotionPlanner:
                 if held_name is None
                 else HeldObject.grasped(sim=sim, arm=arm, name=held_name, riders=())
             )
-            ignore = () if held_name is None else (held_name,)
+            ignore: tuple[str, ...] = () if held_name is None else (held_name,)
+            if ignores_food:
+                ignore = tuple(
+                    name
+                    for name in state.get_object_names()
+                    if name.startswith(RackPyBulletSim.movable_prefix)
+                )
             carries: list[list[np.ndarray]] = [[arm.copy()]]
             if held is None:
                 tuck: list[float] | None = list(np.asarray(shelf.home_arm, dtype=float))
@@ -765,6 +789,8 @@ class ScraperMotionPlanner:
                     )
                 except PlanningRefused as exc:
                     failures.append(str(exc))
+            if tuck_first:
+                carries.reverse()
             for candidate in candidates:
                 if monotonic() >= deadline:
                     failures.append("deadline")
@@ -841,7 +867,9 @@ class ScraperMotionPlanner:
         ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=held_name is not None)
         if not ok(base=base, arm=arm):
             return True
-        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        sim = RackPyBulletSim.from_shelf(
+            shelf=shelf, ignores_food=bool(getattr(tool, "ignores_food", False))
+        )
         try:
             sim.set_robot_base(SE2(*(float(v) for v in base)))
             held = (
