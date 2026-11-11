@@ -991,7 +991,14 @@ class RackScraper(TableWiper):
     def check_arm_segment(
         self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
     ) -> None:
-        """Check the wrapped, straight joint path `JointStep` drives the arm along."""
+        """Check the wrapped, straight joint path `JointStep` drives the arm along.
+
+        The axis-clipped path is still checked although the servo no longer follows
+        it: a target only reachable past it is refused, and that refusal is what
+        sends a blade resting on the plate rim to retreat before it lifts. Dropping
+        the pass made that lift plannable from the stretched rear stance, where it
+        then failed on hand tracking (6.0 mm).
+        """
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
         for fraction in np.linspace(0, 1, count + 1):
@@ -999,6 +1006,17 @@ class RackScraper(TableWiper):
                 self.check_configuration(base=base, arm=start + fraction * delta, holding=holding)
             except SkillFailed as exc:
                 raise SkillFailed(f"straight joint segment fraction {fraction:.3f}: {exc}") from exc
+        for distance in np.arange(0, np.max(np.abs(delta)), 0.025):
+            try:
+                self.check_configuration(
+                    base=base,
+                    arm=start + np.sign(delta) * np.minimum(np.abs(delta), distance),
+                    holding=holding,
+                )
+            except SkillFailed as exc:
+                raise SkillFailed(
+                    f"axis-clipped joint segment at {distance:.3f} rad: {exc}"
+                ) from exc
 
     def ik(
         self,

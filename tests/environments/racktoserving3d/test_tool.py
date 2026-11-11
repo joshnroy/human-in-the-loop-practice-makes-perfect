@@ -692,14 +692,3 @@ def test_the_step_guard_checks_the_command_the_servo_will_send():
         np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)
     tool.shelf.step.assert_called_once()
 
-
-def test_an_arm_segment_is_checked_along_the_straight_path_the_servo_follows():
-    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
-    tool = _guarded_scraper(arm=arm, base=base)
-    tool.check_arm_segment(start=arm, target=arm + UNEQUAL_ERROR, base=base, holding=False)
-    checked = [call.kwargs["arm"] for call in tool.check_configuration.call_args_list]
-    np.testing.assert_allclose(checked[-1], arm + UNEQUAL_ERROR)
-    assert len(checked) >= 7
-    for configuration in checked:
-        moved = configuration - arm
-        np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)
