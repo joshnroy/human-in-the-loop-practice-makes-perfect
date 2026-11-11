@@ -160,3 +160,24 @@ def test_a_priced_model_values_deployment_below_the_unpriced_one():
     assert priced.J(belief_state=belief, summed_cost=1.0, num_samples=1) < model.J(
         belief_state=belief, summed_cost=1.0, num_samples=1
     )
+
+
+def test_the_real_robot_prices_deployment_at_its_measured_wall_clock_charges():
+    """The real TidyBot charges wall-clock seconds (0.1 per second), not simulator steps:
+    its deployment pick and toss cost what they were measured to cost on the robot, in
+    steps of the run's 0.01 robot-step price. Nothing else differs from the sim domain."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_REAL_DOMAIN
+    from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
+
+    assert Tossing3DPomdpCli.DOMAINS["Tossing3DRealCli"] is TOSSING3D_REAL_DOMAIN
+    assert Tossing3DPomdpCli.DOMAINS["Tossing3DCli"] is TOSSING3D_DOMAIN
+    priced = TOSSING3D_REAL_DOMAIN.model_copy(
+        update={"deployment_cost_lambda": 1.2e-4, "robot_step_price": PRICE}
+    )
+    cost = {name: priced._deployment_cost(skill_name=name) for name in (PICK_SKILL, TOSS_SKILL)}  # noqa: SLF001
+    assert cost[PICK_SKILL] == pytest.approx(3.642, abs=1e-3)
+    assert cost[TOSS_SKILL] == pytest.approx(2.829, abs=1e-3)
+    assert (
+        TOSSING3D_REAL_DOMAIN.model_copy(update={"deployment_steps": TOSSING3D_DEPLOYMENT_STEPS})
+        == TOSSING3D_DOMAIN
+    )

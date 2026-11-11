@@ -948,3 +948,12 @@ def test_bin_pouring_observations_update_only_its_own_competence() -> None:
         belief=before.skill_beliefs[POUR_BIN_SKILL]
     )
     assert after.pending_examples.get(POUR_BIN_SKILL, 0) == 1
+
+
+def test_the_real_robot_domain_configures_the_method_like_the_sim_domain():
+    """The real TidyBot's domain is the sim's with measured deployment costs, so it
+    passes the same skill check and builds the same model."""
+    from hitl_pmp.methods.belief_space.practice_domain import TOSSING3D_REAL_DOMAIN
+
+    method = _build(pomdp_domain=TOSSING3D_REAL_DOMAIN, pomdp_num_particles=32)
+    assert method._pomdp_model.domain is TOSSING3D_REAL_DOMAIN  # noqa: SLF001

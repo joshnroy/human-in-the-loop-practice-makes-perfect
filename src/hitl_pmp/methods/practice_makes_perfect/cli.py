@@ -10,6 +10,7 @@ from hitl_pmp.core.practice_costs import SkillStepCosts
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
+    TOSSING3D_REAL_DOMAIN,
     PracticeDomain,
 )
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
@@ -432,7 +433,7 @@ class Tossing3DPomdpCli(EesCli):
     # method-CLI never imports an environment.
     DOMAINS: dict[str, PracticeDomain | Callable[[SkillProvider], PracticeDomain]] = {
         "Tossing3DCli": TOSSING3D_DOMAIN,
-        "Tossing3DRealCli": TOSSING3D_DOMAIN,
+        "Tossing3DRealCli": TOSSING3D_REAL_DOMAIN,
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
         # The kitchen is Tossing3D re-flavoured: the same skills, so the same domain.
         "KitchenRecyclingCli": TOSSING3D_DOMAIN,
