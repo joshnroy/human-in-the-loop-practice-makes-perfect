@@ -32,11 +32,12 @@ def test_the_config_food_extents_are_the_potstickers_not_free_parameters():
     assert config.dumpling_mass == 0.020
 
 
-def _env(*, seed=0):
+def _env(*, seed=0, collision="full"):
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
     from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(dumpling_collision=collision))
     RackServingTasks(env=env, seed=seed).sample_train_task()
     return env
 
@@ -49,6 +50,24 @@ def _settle(*, env, placements):
 
 
 @kinder_only
+def test_the_default_reset_scene_collides_each_potsticker_as_one_hull():
+    import mujoco
+
+    env = _env(collision="hull")
+    try:
+        backend = env.backend()
+        model = backend.model()
+        for name in backend.cube_names:
+            geoms = backend.body_geoms(name=name)
+            assert [int(model.geom_type[geom]) for geom in geoms] == [
+                int(mujoco.mjtGeom.mjGEOM_MESH)
+            ]
+            assert model.body_mass[model.body(name).id] == pytest.approx(0.020)
+            assert backend.location(name=name) == "OnRack"
+    finally:
+        env.close()
+
+
 def test_reset_scene_has_five_potsticker_bodies_with_its_collision_geoms():
     import mujoco
 
@@ -150,5 +169,96 @@ def test_carried_potsticker_bottom_is_its_lowest_vertex_not_a_box_about_its_fram
         # The lowest part sits on the rack, within its rest penetration.
         assert min(bottoms) == pytest.approx(lowest, abs=1e-6)
         assert min(bottoms) >= backend.support(name="rack_0").top_z - 0.003
+    finally:
+        env.close()
+
+
+SIMPLIFIED = ("hull",)
+BODY = {"name": "cube_0", "joint": "j", "mass": 0.02, "friction": "1 0 0", "condim": 6, "index": 0}
+
+
+def test_the_default_dumpling_collision_is_the_single_hull():
+    # Josh, 2026-11-05: the hull served like the full model on paired Della layouts
+    # (18/25 vs 17/25, pick/place 5/5 each) at 1.21x the simulation speed.
+    assert RackServingConfig().dumpling_collision == "hull"
+
+
+def test_full_collision_builds_the_same_body_as_before_the_option_existed():
+    import xml.etree.ElementTree as ET
+
+    default = RackPotsticker.body(**BODY)
+    full = RackPotsticker.body(collision="full", **BODY)
+    assert ET.tostring(default) == ET.tostring(full)
+    assert len(default.findall("geom")) == 41
+    assert ET.tostring(RackPotsticker.assets()[-1]) == ET.tostring(
+        RackPotsticker.assets(collision="full")[-1]
+    )
+
+
+@pytest.mark.parametrize("collision", SIMPLIFIED)
+def test_simplified_collision_keeps_every_visual_part_but_none_of_them_collides(*, collision):
+    from hitl_pmp.environments.pouring3d.potsticker_shape import shape_xml
+
+    body = RackPotsticker.body(collision=collision, **BODY)
+    visual = [g for g in body.findall("geom") if g.get("contype") == "0"]
+    colliding = [g for g in body.findall("geom") if g.get("contype") != "0"]
+    assert len(visual) == len(shape_xml().findall("worldbody/body/geom"))
+    assert all(g.get("conaffinity") == "0" and g.get("group") is None for g in visual)
+    assert 1 <= len(colliding) <= 6
+    assert all(g.get("group") == "3" for g in colliding)
+    assert all(g.get("name", "").startswith("cube_0_part_") for g in colliding)
+    assert all(g.get("friction") == "1 0 0" and g.get("condim") == "6" for g in colliding)
+
+
+@pytest.mark.parametrize("collision", SIMPLIFIED)
+def test_simplified_collision_stays_within_the_potstickers_extents(*, collision):
+    vertices = RackPotsticker.collision_support(collision=collision)
+    full = RackPotsticker.extents()
+    extents = np.ptp(vertices, axis=0)
+    assert np.all(extents <= full + 1e-6)
+    assert np.all(extents >= 0.8 * full)
+
+
+def _compiled_body(*, collision):
+    import xml.etree.ElementTree as ET
+
+    import mujoco
+
+    root = ET.Element("mujoco")
+    asset = ET.SubElement(root, "asset")
+    for element in RackPotsticker.assets(collision=collision):
+        if element.tag != "texture":
+            asset.append(element)
+    for material in asset.findall("material"):
+        material.attrib.pop("texture")
+    world = ET.SubElement(root, "worldbody")
+    world.append(RackPotsticker.body(collision=collision, **BODY))
+    return mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
+
+
+@kinder_only
+@pytest.mark.parametrize("collision", SIMPLIFIED)
+def test_simplified_collision_keeps_the_potstickers_mass_and_inertia(*, collision):
+    full = _compiled_body(collision="full")
+    simple = _compiled_body(collision=collision)
+    np.testing.assert_allclose(simple.body_mass[1], full.body_mass[1])
+    np.testing.assert_allclose(simple.body_ipos[1], full.body_ipos[1], atol=1e-9)
+    np.testing.assert_allclose(simple.body_inertia[1], full.body_inertia[1], rtol=1e-6)
+    colliding = (simple.geom_contype != 0) | (simple.geom_conaffinity != 0)
+    assert 1 <= colliding.sum() <= 6
+
+
+@kinder_only
+@pytest.mark.parametrize("collision", ("full", "hull"))
+def test_the_configured_collision_reaches_the_scene(*, collision):
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
+
+    env = RackServingEnvironment(config=RackServingConfig(dumpling_collision=collision))
+    RackServingTasks(env=env, seed=0).sample_train_task()
+    try:
+        backend = env.backend()
+        counts = {len(backend.body_geoms(name=name)) for name in backend.cube_names}
+        assert counts == ({41} if collision == "full" else {1})
     finally:
         env.close()
