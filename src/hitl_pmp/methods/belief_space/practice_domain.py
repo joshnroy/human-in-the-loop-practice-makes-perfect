@@ -274,6 +274,18 @@ class Tossing3DPracticeDomain(PracticeDomain):
 
 TOSSING3D_DOMAIN = Tossing3DPracticeDomain()
 
+# The real TidyBot charges wall-clock seconds (0.1 per second; its robot step price is
+# 0.01), so its deployment costs are its own measurements, in steps: the mean observed
+# charge of every practice execution of the 2026-11-06 real runs (final-20261105,
+# w4 and w10 step_events.jsonl): PickCube 3.642 over 25, MoveToTossLocationAndToss 2.829
+# over 24. OpenGripper never ran on the robot; it keeps the sim's 39.
+TOSSING3D_REAL_DEPLOYMENT_STEPS: tuple[tuple[str, float], ...] = (
+    (PICK_SKILL, 364.2),
+    (TOSS_SKILL, 282.9),
+    (OPEN_GRIPPER_SKILL, 39.0),
+)
+TOSSING3D_REAL_DOMAIN = Tossing3DPracticeDomain(deployment_steps=TOSSING3D_REAL_DEPLOYMENT_STEPS)
+
 
 class SweepOffShelfDeployment:
     """The held-out solve probability for SweepOffShelf3D, given each robot skill's
