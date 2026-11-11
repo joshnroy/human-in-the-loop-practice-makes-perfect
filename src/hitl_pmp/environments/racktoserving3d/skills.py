@@ -107,7 +107,14 @@ class RackServing3DSkills:
     GATHER_AND_SWEEP: ClassVar[Skill] = Skill(
         name="GatherAndSweep",
         parameters=(_ROBOT, _SCRAPER, _RACK, _TRAY, *_SLOTS),
-        preconditions=frozenset({_HELD_SCRAPER, _ANY_ON, *_CHAIN}),
+        # Every food on the rack (Josh, 2026-11-06): a sweep is a full-rack stroke, so food
+        # left after a partial one is picked rather than swept past the served food.
+        preconditions=frozenset({
+            _HELD_SCRAPER,
+            _ANY_ON,
+            *_CHAIN,
+            *(_atom(predicate=ON_RACK, variables=(food, _RACK)) for food in _SLOTS),
+        }),
         add_effects=frozenset({_ANY_OFF}),
         delete_effects=frozenset({
             _ANY_ON,
