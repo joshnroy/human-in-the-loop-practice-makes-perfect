@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
@@ -237,7 +237,12 @@ class RackControllers:
                 and self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3]) < 1.0
             ):
                 return
-        raise SkillFailed(f"{label}: measured scraper pose failed to converge")
+        position_error = float(np.linalg.norm(actual[:3, 3] - body[:3, 3]))
+        angle_error = self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3])
+        raise SkillFailed(
+            f"{label}: measured scraper pose failed to converge "
+            f"({position_error * 1000:.2f} mm / {angle_error:.2f} deg)"
+        )
 
     def gather_and_sweep(self, *, s: float, delta: float, d: float) -> None:
         """Squeeze toward the plate in two passes, gather from +y then -y, then sweep."""
@@ -579,8 +584,11 @@ class RackControllers:
         The push loop ends on progress along travel only, so a blade the food has held
         back or lifted stops short. This commands the end pose plus an accumulated
         correction of the measured error, for at most ``SETTLE_STEPS`` steps, and never
-        commands the edge more than 2 mm below the planned end, so it cannot press into
-        the rack. Error along the blade's own length is neither corrected nor waited
+        commands the edge centre more than 2 mm below the planned end. The entire
+        blade and joint path still need the collision guard: a tilted corner can
+        dip lower. Unsafe corrections are backtracked toward the measured pose;
+        when no checked correction is available, this optional settling ends.
+        Error along the blade's own length is neither corrected nor waited
         for: dragging the blade sideways rearranged the food and made the next gather
         climb a dumpling, failing (0.10, 0.0, 0.08) on 7/7 real-arm layouts (2026-11-03).
         Returns the full edge error before and after, in metres; reaching the tolerance
@@ -600,17 +608,56 @@ class RackControllers:
             error = correctable()
             if np.linalg.norm(error) < self.SETTLE_TOLERANCE:
                 break
-            offset = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
-            offset[2] = max(offset[2], -0.002)
+            proposed = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
+            proposed[2] = max(proposed[2], -0.002)
             desired = body.copy()
-            desired[:3, 3] += end_offset + offset
-            waypoint = self.hand_for_tool(body=desired)
+            desired[:3, 3] += end_offset + proposed
             shelf.base_target = base.copy()
-            arm = tool.ik(
-                position=waypoint[:3, 3], rotation=waypoint[:3, :3], holding=True, seed=arm
-            )
+            correction, fraction = self.settling_correction(body=desired, label=label)
+            if correction is None:
+                break
+            offset += fraction * (proposed - offset)
+            arm = correction
+            # Execution failures, lost grasps and exhausted budgets must propagate.
             tool.step(arm=arm, label=f"{label}_settle")
         return before, float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
+
+    def settling_correction(
+        self, *, body: np.ndarray, label: str
+    ) -> tuple[np.ndarray | None, float]:
+        """Find a smaller checked correction; never execute a rejected joint path."""
+        tool, shelf = self.tool, self.shelf
+        current = tool.wiper_pose().copy()
+        rotation = Slerp([0, 1], Rotation.from_matrix([current[:3, :3], body[:3, :3]]))
+        reason = ""
+        for fraction in (1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125):
+            candidate = np.eye(4)
+            candidate[:3, :3] = rotation(fraction).as_matrix()
+            candidate[:3, 3] = current[:3, 3] + fraction * (body[:3, 3] - current[:3, 3])
+            waypoint = self.hand_for_tool(body=candidate)
+            try:
+                arm = tool.ik(
+                    position=waypoint[:3, 3],
+                    rotation=waypoint[:3, :3],
+                    holding=True,
+                    seed=shelf.data.qpos[shelf.qa].copy(),
+                )
+            except SkillFailed as exc:
+                reason = str(exc)
+                continue
+            if fraction < 1:
+                self.metrics.setdefault("settling_corrections", []).append({
+                    "label": label,
+                    "fraction": fraction,
+                    "reason": reason,
+                })
+            return arm, fraction
+        self.metrics.setdefault("settling_corrections", []).append({
+            "label": label,
+            "fraction": 0,
+            "reason": reason,
+        })
+        return None, 0.0
 
     def release_swept_food(
         self, *, rotation: np.ndarray | None = None, retreat: np.ndarray | None = None
