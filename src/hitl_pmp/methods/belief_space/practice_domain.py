@@ -11,6 +11,14 @@ things are not, and a `PracticeDomain` supplies them:
   skill, whose effects are checked and whose competence is learned like a robot's;
 - the value of the deployment policy -- the probability a held-out task is solved,
   with no human -- as a function of the skills' competences.
+
+A domain may also charge what deployment costs. The model sets `deployment_cost_lambda`
+(its own linear-cost lambda) and `robot_step_price` (the run's price of one robot step,
+in practice-cost units); a domain that models deployment cost then returns, from all
+three value methods, E[solved] - deployment_cost_lambda * E[deployment cost per task],
+the cost in those same practice-cost units, and reports the cost alone from
+`expected_deployment_cost`. Both default to zero, and a domain that does not opt in
+ignores them: its value is P(solve) exactly as before.
 """
 
 import abc
@@ -36,6 +44,7 @@ from .tossing3d_deployment_model import (
     DeploymentPolicyExpectation,
     evaluate_deployment_policies,
     evaluate_deployment_policy,
+    evaluate_deployment_policy_costs,
 )
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief, SkillHypothesis
@@ -72,6 +81,15 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (object_symmetry.py, `Tossing3DPracticeModel.search_cache_key`). Off by default,
     # so a domain that has never been checked for it searches exactly as before.
     reduce_expectimax_search: bool = False
+    # Set by Tossing3DPracticeModel, never by a domain itself (see the module docstring).
+    deployment_cost_lambda: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    robot_step_price: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+
+    def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
+        """E[cost of one evaluation task] in practice-cost units, under the policy the
+        value methods assume. Zero for a domain that does not model it."""
+        del beliefs
+        return 0.0
 
     def belief_name(self, *, skill_name: str) -> str | None:
         shared = dict(self.shared_beliefs)
@@ -109,10 +127,26 @@ class PracticeDomain(BaseModel, abc.ABC):
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float: ...
 
 
+# Mean control steps per evaluation execution, from every evaluation task of the tossing
+# env's v10/v10b reset-cost sweeps (kitchen-recycling-20261104-v10-costsweep and
+# -v10b-highcost, all arms, actions.jsonl): PickCube 193.1 over 11031 executions,
+# MoveToTossLocationAndToss 118.9 over 4780. OpenGripper never runs in evaluation there;
+# its 39 is its mean charged practice cost (0.39 at 0.01 per step, 26 executions).
+TOSSING3D_DEPLOYMENT_STEPS: tuple[tuple[str, float], ...] = (
+    (PICK_SKILL, 193.1),
+    (TOSS_SKILL, 118.9),
+    (OPEN_GRIPPER_SKILL, 39.0),
+)
+
+
 class Tossing3DPracticeDomain(PracticeDomain):
     """Exactly the model the Tossing3D method has always used."""
 
     deployment_horizon: int = 4
+    # Control steps one deployment execution of each skill costs; charged at
+    # `robot_step_price` when deployment is priced. A backend with its own
+    # measurements (the real robot) replaces it.
+    deployment_steps: tuple[tuple[str, float], ...] = TOSSING3D_DEPLOYMENT_STEPS
     sampler_skill: str = TOSS_SKILL
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = (
         (PICK_SKILL, PracticeExampleSource.OUTCOME),
@@ -159,37 +193,98 @@ class Tossing3DPracticeDomain(PracticeDomain):
         ]
 
     def evaluate_theta(self, *, theta: Any) -> float:
-        return evaluate_deployment_policy(
+        value = evaluate_deployment_policy(
             toss_competence=theta.toss.competence,
             pick_competence=theta.pick.competence,
             open_competence=theta.open_gripper.competence,
             horizon=self.deployment_horizon,
         )
+        if not self._prices_deployment():
+            return value
+        cost = evaluate_deployment_policy_costs(
+            pick_competences=np.array([theta.pick.competence]),
+            open_competences=np.array([theta.open_gripper.competence]),
+            pick_costs=np.array([self._deployment_cost(skill_name=PICK_SKILL)]),
+            toss_costs=np.array([self._deployment_cost(skill_name=TOSS_SKILL)]),
+            open_costs=np.array([self._deployment_cost(skill_name=OPEN_GRIPPER_SKILL)]),
+            horizon=self.deployment_horizon,
+        )[0]
+        return value - self.deployment_cost_lambda * float(cost)
 
     def sample_policy_values(
         self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
     ) -> NDArray[np.float64]:
-        competences = [
-            beliefs[name].sample(rng=rng, count=count)[:, 0]
+        pick, toss, opened = (
+            beliefs[name].sample(rng=rng, count=count)
             for name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
-        ]
-        return evaluate_deployment_policies(
-            toss_competences=competences[1],
-            pick_competences=competences[0],
-            open_competences=competences[2],
+        )
+        values = evaluate_deployment_policies(
+            toss_competences=toss[:, 0],
+            pick_competences=pick[:, 0],
+            open_competences=opened[:, 0],
             horizon=self.deployment_horizon,
         )
+        if not self._prices_deployment():
+            return values
+        costs = evaluate_deployment_policy_costs(
+            pick_competences=pick[:, 0],
+            open_competences=opened[:, 0],
+            pick_costs=np.full(count, self._deployment_cost(skill_name=PICK_SKILL)),
+            toss_costs=np.full(count, self._deployment_cost(skill_name=TOSS_SKILL)),
+            open_costs=np.full(count, self._deployment_cost(skill_name=OPEN_GRIPPER_SKILL)),
+            horizon=self.deployment_horizon,
+        )
+        return values - self.deployment_cost_lambda * costs
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
-        return DeploymentPolicyExpectation.evaluate(
+        if not self._prices_deployment():
+            return DeploymentPolicyExpectation.evaluate(
+                pick=beliefs[PICK_SKILL],
+                toss=beliefs[TOSS_SKILL],
+                opened=beliefs[OPEN_GRIPPER_SKILL],
+                horizon=self.deployment_horizon,
+            )
+        value, cost = self._valued_with_cost(beliefs=beliefs)
+        return value - self.deployment_cost_lambda * cost
+
+    def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
+        """E[cost of one evaluation task] under the policy P(solve) assumes, in
+        practice-cost units: `deployment_steps` at `robot_step_price`."""
+        if not self._prices_deployment():
+            return 0.0
+        return self._valued_with_cost(beliefs=beliefs)[1]
+
+    def _prices_deployment(self) -> bool:
+        return self.deployment_cost_lambda > 0.0 and self.robot_step_price > 0.0
+
+    def _deployment_cost(self, *, skill_name: str) -> float:
+        return dict(self.deployment_steps)[skill_name] * self.robot_step_price
+
+    def _valued_with_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> tuple[float, float]:
+        return DeploymentPolicyExpectation.evaluate_with_cost(
             pick=beliefs[PICK_SKILL],
             toss=beliefs[TOSS_SKILL],
             opened=beliefs[OPEN_GRIPPER_SKILL],
             horizon=self.deployment_horizon,
+            pick_cost=self._deployment_cost(skill_name=PICK_SKILL),
+            toss_cost=self._deployment_cost(skill_name=TOSS_SKILL),
+            open_cost=self._deployment_cost(skill_name=OPEN_GRIPPER_SKILL),
         )
 
 
 TOSSING3D_DOMAIN = Tossing3DPracticeDomain()
+
+# The real TidyBot charges wall-clock seconds (0.1 per second; its robot step price is
+# 0.01), so its deployment costs are its own measurements, in steps: the mean observed
+# charge of every practice execution of the 2026-11-06 real runs (final-20261105,
+# w4 and w10 step_events.jsonl): PickCube 3.642 over 25, MoveToTossLocationAndToss 2.829
+# over 24. OpenGripper never ran on the robot; it keeps the sim's 39.
+TOSSING3D_REAL_DEPLOYMENT_STEPS: tuple[tuple[str, float], ...] = (
+    (PICK_SKILL, 364.2),
+    (TOSS_SKILL, 282.9),
+    (OPEN_GRIPPER_SKILL, 39.0),
+)
+TOSSING3D_REAL_DOMAIN = Tossing3DPracticeDomain(deployment_steps=TOSSING3D_REAL_DEPLOYMENT_STEPS)
 
 
 class SweepOffShelfDeployment:

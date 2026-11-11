@@ -34,6 +34,11 @@ PLACEMENT_TURNS_DEG = (0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0)
 # above the support; a grasp reaching further below the food than the cap refuses.
 RELEASE_CLEARANCE_M = 0.003
 RELEASE_MAX_DROP_M = 0.02
+# How far inside a serving target's edge a placed footprint stays. A dropped dumpling
+# lands with scatter; a welded one is snapped upright and at rest onto its spot, so its
+# footprint need only clear the edge by the half-millimetre it settles through.
+DROP_EDGE_MARGIN_M = 0.02
+SNAP_EDGE_MARGIN_M = 0.002
 # How far the gripper at a planned release must stay from every ungrasped food.
 SET_DOWN_FOOD_CLEARANCE_M = 0.003
 # Spacing of the spots searched on a round serving target, a fraction of a dumpling.
@@ -920,7 +925,10 @@ class RackFoodController:
             default=food_bottom,
         )
         reach_below = max(0.0, food_bottom - gripper_bottom)
-        if reach_below > RELEASE_MAX_DROP_M:
+        # A welded placement snaps the food onto its spot rather than dropping it, so
+        # only the pads' clearance applies, however high in the hand it was welded.
+        welded = self.backend.config.food_handling == "welded"
+        if reach_below > RELEASE_MAX_DROP_M and not welded:
             raise SkillFailed(
                 f"Food held {reach_below:.3f} m above the pads' tips; retaining grasp"
             )
@@ -957,8 +965,13 @@ class RackFoodController:
                     name=name, count=self.RACK_PUT_BACK_DRAWS
                 )
             ]
-        xs = (region.x_min - lower[0] + 0.02, region.x_max - upper[0] - 0.02)
-        ys = (region.y_min - lower[1] + 0.02, region.y_max - upper[1] - 0.02)
+        edge = (
+            SNAP_EDGE_MARGIN_M
+            if self.backend.config.food_handling == "welded"
+            else DROP_EDGE_MARGIN_M
+        )
+        xs = (region.x_min - lower[0] + edge, region.x_max - upper[0] - edge)
+        ys = (region.y_min - lower[1] + edge, region.y_max - upper[1] - edge)
         if xs[0] > xs[1] or ys[0] > ys[1]:
             raise SkillFailed("Food footprint does not fit destination")
         round_target = isinstance(region, CircularSupport)
@@ -982,7 +995,7 @@ class RackFoodController:
             for target_y in grid_y:
                 target = np.array([target_x, target_y, region.top_z - lower[2] + release])
                 if round_target and not region.contains_xy(
-                    points=self._box_xy(lower=target + lower, upper=target + upper), margin=0.02
+                    points=self._box_xy(lower=target + lower, upper=target + upper), margin=edge
                 ):
                     continue
                 gaps = [
