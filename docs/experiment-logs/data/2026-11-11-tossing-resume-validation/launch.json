@@ -1,0 +1,15 @@
+{
+  "job_id": "17330575",
+  "cluster": "della",
+  "root": "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3",
+  "source_commit": "b4e7f182887087ad125b06a1cf3afbbc62dea7ac",
+  "source_archive_sha256": "0aa6c3b2ea6ab05fc384c9210932b9996f4604cf1a442b6bd4d9b5d76428354f",
+  "account": "tsilver",
+  "partition": "cpu",
+  "constraint": null,
+  "cpus": 4,
+  "memory_gb": 16,
+  "time_limit": "00:20:00",
+  "compare_sha256": "6b43c182758598e2ff6d03b1f25fb1f8c3ddd78299dd91d826abd9f43ce3e1ca",
+  "protocol": "eval0 -> practice1 -> eval1 -> new process resume -> practice2 -> eval2; uninterrupted reference"
+}

@@ -1,0 +1,80 @@
+{
+  "cycle1": {
+    "argv": [
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/source/scripts/with_env.sh",
+      "python",
+      "scripts/run_sweep.py",
+      "--env",
+      "kitchen_recycling3d",
+      "--methods",
+      "pomdp",
+      "--num-seeds",
+      "1",
+      "--max-workers",
+      "1",
+      "--max-spawn-attempts",
+      "1",
+      "--results-root",
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/results/resumed",
+      "--shared-args",
+      "--practice-step-budget 200000 --num-cycles 10 --evaluation-control-steps 500 --human-skill-steps 1 --sampler-max-train-iters 10000 --pomdp-solver determinized_astar --pomdp-determinized-variant curtis --pomdp-max-search-iterations 100 --pomdp-competence-model local_trend --pomdp-competence-evidence non_epsilon --pomdp-inference-engine grid --pomdp-grid-competence-bins 25 --pomdp-grid-learning-rate-bins 16 --pomdp-competence-process-noise-std 0.03 --pomdp-learning-rate-decay 0.9 --pomdp-learning-rate-max 0.15 --pomdp-learning-rate-process-noise-std 0.005 --pomdp-learning-time-scale 1.0 --pomdp-linear-cost-lambda 0.0003 --pomdp-num-particles 1024 --pomdp-num-samples 100 --pomdp-draw-scope node --pomdp-observation-probability-weight 0.01 --exploration-epsilon 0.5 --practice-groundings observed --competence-recency-size 5 --competence-window-size 5 --ees-prior-alpha 10.0 --ees-prior-beta 1.0 --planning-timeout 10.0 --test-env-seed-offset 10000 --kitchen-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/kitchen-config.json --practice-cost-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/costs.json --practice-reset-policy never --no-scene-bg --no-early-stop --defer-rendering --initial-measurement --checkpoint-cycles --measure-after-learning-updates 1 2 --measurement-interval-steps 200000 --max-steps-per-interaction 2 --num-test-tasks 1 --evaluation-workers 1 --evaluation-task-rng per-task --evaluation-policy method --record-sampler-draws --pomdp-compress-decision-log --stop-after-cycles 1"
+    ],
+    "exit": {
+      "ended_unix": 1794411544.8775642,
+      "returncode": 0,
+      "started_unix": 1794411482.3652294
+    }
+  },
+  "cycle2": {
+    "argv": [
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/source/scripts/with_env.sh",
+      "python",
+      "scripts/run_sweep.py",
+      "--env",
+      "kitchen_recycling3d",
+      "--methods",
+      "pomdp",
+      "--num-seeds",
+      "1",
+      "--max-workers",
+      "1",
+      "--max-spawn-attempts",
+      "1",
+      "--results-root",
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/results/resumed",
+      "--shared-args",
+      "--practice-step-budget 200000 --num-cycles 10 --evaluation-control-steps 500 --human-skill-steps 1 --sampler-max-train-iters 10000 --pomdp-solver determinized_astar --pomdp-determinized-variant curtis --pomdp-max-search-iterations 100 --pomdp-competence-model local_trend --pomdp-competence-evidence non_epsilon --pomdp-inference-engine grid --pomdp-grid-competence-bins 25 --pomdp-grid-learning-rate-bins 16 --pomdp-competence-process-noise-std 0.03 --pomdp-learning-rate-decay 0.9 --pomdp-learning-rate-max 0.15 --pomdp-learning-rate-process-noise-std 0.005 --pomdp-learning-time-scale 1.0 --pomdp-linear-cost-lambda 0.0003 --pomdp-num-particles 1024 --pomdp-num-samples 100 --pomdp-draw-scope node --pomdp-observation-probability-weight 0.01 --exploration-epsilon 0.5 --practice-groundings observed --competence-recency-size 5 --competence-window-size 5 --ees-prior-alpha 10.0 --ees-prior-beta 1.0 --planning-timeout 10.0 --test-env-seed-offset 10000 --kitchen-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/kitchen-config.json --practice-cost-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/costs.json --practice-reset-policy never --no-scene-bg --no-early-stop --defer-rendering --initial-measurement --checkpoint-cycles --measure-after-learning-updates 1 2 --measurement-interval-steps 200000 --max-steps-per-interaction 2 --num-test-tasks 1 --evaluation-workers 1 --evaluation-task-rng per-task --evaluation-policy method --record-sampler-draws --pomdp-compress-decision-log --stop-after-cycles 1 --resume /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/results/resumed/pomdp/0"
+    ],
+    "exit": {
+      "ended_unix": 1794411581.8036075,
+      "returncode": 0,
+      "started_unix": 1794411544.8825614
+    }
+  },
+  "reference": {
+    "argv": [
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/source/scripts/with_env.sh",
+      "python",
+      "scripts/run_sweep.py",
+      "--env",
+      "kitchen_recycling3d",
+      "--methods",
+      "pomdp",
+      "--num-seeds",
+      "1",
+      "--max-workers",
+      "1",
+      "--max-spawn-attempts",
+      "1",
+      "--results-root",
+      "/scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/results/reference",
+      "--shared-args",
+      "--practice-step-budget 200000 --num-cycles 10 --evaluation-control-steps 500 --human-skill-steps 1 --sampler-max-train-iters 10000 --pomdp-solver determinized_astar --pomdp-determinized-variant curtis --pomdp-max-search-iterations 100 --pomdp-competence-model local_trend --pomdp-competence-evidence non_epsilon --pomdp-inference-engine grid --pomdp-grid-competence-bins 25 --pomdp-grid-learning-rate-bins 16 --pomdp-competence-process-noise-std 0.03 --pomdp-learning-rate-decay 0.9 --pomdp-learning-rate-max 0.15 --pomdp-learning-rate-process-noise-std 0.005 --pomdp-learning-time-scale 1.0 --pomdp-linear-cost-lambda 0.0003 --pomdp-num-particles 1024 --pomdp-num-samples 100 --pomdp-draw-scope node --pomdp-observation-probability-weight 0.01 --exploration-epsilon 0.5 --practice-groundings observed --competence-recency-size 5 --competence-window-size 5 --ees-prior-alpha 10.0 --ees-prior-beta 1.0 --planning-timeout 10.0 --test-env-seed-offset 10000 --kitchen-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/kitchen-config.json --practice-cost-config /scratch/gpfs/TSILVER/jr2860/kitchen-recycling/tossing-resume-validation-20261111-attempt3/inputs/costs.json --practice-reset-policy never --no-scene-bg --no-early-stop --defer-rendering --initial-measurement --checkpoint-cycles --measure-after-learning-updates 1 2 --measurement-interval-steps 200000 --max-steps-per-interaction 2 --num-test-tasks 1 --evaluation-workers 1 --evaluation-task-rng per-task --evaluation-policy method --record-sampler-draws --pomdp-compress-decision-log --stop-after-cycles 2"
+    ],
+    "exit": {
+      "ended_unix": 1794411669.2300758,
+      "returncode": 0,
+      "started_unix": 1794411581.8084617
+    }
+  }
+}

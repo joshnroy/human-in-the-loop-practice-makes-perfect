@@ -1,0 +1,129 @@
+[
+  {
+    "index": 0,
+    "practice_steps": 0,
+    "clock_steps": 0,
+    "robot_steps": 0,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 0,
+    "learning_updates": 0,
+    "session_index": 0,
+    "policy_file_sha256": "9fbe814c3111339c877f955087be581f993910d18d38b0c34808177039e612bd",
+    "robot_cost": 0,
+    "human_cost": 0,
+    "physical_cost": 0.0,
+    "human_steps": 0,
+    "human_invocations_by_skill": {},
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 302,
+        "reason": "no_plan"
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "deployment_policy": {
+      "kind": "tossing_canonical",
+      "source_method": "curtis/determinized_astar",
+      "horizon": 4,
+      "max_states": 4096,
+      "dp_priors": {}
+    },
+    "elapsed_seconds": 17.489982651997707
+  },
+  {
+    "index": 1,
+    "practice_steps": 273,
+    "clock_steps": 273,
+    "robot_steps": 273,
+    "human_invocations": 0,
+    "human_resets_by_destination": {
+      "robot_side": 0,
+      "opposite_side": 0
+    },
+    "robot_invocations": 2,
+    "learning_updates": 1,
+    "session_index": 1,
+    "policy_file_sha256": "122374ce10ebc6d6a0924e241fcc412a0b118f9dd8cbb160199941a7fd4793f5",
+    "robot_cost": 2.7299999999999858,
+    "human_cost": 0,
+    "physical_cost": 2.7299999999999858,
+    "human_steps": 0,
+    "human_invocations_by_skill": {},
+    "after_cycle": 0,
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 301,
+        "reason": "no_plan"
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "deployment_policy": {
+      "kind": "tossing_canonical",
+      "source_method": "curtis/determinized_astar",
+      "horizon": 4,
+      "max_states": 4096,
+      "dp_priors": {}
+    },
+    "elapsed_seconds": 18.934505497003556
+  },
+  {
+    "index": 2,
+    "practice_steps": 484,
+    "clock_steps": 484,
+    "robot_steps": 483,
+    "human_invocations": 1,
+    "human_resets_by_destination": {
+      "robot_side": 1,
+      "opposite_side": 0
+    },
+    "robot_invocations": 3,
+    "learning_updates": 2,
+    "session_index": 2,
+    "policy_file_sha256": "e4c72df4ef872be320471acff9c1d8c19a4dd72d37d2eeb41a732c1f51ceed21",
+    "robot_cost": 4.8299999999999415,
+    "human_cost": 5.0,
+    "physical_cost": 9.829999999999941,
+    "human_steps": 1,
+    "human_invocations_by_skill": {
+      "ResetCubeBinSameSide": 1
+    },
+    "after_cycle": 1,
+    "complete": true,
+    "tasks": [
+      {
+        "task": 0,
+        "seed": 357381689,
+        "goal": "InBin(cube_0, bin_0)",
+        "solved": false,
+        "steps": 301,
+        "reason": "no_plan"
+      }
+    ],
+    "num_solved": 0,
+    "num_total": 1,
+    "deployment_policy": {
+      "kind": "tossing_canonical",
+      "source_method": "curtis/determinized_astar",
+      "horizon": 4,
+      "max_states": 4096,
+      "dp_priors": {}
+    },
+    "elapsed_seconds": 19.837298587997793
+  }
+]

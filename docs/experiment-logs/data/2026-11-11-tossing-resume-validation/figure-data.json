@@ -1,0 +1,40 @@
+{
+  "input_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing-resume-validation-20261111/attempt3",
+  "source_commit": "b4e7f182887087ad125b06a1cf3afbbc62dea7ac",
+  "comparison_passed": true,
+  "stages": {
+    "Eval 0": true,
+    "Practice 1": true,
+    "Eval 1": true,
+    "Restart": true,
+    "Practice 2": true,
+    "Eval 2": true
+  },
+  "accounting": [
+    {
+      "evaluation": 0,
+      "x": 0,
+      "robot_steps": 0,
+      "physical_cost": 0.0,
+      "evaluation_control_steps": 302,
+      "complete": true
+    },
+    {
+      "evaluation": 1,
+      "x": 2,
+      "robot_steps": 273,
+      "physical_cost": 2.7299999999999858,
+      "evaluation_control_steps": 301,
+      "complete": true
+    },
+    {
+      "evaluation": 2,
+      "x": 5,
+      "robot_steps": 483,
+      "physical_cost": 9.829999999999941,
+      "evaluation_control_steps": 301,
+      "complete": true
+    }
+  ],
+  "scope": "Curtis seed0 continuation proof only; no hypothesis tests or efficacy inference"
+}

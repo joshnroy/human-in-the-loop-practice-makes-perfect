@@ -1,0 +1,145 @@
+{
+  "hashes": {
+    "accounting": {
+      "reference": "36a9a2af951feb13973f7d3bdda13e24517112165e88f45470f21614c58a11e1",
+      "resumed": "36a9a2af951feb13973f7d3bdda13e24517112165e88f45470f21614c58a11e1"
+    },
+    "clock": {
+      "reference": "736dc014fd299e55c89caf355c52dc3c74523575473af5e0bdd8c0629423f241",
+      "resumed": "736dc014fd299e55c89caf355c52dc3c74523575473af5e0bdd8c0629423f241"
+    },
+    "cycle": {
+      "reference": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+      "resumed": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+    },
+    "env_state": {
+      "reference": "ae2313f61a46d3e88fa07db9775f0fc2f3ae5b4c5ebf5692b31198b68dd65487",
+      "resumed": "ae2313f61a46d3e88fa07db9775f0fc2f3ae5b4c5ebf5692b31198b68dd65487"
+    },
+    "evaluation_json": {
+      "reference": "55a2e65966dc00d25b1c091771aefc346b9cb209e1818590da605a4324121e10",
+      "resumed": "55a2e65966dc00d25b1c091771aefc346b9cb209e1818590da605a4324121e10"
+    },
+    "evaluations": {
+      "reference": "3253058fb1a9644288932bb0283d4f8c451bb8332175ce4c4546bd7a6a04026e",
+      "resumed": "3253058fb1a9644288932bb0283d4f8c451bb8332175ce4c4546bd7a6a04026e"
+    },
+    "events": {
+      "reference": "b6ff5aaf6666546785cde6a2b186a91f8f40b54c83bed6acac46c5f682500b31",
+      "resumed": "b6ff5aaf6666546785cde6a2b186a91f8f40b54c83bed6acac46c5f682500b31"
+    },
+    "learning_updates": {
+      "reference": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35",
+      "resumed": "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+    },
+    "method": {
+      "reference": "fa5fb65decd3bafc4058aa0cc4f2b88334a939d6f243a88e4464db2401040c9d",
+      "resumed": "fa5fb65decd3bafc4058aa0cc4f2b88334a939d6f243a88e4464db2401040c9d"
+    },
+    "metrics": {
+      "reference": "9dc4639a3995ade3e3027b39c3983e7c14fe874a8985332993726b3ce942f6ca",
+      "resumed": "9dc4639a3995ade3e3027b39c3983e7c14fe874a8985332993726b3ce942f6ca"
+    },
+    "no_robot_action_streak": {
+      "reference": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "resumed": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "records": {
+      "reference": "e4935ba1b147a1bc2b8b7918a6ea5474629a0ac47501958b06c605daa9960f73",
+      "resumed": "e4935ba1b147a1bc2b8b7918a6ea5474629a0ac47501958b06c605daa9960f73"
+    },
+    "reset_counts": {
+      "reference": "5a7100020d831f83597c273b8ea22a20eb72ad939b14f415ff439226bc23bd27",
+      "resumed": "5a7100020d831f83597c273b8ea22a20eb72ad939b14f415ff439226bc23bd27"
+    },
+    "rngs": {
+      "reference": "bc1e1b14c42c4ffe2db0c00d6e6c5679f8a443eec48e81baacd9e634c381476d",
+      "resumed": "bc1e1b14c42c4ffe2db0c00d6e6c5679f8a443eec48e81baacd9e634c381476d"
+    },
+    "robot_invocations": {
+      "reference": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce",
+      "resumed": "4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce"
+    },
+    "sampler_draws.jsonl": {
+      "reference": "cca2d594c10a0adcaf2b4108fa3e67f0236da817a1cde5edd88bb812c6688a59",
+      "resumed": "cca2d594c10a0adcaf2b4108fa3e67f0236da817a1cde5edd88bb812c6688a59"
+    },
+    "sampler_proposals.jsonl": {
+      "reference": "f240d747c24b7c8c965de0084247bd587cd0ffe571dfeca35916e04d9a1774c4",
+      "resumed": "f240d747c24b7c8c965de0084247bd587cd0ffe571dfeca35916e04d9a1774c4"
+    },
+    "simulation_state": {
+      "reference": "511505cf567cac6827f6f85025624542a18b3eecc12b3e16b3fbabd8681b7cdd",
+      "resumed": "511505cf567cac6827f6f85025624542a18b3eecc12b3e16b3fbabd8681b7cdd"
+    },
+    "stop_streak": {
+      "reference": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "resumed": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    "zero_step_streak": {
+      "reference": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "resumed": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    }
+  },
+  "normalization_omits": [
+    "checkpoint_written_unix",
+    "decision_log",
+    "draw_recorder",
+    "ees_decision_log",
+    "elapsed_seconds",
+    "event_log_bytes",
+    "git_commit",
+    "git_dirty",
+    "header",
+    "output_dir",
+    "output_path",
+    "policy_file_sha256",
+    "policy_sha256",
+    "seconds",
+    "timestamp",
+    "timing",
+    "updated_unix",
+    "written_unix"
+  ],
+  "passed": true,
+  "raw_external_diagnostics": {
+    "reference": [
+      {
+        "cache_key_sha256": "0d8023b86e7d9f061e492a116208a46fcf6725b082e196053498d1f234b99d35",
+        "raw_fd_output_sha256": "4404d85e5e75482b3e5691b790561eeed00419ca962ba59e61acbaddf684d682",
+        "sas_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      {
+        "cache_key_sha256": "309a64a60adfac818e96928e95e1fcf64e2ae6c6dbf4791eb2775e0bbc25466e",
+        "raw_fd_output_sha256": "ab9f347cda7960164e44f012177d5a5230918adf44d6739cd046789d7a1fdfb1",
+        "sas_sha256": "94ca82242b128de40c57bce3f96158c925936f7f59d43b3e319eed05f076898c"
+      }
+    ],
+    "resumed": [
+      {
+        "cache_key_sha256": "0d8023b86e7d9f061e492a116208a46fcf6725b082e196053498d1f234b99d35",
+        "raw_fd_output_sha256": "a9cc43eb345a661d65dd673a5c365e9890d7e6fe4a20825993f08d3a61217bd0",
+        "sas_sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+      },
+      {
+        "cache_key_sha256": "309a64a60adfac818e96928e95e1fcf64e2ae6c6dbf4791eb2775e0bbc25466e",
+        "raw_fd_output_sha256": "42395038aa1f907cba08b5d0efbc2914dd2cc279fd9ae6d7f4dea859fa117b87",
+        "sas_sha256": "94ca82242b128de40c57bce3f96158c925936f7f59d43b3e319eed05f076898c"
+      }
+    ]
+  },
+  "semantic_normalization": {
+    "cached_fd_output": "exclude external diagnostic text containing temporary paths, timing and memory; retain exact cache keys and SAS payloads",
+    "cost_forecast_keys": "parse skill and bound object names/types/features with regex and literal_eval; require exact ground-skill bijection; retain every value"
+  },
+  "structural": {
+    "canonical_deployment": true,
+    "eval0_once": true,
+    "evals_complete": true,
+    "first_boundary": true,
+    "preserved_prefix_sampler_draws.jsonl": true,
+    "preserved_prefix_sampler_proposals.jsonl": true,
+    "two_cycles": true,
+    "two_updates": true
+  }
+}
