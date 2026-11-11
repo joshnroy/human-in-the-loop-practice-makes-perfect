@@ -48,7 +48,7 @@ topic branches; `kindergarden` @ `0dac89e` from `keep-alive/0dac89e` and two top
 branches. The keep branches are what hold each pin, so deleting one orphans it once the
 topic branches move. `predicators` never needed a fork: read-only reference, pinned on its
 default branch (`master`, not `main`). `prpl-tidybot` is the exception: it points at
-Josh's fork, pinned on the fork's `main` (`eb3ac06`, 2026-11-02), where the real-robot
+Josh's fork, pinned on the fork's `main` (`411fcb4`, 2026-11-06), where the real-robot
 work is reviewed and merged. A pin on the fork's `main` cannot be force-pushed
 away by anyone but Josh. `tidybot_real` is Yixuan Huang's old
 real-robot toss stack, a read-only reference pinned on its default branch (`main`).
