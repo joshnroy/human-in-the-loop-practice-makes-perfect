@@ -1124,6 +1124,11 @@ class StepProtocolEntry:
         env_cli: type[EnvironmentCli],
         environment: type[StepProtocolEnvironment],
     ) -> None:
+        # Resolve domain metadata from the current inputs before checking a resume.
+        # This hook must be pure configuration work: no scene, planner or recorder.
+        resolve_configuration = getattr(environment, "resolve_configuration", None)
+        if resolve_configuration is not None:
+            resolve_configuration(args=args)
         resuming = getattr(args, "resume", None) is not None
         if resuming:
             StepProtocolResume.prepare(args=args)
