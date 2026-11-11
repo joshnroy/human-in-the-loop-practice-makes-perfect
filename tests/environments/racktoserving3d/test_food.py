@@ -71,6 +71,7 @@ def food():
         plan_base=Mock(),
         check_arm_clearance=Mock(),
         departing_from_contacts=Mock(side_effect=nullcontext),
+        depart=Mock(),
         settle_lost_food=Mock(),
         departing={},
         departing_food={},
