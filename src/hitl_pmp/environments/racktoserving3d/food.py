@@ -52,6 +52,9 @@ PLAN_DEADLINE_S = 60.0
 CARRY_RAISE_M = 0.10
 # A held-food skill starting in contact first rises this far before it plans.
 PLACE_ESCAPE_M = 0.04
+# A pick starting with the open hand down at the plate rises this far before it plans
+# again: the dumpling's height, 27 mm, plus the planner's 15 mm margin, plus play.
+PICK_ESCAPE_M = 0.06
 # A food lost from the hand is waited for, the arm still, for at most this many control
 # steps, until no food moves faster than this or touches the robot.
 SETTLE_LOST_FOOD_STEPS = 60
@@ -97,6 +100,9 @@ class _FoodMotion(RackScraper):
         # Carried-food overlaps (carried geom, obstacle) present when a departing scope
         # began; like `departing`, each may persist but not deepen.
         self.departing_food = {}
+        # (robot geom, ungrasped food geom) contacts present when a departing scope
+        # began, by distance; like `departing`, each may persist but not deepen.
+        self.departing_touch: dict[tuple[int, int], float] = {}
         super().__init__(shelf=food.shelf, config=food.backend.config)
 
     def check_configuration(
@@ -189,11 +195,47 @@ class _FoodMotion(RackScraper):
         target = mask(geoms=self.food.target_geoms)
         a = np.asarray(scratch.contact.geom1[:ncon])
         b = np.asarray(scratch.contact.geom2[:ncon])
-        touching = ~(np.asarray(scratch.contact.dist[:ncon]) > 0)
+        dist = np.asarray(scratch.contact.dist[:ncon])
+        touching = ~(dist > 0)
         hit = (robot[a] & food[b] & ~(pad[a] & target[b])) | (
             robot[b] & food[a] & ~(pad[b] & target[a])
         )
-        return bool(np.any(touching & hit))
+        hits = np.flatnonzero(touching & hit)
+        if not self.departing_touch:
+            return bool(hits.size)
+        for index in hits:
+            pair = (
+                (int(a[index]), int(b[index]))
+                if robot[a[index]]
+                else (int(b[index]), int(a[index]))
+            )
+            start = self.departing_touch.get(pair)
+            if start is None or dist[index] < start - DEPARTURE_TOLERANCE:
+                return True
+        return False
+
+    def food_touches(self) -> dict[tuple[int, int], float]:
+        """Closest distance of each touching (robot geom, food geom) pair among scratch
+        data's contacts, the target food's pads excepted as `_touches_ungrasped_food`
+        excepts them."""
+        shelf = self.shelf
+        scratch = shelf.ik_data
+        foods = self._food_geoms(carried=self.food.carried)
+        target = self.food.target_geoms
+        pairs: dict[tuple[int, int], float] = {}
+        for contact in scratch.contact[: scratch.ncon]:
+            if contact.dist > 0:
+                continue
+            for robot, other in (
+                (int(contact.geom1), int(contact.geom2)),
+                (int(contact.geom2), int(contact.geom1)),
+            ):
+                if robot not in shelf.robot_geoms or other not in foods:
+                    continue
+                if robot in shelf.pad_geoms and other in target:
+                    continue
+                pairs[robot, other] = min(pairs.get((robot, other), np.inf), contact.dist)
+        return pairs
 
     def _penetration(
         self,
@@ -272,12 +314,15 @@ class _FoodMotion(RackScraper):
         A closed grasp on the wire rack can leave a pad resting on a wire. The lift
         moves away from that contact, but the unconditioned check rejects the lift's
         own starting configuration. Holding food, the food's own overlaps with
-        fixtures at the start are measured and allowed the same way.
+        fixtures at the start are measured and allowed the same way. So is the hand
+        resting against an ungrasped dumpling: a placement beside one already served
+        releases with a pad touching it, and its retreat starts there.
         """
         shelf = self.shelf
         shelf.site_at(base=shelf.data.qpos[shelf.ba].copy(), arm=shelf.data.qpos[shelf.qa].copy())
         shelf.mujoco.mj_collision(shelf.model, shelf.ik_data)
         self.departing = self.pad_fixture_contacts()
+        self.departing_touch = self.food_touches()
         self.departing_food = {}
         if self.food.carried is not None:
             self._measuring_departure = True
@@ -294,7 +339,7 @@ class _FoodMotion(RackScraper):
         try:
             yield
         finally:
-            self.departing, self.departing_food = {}, {}
+            self.departing, self.departing_food, self.departing_touch = {}, {}, {}
 
     def step(self, *, arm: np.ndarray, label: str) -> None:
         if self.food.carried is not None:
@@ -608,6 +653,44 @@ class RackFoodController:
         grasp, pre = chosen.payload
         return plan, grasp, pre, plan.stance
 
+    def _plan_pick_from_here(self, *, name: str) -> tuple[Any, np.ndarray, np.ndarray, np.ndarray]:
+        """`_plan_pick`, first leaving a start no plan can begin from.
+
+        A placement whose retreat failed leaves the open hand down at the plate, within
+        the planner's margin of it and of the food on it, so every reach is refused.
+        Rise straight up, open, out of that start (a line checked as it goes, as the
+        placement's own escape), then plan once more. From a start that is not blocked
+        a refusal moves nothing.
+        """
+        from .planning import ScraperMotionPlanner
+
+        try:
+            return self._plan_pick(name=name)
+        except SkillFailed as exc:
+            if not ScraperMotionPlanner.start_blocked(tool=self.motion, held_name=None):
+                raise
+            reason = str(exc)
+        shelf = self.shelf
+        if shelf.grip > 0.0:
+            shelf.grip = 0.0
+            shelf.hold(count=25, label="food_pick_escape_open")
+        here = shelf.site_pose()
+        try:
+            self.motion.line(
+                position=here[:3, 3] + [0.0, 0.0, PICK_ESCAPE_M],
+                rotation=here[:3, :3],
+                label="food_pick_escape",
+                holding=False,
+                step=0.005,
+                steps_per=5,
+            )
+        except SkillFailed as exc:
+            raise SkillFailed(f"{reason}; escape refused: {exc}") from exc
+        try:
+            return self._plan_pick(name=name)
+        except SkillFailed as again:
+            raise SkillFailed(f"after escaping the start: {again}") from again
+
     def _follow(self, *, plan: Any, pose: np.ndarray, label: str) -> None:
         """Execute a planned reach: tuck, base, arm to `pose`."""
         motion = self.motion
@@ -684,7 +767,7 @@ class RackFoodController:
         self.carried = None
         with self.controllers.feedback():
             with self.motion.departing_from_contacts():
-                plan, grasp, pre, base = self._plan_pick(name=name)
+                plan, grasp, pre, base = self._plan_pick_from_here(name=name)
                 planned = self._pose(name=name)
                 self._limit_grip(newtons=None)
                 shelf.grip = 0.0
@@ -880,13 +963,15 @@ class RackFoodController:
                 raise SkillFailed("Food remained held after release")
             self.controllers.held_food = shelf.held_cube = None
             self.target_geoms = self.backend.body_geoms(name=name)
-            self.motion.line(
-                position=pre[:3, 3],
-                rotation=pre[:3, :3],
-                label="food_retreat",
-                holding=False,
-                step=0.005,
-            )
+            # Set down beside a served dumpling, the open hand can rest against it.
+            with self.motion.departing_from_contacts():
+                self.motion.line(
+                    position=pre[:3, 3],
+                    rotation=pre[:3, :3],
+                    label="food_retreat",
+                    holding=False,
+                    step=0.005,
+                )
             shelf.hold(count=20, label="food_rest")
             expected = "OnRack" if destination == "rack_0" else "OnTray"
             if self.backend.location(name=name) != expected:
