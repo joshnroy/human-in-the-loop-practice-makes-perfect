@@ -77,8 +77,8 @@ def test_the_verified_grasp_survives_a_physical_pour_and_releases_for_placement(
         assert c.vessel_home(name="pitcher")
         assert len(drift) > 100
         peak = np.max(drift, axis=0)
-        record_property("max_grasp_position_error_m", peak[0])
-        record_property("max_grasp_rotation_error_deg", np.rad2deg(peak[1]))
+        record_property("max_grasp_position_error_m", float(peak[0]))
+        record_property("max_grasp_rotation_error_deg", float(np.rad2deg(peak[1])))
         assert peak[0] < 0.001
         # MuJoCo welds remain compliant under load; bound slip throughout motion,
         # rather than demanding the zero residual of a kinematic attachment.
