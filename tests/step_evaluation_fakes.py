@@ -82,6 +82,11 @@ class LightSwitchEvaluationProtocol:
         return problem.env
 
     @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        del problem, action
+        return None
+
+    @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> LightSwitchProblem:
         env = ObservedLightSwitchEnvironment(
             grid_size=3,

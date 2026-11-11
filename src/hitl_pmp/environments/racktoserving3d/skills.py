@@ -225,14 +225,16 @@ class RackServing3DSkills:
     )
 
     @staticmethod
-    def robot_skills(*, include_sweep: bool = True) -> tuple[Skill, ...]:
+    def robot_skills(
+        *, include_sweep: bool = True, include_placement: bool = True
+    ) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
         return (
             skills.PICK_SCRAPER,
             skills.GATHER_AND_SWEEP,
             skills.RETURN_SCRAPER,
             skills.PICK_FOOD,
-            skills.PLACE_FOOD_ON_TRAY,
+            *((skills.PLACE_FOOD_ON_TRAY,) if include_placement else ()),
             skills.RETURN_FOOD_TO_RACK,
         ) + ((skills.SWEEP,) if include_sweep else ())
 

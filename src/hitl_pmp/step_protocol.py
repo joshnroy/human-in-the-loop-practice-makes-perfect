@@ -603,6 +603,7 @@ class StepProtocolResume:
         "evaluation_max_pour_attempts": "None",
         "evaluation_policy": "None",
         "repeated_zero_step_call_limit": "20",
+        "bulk_transfer_only": "False",
     }
 
     @staticmethod
@@ -893,6 +894,12 @@ class StepEvaluation:
                         )
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
+                            break
+                        terminal = environment.evaluation_terminal_reason(
+                            problem=problem, action=action.action
+                        )
+                        if terminal is not None:
+                            reason = terminal
                             break
                         # A one-shot skill (a Pour) that failed at deployment is
                         # committed: past the allowed attempts the task ends unsolved.

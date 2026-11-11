@@ -399,3 +399,41 @@ def test_the_competence_prior_flag_overrides_the_domains_beta_prior(
         RACK_SERVING_DOMAIN.initial_competence_alpha,
         RACK_SERVING_DOMAIN.initial_competence_beta,
     ) == (1.0, 3.0)
+
+
+def _one_attempt(*, horizon, **competence):
+    return float(
+        RackServingDeployment.solve(
+            competences={name: np.array([value]) for name, value in competence.items()},
+            horizon=horizon,
+            step_weight=0.0,
+            one_bulk_attempt=True,
+        )[0][0]
+    )
+
+
+def test_one_bulk_attempt_gives_a_failed_sweep_no_retry_and_takes_the_better_skill():
+    assert _one_attempt(horizon=12, PickScraper=1, GatherAndSweep=0.5) == pytest.approx(0.5)
+    assert _one_attempt(horizon=12, PickScraper=1, GatherAndSweep=0.9, Sweep=0.3) == (
+        pytest.approx(0.9)
+    )
+    # Picking the scraper up is not the bulk attempt: it may still be retried.
+    assert _one_attempt(horizon=3, PickScraper=0.5, GatherAndSweep=1) == pytest.approx(0.75)
+
+
+def test_a_provider_without_placement_is_valued_as_one_bulk_attempt():
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+
+    offered = frozenset(RACK_ROBOT_SKILLS) - {"PlaceFoodOnTray"}
+    domain = PracticeDomainWithoutSkills.keep_offered(
+        domain=RACK_SERVING_DOMAIN, offered=offered | frozenset(RACK_HUMAN_SKILLS)
+    )
+    assert "PlaceFoodOnTray" not in dict(domain.belief_sources)
+    theta = {
+        name: Mock(competence=0.5 if name == "GatherAndSweep" else 1.0)
+        for name in domain.robot_skills()
+    }
+    theta["Sweep"] = Mock(competence=0.3)
+    assert domain.evaluate_theta(theta=theta) == pytest.approx(0.5)
+    with_placement = {**theta, "PlaceFoodOnTray": Mock(competence=1.0)}
+    assert RACK_SERVING_DOMAIN.evaluate_theta(theta=with_placement) == pytest.approx(1.0)

@@ -128,3 +128,11 @@ def test_no_human_flag_removes_only_human_offerings():
     disabled = _provider(offer=False)
     assert disabled.human_cube_bin_reset_skills() == ()
     assert disabled.skills() == Skills.robot_skills()
+
+
+def test_bulk_transfer_only_withholds_individual_placement_and_nothing_else():
+    default = {skill.name for skill in _provider().skills()}
+    env = RackServingEnvironment(config=RackServingConfig(bulk_transfer_only=True))
+    bulk = {skill.name for skill in RackServingSkillProvider(env=env).skills()}
+    assert default - bulk == {"PlaceFoodOnTray"}
+    assert {"Sweep", "GatherAndSweep"} <= bulk

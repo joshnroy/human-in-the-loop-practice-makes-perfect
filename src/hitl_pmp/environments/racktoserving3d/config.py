@@ -53,6 +53,12 @@ class RackServingConfig(BaseModel):
     # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
     # (`RackLayout.lined_up`) for episode starts.
     sweep_skill: bool = True
+    # The benchmark's bulk-transfer protocol (Josh, 2026-11-11): PlaceFoodOnTray is not
+    # offered, in practice or evaluation, and a held-out task ends with its first Sweep
+    # or GatherAndSweep, whatever it delivered. With placement on offer every method
+    # solved 36/36 tasks before and after practice by carrying the leftovers, so what
+    # the sweeps had learned could not show.
+    bulk_transfer_only: bool = False
     start_layout: Literal["scattered", "pile2col", "stack", "row"] = "scattered"
     # scattered only: the probability an episode start or a human batch return places
     # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,

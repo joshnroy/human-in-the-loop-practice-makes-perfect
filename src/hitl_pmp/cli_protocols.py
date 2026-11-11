@@ -191,6 +191,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        """The end reason of a held-out task that `action`, just executed, ends whatever
+        it reported (a domain that gives a task one attempt at a skill); None otherwise."""
+        ...
+
+    @staticmethod
     def isolate_evaluation_task(*, problem: Problem) -> None:
         """Under `--evaluation-task-rng per-task`, before each held-out task: forget
         whatever this evaluation environment instance remembers from earlier tasks, so the
@@ -261,6 +267,12 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def drain_measured_seconds(*, problem: Problem) -> float | None:
         del problem
+        return None
+
+    @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        """By default no action ends a task by itself."""
+        del problem, action
         return None
 
     @staticmethod

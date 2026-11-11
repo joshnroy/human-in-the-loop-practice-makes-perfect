@@ -254,3 +254,19 @@ def test_real_entry_builds_ees_with_rack_context_and_closes_resources(
     assert call["recorder"].header.environment == "racktoserving3d"
     assert closed == [call["problem"].env]
     assert call["problem"].env._backend is None
+
+
+@pytest.mark.parametrize("bulk_only", [True, False])
+def test_a_bulk_transfer_only_task_ends_with_its_first_sweep(*, tmp_path, bulk_only):
+    from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
+
+    extra = ("--bulk-transfer-only", "1") if bulk_only else ()
+    problem = RackServingStepProtocol.build_evaluation_problem(
+        args=_args(tmp_path=tmp_path, extra=extra)
+    )
+    for name, skill in SKILL_IDS.items():
+        reason = RackServingStepProtocol.evaluation_terminal_reason(
+            problem=problem, action=np.array([skill, 0, 0, 0, 0], dtype=float)
+        )
+        ends = bulk_only and name in {"Sweep", "GatherAndSweep"}
+        assert reason == ("bulk_attempt_finished" if ends else None), name
