@@ -14,7 +14,7 @@ from .backend import RackServingBackend
 from .config import RackServingConfig
 from .food import RackFoodController
 from .servo import SweepServo
-from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_SPEED_M_S
+from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_BOUNDS, SWEEP_SPEED_M_S
 from .stroke import GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
@@ -312,6 +312,38 @@ class RackControllers:
             self.push_stroke(
                 stroke=sweep,
                 base=stances.rear_base(y=float(sweep.start[1]), config=config),
+                travel=self.to_rear,
+                rack_pose=rack_pose,
+                label="sweep",
+            )
+
+    def sweep(self, *, d: float) -> None:
+        """GatherAndSweep's final stroke alone: no squeeze and no gathers."""
+        ((d_low, d_high),) = SWEEP_BOUNDS
+        if not np.isfinite(d) or not d_low <= d <= d_high:
+            raise SkillFailed(f"Sweep requires d [{d_low},{d_high}] m")
+        backend = self.backend
+        if not self.on_rack():
+            raise SkillFailed("no food is physically on the rack")
+        rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
+        if rack.top_z < tray.top_z or tray.x_max > rack.x_min:
+            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+        geometry = self.stroke_geometry()
+        self.metrics = {
+            "measured_gap_m": rack.x_min - tray.x_max,
+            "rack_top_m": rack.top_z,
+            "tray_top_m": tray.top_z,
+            "d_m": d,
+            "speed_m_s": SWEEP_SPEED_M_S,
+            "max_rack_displacement_m": 0.0,
+            "strokes": [],
+        }
+        rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
+        stroke = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
+        with self.feedback():
+            self.push_stroke(
+                stroke=stroke,
+                base=self.stances.rear_base(y=float(stroke.start[1]), config=backend.config),
                 travel=self.to_rear,
                 rack_pose=rack_pose,
                 label="sweep",

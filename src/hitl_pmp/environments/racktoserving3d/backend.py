@@ -47,6 +47,11 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _control_steps: int = PrivateAttr(default=0)
     _tool_home: Callable[[], bool] | None = PrivateAttr(default=None)
     _rng: Any = PrivateAttr(default=None)
+    _start_kind: str = PrivateAttr(default="scattered")
+
+    def start_kind(self) -> str:
+        """This episode's start layout, after any `gathered_fraction` draw."""
+        return self._start_kind
 
     def env(self) -> Any:
         if self._env is None:
@@ -102,8 +107,27 @@ class RackServingBackend(SweepOffShelf3DBackend):
         core.box_interior = self.box_interior
         core.cube_in_box = lambda name: self.settled_on_tray(name=name)
         self._tool_home = None
-        # Every episode starts from its own seed's draw of the shared rack layout.
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        # Every episode starts from its own seed's draw of the shared rack layout,
+        # unless an opt-in fixed layout is configured.
+        self._place_all_food()
+
+    def _place_all_food(self) -> None:
+        """All five on the rack: the configured layout, or the start mixture (the
+        "stack" pile with probability `gathered_fraction`, else scattered)."""
+        names = list(self.cube_names)
+        kind = self.config.start_layout
+        # No coin at fraction 0, so a scattered-only config draws exactly as before.
+        if (
+            kind == "scattered"
+            and self.config.gathered_fraction > 0
+            and self._rng.uniform() < self.config.gathered_fraction
+        ):
+            kind = "stack"
+        self._start_kind = kind
+        if kind == "scattered":
+            self._commit(placements=self.food_placements(names=names))
+        else:
+            self._commit(placements=self.food_placements(names=names, start_layout=kind))
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
@@ -445,12 +469,16 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def batch_return(self) -> None:
         self.sync_clock()
         self.ledger = self.ledger.charge_human(intervention="human_batch_return")
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        # The person returns food from the same start mixture an episode starts from.
+        self._place_all_food()
 
-    def food_placements(self, *, names: list[str]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    def food_placements(
+        self, *, names: list[str], start_layout: str = "scattered"
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Place `names` on the rack as one draw of the shared layout distribution,
         conditioned on every other dumpling's current centre; a layout that collides
-        with anything else in the scene is redrawn whole."""
+        with anything else in the scene is redrawn whole. A lined-up `start_layout`
+        draws all five from `RackLayout.lined_up` instead."""
         import mujoco
 
         model, scratch, addresses, _ = self._scratch(names=names)
@@ -458,8 +486,19 @@ class RackServingBackend(SweepOffShelf3DBackend):
         support = self.body_geoms(name="rack_0")
         others = [self.food_centre(name=other) for other in self.cube_names if other not in names]
         height = rack.top_z + self.config.dumpling_height / 2 + 0.002
+        tray = self.support(name="box_0")
         for _ in range(MAX_RETURN_LAYOUTS):
-            layout = RackLayout.sample(rng=self._rng, rack=rack, count=len(names), others=others)
+            if start_layout == "scattered":
+                layout = RackLayout.sample(
+                    rng=self._rng, rack=rack, count=len(names), others=others
+                )
+            else:
+                layout = RackLayout.lined_up(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    kind=start_layout,
+                )
             placed = {
                 name: (np.array([x, y, height]), RackLayout.quaternion(yaw=yaw))
                 for name, (x, y, yaw) in zip(names, layout, strict=True)

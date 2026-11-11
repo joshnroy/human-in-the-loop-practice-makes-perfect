@@ -113,6 +113,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 controllers.gather_and_sweep(
                     s=float(values[2]), delta=float(values[3]), d=float(values[4])
                 )
+            elif skill_id == SKILL_IDS["Sweep"]:
+                if not self.config.sweep_skill:
+                    raise SkillFailed("Sweep is not enabled (RackServingConfig.sweep_skill)")
+                controllers.sweep(d=float(values[4]))
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
             elif skill_id == SKILL_IDS["PickFood"]:
