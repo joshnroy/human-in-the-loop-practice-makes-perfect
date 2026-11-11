@@ -4,7 +4,7 @@ Mock geometry follows the kitchen prototype's bench scraper and wiper tests.
 """
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -15,6 +15,7 @@ from hitl_pmp.environments.racktoserving3d.tool import (
     BODY_REST,
     RackScraper,
     RackShelfSkills,
+    TableWiper,
     box_overlap,
     wiper_unwatched,
 )
@@ -504,7 +505,7 @@ def test_servo_ramps_a_held_scrapers_heading_across_the_control_period(*, holdin
 
 def reference_tool_clear(*, tool, pose, data=None):
     """`RackScraper.tool_clear` as it was: every obstacle tested one at a time."""
-    from hitl_pmp.environments.racktoserving3d.tool import SUPPORT_ALLOWANCE
+    from hitl_pmp.environments.racktoserving3d.tool import GRAZE, SUPPORT_ALLOWANCE
 
     if not np.isfinite(pose).all():
         return False
@@ -535,7 +536,7 @@ def reference_tool_clear(*, tool, pose, data=None):
                 other_rotation=other_rotation,
                 other_size=other_size,
             )
-            if overlap <= 1e-9:
+            if overlap <= GRAZE:
                 continue
             support_top = float(other_center[2] + np.abs(other_rotation[2]) @ other_size)
             support = (
@@ -691,3 +692,95 @@ def test_the_step_guard_checks_the_command_the_servo_will_send():
         moved = configuration - arm
         np.testing.assert_allclose(moved, UNEQUAL_ERROR * (moved[0] / 0.1623), atol=1e-12)
     tool.shelf.step.assert_called_once()
+
+
+def _off_the_straight_path(*, arm, start, delta):
+    moved = arm - start
+    scale = moved[0] / delta[0]
+    return not np.allclose(moved, scale * delta, atol=1e-12)
+
+
+def test_an_executed_segment_is_checked_along_the_path_the_servo_follows():
+    """Ours seed 0 (bulk-only-v1), 18th action: a Sweep refused 30 steps in with
+    "sweep_arm_clearance: axis-clipped joint segment at 0.225 rad". The transit had
+    planned its route, driven the arm to within 0.02 rad of the last waypoint, and
+    re-checked the final segment from where the arm then was: the straight path was
+    clear, and the axis-clipped one (which `JointStep` never drives) put one blade
+    corner 0.07 mm into the rack's side."""
+    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
+    delta = np.array([0.225, -0.1924, 0.225, -0.225, -0.225, -0.225, 0.225]) * 1.4
+    tool = _guarded_scraper(arm=arm, base=base)
+    tool.check_arm_segment(
+        start=arm, target=arm + delta, base=base, holding=True, axis_clipped=False
+    )
+    checked = [call.kwargs["arm"] for call in tool.check_configuration.call_args_list]
+    assert len(checked) > 2
+    assert not any(_off_the_straight_path(arm=c, start=arm, delta=delta) for c in checked)
+
+
+def test_a_planned_segment_is_still_checked_along_the_axis_clipped_path_too():
+    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
+    delta = np.array([0.225, -0.1924, 0.225, -0.225, -0.225, -0.225, 0.225]) * 1.4
+    tool = _guarded_scraper(arm=arm, base=base)
+    tool.check_arm_segment(start=arm, target=arm + delta, base=base, holding=True)
+    checked = [call.kwargs["arm"] for call in tool.check_configuration.call_args_list]
+    assert any(_off_the_straight_path(arm=c, start=arm, delta=delta) for c in checked)
+
+
+def test_a_transit_rechecks_each_executed_segment_along_the_servo_path_only():
+    arm, base = np.linspace(-0.3, 0.3, 7), np.array([1.5, 0.85, -np.pi / 2])
+    tool = _guarded_scraper(arm=arm, base=base)
+    target = arm + 0.01
+    tool.check_arm_segment = Mock()
+    tool.settle_hand = Mock()
+    planner = SimpleNamespace(
+        plan=Mock(return_value=[arm + 0.005, target]),
+        delta=Mock(return_value=np.zeros(7)),
+        edge_checks=0,
+        last_failure="",
+    )
+    with (
+        patch.object(TableWiper, "ik", return_value=target),
+        patch("hitl_pmp.environments.racktoserving3d.tool.ArmTransit", return_value=planner),
+    ):
+        tool.transit(
+            position=np.zeros(3), rotation=np.eye(3), label="sweep_arm_clearance", holding=False
+        )
+    assert len(tool.check_arm_segment.call_args_list) == 2
+    for call in tool.check_arm_segment.call_args_list:
+        assert call.kwargs["axis_clipped"] is False
+
+
+def test_a_blade_grazing_the_racks_front_face_as_it_leaves_is_not_a_collision():
+    """Ours seed 0 (bulk-only-v1), 45th action: a Sweep that had moved all five foods
+    was refused at step 226, "Scraper blade or handle would collide with fixture
+    geometry", on its own measured pose. The blade had just left the rack's front
+    edge and sagged 3.8 mm below the rack top, with its back face still less than
+    0.005 mm inside the rack's front face."""
+    shelf = FakeShelf()
+    shelf.cupboard_geoms = {3}
+    tool = RackScraper(shelf=shelf)
+    pose = np.eye(4)
+    pose[:3, :3] = tool.sweep_body_rotation(yaw_deg=0)
+    pose[:3, 3] = [1.5, 0, 0]
+    pose[2, 3] += tool.top - 0.0038 - tool.capsule_bottom(pose=pose)
+    assert not tool.tool_clear(pose=pose)
+    inside, outside = 1.5, 1.2
+    for _ in range(40):
+        middle = (inside + outside) / 2
+        pose[0, 3] = middle
+        if tool.tool_clear(pose=pose):
+            outside = middle
+        else:
+            inside = middle
+    pose[0, 3] = inside
+    model, data, geom = shelf.model, shelf.data, tool.head_geom
+    depth = box_overlap(
+        center=pose[:3, :3] @ model.geom_pos[geom] + pose[:3, 3],
+        rotation=pose[:3, :3] @ tool.geom_rotation(geom=geom),
+        size=model.geom_size[geom],
+        other_center=data.geom_xpos[3],
+        other_rotation=data.geom_xmat[3].reshape(3, 3),
+        other_size=model.geom_size[3],
+    )
+    assert depth == pytest.approx(1e-4, abs=1e-6)

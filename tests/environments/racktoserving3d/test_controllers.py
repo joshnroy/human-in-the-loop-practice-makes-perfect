@@ -242,7 +242,9 @@ def test_release_levels_and_backs_off_a_rolled_blade_before_rising():
             )
         ),
     )
-    controller.move_tool = Mock(side_effect=lambda **kwargs: targets.append(kwargs["body"]))
+    controller.move_tool = Mock(
+        side_effect=lambda **kwargs: targets.append(kwargs["body"]) or kwargs["body"]
+    )
     controller.shelf = SimpleNamespace(hold=Mock())
     controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
     first, last = targets[0], targets[-1]
@@ -386,3 +388,116 @@ def test_optional_settling_does_not_swallow_execution_failure():
         controller.settle_stroke_end(
             stroke=stroke, body=body, base=np.zeros(3), arm=np.zeros(7), label="gather"
         )
+
+
+def move_tool_controller(*, ends_at: np.ndarray):
+    """A controller whose arm always leaves the scraper `ends_at` from the commanded pose."""
+    controller = RackControllers.__new__(RackControllers)
+    actual = np.eye(4)
+
+    def hand_for_tool(*, body):
+        actual[:3, 3] = body[:3, 3] + ends_at
+        return body
+
+    controller.hand_for_tool = hand_for_tool
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(side_effect=lambda: actual.copy()),
+        line=Mock(),
+        rotation_error=Mock(return_value=0.55),
+    )
+    controller.metrics = {}
+    return controller
+
+
+def test_a_blade_held_up_by_food_counts_as_levelled_where_it_rests():
+    """EES seed 0 (bulk-only-v1) and DP seed 0: a GatherAndSweep that had moved all five
+    foods ended "sweep_level: measured scraper pose failed to converge (5.22 mm / 0.60
+    deg)". The blade rested on a dumpling, 4.4 mm above the levelling target and 1.6 mm
+    off it horizontally, on all five attempts."""
+    controller = move_tool_controller(ends_at=np.array([-0.0015, -0.0006, 0.0044]))
+    body = np.eye(4)
+    body[:3, 3] = [1.3, 0.0, 0.92]
+    reached = controller.move_tool(body=body, label="sweep_level", may_rest_above=True)
+    np.testing.assert_allclose(reached[:3, 3], body[:3, 3] + [-0.0015, -0.0006, 0.0044])
+    assert controller.metrics["rested_above"] == [
+        {"label": "sweep_level", "above_m": pytest.approx(0.0044)}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ends_at", "may_rest_above"),
+    [
+        ([-0.0015, -0.0006, 0.0044], False),
+        ([-0.0015, -0.0006, -0.0044], True),
+        ([-0.0040, -0.0006, 0.0044], True),
+        ([0.0, 0.0, 0.0200], True),
+    ],
+    ids=["not-allowed", "below", "sideways", "far-above"],
+)
+def test_only_a_blade_resting_just_above_its_target_is_accepted(*, ends_at, may_rest_above):
+    controller = move_tool_controller(ends_at=np.array(ends_at))
+    body = np.eye(4)
+    with pytest.raises(SkillFailed, match="failed to converge"):
+        controller.move_tool(body=body, label="sweep_level", may_rest_above=may_rest_above)
+
+
+def test_release_lifts_six_centimetres_from_where_the_blade_actually_levelled():
+    controller = RackControllers.__new__(RackControllers)
+    level = RackControllers.push_rotation(phi=0)
+    edge = np.array([[1.375, -0.04, 0.926], [1.625, -0.04, 0.926]])
+    start = np.eye(4)
+    start[:3, 3] = [1.50, -0.04, 0.926]
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(return_value=start),
+        blade_edge=Mock(
+            side_effect=lambda pose=None: (
+                edge if pose is None else edge - start[:3, 3] + pose[:3, 3]
+            )
+        ),
+    )
+    targets = []
+
+    def move_tool(**kwargs):
+        targets.append(kwargs)
+        reached = kwargs["body"].copy()
+        if kwargs["label"] == "sweep_level":
+            reached[2, 3] += 0.0044
+        return reached
+
+    controller.move_tool = Mock(side_effect=move_tool)
+    controller.shelf = SimpleNamespace(hold=Mock())
+    controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
+    assert targets[0]["may_rest_above"] is True
+    assert targets[1]["body"][2, 3] == pytest.approx(targets[0]["body"][2, 3] + 0.0044 + 0.06)
+    np.testing.assert_allclose(targets[1]["body"][:2, 3], targets[0]["body"][:2, 3])
+
+
+def test_release_of_a_blade_that_levelled_lifts_from_the_level_pose_exactly():
+    """Lifting from the reached pose on every stroke moved each lift by up to 3 mm,
+    and ours seed 2's replay then failed a Gather that had passed (sweep_level: hand
+    tracking error 6.8 mm)."""
+    controller = RackControllers.__new__(RackControllers)
+    level = RackControllers.push_rotation(phi=0)
+    edge = np.array([[1.375, -0.04, 0.926], [1.625, -0.04, 0.926]])
+    start = np.eye(4)
+    start[:3, 3] = [1.50, -0.04, 0.926]
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(return_value=start),
+        blade_edge=Mock(
+            side_effect=lambda pose=None: (
+                edge if pose is None else edge - start[:3, 3] + pose[:3, 3]
+            )
+        ),
+    )
+    targets = []
+
+    def move_tool(**kwargs):
+        targets.append(kwargs)
+        reached = kwargs["body"].copy()
+        reached[2, 3] += 0.0025
+        return reached
+
+    controller.move_tool = Mock(side_effect=move_tool)
+    controller.shelf = SimpleNamespace(hold=Mock())
+    controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
+    assert targets[1]["body"][2, 3] == pytest.approx(targets[0]["body"][2, 3] + 0.06)

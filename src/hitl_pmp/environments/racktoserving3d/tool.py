@@ -948,6 +948,10 @@ class TableWiper:
 
 
 SUPPORT_ALLOWANCE = 0.003
+# A box overlap this shallow is contact, not penetration: the arm tracks to millimetres,
+# and a blade leaving the rack's front edge sags below its top while its back face is
+# still microns inside the front face.
+GRAZE = 1e-4
 
 
 def box_overlap(
@@ -1108,7 +1112,7 @@ class RackScraper(TableWiper):
                     other_rotation=other_rotation,
                     other_size=other_size,
                 )
-                if overlap <= 1e-9:
+                if overlap <= GRAZE:
                     continue
                 support_top = float(other_center[2] + np.abs(other_rotation[2]) @ other_size)
                 support = (
@@ -1162,15 +1166,26 @@ class RackScraper(TableWiper):
                 raise SkillFailed("Scraper blade or handle would collide with fixture geometry")
 
     def check_arm_segment(
-        self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
+        self,
+        *,
+        start: np.ndarray,
+        target: np.ndarray,
+        base: np.ndarray,
+        holding: bool,
+        axis_clipped: bool = True,
     ) -> None:
         """Check the wrapped, straight joint path `JointStep` drives the arm along.
 
-        The axis-clipped path is still checked although the servo no longer follows
-        it: a target only reachable past it is refused, and that refusal is what
-        sends a blade resting on the plate rim to retreat before it lifts. Dropping
-        the pass made that lift plannable from the stretched rear stance, where it
-        then failed on hand tracking (6.0 mm).
+        The axis-clipped path is still checked for a move being planned although the
+        servo no longer follows it: a target only reachable past it is refused, and
+        that refusal is what sends a blade resting on the plate rim to retreat before
+        it lifts. Dropping the pass made that lift plannable from the stretched rear
+        stance, where it then failed on hand tracking (6.0 mm).
+
+        A transit re-checking a segment of a route it has already planned passes
+        ``axis_clipped=False``: the arm starts up to 0.02 rad off the planned waypoint,
+        and from there the path it will not take can graze what the planned one
+        cleared (a Sweep refused 30 steps in, one blade corner 0.07 mm into the rack).
         """
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
@@ -1179,6 +1194,8 @@ class RackScraper(TableWiper):
                 self.check_configuration(base=base, arm=start + fraction * delta, holding=holding)
             except SkillFailed as exc:
                 raise SkillFailed(f"straight joint segment fraction {fraction:.3f}: {exc}") from exc
+        if not axis_clipped:
+            return
         for distance in np.arange(0, np.max(np.abs(delta)), 0.025):
             try:
                 self.check_configuration(
@@ -1259,6 +1276,7 @@ class RackScraper(TableWiper):
                     target=waypoint,
                     base=shelf.base_target,
                     holding=holding,
+                    axis_clipped=False,
                 )
                 for _ in range(80):
                     error = planner.delta(start=shelf.data.qpos[shelf.qa], target=waypoint)
@@ -1275,6 +1293,7 @@ class RackScraper(TableWiper):
                 target=target,
                 base=shelf.base_target,
                 holding=holding,
+                axis_clipped=False,
             )
             self.settle_hand(
                 arm=target, position=position, rotation=rotation, label=label, limit=300
