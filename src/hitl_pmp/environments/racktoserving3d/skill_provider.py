@@ -22,7 +22,10 @@ class RackServingSkillProvider(SkillProvider):
     offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
-        return Skills.robot_skills(include_sweep=self.env.config.sweep_skill)
+        return Skills.robot_skills(
+            include_sweep=self.env.config.sweep_skill,
+            include_placement=not self.env.config.bulk_transfer_only,
+        )
 
     def predicates(self) -> tuple[Predicate, ...]:
         return RackServing3DPredicates.all()

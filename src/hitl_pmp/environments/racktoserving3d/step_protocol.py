@@ -22,6 +22,7 @@ from .problem import RackServingProblem
 from .recording import RackServingReplayRenderer
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skill_provider import RackServingSkillProvider
+from .skills import SKILL_IDS
 
 
 class RackServingStepProtocol(SimulatedStepProtocolHooks):
@@ -140,6 +141,15 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
         return RackServingStepProtocol.env(problem=problem).adopt_interrupted_skill(
             action=action, reason=reason
         )
+
+    @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        """Under `bulk_transfer_only` a task's one Sweep or GatherAndSweep ends it."""
+        env = RackServingStepProtocol.env(problem=problem)
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]}
+        if env.config.bulk_transfer_only and action.size and int(action.flat[0]) in bulk:
+            return "bulk_attempt_finished"
+        return None
 
     @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:

@@ -104,7 +104,11 @@ class RackServingDeployment:
 
     @staticmethod
     def solve(
-        *, competences: dict[str, NDArray[np.float64]], horizon: int, step_weight: float
+        *,
+        competences: dict[str, NDArray[np.float64]],
+        horizon: int,
+        step_weight: float,
+        one_bulk_attempt: bool = False,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """One finite-horizon DP maximising P(solve) - step_weight * E[control steps].
 
@@ -112,6 +116,10 @@ class RackServingDeployment:
         both batched, at the start state. Each attempt costs RACK_SKILL_STEPS' success
         or failure steps. Stopping short (value 0, no further steps) stays available,
         as it always was; at zero weight this is exactly the P(solve)-only DP.
+
+        With `one_bulk_attempt` a failed Sweep or GatherAndSweep ends the task unsolved
+        instead of leaving the state to be retried, as `bulk_transfer_only` evaluation
+        does. Every other skill is still retried.
         """
         moves = RackServingDeployment.transitions()
         size = len(next(iter(competences.values())))
@@ -132,12 +140,15 @@ class RackServingDeployment:
                             continue
                         competence = competences[skill]
                         success_steps, failure_steps = RACK_SKILL_STEPS[skill]
+                        ends = one_bulk_attempt and skill in RACK_SWEEP_SKILLS
+                        failed = 0.0 if ends else previous[state]
+                        failed_steps = 0.0 if ends else previous_steps[state]
                         candidate = competence * (
                             previous[successor] - step_weight * success_steps
-                        ) + (1.0 - competence) * (previous[state] - step_weight * failure_steps)
+                        ) + (1.0 - competence) * (failed - step_weight * failure_steps)
                         candidate_steps = competence * (
                             success_steps + previous_steps[successor]
-                        ) + (1.0 - competence) * (failure_steps + previous_steps[state])
+                        ) + (1.0 - competence) * (failure_steps + failed_steps)
                         better = candidate > best
                         best = np.where(better, candidate, best)
                         best_steps = np.where(better, candidate_steps, best_steps)
@@ -173,7 +184,8 @@ class RackServingPracticeDomain(PracticeDomain):
         for name in (*RACK_ROBOT_SKILLS[:-1], *RACK_HUMAN_SKILLS, RACK_ROBOT_SKILLS[-1])
     )
     # `RackServingConfig.sweep_skill=False` removes Sweep from the provider.
-    optional_skill_names: frozenset[str] = frozenset({"Sweep"})
+    # `bulk_transfer_only=True` removes PlaceFoodOnTray.
+    optional_skill_names: frozenset[str] = frozenset({"Sweep", "PlaceFoodOnTray"})
     failure_effect_skills: frozenset[str] = frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS))
     human_skill_names: frozenset[str] = frozenset(RACK_HUMAN_SKILLS)
 
@@ -195,6 +207,9 @@ class RackServingPracticeDomain(PracticeDomain):
             competences=competences,
             horizon=self.deployment_horizon,
             step_weight=self.deployment_cost_lambda * self.robot_step_price,
+            # A provider under `bulk_transfer_only` offers no placement, and its
+            # evaluation gives a task one bulk attempt.
+            one_bulk_attempt="PlaceFoodOnTray" not in dict(self.belief_sources),
         )
 
     def _sampled_competences(
