@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from .deployment_value_iteration import DeploymentOption, DeploymentValueIteration
 from .practice_domain import PracticeDomain, SampleSkills
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
@@ -74,27 +75,25 @@ class RackServingDeployment:
         return moves
 
     @staticmethod
+    @cache
+    def _table() -> tuple[
+        dict[RackDeploymentState, tuple[DeploymentOption, ...]], dict[RackDeploymentState, float]
+    ]:
+        return DeploymentValueIteration.failure_keeps_state(
+            moves=RackServingDeployment.transitions(),
+            solved=lambda state: state[0] == 0 and state[1] != "food",
+        )
+
+    @staticmethod
     def values(*, competences: dict[str, NDArray[np.float64]], horizon: int) -> NDArray[np.float64]:
-        moves = RackServingDeployment.transitions()
-        size = len(next(iter(competences.values())))
-        solved = {
-            state: np.full(size, float(state[0] == 0 and state[1] != "food")) for state in moves
-        }
-        value = dict(solved)
-        for _ in range(horizon):
-            previous = value
-            value = {}
-            for state, options in moves.items():
-                best = solved[state].copy()
-                if not best.any():
-                    for skill, successor in options:
-                        competence = competences[skill]
-                        best = np.maximum(
-                            best,
-                            competence * previous[successor] + (1.0 - competence) * previous[state],
-                        )
-                value[state] = best
-        return value[(RACK_NUM_FOOD, "empty", True)]
+        transitions, terminal_values = RackServingDeployment._table()
+        return DeploymentValueIteration.values(
+            transitions=transitions,
+            terminal_values=terminal_values,
+            competences=competences,
+            horizon=horizon,
+            start=(RACK_NUM_FOOD, "empty", True),
+        )
 
 
 class RackServingPracticeDomain(PracticeDomain):

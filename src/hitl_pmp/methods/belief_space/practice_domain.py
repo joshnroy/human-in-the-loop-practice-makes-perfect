@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 
+from .deployment_value_iteration import DeploymentOption, DeploymentValueIteration
 from .tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
@@ -32,11 +33,7 @@ from .tossing3d_constants import (
     RESET_SAME_SIDE_SKILL,
     TOSS_SKILL,
 )
-from .tossing3d_deployment_model import (
-    DeploymentPolicyExpectation,
-    evaluate_deployment_policies,
-    evaluate_deployment_policy,
-)
+from .tossing3d_deployment_model import DeploymentPolicyExpectation, Tossing3DDeployment
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief, SkillHypothesis
 from .types.theta import Tossing3DTheta
@@ -159,26 +156,26 @@ class Tossing3DPracticeDomain(PracticeDomain):
         ]
 
     def evaluate_theta(self, *, theta: Any) -> float:
-        return evaluate_deployment_policy(
-            toss_competence=theta.toss.competence,
-            pick_competence=theta.pick.competence,
-            open_competence=theta.open_gripper.competence,
-            horizon=self.deployment_horizon,
+        return float(
+            Tossing3DDeployment.values(
+                competences={
+                    PICK_SKILL: np.array([theta.pick.competence]),
+                    TOSS_SKILL: np.array([theta.toss.competence]),
+                    OPEN_GRIPPER_SKILL: np.array([theta.open_gripper.competence]),
+                },
+                horizon=self.deployment_horizon,
+            )[0]
         )
 
     def sample_policy_values(
         self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
     ) -> NDArray[np.float64]:
-        competences = [
-            beliefs[name].sample(rng=rng, count=count)[:, 0]
+        # Drawn in this order: it fixes which draws of `rng` each skill receives.
+        competences = {
+            name: beliefs[name].sample(rng=rng, count=count)[:, 0]
             for name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
-        ]
-        return evaluate_deployment_policies(
-            toss_competences=competences[1],
-            pick_competences=competences[0],
-            open_competences=competences[2],
-            horizon=self.deployment_horizon,
-        )
+        }
+        return Tossing3DDeployment.values(competences=competences, horizon=self.deployment_horizon)
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
         return DeploymentPolicyExpectation.evaluate(
@@ -230,27 +227,27 @@ class SweepOffShelfDeployment:
         return moves
 
     @staticmethod
+    @cache
+    def _table() -> tuple[
+        dict[tuple[int, str, bool], tuple[DeploymentOption, ...]],
+        dict[tuple[int, str, bool], float],
+    ]:
+        return DeploymentValueIteration.failure_keeps_state(
+            moves=SweepOffShelfDeployment._transitions(),
+            solved=lambda state: state[0] == 0 and state[1] != "cube",
+        )
+
+    @staticmethod
     def values(*, competences: dict[str, NDArray[np.float64]], horizon: int) -> NDArray[np.float64]:
         """Batch value at the start state (all cubes on the shelf, wiper home)."""
-        moves = SweepOffShelfDeployment._transitions()
-        size = len(next(iter(competences.values())))
-        solved = {
-            state: np.full(size, float(state[0] == 0 and state[1] != "cube")) for state in moves
-        }
-        value = dict(solved)
-        for _ in range(horizon):
-            previous = value
-            value = {}
-            for state, options in moves.items():
-                best = solved[state].copy()
-                if not best.any():
-                    for skill, successor in options:
-                        p = competences[skill]
-                        best = np.maximum(
-                            best, p * previous[successor] + (1.0 - p) * previous[state]
-                        )
-                value[state] = best
-        return value[(SweepOffShelfDeployment.NUM_CUBES, "empty", True)]
+        transitions, terminal_values = SweepOffShelfDeployment._table()
+        return DeploymentValueIteration.values(
+            transitions=transitions,
+            terminal_values=terminal_values,
+            competences=competences,
+            horizon=horizon,
+            start=(SweepOffShelfDeployment.NUM_CUBES, "empty", True),
+        )
 
 
 # The skills J's deployment policy is built from, and the order it draws them in.
