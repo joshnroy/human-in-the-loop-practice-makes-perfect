@@ -21,6 +21,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
     WiperLost,
 )
 
+from .servo import JointStep
 from .transit import (
     ArmTransit,
     geom_half_extents,
@@ -990,7 +991,14 @@ class RackScraper(TableWiper):
     def check_arm_segment(
         self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
     ) -> None:
-        """Check the same wrapped, axis-clipped joint path used by ShelfSkills.step."""
+        """Check the wrapped, straight joint path `JointStep` drives the arm along.
+
+        The axis-clipped path is still checked although the servo no longer follows
+        it: a target only reachable past it is refused, and that refusal is what
+        sends a blade resting on the plate rim to retreat before it lifts. Dropping
+        the pass made that lift plannable from the stretched rear stance, where it
+        then failed on hand tracking (6.0 mm).
+        """
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
         for fraction in np.linspace(0, 1, count + 1):
@@ -1036,8 +1044,7 @@ class RackScraper(TableWiper):
             self.require_held(label=label)
         current_arm = shelf.data.qpos[shelf.qa].copy()
         current_base = shelf.data.qpos[shelf.ba].copy()
-        delta = (arm - current_arm + np.pi) % (2 * np.pi) - np.pi
-        next_arm = current_arm + np.clip(delta, -0.1, 0.1)
+        next_arm = JointStep.toward(current=current_arm, target=arm)
         next_base = current_base + np.clip(
             shelf.base_target - current_base, -shelf.base_step_limit, shelf.base_step_limit
         )
