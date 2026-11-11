@@ -44,6 +44,10 @@ from hitl_pmp.core.problem.human.types import (
 )
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.methods.belief_space.practice_domain import Tossing3DPracticeDomain
+from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
+from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, Phase
@@ -584,6 +588,7 @@ class StepProtocolResume:
         "extra_measurement_steps": "[]",
         "measure_after_learning_updates": "[]",
         "evaluation_max_pour_attempts": "None",
+        "evaluation_policy": "None",
     }
 
     @staticmethod
@@ -605,10 +610,32 @@ class StepProtocolResume:
 
 
 class DeploymentSnapshot:
-    """Both structured arms inherit EES deployment; practice-only state is excluded."""
+    """Versioned, frozen deployment state. Full continuation uses PracticeCheckpoint.
+
+    Unversioned historical snapshots intentionally retain shared EES replay. New
+    simulation snapshots name the policy that the practice objective values.
+    """
 
     @staticmethod
-    def encode(*, method: EesMethod) -> bytes:
+    def encode(*, method: EesMethod, method_specific: bool = True) -> bytes:
+        policy = DeploymentPolicy(source_method=type(method).__name__)
+        if method_specific and isinstance(method, DpMethod):
+            policy = DeploymentPolicy(
+                kind="dp_mdp",
+                source_method="dp",
+                max_states=method.dp_max_states,
+                dp_priors=method._dp_skill_priors,
+            )
+        elif method_specific and isinstance(method, Tossing3DPomdpMethod):
+            if not isinstance(method.pomdp_domain, Tossing3DPracticeDomain):
+                raise ValueError(
+                    "Method-specific deployment currently supports the Tossing domain only"
+                )
+            policy = DeploymentPolicy(
+                kind="tossing_canonical",
+                source_method=f"{method.pomdp_determinized_variant}/{method.pomdp_solver}",
+                horizon=method.pomdp_domain.deployment_horizon,
+            )
         configuration = {
             key: getattr(method, key)
             for key in EesMethod.model_fields
@@ -616,6 +643,8 @@ class DeploymentSnapshot:
         }
         return pickle.dumps(
             {
+                "version": 2,
+                "deployment_policy": policy.model_dump(),
                 "configuration": configuration,
                 "samplers": method._samplers,
                 "competence_models": [
@@ -630,7 +659,19 @@ class DeploymentSnapshot:
     @staticmethod
     def restore(*, raw: bytes, env: Any, provider: Any) -> EesMethod:
         payload = pickle.loads(raw)  # trusted, locally produced experiment snapshots
-        method = EesMethod(env=env, skill_provider=provider, **payload["configuration"])
+        version = payload.get("version", 1)
+        if version not in {1, 2}:
+            raise ValueError(f"Unsupported deployment snapshot version: {version}")
+        method = (
+            EesMethod(env=env, skill_provider=provider, **payload["configuration"])
+            if version == 1
+            else SnapshotDeployment(
+                env=env,
+                skill_provider=provider,
+                **payload["configuration"],
+                deployment_policy=DeploymentPolicy.model_validate(payload["deployment_policy"]),
+            )
+        )
         method._samplers = payload["samplers"]
         skills = {skill.name: skill for skill in provider.skills()}
         objects = {obj.name: obj for obj in provider.objects()}
@@ -864,6 +905,11 @@ class StepEvaluation:
                 "num_solved": sum(r["solved"] for r in results),
                 "num_total": len(results),
                 **PolicyFileHash.record(raw=raw),
+                "deployment_policy": (
+                    method.deployment_policy.model_dump()
+                    if isinstance(method, SnapshotDeployment)
+                    else {"kind": "shared_ees", "source_method": "legacy_snapshot"}
+                ),
                 "elapsed_seconds": time.monotonic() - started,
             }
             StepFiles.json(path=directory / "results.json", value=result)
@@ -952,6 +998,11 @@ class TaskParallelEvaluation:
             "num_solved": sum(t["solved"] for t in tasks),
             "num_total": len(tasks),
             PolicyFileHash.KEY: hashes.pop(),
+            **(
+                {"deployment_policy": results[0]["deployment_policy"]}
+                if results and "deployment_policy" in results[0]
+                else {}
+            ),
             "elapsed_seconds": elapsed_seconds,
         }
         StepFiles.json(path=directory / "results.json", value=result)
@@ -1132,6 +1183,13 @@ class StepProtocolEntry:
 
 
 class StepPracticeRunner:
+    @staticmethod
+    def method_specific_evaluation(*, args: argparse.Namespace) -> bool:
+        selected = getattr(args, "evaluation_policy", None)
+        return selected == "method" or (
+            selected is None and getattr(args, "env", None) in {"tossing3d", "kitchen_recycling3d"}
+        )
+
     # A run whose planner opens this many sessions in a row with a STOP has stopped
     # practising: nothing changes between them, so the next would stop too.
     REPEATED_STOP_LIMIT: ClassVar[int] = 10
@@ -1411,7 +1469,10 @@ class StepPracticeRunner:
             label = "(final)" if after_cycle is None else f"after cycle {after_cycle}"
             if before_practice:
                 label = "(before practice)"
-            raw = DeploymentSnapshot.encode(method=method)
+            raw = DeploymentSnapshot.encode(
+                method=method,
+                method_specific=StepPracticeRunner.method_specific_evaluation(args=args),
+            )
             index = len(records)
             path = output / "snapshots" / f"{index:04d}.pickle"
             path.write_bytes(raw)
@@ -1482,7 +1543,12 @@ class StepPracticeRunner:
             if measure_every_cycles is not None:
                 path = output / "snapshots" / f"after-update-{learning_updates:04d}.pickle"
                 partial = path.with_suffix(".partial")
-                partial.write_bytes(DeploymentSnapshot.encode(method=method))
+                partial.write_bytes(
+                    DeploymentSnapshot.encode(
+                        method=method,
+                        method_specific=StepPracticeRunner.method_specific_evaluation(args=args),
+                    )
+                )
                 partial.replace(path)
             StepFiles.event(
                 path=events,
