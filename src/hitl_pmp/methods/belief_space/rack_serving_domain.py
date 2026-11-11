@@ -35,6 +35,22 @@ RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
 RACK_EXPECTATION_SAMPLES = 4096
 RACK_EXPECTATION_SEED = 0
 RackDeploymentState = tuple[int, str, bool]
+# Mean control steps per evaluation execution, (on success, on failure), from every
+# evaluation task of run tag rack-prior2x2-b406ad8-20261106 (all four arms, 735 tasks),
+# read from each task's recording.jsonl `action` records: unlike actions.jsonl, those
+# include the final, goal-reaching action. Success is the record's own `success` flag.
+# Executions (success/failure): PickScraper 776/5, GatherAndSweep 246/368,
+# ReturnScraper 447/9, PickFood 1146/32, PlaceFoodOnTray 681/390, ReturnFoodToRack 95/6,
+# Sweep 130/65.
+RACK_SKILL_STEPS: dict[str, tuple[float, float]] = {
+    "PickScraper": (449.0, 275.0),
+    "GatherAndSweep": (3916.0, 3436.0),
+    "ReturnScraper": (874.0, 113.0),
+    "PickFood": (645.0, 434.0),
+    "PlaceFoodOnTray": (296.0, 166.0),
+    "ReturnFoodToRack": (499.0, 212.0),
+    "Sweep": (969.0, 889.0),
+}
 
 
 class RackServingDeployment:
@@ -81,28 +97,54 @@ class RackServingDeployment:
 
     @staticmethod
     def values(*, competences: dict[str, NDArray[np.float64]], horizon: int) -> NDArray[np.float64]:
+        """P(solve) from the start state: `solve` with no cost per step."""
+        return RackServingDeployment.solve(
+            competences=competences, horizon=horizon, step_weight=0.0
+        )[0]
+
+    @staticmethod
+    def solve(
+        *, competences: dict[str, NDArray[np.float64]], horizon: int, step_weight: float
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """One finite-horizon DP maximising P(solve) - step_weight * E[control steps].
+
+        Returns that value and the expected control steps of the policy attaining it,
+        both batched, at the start state. Each attempt costs RACK_SKILL_STEPS' success
+        or failure steps. Stopping short (value 0, no further steps) stays available,
+        as it always was; at zero weight this is exactly the P(solve)-only DP.
+        """
         moves = RackServingDeployment.transitions()
         size = len(next(iter(competences.values())))
         solved = {
             state: np.full(size, float(state[0] == 0 and state[1] != "food")) for state in moves
         }
         value = dict(solved)
+        steps = {state: np.zeros(size) for state in moves}
         for _ in range(horizon):
-            previous = value
-            value = {}
+            previous, previous_steps = value, steps
+            value, steps = {}, {}
             for state, options in moves.items():
                 best = solved[state].copy()
+                best_steps = np.zeros(size)
                 if not best.any():
                     for skill, successor in options:
                         if skill not in competences:
                             continue
                         competence = competences[skill]
-                        best = np.maximum(
-                            best,
-                            competence * previous[successor] + (1.0 - competence) * previous[state],
-                        )
+                        success_steps, failure_steps = RACK_SKILL_STEPS[skill]
+                        candidate = competence * (
+                            previous[successor] - step_weight * success_steps
+                        ) + (1.0 - competence) * (previous[state] - step_weight * failure_steps)
+                        candidate_steps = competence * (
+                            success_steps + previous_steps[successor]
+                        ) + (1.0 - competence) * (failure_steps + previous_steps[state])
+                        better = candidate > best
+                        best = np.where(better, candidate, best)
+                        best_steps = np.where(better, candidate_steps, best_steps)
                 value[state] = best
-        return value[(RACK_NUM_FOOD, "empty", True)]
+                steps[state] = best_steps
+        start = (RACK_NUM_FOOD, "empty", True)
+        return value[start], steps[start]
 
 
 class RackServingPracticeDomain(PracticeDomain):
@@ -146,35 +188,55 @@ class RackServingPracticeDomain(PracticeDomain):
         samples = {name: sample_skills(beliefs[name], count) for name in self.robot_skills()}
         return [{name: draws[index] for name, draws in samples.items()} for index in range(count)]
 
+    def _solve(
+        self, *, competences: dict[str, NDArray[np.float64]]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        return RackServingDeployment.solve(
+            competences=competences,
+            horizon=self.deployment_horizon,
+            step_weight=self.deployment_cost_lambda * self.robot_step_price,
+        )
+
+    def _sampled_competences(
+        self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
+    ) -> dict[str, NDArray[np.float64]]:
+        return {
+            name: beliefs[name].sample(rng=rng, count=count)[:, 0] for name in self.robot_skills()
+        }
+
+    def _expectation(
+        self, *, beliefs: Mapping[str, SkillBelief]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        return self._solve(
+            competences=self._sampled_competences(
+                beliefs=beliefs,
+                rng=np.random.default_rng(RACK_EXPECTATION_SEED),
+                count=RACK_EXPECTATION_SAMPLES,
+            )
+        )
+
     def evaluate_theta(self, *, theta: Any) -> float:
         return float(
-            RackServingDeployment.values(
+            self._solve(
                 competences={
                     name: np.array([theta[name].competence]) for name in self.robot_skills()
-                },
-                horizon=self.deployment_horizon,
-            )[0]
+                }
+            )[0][0]
         )
 
     def sample_policy_values(
         self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
     ) -> NDArray[np.float64]:
-        return RackServingDeployment.values(
-            competences={
-                name: beliefs[name].sample(rng=rng, count=count)[:, 0]
-                for name in self.robot_skills()
-            },
-            horizon=self.deployment_horizon,
-        )
+        return self._solve(
+            competences=self._sampled_competences(beliefs=beliefs, rng=rng, count=count)
+        )[0]
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
-        return float(
-            self.sample_policy_values(
-                beliefs=beliefs,
-                rng=np.random.default_rng(RACK_EXPECTATION_SEED),
-                count=RACK_EXPECTATION_SAMPLES,
-            ).mean()
-        )
+        return float(self._expectation(beliefs=beliefs)[0].mean())
+
+    def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
+        """Expected control steps per task, times the run's robot-step price."""
+        return float(self._expectation(beliefs=beliefs)[1].mean()) * self.robot_step_price
 
 
 RACK_SERVING_DOMAIN = RackServingPracticeDomain()

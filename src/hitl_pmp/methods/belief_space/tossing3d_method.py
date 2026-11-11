@@ -236,8 +236,10 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"expected_execution_costs": estimates}
         )
-        if self._pomdp_model.stop_cost != price:
-            self._pomdp_model = self._pomdp_model.model_copy(update={"stop_cost": price})
+        if self._pomdp_model.stop_cost != price or self._pomdp_model.robot_step_price != price:
+            self._pomdp_model = self._pomdp_model.model_copy(
+                update={"stop_cost": price, "robot_step_price": price}
+            )
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
         if self._practice_accounting is None:
