@@ -882,6 +882,16 @@ class DpCli(EesCli):
             "experimental one).",
         )
         parser.add_argument(
+            "--dp-competence-estimator",
+            choices=["recent_rounds", "cumulative"],
+            default=fields["dp_competence_estimator"].default,
+            help="How DP reads competence and its learning rate off practice outcomes: "
+            "recent_rounds (default; EES's last-five-rounds estimate, with the learning "
+            "rate updated per closed round) or cumulative (every outcome pooled, the rate "
+            "updated per outcome; every DP result before 2026-11-12). Neither is the "
+            "paper's, which does not say.",
+        )
+        parser.add_argument(
             "--dp-smoothing",
             type=lambda value: DpCli.unit_interval(value=value),
             default=fields["dp_smoothing"].default,
@@ -965,6 +975,7 @@ class DpCli(EesCli):
                 ),
                 dp_initial_learning_rate=args.dp_initial_learning_rate,
                 dp_smoothing=args.dp_smoothing,
+                dp_competence_estimator=args.dp_competence_estimator,
                 dp_min_learning_rate=args.dp_min_learning_rate,
                 dp_max_skills=args.dp_max_skills,
                 dp_max_allocations=args.dp_max_allocations,
