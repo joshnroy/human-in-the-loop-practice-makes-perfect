@@ -39,7 +39,27 @@ class KitchenScene(PotstickerScene):
         self.payload_rest.clear()
         result = super().reset(seed=seed, options=options)
         self.release_payloads()
+        self.weld_skillet()
         return result
+
+    # The skillet is welded to the stove where the episode placed it (Josh, 2026-11-06),
+    # so no pour, pick or spill can move it and `TrayHome` is always true. A weld
+    # equality to the world rather than #726's mocap body: the skillet keeps its free
+    # joint, so qpos keeps its layout and every recorded state still restores.
+    SKILLET_WELD: ClassVar[str] = "skillet_weld"
+
+    def weld_skillet(self) -> None:
+        import mujoco
+
+        model, data = self._model_and_data()
+        mujoco.mj_forward(model, data)
+        weld = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, self.SKILLET_WELD))
+        pan = model.body("tray").id
+        model.eq_data[weld, :3] = 0.0
+        model.eq_data[weld, 3:6] = data.xpos[pan]
+        model.eq_data[weld, 6:10] = data.xquat[pan]
+        data.eq_active[weld] = 1
+        mujoco.mj_forward(model, data)
 
     # A dumpling the gripper has closed on is held rigidly until it is released: a
     # weld from the hand to the piece, frozen at the pose it was grasped in (Josh,
@@ -145,6 +165,15 @@ class KitchenScene(PotstickerScene):
         equality = root.find("equality")
         if equality is None:
             equality = ET.SubElement(root, "equality")
+        ET.SubElement(
+            equality,
+            "weld",
+            name=self.SKILLET_WELD,
+            body1="world",
+            body2="tray",
+            active="false",
+            solref="0.002 1",
+        )
         for name in self.cube_names:
             ET.SubElement(
                 equality,
