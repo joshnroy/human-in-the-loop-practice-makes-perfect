@@ -17,7 +17,10 @@ and one skill is one robot call (`real/contract.py`).
 | `MovableInGoalRegion(cube)` | centre in the scored box | `cube_in_bin` |
 | `MovableIsDownX(cube, barrier)` | `cube.x < barrier.x` | the same, in the domain frame |
 | `BinOnGround(bin)` | upright and on the floor | a bin fit is present |
-| `PickPlannable(robot, cube)` | gate, else a planner dry run | gate, else `can_pick()` |
+| `PickPlannable(robot, cube)` | gate, else a planner dry run | gate, else `can_pick()` (*) |
+
+(*) and no pick remembered to have failed here without touching the cube
+(`pick_refusal.py`): the dry run cannot see what its own wrist servo will refuse.
 
 The side atoms (`CubeOnRobotSide`, `BinOnRobotSide` and their opposites) and the rest
 are the sim's own predicates over the flat state. Anything not seen is NaN, never a guess, and no
@@ -80,6 +83,7 @@ from hitl_pmp.environments.tossing3d.types import (
 
 from .contract import CanPickReply, DumpReply, ObserveReply, PickReply, TossingRobot, TossReply
 from .frame import BIN_SPOTS, CUBE_SPOT, ROOM_FRAME, BinSpot, RealRoomFrame
+from .pick_refusal import RealPickRefusal, RealPickRefusalMemory
 from .session_log import RealSessionLog
 
 ROBOT_NAME = "robot"
@@ -413,6 +417,13 @@ class RealSceneSnapshot(FixedTossDirection):
     reply: ObserveReply
     can_pick: bool | None
     frame: RealRoomFrame
+    # The failed pick this look still finds the scene of (`pick_refusal.py`), if any.
+    pick_refusal: RealPickRefusal | None = None
+
+    def __setstate__(self, state: dict[str, Any]) -> None:  # noqa: PLR0917
+        # A checkpoint pickled before `pick_refusal` existed resumes with no memory.
+        state["__dict__"].setdefault("pick_refusal", None)
+        super().__setstate__(state)
 
     def toss_azimuth(self) -> float | None:
         """The robot side's fixed direction for the bin's spot (from +x of the bin on
@@ -468,6 +479,10 @@ class RealTossingBackend(BaseModel):
     _practice_cycle: int | None = PrivateAttr(default=None)
     _practice_throws: list[bool] = PrivateAttr(default_factory=list)
     _evaluation_index: int | None = PrivateAttr(default=None)
+    # The failed pick the scene is still as it was for, and one awaiting the look after
+    # it: (the look before the pick, the pick's reply). See `pick_refusal.py`.
+    _pick_refusal: RealPickRefusal | None = PrivateAttr(default=None)
+    _unresolved_pick: tuple[ObserveReply, PickReply] | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
@@ -479,6 +494,7 @@ class RealTossingBackend(BaseModel):
         self._say_progress()
         later_task = self._evaluation_task is not None and self._evaluation_task > 1
         self._home_and_open(drive_home=not later_task)
+        self._forget_pick_refusal()
         return self._placed(
             kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
         )
@@ -547,6 +563,7 @@ class RealTossingBackend(BaseModel):
             else Tossing3DSide(str(bin_region["destination"]))
         )
         self._say_progress()
+        self._forget_pick_refusal()
         return self._placed(kind="human reset", destination=destination)
 
     def _placed(
@@ -659,11 +676,52 @@ class RealTossingBackend(BaseModel):
                 "the robot reports no barrier: the real experiment needs the tape enabled "
                 "in the skill server's config"
             )
+        self._pick_refusal = self._refusal_after(reply=reply)
         self._last = RealSceneSnapshot(
-            reply=reply, can_pick=self._pick_verdict(reply=reply), frame=self.frame
+            reply=reply,
+            can_pick=self._pick_verdict(reply=reply),
+            frame=self.frame,
+            pick_refusal=self._pick_refusal,
         )
         self._seen = self.to_observation(snapshot=self._last)
         return self._seen
+
+    def _refusal_after(self, *, reply: ObserveReply) -> RealPickRefusal | None:
+        """The pick refusal that stands at the look `reply`: the one a pick just left, if
+        this is the look after it, else the remembered one while nothing has moved."""
+        unresolved, self._unresolved_pick = self._unresolved_pick, None
+        if unresolved is not None:
+            before, pick = unresolved
+            refusal = RealPickRefusalMemory.recorded(before=before, pick=pick, after=reply)
+            if refusal is not None:
+                RealSessionLog.detail(
+                    line=f"pick refusal remembered at cube ({refusal.cube[0]:.3f}, "
+                    f"{refusal.cube[1]:.3f}): {refusal.note}"
+                )
+            return refusal
+        remembered = self._pick_refusal
+        if remembered is None:
+            return None
+        if RealPickRefusalMemory.stands(refusal=remembered, reply=reply):
+            return remembered
+        RealSessionLog.detail(line="pick refusal forgotten: the cube or the bin moved")
+        return None
+
+    def pick_refusal(self) -> RealPickRefusal | None:
+        return self._pick_refusal
+
+    def _forget_pick_refusal(self) -> None:
+        """A person is about to place the cube: a new scene wherever it lands, as the
+        reset's operator promises. Waiting to see it elsewhere would leave a cube put
+        back on its spot refused, with the resets the only skills left."""
+        if self._pick_refusal is not None:
+            RealSessionLog.detail(line="pick refusal forgotten: a person places the cube")
+        self._pick_refusal, self._unresolved_pick = None, None
+
+    def remember_pick_refusal(self, *, refusal: RealPickRefusal | None) -> None:
+        """A resumed run's memory, from its last practice state. The next look keeps it
+        only if the cube and the bin are still where it left them."""
+        self._pick_refusal = refusal
 
     def to_observation(self, *, snapshot: RealSceneSnapshot) -> Tossing3DObservation:
         reply = snapshot.reply
@@ -750,7 +808,12 @@ class RealTossingBackend(BaseModel):
     def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
         subject = self.snapshot() if state is None else state
         assert isinstance(subject, RealSceneSnapshot)
-        return {"reply": subject.reply.model_dump(mode="json"), "can_pick": subject.can_pick}
+        refusal = subject.pick_refusal
+        return {
+            "reply": subject.reply.model_dump(mode="json"),
+            "can_pick": subject.can_pick,
+            "pick_refusal": None if refusal is None else refusal.model_dump(mode="json"),
+        }
 
     def check_goals(self) -> bool:
         return self._last is not None and self._last.reply.cube_in_bin
@@ -761,8 +824,11 @@ class RealTossingBackend(BaseModel):
         replies: list[PickReply] = []
 
         def act() -> ControllerRun:
+            before = None if self._last is None else self._last.reply
             reply = PickReply.model_validate(self.robot.pick())
             replies.append(reply)
+            if before is not None and RealPickRefusalMemory.never_closed(pick=reply):
+                self._unresolved_pick = (before, reply)
             if reply.refused:
                 return ControllerRun(
                     steps=0, terminated=True, error=f"pick refused: {reply.reason}"
@@ -1072,7 +1138,8 @@ class RealAtoms:
         elif RealAtoms.cube_across_barrier(reply=reply, frame=snapshot.frame):
             plannable = False
         else:
-            plannable = bool(snapshot.can_pick)
+            # The dry run's verdict, unless a pick here already failed untouched.
+            plannable = bool(snapshot.can_pick) and snapshot.pick_refusal is None
         if plannable:
             atoms.add((KB_PICK_PLANNABLE, (ROBOT_NAME, CUBE_NAME)))
         return frozenset(atoms)
