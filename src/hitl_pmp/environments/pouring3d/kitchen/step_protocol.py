@@ -78,6 +78,7 @@ class KitchenStepProtocol(FrozenPourStepProtocol):
                     "scene_bg": env.scene_bg,
                     "deployment": env.deployment,
                     "human_interruption_cost": env.human_interruption_cost,
+                    "human_reset_success_probability": env.human_reset_success_probability,
                     "motion": motion,
                     "fps": 10,
                     "kitchen_model_version": 2,
