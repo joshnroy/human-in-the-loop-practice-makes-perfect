@@ -119,6 +119,15 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
         )
 
     @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        return (
+            Tossing3DRealStepProtocol
+            .real_env(problem=problem)
+            .real_backend()
+            .person.wants_evaluation(label=label)
+        )
+
+    @staticmethod
     def practice_scene(*, problem: Problem) -> PracticeScene:
         return Tossing3DRealStepProtocol.real_env(problem=problem).real_backend().practice_scene()
 
