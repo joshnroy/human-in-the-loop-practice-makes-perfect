@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate
@@ -522,7 +522,13 @@ class Skill(BaseModel):
     predicate that is both ignored and added stays true (predicators'
     `utils.apply_operator`). Conditional ignore effects apply the same forgetting only
     when their lifted conditions held in the incoming state. Their predicates quantify
-    over all objects and need not bind variables in this skill's signature."""
+    over all objects and need not bind variables in this skill's signature.
+
+    `success_alternatives` says what a success leaves behind when that is not one
+    thing: each is one mutually exclusive way a success can turn out, on top of the
+    effects above. Only a forecast reads them. A success is still judged by
+    `add_effects` alone, and the PDDL written for a task planner does not mention
+    them."""
 
     # Forbid unknown fields: a stale `practice_cost=` (removed; costs live only in the
     # practice-cost file) must fail loudly rather than be silently dropped.
@@ -538,6 +544,9 @@ class Skill(BaseModel):
     ignore_effects: frozenset[Predicate] = frozenset()
     conditional_add_effects: frozenset[ConditionalAddEffect] = frozenset()
     conditional_ignore_effects: frozenset[ConditionalIgnoreEffect] = frozenset()
+    # Out of the repr: `str(ground_skill)` keys the cost forecasts and the decision
+    # logs, and a skill is the same action whatever a forecast expects of it.
+    success_alternatives: tuple[SuccessAlternative, ...] = Field(default=(), repr=False)
     param_dim: int
 
     @model_validator(mode="after")
@@ -567,6 +576,18 @@ class Skill(BaseModel):
             for atom in effect.conditions
             for variable in atom.variables
         )
+        for alternative in self.success_alternatives:
+            bound = {variable for variable, _ in alternative.constant_bindings}
+            if any(variable.name in parameter_names for variable in bound):
+                raise ValueError(
+                    f"Skill {self.name!r}: constant bindings cannot shadow skill parameters"
+                )
+            referenced.update(
+                variable
+                for atom in (*alternative.add_effects, *alternative.delete_effects)
+                for variable in atom.variables
+                if variable not in bound
+            )
         undeclared = referenced - declared
         if undeclared:
             raise ValueError(
@@ -663,6 +684,13 @@ class GroundSkill(BaseModel):
             for effect in self.skill.conditional_ignore_effects
         )
 
+    @property
+    def success_alternatives(self) -> tuple[GroundSuccessAlternative, ...]:
+        return tuple(
+            alternative.ground(substitution=self._substitution)
+            for alternative in self.skill.success_alternatives
+        )
+
     def expected_ignore_effects(
         self, *, before_atoms: frozenset[GroundAtom]
     ) -> frozenset[Predicate]:
@@ -733,6 +761,54 @@ class GroundConditionalAddEffect(BaseModel):
 
     conditions: frozenset[GroundAtom]
     add_effects: frozenset[GroundAtom]
+
+
+class SuccessAlternative(BaseModel):
+    """One of the ways a skill's success can turn out, applied after its own effects.
+
+    Constant bindings substitute named objects as in `ConditionalAddEffect`: they are
+    not skill parameters and introduce no action groundings.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    add_effects: frozenset[LiftedAtom] = frozenset()
+    delete_effects: frozenset[LiftedAtom] = frozenset()
+    constant_bindings: tuple[tuple[Variable, Object], ...] = ()
+
+    @model_validator(mode="after")
+    def _check_constant_bindings(self) -> SuccessAlternative:
+        names: set[str] = set()
+        for variable, obj in self.constant_bindings:
+            if variable.name in names:
+                raise ValueError(f"Duplicate constant binding for variable {variable.name!r}")
+            names.add(variable.name)
+            if variable.type != obj.type:
+                raise ValueError(
+                    f"Constant binding for {variable.name!r}: object {obj.name!r} has type "
+                    f"{obj.type.name!r}, but variable declares {variable.type.name!r}"
+                )
+        return self
+
+    def ground(self, *, substitution: dict[Variable, Object]) -> GroundSuccessAlternative:
+        substitution = {**substitution, **dict(self.constant_bindings)}
+        return GroundSuccessAlternative(
+            add_effects=frozenset(
+                atom.ground(substitution=substitution) for atom in self.add_effects
+            ),
+            delete_effects=frozenset(
+                atom.ground(substitution=substitution) for atom in self.delete_effects
+            ),
+        )
+
+
+class GroundSuccessAlternative(BaseModel):
+    """A success alternative bound to the skill's concrete objects."""
+
+    model_config = ConfigDict(frozen=True)
+
+    add_effects: frozenset[GroundAtom]
+    delete_effects: frozenset[GroundAtom]
 
 
 class ConditionalIgnoreEffect(BaseModel):

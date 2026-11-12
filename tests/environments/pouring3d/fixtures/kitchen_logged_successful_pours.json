@@ -1,0 +1,737 @@
+{
+ "before": [
+  "HoldingPitcher(robot,pitcher)",
+  "InPitcher(potsticker_0,pitcher)",
+  "InPitcher(potsticker_1,pitcher)",
+  "InPitcher(potsticker_2,pitcher)",
+  "PayloadOrder(potsticker_0,potsticker_1)",
+  "PayloadOrder(potsticker_1,potsticker_2)",
+  "PickPlannable(robot,potsticker_0)",
+  "PickPlannable(robot,potsticker_1)",
+  "PickPlannable(robot,potsticker_2)"
+ ],
+ "successes": [
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.5 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.5 c20",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=0.5 c20",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=0.5 c20",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=0.25 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.25 c20",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=0.1 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.1 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.0 c20",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=0.0 c20",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_2,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour1",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_0,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split1()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour2",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InPitcher(potsticker_1,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split2()"
+   ]
+  },
+  {
+   "run": "curtis p=1.0 pilot",
+   "skill": "Pour3",
+   "after": [
+    "HoldingPitcher(robot,pitcher)",
+    "InTray(potsticker_0,tray)",
+    "InTray(potsticker_1,tray)",
+    "InTray(potsticker_2,tray)",
+    "PayloadOrder(potsticker_0,potsticker_1)",
+    "PayloadOrder(potsticker_1,potsticker_2)",
+    "PickPlannable(robot,potsticker_0)",
+    "PickPlannable(robot,potsticker_1)",
+    "PickPlannable(robot,potsticker_2)",
+    "Settled(potsticker_0)",
+    "Settled(potsticker_1)",
+    "Settled(potsticker_2)",
+    "Split3()"
+   ]
+  }
+ ]
+}
