@@ -448,12 +448,19 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 atoms.add(("ScraperOnFloor", ("wiper_0",)))
         if not held:
             atoms.add(("HandEmpty", ("robot",)))
-        return RackServing3DAtoms.with_summaries(
+        summarised = RackServing3DAtoms.with_summaries(
             atoms=frozenset(atoms),
             available_food=frozenset(
                 name for name in self.cube_names if self.food_available(name=name)
             ),
         )
+        if self.config.two_route_rewards:
+            return RackServing3DAtoms.with_served(atoms=summarised)
+        return summarised
+
+    def plate_count(self) -> int:
+        """How many dumplings are settled on the plate now."""
+        return sum(self.settled_on_tray(name=name) for name in self.cube_names)
 
     def food_available(self, *, name: str) -> bool:
         """Physical support permits a pick even when strict delivery containment fails."""
@@ -527,6 +534,14 @@ class RackServingBackend(SweepOffShelf3DBackend):
             if start_layout == "scattered":
                 layout = RackLayout.sample(
                     rng=self._rng, rack=rack, count=len(names), others=others
+                )
+            elif start_layout == "spaced":
+                layout = RackLayout.spaced(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    pitch=self.config.spaced_pitch,
+                    long_axis=self.config.spaced_long_axis,
                 )
             else:
                 layout = RackLayout.lined_up(

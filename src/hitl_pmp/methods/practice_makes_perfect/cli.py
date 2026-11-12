@@ -15,6 +15,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 )
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
+    RackServingPracticeDomain,
 )
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
@@ -446,6 +447,14 @@ class Tossing3DPomdpCli(EesCli):
     }
 
     @staticmethod
+    def with_goal_rewards(*, domain: PracticeDomain, provider: SkillProvider) -> PracticeDomain:
+        """The rack domain with the provider's goal rewards as its bulk skills' terminal
+        values; any other domain, and a provider that prices nothing, as is."""
+        if isinstance(domain, RackServingPracticeDomain):
+            return domain.with_goal_rewards(provider=provider)
+        return domain
+
+    @staticmethod
     def with_competence_prior(
         *, domain: PracticeDomain, prior: tuple[float, float] | None
     ) -> PracticeDomain:
@@ -775,8 +784,13 @@ class Tossing3DPomdpCli(EesCli):
                     else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
                 ),
                 pomdp_domain=Tossing3DPomdpCli.with_competence_prior(
-                    domain=(
-                        domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                    domain=Tossing3DPomdpCli.with_goal_rewards(
+                        domain=(
+                            domain
+                            if isinstance(domain, PracticeDomain)
+                            else domain(ctx.skill_provider)
+                        ),
+                        provider=ctx.skill_provider,
                     ),
                     prior=competence_prior,
                 ),

@@ -45,6 +45,7 @@ from hitl_pmp.core.problem.human.types import (
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.belief_space.practice_domain import Tossing3DPracticeDomain
+from hitl_pmp.methods.belief_space.rack_serving_domain import RackServingPracticeDomain
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
@@ -663,6 +664,22 @@ class DeploymentSnapshot:
                     source_method=source,
                     horizon=domain.deployment_horizon,
                     dp_priors={name: prior for name, _ in domain.route_rewards},
+                )
+            elif isinstance(domain, RackServingPracticeDomain) and domain.bulk_rewards:
+                # Ours' value model here is the one-bulk-attempt task with each bulk
+                # outcome priced; the snapshot carries outcome counts, not the planner's
+                # belief, so it deploys the rewarded task MDP at the posterior means of
+                # those counts under the domain's own prior. The value model's step
+                # cost is not in this policy.
+                prior = DpSkillPrior(
+                    alpha=domain.initial_competence_alpha or method.prior_alpha,
+                    beta=domain.initial_competence_beta or method.prior_beta,
+                    initial_learning_rate=0.0,
+                )
+                policy = DeploymentPolicy(
+                    kind="dp_mdp",
+                    source_method=source,
+                    dp_priors={skill.name: prior for skill in method.skills()},
                 )
             elif not isinstance(domain, Tossing3DPracticeDomain):
                 raise ValueError(

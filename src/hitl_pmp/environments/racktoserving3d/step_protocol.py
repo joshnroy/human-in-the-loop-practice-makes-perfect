@@ -157,6 +157,11 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
 
     @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
-        """No rack-specific trace builder exists; shelf skill IDs are not interchangeable."""
-        del problem
-        return None
+        """No rack-specific trace builder exists; shelf skill IDs are not interchangeable.
+
+        Under `two_route_rewards` every robot event carries the plate count after it,
+        so an evaluation task's reward by count can be read from its last event."""
+        env = RackServingStepProtocol.env(problem=problem)
+        if not env.config.two_route_rewards:
+            return None
+        return {"plate_count": env.backend().plate_count()}

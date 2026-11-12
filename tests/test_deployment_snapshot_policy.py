@@ -110,3 +110,31 @@ def test_a_rewarded_routes_snapshot_deploys_reward_greedy_from_the_domains_prior
         DeploymentSnapshot.restore(raw=legacy, env=env, provider=provider).deployment_policy.kind
         == "shared_ees"
     )
+
+
+def test_a_two_route_rack_snapshot_deploys_the_rewarded_task_mdp_from_the_domains_prior():
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
+    from hitl_pmp.methods.belief_space.rack_serving_domain import RACK_SERVING_DOMAIN
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+
+    env = RackServingEnvironment(
+        config=RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+    )
+    provider = RackServingSkillProvider(env=env)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        seed=0,
+        pomdp_num_particles=32,
+        pomdp_domain=RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider),
+    )
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(
+        raw=raw, env=env, provider=RackServingSkillProvider(env=env, offer_human_reset=False)
+    )
+    policy = restored.deployment_policy
+    assert policy.kind == "dp_mdp"
+    assert {(prior.alpha, prior.beta) for prior in policy.dp_priors.values()} == {(1.0, 3.0)}
+    assert {"PickScraper", "Sweep", "GatherAndSweep"} <= set(policy.dp_priors)

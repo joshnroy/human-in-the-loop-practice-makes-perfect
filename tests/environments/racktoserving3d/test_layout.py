@@ -191,3 +191,18 @@ def test_the_put_back_draws_from_the_layout_conditioned_on_the_others(*, layout_
         ((ex, ey, _),) = RackLayout.sample(rng=rng, rack=RACK, count=1, others=remaining)
         assert (x, y) == pytest.approx((ex, ey))
         assert all(math.hypot(x - ox, y - oy) >= 0.05 for ox, oy in remaining)
+
+
+def test_the_spaced_layout_is_one_evenly_spaced_row_centred_on_the_plate_line():
+    layout = RackLayout.spaced(
+        rng=np.random.default_rng(3), rack=RACK, center_y=0.01, pitch=0.05, long_axis="x"
+    )
+    assert len(layout) == 5
+    for index, (x, y, yaw) in enumerate(layout):
+        assert abs(x - (RACK.x_min + RACK.x_max) / 2) <= RackLayout.LINED_UP_JITTER
+        assert abs(y - (0.01 + 0.05 * (index - 2))) <= RackLayout.LINED_UP_JITTER
+        assert abs(yaw - math.pi / 2) <= RackLayout.LINED_UP_YAW_JITTER
+    other = RackLayout.spaced(
+        rng=np.random.default_rng(4), rack=RACK, center_y=0.01, pitch=0.05, long_axis="x"
+    )
+    assert layout != other

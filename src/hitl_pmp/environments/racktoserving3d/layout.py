@@ -91,6 +91,35 @@ class RackLayout:
         )
 
     @staticmethod
+    def spaced(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        pitch: float,
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres in one evenly spaced row across the rack.
+
+        The opt-in two-route start (Josh, 2026-11-12): a row on the rack's x centre
+        line, centred on y = center_y (the plate's centre line), `pitch` apart, each
+        piece's long axis along world `long_axis`; jittered as `lined_up` is. How
+        many a straight Sweep delivers from it is a measured fact, not a property of
+        this function.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, center_y + pitch * (index - 2) + dy, yaw + dyaw)
+            for index, (dx, dy, dyaw) in enumerate(jitter.tolist())
+        )
+
+    @staticmethod
     def _clear(*, points: list[tuple[float, float]], others: list[tuple[float, float]]) -> bool:
         pairs = itertools.chain(
             itertools.combinations(points, 2), itertools.product(points, others)

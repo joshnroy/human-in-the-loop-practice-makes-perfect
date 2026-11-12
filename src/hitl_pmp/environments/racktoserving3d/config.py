@@ -59,7 +59,16 @@ class RackServingConfig(BaseModel):
     # solved 36/36 tasks before and after practice by carrying the leftovers, so what
     # the sweeps had learned could not show.
     bulk_transfer_only: bool = False
-    start_layout: Literal["scattered", "pile2col", "stack", "row"] = "scattered"
+    # The two-route reward structure (Josh, 2026-11-12), opt-in: Sweep succeeds when at
+    # least three dumplings are on the plate and that outcome is worth 3; GatherAndSweep
+    # succeeds when all five are and is worth 5 (`TWO_ROUTE_REWARDS`). The rewards are
+    # given to the methods, never estimated. Needs `bulk_transfer_only`, whose one
+    # bulk attempt per task is what makes each bulk skill a route.
+    two_route_rewards: bool = False
+    # "spaced" (Josh, 2026-11-12): the two-route start, `RackLayout.spaced`.
+    start_layout: Literal["scattered", "pile2col", "stack", "row", "spaced"] = "scattered"
+    spaced_pitch: Positive = Field(default=0.04, description="start_layout spaced only")
+    spaced_long_axis: Literal["x", "y"] = "x"
     # scattered only: the probability an episode start or a human batch return places
     # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,
     # Josh). At 0 no coin is drawn, so the scattered draws are exactly the old ones.
@@ -280,6 +289,8 @@ class RackServingConfig(BaseModel):
     @model_validator(mode="after")
     def validate_layout(self) -> "RackServingConfig":
         """Reject unsupported layouts rather than silently clipping hardware."""
+        if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
+            raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
         if self.rack_height < self.serving_thickness:
             raise ValueError("Rack top must be at or above tray top")
         if self.serving_target == "lipped_platter":

@@ -14,6 +14,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from hitl_pmp.core.method.skill_provider import SkillProvider
+
 from .practice_domain import PracticeDomain, SampleSkills
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
@@ -109,6 +111,7 @@ class RackServingDeployment:
         horizon: int,
         step_weight: float,
         one_bulk_attempt: bool = False,
+        bulk_rewards: Mapping[str, float] | None = None,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """One finite-horizon DP maximising P(solve) - step_weight * E[control steps].
 
@@ -120,7 +123,13 @@ class RackServingDeployment:
         With `one_bulk_attempt` a failed Sweep or GatherAndSweep ends the task unsolved
         instead of leaving the state to be retried, as `bulk_transfer_only` evaluation
         does. Every other skill is still retried.
+
+        `bulk_rewards` (two-route rewards; needs `one_bulk_attempt`) names what a
+        successful Sweep or GatherAndSweep is worth: its success ends the task with
+        that reward in place of 1, so the value is a reward, not a probability.
         """
+        if bulk_rewards and not one_bulk_attempt:
+            raise ValueError("bulk rewards are terminal values of the one bulk attempt")
         moves = RackServingDeployment.transitions()
         size = len(next(iter(competences.values())))
         solved = {
@@ -143,12 +152,15 @@ class RackServingDeployment:
                         ends = one_bulk_attempt and skill in RACK_SWEEP_SKILLS
                         failed = 0.0 if ends else previous[state]
                         failed_steps = 0.0 if ends else previous_steps[state]
-                        candidate = competence * (
-                            previous[successor] - step_weight * success_steps
-                        ) + (1.0 - competence) * (failed - step_weight * failure_steps)
-                        candidate_steps = competence * (
-                            success_steps + previous_steps[successor]
-                        ) + (1.0 - competence) * (failure_steps + failed_steps)
+                        priced = bool(bulk_rewards) and skill in (bulk_rewards or {})
+                        succeeded = (bulk_rewards or {})[skill] if priced else previous[successor]
+                        succeeded_steps = 0.0 if priced else previous_steps[successor]
+                        candidate = competence * (succeeded - step_weight * success_steps) + (
+                            1.0 - competence
+                        ) * (failed - step_weight * failure_steps)
+                        candidate_steps = competence * (success_steps + succeeded_steps) + (
+                            1.0 - competence
+                        ) * (failure_steps + failed_steps)
                         better = candidate > best
                         best = np.where(better, candidate, best)
                         best_steps = np.where(better, candidate_steps, best_steps)
@@ -188,6 +200,34 @@ class RackServingPracticeDomain(PracticeDomain):
     optional_skill_names: frozenset[str] = frozenset({"Sweep", "PlaceFoodOnTray"})
     failure_effect_skills: frozenset[str] = frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS))
     human_skill_names: frozenset[str] = frozenset(RACK_HUMAN_SKILLS)
+    # Bulk skill name -> the reward of the outcome its success reaches; empty unless
+    # the provider prices goals (`RackServingConfig.two_route_rewards`).
+    bulk_rewards: tuple[tuple[str, float], ...] = ()
+
+    def with_goal_rewards(self, *, provider: SkillProvider) -> "RackServingPracticeDomain":
+        """This domain valuing each bulk skill at the largest reward of a predicate it
+        adds that the provider prices (`SkillProvider.goal_rewards`); itself when the
+        provider prices nothing."""
+        rewards = provider.goal_rewards()
+        if not rewards:
+            return self
+        return self.model_copy(
+            update={
+                "bulk_rewards": tuple(
+                    (
+                        skill.name,
+                        max(
+                            rewards[atom.predicate.name]
+                            for atom in skill.add_effects
+                            if atom.predicate.name in rewards
+                        ),
+                    )
+                    for skill in provider.skills()
+                    if skill.name in RACK_SWEEP_SKILLS
+                    and any(atom.predicate.name in rewards for atom in skill.add_effects)
+                )
+            }
+        )
 
     def robot_skills(self) -> tuple[str, ...]:
         """The modelled robot skills this domain still has beliefs for."""
@@ -210,6 +250,7 @@ class RackServingPracticeDomain(PracticeDomain):
             # A provider under `bulk_transfer_only` offers no placement, and its
             # evaluation gives a task one bulk attempt.
             one_bulk_attempt="PlaceFoodOnTray" not in dict(self.belief_sources),
+            bulk_rewards=dict(self.bulk_rewards) or None,
         )
 
     def _sampled_competences(

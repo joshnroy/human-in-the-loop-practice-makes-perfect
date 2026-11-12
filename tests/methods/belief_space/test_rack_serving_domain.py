@@ -437,3 +437,44 @@ def test_a_provider_without_placement_is_valued_as_one_bulk_attempt():
     assert domain.evaluate_theta(theta=theta) == pytest.approx(0.5)
     with_placement = {**theta, "PlaceFoodOnTray": Mock(competence=1.0)}
     assert RACK_SERVING_DOMAIN.evaluate_theta(theta=with_placement) == pytest.approx(1.0)
+
+
+TWO_ROUTE_CONFIG = RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+
+
+def test_priced_bulk_outcomes_are_terminal_values_weighed_by_competence():
+    def value(**competence):
+        return float(
+            RackServingDeployment.solve(
+                competences={name: np.array([v]) for name, v in competence.items()},
+                horizon=12,
+                step_weight=0.0,
+                one_bulk_attempt=True,
+                bulk_rewards={"Sweep": 3.0, "GatherAndSweep": 5.0},
+            )[0][0]
+        )
+
+    assert value(PickScraper=1, Sweep=0.9, GatherAndSweep=0.4) == pytest.approx(2.7)
+    assert value(PickScraper=1, Sweep=0.9, GatherAndSweep=0.8) == pytest.approx(4.0)
+    assert value(PickScraper=1, Sweep=1.0) == pytest.approx(3.0)
+
+
+def test_the_rack_domain_takes_its_bulk_rewards_from_a_provider_that_prices_goals():
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+    from hitl_pmp.methods.belief_space.rack_serving_domain import RackServingPracticeDomain
+
+    plain = RackServingSkillProvider(env=RackServingEnvironment())
+    assert RACK_SERVING_DOMAIN.with_goal_rewards(provider=plain) is RACK_SERVING_DOMAIN
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    domain = RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider)
+    assert isinstance(domain, RackServingPracticeDomain)
+    assert dict(domain.bulk_rewards) == {"Sweep": 3.0, "GatherAndSweep": 5.0}
+    domain = PracticeDomainWithoutSkills.keep_offered(
+        domain=domain,
+        offered=frozenset(skill.name for skill in provider.skills()) | frozenset(RACK_HUMAN_SKILLS),
+    )
+    theta = {name: Mock(competence=1.0) for name in domain.robot_skills()}
+    theta["GatherAndSweep"] = Mock(competence=0.5)
+    assert domain.evaluate_theta(theta=theta) == pytest.approx(3.0)
+    theta["GatherAndSweep"] = Mock(competence=0.7)
+    assert domain.evaluate_theta(theta=theta) == pytest.approx(3.5)

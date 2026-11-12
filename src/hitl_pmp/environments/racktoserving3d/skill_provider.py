@@ -11,7 +11,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
-from .predicates import RackServing3DAtoms, RackServing3DPredicates
+from .predicates import TWO_ROUTE_REWARDS, RackServing3DAtoms, RackServing3DPredicates
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS, SWEEP_BOUNDS
 from .skills import RackServing3DSkills as Skills
@@ -25,10 +25,14 @@ class RackServingSkillProvider(SkillProvider):
         return Skills.robot_skills(
             include_sweep=self.env.config.sweep_skill,
             include_placement=not self.env.config.bulk_transfer_only,
+            two_route=self.env.config.two_route_rewards,
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return RackServing3DPredicates.all()
+        return RackServing3DPredicates.all(two_route=self.env.config.two_route_rewards)
+
+    def goal_rewards(self) -> dict[str, float]:
+        return dict(TWO_ROUTE_REWARDS) if self.env.config.two_route_rewards else {}
 
     def types(self) -> tuple[Type, ...]:
         return Objects.all_types()
@@ -37,10 +41,12 @@ class RackServingSkillProvider(SkillProvider):
         return Objects.all_objects()
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        bounds = {Skills.GATHER_AND_SWEEP: GATHER_AND_SWEEP_BOUNDS, Skills.SWEEP: SWEEP_BOUNDS}
-        if ground_skill.skill not in bounds:
+        # By name: the two-route variants are the same skills with success restated.
+        bounds = {"GatherAndSweep": GATHER_AND_SWEEP_BOUNDS, "Sweep": SWEEP_BOUNDS}
+        name = ground_skill.skill.name
+        if name not in bounds:
             return np.zeros(0)
-        return np.array([rng.uniform(lower, upper) for lower, upper in bounds[ground_skill.skill]])
+        return np.array([rng.uniform(lower, upper) for lower, upper in bounds[name]])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
@@ -51,7 +57,9 @@ class RackServingSkillProvider(SkillProvider):
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         if not self.offer_human_reset or self.env.config.mode == "deployment":
             return ()
-        batch, tool = Skills.human_skills(mode=self.env.config.mode)
+        batch, tool = Skills.human_skills(
+            mode=self.env.config.mode, two_route=self.env.config.two_route_rewards
+        )
         return (
             GroundSkill(
                 skill=batch, objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food)
@@ -82,20 +90,20 @@ class RackServingActions:
         skill = ground_skill.skill
         if skill.name in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
             raise PermissionError("human interventions are not robot actions")
-        if skill not in Skills.robot_skills(include_sweep=True):
+        if skill.name not in SKILL_IDS:
             raise ValueError(f"unknown rack-serving robot skill: {skill.name}")
         params = np.asarray(params, dtype=float)
         if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
             raise ValueError(f"{skill.name} requires {skill.param_dim} finite parameters")
         continuous = np.zeros(3)
-        if skill == Skills.GATHER_AND_SWEEP:
+        if skill.name == Skills.GATHER_AND_SWEEP.name:
             if any(
                 not lower <= value <= upper
                 for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
             ):
                 raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
             continuous = params
-        if skill == Skills.SWEEP:
+        if skill.name == Skills.SWEEP.name:
             ((lower, upper),) = SWEEP_BOUNDS
             if not lower <= params[0] <= upper:
                 raise ValueError("Sweep d is outside the declared bounds")

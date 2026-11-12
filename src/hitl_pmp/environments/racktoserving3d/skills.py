@@ -27,6 +27,9 @@ from .predicates import (
     SCRAPER_AWAY,
     SCRAPER_HOME,
     SCRAPER_ON_FLOOR,
+    SERVED,
+    SERVED_FIVE,
+    SERVED_THREE,
     SPILLED_COUNTER,
     SPILLED_FLOOR,
 )
@@ -224,22 +227,52 @@ class RackServing3DSkills:
         param_dim=0,
     )
 
+    # `RackServingConfig.two_route_rewards`: the same two bulk skills and batch return,
+    # with success restated. Sweep promises three on the plate (Served, ServedThree)
+    # and no longer every OnTray; GatherAndSweep promises all five as before, and so
+    # ServedFive too. Both still clear the rack symbolically, so a practice try of
+    # either is followed by the person's batch return, which withdraws the outcome.
+    TWO_ROUTE_GATHER_AND_SWEEP: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(
+        update={
+            "add_effects": GATHER_AND_SWEEP.add_effects
+            | {_atom(predicate=p) for p in (SERVED, SERVED_THREE, SERVED_FIVE)}
+        }
+    )
+    TWO_ROUTE_SWEEP: ClassVar[Skill] = SWEEP.model_copy(
+        update={
+            "add_effects": SWEEP.add_effects | {_atom(predicate=p) for p in (SERVED, SERVED_THREE)},
+            "conditional_add_effects": frozenset(),
+        }
+    )
+    TWO_ROUTE_HUMAN_BATCH_RETURN: ClassVar[Skill] = HUMAN_BATCH_RETURN.model_copy(
+        update={
+            "delete_effects": HUMAN_BATCH_RETURN.delete_effects
+            | {_atom(predicate=p) for p in (SERVED, SERVED_THREE, SERVED_FIVE)}
+        }
+    )
+
     @staticmethod
     def robot_skills(
-        *, include_sweep: bool = True, include_placement: bool = True
+        *, include_sweep: bool = True, include_placement: bool = True, two_route: bool = False
     ) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
         return (
             skills.PICK_SCRAPER,
-            skills.GATHER_AND_SWEEP,
+            skills.TWO_ROUTE_GATHER_AND_SWEEP if two_route else skills.GATHER_AND_SWEEP,
             skills.RETURN_SCRAPER,
             skills.PICK_FOOD,
             *((skills.PLACE_FOOD_ON_TRAY,) if include_placement else ()),
             skills.RETURN_FOOD_TO_RACK,
-        ) + ((skills.SWEEP,) if include_sweep else ())
+        ) + (((skills.TWO_ROUTE_SWEEP if two_route else skills.SWEEP),) if include_sweep else ())
 
     @staticmethod
-    def human_skills(*, mode: Literal["training", "deployment"] = "training") -> tuple[Skill, ...]:
+    def human_skills(
+        *, mode: Literal["training", "deployment"] = "training", two_route: bool = False
+    ) -> tuple[Skill, ...]:
         if mode == "deployment":
             return ()
-        return (RackServing3DSkills.HUMAN_BATCH_RETURN, RackServing3DSkills.HUMAN_TOOL_RECOVERY)
+        skills = RackServing3DSkills
+        return (
+            skills.TWO_ROUTE_HUMAN_BATCH_RETURN if two_route else skills.HUMAN_BATCH_RETURN,
+            skills.HUMAN_TOOL_RECOVERY,
+        )
