@@ -1,11 +1,15 @@
-"""Summarise two-route Serving runs: practice choices, plate counts and reward by count.
+"""Summarise two-route Serving runs: practice choices, plate counts and reward by skill.
 
 Reads `<results-root>/<method>/<seed>/` as `scripts.run_sweep` wrote it. Practice comes
 from `step_events.jsonl` (each robot event's `skill_trace.plate_count` is the count
 after it); evaluation from each `evaluations/<index>/` (`results.json`, and
-`actions.jsonl` for the plate count after a task's bulk skill). A task the evaluation
-clock stopped at its goal (all five settled) has no action event and counts as 5.
-Reward by count: 5 on the plate is 5, 3 or 4 is 3, fewer is 0. Post-run only.
+`actions.jsonl` for the plate count after a task's bulk skill). A task is solved by
+the skill that ended it (Josh, 2026-11-12): a Sweep that left 3 or more on the plate
+is solved and worth 3, a GatherAndSweep that left all 5 is solved and worth 5, and
+anything else is unsolved and worth 0, a GatherAndSweep that landed 3 or 4 included.
+`results_solved` is the run's own `solved`; runs from before that rule (which stopped a
+task the moment all five settled, leaving no action event: counted as 5 here) can
+disagree with `solved`. Post-run only.
 """
 
 import argparse
@@ -15,6 +19,7 @@ from typing import Any
 
 BULK = ("Sweep", "GatherAndSweep")
 NEEDED = {"Sweep": 3, "GatherAndSweep": 5}
+REWARD = {"Sweep": 3, "GatherAndSweep": 5}
 
 
 class RackTwoRouteSummary:
@@ -25,8 +30,14 @@ class RackTwoRouteSummary:
         return [json.loads(line) for line in path.read_text().splitlines() if line]
 
     @staticmethod
-    def reward(*, count: int) -> int:
-        return 5 if count >= 5 else 3 if count >= 3 else 0
+    def solved(*, skill: str | None, count: int) -> bool:
+        return skill in NEEDED and count >= NEEDED[skill]
+
+    @staticmethod
+    def reward(*, skill: str | None, count: int) -> int:
+        return (
+            REWARD[skill] if skill and RackTwoRouteSummary.solved(skill=skill, count=count) else 0
+        )
 
     @staticmethod
     def skill(*, label: str) -> str:
@@ -92,19 +103,25 @@ class RackTwoRouteSummary:
             own = [a for a in actions if a["task"] == task["task"]]
             bulk = [a for a in own if RackTwoRouteSummary.skill(label=a["label"]) in BULK]
             count = 5 if task["solved"] else 0
-            if bulk and not task["solved"]:
+            if bulk:
                 count = bulk[-1]["skill_trace"]["plate_count"]
+            skill = dispatched.get(task["task"]) or (
+                RackTwoRouteSummary.skill(label=bulk[-1]["label"]) if bulk else None
+            )
             tasks.append({
                 "task": task["task"],
-                "bulk_skill": dispatched.get(task["task"]),
+                "bulk_skill": skill,
                 "plate_count": count,
-                "reward": RackTwoRouteSummary.reward(count=count),
+                "solved": RackTwoRouteSummary.solved(skill=skill, count=count),
+                "results_solved": task["solved"],
+                "reward": RackTwoRouteSummary.reward(skill=skill, count=count),
                 "reason": task["reason"],
                 "errors": [a["skill_error"] for a in own if a.get("skill_error")],
             })
         return {
             "policy": results["deployment_policy"]["kind"],
             "tasks": tasks,
+            "num_solved": sum(t["solved"] for t in tasks),
             "total_reward": sum(t["reward"] for t in tasks),
             "max_reward": 5 * len(tasks),
         }

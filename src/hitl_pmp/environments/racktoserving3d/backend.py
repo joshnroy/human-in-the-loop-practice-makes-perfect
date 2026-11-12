@@ -448,15 +448,12 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 atoms.add(("ScraperOnFloor", ("wiper_0",)))
         if not held:
             atoms.add(("HandEmpty", ("robot",)))
-        summarised = RackServing3DAtoms.with_summaries(
+        return RackServing3DAtoms.with_summaries(
             atoms=frozenset(atoms),
             available_food=frozenset(
                 name for name in self.cube_names if self.food_available(name=name)
             ),
         )
-        if self.config.two_route_rewards:
-            return RackServing3DAtoms.with_served(atoms=summarised)
-        return summarised
 
     def plate_count(self) -> int:
         """How many dumplings are settled on the plate now."""

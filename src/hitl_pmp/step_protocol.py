@@ -931,6 +931,11 @@ class StepEvaluation:
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
+                        verdict = environment.evaluation_solved_after_action(
+                            problem=problem, action=action.action
+                        )
+                        if verdict is not None:
+                            clock.solved = verdict
                         terminal = environment.evaluation_terminal_reason(
                             problem=problem, action=action.action
                         )

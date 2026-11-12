@@ -128,8 +128,24 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
     def goal_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
         """Use the same live rack verdict as skill-step evaluation, not KINDER's shelf goal."""
         del task
-        backend = RackServingStepProtocol.env(problem=problem).backend()
+        env = RackServingStepProtocol.env(problem=problem)
+        if env.config.two_route_rewards:
+            # The verdict is the bulk skill's own, taken when it returns
+            # (`evaluation_solved_after_action`): no tick mid-skill scores the task or
+            # stops the controller.
+            return lambda: False
+        backend = env.backend()
         return lambda: bool(backend.task_succeeded())
+
+    @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        """Under `two_route_rewards`, a Sweep or GatherAndSweep that has returned decides
+        the task: solved when its own outcome holds (`served_verdict`)."""
+        env = RackServingStepProtocol.env(problem=problem)
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]}
+        if not (env.config.two_route_rewards and action.size and int(action.flat[0]) in bulk):
+            return None
+        return ("Served", ()) in env.bulk_verdict()
 
     @staticmethod
     def interrupted(*, problem: Problem, action: Action) -> None:

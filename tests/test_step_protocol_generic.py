@@ -96,6 +96,11 @@ class FakeStepProtocol:
         return None
 
     @staticmethod
+    def evaluation_solved_after_action(*, problem: Any, action: Any) -> bool | None:
+        del problem, action
+        return None
+
+    @staticmethod
     def evaluation_terminal_reason(*, problem: Any, action: Any) -> str | None:
         del problem, action
         return None

@@ -49,3 +49,26 @@ def test_a_task_ends_at_the_first_action_its_domain_names_terminal(*, tmp_path):
         assert _toggles(output=output, task=task["task"]) == 1
     assert all(t["reason"] in {"toggle_attempt_finished", "goal"} for t in tasks)
     assert all(t["solved"] for t in tasks if t["reason"] == "goal")
+
+
+class VerdictWhenTheToggleReturns(FirstToggleEndsTheTask):
+    @staticmethod
+    def evaluation_solved_after_action(*, problem: Any, action: Any) -> bool | None:
+        del problem
+        return True if float(action[1]) != 0 else None
+
+
+def test_a_domain_can_score_a_task_when_a_named_action_returns(*, tmp_path):
+    ended = _evaluate(tmp_path=tmp_path, environment=FirstToggleEndsTheTask)
+    unsolved = {
+        t["task"]
+        for t in json.loads((ended / "results.json").read_text())["tasks"]
+        if t["reason"] == "toggle_attempt_finished"
+    }
+    assert unsolved
+    output = _evaluate(tmp_path=tmp_path, environment=VerdictWhenTheToggleReturns)
+    tasks = json.loads((output / "results.json").read_text())["tasks"]
+    for task in tasks:
+        if task["task"] in unsolved:
+            assert task["solved"] is True and task["reason"] == "goal"
+            assert _toggles(output=output, task=task["task"]) == 1

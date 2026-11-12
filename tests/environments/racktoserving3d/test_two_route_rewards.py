@@ -55,18 +55,62 @@ def _bulk(*, provider, name):
 
 
 @pytest.mark.parametrize(
-    ("on_tray", "expected"),
+    ("skill", "plate_count", "expected"),
     [
-        (2, set()),
-        (3, {"Served", "ServedThree"}),
-        (4, {"Served", "ServedThree"}),
-        (5, {"Served", "ServedThree", "ServedFive"}),
+        ("Sweep", 2, set()),
+        ("Sweep", 3, {"Served", "ServedThree"}),
+        ("Sweep", 4, {"Served", "ServedThree"}),
+        # A Sweep is worth 3 whenever it is solved, even if it lands all five.
+        ("Sweep", 5, {"Served", "ServedThree"}),
+        # A GatherAndSweep that lands three or four is unsolved.
+        ("GatherAndSweep", 3, set()),
+        ("GatherAndSweep", 4, set()),
+        ("GatherAndSweep", 5, {"Served", "ServedFive"}),
     ],
 )
-def test_the_served_facts_follow_the_plate_count(*, on_tray, expected):
-    atoms = frozenset(("OnTray", (food.name, "box_0")) for food in Objects.food[:on_tray])
-    served = RackServing3DAtoms.with_served(atoms=atoms)
-    assert {name for name, _ in served - atoms} == expected
+def test_the_verdict_is_by_skill_and_plate_count(*, skill, plate_count, expected):
+    verdict = RackServing3DAtoms.served_verdict(skill=skill, plate_count=plate_count)
+    assert {name for name, _ in verdict} == expected
+
+
+def test_the_verdict_is_taken_when_the_bulk_skill_returns_never_mid_skill(*, tmp_path):
+    from unittest.mock import Mock
+
+    from hitl_pmp.core.problem.tasks.types import Task
+    from hitl_pmp.environments.racktoserving3d.problem import RackServingProblem
+    from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
+    from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
+
+    env = RackServingEnvironment(config=TWO_ROUTE)
+    env._backend = Mock()
+    env._backend.task_succeeded.return_value = True
+    problem = RackServingProblem(env=env, tasks=RackServingTasks(env=env))
+    task = Mock(spec=Task)
+    # All five on the plate mid-skill does not stop the skill or score the task.
+    assert RackServingStepProtocol.goal_check(problem=problem, task=task)() is False
+
+    def verdict(*, name):
+        return RackServingStepProtocol.evaluation_solved_after_action(
+            problem=problem, action=np.array([SKILL_IDS[name], 0, 0, 0, 0], dtype=float)
+        )
+
+    assert verdict(name="PickScraper") is None
+    assert verdict(name="Sweep") is False
+    env._bulk_verdict = RackServing3DAtoms.served_verdict(skill="Sweep", plate_count=3)
+    assert verdict(name="Sweep") is True
+    env._bulk_verdict = RackServing3DAtoms.served_verdict(skill="GatherAndSweep", plate_count=4)
+    assert verdict(name="GatherAndSweep") is False
+    plain = RackServingEnvironment(config=RackServingConfig(bulk_transfer_only=True))
+    plain._backend = Mock()
+    plain._backend.task_succeeded.return_value = True
+    plain_problem = RackServingProblem(env=plain, tasks=RackServingTasks(env=plain))
+    assert RackServingStepProtocol.goal_check(problem=plain_problem, task=task)() is True
+    assert (
+        RackServingStepProtocol.evaluation_solved_after_action(
+            problem=plain_problem, action=np.array([SKILL_IDS["Sweep"], 0, 0, 0, 0], dtype=float)
+        )
+        is None
+    )
 
 
 def test_the_default_serving_domain_is_unchanged():
@@ -100,7 +144,8 @@ def test_each_bulk_skill_promises_its_own_outcome_and_the_goal_is_shared():
 
     assert {"Served", "ServedThree"} <= names(ground=sweep)
     assert not {"ServedFive", "OnTray"} & names(ground=sweep)
-    assert {"Served", "ServedThree", "ServedFive", "OnTray"} <= names(ground=gather)
+    assert {"Served", "ServedFive", "OnTray"} <= names(ground=gather)
+    assert "ServedThree" not in names(ground=gather)
     goal = RackServingTasks(env=provider.env).goal().atoms
     assert {atom.predicate.name for atom in goal} == {"Served"}
     for ground, reward in ((sweep, 3.0), (gather, 5.0)):

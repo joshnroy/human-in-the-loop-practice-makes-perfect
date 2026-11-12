@@ -82,6 +82,11 @@ class LightSwitchEvaluationProtocol:
         return problem.env
 
     @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        del problem, action
+        return None
+
+    @staticmethod
     def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
         del problem, action
         return None

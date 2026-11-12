@@ -230,12 +230,12 @@ class RackServing3DSkills:
     # `RackServingConfig.two_route_rewards`: the same two bulk skills and batch return,
     # with success restated. Sweep promises three on the plate (Served, ServedThree)
     # and no longer every OnTray; GatherAndSweep promises all five as before, and so
-    # ServedFive too. Both still clear the rack symbolically, so a practice try of
-    # either is followed by the person's batch return, which withdraws the outcome.
+    # Served and ServedFive. Both still clear the rack symbolically, so a practice try
+    # of either is followed by the person's batch return, which withdraws the outcome.
     TWO_ROUTE_GATHER_AND_SWEEP: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(
         update={
             "add_effects": GATHER_AND_SWEEP.add_effects
-            | {_atom(predicate=p) for p in (SERVED, SERVED_THREE, SERVED_FIVE)}
+            | {_atom(predicate=p) for p in (SERVED, SERVED_FIVE)}
         }
     )
     TWO_ROUTE_SWEEP: ClassVar[Skill] = SWEEP.model_copy(

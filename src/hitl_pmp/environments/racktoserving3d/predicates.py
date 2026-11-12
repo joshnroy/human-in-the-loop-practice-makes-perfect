@@ -9,7 +9,8 @@ from .objects import RackServing3DObjects as Objects
 
 AbstractAtom = tuple[str, tuple[str, ...]]
 # `RackServingConfig.two_route_rewards`: what each outcome is worth, by the predicate
-# that holds in it. All five on the plate holds both, and is worth the larger.
+# that holds in it. The two never hold together: which one a solved task holds is
+# decided by the bulk skill that solved it (`RackServing3DAtoms.served_verdict`).
 TWO_ROUTE_SWEEP_COUNT = 3
 TWO_ROUTE_REWARDS = {"ServedThree": 3.0, "ServedFive": 5.0}
 
@@ -33,16 +34,17 @@ class RackServing3DAtoms:
         )
 
     @staticmethod
-    def with_served(*, atoms: frozenset[AbstractAtom]) -> frozenset[AbstractAtom]:
-        """The two-route outcome facts, from how many dumplings are OnTray: Served and
-        ServedThree at three or more, ServedFive at all five."""
-        count = sum(name == "OnTray" for name, _ in atoms)
-        served: set[AbstractAtom] = set()
-        if count >= TWO_ROUTE_SWEEP_COUNT:
-            served |= {("Served", ()), ("ServedThree", ())}
-        if count == len(Objects.food):
-            served.add(("ServedFive", ()))
-        return atoms | served
+    def served_verdict(*, skill: str, plate_count: int) -> frozenset[AbstractAtom]:
+        """The two-route outcome facts of a bulk skill that has just returned (Josh,
+        2026-11-12): a Sweep that left three or more on the plate is Served and
+        ServedThree, whatever more it landed; a GatherAndSweep that left all five is
+        Served and ServedFive; anything else, a GatherAndSweep that landed three or four
+        included, is neither."""
+        if skill == "Sweep" and plate_count >= TWO_ROUTE_SWEEP_COUNT:
+            return frozenset({("Served", ()), ("ServedThree", ())})
+        if skill == "GatherAndSweep" and plate_count == len(Objects.food):
+            return frozenset({("Served", ()), ("ServedFive", ())})
+        return frozenset()
 
     @staticmethod
     def with_summaries(

@@ -19,12 +19,14 @@ from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
 
-VIEW = 480
+VIEW = 416
 CAPTURE_HZ = 15
 
 
 class TwoRouteProbeVideo:
-    """Two fixed views of the live scene, captured from the backend's tick observer."""
+    """Four fixed views of the live scene, captured from the backend's tick observer:
+    oblique, top close-up, and two low views of the rack's front edge and the plate's
+    near rim (from the plate side, and from the side), where stranded dumplings rest."""
 
     def __init__(self, *, backend: Any, path: Path, title: str) -> None:
         import imageio.v2 as imageio
@@ -38,6 +40,8 @@ class TwoRouteProbeVideo:
         for lookat, distance, azimuth, elevation in (
             ([1.45, 0.0, 0.95], 2.1, 35, -38),
             ([1.40, 0.0, 0.92], 0.80, 180, -89.5),
+            ([1.345, 0.0, 0.925], 0.42, 0, -14),
+            ([1.345, 0.0, 0.925], 0.50, 90, -8),
         ):
             camera = mujoco.MjvCamera()
             camera.lookat[:] = lookat
@@ -53,6 +57,13 @@ class TwoRouteProbeVideo:
         )
         self.last = -1.0
         self.label = "start"
+        self.frames = 0
+        self.marks: dict[str, float] = {}
+
+    def mark(self, *, label: str) -> None:
+        """Start a labelled phase and remember the clip time it starts at."""
+        self.label = label
+        self.marks[label] = round(self.frames / (2 * CAPTURE_HZ), 1)
 
     def frame(self, *, repeat: int = 1, force: bool = False) -> None:
         from PIL import Image, ImageDraw, ImageFont
@@ -65,18 +76,21 @@ class TwoRouteProbeVideo:
         for camera in self.cameras:
             self.renderer.update_scene(data, camera=camera)
             views.append(self.renderer.render().copy())
-        canvas = Image.new("RGB", (2 * VIEW, VIEW + 28), "#111827")
-        canvas.paste(Image.fromarray(np.concatenate(views, axis=1)), (0, 28))
+        canvas = Image.new("RGB", (len(views) * VIEW, VIEW + 32), "#111827")
+        canvas.paste(Image.fromarray(np.concatenate(views, axis=1)), (0, 32))
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 15)
         ImageDraw.Draw(canvas).text(
             (8, 5),
-            f"{self.title} | {self.label} | plate {self.backend.plate_count()}/5 | 2x",
+            f"{self.title} | {self.label} | plate {self.backend.plate_count()}/5 | 2x | "
+            f"clip t={self.frames / (2 * CAPTURE_HZ):.1f}s | views: oblique, top, "
+            "plate-side low, side low",
             font=font,
             fill="white",
         )
         pixels = np.asarray(canvas)
         for _ in range(repeat):
             self.writer.append_data(pixels)
+        self.frames += repeat
 
     def close(self) -> None:
         self.writer.close()
@@ -138,7 +152,14 @@ def main() -> None:
     import mujoco
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skill", choices=("Sweep", "GatherAndSweep"), required=True)
+    parser.add_argument(
+        "--skill",
+        choices=("Sweep", "GatherAndSweep", "PickScraperCycle"),
+        required=True,
+        help="PickScraperCycle: PickScraper then the person's tool recovery, three times.",
+    )
+    parser.add_argument("--banner", default="", help="--video only: text leading the banner")
+    parser.add_argument("--clip-name", default=None, help="--video only: file stem")
     parser.add_argument("--params", type=float, nargs=3, default=(0.0, 0.0, 0.08))
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument("--start-layout", default="spaced")
@@ -175,19 +196,39 @@ def main() -> None:
                 shown = args.params[2:] if args.skill == "Sweep" else args.params
                 video = TwoRouteProbeVideo(
                     backend=backend,
-                    path=args.video / f"{args.skill}-seed{seed}.mp4",
-                    title=f"{args.skill}({', '.join(f'{v:g}' for v in shown)}), spaced start,"
-                    f" env seed {seed}",
+                    path=args.video / f"{args.clip_name or args.skill}-seed{seed}.mp4",
+                    title=(f"{args.banner} | " if args.banner else "")
+                    + f"{args.skill}({', '.join(f'{v:g}' for v in shown)}), env seed {seed}",
                 )
                 video.frame(repeat=15, force=True)
                 backend.set_tick_observer(observer=video.frame)
             try:
                 if video is not None:
-                    video.label = "PickScraper"
+                    video.mark(label="PickScraper")
                 env.take_action(action=np.array([SKILL_IDS["PickScraper"], 0, 0.0, 0.0, 0.0]))
                 before = backend.control_steps()
+                if args.skill == "PickScraperCycle":
+                    errors = [env.last_skill_error()]
+                    for cycle in range(2, 4):
+                        if video is not None:
+                            video.mark(label=f"human tool recovery {cycle - 1}")
+                            video.frame(repeat=20, force=True)
+                        env.reset_movables(destination="human_tool_recovery")
+                        if video is not None:
+                            video.frame(repeat=20, force=True)
+                            video.mark(label=f"PickScraper {cycle}")
+                        env.take_action(
+                            action=np.array([SKILL_IDS["PickScraper"], 0, 0.0, 0.0, 0.0])
+                        )
+                        errors.append(env.last_skill_error())
+                    row["pick_errors"] = errors
+                    if video is not None:
+                        video.mark(label="done")
+                        video.frame(repeat=45, force=True)
+                        row["clip_marks"] = video.marks
+                    continue
                 if video is not None:
-                    video.label = args.skill
+                    video.mark(label=args.skill)
                 env.take_action(action=np.array([SKILL_IDS[args.skill], 0, *args.params]))
                 row["steps"] = backend.control_steps() - before
                 row["skill_error"] = env.last_skill_error()
@@ -206,8 +247,9 @@ def main() -> None:
                     backend.location(name=name) for name in backend.cube_names
                 ]
                 if video is not None:
-                    video.label = "done"
-                    video.frame(repeat=45, force=True)
+                    video.mark(label="done")
+                    video.frame(repeat=60, force=True)
+                    row["clip_marks"] = video.marks
             except Exception as error:  # noqa: BLE001 - a probe reports every failure
                 row["error"] = f"{type(error).__name__}: {error}"
             finally:
