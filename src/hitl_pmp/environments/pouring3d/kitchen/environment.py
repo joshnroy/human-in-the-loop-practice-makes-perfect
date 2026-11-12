@@ -188,7 +188,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.human_interventions += 1
         self.interruption_cost_total += self.human_interruption_cost
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}
-        result = super().reset_movables(destination=LEGACY_RESET)
+        c = self.controller()
+        food_only = (
+            c.held is None
+            and c.vessel_home(name="pitcher")
+            and c.vessel_home(name="tray")
+            and c.scene.cube_locations() != ["pitcher"] * self.payload_count
+        )
+        if food_only:
+            result = super().reset_movables(destination=LEGACY_RESET)
+        else:
+            result = self.reset_from_any_state()
         self.last_info.update(
             skill=HUMAN_RESET,
             success=result,
@@ -196,6 +206,33 @@ class KitchenEnvironment(FrozenPourEnvironment):
             interruption_cost=self.human_interruption_cost,
         )
         return result
+
+    def reset_from_any_state(self) -> bool:
+        """The human reset from a state the food-only pour-back does not cover (Josh,
+        2026-11-06): the human stands a displaced skillet at home, takes the jug or a
+        dumpling from the hand and stands the jug at home, and returns the dumplings to
+        it if any is out or the jug moved. What is already in place is not touched, so
+        from the fully reset state this changes nothing. Same price, same success test
+        (`ready()`) and zero robot ticks."""
+        c = self.controller()
+        if not c.vessel_home(name="tray"):
+            c.human_stands_vessel_home(name="tray")
+        jug_moved = c.held is not None or not c.vessel_home(name="pitcher")
+        if jug_moved:
+            c.human_takes_jug_home()
+        if jug_moved or c.scene.cube_locations() != ["pitcher"] * self.payload_count:
+            c.scene.respawn_payload_in_pitcher()
+        self._steps += 1
+        self.last_info = {
+            "skill": LEGACY_RESET,
+            "success": c.ready(),
+            "error": None,
+            "human_interventions": 1,
+            "seconds": 0,
+            "controller_steps": 0,
+        }
+        self.current_state = self.observe()
+        return bool(self.last_info["success"])
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""
