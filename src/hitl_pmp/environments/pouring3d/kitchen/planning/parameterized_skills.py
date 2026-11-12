@@ -55,6 +55,18 @@ from .utils import PLANNING_MARGIN_M, UPRIGHT_TILT_LIMIT_DEG, KitchenPyBulletSim
 # (ees/ees/0 of Della job 16949734); without the escape, BiRRT refuses its own start.
 ESCAPE_MARGIN_M = 0.005
 
+# The arm's continuous joints (1, 3, 5, 7) and MuJoCo's range for them. PyBullet models
+# them as unlimited, so the range is enforced here, on the path as MuJoCo follows it.
+CONTINUOUS = (0, 2, 4, 6)
+CONTINUOUS_LIMIT_RAD = 12.0
+# A held skill's own IK refuses within 20 deg of the range (`held_bound_margin`), so a
+# turn chosen for a planned end keeps that much room too.
+CONTINUOUS_LIMIT_MARGIN_RAD = float(np.deg2rad(20.0))
+# Joint-space spacing at which a re-turned path is collision-checked, and the largest
+# per-joint step between the waypoints it is returned as (the remap distance, 0.2).
+RETURN_CHECK_RAD = 0.02
+RETURN_WAYPOINT_RAD = 0.2
+
 
 class PlanningRefused(ValueError):
     """A planner found no plan; nothing was executed."""
@@ -147,6 +159,7 @@ class KitchenMotionPlanner:
         margin: float = PLANNING_MARGIN_M,
         held: HeldObject | None = None,
         reference: Any | None = None,
+        neutral: Any | None = None,
     ) -> list[np.ndarray]:
         """A checked joint path from `start` to a valid IK solution for the hand pose.
 
@@ -225,7 +238,105 @@ class KitchenMotionPlanner:
         if planned is None:
             upright = " upright" if held is not None else ""
             raise PlanningRefused(f"No collision-free{upright} arm path to {what}")
-        return [np.asarray(q[:7], dtype=float) for q in planned]
+        path = KitchenMotionPlanner.unwrapped(path=planned)
+        if neutral is not None:
+            turns = KitchenMotionPlanner.turns_toward(
+                end=path[-1], neutral=np.asarray(neutral, dtype=float)
+            )
+            if turns.any():
+                returned = KitchenMotionPlanner.returned(
+                    path=path, turns=turns, collides=lambda q: collides([*q, *start_joints[7:]])
+                )
+                if returned is not None:
+                    path = returned
+        KitchenMotionPlanner.check_range(path=path, what=what)
+        return path
+
+    @staticmethod
+    def returned(
+        *, path: list[np.ndarray], turns: np.ndarray, collides: Callable[[list[float]], bool]
+    ) -> list[np.ndarray] | None:
+        """`path` ending on the turn `turns` whole turns away, the most preferred clear
+        version of it; None if every one collides.
+
+        A whole turn leaves every configuration's hand pose unchanged, but not those on
+        the way, so each candidate is checked again as MuJoCo will follow it, every
+        `RETURN_CHECK_RAD` along its straight segments. Candidates, in order: all of
+        `turns` first, then one turn fewer per joint down to one; for each, the turns
+        made at the start (where the unwind before a pick makes them), then spread
+        along the path in proportion to its joint-space length.
+        """
+        steps = np.array([np.linalg.norm(b - a) for a, b in zip(path[:-1], path[1:], strict=True)])
+        total = float(steps.sum())
+        spread = (
+            np.concatenate([[0.0], np.cumsum(steps) / total])
+            if total > 0
+            else np.linspace(0.0, 1.0, len(path))
+        )
+        for most in range(int(np.max(np.abs(turns))), 0, -1):
+            chosen = np.clip(turns, -most, most)
+            at_start = [path[0], *(q + 2 * np.pi * chosen for q in path)]
+            along = [q + 2 * np.pi * chosen * u for q, u in zip(path, spread, strict=True)]
+            for candidate in (at_start, along):
+                out = KitchenMotionPlanner.densified(path=candidate, collides=collides)
+                if out is not None:
+                    return out
+        return None
+
+    @staticmethod
+    def densified(
+        *, path: list[np.ndarray], collides: Callable[[list[float]], bool]
+    ) -> list[np.ndarray] | None:
+        """`path` with no per-joint step over `RETURN_WAYPOINT_RAD`, or None if a
+        configuration on it, checked every `RETURN_CHECK_RAD`, collides."""
+        out = [path[0]]
+        for a, b in zip(path[:-1], path[1:], strict=True):
+            span = float(np.max(np.abs(b - a)))
+            for u in np.linspace(0, 1, 1 + max(1, int(np.ceil(span / RETURN_CHECK_RAD))))[1:]:
+                if collides([float(v) for v in a + u * (b - a)]):
+                    return None
+            count = max(1, int(np.ceil(span / RETURN_WAYPOINT_RAD)))
+            out.extend(a + (b - a) * (i / count) for i in range(1, count + 1))
+        return out
+
+    @staticmethod
+    def unwrapped(*, path: list[Any]) -> list[np.ndarray]:
+        """`path` as MuJoCo follows it from `path[0]`: each continuous joint the short
+        way round between waypoints (`KitchenController.follow_arm_path`)."""
+        out = [np.asarray(path[0], dtype=float)[:7].copy()]
+        index = list(CONTINUOUS)
+        for q in path[1:]:
+            delta = np.asarray(q, dtype=float)[:7] - out[-1]
+            delta[index] = np.arctan2(np.sin(delta[index]), np.cos(delta[index]))
+            out.append(out[-1] + delta)
+        return out
+
+    @staticmethod
+    def turns_toward(*, end: np.ndarray, neutral: np.ndarray) -> np.ndarray:
+        """Whole turns to add to each continuous joint of `end` to bring it nearest
+        `neutral`, kept inside MuJoCo's range less its margin; zero elsewhere."""
+        turns = np.zeros(7, dtype=int)
+        bound = CONTINUOUS_LIMIT_RAD - CONTINUOUS_LIMIT_MARGIN_RAD
+        for j in CONTINUOUS:
+            k = round((float(neutral[j]) - float(end[j])) / (2 * np.pi))
+            candidates = [k, k - 1, k + 1]
+            inside = [c for c in candidates if abs(end[j] + 2 * np.pi * c) <= bound]
+            if inside:
+                turns[j] = min(inside, key=lambda c: abs(end[j] + 2 * np.pi * c - neutral[j]))
+        return turns
+
+    @staticmethod
+    def check_range(*, path: list[np.ndarray], what: str) -> None:
+        """Refuse a path that carries a continuous joint past MuJoCo's range, or further
+        past it than it starts."""
+        for j in CONTINUOUS:
+            reach = max(abs(float(q[j])) for q in path)
+            if reach > max(CONTINUOUS_LIMIT_RAD, abs(float(path[0][j]))):
+                raise PlanningRefused(
+                    f"The arm path to {what} carries continuous joint {j + 1} to "
+                    f"{np.rad2deg(reach):.0f} deg, past its range "
+                    f"({np.rad2deg(CONTINUOUS_LIMIT_RAD):.0f} deg)"
+                )
 
     @staticmethod
     def goal(
@@ -423,6 +534,7 @@ class PickPitcherController:
                     rotation=rotation,
                     what="the tucked arm",
                     reference=home,
+                    neutral=home,
                 )
                 arm = tuck[-1]
             base_path = KitchenMotionPlanner.plan_base(
@@ -439,6 +551,7 @@ class PickPitcherController:
                 rotation=rotation,
                 what="pitcher hover",
                 reference=home,
+                neutral=home,
             ),
         }
 
@@ -486,6 +599,7 @@ class CarryToPourController:
         start: np.ndarray,
         start_rotation: Rotation,
         riders: tuple[str, ...],
+        neutral: np.ndarray,
     ) -> None:
         sim = self.sim
         sim.set_state(x)
@@ -501,6 +615,7 @@ class CarryToPourController:
             rotation=hand_rotation,
             what="the carry pose",
             held=held,
+            neutral=neutral,
         )
         base_path = KitchenMotionPlanner.plan_base(
             sim=sim, state=x, target=base_target, arm=tuck[-1], what="the pour pose", held=held
@@ -516,6 +631,7 @@ class CarryToPourController:
                 rotation=start_rotation,
                 what="the pour start",
                 held=held,
+                neutral=neutral,
             ),
         }
 
@@ -559,6 +675,7 @@ class PlacePitcherController:
         rotation_offset: Rotation,
         home: np.ndarray,
         riders: tuple[str, ...],
+        neutral: np.ndarray,
     ) -> None:
         sim = self.sim
         sim.set_state(x)
@@ -574,6 +691,7 @@ class PlacePitcherController:
             rotation=hand_rotation,
             what="the carry pose",
             held=held,
+            neutral=neutral,
         )
         # The jug upright over home; the hand where the current grasp puts it.
         jug = home + np.array([0.0, 0.0, self.HOVER_M])
@@ -593,6 +711,7 @@ class PlacePitcherController:
                     rotation=rotation_offset,
                     what="the jug hover above home",
                     held=held,
+                    neutral=neutral,
                 ),
             }
 

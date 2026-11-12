@@ -15,6 +15,7 @@ import multiprocessing
 import os
 import pickle
 import random
+import sys
 import threading
 import time
 import traceback
@@ -30,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.cli_protocols import EnvironmentCli, StepProtocolEnvironment
 from hitl_pmp.config_snapshot import ConfigSnapshot
-from hitl_pmp.core.control_steps import ControlStepLimitReached
+from hitl_pmp.core.control_steps import ControlStepLimitReached, SimulatorDiverged
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill
@@ -851,6 +852,7 @@ class StepEvaluation:
                 reason = "goal" if clock.solved else "step_budget"
                 max_one_shot = getattr(args, "evaluation_max_pour_attempts", None)
                 one_shot_failures = 0
+                diverged: dict[str, Any] | None = None
                 problem.env.set_control_step_observers(before=clock.before, after=clock.after)
                 try:
                     while not clock.solved and clock.steps < args.evaluation_control_steps:
@@ -862,6 +864,28 @@ class StepEvaluation:
                         previous = clock.steps
                         try:
                             state = problem.take_action(action=action.action)
+                        except SimulatorDiverged as wiped:
+                            # The scene was wiped under the robot: this task fails with
+                            # the cause, and the next one starts from its own reset.
+                            reason, diverged = "simulator_diverged", wiped.details
+                            StepFiles.event(
+                                path=directory / "actions.jsonl",
+                                task=index,
+                                label=action.label,
+                                start_step=previous,
+                                end_step=clock.steps,
+                                skill_error=str(wiped),
+                                simulator_diverged=diverged,
+                            )
+                            writer.robot_action(
+                                label=action.label,
+                                start_step=previous,
+                                end_step=clock.steps,
+                                success=False,
+                                outcome=reason,
+                            )
+                            print(f"evaluation task {index}: {wiped}", file=sys.stderr, flush=True)
+                            break
                         except ControlStepLimitReached:
                             environment.interrupted(problem=problem, action=action.action)
                             writer.robot_action(
@@ -904,17 +928,20 @@ class StepEvaluation:
                                     break
                 finally:
                     problem.env.set_control_step_observers(before=None, after=None)
-                if clock.solved:
+                # A wiped scene that happens to pass the goal check is not a solve.
+                solved = clock.solved and diverged is None
+                if solved:
                     reason = "goal"
                 results.append({
                     "task": index,
                     "seed": seed,
                     "goal": task.goal.describe(),
-                    "solved": clock.solved,
+                    "solved": solved,
                     "steps": clock.steps,
                     "reason": reason,
+                    **({} if diverged is None else {"simulator_diverged": diverged}),
                 })
-                writer.end_segment(success=clock.solved, outcome=reason, steps=clock.steps)
+                writer.end_segment(success=solved, outcome=reason, steps=clock.steps)
                 StepFiles.json(path=directory / "progress.json", value={"tasks": results})
             result = {
                 "complete": True,
@@ -2239,6 +2266,21 @@ class StepPracticeRunner:
                     break
             if endpoint == "running":
                 endpoint = "practice_step_budget"
+        except SimulatorDiverged as error:
+            # The simulator wiped the scene under a robot skill or a human reset: nothing
+            # after it is practice, so it ends here with the cause, the skill in flight
+            # unrecorded and unlearned. The measurements so far, and a final one of the
+            # policy as it stood, are kept.
+            endpoint = "simulator_diverged"
+            StepFiles.event(
+                path=events,
+                event="simulator_diverged",
+                cycle=cycle,
+                practice_steps=clock.steps,
+                **error.details,
+            )
+            (output / "simulator_diverged.txt").write_text(traceback.format_exc())
+            print(f"practice ended: {error}", file=sys.stderr, flush=True)
         except BaseException:
             endpoint = "failed"
             (output / "failure.txt").write_text(traceback.format_exc())
@@ -2313,9 +2355,10 @@ class StepPracticeRunner:
             StepFiles.json(path=output / "step_evaluations.json", value=evaluation_records)
             StepFiles.json(path=output / "stats.json", value=metrics.model_dump(mode="json"))
             evaluation_failures = sum(not r["complete"] for r in evaluation_records)
+            # A diverged run is never reported `complete`: its practice was cut short.
             endpoint = (
-                "failed"
-                if endpoint == "failed"
+                endpoint
+                if endpoint in {"failed", "simulator_diverged"}
                 else "evaluation_failed"
                 if evaluation_failures
                 else "paused"

@@ -650,3 +650,31 @@ def test_a_reset_competence_sweep_runs_seed_major_then_p_then_arm():
         for run in runs
     ]
     assert order == [(s, p) for s in (0, 1) for p in (1.0, 0.1) for _ in range(3)]
+
+
+def test_a_della_sweep_over_a_subset_of_arms_plans_and_runs_only_those_arms(
+    *, tmp_path, monkeypatch
+):
+    manifest, script = _della(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        stage="long_one_shot_learning",
+        seeds=(0, 1),
+        human_reset_success_probabilities=(1.0, 0.1),
+        arms=("ees", "curtis"),
+    )
+    assert manifest["arms"] == ["ees", "curtis"]
+    assert [(row["seed"], row["arm"]) for row in manifest["runs"]] == [
+        (seed, arm) for seed in (0, 1) for _ in (1.0, 0.1) for arm in ("ees", "curtis")
+    ]
+    assert "#SBATCH --array=1-8\n" in script
+    runs = KitchenLaunch.runs(
+        stage=manifest["stage"],
+        results_root=Path(manifest["results_root"]),
+        seeds=(0, 1),
+        repo=Path(manifest["working_directory"]),
+        evaluation_workers=manifest["evaluation_workers"],
+        human_reset_success_probabilities=(1.0, 0.1),
+        arms=tuple(manifest["arms"]),
+    )
+    assert KitchenLaunch.rows(runs=runs, validate=False) == manifest["runs"]

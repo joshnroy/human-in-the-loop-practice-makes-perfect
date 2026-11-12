@@ -11,6 +11,7 @@ import numpy as np
 from pydantic import Field
 from scipy.spatial.transform import Rotation
 
+from hitl_pmp.core.control_steps import SimulatorDiverged
 from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv, PotstickerScene
 
@@ -34,6 +35,20 @@ class KitchenScene(PotstickerScene):
         self.skillet_mu = skillet_mu
         self.payload_rest = PayloadRestWindow()
         super().__init__(*args, **kwargs)
+
+    # KinDER's robot MJCF sets `implicitfast`, which drops the gyroscopic term from the
+    # implicit derivative: a dumpling spinning past ~100 rad/s on the skillet or floor
+    # gains energy with no torque on it until MuJoCo's guard wipes the scene (Della sweep
+    # 16997464). The robot XML's <option> is merged in after the scene's, so the override
+    # goes on the compiled model, before the first step (Josh, 2026-11-07).
+    INTEGRATOR: ClassVar[str] = "mjINT_IMPLICIT"
+
+    def _initialize_object_poses(self) -> None:
+        import mujoco
+
+        model, _ = self._model_and_data()
+        model.opt.integrator = getattr(mujoco.mjtIntegrator, self.INTEGRATOR)
+        super()._initialize_object_poses()
 
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
         self.payload_rest.clear()
@@ -103,10 +118,63 @@ class KitchenScene(PotstickerScene):
         super().respawn_payload_in_pitcher()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
+        _, data = self._model_and_data()
+        time, warnings = float(data.time), self.instability_warnings()
         result = super().step(action)
+        self.scene_steps += 1
+        self.check_simulator_stable(time=time, warnings=warnings)
         # Observation only: recording reads qpos and never changes the trajectory.
         self.record_payload_rest()
         return result
+
+    # The warnings MuJoCo's guard raises just before it calls `mj_resetData`: every
+    # body to `qpos0`, every equality (the skillet weld) to its default, time to 0.
+    # The simulation then carries on from that wiped scene, which no skill caused.
+    INSTABILITY_WARNINGS: ClassVar[tuple[str, ...]] = (
+        "mjWARN_BADQPOS",
+        "mjWARN_BADQVEL",
+        "mjWARN_BADQACC",
+    )
+    scene_steps: int = 0
+
+    def instability_warnings(self) -> tuple[int, ...]:
+        import mujoco
+
+        _, data = self._model_and_data()
+        return tuple(
+            int(data.warning[int(getattr(mujoco.mjtWarning, name))].number)
+            for name in self.INSTABILITY_WARNINGS
+        )
+
+    def check_simulator_stable(self, *, time: float, warnings: tuple[int, ...]) -> None:
+        """Raise `SimulatorDiverged` if the guard fired during the step from `time`.
+
+        Read-only. `mj_resetData` clears the warning counters before the guard counts
+        its own warning again, so a count that changed at all, or time that went
+        backwards, means it fired."""
+        import mujoco
+
+        model, data = self._model_and_data()
+        after = self.instability_warnings()
+        if after == warnings and float(data.time) >= time:
+            return
+        changed = [i for i, (a, b) in enumerate(zip(after, warnings, strict=True)) if a != b]
+        name = self.INSTABILITY_WARNINGS[changed[-1] if changed else -1]
+        index = int(data.warning[int(getattr(mujoco.mjtWarning, name))].lastinfo)
+        if name == "mjWARN_BADQPOS":
+            # `lastinfo` is a qpos address; the joint is the last one starting at or before it.
+            joint = int(np.searchsorted(model.jnt_qposadr, index, side="right")) - 1
+            body_id = int(model.jnt_bodyid[joint]) if joint >= 0 else -1
+        else:
+            body_id = int(model.dof_bodyid[index]) if 0 <= index < model.nv else -1
+        raise SimulatorDiverged(
+            time=time,
+            time_after_reset=float(data.time),
+            warning=name,
+            index=index,
+            body=model.body(body_id).name if body_id >= 0 else None,
+            scene_step=self.scene_steps,
+        )
 
     def payload_positions(self) -> np.ndarray:
         # qpos, not xpos: mj_step leaves derived poses at the preceding instant.
@@ -498,20 +566,21 @@ class KitchenController(PotstickerController):
         self.data.qvel[[int(self.model.jnt_dofadr[j]) for j in self.finger_joints()]] = 0.0
         self.human_stands_vessel_home(name="pitcher")
 
-    def continuous_turns(self) -> np.ndarray:
+    def continuous_turns(self, *, threshold: float = 2 * np.pi) -> np.ndarray:
         """Whole turns each continuous arm joint has wound away from its neutral angle.
 
-        Hysteresis: a joint less than a full turn from neutral counts as unwound, so
-        one resting near +-180 deg (the wrist after a pour) never flips back and forth.
+        Hysteresis: by default a joint less than a full turn from neutral counts as
+        unwound, so one resting near +-180 deg (the wrist after a pour) never flips back
+        and forth. PickPitcher passes half a turn (`pick_pitcher`).
         """
         continuous = self.lower == -12
         offset = self.data.qpos[self.arm_q] - self.arm_neutral_q
-        wound = continuous & (np.abs(offset) >= 2 * np.pi)
+        wound = continuous & (np.abs(offset) >= threshold)
         turns = np.zeros(len(offset), dtype=int)
         turns[wound] = np.round(offset[wound] / (2 * np.pi)).astype(int)
         return turns
 
-    def unwind_continuous_joints(self) -> None:
+    def unwind_continuous_joints(self, *, threshold: float = 2 * np.pi) -> None:
         """Rotate each wound continuous joint back by whole turns, empty hand only.
 
         IK resolves each continuous joint to the equivalent nearest the previous
@@ -523,7 +592,7 @@ class KitchenController(PotstickerController):
         """
         if self.held is not None:
             raise ValueError("Unwinding requires an empty hand")
-        turns = self.continuous_turns()
+        turns = self.continuous_turns(threshold=threshold)
         if not turns.any():
             return
         start = self.data.qpos[self.arm_q].copy()
@@ -560,7 +629,9 @@ class KitchenController(PotstickerController):
 
         if self.held is not None:
             raise ValueError("Pitcher pick requires an empty hand")
-        self.unwind_continuous_joints()
+        # The pick, carry and pour each move the arm before the next unwind is possible,
+        # so they start within half a turn of neutral, not merely within a full one.
+        self.unwind_continuous_joints(threshold=np.pi)
         if not self.ready():
             raise ValueError("Pitcher pick requires a ready scene")
         self.shrimp_recovery_active = False
@@ -728,6 +799,7 @@ class KitchenController(PotstickerController):
                 rotation_offset=self.rotation_offset,
                 home=self.home.copy(),
                 riders=riders,
+                neutral=self.arm_neutral_q.copy(),
             )
         finally:
             sim.close()
@@ -897,6 +969,7 @@ class KitchenController(PotstickerController):
                 start=center,
                 start_rotation=self.pour_orientation(angle=0) * self.rotation_offset,
                 riders=riders,
+                neutral=self.arm_neutral_q.copy(),
             )
         finally:
             sim.close()
