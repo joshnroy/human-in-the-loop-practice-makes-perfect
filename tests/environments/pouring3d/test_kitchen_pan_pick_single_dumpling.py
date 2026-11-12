@@ -114,6 +114,14 @@ def test_after_it_the_hand_is_empty_and_no_dumpling_is_pinched(*, after_the_reco
     assert {name: c.finger_contacts(name=name) for name in names} == dict.fromkeys(names, set())
 
 
+def test_after_it_the_empty_hand_is_back_above_the_pan(*, after_the_recorded_pick):
+    env, names, _ = after_the_recorded_pick
+    c = env.controller()
+    assert "recovery_error" not in env.last_info, env.last_info
+    released = c.body_pose(name=names[CASE["dumpling"]])[0]
+    assert c.hand_pose()[0][2] - released[2] >= 0.10
+
+
 def test_after_it_every_dumpling_has_exactly_one_location_atom(*, after_the_recorded_pick):
     env, names, _ = after_the_recorded_pick
     where = Recorded.location_atoms(env=env)

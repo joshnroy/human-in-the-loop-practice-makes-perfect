@@ -1250,14 +1250,20 @@ class KitchenController(PotstickerController):
 
         A second dumpling pinched between a pad and the held one hangs by friction, off
         every surface: it has no location, so no robot skill can name it. Released where
-        they were taken, both lie on a surface again. The caller's `clear_failed_pick`
-        then retraces the descent upwards, as after any failed pick."""
+        they were taken, both lie on a surface again, and the empty hand rises back up
+        the descent to the hover."""
         self.follow_contact_path(
             path=descent, phase="lower shrimp after lifting a second dumpling", grip=1
         )
         self.held = None
         self.events.append({"event": "released a pick that lifted a second dumpling"})
         self.pause(phase="release shrimp after lifting a second dumpling", seconds=1, grip=0)
+        # `clear_failed_pick` demands each waypoint within 2 s and so can stop part way
+        # up; rise here as the lift did, and leave it only the hover the hand is at.
+        self.follow_contact_path(
+            path=descent[::-1], phase="retreat after failed shrimp pick", grip=0
+        )
+        self.shrimp_approach_path = self.shrimp_approach_path[:1]
         for _ in range(round(10 * self.frequency)):
             if self.scene.cubes_settled():
                 break
