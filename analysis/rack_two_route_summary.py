@@ -77,6 +77,16 @@ class RackTwoRouteSummary:
     def evaluation(*, directory: Path) -> dict[str, Any]:
         results = json.loads((directory / "results.json").read_text())
         actions = RackTwoRouteSummary.lines(path=directory / "actions.jsonl")
+        # The recording names every dispatched skill, the goal-stopped one included.
+        dispatched: dict[int, str] = {}
+        recording = directory / "recording.jsonl"
+        if recording.exists():
+            with recording.open() as stream:
+                for line in stream:
+                    if line.startswith('{"kind": "action"'):
+                        record = json.loads(line)
+                        if record.get("skill") in BULK:
+                            dispatched[record["task_index"]] = record["skill"]
         tasks = []
         for task in results["tasks"]:
             own = [a for a in actions if a["task"] == task["task"]]
@@ -86,7 +96,7 @@ class RackTwoRouteSummary:
                 count = bulk[-1]["skill_trace"]["plate_count"]
             tasks.append({
                 "task": task["task"],
-                "bulk_skill": RackTwoRouteSummary.skill(label=bulk[-1]["label"]) if bulk else None,
+                "bulk_skill": dispatched.get(task["task"]),
                 "plate_count": count,
                 "reward": RackTwoRouteSummary.reward(count=count),
                 "reason": task["reason"],
