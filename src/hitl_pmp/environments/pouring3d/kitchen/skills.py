@@ -5,11 +5,19 @@
 `Skill` cannot name a fixed object in a precondition (Josh chose this fallback over
 framework support, 2026-11-06). Native dispatch and the controllers are the legacy
 benchmark's; only the symbolic model differs from `PourSkills`.
+
+A successful `Pour{n}` takes n dumplings out of the jug and into the skillet, and
+nothing symbolic says which: over 38 logged successes a Pour1 took dumpling 0, 1, 2 in
+3, 5, 7 of 15 and a Pour2 each pair in 4, 3, 4 of 11. So a pour is still judged by
+`Split{n}` alone, and declares one success alternative per subset of n for a forecast
+to branch over. The skillet in them is a constant, not a parameter, so the pour's
+groundings and its PDDL are what they were.
 """
 
 from functools import lru_cache
+from itertools import combinations
 
-from hitl_pmp.core.method.types import LiftedAtom, Skill, Variable
+from hitl_pmp.core.method.types import LiftedAtom, Skill, SuccessAlternative, Variable
 
 from .environment import HUMAN_RESET
 from .predicates import SPLIT_COUNTS
@@ -38,6 +46,7 @@ class KitchenSkills:
             add: set[LiftedAtom],
             delete: set[LiftedAtom],
             ignore: tuple[str, ...] = (),
+            alternatives: tuple[SuccessAlternative, ...] = (),
         ) -> Skill:
             return Skill(
                 name=name,
@@ -49,6 +58,7 @@ class KitchenSkills:
                 if name.startswith("Pour")
                 else 0,
                 ignore_effects=frozenset(P.get(name=n) for n in ignore),
+                success_alternatives=alternatives,
             )
 
         empty, held, home = (
@@ -99,6 +109,20 @@ class KitchenSkills:
                         "Settled",
                         *splits,
                         "PickPlannable",
+                    ),
+                    alternatives=tuple(
+                        SuccessAlternative(
+                            add_effects=frozenset({
+                                atom(f"Split{n}"),
+                                *(atom("InTray", x, t) for x in leaving),
+                            }),
+                            delete_effects=frozenset({
+                                *(atom("InPitcher", x, p) for x in leaving),
+                                *(atom(name) for name in splits if name != f"Split{n}"),
+                            }),
+                            constant_bindings=((t, O.tray),),
+                        )
+                        for leaving in combinations(each, n)
                     ),
                 )
                 for n in SPLIT_COUNTS
