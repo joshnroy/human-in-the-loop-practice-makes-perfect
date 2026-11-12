@@ -62,3 +62,16 @@ def test_the_oracle_takes_route_b_and_stops_once_done_or_spent() -> None:
     state = env.take_action(action=first.action)
     after = oracle.get_labeled_action(state=state, goal=goal)
     assert np.array_equal(after.action, env.noop_action())
+
+
+def test_the_goal_is_priced_by_which_route_reached_it() -> None:
+    env = TwoRoutesEnvironment(route_a_reward=2.0, route_b_reward=7.0)
+    assert TwoRoutesSkillProvider(env=env).goal_rewards() == {"ViaA": 2.0, "ViaB": 7.0}
+
+
+def test_a_domain_prices_no_goal_by_default() -> None:
+    from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+
+    provider = LightSwitchSkillProvider(env=LightSwitchEnvironment(grid_size=3))
+    assert provider.goal_rewards() == {}

@@ -62,6 +62,8 @@ def _fixture():
         _competence_models={},
         prior_alpha=1.0,
         prior_beta=1.0,
+        # A domain that prices no goal: every goal state is worth 1.
+        skill_provider=SimpleNamespace(goal_rewards=dict),
     )
     states = {name: SymbolicState(data={}, atoms=frozenset({atom})) for name, atom in atoms.items()}
     task = Task(initial_state=states["ready"], goal=Goal(atoms=frozenset({atoms["goal"]})))
@@ -165,3 +167,80 @@ def test_dp_uses_cumulative_history_when_recent_window_prefers_another_route():
     policy(states["ready"])
     # The direct route has p=.5; cumulative pick*toss>.8, recent pick*toss<.1.
     assert dispatched == ["PickCube"]
+
+
+class _TwoRoutesDeployment:
+    """A restored deployment on Two Routes, with a scripted practice history."""
+
+    @staticmethod
+    def build(*, kind: str, successes: dict[str, tuple[int, int]], priors: dict | None = None):
+        from hitl_pmp.environments.tworoutes.environment import TwoRoutesEnvironment
+        from hitl_pmp.environments.tworoutes.skill_provider import TwoRoutesSkillProvider
+        from hitl_pmp.environments.tworoutes.tasks import TwoRoutesTasks
+        from hitl_pmp.methods.deployment import SnapshotDeployment
+
+        env = TwoRoutesEnvironment(route_a_start=1.0, route_b_start=1.0, competence_cap=1.0)
+        env.hard_reset()
+        provider = TwoRoutesSkillProvider(env=env, offer_human_reset=False)
+        method = SnapshotDeployment(
+            env=env,
+            skill_provider=provider,
+            deployment_policy=DeploymentPolicy(kind=kind, horizon=1, dp_priors=priors or {}),
+        )
+        for name, (won, lost) in successes.items():
+            ground = provider.ground(name=name)
+            for outcome in (*[True] * won, *[False] * lost):
+                method.observe_outcome(ground_skill=ground, success=outcome)
+        task = TwoRoutesTasks(env=env).sample_test_task()
+        return env, method.get_task_policy(task=task), task
+
+
+@pytest.mark.parametrize(
+    ("history", "route"),
+    [
+        # 3 * 2/14 < 10/14: Route A, though Route B pays three times as much.
+        ({"RouteA": (9, 1), "RouteB": (1, 9)}, "RouteA"),
+        # 3 * 5/14 > 10/14: Route B, though Route A succeeds twice as often.
+        ({"RouteA": (9, 1), "RouteB": (4, 6)}, "RouteB"),
+    ],
+)
+def test_reward_greedy_takes_the_route_of_largest_reward_times_competence(*, history, route):
+    from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
+
+    prior = DpSkillPrior(alpha=1.0, beta=3.0, initial_learning_rate=0.0)
+    env, policy, _ = _TwoRoutesDeployment.build(
+        kind="reward_greedy", successes=history, priors={"RouteA": prior, "RouteB": prior}
+    )
+    assert policy(env.get_current_state()).label.startswith(route)
+
+
+def test_reward_greedy_is_one_attempt():
+    env, policy, _ = _TwoRoutesDeployment.build(kind="reward_greedy", successes={})
+    first = policy(env.get_current_state())
+    assert not np.array_equal(first.action, env.noop_action())
+    env.set_state(state=env.build_state(after_a=True))
+    assert np.array_equal(policy(env.get_current_state()).action, env.noop_action())
+
+
+def test_reward_greedy_values_an_unpractised_route_at_its_prior_not_the_ees_default():
+    """Untried, Route B is worth 3 * 1/4 under Beta(1, 3), less than Route A's 20/24.
+    EES's Beta(10, 1) would call it 0.91 competent and deploy it."""
+    from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
+
+    prior = DpSkillPrior(alpha=1.0, beta=3.0, initial_learning_rate=0.0)
+    env, policy, _ = _TwoRoutesDeployment.build(
+        kind="reward_greedy",
+        successes={"RouteA": (19, 1)},
+        priors={"RouteA": prior, "RouteB": prior},
+    )
+    assert policy(env.get_current_state()).label.startswith("RouteA")
+    env, policy, _ = _TwoRoutesDeployment.build(kind="reward_greedy", successes={"RouteA": (19, 1)})
+    assert policy(env.get_current_state()).label.startswith("RouteB")
+
+
+def test_dp_deployment_weighs_the_goal_reward_and_shared_ees_does_not():
+    history = {"RouteA": (9, 1), "RouteB": (5, 5)}
+    env, policy, _ = _TwoRoutesDeployment.build(kind="dp_mdp", successes=history)
+    assert policy(env.get_current_state()).label.startswith("RouteB")
+    env, policy, _ = _TwoRoutesDeployment.build(kind="shared_ees", successes=history)
+    assert policy(env.get_current_state()).label.startswith("RouteA")
