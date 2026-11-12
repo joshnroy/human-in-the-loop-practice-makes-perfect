@@ -79,7 +79,10 @@ REAL_TOSS_PARAMETERS = TossParameterSet(
     # throw reached only the near bin's near rim, so the robot stands 1.20 m from either
     # bin and searches speed and release alone. A set's bounds must be an interval, so
     # +-5 mm stands in for "fixed".
-    standoff_bounds=(1.195, 1.205),
+    # 1.40 m since 2026-11-09 (Josh): the box at the bottle's edge of reach, where only
+    # the longest throws land and the October cube learned 1/5 -> 5/5 (1.20 m: random
+    # throws ~5/10; 1.30 m: the learned throw scored 6/9).
+    standoff_bounds=(1.395, 1.405),
     speed_bounds=(100.0, 140.0),
     release_ms_bounds=(500.0, 850.0),
     # A fixed standoff is not something to learn (Josh, 2026-11-08): normalised, the
