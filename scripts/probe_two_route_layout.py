@@ -83,6 +83,57 @@ class TwoRouteProbeVideo:
         self.renderer.close()
 
 
+class TwoRouteProbeFoods:
+    """Where each dumpling ended: pose, every body it touches, and the surface under it."""
+
+    @staticmethod
+    def describe(*, backend: Any) -> list[dict[str, Any]]:
+        model, data = backend.model(), backend.data()
+        well = backend.corelle_support()
+        rim_radius = backend.config.corelle_diameter / 2
+        rack = backend.support(name="rack_0")
+        rows = []
+        for name in backend.cube_names:
+            body = model.body(name).id
+            touching: set[str] = set()
+            for contact in data.contact[: data.ncon]:
+                if contact.dist > 0.001:
+                    continue
+                bodies = {
+                    int(model.geom_bodyid[contact.geom1]),
+                    int(model.geom_bodyid[contact.geom2]),
+                }
+                if body in bodies:
+                    touching |= {model.body(other).name or "world" for other in bodies - {body}}
+            x, y, z = (float(v) for v in data.xpos[body])
+            radius = float(np.hypot(x - well.center_x, y - well.center_y))
+            location = backend.location(name=name)
+            if location == "OnTray":
+                surface = "plate well"
+            elif "box_0" in touching:
+                surface = "plate rim" if radius > well.radius else "plate, not resting in the well"
+            elif location == "SpilledCounter":
+                surface = "counter beside the rack" if x > rack.x_min else "counter"
+            elif location == "OnRack":
+                surface = "rack"
+            else:
+                surface = "none of these"
+            rows.append({
+                "name": name,
+                "xyz": [round(x, 3), round(y, 3), round(z, 3)],
+                "plate_centre_distance": round(radius, 3),
+                "well_radius": round(float(well.radius), 3),
+                "rim_radius": round(float(rim_radius), 3),
+                "upright_cosine": round(float(data.xmat[body].reshape(3, 3)[2, 2]), 2),
+                "location": location,
+                "settled_on_plate": bool(backend.settled_on_tray(name=name)),
+                "touching": sorted(touching),
+                "below": sorted(backend.supporting_bodies(name=name)),
+                "surface": surface,
+            })
+        return rows
+
+
 def main() -> None:
     import mujoco
 
@@ -144,6 +195,7 @@ def main() -> None:
                 row["served"] = served
                 row["locations"] = [backend.location(name=name) for name in backend.cube_names]
                 row["count"] = len(served)
+                row["foods"] = TwoRouteProbeFoods.describe(backend=backend)
                 model, data = backend.model(), backend.data()
                 for _ in range(int(1.0 / model.opt.timestep)):
                     mujoco.mj_step(model, data)
