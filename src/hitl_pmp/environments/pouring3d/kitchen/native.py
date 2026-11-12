@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import Field
+from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
 from hitl_pmp.core.control_steps import SimulatorDiverged
@@ -116,6 +117,10 @@ class KitchenScene(PotstickerScene):
     def respawn_payload_in_pitcher(self) -> None:
         self.release_payloads()
         super().respawn_payload_in_pitcher()
+        # A respawn moves every piece in zero sim time: positions from before it are not
+        # this trajectory's past, so rest by position starts again (Settled falls back
+        # to the speed rule until the window refills).
+        self.payload_rest.clear()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
         _, data = self._model_and_data()
@@ -737,6 +742,447 @@ class KitchenController(PotstickerController):
             self.unwind_continuous_joints()
         super().pick_shrimp(index=index, location=location)
 
+    # A pick from the pan that plans no approach refuses with this, before any motion.
+    PAN_PICK_REFUSAL: ClassVar[str] = "No planned pick from the pan"
+    # The hover above the grasp, and how finely the vertical descent and lift are solved.
+    PAN_PICK_HOVER_M: ClassVar[float] = 0.16
+    PAN_PICK_STEP_M: ClassVar[float] = 0.01
+    # A straight rise that stops short of the hover (the wrist at its limit) is kept if it
+    # clears the dumpling by this much; the planner takes the lift from there.
+    PAN_PICK_MIN_STRAIGHT_M: ClassVar[float] = 0.04
+    # The planned remainder of the lift: the grasp's own orientation, then tilted away
+    # from the base by these.
+    PAN_LIFT_TILTS_DEG: ClassVar[tuple[float, ...]] = (0.0, 20.0, 40.0)
+    # Grasp yaws, as turns of the yaw across the dumpling's long axis: that yaw and its
+    # 180 deg equivalent first, then turned 45 and 90 deg (pinching more along the piece).
+    PAN_PICK_YAW_TURNS_DEG: ClassVar[tuple[float, ...]] = (0.0, 180.0, 45.0, -45.0, 90.0, 225.0)
+    # Multi-start IK for the grasp configuration, as `prepare_empty_arm` searches.
+    PAN_PICK_IK_STARTS: ClassVar[int] = 16
+    # A pick from the floor that plans no approach refuses with this, before any motion.
+    FLOOR_PICK_REFUSAL: ClassVar[str] = "No planned pick from the floor"
+    # Base poses offered for a floor pick: the base centre this far from the dumpling,
+    # facing it from each heading in turn. The scripted pick's pose, from -x, comes first.
+    FLOOR_PICK_REACH_M: ClassVar[float] = 0.65
+    FLOOR_PICK_HEADINGS_DEG: ClassVar[tuple[float, ...]] = (
+        0.0,
+        45.0,
+        -45.0,
+        90.0,
+        -90.0,
+        135.0,
+        -135.0,
+        180.0,
+    )
+
+    def pick_payload_with_retry(self, *, index: int, location: str) -> None:
+        """From the pan and from the floor the pick is planned (`pick_from_pan`,
+        `pick_from_floor`); elsewhere it is unchanged."""
+        if location == "tray":
+            self.pick_from_pan(index=index)
+        elif location == "floor":
+            self.pick_from_floor(index=index)
+        else:
+            super().pick_payload_with_retry(index=index, location=location)
+
+    def pan_pick_rotations(self, *, name: str, heading: float = 0.0) -> list[tuple[str, Rotation]]:
+        """Grasp orientations in the order tried: each yaw of `PAN_PICK_YAW_TURNS_DEG` at
+        the configured, the top-down and the steep pitch (the retry's three pitches).
+
+        This replaces the pan footprint rule (`PracticePourController.pick_shrimp`), which
+        near the wall chose the least-negative footprint margin, yaw + 90 deg in 3/3
+        stranded runs, a pose with no IK solution at any pitch. Here each orientation is
+        checked by IK and planning instead, with the pads allowed to touch the pan.
+
+        `heading` is the base's yaw at the pick (the pan pick's is 0): yaws are taken
+        relative to it, so the wrist starts on the robot's side of the dumpling.
+        """
+        _, across = self.payload_grasp_geometry(name=name)
+        natural = float(np.arctan2(across[1], across[0])) - heading
+        natural = (natural + np.pi / 2) % np.pi - np.pi / 2
+        if natural > 0:
+            # The wrist on the aisle side of the dumpling, as the scripted pick takes it.
+            natural -= np.pi
+        natural += heading
+        pitch = self.recovery_pitch_degrees
+        # The configured tilt first: the drop's planned carry finds no carry pose for a
+        # top-down grasp (measured at the pan centre, 2026-11-09), and the scripted pick
+        # reached the tilt there too, after its top-down candidate failed.
+        pitches = (pitch, 0.0, 30.0 if pitch > 45 else 60.0)
+        return [
+            (
+                f"yaw {turn:+.0f} pitch {tilt:.0f}",
+                Rotation.from_euler("z", natural + np.deg2rad(turn))
+                * Rotation.from_euler("x", tilt, degrees=True)
+                * Rotation.from_euler("y", np.pi),
+            )
+            for turn in self.PAN_PICK_YAW_TURNS_DEG
+            for tilt in pitches
+        ]
+
+    def pan_pick_chain(
+        self, *, grasp: np.ndarray, rotation: Rotation, base: np.ndarray
+    ) -> list[np.ndarray] | str:
+        """Arm configurations from the grasp straight up to the hover, with the base at
+        `base`, or why there are none. Solved in scratch upwards from a multi-start grasp
+        solution with the descent's own IK and clearance (pads may touch the pan, the arm
+        and wrist keep their margin), so the descent replayed downwards reaches the grasp
+        on the branch it was checked on, and the lift replays it upwards.
+
+        When no grasp solution rises straight all the way, the longest straight rise that
+        clears `PAN_PICK_MIN_STRAIGHT_M` is returned short of the hover, for the planner
+        to complete (`plan_pick_from_pan`)."""
+        saved = (self.last_q.copy(), self.base_target.copy(), self.phase, self.posture)
+        steps = round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M)
+        heights = self.PAN_PICK_STEP_M * np.arange(1, steps + 1, dtype=float)
+        try:
+            self.phase = "descend to shrimp body"
+            self.base_target = np.asarray(base, dtype=float).copy()
+
+            def residual(q: np.ndarray) -> np.ndarray:  # noqa: PLR0917 -- scipy callback
+                self.scratch.qpos[self.arm_q] = q
+                self.update_ik_scratch()
+                actual = Rotation.from_matrix(self.scratch.site_xmat[self.site].reshape(3, 3))
+                return np.r_[
+                    self.scratch.site_xpos[self.site] - grasp,
+                    0.22 * (rotation * actual.inv()).as_rotvec(),
+                    self.obstacle_residual(),
+                ]
+
+            rng = np.random.default_rng(0)
+            neutral = self.arm_neutral_q
+            continuous = self.lower == -12
+            best, reason = float("inf"), ""
+            chains: list[list[np.ndarray]] = []
+            partial: list[list[np.ndarray]] = []
+            for start in range(self.PAN_PICK_IK_STARTS):
+                self.scratch.qpos[:] = self.data.qpos
+                self.scratch.qpos[self.base_q] = self.base_target
+                if start == 0:
+                    seed = neutral.copy()
+                elif start == 1:
+                    seed = self.data.qpos[self.arm_q].copy()
+                else:
+                    seed = rng.uniform(
+                        np.maximum(self.lower, -np.pi), np.minimum(self.upper, np.pi)
+                    )
+                fit = least_squares(
+                    residual,
+                    np.clip(seed, self.lower + 1e-6, self.upper - 1e-6),
+                    bounds=(self.lower, self.upper),
+                    max_nfev=200,
+                )
+                error = float(np.linalg.norm(residual(fit.x)))
+                best = min(best, error)
+                if error > self.IK_TOLERANCE_M:
+                    continue
+                q = fit.x.copy()
+                turn = q[continuous] - neutral[continuous]
+                q[continuous] = neutral[continuous] + np.arctan2(np.sin(turn), np.cos(turn))
+                if any(np.linalg.norm(q - chain[0]) < 0.05 for chain in chains):
+                    continue
+                self.last_q = q.copy()
+                rise: list[np.ndarray] = []
+                try:
+                    for h in heights:
+                        rise.append(
+                            self.inverse_kinematics(position=grasp + [0, 0, h], rotation=rotation)
+                        )
+                except ValueError as exc:
+                    reason = f"; no straight rise from a grasp solution ({exc})"
+                    if len(rise) * self.PAN_PICK_STEP_M >= self.PAN_PICK_MIN_STRAIGHT_M - 1e-9:
+                        partial.append([q, *rise])
+                    continue
+                chains.append([q, *rise])
+            # The branch nearest the episode-initial arm: the one the drop's carry and
+            # the other skills start from. A flipped elbow or wrist reaches the same
+            # grasp, but the welded carry and the in-place release fail from it.
+            if chains:
+                return min(chains, key=lambda chain: float(np.linalg.norm(chain[0] - neutral)))
+            if partial:
+                return min(
+                    partial,
+                    key=lambda chain: (-len(chain), float(np.linalg.norm(chain[0] - neutral))),
+                )
+            return f"no grasp IK within {self.IK_TOLERANCE_M * 1000:.0f} mm (best {best:.4f})" + (
+                reason
+            )
+        finally:
+            self.last_q, self.base_target, self.phase, self.posture = saved
+
+    def plan_pick_from_pan(
+        self, *, name: str, base_target: np.ndarray
+    ) -> tuple[dict[str, list[np.ndarray]], list[np.ndarray], np.ndarray, str]:
+        """Plan the whole pick before anything moves: the planned free-space motions,
+        the grasp-to-hover chain, the grasp position and the orientation's label."""
+        plans, chain, grasp, label, _ = self.plan_payload_pick(
+            name=name, base_targets=[base_target], refusal=self.PAN_PICK_REFUSAL
+        )
+        return plans, chain, grasp, label
+
+    def plan_payload_pick(
+        self, *, name: str, base_targets: list[np.ndarray], refusal: str
+    ) -> tuple[dict[str, list[np.ndarray]], list[np.ndarray], np.ndarray, str, np.ndarray]:
+        """`plan_pick_from_pan` from the first of `base_targets` (x, y, yaw) that plans,
+        each with the grasp orientations of `pan_pick_rotations` at its heading; also
+        returns the base target. A base that plans no path refuses the whole pick when it
+        is the only one offered, as the pan pick always has; otherwise the next is tried."""
+        from .planning.parameterized_skills import PickShrimpController, PlanningRefused
+        from .planning.utils import KitchenPyBulletSim
+
+        point, _ = self.payload_grasp_geometry(name=name)
+        refusals: list[str] = []
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            planner = PickShrimpController(sim=sim)
+            for base_target in base_targets:
+                where = (
+                    ""
+                    if len(base_targets) == 1
+                    else (
+                        f"base ({base_target[0]:.2f}, {base_target[1]:.2f}, "
+                        f"{np.rad2deg(base_target[2]):.0f} deg) "
+                    )
+                )
+                based = False
+                for label, rotation in self.pan_pick_rotations(
+                    name=name, heading=float(base_target[2])
+                ):
+                    grasp = point - rotation.apply([0, 0, self.recovery_finger_offset])
+                    chain = self.pan_pick_chain(grasp=grasp, rotation=rotation, base=base_target)
+                    if isinstance(chain, str):
+                        refusals.append(f"{where}{label}: {chain}")
+                        continue
+                    if len(chain) - 1 < round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M):
+                        try:
+                            chain = chain + self.planned_pan_lift(
+                                sim=sim,
+                                chain=chain,
+                                grasp=grasp,
+                                rotation=rotation,
+                                base_target=base_target,
+                                name=name,
+                            )
+                        except PlanningRefused as exc:
+                            straight = (len(chain) - 1) * self.PAN_PICK_STEP_M * 100
+                            refusals.append(
+                                f"{where}{label}: straight rise {straight:.0f} cm, then {exc}"
+                            )
+                            continue
+                    if not based:
+                        # The tuck, when one is needed, first tries this grasp's orientation.
+                        try:
+                            planner.plan_base(
+                                x=self.scene._get_object_centric_state(),
+                                arm=self.data.qpos[self.arm_q].copy(),
+                                base=self.data.qpos[self.base_q].copy(),
+                                base_target=base_target,
+                                rotations=[rotation],
+                                home=self.arm_neutral_q.copy(),
+                            )
+                        except PlanningRefused as exc:
+                            if len(base_targets) == 1:
+                                raise PlanningRefused(f"{refusal}: {exc}") from exc
+                            refusals.append(f"{where}{exc}")
+                            break
+                        based = True
+                    try:
+                        planner.plan_hover(hover=chain[-1], base_target=base_target)
+                    except PlanningRefused as exc:
+                        refusals.append(f"{where}{label}: {exc}")
+                        continue
+                    return planner.plans, chain, grasp, label, base_target
+        finally:
+            sim.close()
+        raise PlanningRefused(f"{refusal}: " + "; ".join(refusals))
+
+    def floor_pick_base_targets(self, *, name: str) -> list[np.ndarray]:
+        """Base poses facing the dumpling from each of `FLOOR_PICK_HEADINGS_DEG`, less those
+        whose 2-D footprint overlaps an obstacle's: no path could end there."""
+        from .planning.parameterized_skills import KitchenMotionPlanner
+
+        point, _ = self.payload_grasp_geometry(name=name)
+        state = self.scene._get_object_centric_state()
+        targets = []
+        for heading in np.deg2rad(self.FLOOR_PICK_HEADINGS_DEG):
+            direction = np.array([np.cos(heading), np.sin(heading)])
+            target = np.r_[point[:2] - self.FLOOR_PICK_REACH_M * direction, heading]
+            if not KitchenMotionPlanner.footprint_blocked(state=state, target=target):
+                targets.append(target)
+        return targets
+
+    def pick_from_floor(self, *, index: int) -> None:
+        """Pick a dumpling from the floor as `pick_from_pan` picks one from the pan, the
+        base facing it from the first heading that plans. The scripted pick drove the base
+        straight to a pose in front of the dumpling, through the stove when it lay past it
+        (pouring-threefix-20261109, EES seed 2 at p = 0.1, a dead end for the run)."""
+        name = self.scene.cube_names[index]
+        if self.held is not None or self.scene.cube_locations()[index] != "floor":
+            raise ValueError("Shrimp pick requires an empty hand and the named source")
+        self.shrimp_recovery_active = True
+        self.shrimp_approach_path.clear()
+        self.payload_approach_plan.clear()
+        targets = self.floor_pick_base_targets(name=name)
+        if not targets:
+            raise ValueError(
+                f"{self.FLOOR_PICK_REFUSAL}: every base pose facing the dumpling overlaps "
+                "an obstacle"
+            )
+        start = self.body_pose(name=name)[0]
+        plans, chain, grasp, label, base = self.plan_payload_pick(
+            name=name, base_targets=targets, refusal=self.FLOOR_PICK_REFUSAL
+        )
+        self.events.append({
+            "event": "planned pick from the floor",
+            "payload": name,
+            "grasp": label,
+            "base": [float(v) for v in base],
+        })
+        self.follow_planned_pick(name=name, plans=plans, chain=chain, grasp=grasp, start=start)
+
+    def planned_pan_lift(
+        self,
+        *,
+        sim: Any,
+        chain: list[np.ndarray],
+        grasp: np.ndarray,
+        rotation: Rotation,
+        base_target: np.ndarray,
+        name: str,
+    ) -> list[np.ndarray]:
+        """The rest of a lift whose straight rise stopped short of the hover: planned
+        from the top of the straight rise to the hover, the dumpling carried as it will
+        be once welded. The descent replays it downwards before the grasp, inside the
+        same swept volume."""
+        from spatialmath import SE2
+
+        from .planning.parameterized_skills import (
+            HeldObject,
+            KitchenMotionPlanner,
+            PlanningRefused,
+        )
+
+        sim.set_state(self.scene._get_object_centric_state())
+        sim.set_robot_base(SE2(*(float(v) for v in base_target)))
+        held = HeldObject.grasped(sim=sim, arm=chain[0], name=name, riders=(), keep_upright=False)
+        # The hover can lie at the edge of the grasp orientation's reach; the welded
+        # dumpling allows the hand to tilt away from the base, which extends it.
+        away = np.array([grasp[0] - base_target[0], grasp[1] - base_target[1], 0.0])
+        axis = np.cross(away / np.linalg.norm(away), [0.0, 0.0, 1.0])
+        refusals: list[str] = []
+        for tilt in self.PAN_LIFT_TILTS_DEG:
+            try:
+                path = KitchenMotionPlanner.plan_arm(
+                    sim=sim,
+                    start=chain[-1],
+                    position=grasp + [0, 0, self.PAN_PICK_HOVER_M],
+                    rotation=Rotation.from_rotvec(np.deg2rad(tilt) * axis) * rotation,
+                    what="the lift above the pan",
+                    held=held,
+                )
+            except PlanningRefused as exc:
+                refusals.append(f"tilted {tilt:.0f} deg: {exc}")
+                continue
+            return [np.asarray(q, dtype=float) for q in path[1:]]
+        raise PlanningRefused(", ".join(refusals))
+
+    def pick_from_pan(self, *, index: int) -> None:
+        """Pick a dumpling from the pan with planned free-space motion, as the jug's
+        skills move: everything is planned before the robot moves (a refusal executes
+        nothing). Then the planned tuck, base and arm motions to a hover above the
+        dumpling; the checked vertical descent; the pinch, which welds the piece to the
+        hand; and the lift, the descent replayed upwards."""
+        name = self.scene.cube_names[index]
+        if self.held is not None or self.scene.cube_locations()[index] != "tray":
+            raise ValueError("Shrimp pick requires an empty hand and the named source")
+        self.shrimp_recovery_active = True
+        self.shrimp_approach_path.clear()
+        self.payload_approach_plan.clear()
+        start = self.body_pose(name=name)[0]
+        point, _ = self.payload_grasp_geometry(name=name)
+        base_target = np.array([self.recovery_base_x, point[1], 0.0])
+        plans, chain, grasp, label = self.plan_pick_from_pan(name=name, base_target=base_target)
+        self.events.append({"event": "planned pick from the pan", "payload": name, "grasp": label})
+        self.follow_planned_pick(name=name, plans=plans, chain=chain, grasp=grasp, start=start)
+
+    def follow_planned_pick(
+        self,
+        *,
+        name: str,
+        plans: dict[str, list[np.ndarray]],
+        chain: list[np.ndarray],
+        grasp: np.ndarray,
+        start: np.ndarray,
+    ) -> None:
+        """Execute a planned pick: the planned tuck, base and arm motions to the hover,
+        the checked descent, the pinch and the lift; `start` is where the dumpling lay."""
+        from .planning.parameterized_skills import PickShrimpController
+
+        grip = self.recovery_open_grip
+        self.grip = grip
+        if PickShrimpController.TUCK in plans:
+            self.follow_arm_path(
+                path=plans[PickShrimpController.TUCK], phase=PickShrimpController.TUCK, grip=grip
+            )
+        self.follow_base_path(
+            path=plans[PickShrimpController.BASE_MOTION], phase=PickShrimpController.BASE_MOTION
+        )
+        self.follow_arm_path(
+            path=plans[PickShrimpController.MOVE_ARM_TO_HOVER],
+            phase=PickShrimpController.MOVE_ARM_TO_HOVER,
+            grip=grip,
+        )
+        # The planned path ends at the hover modulo whole turns of the continuous joints;
+        # put the checked chain on the turn the arm is on.
+        continuous = self.lower == -12
+        arm = self.data.qpos[self.arm_q]
+        turns = np.zeros(7)
+        turns[continuous] = np.round((arm - chain[-1])[continuous] / (2 * np.pi))
+        chain = [q + 2 * np.pi * turns for q in chain]
+        self.base_target = self.data.qpos[self.base_q].copy()
+        self.last_q = arm.copy()
+        descent = chain[::-1]
+        self.follow_contact_path(path=descent, phase="descend to shrimp body", grip=grip)
+        # A failed pick retraces the executed descent (`clear_failed_pick`).
+        self.shrimp_approach_path = [(self.base_target.copy(), q.copy()) for q in descent]
+        if np.linalg.norm(self.hand_pose()[0] - grasp) > 0.03:
+            raise ValueError("Motor tracking failed in descend to shrimp body")
+        self.pinch_shrimp(name=name)
+        self.follow_contact_path(path=chain, phase="lift shrimp", grip=1)
+        if self.body_pose(name=name)[0][2] < start[2] + 0.10:
+            self.held = None
+            raise ValueError("Shrimp not retained through lift")
+
+    # The scripted descent and lift each took 4 s; their checked replays take no less.
+    CONTACT_PATH_SECONDS: ClassVar[float] = 4.0
+
+    def follow_contact_path(self, *, path: list[np.ndarray], phase: str, grip: float) -> None:
+        """Drive the arm through a checked vertical path that ends in contact (the pads on
+        the dumpling, or on the pan beside it), as the scripted `move` did: at least
+        `CONTACT_PATH_SECONDS`, then a short settle. Unlike `follow_arm_path` it does not
+        demand joint convergence at the end, which contact can prevent; the caller judges
+        where the hand ended, as the scripted pick did."""
+        self.phase = phase
+        self.grip = grip
+        start = self.data.qpos[self.arm_q].copy()
+        points = [start, *(np.asarray(q, dtype=float) for q in path)]
+        spans = [float(np.max(np.abs(b - a))) for a, b in zip(points[:-1], points[1:], strict=True)]
+        total = max(sum(spans), 1e-9)
+        seconds = max(self.CONTACT_PATH_SECONDS, total / self.planned_joint_speed)
+        for (a, b), span in zip(zip(points[:-1], points[1:], strict=True), spans, strict=True):
+            count = max(1, int(np.ceil(seconds * self.frequency * span / total)))
+            for index in range(1, count + 1):
+                self.last_q = a + (b - a) * (index / count)
+                self.motor_step(target_q=self.last_q, grip=grip)
+        for _ in range(round(2 * self.frequency)):
+            if np.max(np.abs(self.last_q - self.data.qpos[self.arm_q])) < 0.025:
+                break
+            self.motor_step(target_q=self.last_q, grip=grip)
+        self.events.append({
+            "event": "contact path followed",
+            "phase": phase,
+            "joint_error_rad": float(np.max(np.abs(self.last_q - self.data.qpos[self.arm_q]))),
+        })
+
     def inverse_kinematics(self, *, position: np.ndarray, rotation: Rotation) -> np.ndarray:
         previous = self.last_q.copy()
         q = super().inverse_kinematics(position=position, rotation=rotation)
@@ -860,9 +1306,52 @@ class KitchenController(PotstickerController):
             sim.close()
         self.follow_base_path(path=clear.plans[clear.BASE_MOTION], phase=clear.BASE_MOTION)
 
+    # Where the base stands to drop a dumpling into the jug, as the scripted carry did.
+    SHRIMP_DROP_BASE_X: ClassVar[float] = 0.20
+
+    def carry_held_shrimp_to_pitcher(self, *, name: str, pitcher: np.ndarray) -> Rotation:
+        """Plan the held dumpling's carry to a hover above the jug (PyBullet) and follow
+        it, as the jug's own carries are planned. The scripted carry kept the grasp
+        orientation and tracked it with local IK, which pins the wrist at its limit; the
+        weld makes any orientation safe, so the planner may turn the hand."""
+        from .planning.parameterized_skills import DropShrimpController
+        from .planning.utils import KitchenPyBulletSim
+
+        hand, rotation = self.hand_pose()
+        point, _ = self.body_pose(name=name)
+        hover = pitcher + [0, 0, self.scene.get_object("pitcher").height + 0.07]
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            planner = DropShrimpController(sim=sim)
+            planner.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base=self.data.qpos[self.base_q].copy(),
+                base_target=np.array([self.SHRIMP_DROP_BASE_X, pitcher[1], 0.0]),
+                name=name,
+                hand_rotation=rotation,
+                payload_in_hand=rotation.inv().apply(point - hand),
+                hover=hover,
+            )
+        finally:
+            sim.close()
+        self.follow_arm_path(path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=1)
+        self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
+        self.follow_arm_path(
+            path=planner.plans[planner.MOVE_ARM_TO_HOVER], phase=planner.MOVE_ARM_TO_HOVER, grip=1
+        )
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        self.base_target = self.data.qpos[self.base_q].copy()
+        return self.hand_pose()[1]
+
     def active_obstacle_pairs(self) -> list[tuple[int, int]]:
         pairs = super().active_obstacle_pairs()
-        if self.held is None and self.phase == "withdraw empty gripper above pitcher":
+        # After a drop the unwind starts beside the jug: a whole turn of the wrist can
+        # sweep the fingers through it.
+        if self.held is None and self.phase in {
+            "withdraw empty gripper above pitcher",
+            "unwind continuous arm joints",
+        }:
             pairs = pairs + self.pitcher_pairs
         return pairs
 

@@ -4,7 +4,8 @@ From the recorded seed-1 state below, the fourth grasp candidate's plan swings j
 and 3 by 26 deg within one 4-tick waypoint while the base drives in. The arm tracks about
 0.02 rad per tick, so the old flat timing fell 20 deg behind and failed "position for shrimp
 pick", reported as "descend to shrimp body". Timed to the joint speed, the arm follows the
-plan to the dumpling; what stops it there is the pan wall 11 mm away, a separate gap.
+plan to the dumpling. With a 10 mm IK tolerance the descent beside the pan wall, 11 mm away,
+now completes and the dumpling is picked.
 """
 
 import json
@@ -48,35 +49,21 @@ def test_waypoint_ticks_scale_with_the_largest_joint_change():
     assert ticks(duration=5 / 15, delta=delta, speed=speed, frequency=frequency) == 29
 
 
-def test_a_near_wall_pick_follows_its_plan_to_the_dumpling_and_names_the_failing_phase():
+def test_a_near_wall_pick_follows_its_plan_to_the_dumpling_and_picks_it():
     env = restored()
     c = env.controller()
     phases: list[str] = []
-    pad_on_pan = []
     observed = c.after_step
 
     def watch() -> None:
         if observed is not None:
             observed()
         phases.append(c.phase)
-        m, d = c.model, c.data
-        for i in range(d.ncon):
-            names = {
-                m.body(int(m.geom_bodyid[d.contact[i].geom1])).name,
-                m.geom(d.contact[i].geom2).name or "",
-                m.geom(d.contact[i].geom1).name or "",
-                m.body(int(m.geom_bodyid[d.contact[i].geom2])).name,
-            }
-            if any(n.endswith("_pad") for n in names) and any(
-                n.startswith("tray_wall") for n in names
-            ):
-                pad_on_pan.append(c.phase)
 
     c.after_step = watch
     env.take_action(action=np.array(json.loads(FIXTURE.read_text())["action"]))
-    assert env.last_info["success"] is False
     # Positioning and the approach no longer fail on tracking lag ...
     assert "descend to shrimp body" in phases
-    assert env.last_info["error"] == "Motor tracking failed in descend to shrimp body"
-    # ... and what stops the descent is a finger pad on the near pan wall.
-    assert "descend to shrimp body" in pad_on_pan
+    # ... and the descent beside the wall completes.
+    assert env.last_info["success"] is True, env.last_info
+    assert c.held in c.scene.cube_names

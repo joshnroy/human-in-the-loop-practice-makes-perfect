@@ -18,6 +18,9 @@ from .skillet import CastIronSkillet
 
 
 class PracticePourController(FeedbackPourController):
+    # A held dumpling this close to the release point above the jug is let go there;
+    # whether it lands inside is still checked. Was 10 mm.
+    DROP_RELEASE_RADIUS_M: ClassVar[float] = 0.03
     station_pour_height_drop: ClassVar[float] = 0.16
     station_pour_base_offset: ClassVar[float] = 0.70
     active_pour_count: int = 0
@@ -245,7 +248,7 @@ class PracticePourController(FeedbackPourController):
             )
             fit_error = float(np.linalg.norm(residual(fit.x)))
             best_error = min(best_error, fit_error)
-            if fit_error > 0.008:
+            if fit_error > self.IK_TOLERANCE_M:
                 continue
             reachable += 1
             goal = fit.x.copy()
@@ -656,6 +659,25 @@ class PracticePourController(FeedbackPourController):
                 else None,
             )
         self.move_to_payload_grasp(grasp=grasp, point=point, down=down, elevated=elevated)
+        self.pinch_shrimp(name=name)
+        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
+        lift_rotation = down
+        if self.recovery_lift_from_actual:
+            hand, lift_rotation = self.hand_pose()
+            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
+        self.move(
+            position=lift_position,
+            rotation=lift_rotation,
+            seconds=4,
+            grip=1,
+            phase="lift shrimp",
+        )
+        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
+            self.held = None
+            raise ValueError("Shrimp not retained through lift")
+
+    def pinch_shrimp(self, *, name: str) -> None:
+        """Close on the dumpling at the grasp and take it: the hand is open around it."""
         self.pause(phase="settle shrimp approach", seconds=1, grip=self.recovery_open_grip)
         self.phase = "pinch shrimp"
         self.payload_hold_grip = 1.0
@@ -672,21 +694,6 @@ class PracticePourController(FeedbackPourController):
         self.held, self.lost_contacts = name, 0
         if self.recovery_contact_close and self.payload_grip_force > 0:
             self.pause(phase="secure shrimp grasp", seconds=2, grip=1)
-        lift_position = grasp + [0, 0, 0.15] if elevated else point + [0, 0, 0.28]
-        lift_rotation = down
-        if self.recovery_lift_from_actual:
-            hand, lift_rotation = self.hand_pose()
-            lift_position = hand + [0, 0, 0.15 if elevated else 0.24]
-        self.move(
-            position=lift_position,
-            rotation=lift_rotation,
-            seconds=4,
-            grip=1,
-            phase="lift shrimp",
-        )
-        if self.body_pose(name=name)[0][2] < position[2] + (0.10 if elevated else 0.20):
-            self.held = None
-            raise ValueError("Shrimp not retained through lift")
 
     def move_to_payload_grasp(
         self,
@@ -797,11 +804,10 @@ class PracticePourController(FeedbackPourController):
     def floor_carry_rotation(self, *, hand: np.ndarray, rotation: Rotation) -> Rotation:
         return rotation * Rotation.from_euler("x", self.recovery_floor_carry_angle, degrees=True)
 
-    def drop_shrimp(self, *, index: int) -> None:
-        name = self.scene.cube_names[index]
-        if self.held != name or not self.vessel_home(name="pitcher"):
-            raise ValueError("Drop requires held shrimp and home pitcher")
-        pitcher, _ = self.body_pose(name="pitcher")
+    def carry_held_shrimp_to_pitcher(self, *, name: str, pitcher: np.ndarray) -> Rotation:
+        """Bring the held dumpling near the release point above the jug; return the hand
+        orientation the centring keeps. Scripted here; the kitchen plans it."""
+        del name
         _, down = self.hand_pose()
         elevated = "prep_table" in self.scene._fixtures_dict
         hand, down = self.hand_pose()
@@ -850,26 +856,41 @@ class PracticePourController(FeedbackPourController):
             phase="position for shrimp drop",
             seconds=5,
         )
+        return down
+
+    def drop_shrimp(self, *, index: int) -> None:
+        name = self.scene.cube_names[index]
+        if self.held != name or not self.vessel_home(name="pitcher"):
+            raise ValueError("Drop requires held shrimp and home pitcher")
+        pitcher, _ = self.body_pose(name="pitcher")
+        down = self.carry_held_shrimp_to_pitcher(name=name, pitcher=pitcher)
         # Center the observed payload rather than assuming its offset from the
         # wrist is constant across differently oriented curled-piece grasps.
         destination = pitcher + [0, 0, self.scene.get_object("pitcher").height + 0.07]
         for attempt in range(3):
             point, _ = self.body_pose(name=name)
             hand, _ = self.hand_pose()
-            self.move(
-                position=hand + destination - point,
-                rotation=down,
-                seconds=5 if attempt == 0 else 2,
-                grip=1,
-                phase="center held shrimp over pitcher",
-            )
+            try:
+                self.move(
+                    position=hand + destination - point,
+                    rotation=down,
+                    seconds=5 if attempt == 0 else 2,
+                    grip=1,
+                    phase="center held shrimp over pitcher",
+                )
+            except ValueError as exc:
+                # Pick and place are assumed to work (Josh, 2026-11-08): a centring move
+                # the arm cannot finish ends centring; the release below decides.
+                if not str(exc).startswith(("IK infeasible", "Discontinuous IK")):
+                    raise
+                break
             self.pause(phase="stabilize shrimp before release", seconds=0.5, grip=1)
             if np.linalg.norm(self.body_pose(name=name)[0] - destination) < 0.004:
                 break
         if len(self.finger_contacts(name=name)) != 2:
             self.held = None
             raise ValueError("Shrimp lost before release")
-        if np.linalg.norm(self.body_pose(name=name)[0] - destination) >= 0.01:
+        if np.linalg.norm(self.body_pose(name=name)[0] - destination) >= self.DROP_RELEASE_RADIUS_M:
             raise ValueError("Held shrimp did not converge above pitcher")
         self.held = None
         self.pause(phase="release shrimp into pitcher", seconds=3, grip=0)

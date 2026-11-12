@@ -62,6 +62,25 @@ class Scene:
 
         monkeypatch.setattr(KitchenController, "move", failing_move)
         monkeypatch.setattr(KitchenController, "move_base", failing_move_base)
+        # The pick from the pan lifts along a checked joint path, not with `move`.
+        follow = KitchenController.follow_contact_path
+
+        def failing_follow(self, **kwargs):  # noqa: PLR0917 -- patched method
+            if when(self, kwargs["phase"]):
+                raise ValueError(error)
+            return follow(self, **kwargs)
+
+        monkeypatch.setattr(KitchenController, "follow_contact_path", failing_follow)
+        # The dumpling's carry to the jug is planned (`carry_held_shrimp_to_pitcher`),
+        # not built from `move`: an infeasible carry is a planning refusal there.
+        carry = KitchenController.carry_held_shrimp_to_pitcher
+
+        def failing_carry(self, **kwargs):  # noqa: PLR0917 -- patched method
+            if when(self, "carry held shrimp to pitcher"):
+                raise ValueError(error)
+            return carry(self, **kwargs)
+
+        monkeypatch.setattr(KitchenController, "carry_held_shrimp_to_pitcher", failing_carry)
 
     @staticmethod
     def assert_released_and_recoverable(*, env: KitchenEnvironment, error: str) -> None:
