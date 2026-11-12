@@ -2,6 +2,7 @@
 
 import logging
 import math
+import pickle
 import re
 import threading
 import time
@@ -628,6 +629,76 @@ def test_an_untimed_placement_shows_no_counter() -> None:
     assert ticks == []
 
 
+class _MisplacesTheBinOnce(FakePerson):
+    """A FakePerson who first puts the bin `offset` (map frame) from its spot, and on
+    the spot when asked to move it."""
+
+    offset: tuple[float, float] = (0.0, 0.0)
+    misplaced: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        if self.misplaced == 0:
+            self.misplaced += 1
+            spot = request.bin.center
+            self.robot.put(
+                cube=request.cube,
+                bin_center=(spot[0] + self.offset[0], spot[1] + self.offset[1]),
+                bin_yaw=request.bin.yaw,
+            )
+            return
+        super().placed(request=request)
+
+
+def test_a_bin_put_off_the_close_spot_is_accepted_there() -> None:
+    """Only the far spot's placement matters (Josh, 2026-11-08)."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.0, 0.0))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.offset, person.misplaced = (0.07, 0.21), 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination="robot_side")
+    assert not [line for line in written if line.startswith("the bin is")]
+    assert [name for name, _ in robot.calls].count("observe") == 1
+
+
+@pytest.mark.parametrize("destination", ["opposite_side"])
+def test_a_bin_put_off_its_spot_is_reported_and_the_person_asked_to_move_it(
+    *, destination: str
+) -> None:
+    """Trial 3 on 2026-11-08 started with the far bin 21 cm across the tape from its spot,
+    and the first toss was refused; the run should say so before any skill instead."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.0, 0.0))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.offset, person.misplaced = (0.07, 0.21), 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    (problem,) = [line for line in written if line.startswith("the bin is")]
+    assert "22 cm from its spot" in problem
+    assert "Moved the bin onto its spot? [y/n]" in "\n".join(written)
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert not MOTION & {name for name, _ in robot.calls}
+    spot = BIN_SPOTS[Tossing3DSide(destination)].center
+    assert robot.observe()["bin"]["x"] == pytest.approx(spot[0])
+    assert robot.observe()["bin"]["y"] == pytest.approx(spot[1])
+
+
+def test_a_bin_within_a_few_centimetres_of_its_spot_is_accepted_as_placed() -> None:
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _MisplacesTheBinOnce(robot=robot, write=written.append, offset=(0.02, -0.02))
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert not [line for line in written if line.startswith("the bin is")]
+    assert [name for name, _ in robot.calls].count("observe") == 1
+
+
 def _fresh_look(*, robot: FakeTossingRobot) -> tuple[Tossing3DObservation, frozenset]:
     """What a look at the room now would give the planner: the observation and atoms."""
     backend = RealTossingBackend(
@@ -723,3 +794,254 @@ def test_practice_scenes_and_restores_still_drive_home_every_time() -> None:
     names = [name for name, _ in robot.calls]
     assert names.count("go_home") == 3
     assert names.count("open_gripper") == 3
+
+
+class _LosesTheCubeOnToss(FakeTossingRobot):
+    """A toss after which no camera sees the cube (`lost` looks), then it is seen."""
+
+    lost: int = 0
+
+    def toss(
+        self, *, standoff: float, speed: float, release_ms: float, direction: float
+    ) -> dict[str, object]:
+        reply = super().toss(
+            standoff=standoff, speed=speed, release_ms=release_ms, direction=direction
+        )
+        self.cube = None
+        return reply
+
+    def observe(self) -> dict[str, object]:
+        reply = super().observe()
+        if self.lost > 0:
+            self.lost -= 1
+        elif self.cube is None:
+            self.cube = (0.7, -0.6, 0.0)
+            reply = super().observe()
+            self.calls.pop()
+        return reply
+
+
+class _Answers(FakePerson):
+    """A FakePerson who answers the lost-cube question from `answers`, in order."""
+
+    answers: list[str]
+
+    def model_post_init(self, __context: object) -> None:
+        self.read = lambda prompt: self._answer(prompt=prompt)
+
+    def _answer(self, *, prompt: str) -> str:
+        answer = self.answers.pop(0) if prompt.startswith("Where is it?") else "y"
+        self.write(f"{prompt}{answer}")
+        return answer
+
+    def locate_lost_cube(self) -> str:
+        return TerminalPerson.locate_lost_cube(self)
+
+
+def _lost_after_toss(*, answers: list[str]) -> tuple[Tossing3DObservation, list[str], int]:
+    written: list[str] = []
+    robot = _LosesTheCubeOnToss()
+    person = _Answers(robot=robot, write=written.append, answers=answers)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    env.backend().run_pick_cube()
+    robot.calls.clear()
+    written.clear()
+    robot.lost = 1
+    env.backend().run_move_to_toss_location_and_toss(
+        distance=1.2, rotation=math.pi, release_speed_deg_s=103.0, gripper_release_ms=590.0
+    )
+    looks = [name for name, _ in robot.calls].count("observe")
+    return env.backend().observe(), written, looks
+
+
+def test_a_cube_no_camera_sees_after_a_skill_is_asked_about_and_in_the_bin_scores() -> None:
+    """Josh, 2026-11-08 (the cardboard box): when the bottle is seen neither on the floor
+    nor in the bin, ask where it is rather than take it as gone."""
+    seen, written, looks = _lost_after_toss(answers=["b"])
+    assert any("the cameras do not see the cube" in line for line in written)
+    assert seen.solved
+    assert looks == 1
+
+
+def test_a_lost_cube_out_of_the_workspace_stays_unseen() -> None:
+    seen, _written, looks = _lost_after_toss(answers=["o"])
+    assert not seen.solved
+    assert looks == 1
+
+
+def test_look_again_looks_and_a_cube_then_seen_asks_no_more() -> None:
+    seen, written, looks = _lost_after_toss(answers=["x", "l"])
+    assert "'x': please type b, o, l or n." in written
+    assert looks == 2
+    assert not seen.solved
+    assert sum(line.startswith("Where is it?") for line in written) == 2
+
+
+class _BinUnseenOnce(FakePerson):
+    """A FakePerson whose first placement leaves no bin the cameras can see."""
+
+    hidden: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.hidden == 0:
+            self.hidden += 1
+            self.robot.bin = None
+
+
+def test_a_far_bin_the_cameras_do_not_see_is_reported_and_the_person_asked_to_place_it() -> None:
+    """Trial 5's evaluation task 10 on 2026-11-08: the scene look found no box, and the
+    task went on to no throw rather than asking for the bin."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _BinUnseenOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    (problem,) = [line for line in written if line.startswith("the cameras see no bin")]
+    assert "far spot" in problem
+    assert "Moved the bin onto its spot? [y/n]" in "\n".join(written)
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    spot = BIN_SPOTS[Tossing3DSide.OPPOSITE].center
+    assert robot.observe()["bin"]["x"] == pytest.approx(spot[0])
+
+
+def _scene_with_the_cube_in_the_close_bin(
+    *, env: RealTossing3DEnvironment, robot: FakeTossingRobot
+) -> PracticeScene:
+    """2026-11-08: practice left the cube in the bin at the close spot."""
+    spot = BIN_SPOTS[Tossing3DSide.ROBOT]
+    robot.put(cube=spot.center, bin_center=spot.center, bin_yaw=spot.yaw)
+    backend = env.real_backend()
+    backend._seen = None  # The person moved things: the next look is a new one.
+    backend.observe()
+    return backend.practice_scene()
+
+
+def test_a_practice_scene_remembers_a_cube_in_the_bin() -> None:
+    env, robot = _env()
+    assert not env.backend().practice_scene().cube_in_bin
+    assert _scene_with_the_cube_in_the_close_bin(env=env, robot=robot).cube_in_bin
+
+
+def test_restoring_a_cube_in_the_bin_asks_for_it_in_the_bin_not_at_floor_coordinates() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = _scene_with_the_cube_in_the_close_bin(env=env, robot=robot)
+    # The evaluation moved everything: the bin to the far spot, the cube on the floor.
+    far = BIN_SPOTS[Tossing3DSide.OPPOSITE]
+    robot.put(cube=CUBE_SPOT, bin_center=far.center, bin_yaw=far.yaw)
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert request == (
+        "restore practice: SAME (bin at the close spot, our side of the tape); "
+        "cube in the bin; do not move the robot"
+    )
+    # The robot's saved state and the scene as placed agree: the cube is in the bin.
+    assert env.backend().snapshot().reply.cube_in_bin
+
+
+def test_a_practice_scene_pickled_before_it_recorded_the_bin_restores_a_floor_cube() -> None:
+    """A checkpoint written before `cube_in_bin` existed still resumes."""
+    written: list[str] = []
+    env, _ = _env(written=written)
+    scene = PracticeScene(cube=(0.66, -0.98), holding=False, bin_side=Tossing3DSide.ROBOT)
+    del scene.__dict__["cube_in_bin"]  # As the older class pickled it.
+    old = pickle.loads(pickle.dumps(scene))
+    assert old.cube_in_bin is False
+    written.clear()
+    env.restore_practice_scene(scene=old)
+    (request,) = [line for line in written if line.startswith("restore practice:")]
+    assert "cube at (0.66, -0.98) on our side" in request
+
+
+class _CubeReadInTheBinOnce(FakePerson):
+    """A FakePerson whose first placement leaves the cameras reading the cube in the
+    bin (2026-11-09: Josh standing beside the box, read as the bottle inside it)."""
+
+    misread: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.misread == 0:
+            self.misread += 1
+            self.robot.cube = (request.bin.center[0], request.bin.center[1], 0.0)
+
+
+CUBE_IN_BIN_PROMPT = (
+    "the cameras see the cube in the bin: take it out, put it on our side, step away "
+    "from the bin, then y"
+)
+
+
+@pytest.mark.parametrize("destination", ["opposite_side", "robot_side"])
+def test_a_scene_look_that_sees_the_cube_in_the_bin_asks_for_it_out_and_looks_again(
+    *, destination: str
+) -> None:
+    """Seed 7's evaluation 0, task 7 (2026-11-09) ended solved with no throw: the scene
+    look read the cube as already in the bin."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeReadInTheBinOnce(robot=robot, write=written.append, misread=1)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    person.misread = 0
+    written.clear()
+    robot.calls.clear()
+    UnconditionalHumanOracle.execute_movables_reset(env=env, destination=destination)
+    assert CUBE_IN_BIN_PROMPT in written
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert not MOTION & {name for name, _ in robot.calls}
+    assert not env.backend().snapshot().reply.cube_in_bin
+    assert _side(env=env, obj=env.cube) == {"robot_side"}
+
+
+def test_a_task_scene_that_sees_the_cube_in_the_bin_does_not_start_solved() -> None:
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeReadInTheBinOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert written.count(CUBE_IN_BIN_PROMPT) == 1
+    assert not env.backend().snapshot().reply.cube_in_bin
+
+
+class _CubeUnseenOnce(FakePerson):
+    """A FakePerson whose first placement leaves no camera seeing the cube."""
+
+    unseen: int = 0
+
+    def placed(self, *, request: PlacementRequest) -> None:
+        super().placed(request=request)
+        if self.unseen == 0:
+            self.unseen += 1
+            self.robot.cube = None
+
+
+CUBE_UNSEEN_PROMPT = (
+    "the cameras do not see the cube: put it on our side, on a face and in view, step away, then y"
+)
+
+
+def test_a_task_scene_whose_look_sees_no_cube_asks_for_it_and_looks_again() -> None:
+    """Seed 2's evaluation 1, task 3 (2026-11-10): the look right after the y saw no
+    cube, no pick was planned, and the task was scored a miss with no throw."""
+    written: list[str] = []
+    robot = FakeTossingRobot()
+    person = _CubeUnseenOnce(robot=robot, write=written.append)
+    env = RealTossing3DEnvironment(tossing_robot=robot, person=person, clock=robot.now)
+    env.hard_reset()
+    assert written.count(CUBE_UNSEEN_PROMPT) == 1
+    assert [name for name, _ in robot.calls].count("observe") == 2
+    assert env.backend().snapshot().reply.cube is not None
+
+
+def test_restoring_a_cube_that_had_scored_accepts_it_in_the_bin() -> None:
+    written: list[str] = []
+    env, robot = _env(written=written)
+    scene = _scene_with_the_cube_in_the_close_bin(env=env, robot=robot)
+    written.clear()
+    env.restore_practice_scene(scene=scene)
+    assert CUBE_IN_BIN_PROMPT not in written
+    assert env.backend().snapshot().reply.cube_in_bin

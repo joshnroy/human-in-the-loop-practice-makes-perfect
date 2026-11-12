@@ -96,9 +96,14 @@ GRIPPER_CLOSED_COMMAND: Final = 1.0
 # The only answers a y/n prompt takes; anything else is asked again.
 _ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
 _RUN_OR_SKIP: Final[dict[str, bool]] = {"y": True, "yes": True, "s": False, "skip": False}
+_WHERE: Final[dict[str, str | None]] = {"b": "bin", "o": "out", "l": "look", "n": None}
 CUBE_HALF_SIZE_M = 0.025
 
 _UNKNOWN = math.nan
+# How far a placed bin may sit from its spot before the person is asked to move it:
+# the live bin overlay calls 2 cm and 3 deg in place; a toss stand moves with the bin.
+BIN_PLACEMENT_TOLERANCE_M: Final = 0.05
+BIN_PLACEMENT_TOLERANCE_RAD: Final = math.radians(10.0)
 
 
 # One sim tick of the tossing env's controllers, in seconds (10 Hz): a real skill is
@@ -157,6 +162,10 @@ class PracticeScene(BaseModel):
     holding: bool
     # The bin's side of the tape (SAME or FAR), `None` if the last look saw no bin.
     bin_side: Tossing3DSide | None
+    # The cube scored in the bin (the robot side's `cube_in_bin`). Its `cube` is then a
+    # point inside the bin, which is floor once the bin goes back on its spot, so a
+    # restore asks for it in the bin instead (2026-11-08).
+    cube_in_bin: bool = False
 
     @staticmethod
     def of(*, snapshot: "RealSceneSnapshot") -> "PracticeScene":
@@ -170,7 +179,17 @@ class PracticeScene(BaseModel):
         if reply.bin is not None:
             bin_x, _ = frame.to_domain(x=reply.bin.x, y=reply.bin.y)
             side = Tossing3DSide.ROBOT if bin_x < 0.0 else Tossing3DSide.OPPOSITE
-        return PracticeScene(cube=cube, holding=reply.holding, bin_side=side)
+        return PracticeScene(
+            cube=cube,
+            holding=reply.holding,
+            bin_side=side,
+            cube_in_bin=not reply.holding and reply.cube_in_bin,
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:  # noqa: PLR0917
+        # A checkpoint pickled before `cube_in_bin` existed resumes with its default.
+        state["__dict__"].setdefault("cube_in_bin", False)
+        super().__setstate__(state)
 
 
 # The bin's spot as the person is told it: on the robot's side of the tape, or across.
@@ -193,6 +212,8 @@ class PlacementRequest(BaseModel):
     gripper_note: str | None = None
     # The cube goes at `cube` exactly (a restore), not anywhere on the robot's side.
     cube_exact: bool = False
+    # The cube goes in the bin (a restore of a cube that had scored); `cube` is unused.
+    cube_in_bin: bool = False
 
     def instructions(self) -> str:
         """One line: the bin's spot by name, and the cube anywhere on the robot's side
@@ -201,12 +222,14 @@ class PlacementRequest(BaseModel):
         if self.destination is Tossing3DSide.OPPOSITE:
             spot = "the far spot, across the tape"
         note = "" if self.gripper_note is None else f"; {self.gripper_note}"
-        cube = "anywhere"
-        if self.cube_exact:
-            cube = f"at ({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+        cube = "cube anywhere on our side, on a face"
+        if self.cube_in_bin:
+            cube = "cube in the bin"
+        elif self.cube_exact:
+            cube = f"cube at ({self.cube[0]:.2f}, {self.cube[1]:.2f}) on our side, on a face"
         return (
             f"{self.kind}: {SPOT_NAMES[self.destination]} (bin at {spot}); "
-            f"cube {cube} on our side, on a face; do not move the robot{note}"
+            f"{cube}; do not move the robot{note}"
         )
 
     def details(self) -> str:
@@ -214,8 +237,12 @@ class PlacementRequest(BaseModel):
         return (
             f"{self.kind} {SPOT_NAMES[self.destination]} (robot map frame, metres): bin "
             f"centred at ({self.bin.center[0]:.2f}, {self.bin.center[1]:.2f}), yaw "
-            f"{self.bin.yaw:.2f}: {self.bin.description}; cube nominally at "
-            f"({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+            f"{self.bin.yaw:.2f}: {self.bin.description}; "
+            + (
+                "cube in the bin"
+                if self.cube_in_bin
+                else f"cube nominally at ({self.cube[0]:.2f}, {self.cube[1]:.2f})"
+            )
         )
 
 
@@ -284,6 +311,49 @@ class TerminalPerson(BaseModel):
     def placed(self, *, request: PlacementRequest) -> None:
         """After y. A real person has already done it; a fake one does it here."""
         del request
+
+    def move_bin(self, *, request: PlacementRequest, problem: str) -> None:
+        """The cameras saw the bin off its spot: say how far, and wait for a y once it
+        is moved (n ends the run)."""
+        self.write(problem)
+        self._yes(question="Moved the bin onto its spot?", declined="bin placement")
+        self.placed(request=request)
+
+    def take_cube_out(self, *, request: PlacementRequest) -> None:
+        """The cameras saw the cube in the bin where none was asked for: wait for a y
+        once it is out and the person is clear of the bin (n ends the run)."""
+        self.write(
+            "the cameras see the cube in the bin: take it out, put it on our side, step "
+            "away from the bin, then y"
+        )
+        self._yes(question="Cube out and you away from the bin?", declined="cube placement")
+        self.placed(request=request)
+
+    def put_cube_in_view(self, *, request: PlacementRequest) -> None:
+        """The scene look saw no cube: wait for a y once it is back in view (n ends the
+        run)."""
+        self.write(
+            "the cameras do not see the cube: put it on our side, on a face and in view, "
+            "step away, then y"
+        )
+        self._yes(question="Cube in view and you away from it?", declined="cube placement")
+        self.placed(request=request)
+
+    def locate_lost_cube(self) -> str:
+        """No camera sees the cube after a skill: "bin", "out" (of the workspace) or
+        "look" (look again, once it is moved into view); n ends the run."""
+        self.write("the cameras do not see the cube: not on the floor, not in the bin, not held")
+        question = (
+            "Where is it? [b = in the bin / o = out of the workspace / "
+            "l = look again (move it into view first) / n = stop] "
+        )
+        while (answer := self.read(question).strip().lower()) not in _WHERE:
+            if answer:
+                self.write(f"{answer!r}: please type b, o, l or n.")
+        where = _WHERE[answer]
+        if where is None:
+            raise KeyboardInterrupt("the person declined: locating the lost cube")
+        return where
 
     def wants_evaluation(self, *, label: str) -> bool:
         """Before an evaluation: y runs it, s skips it and practice carries on (Josh,
@@ -430,10 +500,12 @@ class RealTossingBackend(BaseModel):
             notes.append("the last look saw no cube: put it where it was")
         if scene.bin_side is None:
             notes.append("the last look saw no bin: put it at the far spot")
+        in_bin = scene.cube_in_bin
         return self._placed(
             kind="restore practice",
             destination=scene.bin_side or Tossing3DSide.OPPOSITE,
-            cube=scene.cube,
+            cube=None if in_bin else scene.cube,
+            cube_in_bin=in_bin,
             gripper_note="; ".join(notes) or None,
         )
 
@@ -467,23 +539,87 @@ class RealTossingBackend(BaseModel):
         destination: Tossing3DSide,
         gripper_note: str | None = None,
         cube: tuple[float, float] | None = None,
+        cube_in_bin: bool = False,
     ) -> Tossing3DObservation:
-        """`cube` is a restore's exact spot; otherwise the cube goes anywhere on the
-        robot's side (nominally `CUBE_SPOT`)."""
-        self.person.place(
-            request=PlacementRequest(
-                kind=kind,
-                destination=destination,
-                cube=CUBE_SPOT if cube is None else cube,
-                bin=BIN_SPOTS[destination],
-                gripper_note=gripper_note,
-                cube_exact=cube is not None,
-            )
+        """`cube` is a restore's exact spot, `cube_in_bin` a restore's cube in the bin;
+        otherwise the cube goes anywhere on the robot's side (nominally `CUBE_SPOT`)."""
+        request = PlacementRequest(
+            kind=kind,
+            destination=destination,
+            cube=CUBE_SPOT if cube is None else cube,
+            bin=BIN_SPOTS[destination],
+            gripper_note=gripper_note,
+            cube_exact=cube is not None,
+            cube_in_bin=cube_in_bin,
         )
+        self.person.place(request=request)
         self._seen = None
         observation = self.observe()
+        while True:
+            # A cube the look reads in the bin when none was asked for there would start
+            # the task solved, with no throw: seed 7's evaluation 0, task 7 (2026-11-09),
+            # where the person standing beside the box was read as the cube inside it.
+            if not request.cube_in_bin and self._cube_seen_in_bin():
+                self.person.take_cube_out(request=request)
+            # A task that starts with no cube seen plans no pick and ends with no throw,
+            # scored a miss: seed 2's evaluation 1, task 3 (2026-11-10).
+            elif not request.cube_in_bin and self._cube_unseen():
+                self.person.put_cube_in_view(request=request)
+            # Only the far spot is checked: the test tasks throw at it from a stand fixed
+            # by the bin, so where it sits is part of the task (Josh, 2026-11-08); the
+            # close spot only has to be on the robot's side.
+            elif (
+                destination is Tossing3DSide.OPPOSITE
+                and (problem := self._bin_placement_problem(spot=request.bin)) is not None
+            ):
+                self.person.move_bin(request=request, problem=problem)
+            else:
+                break
+            self._seen = None
+            observation = self.observe()
         self._say(line="planning the next skill ...")
         return observation
+
+    def _cube_seen_in_bin(self) -> bool:
+        """Whether the look just taken puts the cube in the bin, scored or not."""
+        assert self._last is not None
+        reply = self._last.reply
+        return reply.cube_in_bin or reply.cube_inside_bin
+
+    def _cube_unseen(self) -> bool:
+        """Whether the look just taken saw no cube at all."""
+        assert self._last is not None
+        return self._last.reply.cube is None
+
+    def _bin_placement_problem(self, *, spot: BinSpot) -> str | None:
+        """How far the bin the cameras just saw is from `spot`, in words, or None when it
+        is within `BIN_PLACEMENT_TOLERANCE_M` and `BIN_PLACEMENT_TOLERANCE_RAD`. A bin off
+        its spot moves every toss stand with it, and a stand past the tape is refused only
+        at the first toss. An unseen bin is a problem too: a task that starts without one
+        ends with no throw (trial 5, evaluation task 10, 2026-11-08)."""
+        assert self._last is not None
+        seen = self._last.reply.bin
+        if seen is None:
+            return (
+                "the cameras see no bin: put it on the far spot, upright and in view "
+                "(bin overlay: tidybot-final/bin-placement)"
+            )
+        frame = self.frame
+        at_x, at_y = frame.to_domain(x=seen.x, y=seen.y)
+        to_x, to_y = frame.to_domain(x=spot.center[0], y=spot.center[1])
+        distance = math.hypot(at_x - to_x, at_y - to_y)
+        # The bin is symmetric end for end: a yaw is only defined modulo a half turn.
+        turn = math.remainder(seen.yaw - spot.yaw, math.pi)
+        if distance <= BIN_PLACEMENT_TOLERANCE_M and abs(turn) <= BIN_PLACEMENT_TOLERANCE_RAD:
+            return None
+        across = abs(at_x) - abs(to_x)
+        toward = "toward" if across > 0 else "away from"
+        return (
+            f"the bin is {100 * distance:.0f} cm from its spot: move it "
+            f"{100 * abs(across):.0f} cm {toward} the tape and "
+            f"{100 * abs(at_y - to_y):.0f} cm along it, and turn it "
+            f"{math.degrees(abs(turn)):.0f} deg (bin overlay: tidybot-final/bin-placement)"
+        )
 
     def drain_measured_seconds(self) -> float | None:
         """The wall-clock seconds of the last robot skill or timed human reset, once
@@ -753,6 +889,7 @@ class RealTossingBackend(BaseModel):
             self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
             self._seen = None
             self.observe()
+            self._ask_if_lost()
         else:
             self._say(
                 line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); "
@@ -765,6 +902,28 @@ class RealTossingBackend(BaseModel):
             for _ in range(run.steps):
                 self._after()
         return run
+
+    def _ask_if_lost(self) -> None:
+        """A cube seen nowhere -- not on the floor, in the bin or held -- is asked about
+        (Josh, 2026-11-08): the person's "in the bin" scores it, "out" keeps the look."""
+        while self._last is not None:
+            reply = self._last.reply
+            if reply.cube is not None or reply.holding or reply.cube_in_bin:
+                return
+            where = self.person.locate_lost_cube()
+            RealSessionLog.detail(line=f"lost cube: the person says {where}")
+            if where == "look":
+                self._seen = None
+                self.observe()
+                continue
+            if where == "bin":
+                center = None if reply.bin is None else (reply.bin.x, reply.bin.y, 0.0)
+                self._adopt(
+                    reply=reply.model_copy(
+                        update={"cube": center, "cube_in_bin": True, "cube_inside_bin": True}
+                    )
+                )
+            return
 
     def _now(self) -> float:
         return WallClock.now() if self.clock is None else self.clock()
