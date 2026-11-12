@@ -16,6 +16,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
 )
+from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
@@ -438,6 +439,10 @@ class Tossing3DPomdpCli(EesCli):
         # The kitchen is Tossing3D re-flavoured: the same skills, so the same domain.
         "KitchenRecyclingCli": TOSSING3D_DOMAIN,
         "RackServingCli": RACK_SERVING_DOMAIN,
+        # Built from the provider: the routes and their rewards are the domain's flags.
+        "TwoRoutesCli": lambda provider: RewardedRoutesPracticeDomain.from_provider(
+            provider=provider
+        ),
     }
 
     @staticmethod
@@ -682,7 +687,7 @@ class Tossing3DPomdpCli(EesCli):
         if domain is None:
             raise ValueError(
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
-                "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
+                "pouring3d_kitchen, kitchen_recycling3d, racktoserving3d and tworoutes"
             )
         competence_prior = EesCli.competence_prior(args=args)
         if args.pomdp_competence_prior is not None:
@@ -903,6 +908,16 @@ class DpCli(EesCli):
             "experimental one).",
         )
         parser.add_argument(
+            "--dp-competence-estimator",
+            choices=["recent_rounds", "cumulative"],
+            default=fields["dp_competence_estimator"].default,
+            help="How DP reads competence and its learning rate off practice outcomes: "
+            "recent_rounds (default; EES's last-five-rounds estimate, with the learning "
+            "rate updated per closed round) or cumulative (every outcome pooled, the rate "
+            "updated per outcome; every DP result before 2026-11-12). Neither is the "
+            "paper's, which does not say.",
+        )
+        parser.add_argument(
             "--dp-smoothing",
             type=lambda value: DpCli.unit_interval(value=value),
             default=fields["dp_smoothing"].default,
@@ -986,6 +1001,7 @@ class DpCli(EesCli):
                 ),
                 dp_initial_learning_rate=args.dp_initial_learning_rate,
                 dp_smoothing=args.dp_smoothing,
+                dp_competence_estimator=args.dp_competence_estimator,
                 dp_min_learning_rate=args.dp_min_learning_rate,
                 dp_max_skills=args.dp_max_skills,
                 dp_max_allocations=args.dp_max_allocations,

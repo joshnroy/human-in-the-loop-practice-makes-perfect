@@ -417,3 +417,54 @@ def test_graph_evaluates_guards_in_prestate_and_adds_after_conditional_forgettin
         ground_skill=ground,
         effects={ground: (ground.add_effects, ground.delete_effects, ground.ignore_effects)},
     )
+
+
+class _TwoRoutes:
+    """The Two Routes symbolic task: either route reaches the goal from ready."""
+
+    @staticmethod
+    def task_model(*, goal_rewards: dict[str, float] | None) -> "DpMdp[GroundSkill]":
+        from hitl_pmp.environments.tworoutes.environment import TwoRoutesEnvironment
+        from hitl_pmp.environments.tworoutes.skill_provider import TwoRoutesSkillProvider
+        from hitl_pmp.environments.tworoutes.tasks import TwoRoutesTasks
+
+        env = TwoRoutesEnvironment()
+        env.hard_reset()
+        provider = TwoRoutesSkillProvider(env=env)
+        atoms = SkillGrounder.abstract_state(
+            state=env.get_current_state(),
+            objects=provider.objects(),
+            predicates=provider.predicates(),
+        )
+        kwargs = {} if goal_rewards is None else {"goal_rewards": goal_rewards}
+        return DpTaskModel.build(
+            tasks=[(atoms, TwoRoutesTasks(env=env).goal().atoms)],
+            skills=provider.skills(),
+            objects=provider.objects(),
+            max_states=16,
+            **kwargs,
+        )
+
+
+def test_every_goal_state_is_worth_one_unless_the_domain_prices_it():
+    for rewards in (None, {}):
+        assert sorted(_TwoRoutes.task_model(goal_rewards=rewards).terminal_rewards.values()) == [
+            1,
+            1,
+        ]
+
+
+def test_a_goal_state_is_worth_the_reward_of_the_priced_atom_it_holds():
+    mdp = _TwoRoutes.task_model(goal_rewards={"ViaA": 1.0, "ViaB": 3.0})
+    reward_by_route = {
+        t.skill.skill.name: mdp.terminal_rewards[t.successor] for t in mdp.transitions
+    }
+    assert reward_by_route == {"RouteA": 1.0, "RouteB": 3.0}
+    # The policy follows reward times competence, not competence alone.
+    grounds = {t.skill.skill.name: t.skill for t in mdp.transitions}
+    value, policy = mdp.solve(competences={grounds["RouteA"]: 0.8, grounds["RouteB"]: 0.3})
+    assert value == pytest.approx(0.9)
+    assert policy[next(iter(mdp.initial_probabilities))].skill.skill.name == "RouteB"
+    value, policy = mdp.solve(competences={grounds["RouteA"]: 0.8, grounds["RouteB"]: 0.2})
+    assert value == pytest.approx(0.8)
+    assert policy[next(iter(mdp.initial_probabilities))].skill.skill.name == "RouteA"

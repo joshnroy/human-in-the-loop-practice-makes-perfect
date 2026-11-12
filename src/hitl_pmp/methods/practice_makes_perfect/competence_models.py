@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -135,21 +137,28 @@ class LinearSkillCompetenceModel(BaseModel):
 
     clipped below at 0 as well, since the online Delta can go negative.
 
-    p is the Beta-Bernoulli posterior mean (alpha + s) / (alpha + beta + n) pooled over
-    every outcome so far, open cycle included. The prior defaults to EES's Beta(10, 1),
-    so DP and EES start from the same belief about a never-practised skill.
-
-    Delta is the paper's running average of observed improvement,
+    The paper gives the recurrence
 
         Delta_t = eps * Delta_{t-1} + (1 - eps) * (p_t - p_{t-1})
 
-    applied once per retained skill-outcome observation in closed cycles. Periods
-    batch learner fitting, not the recurrence: repartitioning the same closed
-    observation sequence cannot change Delta. Empty cycles leave Delta unchanged.
-    The cumulative Beta estimator and inherited outcome eligibility remain explicit
-    adaptations; this is not a controlled measurement of post-training improvement.
-    The paper does not specify the estimator or its exact update cadence. Here t
-    indexes observed skill episodes, never control ticks or whole practice periods.
+    and neither how p is measured nor what t indexes. Two readings are implemented.
+
+    `recent_rounds` (the default since 2026-11-12, Josh): p is EES's estimate, the
+    Beta-Bernoulli posterior mean over the last `window_size` non-empty practice rounds,
+    open one included, so the failures of a skill that has since improved drop out. t
+    indexes closed non-empty rounds: each one after the first moves Delta by the change
+    in the raw success rate of that same window, per attempt of the round. The rate is
+    raw, as EES's own extrapolation is: a prior washing out is not the skill declining.
+    Rounds that all fail leave the rate unchanged, so Delta decays and never turns
+    negative on failures alone.
+
+    `cumulative` is the estimator every DP result before that date was produced with: p
+    pools every outcome so far, and t indexes single outcomes in closed cycles, so
+    repartitioning the same closed sequence cannot change Delta. On a skill that fails
+    more often than not, the last outcomes are mostly failures and Delta turns negative
+    within a round or two, which writes the skill off (Two Routes, route B).
+
+    Both are our adaptations. Empty cycles leave Delta unchanged under either.
 
     The paper gives no experimental values for the Delta prior or eps. 0.1 is the
     per-episode improvement in its own illustrative example, and eps = 0.5 is ours."""
@@ -158,6 +167,8 @@ class LinearSkillCompetenceModel(BaseModel):
     beta: float = Field(default=1.0, gt=0.0)
     initial_delta: float = 0.1
     smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
+    estimator: Literal["recent_rounds", "cumulative"] = "recent_rounds"
+    window_size: int = Field(default=5, ge=1)
     # The same layout as OptimisticSkillCompetenceModel's, so one can be built from the
     # other's history.
     cycle_observations: list[list[bool]] = Field(default_factory=lambda: [list[bool]()])
@@ -169,10 +180,15 @@ class LinearSkillCompetenceModel(BaseModel):
         self.cycle_observations.append([])
 
     def get_current_competence(self) -> float:
-        outcomes = [outcome for cycle in self.cycle_observations for outcome in cycle]
+        cycles = [cycle for cycle in self.cycle_observations if cycle]
+        if self.estimator == "recent_rounds":
+            cycles = cycles[-self.window_size :]
+        outcomes = [outcome for cycle in cycles for outcome in cycle]
         return self._posterior_mean(successes=sum(outcomes), total=len(outcomes))
 
     def learning_rate(self) -> float:
+        if self.estimator == "recent_rounds":
+            return self._round_learning_rate()
         delta = self.initial_delta
         successes = 0
         total = 0
@@ -184,6 +200,20 @@ class LinearSkillCompetenceModel(BaseModel):
                 current = self._posterior_mean(successes=successes, total=total)
                 delta = self.smoothing * delta + (1.0 - self.smoothing) * (current - previous)
                 previous = current
+        return delta
+
+    def _round_learning_rate(self) -> float:
+        delta = self.initial_delta
+        closed = [cycle for cycle in self.cycle_observations[:-1] if cycle]
+        previous: float | None = None
+        for index, cycle in enumerate(closed):
+            window = closed[max(0, index + 1 - self.window_size) : index + 1]
+            outcomes = [outcome for recent in window for outcome in recent]
+            rate = sum(outcomes) / len(outcomes)
+            if previous is not None:
+                change = (rate - previous) / len(cycle)
+                delta = self.smoothing * delta + (1.0 - self.smoothing) * change
+            previous = rate
         return delta
 
     def predict_competence(self, *, num_attempts: int) -> float:

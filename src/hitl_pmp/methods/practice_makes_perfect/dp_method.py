@@ -60,6 +60,9 @@ class DpMethod(EesMethod):
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
     dp_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
+    # How competence and its learning rate are read off the outcomes: see
+    # LinearSkillCompetenceModel. `cumulative` reproduces results from before 2026-11-12.
+    dp_competence_estimator: Literal["recent_rounds", "cumulative"] = "recent_rounds"
     # A floor on every fitted Delta the allocator sees; None keeps them signed. Under
     # per-period reallocation a negative Delta fitted from a few noisy outcomes makes
     # practising that skill look harmful, so a re-solve allocates it nothing and no
@@ -295,6 +298,7 @@ class DpMethod(EesMethod):
             skills=self.skills(),
             objects=self.objects(),
             max_states=self.dp_max_states,
+            goal_rewards=self.skill_provider.goal_rewards(),
         )
         if self.dp_prior_calibration is not None:
             missing = {edge.skill.skill.name for edge in mdp.transitions} - set(
@@ -467,6 +471,7 @@ class DpMethod(EesMethod):
                 )
             ),
             smoothing=self.dp_smoothing,
+            estimator=self.dp_competence_estimator,
             cycle_observations=(
                 [list(cycle) for cycle in history.cycle_observations]
                 if history is not None
