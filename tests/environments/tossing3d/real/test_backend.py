@@ -878,6 +878,35 @@ def test_look_again_looks_and_a_cube_then_seen_asks_no_more() -> None:
     assert sum(line.startswith("Where is it?") for line in written) == 2
 
 
+def test_an_evaluations_progress_line_shows_its_score_so_far() -> None:
+    """Josh, 2026-11-08: each task's line carries the robot's in-bin count of the tasks
+    before it, so the score is visible during an evaluation."""
+    robot = FakeTossingRobot()
+    lines: list[str] = []
+    evaluation = RealTossing3DEnvironment(
+        tossing_robot=robot,
+        person=FakePerson(robot=robot, write=lambda _line: None),
+        evaluation=True,
+    )
+    backend = evaluation.backend()
+    backend._say = lambda *, line: lines.append(line)  # type: ignore[method-assign]
+    landed_in_bin = [True, False, True]
+    for task, in_bin in enumerate(landed_in_bin, start=1):
+        backend.evaluation_progress(index=1, label="after cycle 2", task=task, num_tasks=4)
+        backend.reset(seed=0)
+        if in_bin:
+            robot.cube = (robot.bin[0], robot.bin[1], 0.0)
+        backend._seen = None
+        backend.observe()
+    backend.evaluation_progress(index=1, label="after cycle 2", task=4, num_tasks=4)
+    backend.reset(seed=0)
+    progress = [line for line in lines if line.startswith("eval 1")]
+    assert progress[0] == "eval 1 after cycle 2: task 1/4"
+    assert progress[1] == "eval 1 after cycle 2: task 2/4 · 1/1 in the bin so far"
+    assert progress[2] == "eval 1 after cycle 2: task 3/4 · 1/2 in the bin so far"
+    assert progress[3] == "eval 1 after cycle 2: task 4/4 · 2/3 in the bin so far"
+
+
 class _BinUnseenOnce(FakePerson):
     """A FakePerson whose first placement leaves no bin the cameras can see."""
 
@@ -1045,3 +1074,39 @@ def test_restoring_a_cube_that_had_scored_accepts_it_in_the_bin() -> None:
     env.restore_practice_scene(scene=scene)
     assert CUBE_IN_BIN_PROMPT not in written
     assert env.backend().snapshot().reply.cube_in_bin
+
+
+def test_a_practice_progress_line_shows_the_cycles_throws_in_the_bin_so_far() -> None:
+    """Josh, 2026-11-09: practice's line shows how many of this cycle's throws went in,
+    as an evaluation's does; a new cycle starts its count again."""
+    written: list[str] = []
+    env, robot = _env(written=written)
+    backend = env.backend()
+    # The stand this checkout throws from, and a speed the fake scores from there.
+    distance = sum(REAL_TOSS_PARAMETERS.standoff_bounds) / 2
+    scores = round(100.0 + 40.0 * (distance - 0.9) / 0.55)
+    assert FakeTossingRobot.lands_in_bin(standoff=distance, speed=scores, release_ms=600.0)
+    assert not FakeTossingRobot.lands_in_bin(standoff=distance, speed=scores - 20, release_ms=600.0)
+    throws = [(scores, 600.0), (scores - 20, 600.0), (scores, 620.0)]
+    for action, (speed, release) in enumerate(throws, start=1):
+        backend.practice_progress(cycle=0, action=2 * action, max_actions=20, steps=0, budget=99)
+        backend.run_pick_cube()
+        backend.practice_progress(
+            cycle=0, action=2 * action + 1, max_actions=20, steps=0, budget=99
+        )
+        backend.run_move_to_toss_location_and_toss(
+            distance=distance,
+            rotation=math.pi,
+            release_speed_deg_s=speed,
+            gripper_release_ms=release,
+        )
+        assert robot.bin is not None
+        robot.put(cube=CUBE_SPOT, bin_center=robot.bin[:2], bin_yaw=robot.bin[2])
+    written.clear()
+    backend.practice_progress(cycle=0, action=8, max_actions=20, steps=0, budget=99)
+    backend.run_pick_cube()
+    backend.practice_progress(cycle=1, action=1, max_actions=20, steps=0, budget=99)
+    backend.run_pick_cube()
+    cycle_lines = [line for line in written if line.startswith("cycle ")]
+    assert cycle_lines[0].endswith(" · throws 2/3 in")
+    assert not cycle_lines[1].endswith("in")

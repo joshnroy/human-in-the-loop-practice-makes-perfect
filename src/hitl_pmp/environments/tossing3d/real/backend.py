@@ -123,15 +123,20 @@ class PracticeProgress(BaseModel):
     max_actions: int
     steps: int
     budget: int
+    # The robot's in-bin count over this cycle's throws so far.
+    throws: int = 0
+    in_bin: int = 0
 
     def line(self, *, width: int = 10) -> str:
-        """`cycle 0 [######----] action 13/20 · steps 1050/1500`: the bar is the cycle."""
+        """`cycle 0 [######----] action 13/20 · steps 1050/1500`: the bar is the cycle;
+        then `· throws 2/3 in` once the cycle has thrown."""
         filled = min(width, width * self.action // max(self.max_actions, 1))
         bar = "#" * filled + "-" * (width - filled)
-        return (
+        line = (
             f"cycle {self.cycle} [{bar}] action {self.action}/{self.max_actions} · "
             f"steps {self.steps}/{self.budget}"
         )
+        return line if self.throws == 0 else f"{line} · throws {self.in_bin}/{self.throws} in"
 
 
 class EvaluationProgress(BaseModel):
@@ -143,10 +148,15 @@ class EvaluationProgress(BaseModel):
     label: str
     task: int
     num_tasks: int
+    # The robot's in-bin count over the tasks before this one.
+    in_bin: int = 0
+    done: int = 0
 
     def line(self) -> str:
-        """`eval 3 after cycle 3: task 2/5`."""
-        return f"eval {self.index} {self.label}: task {self.task}/{self.num_tasks}"
+        """`eval 3 after cycle 3: task 2/5`, then `· 1/1 in the bin so far` once a
+        task has finished."""
+        line = f"eval {self.index} {self.label}: task {self.task}/{self.num_tasks}"
+        return line if self.done == 0 else f"{line} · {self.in_bin}/{self.done} in the bin so far"
 
 
 class PracticeScene(BaseModel):
@@ -451,6 +461,13 @@ class RealTossingBackend(BaseModel):
     # The evaluation task (1-based) the backend was last told is running; None outside
     # an evaluation.
     _evaluation_task: int | None = PrivateAttr(default=None)
+    # Each finished task's in-bin verdict, keyed by (evaluation index, task), from the
+    # last look before the next task's line.
+    _evaluation_results: dict[tuple[int, int], bool] = PrivateAttr(default_factory=dict)
+    # Practice's current cycle and whether each of its throws landed in the bin.
+    _practice_cycle: int | None = PrivateAttr(default=None)
+    _practice_throws: list[bool] = PrivateAttr(default_factory=list)
+    _evaluation_index: int | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
@@ -828,7 +845,10 @@ class RealTossingBackend(BaseModel):
             f"MoveToTossLocationAndToss(standoff {distance:.2f} m, "
             f"{release_speed_deg_s:.0f} deg/s, release {gripper_release_ms:.0f} ms)"
         )
-        return self._skill(action=action, act=act)
+        run = self._skill(action=action, act=act)
+        if self._practice_cycle is not None and run.error is None and self._last is not None:
+            self._practice_throws.append(self._last.reply.cube_in_bin)
+        return run
 
     def run_pour_bin(self) -> ControllerRun:
         """`dump_bin`: grasp the bin's side wall, lift, turn, roll it over onto the floor
@@ -933,18 +953,40 @@ class RealTossingBackend(BaseModel):
     ) -> None:
         """Practice's place as its next action starts, shown before that action runs.
         Only practice's backend is told; evaluation's is told `evaluation_progress`."""
+        if cycle != self._practice_cycle:
+            self._practice_cycle, self._practice_throws = cycle, []
         self._progress = PracticeProgress(
-            cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
+            cycle=cycle,
+            action=action,
+            max_actions=max_actions,
+            steps=steps,
+            budget=budget,
+            throws=len(self._practice_throws),
+            in_bin=sum(self._practice_throws),
         )
         self._evaluation_task = None
 
     def evaluation_progress(self, *, index: int, label: str, task: int, num_tasks: int) -> None:
         """Which evaluation and task is running, shown before its scene and each skill;
         `task` (1-based) also decides whether its scene drives home (`reset`)."""
+        previous = self._evaluation_task
+        if (
+            previous is not None
+            and self._evaluation_index == index
+            and task != previous
+            and self._last is not None
+        ):
+            self._evaluation_results[(index, previous)] = self._last.reply.cube_in_bin
+        done = [ok for (i, _), ok in self._evaluation_results.items() if i == index]
         self._progress = EvaluationProgress(
-            index=index, label=label, task=task, num_tasks=num_tasks
+            index=index,
+            label=label,
+            task=task,
+            num_tasks=num_tasks,
+            in_bin=sum(done),
+            done=len(done),
         )
-        self._evaluation_task = task
+        self._evaluation_task, self._evaluation_index = task, index
 
     def _say_progress(self) -> None:
         if self._progress is not None:
