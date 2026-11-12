@@ -109,6 +109,8 @@ class RackControllers:
     SETTLE_STEPS: ClassVar[int] = 30
     SETTLE_TOLERANCE: ClassVar[float] = 0.005
     SETTLE_LIMIT: ClassVar[float] = 0.06
+    # A food under the blade held it 4.4 mm and 5.2 mm above its levelling target.
+    REST_ABOVE_LIMIT: ClassVar[float] = 0.010
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
@@ -225,20 +227,45 @@ class RackControllers:
         self.shelf.in_hand = np.linalg.inv(self.shelf.site_pose()) @ self.tool.wiper_pose()
         return body @ np.linalg.inv(self.shelf.in_hand)
 
-    def move_tool(self, *, body: np.ndarray, label: str) -> None:
+    def move_tool(
+        self, *, body: np.ndarray, label: str, may_rest_above: bool = False
+    ) -> np.ndarray:
+        """Drive the measured scraper to ``body``; return the pose it reached.
+
+        With ``may_rest_above``, a scraper that stays up to ``REST_ABOVE_LIMIT`` above
+        ``body``, on it horizontally and in rotation, counts as arrived: something
+        under the blade is holding it up, and pressing down a sixth time would not
+        change that. Only a move that is about to rise anyway may ask for this.
+        """
         for _ in range(5):
             target = self.hand_for_tool(body=body)
             self.tool.line(
-                position=target[:3, 3], rotation=target[:3, :3], label=label, holding=True
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                label=label,
+                holding=True,
+                rest_above=self.REST_ABOVE_LIMIT if may_rest_above else 0.0,
             )
             actual = self.tool.wiper_pose()
             if (
                 np.linalg.norm(actual[:3, 3] - body[:3, 3]) < 0.003
                 and self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3]) < 1.0
             ):
-                return
-        position_error = float(np.linalg.norm(actual[:3, 3] - body[:3, 3]))
+                return actual
+        offset = actual[:3, 3] - body[:3, 3]
+        position_error = float(np.linalg.norm(offset))
         angle_error = self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3])
+        if (
+            may_rest_above
+            and 0 < offset[2] <= self.REST_ABOVE_LIMIT
+            and np.linalg.norm(offset[:2]) < 0.003
+            and angle_error < 1.0
+        ):
+            self.metrics.setdefault("rested_above", []).append({
+                "label": label,
+                "above_m": float(offset[2]),
+            })
+            return actual
         raise SkillFailed(
             f"{label}: measured scraper pose failed to converge "
             f"({position_error * 1000:.2f} mm / {angle_error:.2f} deg)"
@@ -679,8 +706,13 @@ class RackControllers:
             level = np.eye(4)
             level[:3, :3] = rotation
             level[:3, 3] = edge - tool.blade_edge(pose=level).mean(axis=0)
-            self.move_tool(body=level, label="sweep_level")
+            # A blade that ends its stroke on a food cannot come down to 2 mm; it is
+            # about to rise, so it rises from where it rests. A blade that did level
+            # still rises from the level pose, as it always has.
+            reached = self.move_tool(body=level, label="sweep_level", may_rest_above=True)
             lifted_body = level.copy()
+            if reached[2, 3] - level[2, 3] >= 0.003:
+                lifted_body[2, 3] = reached[2, 3]
         lifted_body[2, 3] += 0.06
         self.move_tool(body=lifted_body, label="sweep_lift")
         self.shelf.hold(count=40, label="food_settle")
