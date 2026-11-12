@@ -146,12 +146,31 @@ class DpMdp(BaseModel, Generic[SkillKey]):
 
 class DpTaskModel:
     @staticmethod
+    def goal_reward(*, atoms: frozenset[GroundAtom], goal_rewards: Mapping[str, float]) -> float:
+        """A goal state's reward: the largest reward of a priced predicate holding in
+        it (`SkillProvider.goal_rewards`), or 1 when none is priced."""
+        priced = [
+            goal_rewards[atom.predicate.name]
+            for atom in atoms
+            if atom.predicate.name in goal_rewards
+        ]
+        return max(priced, default=1)
+
+    @staticmethod
+    def successor(*, atoms: frozenset[GroundAtom], ground: GroundSkill) -> frozenset[GroundAtom]:
+        """The symbolic state after `ground` succeeds from `atoms`."""
+        ignored = ground.expected_ignore_effects(before_atoms=atoms)
+        kept = frozenset(atom for atom in atoms if atom.predicate not in ignored)
+        return (kept - ground.delete_effects) | ground.expected_add_effects(before_atoms=atoms)
+
+    @staticmethod
     def build(
         *,
         tasks: Sequence[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]],
         skills: tuple[Skill, ...],
         objects: tuple[Object, ...],
         max_states: int,
+        goal_rewards: Mapping[str, float] | None = None,
     ) -> DpMdp[GroundSkill]:
         states: dict[tuple[int, frozenset[GroundAtom]], int] = {}
         pending: deque[tuple[int, frozenset[GroundAtom]]] = deque()
@@ -174,7 +193,9 @@ class DpTaskModel:
             task, atoms = pending.popleft()
             state = states[(task, atoms)]
             if tasks[task][1] <= atoms:
-                rewards[state] = 1
+                rewards[state] = DpTaskModel.goal_reward(
+                    atoms=atoms, goal_rewards=goal_rewards or {}
+                )
                 continue
             applicable = SkillGrounder.applicable_ground_skills(
                 skills=skills,
@@ -184,16 +205,13 @@ class DpTaskModel:
             for ground in applicable:
                 if not ground.preconditions <= atoms:
                     continue
-                ignored = ground.expected_ignore_effects(before_atoms=atoms)
-                kept = frozenset(atom for atom in atoms if atom.predicate not in ignored)
-                after = (kept - ground.delete_effects) | ground.expected_add_effects(
-                    before_atoms=atoms
-                )
                 transitions.append(
                     DpTransition(
                         state=state,
                         skill=ground,
-                        successor=intern(task=task, atoms=after),
+                        successor=intern(
+                            task=task, atoms=DpTaskModel.successor(atoms=atoms, ground=ground)
+                        ),
                     )
                 )
         return DpMdp(
