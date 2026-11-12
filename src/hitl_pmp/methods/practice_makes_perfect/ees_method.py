@@ -159,6 +159,13 @@ class EesMethod(Method):
     # CFG.active_sampler_learning_exploration_epsilon -- the paper: "epsilon-greedy
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
+    # See `LearnedSkillSampler.sampler_model`. A skill whose provider gives no
+    # `sampler_input_bounds` keeps the MLP even under `gp`.
+    sampler_model: Literal["mlp", "gp"] = "mlp"
+    gp_ucb_kappa: float = 2.0
+    gp_eval: Literal["mean", "lcb"] = "mean"
+    gp_random_warmup: int = 0
+    gp_prior_rate: float | None = None
     # Whether plan_to declines a practice plan whose human reset costs more than the
     # priciest ordinary skill (see plan_to). Off, any reset-using plan is accepted and
     # Fast Downward's own cost minimisation is the only thing choosing between a reset
@@ -1283,6 +1290,11 @@ class EesMethod(Method):
 
     def sampler(self, *, skill_name: str, param_dim: int) -> LearnedSkillSampler:
         if skill_name not in self._samplers:
+            bounds = (
+                self.skill_provider.sampler_input_bounds(skill_name=skill_name)
+                if self.sampler_model == "gp"
+                else None
+            )
             self._samplers[skill_name] = LearnedSkillSampler(
                 skill_name=skill_name,
                 param_dim=param_dim,
@@ -1290,6 +1302,12 @@ class EesMethod(Method):
                 exploration_epsilon=self.exploration_epsilon,
                 seed=self.seed,
                 max_train_iters=self.sampler_max_train_iters,
+                sampler_model="gp" if bounds is not None else "mlp",
+                gp_ucb_kappa=self.gp_ucb_kappa,
+                gp_eval=self.gp_eval,
+                gp_input_bounds=bounds,
+                gp_random_warmup=self.gp_random_warmup,
+                gp_prior_rate=self.gp_prior_rate,
             )
         return self._samplers[skill_name]
 

@@ -90,6 +90,18 @@ class EesCli:
         return alpha, strength - alpha
 
     @staticmethod
+    def sampler_model_kwargs(*, args: argparse.Namespace) -> dict[str, Any]:
+        """The GP-sampler flags, shared by every EesMethod factory."""
+        return {
+            "sampler_model": args.sampler_model,
+            "gp_ucb_kappa": args.gp_ucb_kappa,
+            "gp_eval": args.gp_eval,
+            "gp_random_warmup": args.gp_random_warmup,
+            "gp_prior_rate": args.gp_prior_rate,
+            "num_candidates": args.num_candidates,
+        }
+
+    @staticmethod
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
@@ -120,6 +132,48 @@ class EesCli:
             default=EesMethod.model_fields["exploration_epsilon"].default,
             help="Epsilon-greedy exploration rate for the practice-time sampler "
             "(the paper uses 0.5).",
+        )
+        parser.add_argument(
+            "--sampler-model",
+            choices=("mlp", "gp"),
+            default=EesMethod.model_fields["sampler_model"].default,
+            help="Toss sampler classifier: the MLP (epsilon-greedy practice) or a Laplace "
+            "GP classifier (UCB practice, refit after every outcome).",
+        )
+        parser.add_argument(
+            "--gp-ucb-kappa",
+            type=float,
+            default=EesMethod.model_fields["gp_ucb_kappa"].default,
+            help="With --sampler-model gp: practice score = latent mean + kappa * std.",
+        )
+        parser.add_argument(
+            "--gp-eval",
+            choices=("mean", "lcb"),
+            default=EesMethod.model_fields["gp_eval"].default,
+            help="With --sampler-model gp: evaluation takes the argmax of predictive "
+            "P(success) (mean) or of its kappa=1 lower bound (lcb).",
+        )
+        parser.add_argument(
+            "--num-candidates",
+            type=int,
+            default=EesMethod.model_fields["num_candidates"].default,
+            help="Candidate parameter vectors the toss sampler scores per choice. 100 "
+            "matches predicators; a GP scores thousands in milliseconds, and a narrow "
+            "learned peak needs them to be drawn at all.",
+        )
+        parser.add_argument(
+            "--gp-random-warmup",
+            type=int,
+            default=EesMethod.model_fields["gp_random_warmup"].default,
+            help="With --sampler-model gp: practice draws uniformly until this many "
+            "outcomes are labelled, then UCB.",
+        )
+        parser.add_argument(
+            "--gp-prior-rate",
+            type=float,
+            default=EesMethod.model_fields["gp_prior_rate"].default,
+            help="With --sampler-model gp: the success rate the GP assumes for unexplored "
+            "settings (0.5 = neutral). Default: the smoothed overall rate so far.",
         )
         parser.add_argument(
             "--sampler-max-train-iters",
@@ -373,6 +427,7 @@ class EesCli:
             ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
+            **EesCli.sampler_model_kwargs(args=args),
             sampler_max_train_iters=args.sampler_max_train_iters,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -541,6 +596,14 @@ class Tossing3DPomdpCli(EesCli):
             "advances the training clock; skills without a sampler are always "
             "conditioned.",
         )
+        parser.add_argument(
+            "--pomdp-learning-update",
+            choices=["session", "example"],
+            default=Tossing3DPomdpMethod.model_fields["pomdp_learning_update"].default,
+            help="When the planner's learning curve steps: at the session boundary "
+            "(default, for a sampler retrained there) or after every training example "
+            "(for --sampler-model gp, which refits on each one).",
+        )
         parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
         parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
         parser.add_argument("--pomdp-competence-process-noise-std", type=float, default=0.03)
@@ -676,6 +739,7 @@ class Tossing3DPomdpCli(EesCli):
                 seed=args.seed,
                 draw_recorder=draw_recorder,
                 exploration_epsilon=args.exploration_epsilon,
+                **EesCli.sampler_model_kwargs(args=args),
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -710,6 +774,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_competence_model=args.pomdp_competence_model,
                 pomdp_inference_engine=args.pomdp_inference_engine,
                 pomdp_competence_evidence=CompetenceEvidence(args.pomdp_competence_evidence),
+                pomdp_learning_update=args.pomdp_learning_update,
                 pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
                 pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
                 pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,
