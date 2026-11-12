@@ -33,6 +33,10 @@ ticks it ran, so a session of N steps is the robot time a sim session of N steps
 simulates. A refused skill -- outside the parameter set, or refused by the robot side,
 which owns every geometry and safety check -- moved nothing and is charged nothing.
 
+Every skill is followed by a camera look, except a pick that held the cube (Josh,
+2026-11-08): its reply already says what that look would (`_held_look`), so the next
+observation is the last look updated with it.
+
 ## A human reset is a prompt
 
 `reset` (a task's scene) and `reset_cube_and_bin` (the planner's paid reset) tell the
@@ -41,7 +45,8 @@ and that the cube goes anywhere on the robot's side; the coordinates go to the s
 log only (`real/session_log.py`). They wait for y and observe what was actually placed.
 Nothing is checked or retried: the planner sees the scene as placed. A human reset moves
 no robot; a task's scene drives home first and opens the gripper, as the sim's reset
-restores it open.
+restores it open. An evaluation drives home before its first task only: each later task
+starts where the one before left the robot, the gripper still opened (Josh, 2026-11-08).
 
 An evaluation in the middle of practice (`--measure-every-cycles`) uses the room, so
 practice's scene is remembered first (`practice_scene`: the cube's map spot, or the
@@ -84,8 +89,13 @@ BARRIER_NAME = "cuboid_barrier"
 
 # Upstream's `GRIPPER_OPEN_COMMAND_TOLERANCE`, copied so this path imports no KINDER.
 GRIPPER_OPEN_COMMAND_TOLERANCE = 1e-3
+# What the robot side's observe reports as `gripper_command` after a pick that held: its
+# `pick.top_down.close_position`. A pick's reply does not carry it; 233/233 looks after
+# a held pick in the 2026-11-05..08 real runs reported exactly this.
+GRIPPER_CLOSED_COMMAND: Final = 1.0
 # The only answers a y/n prompt takes; anything else is asked again.
 _ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
+_RUN_OR_SKIP: Final[dict[str, bool]] = {"y": True, "yes": True, "s": False, "skip": False}
 CUBE_HALF_SIZE_M = 0.025
 
 _UNKNOWN = math.nan
@@ -275,6 +285,15 @@ class TerminalPerson(BaseModel):
         """After y. A real person has already done it; a fake one does it here."""
         del request
 
+    def wants_evaluation(self, *, label: str) -> bool:
+        """Before an evaluation: y runs it, s skips it and practice carries on (Josh,
+        2026-11-09). Each evaluation is ten scenes the person sets up."""
+        question = f"evaluation {label}: run it? [y = run / s = skip] "
+        while (answer := self.read(question).strip().lower()) not in _RUN_OR_SKIP:
+            if answer:
+                self.write(f"{answer!r}: please type y or s.")
+        return _RUN_OR_SKIP[answer]
+
     def confirm(self, *, action: str) -> None:
         """Before a skill moves the robot (see `_yes`)."""
         self._yes(question=f"{action} -- run it?", declined=action)
@@ -359,26 +378,32 @@ class RealTossingBackend(BaseModel):
     _skill_seconds: float | None = PrivateAttr(default=None)
     _after: Callable[[], None] | None = PrivateAttr(default=None)
     _progress: PracticeProgress | EvaluationProgress | None = PrivateAttr(default=None)
+    # The evaluation task (1-based) the backend was last told is running; None outside
+    # an evaluation.
+    _evaluation_task: int | None = PrivateAttr(default=None)
 
     # --- the scene, set by a person ---------------------------------------------------
 
     def reset(self, *, seed: int) -> Tossing3DObservation:
         """A task's scene: the robot at home and the bin across the tape, as in the sim.
-        There is one spot per side, so `seed` names the same scene for every task."""
+        There is one spot per side, so `seed` names the same scene for every task.
+        An evaluation's later tasks start where the robot is (module docstring)."""
         del seed
         self._say_progress()
-        self._home_and_open()
+        later_task = self._evaluation_task is not None and self._evaluation_task > 1
+        self._home_and_open(drive_home=not later_task)
         return self._placed(
             kind="scene", destination=Tossing3DSide.OPPOSITE, gripper_note=self._gripper_note()
         )
 
-    def _home_and_open(self) -> None:
+    def _home_and_open(self, *, drive_home: bool = True) -> None:
         # The robot starts each task at its home, the close-side toss stand, as the
         # sim's does; it drives there before the person sets the scene around it.
-        if self.confirm_start:
-            self.person.confirm(action="GoHome (drive to the close-side toss stand)")
-        self._say(line="driving home ...")
-        self.robot.go_home()
+        if drive_home:
+            if self.confirm_start:
+                self.person.confirm(action="GoHome (drive to the close-side toss stand)")
+            self._say(line="driving home ...")
+            self.robot.go_home()
         # The sim's scene reset restores the gripper open. Practice can end on a pick
         # with the cube held, and a gripper still commanded closed leaves `HandEmpty`
         # false for the whole task (run 9's evaluation: no plan at step 0).
@@ -393,6 +418,7 @@ class RealTossingBackend(BaseModel):
         """After an in-process evaluation: home and open, as a task's scene starts, then
         the person puts the cube and the bin back as practice left them. The person's
         job, not a reset the method chose: nothing is charged."""
+        self._evaluation_task = None
         self._home_and_open()
         notes = []
         if scene.holding:
@@ -471,7 +497,10 @@ class RealTossingBackend(BaseModel):
     def observe(self) -> Tossing3DObservation:
         if self._seen is not None:
             return self._seen
-        reply = ObserveReply.model_validate(self.robot.observe())
+        return self._adopt(reply=ObserveReply.model_validate(self.robot.observe()))
+
+    def _adopt(self, *, reply: ObserveReply) -> Tossing3DObservation:
+        """Make `reply` the scene as last seen, a look's or `_held_look`'s."""
         if reply.barrier is None:
             raise ValueError(
                 "the robot reports no barrier: the real experiment needs the tape enabled "
@@ -576,8 +605,11 @@ class RealTossingBackend(BaseModel):
     # --- skills -------------------------------------------------------------------------
 
     def run_pick_cube(self) -> ControllerRun:
+        replies: list[PickReply] = []
+
         def act() -> ControllerRun:
             reply = PickReply.model_validate(self.robot.pick())
+            replies.append(reply)
             if reply.refused:
                 return ControllerRun(
                     steps=0, terminated=True, error=f"pick refused: {reply.reason}"
@@ -585,7 +617,38 @@ class RealTossingBackend(BaseModel):
             error = None if reply.held else f"pick did not hold: {reply.note}"
             return ControllerRun(steps=_MOVED, terminated=True, error=error)
 
-        return self._skill(action="PickCube", act=act)
+        return self._skill(
+            action="PickCube",
+            act=act,
+            known=lambda run: (
+                self._held_look(pick=replies[0]) if replies and not run.error else None
+            ),
+        )
+
+    def _held_look(self, *, pick: PickReply) -> ObserveReply | None:
+        """What a look right after a pick that held would report, from its reply and the
+        look before it; None (look) when the pick did not hold or did not say where it
+        stood. The robot side's `holding` is the held reading with the cube out of view,
+        and the base stands where the pick drove it. The bin is the pick's own fit (the
+        look's it planned from), so a bin the pick pushed is seen only at the next look:
+        in the 2026-11-05..08 real runs a fresh look after a held pick found the bin
+        within 6 mm, the base within 3 cm of `stand`, over 233/233 picks."""
+        if not pick.held or pick.stand is None or self._last is None:
+            return None
+        return self._last.reply.model_copy(
+            update={
+                "robot": tuple(pick.stand),
+                "cube": None,
+                "bin": pick.bin if pick.bin is not None else self._last.reply.bin,
+                "holding": True,
+                "gripper": pick.gripper,
+                "gripper_command": GRIPPER_CLOSED_COMMAND,
+                "cube_upright": False,
+                "cube_in_bin": False,
+                "cube_inside_bin": False,
+                "can_pick": None,
+            }
+        )
 
     def run_open_gripper(self) -> ControllerRun:
         def act() -> ControllerRun:
@@ -647,8 +710,15 @@ class RealTossingBackend(BaseModel):
 
         return self._skill(action="PourCubeOutOfBin", act=act)
 
-    def _skill(self, *, action: str, act: Callable[[], ControllerRun]) -> ControllerRun:
-        """One robot skill, one fresh observation, then its charged steps.
+    def _skill(
+        self,
+        *,
+        action: str,
+        act: Callable[[], ControllerRun],
+        known: Callable[[ControllerRun], ObserveReply | None] | None = None,
+    ) -> ControllerRun:
+        """One robot skill, one fresh observation, then its charged steps. `known` is
+        what the skill's own reply says a look would see, if it can: then no look.
 
         A `ValueError` is the robot side refusing before it moved: uncharged. Any other
         error from the call (a stopped or busy skill, a lost connection) may have come
@@ -678,9 +748,17 @@ class RealTossingBackend(BaseModel):
             run = run.model_copy(
                 update={"steps": max(1, round(self._skill_seconds / self.tick_seconds))}
             )
-        self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
-        self._seen = None
-        self.observe()
+        seen = None if known is None else known(run)
+        if seen is None:
+            self._say(line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); observing ...")
+            self._seen = None
+            self.observe()
+        else:
+            self._say(
+                line=f"{action}: {outcome} ({self._skill_seconds:.0f} s); "
+                "holding the cube, no look needed"
+            )
+            self._adopt(reply=seen)
         self._say(line="planning the next skill ...")
         self._ticks.append(self.snapshot())
         if self._after is not None:
@@ -699,12 +777,15 @@ class RealTossingBackend(BaseModel):
         self._progress = PracticeProgress(
             cycle=cycle, action=action, max_actions=max_actions, steps=steps, budget=budget
         )
+        self._evaluation_task = None
 
     def evaluation_progress(self, *, index: int, label: str, task: int, num_tasks: int) -> None:
-        """Which evaluation and task is running, shown before its scene and each skill."""
+        """Which evaluation and task is running, shown before its scene and each skill;
+        `task` (1-based) also decides whether its scene drives home (`reset`)."""
         self._progress = EvaluationProgress(
             index=index, label=label, task=task, num_tasks=num_tasks
         )
+        self._evaluation_task = task
 
     def _say_progress(self) -> None:
         if self._progress is not None:

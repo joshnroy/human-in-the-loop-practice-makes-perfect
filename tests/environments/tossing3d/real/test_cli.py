@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from hitl_pmp.cli import ENVIRONMENTS, STEP_PROTOCOL_ENVIRONMENTS, Cli
-from hitl_pmp.environments.tossing3d.real.backend import WallClock
+from hitl_pmp.environments.tossing3d.real.backend import TerminalPerson, WallClock
 from hitl_pmp.environments.tossing3d.real.cli import Tossing3DRealCli
 from hitl_pmp.environments.tossing3d.real.environment import RealTossing3DEnvironment
 from hitl_pmp.environments.tossing3d.real.step_protocol import (
@@ -166,6 +166,48 @@ def test_measuring_after_every_cycle_learns_then_measures_then_restores_practice
     assert sum("restore practice:" in line for line in session) == len(updates)
     # A restore is the person's, not a human reset the method chose.
     assert kinds.count("human") == sum(" human reset: " in line for line in session)
+
+
+def test_an_evaluation_the_person_skips_measures_nothing_and_practice_carries_on(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+
+    def wanted(*, problem: Any, label: str) -> bool:
+        del problem
+        asked.append(label)
+        return label != "after cycle 0"
+
+    monkeypatch.setattr(Tossing3DRealStepProtocol, "evaluation_wanted", staticmethod(wanted))
+    output = tmp_path / "run"
+    Cli.main(
+        argv=[
+            *FAKE_RUN,
+            *("--practice-step-budget", "4500", "--measure-every-cycles", "1"),
+            *("--max-steps-per-interaction", "4"),
+            *("--output-dir", str(output)),
+        ]
+    )
+    lines = (output / "step_events.jsonl").read_text().splitlines()
+    events = [e for e in map(json.loads, lines) if e["event"] != "checkpoint"]
+    assert asked[:3] == ["(before practice)", "after cycle 0", "after cycle 1"]
+    skipped = [e for e in events if e["event"] == "evaluation_skipped"]
+    assert [e["label"] for e in skipped] == ["after cycle 0"]
+    measured = [e.get("after_cycle") for e in events if e["event"] == "measurement"]
+    assert 0 not in measured and 1 in measured
+    # A skipped evaluation never used the room: no restore follows it.
+    position = events.index(skipped[0])
+    assert events[position - 1]["event"] == "learning_update"
+    assert events[position + 1]["event"] == "session_start"
+
+
+def test_the_person_chooses_each_evaluation_with_y_or_s() -> None:
+    answers = iter(["", "x", "s", "y"])
+    said: list[str] = []
+    person = TerminalPerson(read=lambda prompt: next(answers), write=said.append)
+    assert person.wants_evaluation(label="after cycle 2") is False
+    assert person.wants_evaluation(label="(final)") is True
+    assert said == ["'x': please type y or s."]
 
 
 def test_the_simulated_domain_has_no_measure_every_cycles_flag() -> None:

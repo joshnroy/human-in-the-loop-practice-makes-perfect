@@ -17,7 +17,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
-from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
@@ -55,6 +55,17 @@ class InProcessEvaluations:
 
 class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     """A static-method container, never instantiated."""
+
+    @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        """A held-out task is one throw at the bin: a throw that misses ends it, so a
+        budget large enough for pick retries never buys a second throw."""
+        if (
+            int(round(float(action[0])))
+            == RealTossing3DEnvironment.move_to_toss_location_and_toss_id
+        ):
+            return "toss_missed"
+        return None
 
     @staticmethod
     def build_practice_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
@@ -105,6 +116,15 @@ class Tossing3DRealStepProtocol(Tossing3DStepProtocol):
     ) -> None:
         Tossing3DRealStepProtocol.real_env(problem=problem).real_backend().evaluation_progress(
             index=index, label=label, task=task, num_tasks=num_tasks
+        )
+
+    @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        return (
+            Tossing3DRealStepProtocol
+            .real_env(problem=problem)
+            .real_backend()
+            .person.wants_evaluation(label=label)
         )
 
     @staticmethod

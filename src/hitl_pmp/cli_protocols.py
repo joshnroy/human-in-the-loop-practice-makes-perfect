@@ -164,6 +164,12 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        """Whether to run the evaluation `label` names (`after cycle 3`, `(final)`), asked
+        before it starts. False skips it: nothing is measured and practice carries on."""
+        ...
+
+    @staticmethod
     def practice_scene(*, problem: Problem) -> Any:
         """Practice's scene, as plain data, before an in-process evaluation uses the room
         (`--measure-every-cycles`)."""
@@ -181,6 +187,12 @@ class StepProtocolEnvironment(Protocol):
         """A compact, JSON-ready account of the last robot skill -- its outcome and
         every candidate it rejected -- logged as the step event's `skill_trace`; None
         for a domain that keeps none (the event then carries no such field)."""
+        ...
+
+    @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        """The end reason (e.g. `toss_missed`) of a held-out task still unsolved after
+        `action`, if `action` is the task's one attempt at its goal; None otherwise."""
         ...
 
     @staticmethod
@@ -228,6 +240,11 @@ class SimulatedStepProtocolHooks:
         del problem, index, label, task, num_tasks
 
     @staticmethod
+    def evaluation_wanted(*, problem: Problem, label: str) -> bool:
+        del problem, label
+        return True
+
+    @staticmethod
     def practice_scene(*, problem: Problem) -> Any:
         del problem
         raise NotImplementedError("--measure-every-cycles is for --env tossing3d_real only")
@@ -255,6 +272,12 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def one_shot_failure_reason(*, action: Action) -> str | None:
         """By default a domain has no one-shot skill: every failure may be retried."""
+        del action
+        return None
+
+    @staticmethod
+    def final_attempt_reason(*, action: Action) -> str | None:
+        """By default a held-out task keeps acting until it is solved or out of budget."""
         del action
         return None
 

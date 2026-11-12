@@ -604,17 +604,31 @@ class StepProtocolResume:
         "evaluation_policy": "None",
     }
 
+    # Flags a resume may change. `--num-test-tasks` (Josh, 2026-11-08: a real run's
+    # later evaluations at 10 tasks instead of 20): every evaluation the resumed process
+    # runs, the pending one included, uses the new count from its first task; each
+    # evaluation's own `results.json` records how many it ran (`num_total`).
+    MAY_CHANGE: ClassVar[frozenset[str]] = frozenset({"num_test_tasks"})
+
     @staticmethod
     def comparable(*, arguments: dict[str, str]) -> dict[str, str]:
-        """The resolved flags a resume must repeat: all but `--resume` itself, and the
-        output directory, which `prepare` has already matched as a path."""
+        """The resolved flags a resume must repeat: all but `--resume` itself, the
+        output directory, which `prepare` has already matched as a path, and
+        `MAY_CHANGE`."""
+        skipped = {"resume", "output_dir", "stop_after_cycles", *StepProtocolResume.MAY_CHANGE}
         return {
             **StepProtocolResume.ADDED_DEFAULTS,
-            **{
-                k: v
-                for k, v in arguments.items()
-                if k not in {"resume", "output_dir", "stop_after_cycles"}
-            },
+            **{k: v for k, v in arguments.items() if k not in skipped},
+        }
+
+    @staticmethod
+    def changed(*, args: argparse.Namespace, output: Path) -> dict[str, dict[str, str]]:
+        """The `MAY_CHANGE` flags this resume changed, as recorded and as now."""
+        recorded = json.loads((output / "config_snapshot.json").read_text())["args"]
+        return {
+            key: {"recorded": recorded[key], "now": str(getattr(args, key))}
+            for key in sorted(StepProtocolResume.MAY_CHANGE)
+            if key in recorded and recorded[key] != str(getattr(args, key))
         }
 
     @staticmethod
@@ -760,6 +774,26 @@ class EvaluationTaskRng:
         environment.isolate_evaluation_task(problem=problem)
         return method
 
+    # Mixed into an in-process evaluation's seed, so its stream is never practice's.
+    IN_PROCESS_SALT: ClassVar[int] = int.from_bytes(b"evaluation", "big")
+
+    @staticmethod
+    def in_process(*, method: EesMethod) -> np.random.SeedSequence:
+        """An in-process evaluation's own stream (`StepEvaluation.run`), from every RNG
+        state its restored deployment holds and a fixed salt: practice carries on from
+        those same states, so drawing from them would replay practice's next draws."""
+        states = {
+            "method": method._rng.bit_generator.state,
+            "samplers": {
+                name: RngStates.capture(owner=sampler) for name, sampler in method._samplers.items()
+            },
+        }
+        encoded = json.dumps(states, sort_keys=True, default=lambda value: value.tolist())
+        digest = hashlib.sha256(encoded.encode()).digest()
+        return np.random.SeedSequence(
+            entropy=[int.from_bytes(digest[:16], "big"), EvaluationTaskRng.IN_PROCESS_SALT]
+        )
+
     @staticmethod
     def reseed(*, method: EesMethod, sequence: np.random.SeedSequence) -> None:
         """Every RNG a deployment draws from, reseeded from `sequence`: the method's own,
@@ -806,9 +840,14 @@ class StepEvaluation:
         `sampling_seed` reseeds every RNG the restored deployment draws from
         (`EvaluationTaskRng.reseed`) before the first task, in place of the snapshot's
         RNG state: a later re-run of a snapshot (`hitl_pmp.evaluate_snapshot`). None
-        draws from the snapshot's state, as every evaluation during a run does."""
+        draws from the snapshot's state, as every spawned evaluation during a run does;
+        an in-process one (the real robot) draws from a stream salted away from it
+        (`EvaluationTaskRng.in_process`), and leaves the process-global RNGs as practice
+        left them, so practice never replays or loses a draw to an evaluation."""
         args = argparse.Namespace(**configuration)
         per_task = EvaluationTaskRng.of(args=args) == EvaluationTaskRng.PER_TASK
+        in_process = environment.evaluation_pool() is not None
+        practice_globals = RngStates.capture_global() if in_process else None
         if sampling_seed is not None and per_task:
             raise ValueError(
                 "a sampling seed replaces the snapshot's RNG state for the evaluation, "
@@ -834,6 +873,10 @@ class StepEvaluation:
             if sampling_seed is not None:
                 EvaluationTaskRng.reseed(
                     method=method, sequence=np.random.SeedSequence(sampling_seed)
+                )
+            elif in_process and not per_task:
+                EvaluationTaskRng.reseed(
+                    method=method, sequence=EvaluationTaskRng.in_process(method=method)
                 )
             for index, task in enumerate(tasks):
                 if task_indices is not None and index not in task_indices:
@@ -914,6 +957,13 @@ class StepEvaluation:
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
+                        # A task's one attempt at its goal (a real toss) ends it either
+                        # way: a large budget buys pick retries, never a second throw.
+                        if not clock.solved and (
+                            final := environment.final_attempt_reason(action=action.action)
+                        ):
+                            reason = final
+                            break
                         # A one-shot skill (a Pour) that failed at deployment is
                         # committed: past the allowed attempts the task ends unsolved.
                         if max_one_shot is not None and error is not None and not clock.solved:
@@ -958,6 +1008,8 @@ class StepEvaluation:
         finally:
             writer.close()
             problem.env.close()
+            if practice_globals is not None:
+                RngStates.restore_global(states=practice_globals)
 
 
 class TaskParallelEvaluation:
@@ -1375,6 +1427,8 @@ class StepPracticeRunner:
             interrupted_last_line=last_line,
             git_commit=snapshot.git_commit,
             git_dirty=snapshot.git_dirty,
+            # config_snapshot.json stays as the first process wrote it.
+            **StepProtocolResume.changed(args=args, output=events.parent),
         )
 
     @staticmethod
@@ -1635,9 +1689,26 @@ class StepPracticeRunner:
                 **restored,
             )
 
+        def skipped(*, label: str) -> None:
+            StepFiles.event(
+                path=events,
+                event="evaluation_skipped",
+                label=label,
+                practice_steps=clock.steps,
+                learning_updates=learning_updates,
+            )
+
         def evaluate_and_restore(*, completed_cycle: int, scene: Any) -> None:
             """Measure the policy after `completed_cycle` (-1: the untrained one), then
             checkpoint and have the person put practice's `scene` back."""
+            label = "(before practice)" if completed_cycle < 0 else f"after cycle {completed_cycle}"
+            if not environment.evaluation_wanted(problem=problem, label=label):
+                # Nothing used the room, so there is no scene to put back; the checkpoint
+                # still replaces the one that says this evaluation is pending.
+                skipped(label=label)
+                if checkpoint_cycles:
+                    checkpoint(completed_cycle=completed_cycle)
+                return
             if completed_cycle < 0:
                 measure(before_practice=True)
             else:
@@ -2279,7 +2350,10 @@ class StepPracticeRunner:
                 and not unchanged
                 and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
-                measure()
+                if environment.evaluation_wanted(problem=problem, label="(final)"):
+                    measure()
+                else:
+                    skipped(label="(final)")
             StepFiles.event(
                 path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
             )

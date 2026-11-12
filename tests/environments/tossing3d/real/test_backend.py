@@ -20,6 +20,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
 from hitl_pmp.environments.tossing3d.real.backend import (
     PlacementRequest,
     PracticeScene,
+    RealTossingBackend,
     TerminalPerson,
     WallClock,
 )
@@ -34,6 +35,7 @@ from hitl_pmp.environments.tossing3d.real.session_log import RealSessionLog
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
+from hitl_pmp.environments.tossing3d.types import Tossing3DObservation
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 
@@ -340,7 +342,7 @@ def test_a_scene_is_looked_at_once_until_something_happens() -> None:
     env.backend().observe()
     env.get_current_state()
     assert [name for name, _ in robot.calls].count("observe") == 0
-    env.backend().run_pick_cube()
+    env.backend().run_open_gripper()  # a held pick needs no look; any other skill looks
     names = [name for name, _ in robot.calls]
     assert names.count("observe") == 1
     robot.calls.clear()
@@ -624,3 +626,100 @@ def test_an_untimed_placement_shows_no_counter() -> None:
     )
     person.place(request=request)
     assert ticks == []
+
+
+def _fresh_look(*, robot: FakeTossingRobot) -> tuple[Tossing3DObservation, frozenset]:
+    """What a look at the room now would give the planner: the observation and atoms."""
+    backend = RealTossingBackend(
+        robot=robot.model_copy(deep=True),
+        person=FakePerson(robot=robot, write=lambda _line: None),
+        parameters=REAL_TOSS_PARAMETERS,
+    )
+    return backend.observe(), backend.abstract_atoms()
+
+
+def test_a_pick_that_holds_the_cube_skips_the_look_after_it() -> None:
+    """A held pick already says what a look would (Josh, 2026-11-08): holding, the cube
+    out of view, the robot at its stand, the gripper closed. So the next observation is
+    built from the pick's reply, and the camera round after it is saved."""
+    env, robot = _env()
+    robot.calls.clear()
+    env.take_action(action=np.array([env.pick_cube_id, 0, 0, 0, 0], dtype=float))
+    assert robot.holding
+    assert [name for name, _ in robot.calls] == ["pick"]
+    observation, atoms = _fresh_look(robot=robot)
+    assert env.backend().observe() == observation
+    assert env.backend().abstract_atoms() == atoms
+    assert "Holding" in {name for name, _ in atoms}
+    assert env.get_current_state().get(obj=env.robot, feature_name="pos_gripper") == 1.0
+    assert [name for name, _ in robot.calls] == ["pick"]
+
+
+def test_the_skill_after_a_held_pick_looks_as_before() -> None:
+    env, robot = _env()
+    env.backend().run_pick_cube()
+    robot.calls.clear()
+    env.backend().run_open_gripper()
+    assert [name for name, _ in robot.calls][:2] == ["open_gripper", "observe"]
+
+
+class _MissingRobot(FakeTossingRobot):
+    """A pick that moves and closes on nothing: a real miss, not a refusal."""
+
+    def pick(self) -> dict[str, object]:
+        self.calls.append(("pick", ()))
+        return {
+            "held": False,
+            "gripper": 0.0,
+            "note": "gripper closed on nothing",
+            "refused": False,
+            "reason": None,
+            "cube": None,
+            "stand": list(self.robot),
+        }
+
+
+def test_a_pick_that_misses_still_looks() -> None:
+    robot = _MissingRobot()
+    env = RealTossing3DEnvironment(
+        tossing_robot=robot, person=FakePerson(robot=robot, write=lambda _line: None)
+    )
+    env.hard_reset()
+    robot.calls.clear()
+    run = env.backend().run_pick_cube()
+    assert run.error is not None
+    assert [name for name, _ in robot.calls][:2] == ["pick", "observe"]
+
+
+def test_an_evaluation_drives_home_only_before_its_first_task() -> None:
+    """Josh, 2026-11-08: a later task starts where the one before left the robot; the
+    gripper is still opened before every task."""
+    robot = FakeTossingRobot()
+    evaluation = RealTossing3DEnvironment(
+        tossing_robot=robot,
+        person=FakePerson(robot=robot, write=lambda _line: None),
+        evaluation=True,
+    )
+    backend = evaluation.backend()
+    for task in range(1, 5):
+        backend.evaluation_progress(index=2, label="after cycle 2", task=task, num_tasks=4)
+        backend.reset(seed=0)
+        backend.evaluation_progress(index=2, label="after cycle 2", task=task, num_tasks=4)
+        backend.run_pick_cube()
+    names = [name for name, _ in robot.calls]
+    assert names.count("go_home") == 1
+    assert names.count("open_gripper") == 4
+    assert names.index("go_home") < names.index("open_gripper") < names.index("pick")
+
+
+def test_practice_scenes_and_restores_still_drive_home_every_time() -> None:
+    env, robot = _env()
+    robot.calls.clear()
+    env.backend().reset(seed=0)
+    env.backend().reset(seed=0)
+    env.restore_practice_scene(
+        scene=PracticeScene(cube=CUBE_SPOT, holding=False, bin_side=Tossing3DSide.OPPOSITE)
+    )
+    names = [name for name, _ in robot.calls]
+    assert names.count("go_home") == 3
+    assert names.count("open_gripper") == 3
