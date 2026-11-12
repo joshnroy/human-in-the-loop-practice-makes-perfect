@@ -288,6 +288,7 @@ jobs:
             tests/results_writer \
             tests/environments/ballring \
             tests/environments/lightswitch \
+            tests/environments/tworoutes \
             tests/environments/tossing3d/real \
             tests/methods \
             tests/humans \

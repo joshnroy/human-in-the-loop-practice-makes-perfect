@@ -39,6 +39,7 @@ class CostFixtures:
         "pouring3d_kitchen": ROOT / "configs/kitchen_pilot_costs.json",
         "racktoserving3d": ROOT / "src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json",
         "sweepoffshelf3d": ROOT / "configs/sweepoffshelf3d_practice_costs.json",
+        "tworoutes": ROOT / "configs/tworoutes_practice_costs.json",
     }
 
     @staticmethod
