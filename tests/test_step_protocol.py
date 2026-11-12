@@ -378,6 +378,11 @@ class FakeStepProtocol:
         del progress
 
     @staticmethod
+    def evaluation_wanted(*, problem, label: str) -> bool:
+        del problem, label
+        return True  # A simulated domain has nobody to ask: every evaluation runs.
+
+    @staticmethod
     def evaluation_pool() -> None:
         return None  # Evaluations beside practice, as in every simulated domain.
 

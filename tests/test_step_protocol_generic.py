@@ -147,6 +147,12 @@ class FakeStepProtocol:
         return {"skill": "fake"}
 
     @staticmethod
+    def evaluation_wanted(*, problem: Any, label: str) -> bool:
+        """A simulated domain has nobody to ask: every evaluation runs."""
+        del problem, label
+        return True
+
+    @staticmethod
     def final_attempt_reason(*, action: Any) -> str | None:
         """A Light Switch task keeps acting until solved or out of budget."""
         del action
