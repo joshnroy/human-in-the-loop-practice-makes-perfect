@@ -272,6 +272,48 @@ def refit_skill_belief(
     return belief.refit(training_examples=training_examples)
 
 
+def refit_skill_after_example(
+    *,
+    state: Tossing3DBeliefState,
+    belief_name: str,
+    sampler_name: str,
+    learning_rate_process_noise_std: float = 0.0,
+    advance_cycle: bool = False,
+) -> Tossing3DBeliefState:
+    """`refit_belief_state` for the one skill whose sampler just refitted on an example.
+
+    Every other skill's belief, pending count and sampler bookkeeping is untouched:
+    their samplers did not train. A skill with nothing pending did not train either.
+    """
+    count = state.pending_examples.get(belief_name, 0)
+    if count == 0:
+        return state
+    stepped = refit_belief_state(
+        state=state.model_copy(
+            update={
+                "skill_beliefs": {belief_name: state.skill_beliefs[belief_name]},
+                "pending_examples": {belief_name: count},
+                "sampler_training": {
+                    name: training
+                    for name, training in state.sampler_training.items()
+                    if name == sampler_name
+                },
+            }
+        ),
+        learning_rate_process_noise_std=learning_rate_process_noise_std,
+        advance_cycle=advance_cycle,
+    )
+    pending_examples = dict(state.pending_examples)
+    del pending_examples[belief_name]
+    return state.model_copy(
+        update={
+            "skill_beliefs": {**state.skill_beliefs, **stepped.skill_beliefs},
+            "pending_examples": pending_examples,
+            "sampler_training": {**state.sampler_training, **stepped.sampler_training},
+        }
+    )
+
+
 def refit_belief_state(
     *,
     state: Tossing3DBeliefState,

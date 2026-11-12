@@ -7,7 +7,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import ConfigDict, Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator
+from typing_extensions import Self
 
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import (
@@ -49,12 +50,14 @@ from .tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
     refit_belief_state,
+    refit_skill_after_example,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.determinized import DeterminizedVariant, DrawScope
 from .types.forced_start_reset import ForcedStartReset
+from .types.learning_update import LearningUpdate
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
@@ -125,6 +128,10 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
     pomdp_inference_engine: Literal["particle", "grid"] = "particle"
     pomdp_competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
+    # "example" is for a sampler that refits on every example (`sampler_model="gp"`):
+    # the learning curve then steps where the learning happens, in the real update and
+    # in search alike, instead of once at the session boundary.
+    pomdp_learning_update: LearningUpdate = "session"
     pomdp_grid_competence_bins: int = Field(default=25, ge=3)
     pomdp_grid_learning_rate_bins: int = Field(default=16, ge=2)
     pomdp_competence_process_noise_std: float = Field(default=0.03, ge=0.0)
@@ -351,6 +358,16 @@ class Tossing3DPomdpMethod(EesMethod):
         resets = self.skill_provider.movables_reset_skills()
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
+    @model_validator(mode="after")
+    def validate_learning_update(self) -> Self:
+        if self.pomdp_learning_update == "example" and self.sampler_model != "gp":
+            raise ValueError(
+                "pomdp_learning_update='example' models a sampler that refits on every "
+                f"example; sampler_model={self.sampler_model!r} refits at the session "
+                "boundary"
+            )
+        return self
+
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
         # Unavailable human and optional robot skills carry no practice belief.
@@ -410,10 +427,12 @@ class Tossing3DPomdpMethod(EesMethod):
             domain=self.pomdp_domain,
             exploration_epsilon=self.exploration_epsilon,
             competence_evidence=self.pomdp_competence_evidence,
+            learning_update=self.pomdp_learning_update,
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
             object_symmetry=reduce_search,
-            merge_beliefs_by_counts=reduce_search,
+            # Counts identify a belief only while no curve steps inside one search.
+            merge_beliefs_by_counts=reduce_search and self.pomdp_learning_update == "session",
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         if self.pomdp_domain == TOSSING3D_DOMAIN:
@@ -706,6 +725,29 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         self._pomdp_state = self._pomdp_model.observe_training_example(
             state=self._pomdp_state, skill_name=skill_name, success=success
+        )
+        if self.pomdp_learning_update != "example":
+            return
+        belief_name = self.pomdp_domain.belief_name(skill_name=skill_name)
+        if belief_name is None or not self._pomdp_state.pending_examples.get(belief_name, 0):
+            return
+        # Save the filtered belief before the step, as `end_cycle` does at a boundary.
+        belief = self._pomdp_state.skill_beliefs[belief_name]
+        if isinstance(belief, BayesianSkillBelief):
+            self._belief_history.setdefault(belief_name, []).append(belief)
+        self._pomdp_state = refit_skill_after_example(
+            state=self._pomdp_state,
+            belief_name=belief_name,
+            sampler_name=skill_name,
+            learning_rate_process_noise_std=self.pomdp_learning_rate_process_noise_std,
+            advance_cycle=True,
+        )
+        self.record_diagnostic(
+            event="example_refit",
+            skill=belief_name,
+            success=success,
+            beliefs=self.belief_diagnostics(),
+            estimated_costs=self.practice_skill_costs(),
         )
 
     def end_cycle(self) -> None:

@@ -596,6 +596,14 @@ class Tossing3DPomdpCli(EesCli):
             "advances the training clock; skills without a sampler are always "
             "conditioned.",
         )
+        parser.add_argument(
+            "--pomdp-learning-update",
+            choices=["session", "example"],
+            default=Tossing3DPomdpMethod.model_fields["pomdp_learning_update"].default,
+            help="When the planner's learning curve steps: at the session boundary "
+            "(default, for a sampler retrained there) or after every training example "
+            "(for --sampler-model gp, which refits on each one).",
+        )
         parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
         parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
         parser.add_argument("--pomdp-competence-process-noise-std", type=float, default=0.03)
@@ -766,6 +774,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_competence_model=args.pomdp_competence_model,
                 pomdp_inference_engine=args.pomdp_inference_engine,
                 pomdp_competence_evidence=CompetenceEvidence(args.pomdp_competence_evidence),
+                pomdp_learning_update=args.pomdp_learning_update,
                 pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
                 pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
                 pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,

@@ -925,4 +925,7 @@ def test_the_sampler_model_flags_parse_and_reach_ees(*, monkeypatch: pytest.Monk
         "sampler_model": "gp",
         "gp_ucb_kappa": 3.0,
         "gp_eval": "lcb",
+        "gp_random_warmup": 0,
+        "gp_prior_rate": None,
+        "num_candidates": 100,
     }

@@ -14,6 +14,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import FUNCTIONAL_PREDICA
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     mean_competence,
+    refit_skill_after_example,
     skill_belief_model,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import (
@@ -22,6 +23,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
 )
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
+from hitl_pmp.methods.belief_space.types.learning_update import LearningUpdate
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 
@@ -253,6 +255,7 @@ def transition_outcomes(
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
     domain: PracticeDomain = TOSSING3D_DOMAIN,
+    learning_update: LearningUpdate = "session",
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
@@ -304,6 +307,7 @@ def transition_outcomes(
         failure_effect_counts=failure_effect_counts,
         competence_evidence=competence_evidence,
         domain=domain,
+        learning_update=learning_update,
     )
 
 
@@ -364,6 +368,7 @@ def toss_outcomes(
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
     domain: PracticeDomain = TOSSING3D_DOMAIN,
+    learning_update: LearningUpdate = "session",
 ) -> tuple[TransitionBranch, ...]:
     """Branch on the greedy/epsilon draw, then on S/F.
 
@@ -432,6 +437,14 @@ def toss_outcomes(
             next_state = skill_belief_model(
                 ground_skill=ground_skill, domain=domain
             ).observe_training_example(state=next_state, success=success)
+            if learning_update == "example":
+                # The sampler has refitted by the next imagined attempt, so that
+                # attempt is forecast from the stepped curve, not the current one.
+                next_state = refit_skill_after_example(
+                    state=next_state,
+                    belief_name=belief_name,
+                    sampler_name=ground_skill.skill.name,
+                )
             branches.extend(
                 (probability * effect_probability, next_state, next_true_atoms)
                 for effect_probability, next_true_atoms in effect_outcomes

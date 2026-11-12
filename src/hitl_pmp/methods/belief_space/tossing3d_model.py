@@ -34,6 +34,7 @@ from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
 from .types.forced_start_reset import ForcedStartReset
+from .types.learning_update import LearningUpdate
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
 
@@ -88,6 +89,7 @@ class Tossing3DPracticeModel(BaseModel):
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
+    learning_update: LearningUpdate = "session"
     # None: the domain's own deployment horizon.
     deployment_horizon: int | None = Field(default=None, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
@@ -510,6 +512,7 @@ class Tossing3DPracticeModel(BaseModel):
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
             domain=self._domain,
+            learning_update=self.learning_update,
         )
         reset = self.forced_start_reset
         if reset is None or action.skill.param_dim == 0:
