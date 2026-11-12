@@ -24,7 +24,7 @@ from hitl_pmp.environments.tossing3d.types import (
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import REAL_TOSS_PARAMETERS
 
-from .backend import PracticeScene, RealTossingBackend
+from .backend import PracticeScene, RealSceneSnapshot, RealTossingBackend
 from .contract import TossingRobot
 
 
@@ -66,9 +66,15 @@ class RealTossing3DEnvironment(Tossing3DEnvironment):
         Nothing about the world is restored or asked for: the scene is observed afresh,
         whatever was moved meanwhile, and the planner sees it as found. `state` supplies
         only what the room cannot show -- the episode bookkeeping (`seed`,
-        `steps_taken`) and the observed pickup-refusal channel.
+        `steps_taken`), the observed pickup-refusal channel, and the pick refusal the
+        backend remembered (`pick_refusal.py`), which the fresh look keeps only if the
+        cube and the bin are still where it left them.
         """
         assert isinstance(state, Tossing3DState)
+        seen = state.object_centric
+        self.real_backend().remember_pick_refusal(
+            refusal=seen.pick_refusal if isinstance(seen, RealSceneSnapshot) else None
+        )
         self._pickup_blocked = (KB_PICKUP_BLOCKED, (self.cube.name,)) in (
             state.abstract_atoms or frozenset()
         )
