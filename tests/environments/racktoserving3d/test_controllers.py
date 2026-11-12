@@ -501,3 +501,14 @@ def test_release_of_a_blade_that_levelled_lifts_from_the_level_pose_exactly():
     controller.shelf = SimpleNamespace(hold=Mock())
     controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
     assert targets[1]["body"][2, 3] == pytest.approx(targets[0]["body"][2, 3] + 0.06)
+
+
+@pytest.mark.parametrize(("may_rest_above", "rest_above"), [(True, 0.010), (False, 0.0)])
+def test_a_move_that_may_rest_above_lets_the_hand_rest_as_high_as_the_blade(
+    *, may_rest_above, rest_above
+):
+    """The hand check runs inside each line, before the blade's own allowance is read."""
+    controller = move_tool_controller(ends_at=np.zeros(3))
+    controller.tool.rotation_error = Mock(return_value=0.0)
+    controller.move_tool(body=np.eye(4), label="sweep_level", may_rest_above=may_rest_above)
+    assert controller.tool.line.call_args.kwargs["rest_above"] == rest_above

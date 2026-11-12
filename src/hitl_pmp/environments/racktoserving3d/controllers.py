@@ -240,7 +240,11 @@ class RackControllers:
         for _ in range(5):
             target = self.hand_for_tool(body=body)
             self.tool.line(
-                position=target[:3, 3], rotation=target[:3, :3], label=label, holding=True
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                label=label,
+                holding=True,
+                rest_above=self.REST_ABOVE_LIMIT if may_rest_above else 0.0,
             )
             actual = self.tool.wiper_pose()
             if (

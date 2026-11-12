@@ -784,3 +784,51 @@ def test_a_blade_grazing_the_racks_front_face_as_it_leaves_is_not_a_collision():
         other_size=model.geom_size[3],
     )
     assert depth == pytest.approx(1e-4, abs=1e-6)
+
+
+def hand_settling_tool(*, ends_at: np.ndarray):
+    """A tool whose hand stays `ends_at` from the origin however long it settles."""
+    tool = TableWiper.__new__(TableWiper)
+    pose = np.eye(4)
+    pose[:3, 3] = ends_at
+    tool.shelf = SimpleNamespace(site_pose=Mock(return_value=pose))
+    tool.step = Mock()
+    return tool
+
+
+def test_a_hand_held_up_while_levelling_onto_food_is_not_a_tracking_error():
+    """Ours seed 0 (bulk-only-v2), Sweep(0.06): "sweep_level: hand tracking error 5.9 mm /
+    0.9 deg". The blade rested on two dumplings, so the hand stopped 5.82 mm above its
+    target and under 1 mm off it horizontally, with every joint within 0.007 rad."""
+    tool = hand_settling_tool(ends_at=np.array([-0.00087, -0.00076, 0.00582]))
+    tool.settle_hand(
+        arm=np.zeros(7),
+        position=np.zeros(3),
+        rotation=np.eye(3),
+        label="sweep_level",
+        limit=3,
+        rest_above=0.010,
+    )
+
+
+@pytest.mark.parametrize(
+    ("ends_at", "rest_above"),
+    [
+        ([-0.00087, -0.00076, 0.00582], 0.0),
+        ([-0.00087, -0.00076, -0.00582], 0.010),
+        ([-0.00600, -0.00076, 0.00582], 0.010),
+        ([0.0, 0.0, 0.0200], 0.010),
+    ],
+    ids=["not-allowed", "below", "sideways", "far-above"],
+)
+def test_only_a_hand_held_just_above_its_target_is_excused(*, ends_at, rest_above):
+    tool = hand_settling_tool(ends_at=np.array(ends_at))
+    with pytest.raises(SkillFailed, match="hand tracking error"):
+        tool.settle_hand(
+            arm=np.zeros(7),
+            position=np.zeros(3),
+            rotation=np.eye(3),
+            label="sweep_level",
+            limit=3,
+            rest_above=rest_above,
+        )

@@ -798,6 +798,7 @@ class TableWiper:
         step: float = 0.01,
         steps_per: int = 3,
         settle: int = 40,
+        rest_above: float = 0.0,
     ) -> None:
         """Interpolate Cartesian position and rotation on one guarded IK branch."""
         shelf = self.shelf
@@ -830,6 +831,7 @@ class TableWiper:
             rotation=rotation,
             label=label,
             limit=settle,
+            rest_above=rest_above,
         )
         if holding:
             self.require_held(label=label)
@@ -932,15 +934,26 @@ class TableWiper:
         rotation: np.ndarray,
         label: str,
         limit: int,
+        rest_above: float = 0.0,
     ) -> None:
+        """Hold ``arm`` until the hand is on its target, or fail on a tracking error.
+
+        A hand up to ``rest_above`` over its target, on it horizontally and in
+        rotation, is not a tracking error: what it holds is resting on something.
+        """
         error, angle = float("inf"), float("inf")
+        offset = np.full(3, np.inf)
         for _ in range(limit):
             self.step(arm=arm, label=label)
             pose = self.shelf.site_pose()
-            error = float(np.linalg.norm(pose[:3, 3] - position))
+            offset = pose[:3, 3] - position
+            error = float(np.linalg.norm(offset))
             angle = self.rotation_error(actual=pose[:3, :3], target=rotation)
             if error < 0.001 and angle < 0.5:
                 return
+        resting = 0 < offset[2] <= rest_above and np.linalg.norm(offset[:2]) <= 0.005
+        if resting and np.isfinite([error, angle]).all() and angle <= 2.0:
+            return
         if not np.isfinite([error, angle]).all() or error > 0.005 or angle > 2.0:
             raise SkillFailed(
                 f"{label}: hand tracking error {error * 1000:.1f} mm / {angle:.1f} deg"
