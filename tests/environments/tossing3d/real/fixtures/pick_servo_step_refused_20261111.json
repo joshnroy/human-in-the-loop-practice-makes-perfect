@@ -1,0 +1,238 @@
+{
+ "source": "tidybot-nuc-prpl skill_calls.jsonl, 2026-11-11 20:47-20:50 US Eastern, rows 109-112 (0-based); pick attempts trimmed to their notes and move names",
+ "calls": [
+  {
+   "row": 109,
+   "call": "observe",
+   "reply": {
+    "robot": [
+     1.1249979796711949,
+     -0.809124669894578,
+     3.137876287224241
+    ],
+    "cube": [
+     -0.2488457542565662,
+     -0.9164594871192803,
+     0.15053464798451088
+    ],
+    "bin": {
+     "x": -0.2949999999999997,
+     "y": -0.8062499999999994,
+     "yaw": 1.5446163880149815,
+     "length": 0.39,
+     "width": 0.29,
+     "height": 0.21
+    },
+    "holding": false,
+    "gripper": 0.008733651041984558,
+    "gripper_command": 0.0,
+    "cube_upright": true,
+    "cube_in_bin": true,
+    "cube_inside_bin": true,
+    "barrier": {
+     "x": 0.0,
+     "y": 0.374,
+     "length": 6.0,
+     "thickness": 0.05,
+     "yaw": 0.026694,
+     "robot_side": [
+      0.026689993556555915,
+      -0.9996437586680323
+     ]
+    },
+    "barrier_x": 0.0,
+    "toss_direction": 0.0,
+    "can_pick": {
+     "feasible": true,
+     "note": null,
+     "refused": false,
+     "reason": null
+    }
+   }
+  },
+  {
+   "row": 110,
+   "call": "pick",
+   "reply": {
+    "held": false,
+    "gripper": 0.008733651041984558,
+    "note": "lateral servo step did not arrive (refused or short)",
+    "refused": false,
+    "reason": null,
+    "cube": {
+     "x": -0.24859497102470762,
+     "y": -0.9158837802255256,
+     "yaw_deg": 6.75,
+     "in_bin": true,
+     "iou": null
+    },
+    "bin": {
+     "x": -0.2949999999999997,
+     "y": -0.8062499999999994,
+     "yaw": 1.5446163880149815,
+     "length": 0.39,
+     "width": 0.29,
+     "height": 0.21
+    },
+    "stand": [
+     0.4220565317533762,
+     -0.8493027115246471,
+     -3.0313560013943395
+    ],
+    "attempts": [
+     {
+      "attempt": 1,
+      "held": false,
+      "gripper": 0.008733651041984558,
+      "note": "lateral servo step did not arrive (refused or short)",
+      "moves": [
+       "above",
+       "hover",
+       "retreat",
+       "above"
+      ],
+      "lateral_servo": {
+       "aligned": false,
+       "note": "lateral servo step did not arrive (refused or short)"
+      }
+     },
+     {
+      "attempt": 2,
+      "held": false,
+      "gripper": 0.008733651041984558,
+      "note": "lateral servo step did not arrive (refused or short)",
+      "moves": [
+       "above",
+       "hover",
+       "retreat",
+       "above"
+      ],
+      "lateral_servo": {
+       "aligned": false,
+       "note": "lateral servo step did not arrive (refused or short)"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "row": 111,
+   "call": "observe",
+   "reply": {
+    "robot": [
+     1.0952597378363875,
+     -0.7771903990335842,
+     -3.14111339601153
+    ],
+    "cube": [
+     -0.2486470735690885,
+     -0.9164389348446712,
+     0.01636246173744682
+    ],
+    "bin": {
+     "x": -0.2949999999999997,
+     "y": -0.8062499999999994,
+     "yaw": 1.5446163880149815,
+     "length": 0.39,
+     "width": 0.29,
+     "height": 0.21
+    },
+    "holding": false,
+    "gripper": 0.008733651041984558,
+    "gripper_command": 0.0,
+    "cube_upright": true,
+    "cube_in_bin": true,
+    "cube_inside_bin": true,
+    "barrier": {
+     "x": 0.0,
+     "y": 0.374,
+     "length": 6.0,
+     "thickness": 0.05,
+     "yaw": 0.026694,
+     "robot_side": [
+      0.026689993556555915,
+      -0.9996437586680323
+     ]
+    },
+    "barrier_x": 0.0,
+    "toss_direction": 0.0,
+    "can_pick": {
+     "feasible": true,
+     "note": null,
+     "refused": false,
+     "reason": null
+    }
+   }
+  },
+  {
+   "row": 112,
+   "call": "pick",
+   "reply": {
+    "held": true,
+    "gripper": 0.5196506381034851,
+    "note": null,
+    "refused": false,
+    "reason": null,
+    "cube": {
+     "x": -0.3013008566327123,
+     "y": -0.8046123781058472,
+     "yaw_deg": 21.000000000000004,
+     "in_bin": true,
+     "iou": null
+    },
+    "bin": {
+     "x": -0.2949999999999997,
+     "y": -0.8062499999999994,
+     "yaw": 1.5446163880149815,
+     "length": 0.39,
+     "width": 0.29,
+     "height": 0.21
+    },
+    "stand": [
+     0.3824378085201057,
+     -0.7944667191370428,
+     -3.1193545834445437
+    ],
+    "attempts": [
+     {
+      "attempt": 1,
+      "held": false,
+      "gripper": 0.008733651041984558,
+      "note": "lateral servo step did not arrive (refused or short)",
+      "moves": [
+       "above",
+       "hover",
+       "retreat",
+       "above"
+      ],
+      "lateral_servo": {
+       "aligned": false,
+       "note": "lateral servo step did not arrive (refused or short)"
+      }
+     },
+     {
+      "attempt": 2,
+      "held": true,
+      "gripper": 0.5196506381034851,
+      "note": null,
+      "moves": [
+       "above",
+       "hover",
+       "lateral_align",
+       "lateral_align",
+       "lateral_align",
+       "grasp",
+       "lift",
+       "above",
+       "carry"
+      ],
+      "lateral_servo": {
+       "aligned": true,
+       "note": null
+      }
+     }
+    ]
+   }
+  }
+ ]
+}
