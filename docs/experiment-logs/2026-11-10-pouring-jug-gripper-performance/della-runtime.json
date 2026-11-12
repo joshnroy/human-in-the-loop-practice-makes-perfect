@@ -1,0 +1,13 @@
+{
+  "python": "3.10.21 | packaged by conda-forge | (main, Aug 21 2026, 22:42:31) [GCC 14.4.0]",
+  "platform": "Linux-5.14.0-687.66.1.el9_8.x86_64-x86_64-with-glibc2.34",
+  "packages": {
+    "numpy": "1.26.4",
+    "scipy": "1.14.0",
+    "mujoco": "3.3.7",
+    "pybullet": null,
+    "pydantic": "2.13.4",
+    "pybullet-helpers": "0.1.1",
+    "kindergarden": "0.2.5"
+  }
+}
