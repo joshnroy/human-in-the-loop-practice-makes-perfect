@@ -35,7 +35,7 @@ def test_two_real_candidates_differing_only_in_standoff_score_identically() -> N
         sampler.observe(sampler_input=_toss_row(env=env, params=params), success=params[1] < 120)
     sampler.fit()
     assert sampler.is_fitted
-    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.195, 1.205)]
+    rows = [_toss_row(env=env, params=np.array([s, 114.72, 729.37])) for s in (1.395, 1.405)]
     low, high = sampler.score_inputs(sampler_inputs=rows)
     assert low == high
 
