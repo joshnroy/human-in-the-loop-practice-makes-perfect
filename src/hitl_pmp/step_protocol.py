@@ -1689,9 +1689,26 @@ class StepPracticeRunner:
                 **restored,
             )
 
+        def skipped(*, label: str) -> None:
+            StepFiles.event(
+                path=events,
+                event="evaluation_skipped",
+                label=label,
+                practice_steps=clock.steps,
+                learning_updates=learning_updates,
+            )
+
         def evaluate_and_restore(*, completed_cycle: int, scene: Any) -> None:
             """Measure the policy after `completed_cycle` (-1: the untrained one), then
             checkpoint and have the person put practice's `scene` back."""
+            label = "(before practice)" if completed_cycle < 0 else f"after cycle {completed_cycle}"
+            if not environment.evaluation_wanted(problem=problem, label=label):
+                # Nothing used the room, so there is no scene to put back; the checkpoint
+                # still replaces the one that says this evaluation is pending.
+                skipped(label=label)
+                if checkpoint_cycles:
+                    checkpoint(completed_cycle=completed_cycle)
+                return
             if completed_cycle < 0:
                 measure(before_practice=True)
             else:
@@ -2333,7 +2350,10 @@ class StepPracticeRunner:
                 and not unchanged
                 and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
-                measure()
+                if environment.evaluation_wanted(problem=problem, label="(final)"):
+                    measure()
+                else:
+                    skipped(label="(final)")
             StepFiles.event(
                 path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
             )

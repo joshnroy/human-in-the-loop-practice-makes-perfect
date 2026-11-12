@@ -95,6 +95,7 @@ GRIPPER_OPEN_COMMAND_TOLERANCE = 1e-3
 GRIPPER_CLOSED_COMMAND: Final = 1.0
 # The only answers a y/n prompt takes; anything else is asked again.
 _ANSWERS: Final[dict[str, bool]] = {"y": True, "yes": True, "n": False, "no": False}
+_RUN_OR_SKIP: Final[dict[str, bool]] = {"y": True, "yes": True, "s": False, "skip": False}
 _WHERE: Final[dict[str, str | None]] = {"b": "bin", "o": "out", "l": "look", "n": None}
 CUBE_HALF_SIZE_M = 0.025
 
@@ -348,6 +349,15 @@ class TerminalPerson(BaseModel):
         if where is None:
             raise KeyboardInterrupt("the person declined: locating the lost cube")
         return where
+
+    def wants_evaluation(self, *, label: str) -> bool:
+        """Before an evaluation: y runs it, s skips it and practice carries on (Josh,
+        2026-11-09). Each evaluation is ten scenes the person sets up."""
+        question = f"evaluation {label}: run it? [y = run / s = skip] "
+        while (answer := self.read(question).strip().lower()) not in _RUN_OR_SKIP:
+            if answer:
+                self.write(f"{answer!r}: please type y or s.")
+        return _RUN_OR_SKIP[answer]
 
     def confirm(self, *, action: str) -> None:
         """Before a skill moves the robot (see `_yes`)."""
