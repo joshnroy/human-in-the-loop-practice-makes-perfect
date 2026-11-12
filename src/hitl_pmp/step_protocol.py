@@ -45,9 +45,11 @@ from hitl_pmp.core.problem.human.types import (
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.belief_space.practice_domain import Tossing3DPracticeDomain
+from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.run_record.types import RECORDING_FILENAME, Phase
@@ -644,15 +646,32 @@ class DeploymentSnapshot:
                 dp_priors=method._dp_skill_priors,
             )
         elif method_specific and isinstance(method, Tossing3DPomdpMethod):
-            if not isinstance(method.pomdp_domain, Tossing3DPracticeDomain):
+            source = f"{method.pomdp_determinized_variant}/{method.pomdp_solver}"
+            domain = method.pomdp_domain
+            if isinstance(domain, RewardedRoutesPracticeDomain):
+                # Deployed from the snapshot's outcome counts and the domain's prior:
+                # the planner's belief is not in a snapshot.
+                prior = DpSkillPrior(
+                    alpha=domain.initial_competence_alpha or method.prior_alpha,
+                    beta=domain.initial_competence_beta or method.prior_beta,
+                    initial_learning_rate=0.0,
+                )
+                policy = DeploymentPolicy(
+                    kind="reward_greedy",
+                    source_method=source,
+                    horizon=domain.deployment_horizon,
+                    dp_priors={name: prior for name, _ in domain.route_rewards},
+                )
+            elif not isinstance(domain, Tossing3DPracticeDomain):
                 raise ValueError(
                     "Method-specific deployment currently supports the Tossing domain only"
                 )
-            policy = DeploymentPolicy(
-                kind="tossing_canonical",
-                source_method=f"{method.pomdp_determinized_variant}/{method.pomdp_solver}",
-                horizon=method.pomdp_domain.deployment_horizon,
-            )
+            else:
+                policy = DeploymentPolicy(
+                    kind="tossing_canonical",
+                    source_method=source,
+                    horizon=domain.deployment_horizon,
+                )
         configuration = {
             key: getattr(method, key)
             for key in EesMethod.model_fields

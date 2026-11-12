@@ -295,6 +295,7 @@ class DpMethod(EesMethod):
             skills=self.skills(),
             objects=self.objects(),
             max_states=self.dp_max_states,
+            goal_rewards=self.skill_provider.goal_rewards(),
         )
         if self.dp_prior_calibration is not None:
             missing = {edge.skill.skill.name for edge in mdp.transitions} - set(
