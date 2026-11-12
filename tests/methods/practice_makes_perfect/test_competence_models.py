@@ -227,13 +227,13 @@ def test_returns_are_plain_floats():
 
 
 def test_linear_fresh_model_reports_its_priors():
-    model = LinearSkillCompetenceModel()
+    model = LinearSkillCompetenceModel(estimator="cumulative")
     assert model.get_current_competence() == pytest.approx(10.0 / 11.0)
     assert model.learning_rate() == pytest.approx(0.1)
 
 
 def test_linear_learning_rate_is_the_papers_running_average_per_attempt():
-    model = LinearSkillCompetenceModel()
+    model = LinearSkillCompetenceModel(estimator="cumulative")
     _observe_all(model=model, outcomes=[False, False])
     model.advance_cycle()
     prior, first, second = 10.0 / 11.0, 10.0 / 12.0, 10.0 / 13.0
@@ -253,8 +253,8 @@ def test_linear_learning_rate_is_the_papers_running_average_per_attempt():
 @pytest.mark.parametrize("smoothing", [0.0, 0.5, 0.9, 1.0])
 def test_linear_rate_does_not_depend_on_closed_period_partition(*, smoothing):
     outcomes = [False, False, True, False, True, True, True, False]
-    batched = LinearSkillCompetenceModel(smoothing=smoothing)
-    episodic = LinearSkillCompetenceModel(smoothing=smoothing)
+    batched = LinearSkillCompetenceModel(estimator="cumulative", smoothing=smoothing)
+    episodic = LinearSkillCompetenceModel(estimator="cumulative", smoothing=smoothing)
     _observe_all(model=batched, outcomes=outcomes)
     batched.advance_cycle()
     for outcome in outcomes:
@@ -267,6 +267,7 @@ def test_linear_rate_does_not_depend_on_closed_period_partition(*, smoothing):
 def test_linear_recorded_seed_zero_failures_keep_signed_episode_updates():
     probability = 0.1326530612244898
     model = LinearSkillCompetenceModel(
+        estimator="cumulative",
         alpha=2 * probability,
         beta=2 * (1 - probability),
         initial_delta=0.00620110544217687,
@@ -283,7 +284,7 @@ def test_linear_recorded_seed_zero_failures_keep_signed_episode_updates():
 
 
 def test_linear_open_cycle_moves_competence_but_not_the_learning_rate():
-    model = LinearSkillCompetenceModel()
+    model = LinearSkillCompetenceModel(estimator="cumulative")
     _observe_all(model=model, outcomes=[False])
     assert model.get_current_competence() == pytest.approx(10.0 / 12.0)
     assert model.learning_rate() == pytest.approx(0.1)
@@ -292,14 +293,16 @@ def test_linear_open_cycle_moves_competence_but_not_the_learning_rate():
 def test_linear_idle_cycle_leaves_the_learning_rate_alone():
     # A cycle in which the skill was never practised carries no evidence about how
     # fast practice improves it, so it must not decay Delta toward zero.
-    model = LinearSkillCompetenceModel()
+    model = LinearSkillCompetenceModel(estimator="cumulative")
     model.advance_cycle()
     model.advance_cycle()
     assert model.learning_rate() == pytest.approx(0.1)
 
 
 def test_linear_smoothing_and_priors_are_configurable():
-    model = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=0.2, smoothing=0.0)
+    model = LinearSkillCompetenceModel(
+        estimator="cumulative", alpha=1.0, beta=1.0, initial_delta=0.2, smoothing=0.0
+    )
     assert model.get_current_competence() == pytest.approx(0.5)
     _observe_all(model=model, outcomes=[True])
     model.advance_cycle()
@@ -308,9 +311,70 @@ def test_linear_smoothing_and_priors_are_configurable():
 
 
 def test_linear_prediction_is_clipped_to_the_unit_interval():
-    model = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=0.1)
+    model = LinearSkillCompetenceModel(
+        estimator="cumulative", alpha=1.0, beta=1.0, initial_delta=0.1
+    )
     assert model.predict_competence(num_attempts=0) == pytest.approx(0.5)
     assert model.predict_competence(num_attempts=3) == pytest.approx(0.8)
     assert model.predict_competence(num_attempts=50) == 1.0
-    falling = LinearSkillCompetenceModel(alpha=1.0, beta=1.0, initial_delta=-0.1)
+    falling = LinearSkillCompetenceModel(
+        estimator="cumulative", alpha=1.0, beta=1.0, initial_delta=-0.1
+    )
     assert falling.predict_competence(num_attempts=50) == 0.0
+
+
+def linear_model_with_rounds(*, rounds: list[list[bool]]) -> LinearSkillCompetenceModel:
+    model = LinearSkillCompetenceModel(alpha=1.0, beta=3.0)
+    for outcomes in rounds:
+        for success in outcomes:
+            model.observe(success=success)
+        model.advance_cycle()
+    return model
+
+
+def test_dp_competence_is_the_success_rate_of_the_last_five_practice_rounds():
+    """As EES estimates it: early failures drop out, so a skill that has since been
+    mastered reads as mastered rather than as its lifetime average."""
+    model = linear_model_with_rounds(rounds=[[False] * 5, *([[True] * 5] * 5)])
+    assert model.get_current_competence() == pytest.approx((1 + 25) / (1 + 3 + 25))
+
+
+def test_dp_learning_rate_is_positive_for_a_skill_that_fails_first_and_then_improves():
+    """Two Routes, route B at budget 30: five failures in a row turned the per-try
+    estimate negative, and DP wrote off a route whose success rate was rising."""
+    fail, win = False, True
+    model = linear_model_with_rounds(
+        rounds=[
+            [fail] * 5,
+            [fail] * 5,
+            [fail, fail, fail, fail, win],
+            [fail, fail, win, fail, win],
+            [win, fail, win, win, fail],
+        ]
+    )
+    assert model.learning_rate() > 0
+
+
+def test_dp_learning_rate_only_decays_while_every_round_fails():
+    """No round-to-round change is no evidence of decline: the prior rate halves per
+    round (smoothing 0.5) from the second closed round on, and never goes negative."""
+    model = linear_model_with_rounds(rounds=[[False] * 5] * 3)
+    assert model.learning_rate() == pytest.approx(0.1 * 0.5 * 0.5)
+
+
+def test_dp_learning_rate_is_per_try_improvement_between_rounds():
+    """Success rates of 0, 20, 40, 60 and 80% over five rounds of five tries rise 4% per
+    try; the windowed estimate lags a rising skill, so it lands below that, above zero."""
+    rounds = [[index < wins for index in range(5)] for wins in range(5)]
+    rate = linear_model_with_rounds(rounds=rounds).learning_rate()
+    assert 0.01 < rate < 0.04
+
+
+def test_dp_cumulative_estimator_is_still_available():
+    """The estimator every DP result before 2026-11-12 was produced with."""
+    model = LinearSkillCompetenceModel(alpha=1.0, beta=3.0, estimator="cumulative")
+    for success in [False] * 5:
+        model.observe(success=success)
+    model.advance_cycle()
+    assert model.get_current_competence() == pytest.approx(1 / 9)
+    assert model.learning_rate() < 0

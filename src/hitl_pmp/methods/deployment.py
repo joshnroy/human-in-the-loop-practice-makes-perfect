@@ -38,12 +38,14 @@ class DeploymentPolicy(BaseModel):
     dp_priors: dict[str, DpSkillPrior] = Field(default_factory=dict)
 
     def dp_competence(self, *, method: EesMethod, ground: GroundSkill) -> float:
-        """DP values its cumulative posterior, rather than EES's recent window."""
+        """DP deploys on the estimator it practised with. A snapshot from before DP chose
+        one (2026-11-12) pooled every outcome, rather than EES's recent window."""
         prior = self.dp_priors.get(ground.skill.name)
         history = method._competence_models.get(ground)
         return LinearSkillCompetenceModel(
             alpha=prior.alpha if prior is not None else method.prior_alpha,
             beta=prior.beta if prior is not None else method.prior_beta,
+            estimator=getattr(method, "dp_competence_estimator", "cumulative"),
             cycle_observations=history.cycle_observations if history is not None else [[]],
         ).get_current_competence()
 

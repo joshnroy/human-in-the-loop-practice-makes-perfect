@@ -169,6 +169,29 @@ def test_dp_uses_cumulative_history_when_recent_window_prefers_another_route():
     assert dispatched == ["PickCube"]
 
 
+def test_dp_deploys_on_recent_rounds_when_the_method_estimates_competence_that_way():
+    """A DP run values and practises on its estimator, so it deploys on it too: the same
+    history as above, read over the last five rounds, puts pick*toss under .1."""
+    from hitl_pmp.core.method.types import GroundSkill
+
+    method, states, task, dispatched = _fixture()
+    pick, _, toss = method.skills()
+    direct = pick.model_copy(update={"name": "Direct", "add_effects": toss.add_effects})
+    method.skills = lambda: (pick, toss, direct)
+    method.dp_competence_estimator = "recent_rounds"
+    method._competence_models = {  # noqa: SLF001
+        GroundSkill(skill=pick, objects=()): OptimisticSkillCompetenceModel(
+            alpha=1, beta=1, cycle_observations=[[True] * 100] + [[False] * 2 for _ in range(5)]
+        ),
+        GroundSkill(skill=toss, objects=()): OptimisticSkillCompetenceModel(
+            alpha=1, beta=1, cycle_observations=[[True] * 100]
+        ),
+    }
+    policy = DeploymentPolicy(kind="dp_mdp").policy(method=method, task=task)
+    policy(states["ready"])
+    assert dispatched == ["Direct"]
+
+
 class _TwoRoutesDeployment:
     """A restored deployment on Two Routes, with a scripted practice history."""
 
