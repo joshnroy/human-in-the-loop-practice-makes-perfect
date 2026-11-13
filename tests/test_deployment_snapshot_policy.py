@@ -5,7 +5,7 @@ import pytest
 
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
-from hitl_pmp.methods.deployment import SnapshotDeployment
+from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
 from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.step_protocol import DeploymentSnapshot, StepPracticeRunner
@@ -110,3 +110,67 @@ def test_a_rewarded_routes_snapshot_deploys_reward_greedy_from_the_domains_prior
         DeploymentSnapshot.restore(raw=legacy, env=env, provider=provider).deployment_policy.kind
         == "shared_ees"
     )
+
+
+def test_a_two_route_rack_snapshot_executes_the_value_models_own_plan_for_the_planners_belief():
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
+    from hitl_pmp.methods.belief_space.rack_serving_domain import RACK_SERVING_DOMAIN
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+
+    env = RackServingEnvironment(
+        config=RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+    )
+    provider = RackServingSkillProvider(env=env)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        seed=0,
+        pomdp_num_particles=32,
+        pomdp_domain=RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider),
+    )
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(
+        raw=raw, env=env, provider=RackServingSkillProvider(env=env, offer_human_reset=False)
+    )
+    policy = restored.deployment_policy
+    # What is executed at evaluation is what the value model returns for the planner's
+    # own belief, with the value model's own step weight.
+    valued = method._pomdp_model.valued_domain()
+    internal = valued.deployment_plan(beliefs=method._pomdp_state.skill_beliefs)
+    assert policy.kind == "rack_value_model"
+    assert policy.horizon == valued.deployment_horizon
+    assert policy.rack_plan == {
+        DeploymentPolicy.rack_key(state=state, remaining=remaining): (
+            None if choice is None else (choice[0], choice[1][0])
+        )
+        for (state, remaining), choice in internal.items()
+    }
+    assert internal[(5, "empty", True), valued.deployment_horizon][0] == "PickScraper"
+    bulk = internal[(5, "scraper", False), valued.deployment_horizon - 1][0]
+    assert bulk in {"Sweep", "GatherAndSweep"}
+
+    import numpy as np
+
+    from hitl_pmp.core.problem.tasks.types import Task
+    from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
+    from hitl_pmp.environments.racktoserving3d.tasks import RackServingTasks
+    from hitl_pmp.environments.sweepoffshelf3d.types import SweepOffShelf3DState
+
+    def state(*, atoms):
+        data = {obj: np.zeros(obj.type.dim) for obj in Objects.all_objects()}
+        data[Objects.scene] = np.zeros(4)
+        on_rack = {("OnRack", (food.name, "rack_0")) for food in Objects.food}
+        return SweepOffShelf3DState(
+            data=data,
+            abstract_atoms=frozenset(on_rack | {("AnyFoodOnRack", ())} | set(atoms)),
+        )
+
+    start = state(atoms={("HandEmpty", ("robot",)), ("ScraperHome", ("wiper_0",))})
+    held = state(atoms={("HoldingScraper", ("robot", "wiper_0")), ("ScraperAway", ("wiper_0",))})
+    run = restored.get_task_policy(
+        task=Task(initial_state=start, goal=RackServingTasks(env=env).goal())
+    )
+    assert run(start).label.startswith("PickScraper(")
+    assert run(held).label.startswith(f"{bulk}(")

@@ -241,3 +241,31 @@ def test_corelle_scene_options_carry_the_profile() -> None:
         assert options[key] == pytest.approx(getattr(config, key))
     goal = scene["regions"]["serving_goal"]["ranges"][0]
     assert goal[2] == pytest.approx(config.tray_top_z)
+
+
+def test_plate_tuck_is_opt_in_and_slides_the_plate_under_the_racks_front_edge() -> None:
+    default = RackServingConfig()
+    assert default.plate_tuck == 0.0
+    assert default.final_sweep_speed is None
+    tucked = RackServingConfig(plate_tuck=0.035)
+    assert tucked.tray_back_x == pytest.approx(tucked.rack_front_x + 0.035)
+    assert tucked.tray_center_x == pytest.approx(default.tray_center_x + 0.010 + 0.035)
+    scene = build_scene(config=tucked)
+    assert json.loads(json.dumps(scene)) == scene
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        # Only the Corelle plate is known to fit under the rack's deck.
+        {"plate_tuck": 0.02, "serving_target": "slate"},
+        # A rim that reaches the deck's underside cannot slide under it.
+        {"plate_tuck": 0.02, "rack_height": 0.0215},
+        # Under a narrow rack, far enough in, the rim meets the rack's front feet.
+        {"plate_tuck": 0.10, "rack_width": 0.27},
+        {"final_sweep_speed": 0.0},
+    ],
+)
+def test_a_plate_tuck_the_rack_cannot_take_is_rejected(*, overrides: dict) -> None:
+    with pytest.raises(ValidationError):
+        RackServingConfig(**overrides)

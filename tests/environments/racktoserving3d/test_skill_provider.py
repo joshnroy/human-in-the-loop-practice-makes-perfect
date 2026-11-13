@@ -37,7 +37,7 @@ def test_gather_and_sweep_samples_squeeze_gather_and_depth_in_bounds():
     rng = np.random.default_rng(10)
     samples = np.array([provider.sample_params(ground_skill=_sweep(), rng=rng) for _ in range(400)])
     assert samples.shape == (400, 3)
-    for column, (low, high) in enumerate(((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))):
+    for column, (low, high) in enumerate(((0.03, 0.14), (0.005, 0.075), (0.0, 0.12))):
         assert samples[:, column].min() >= low and samples[:, column].max() <= high
         span = high - low
         assert samples[:, column].min() < low + 0.1 * span
@@ -49,7 +49,7 @@ def test_gather_and_sweep_samples_squeeze_gather_and_depth_in_bounds():
 
 
 def test_gather_and_sweep_bounds_are_squeeze_gather_then_depth_with_fixed_speed():
-    assert Skills.GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
+    assert Skills.GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (0.005, 0.075), (0.0, 0.12))
     assert SWEEP_SPEED_M_S == 0.06
     assert Skills.GATHER_AND_SWEEP.param_dim == 3
 
@@ -84,7 +84,7 @@ def test_nonparameterized_actions_return_empty_parameters_and_correct_food_index
         [0.141, 0.0, 0.1],
         [0.07, 0.004, 0.1],
         [0.07, 0.076, 0.1],
-        [0.07, 0.045, 0.039],
+        [0.07, 0.045, -0.001],
         [0.07, 0.045, 0.121],
         [0.07, 0.045, np.nan],
         [np.inf, 0.0, 0.1],

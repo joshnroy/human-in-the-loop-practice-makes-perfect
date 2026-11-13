@@ -1,6 +1,6 @@
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, get_args
 
@@ -15,6 +15,7 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 )
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
+    RackServingPracticeDomain,
 )
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
@@ -446,6 +447,58 @@ class Tossing3DPomdpCli(EesCli):
     }
 
     @staticmethod
+    def with_goal_rewards(*, domain: PracticeDomain, provider: SkillProvider) -> PracticeDomain:
+        """The rack domain with the provider's goal rewards as its bulk skills' terminal
+        values; any other domain, and a provider that prices nothing, as is."""
+        if isinstance(domain, RackServingPracticeDomain):
+            return domain.with_goal_rewards(provider=provider)
+        return domain
+
+    @staticmethod
+    def with_prior_means(*, domain: PracticeDomain, means: Mapping[str, float]) -> PracticeDomain:
+        """The domain with each named skill starting from the Beta of mean m whose
+        smaller parameter is 1 -- Beta(1, (1 - m) / m) below a half, Beta(m / (1 - m), 1)
+        above -- the family the domains' own Beta(1, 3) is in (m = 0.25); every other
+        skill keeps the shared prior. A name the domain holds no belief for is an error."""
+        if not means:
+            return domain
+        known = {name for name, _ in domain.belief_sources}
+        unknown = sorted(set(means) - known)
+        if unknown:
+            raise ValueError(f"no belief for {unknown}; the domain infers {sorted(known)}")
+        if any(not 0 < mean < 1 for mean in means.values()):
+            raise ValueError("a competence prior mean must lie strictly between 0 and 1")
+        return domain.model_copy(
+            update={
+                "competence_prior_overrides": tuple(
+                    (name, max(1.0, mean / (1 - mean)), max(1.0, (1 - mean) / mean))
+                    for name, mean in means.items()
+                )
+            }
+        )
+
+    @staticmethod
+    def with_learning_rates_by_parameters(
+        *, domain: PracticeDomain, provider: SkillProvider, enabled: bool
+    ) -> PracticeDomain:
+        """The domain with each robot skill's starting learning-rate prior scaled by one
+        over its number of continuous parameters, and by zero for a skill with none
+        (Josh, 2026-11-12); the domain itself when not enabled. The person's skills keep
+        the shared prior."""
+        if not enabled:
+            return domain
+        believed = {name for name, _ in domain.belief_sources}
+        return domain.model_copy(
+            update={
+                "learning_rate_prior_scales": tuple(
+                    (skill.name, 1.0 / skill.param_dim if skill.param_dim else 0.0)
+                    for skill in provider.skills()
+                    if skill.name in believed
+                )
+            }
+        )
+
+    @staticmethod
     def with_competence_prior(
         *, domain: PracticeDomain, prior: tuple[float, float] | None
     ) -> PracticeDomain:
@@ -612,6 +665,23 @@ class Tossing3DPomdpCli(EesCli):
             "Tossing3D, SweepOffShelf3D and RackServing3D).",
         )
         parser.add_argument(
+            "--pomdp-competence-prior-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=MEAN",
+            help="One skill's own starting competence belief: the Beta of this mean whose "
+            "smaller parameter is 1, e.g. 0.9 is Beta(9, 1) and 0.25 is Beta(1, 3) "
+            "(repeatable, one per skill); skills not named keep the shared prior.",
+        )
+        parser.add_argument(
+            "--pomdp-learning-rate-by-parameters",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Scale each robot skill's starting learning-rate prior by one over its "
+            "number of continuous parameters, and put a parameterless skill's at zero. "
+            "The person's skills keep the shared prior.",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -774,11 +844,23 @@ class Tossing3DPomdpCli(EesCli):
                     if args.skill_cost_prior_steps is None
                     else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
                 ),
-                pomdp_domain=Tossing3DPomdpCli.with_competence_prior(
-                    domain=(
-                        domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                pomdp_domain=Tossing3DPomdpCli.with_learning_rates_by_parameters(
+                    provider=ctx.skill_provider,
+                    enabled=args.pomdp_learning_rate_by_parameters,
+                    domain=Tossing3DPomdpCli.with_prior_means(
+                        means=args.pomdp_competence_prior_for,
+                        domain=Tossing3DPomdpCli.with_competence_prior(
+                            prior=competence_prior,
+                            domain=Tossing3DPomdpCli.with_goal_rewards(
+                                domain=(
+                                    domain
+                                    if isinstance(domain, PracticeDomain)
+                                    else domain(ctx.skill_provider)
+                                ),
+                                provider=ctx.skill_provider,
+                            ),
+                        ),
                     ),
-                    prior=competence_prior,
                 ),
                 decision_log=(
                     args.output_dir
@@ -892,6 +974,26 @@ class DpCli(EesCli):
             "named keep the EES prior. Excludes --dp-prior-calibration.",
         )
         parser.add_argument(
+            "--dp-skill-cost-prior-steps-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=STEPS",
+            help="Control steps one robot skill's attempt is priced at until DP has observed "
+            "its own cost for it (repeatable, one per skill); skills not named keep "
+            "--skill-cost-prior-steps. Only the cost-unit budget reads it. Like that budget, "
+            "it is this project's adaptation: the paper's DP counts episodes.",
+        )
+        parser.add_argument(
+            "--dp-skill-cost-steps-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=STEPS",
+            help="Control steps one robot skill's attempt is priced at for the whole run "
+            "(repeatable, one per skill): a known input, never replaced by DP's own "
+            "observation. A skill takes this or --dp-skill-cost-prior-steps-for, not both. "
+            "Only the cost-unit budget reads it; this project's adaptation, like that budget.",
+        )
+        parser.add_argument(
             "--dp-initial-learning-rate-for",
             action=DpCli.SkillValues,
             default={},
@@ -906,6 +1008,14 @@ class DpCli(EesCli):
             help="Every skill's prior Delta, its predicted competence gain per practice "
             "attempt (default 0.1, the paper's illustrative value; it gives no "
             "experimental one).",
+        )
+        parser.add_argument(
+            "--dp-learning-rate-by-parameters",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Each skill's prior Delta is --dp-initial-learning-rate divided by its number "
+            "of continuous parameters, and 0 for a skill with none; a skill named with "
+            "--dp-initial-learning-rate-for keeps that value. Not from the paper.",
         )
         parser.add_argument(
             "--dp-competence-estimator",
@@ -996,6 +1106,9 @@ class DpCli(EesCli):
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
+                dp_learning_rate_by_parameters=args.dp_learning_rate_by_parameters,
+                dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,
+                dp_skill_cost_steps_for=args.dp_skill_cost_steps_for,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
                 ),

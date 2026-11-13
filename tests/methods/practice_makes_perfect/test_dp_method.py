@@ -609,3 +609,115 @@ def test_the_learning_rate_floor_must_be_positive():
             dp_budget=10.0,
             dp_min_learning_rate=0.0,
         )
+
+
+def test_a_named_skill_is_priced_at_its_own_prior_until_dp_has_observed_its_cost(*, monkeypatch):
+    method, pick, back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=20.0)
+    method.dp_skill_cost_prior_steps_for = {"PickWiper": 800.0}
+
+    def price(*, ground):
+        return method.dp_expected_attempt_cost(ground_skill=ground)
+
+    assert price(ground=pick) == pytest.approx(800 * STEP_PRICE)
+    # A skill not named keeps the shared prior (one control step by default).
+    assert price(ground=back) == pytest.approx(STEP_PRICE)
+    method.choose_practice_target()
+    allocation = method.dp_allocation()
+    # PickWiper would take 4 attempts to saturate; at 8 each a budget of 20 buys 2.
+    assert allocation[pick] == 2
+    assert sum(count * price(ground=ground) for ground, count in allocation.items()) <= 20.0
+    # Once executed, the observed cost replaces the prior.
+    _execute(method=method, ground=pick, cost=3.0)
+    assert price(ground=pick) == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("prices", [{"NoSuchSkill": 100.0}, {"PickWiper": 0.0}])
+def test_per_skill_cost_priors_must_name_robot_skills_and_be_positive(*, prices):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="cost prior"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=10.0,
+            dp_solver="enumeration",
+            dp_skill_cost_prior_steps_for=prices,
+        )
+
+
+def test_a_fixed_price_is_never_replaced_by_dps_own_observation(*, monkeypatch):
+    def price_after_one_execution(*, field):
+        method, pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=20.0)
+        setattr(method, field, {"PickWiper": 800.0})
+        assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(8.0)
+        _execute(method=method, ground=pick, cost=3.0)
+        method._practice_periods += 1  # noqa: SLF001 -- what get_practice_policy does
+        method.choose_practice_target()
+        return method.dp_expected_attempt_cost(ground_skill=pick), method.dp_allocation()[pick]
+
+    # Fixed: the next allocation still prices the skill at the table value, so the
+    # remaining budget (20 - 3) buys 2 more tries at 8.
+    assert price_after_one_execution(field="dp_skill_cost_steps_for") == (pytest.approx(8.0), 2)
+    # A starting value: the observation replaces it, and at 3 a try the 17 left buys
+    # all 4 tries PickWiper wants (no outcome was observed, so it still wants 4).
+    price, attempts = price_after_one_execution(field="dp_skill_cost_prior_steps_for")
+    assert price == pytest.approx(3.0)
+    assert attempts == 4
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"dp_skill_cost_steps_for": {"NoSuchSkill": 100.0}},
+        {"dp_skill_cost_steps_for": {"PickWiper": 0.0}},
+        # One skill cannot have both a fixed price and a starting value.
+        {
+            "dp_skill_cost_steps_for": {"PickWiper": 100.0},
+            "dp_skill_cost_prior_steps_for": {"PickWiper": 200.0},
+        },
+    ],
+)
+def test_fixed_prices_must_name_robot_skills_be_positive_and_not_also_be_starting_values(*, fields):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="fixed cost steps"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=10.0,
+            dp_solver="enumeration",
+            **fields,
+        )
+
+
+def _rack_dp(**fields):
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
+
+    env = RackServingEnvironment(
+        config=RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+    )
+    return DpMethod(
+        env=env,
+        skill_provider=RackServingSkillProvider(env=env),
+        dp_budget=10.0,
+        dp_solver="enumeration",
+        **fields,
+    )
+
+
+def test_a_starting_learning_rate_is_the_base_rate_over_the_skills_parameter_count():
+    method = _rack_dp(dp_learning_rate_by_parameters=True)
+    # Sweep(d): one parameter. GatherAndSweep(s, delta, d): three. PickScraper: none.
+    assert method.initial_learning_rate(skill_name="Sweep") == pytest.approx(0.1)
+    assert method.initial_learning_rate(skill_name="GatherAndSweep") == pytest.approx(0.1 / 3)
+    assert method.initial_learning_rate(skill_name="PickScraper") == 0.0
+    # An explicit per-skill rate still wins.
+    explicit = _rack_dp(
+        dp_learning_rate_by_parameters=True, dp_initial_learning_rate_for={"PickScraper": 0.2}
+    )
+    assert explicit.initial_learning_rate(skill_name="PickScraper") == 0.2
+    assert explicit.initial_learning_rate(skill_name="Sweep") == pytest.approx(0.1)
+    # Off by default: every skill keeps the one base rate.
+    plain = _rack_dp()
+    for name in ("Sweep", "GatherAndSweep", "PickScraper"):
+        assert plain.initial_learning_rate(skill_name=name) == 0.1

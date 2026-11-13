@@ -45,6 +45,7 @@ from hitl_pmp.core.problem.human.types import (
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.belief_space.practice_domain import Tossing3DPracticeDomain
+from hitl_pmp.methods.belief_space.rack_serving_domain import RackServingPracticeDomain
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
@@ -664,6 +665,27 @@ class DeploymentSnapshot:
                     horizon=domain.deployment_horizon,
                     dp_priors={name: prior for name, _ in domain.route_rewards},
                 )
+            elif isinstance(domain, RackServingPracticeDomain) and domain.bulk_rewards:
+                # What the planner's STOP value is computed from: the rack value model
+                # (`RackServingDeployment`, with the rewards, the model's own step weight
+                # and one-attempt rule) solved for the planner's belief at this moment.
+                # The snapshot carries the resulting plan, which is all of the belief
+                # that deployment uses.
+                valued = method._pomdp_model.valued_domain()
+                if not isinstance(valued, RackServingPracticeDomain):
+                    raise ValueError("the rack value model is not the planner's valued domain")
+                plan = valued.deployment_plan(beliefs=method._pomdp_state.skill_beliefs)
+                policy = DeploymentPolicy(
+                    kind="rack_value_model",
+                    source_method=source,
+                    horizon=valued.deployment_horizon,
+                    rack_plan={
+                        DeploymentPolicy.rack_key(state=state, remaining=remaining): (
+                            None if choice is None else (choice[0], choice[1][0])
+                        )
+                        for (state, remaining), choice in plan.items()
+                    },
+                )
             elif not isinstance(domain, Tossing3DPracticeDomain):
                 raise ValueError(
                     "Method-specific deployment currently supports the Tossing domain only"
@@ -914,6 +936,11 @@ class StepEvaluation:
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"
                             break
+                        verdict = environment.evaluation_solved_after_action(
+                            problem=problem, action=action.action
+                        )
+                        if verdict is not None:
+                            clock.solved = verdict
                         terminal = environment.evaluation_terminal_reason(
                             problem=problem, action=action.action
                         )

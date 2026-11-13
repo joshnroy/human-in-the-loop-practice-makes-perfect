@@ -61,6 +61,24 @@ class Stroke(BaseModel):
         return point
 
 
+class BladeHeightFeedback:
+    """Hold the sweep's blade at its planned height when food under it lifts it.
+
+    Past the rack's front edge a dumpling that has dropped onto the plate's rim sits
+    below the blade edge's line; the edge meets its rounded top, the arm yields upward
+    (10-13 mm measured, env seeds 10 and 18, 2026-11-12) and the blade rides over it.
+    The correction lowers the commanded height by the measured lift, never by more
+    than ``limit`` and never when the blade is at or below its plan: the command is
+    the plan mirrored about the measured blade, so it returns to the plan as the blade
+    does. A ``limit`` over the plate clearance puts the command below the rim top only
+    while the blade is held that far above its plan.
+    """
+
+    @staticmethod
+    def lowering(*, planned_z: float, actual_z: float, limit: float) -> float:
+        return float(min(max(actual_z - planned_z, 0.0), max(limit, 0.0)))
+
+
 class GatherAndSweepPlanner:
     @staticmethod
     def squeeze(
@@ -172,11 +190,14 @@ class GatherAndSweepPlanner:
         plate_center_y: float,
         plate_radius: float,
         blade_width: float,
+        plate_tuck: float = 0.0,
     ) -> Stroke:
         """Push along y = c from behind the rack to ``d`` before the plate's near edge.
 
         The blade glides at rack height, then descends past the rack's front edge to
         ``plate_clear_z`` (just above the plate's rim) over the gap and the plate.
+        ``plate_tuck`` is how far under the rack's front edge the plate's near edge
+        may sit (`RackServingConfig.plate_tuck`).
         """
         GatherAndSweepPlanner._check_rack(
             values=(d, plate_center_x, plate_radius, plate_clear_z),
@@ -191,7 +212,7 @@ class GatherAndSweepPlanner:
         near_edge = plate_center_x + plate_radius
         if (
             plate_radius <= 0
-            or near_edge > rack_front
+            or near_edge > rack_front + max(plate_tuck, 0.0) + 1e-6
             or not 0 <= d <= 2 * plate_radius
             or plate_clear_z > rack_top + EDGE_LIFT
         ):

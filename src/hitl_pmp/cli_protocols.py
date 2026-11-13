@@ -197,6 +197,13 @@ class StepProtocolEnvironment(Protocol):
         ...
 
     @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        """Whether the held-out task is solved, judged as `action` returned, for a domain
+        whose verdict belongs to a finished skill rather than to any tick during it;
+        None (the default) leaves the per-tick goal check's verdict alone."""
+        ...
+
+    @staticmethod
     def isolate_evaluation_task(*, problem: Problem) -> None:
         """Under `--evaluation-task-rng per-task`, before each held-out task: forget
         whatever this evaluation environment instance remembers from earlier tasks, so the
@@ -272,6 +279,12 @@ class SimulatedStepProtocolHooks:
     @staticmethod
     def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
         """By default no action ends a task by itself."""
+        del problem, action
+        return None
+
+    @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        """By default the per-tick goal check alone scores a task."""
         del problem, action
         return None
 

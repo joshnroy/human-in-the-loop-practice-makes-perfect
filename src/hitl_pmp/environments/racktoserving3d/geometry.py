@@ -524,7 +524,13 @@ def install_geometry() -> None:
             ) -> list[float]:
                 outer = object_config["corelle_diameter"] / 2
                 height = object_config["corelle_height"]
-                return _bottom_bounds(position=pos, options={"size": [outer, outer, height / 2]})
+                bounds = _bottom_bounds(position=pos, options={"size": [outer, outer, height / 2]})
+                # KINDER places by axis-aligned boxes and would refuse a rim under the
+                # rack's deck: a tucked plate reports only the part in front of the rack.
+                tuck = float(object_config.get("plate_tuck", 0.0))
+                if tuck > 0:
+                    bounds[3] -= tuck + 0.001
+                return bounds
 
         register_object(name=CORELLE_TYPE)(CorellePlate)
 

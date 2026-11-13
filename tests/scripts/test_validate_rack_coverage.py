@@ -77,7 +77,7 @@ def test_manifest_distinguishes_fixed_repeats_from_seeded_human_layouts():
         {"max_seconds": 43201},
         {"trial_seconds": 901},
         {"search_mode": "unknown"},
-        {"constant_params": (0.07, 0.045, 0.03)},
+        {"constant_params": (0.07, 0.045, 0.13)},
         {"scraper_tilt_degrees": float("nan")},
         {"states": ["fixed:-1"]},
         {"step_limit": 0},

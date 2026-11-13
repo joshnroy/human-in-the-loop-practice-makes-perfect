@@ -455,6 +455,10 @@ class RackServingBackend(SweepOffShelf3DBackend):
             ),
         )
 
+    def plate_count(self) -> int:
+        """How many dumplings are settled on the plate now."""
+        return sum(self.settled_on_tray(name=name) for name in self.cube_names)
+
     def food_available(self, *, name: str) -> bool:
         """Physical support permits a pick even when strict delivery containment fails."""
         supports = {"rack_0", "box_0", "cupboard_1", "world", "floor", "ground", *self.cube_names}
@@ -527,6 +531,31 @@ class RackServingBackend(SweepOffShelf3DBackend):
             if start_layout == "scattered":
                 layout = RackLayout.sample(
                     rng=self._rng, rack=rack, count=len(names), others=others
+                )
+            elif start_layout == "middle_three":
+                layout = RackLayout.middle_three(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    pitch=self.config.spaced_pitch,
+                    side_offset=self.config.side_offset,
+                    long_axis=self.config.spaced_long_axis,
+                )
+            elif start_layout == "custom":
+                layout = RackLayout.custom(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    offsets=self.config.custom_layout,
+                    long_axis=self.config.spaced_long_axis,
+                )
+            elif start_layout == "spaced":
+                layout = RackLayout.spaced(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    pitch=self.config.spaced_pitch,
+                    long_axis=self.config.spaced_long_axis,
                 )
             else:
                 layout = RackLayout.lined_up(

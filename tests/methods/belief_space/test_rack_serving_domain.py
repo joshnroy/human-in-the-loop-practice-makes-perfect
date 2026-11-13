@@ -437,3 +437,211 @@ def test_a_provider_without_placement_is_valued_as_one_bulk_attempt():
     assert domain.evaluate_theta(theta=theta) == pytest.approx(0.5)
     with_placement = {**theta, "PlaceFoodOnTray": Mock(competence=1.0)}
     assert RACK_SERVING_DOMAIN.evaluate_theta(theta=with_placement) == pytest.approx(1.0)
+
+
+TWO_ROUTE_CONFIG = RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+
+
+def test_priced_bulk_outcomes_are_terminal_values_weighed_by_competence():
+    def value(**competence):
+        return float(
+            RackServingDeployment.solve(
+                competences={name: np.array([v]) for name, v in competence.items()},
+                horizon=12,
+                step_weight=0.0,
+                one_bulk_attempt=True,
+                bulk_rewards={"Sweep": 3.0, "GatherAndSweep": 5.0},
+            )[0][0]
+        )
+
+    assert value(PickScraper=1, Sweep=0.9, GatherAndSweep=0.4) == pytest.approx(2.7)
+    assert value(PickScraper=1, Sweep=0.9, GatherAndSweep=0.8) == pytest.approx(4.0)
+    assert value(PickScraper=1, Sweep=1.0) == pytest.approx(3.0)
+
+
+def test_the_rack_domain_takes_its_bulk_rewards_from_a_provider_that_prices_goals():
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+    from hitl_pmp.methods.belief_space.rack_serving_domain import RackServingPracticeDomain
+
+    plain = RackServingSkillProvider(env=RackServingEnvironment())
+    assert RACK_SERVING_DOMAIN.with_goal_rewards(provider=plain) is RACK_SERVING_DOMAIN
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    domain = RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider)
+    assert isinstance(domain, RackServingPracticeDomain)
+    assert dict(domain.bulk_rewards) == {"Sweep": 3.0, "GatherAndSweep": 5.0}
+    domain = PracticeDomainWithoutSkills.keep_offered(
+        domain=domain,
+        offered=frozenset(skill.name for skill in provider.skills()) | frozenset(RACK_HUMAN_SKILLS),
+    )
+    theta = {name: Mock(competence=1.0) for name in domain.robot_skills()}
+    theta["GatherAndSweep"] = Mock(competence=0.5)
+    assert domain.evaluate_theta(theta=theta) == pytest.approx(3.0)
+    theta["GatherAndSweep"] = Mock(competence=0.7)
+    assert domain.evaluate_theta(theta=theta) == pytest.approx(3.5)
+
+
+def _plan(*, step_weight=0.0, **competence):
+    return RackServingDeployment.plan(
+        competences={name: np.array([v]) for name, v in competence.items()},
+        horizon=12,
+        step_weight=step_weight,
+        one_bulk_attempt=True,
+        bulk_rewards={"Sweep": 3.0, "GatherAndSweep": 5.0},
+    )
+
+
+def test_the_deployment_plan_is_the_choice_the_value_recursion_makes():
+    start, held = (5, "empty", True), (5, "scraper", False)
+    plan = _plan(PickScraper=1, Sweep=0.9, GatherAndSweep=0.4)
+    assert plan[start, 12] == ("PickScraper", held)
+    assert plan[held, 11][0] == "Sweep"
+    assert _plan(PickScraper=1, Sweep=0.9, GatherAndSweep=0.8)[held, 11][0] == "GatherAndSweep"
+    # Each step is charged as the value is: at a weight that makes every route a loss the
+    # plan stops, exactly where `solve` returns 0.
+    costly = _plan(step_weight=0.01, PickScraper=1, Sweep=0.9, GatherAndSweep=0.8)
+    assert costly[start, 12] is None
+    # With no steps left there is nothing to choose.
+    assert (start, 0) not in plan
+
+
+def test_the_plans_expected_value_is_the_value_models_at_one_competence_sample():
+    competences = {"PickScraper": 0.7, "Sweep": 0.6, "GatherAndSweep": 0.5}
+    weight = 0.0001
+    plan = _plan(step_weight=weight, **competences)
+    value = float(
+        RackServingDeployment.solve(
+            competences={name: np.array([v]) for name, v in competences.items()},
+            horizon=12,
+            step_weight=weight,
+            one_bulk_attempt=True,
+            bulk_rewards={"Sweep": 3.0, "GatherAndSweep": 5.0},
+        )[0][0]
+    )
+    # Follow the plan exactly: PickScraper is retried while steps remain, the bulk skill once.
+    from hitl_pmp.methods.belief_space.rack_serving_domain import RACK_SKILL_STEPS
+
+    def follow(*, state, remaining):
+        choice = plan.get((state, remaining))
+        if choice is None:
+            return 0.0
+        skill, successor = choice
+        c = competences[skill]
+        ok, bad = RACK_SKILL_STEPS[skill]
+        if skill in ("Sweep", "GatherAndSweep"):
+            reward = {"Sweep": 3.0, "GatherAndSweep": 5.0}[skill]
+            return c * (reward - weight * ok) - (1 - c) * weight * bad
+        return c * (follow(state=successor, remaining=remaining - 1) - weight * ok) + (1 - c) * (
+            follow(state=state, remaining=remaining - 1) - weight * bad
+        )
+
+    assert follow(state=(5, "empty", True), remaining=12) == pytest.approx(value)
+
+
+def test_the_abstract_deployment_state_is_read_from_measured_atoms():
+    atoms = {("OnRack", (f"cube_{i}", "rack_0")) for i in range(5)}
+    assert RackServingDeployment.state_of(
+        atoms=atoms | {("HandEmpty", ("robot",)), ("ScraperHome", ("wiper_0",))}
+    ) == (5, "empty", True)
+    assert RackServingDeployment.state_of(
+        atoms=atoms | {("HoldingScraper", ("robot", "wiper_0")), ("ScraperAway", ("wiper_0",))}
+    ) == (5, "scraper", False)
+
+
+def test_the_domains_deployment_plan_is_the_recursion_at_the_beliefs_mean_competences():
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+
+    domain = PracticeDomainWithoutSkills.keep_offered(
+        domain=RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider),
+        offered=frozenset(skill.name for skill in provider.skills()) | frozenset(RACK_HUMAN_SKILLS),
+    ).model_copy(update={"deployment_cost_lambda": 0.0015, "robot_step_price": 0.01})
+
+    def belief(*, mean):
+        return Mock(sample=lambda rng, count: np.full((count, 1), mean))
+
+    means = {name: 0.9 for name in domain.robot_skills()} | {"Sweep": 0.8, "GatherAndSweep": 0.3}
+    plan = domain.deployment_plan(beliefs={name: belief(mean=m) for name, m in means.items()})
+    expected = RackServingDeployment.plan(
+        competences={name: np.array([m]) for name, m in means.items()},
+        horizon=domain.deployment_horizon,
+        step_weight=0.0015 * 0.01,
+        one_bulk_attempt=True,
+        bulk_rewards={"Sweep": 3.0, "GatherAndSweep": 5.0},
+    )
+    assert plan == expected
+    held = (5, "scraper", False)
+    assert plan[(5, "empty", True), domain.deployment_horizon][0] == "PickScraper"
+    # 3 * 0.8 beats 5 * 0.3, net of each skill's steps at the domain's weight.
+    assert plan[held, domain.deployment_horizon - 1][0] == "Sweep"
+
+
+def test_a_named_skill_can_start_from_its_own_competence_prior():
+    domain = Tossing3DPomdpCli.with_prior_means(
+        domain=RACK_SERVING_DOMAIN, means={"PickScraper": 0.9, "ReturnScraper": 0.9}
+    )
+    assert dict((name, (a, b)) for name, a, b in domain.competence_prior_overrides) == {
+        "PickScraper": (pytest.approx(9.0), pytest.approx(1.0)),
+        "ReturnScraper": (pytest.approx(9.0), pytest.approx(1.0)),
+    }
+    belief = make_default_tossing3d_belief(
+        domain=domain,
+        model="local_trend",
+        engine="grid",
+        num_particles=32,
+        inference_config=InferenceConfig(competence_bins=41, learning_rate_bins=4),
+    )
+    means = {name: b.mean_competence() for name, b in belief.skill_beliefs.items()}
+    assert means["PickScraper"] == pytest.approx(0.9, abs=0.03)
+    assert means["ReturnScraper"] == pytest.approx(0.9, abs=0.03)
+    plain = _belief().skill_beliefs
+    assert means["Sweep"] == pytest.approx(0.25, abs=0.03)
+    assert set(means) == set(plain)
+    assert Tossing3DPomdpCli.with_prior_means(domain=RACK_SERVING_DOMAIN, means={}) is (
+        RACK_SERVING_DOMAIN
+    )
+    with pytest.raises(ValueError, match="NoSuchSkill"):
+        Tossing3DPomdpCli.with_prior_means(domain=RACK_SERVING_DOMAIN, means={"NoSuchSkill": 0.5})
+
+
+def test_ours_starting_learning_rate_prior_scales_with_the_skills_parameter_count():
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    domain = Tossing3DPomdpCli.with_learning_rates_by_parameters(
+        domain=RACK_SERVING_DOMAIN, provider=provider, enabled=True
+    )
+    scales = dict(domain.learning_rate_prior_scales)
+    assert scales["Sweep"] == 1.0
+    assert scales["GatherAndSweep"] == pytest.approx(1 / 3)
+    assert scales["PickScraper"] == 0.0
+    # The person's skills are not the robot's to tune and keep the shared prior.
+    assert not set(scales) & set(RACK_HUMAN_SKILLS)
+
+    def beliefs(*, domain, engine):
+        return make_default_tossing3d_belief(
+            domain=domain,
+            model="local_trend",
+            engine=engine,
+            num_particles=2000,
+            inference_config=InferenceConfig(competence_bins=9, learning_rate_bins=31),
+        ).skill_beliefs
+
+    for engine in ("grid", "particle"):
+        scaled = beliefs(domain=domain, engine=engine)
+        plain = beliefs(domain=RACK_SERVING_DOMAIN, engine=engine)
+        base = plain["Sweep"].mean_learning_rate()
+        assert scaled["Sweep"].mean_learning_rate() == pytest.approx(base)
+        assert scaled["GatherAndSweep"].mean_learning_rate() == pytest.approx(base / 3, rel=0.15)
+        assert scaled["PickScraper"].mean_learning_rate() == pytest.approx(0.0, abs=1e-9)
+        # Competence priors are untouched.
+        assert scaled["PickScraper"].mean_competence() == pytest.approx(
+            plain["PickScraper"].mean_competence()
+        )
+        assert scaled["human_batch_return"].mean_learning_rate() == pytest.approx(
+            plain["human_batch_return"].mean_learning_rate()
+        )
+    # Off: the very same domain object, so beliefs are built exactly as today.
+    assert (
+        Tossing3DPomdpCli.with_learning_rates_by_parameters(
+            domain=RACK_SERVING_DOMAIN, provider=provider, enabled=False
+        )
+        is RACK_SERVING_DOMAIN
+    )

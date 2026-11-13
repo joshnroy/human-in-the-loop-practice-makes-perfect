@@ -13,6 +13,7 @@ from hitl_pmp.core.method.method import NoFeasibleParametersError
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
+from hitl_pmp.methods.belief_space.rack_serving_domain import RackServingDeployment
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILLS,
@@ -31,11 +32,21 @@ from hitl_pmp.planning.grounding import SkillGrounder
 class DeploymentPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["shared_ees", "dp_mdp", "tossing_canonical", "reward_greedy"] = "shared_ees"
+    kind: Literal[
+        "shared_ees", "dp_mdp", "tossing_canonical", "reward_greedy", "rack_value_model"
+    ] = "shared_ees"
     source_method: str = "ees"
     horizon: int = Field(default=4, ge=0)
     max_states: int = Field(default=4096, ge=1)
     dp_priors: dict[str, DpSkillPrior] = Field(default_factory=dict)
+    # rack_value_model: `RackServingPracticeDomain.deployment_plan` for the planner's
+    # belief when the snapshot was taken, keyed by `rack_key`; each entry is the skill
+    # to attempt and the rack count its success reaches, or None to stop.
+    rack_plan: dict[str, tuple[str, int] | None] = Field(default_factory=dict)
+
+    @staticmethod
+    def rack_key(*, state: tuple[int, str, bool], remaining: int) -> str:
+        return f"{state[0]}|{state[1]}|{int(state[2])}|{remaining}"
 
     def dp_competence(self, *, method: EesMethod, ground: GroundSkill) -> float:
         """DP deploys on the estimator it practised with. A snapshot from before DP chose
@@ -146,6 +157,41 @@ class _DeploymentEpisode:
                 | added
             )
             self.forbidden = ground.delete_effects - added
+        elif self.spec.kind == "rack_value_model":
+            if self.remaining <= 0:
+                return self.stop(reason="deployment horizon")
+            # The rack value model's own plan for the planner's belief: look the
+            # measured abstract state up, with the skills still allowed.
+            rack = RackServingDeployment.state_of(
+                atoms=[(a.predicate.name, tuple(o.name for o in a.objects)) for a in atoms]
+            )
+            choice = self.spec.rack_plan.get(
+                DeploymentPolicy.rack_key(state=rack, remaining=self.remaining)
+            )
+            if choice is None:
+                return self.stop(reason="value model stops")
+            name, rack_after = choice
+            candidates = [
+                g
+                for g in SkillGrounder.applicable_ground_skills(
+                    skills=self.method.skills(), objects=self.method.objects(), true_atoms=atoms
+                )
+                if g.skill.name == name and g.preconditions <= atoms
+            ]
+            if name == "PickFood":
+                # The model has two picks: off the rack (its count drops) or off the plate.
+                candidates = [
+                    g
+                    for g in candidates
+                    if any(
+                        a.predicate.name == "OnRack" and g.objects[1] in a.objects for a in atoms
+                    )
+                    == (rack_after < rack[0])
+                ]
+            if not candidates:
+                return self.stop(reason="value model's skill unavailable")
+            ground = min(candidates, key=lambda g: tuple(o.name for o in g.objects))
+            self.remaining -= 1
         elif self.spec.kind == "reward_greedy":
             if self.remaining <= 0:
                 return self.stop(reason="deployment horizon")

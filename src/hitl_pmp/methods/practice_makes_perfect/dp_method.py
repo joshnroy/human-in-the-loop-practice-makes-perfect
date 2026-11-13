@@ -59,6 +59,11 @@ class DpMethod(EesMethod):
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
+    # Opt-in (Josh, 2026-11-12): a skill's Delta prior is dp_initial_learning_rate over
+    # its number of continuous parameters, and 0 for a skill with none (nothing to tune,
+    # so practice is not expected to improve it). A skill named in
+    # dp_initial_learning_rate_for keeps that. Not from the paper.
+    dp_learning_rate_by_parameters: bool = False
     dp_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     # How competence and its learning rate are read off the outcomes: see
     # LinearSkillCompetenceModel. `cumulative` reproduces results from before 2026-11-12.
@@ -72,6 +77,15 @@ class DpMethod(EesMethod):
     dp_max_allocations: int = Field(default=200_000, ge=1)
     dp_max_states: int = Field(default=4096, ge=1)
     skill_cost_prior_steps: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
+    # Control steps a named robot skill's attempt is priced at until DP has observed
+    # its own cost for it; skills not named keep skill_cost_prior_steps. Like the
+    # cost-unit budget itself this is this project's adaptation: the paper's DP counts
+    # episodes and prices nothing.
+    dp_skill_cost_prior_steps_for: dict[str, float] = Field(default_factory=dict)
+    # Control steps a named robot skill's attempt is priced at for the whole run: a known
+    # input like the goal rewards, never replaced by DP's own observation. A skill takes
+    # either this or a starting value above, not both. Also this project's adaptation.
+    dp_skill_cost_steps_for: dict[str, float] = Field(default_factory=dict)
 
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
@@ -116,6 +130,28 @@ class DpMethod(EesMethod):
                     raise ValueError(
                         f"initial learning rate of {name} must be finite and non-negative"
                     )
+        if self.dp_skill_cost_prior_steps_for:
+            unknown = set(self.dp_skill_cost_prior_steps_for) - {
+                skill.name for skill in self.skills()
+            }
+            if unknown:
+                raise ValueError(f"cost prior steps name not robot skills: {sorted(unknown)}")
+            for name, steps in self.dp_skill_cost_prior_steps_for.items():
+                if not math.isfinite(steps) or steps <= 0.0:
+                    raise ValueError(f"cost prior steps of {name} must be finite and positive")
+        if self.dp_skill_cost_steps_for:
+            unknown = set(self.dp_skill_cost_steps_for) - {skill.name for skill in self.skills()}
+            if unknown:
+                raise ValueError(f"fixed cost steps name not robot skills: {sorted(unknown)}")
+            both = set(self.dp_skill_cost_steps_for) & set(self.dp_skill_cost_prior_steps_for)
+            if both:
+                raise ValueError(
+                    f"fixed cost steps and cost prior steps both name {sorted(both)}: a skill's "
+                    "price is either fixed or a starting value"
+                )
+            for name, steps in self.dp_skill_cost_steps_for.items():
+                if not math.isfinite(steps) or steps <= 0.0:
+                    raise ValueError(f"fixed cost steps of {name} must be finite and positive")
         if self.dp_initial_competence:
             if self.dp_prior_calibration is not None:
                 raise ValueError(
@@ -140,7 +176,12 @@ class DpMethod(EesMethod):
         """A skill's Delta prior: its own override, else the global one."""
         if skill_name is None:
             return self.dp_initial_learning_rate
-        return self.dp_initial_learning_rate_for.get(skill_name, self.dp_initial_learning_rate)
+        if skill_name in self.dp_initial_learning_rate_for:
+            return self.dp_initial_learning_rate_for[skill_name]
+        if self.dp_learning_rate_by_parameters:
+            parameters = {skill.name: skill.param_dim for skill in self.skills()}.get(skill_name, 0)
+            return self.dp_initial_learning_rate / parameters if parameters else 0.0
+        return self.dp_initial_learning_rate
 
     def competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
         prior = self._dp_skill_priors.get(ground_skill.skill.name)
@@ -259,12 +300,18 @@ class DpMethod(EesMethod):
         self._dp_forced_reset_pending = True
 
     def dp_expected_attempt_cost(self, *, ground_skill: GroundSkill) -> float:
+        fixed = self.dp_skill_cost_steps_for.get(ground_skill.skill.name)
+        if fixed is not None:
+            return max(1e-12, fixed * self._require_accounting().robot_charge().cost)
         observed = self._dp_costs.get(ground_skill, [])
         pending = self._dp_pending_costs.get(ground_skill, 0.0)
         if observed:
             return max(1e-12, (sum(observed) + pending) / len(observed))
         accounting = self._require_accounting()
-        prior = self.skill_cost_prior_steps * accounting.robot_charge().cost
+        steps = self.dp_skill_cost_prior_steps_for.get(
+            ground_skill.skill.name, self.skill_cost_prior_steps
+        )
+        prior = steps * accounting.robot_charge().cost
         return max(1e-12, prior + pending)
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:

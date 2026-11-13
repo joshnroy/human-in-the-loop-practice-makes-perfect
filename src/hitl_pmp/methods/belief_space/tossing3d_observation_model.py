@@ -229,8 +229,31 @@ def make_default_tossing3d_belief(
     seed_offsets = {
         name: index for index, name in enumerate(dict.fromkeys((*domain.prior_seed_order, *names)))
     }
+    overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
+    rate_scales = dict(domain.learning_rate_prior_scales)
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
+        config = inference_config or InferenceConfig()
+        if name in overrides:
+            config = config.model_copy(
+                update={
+                    "initial_competence_alpha": overrides[name][0],
+                    "initial_competence_beta": overrides[name][1],
+                }
+            )
+        if name in rate_scales:
+            # A scaled half-normal prior on the latent learning rate. At scale 0 the
+            # prior's width is negligible, so the grid puts all its mass in the zero-rate
+            # bin and every particle is drawn at (numerically) zero; the rate's process
+            # noise is switched off with it, or the rate would drift up from zero.
+            scale = rate_scales[name]
+            config = config.model_copy(
+                update=(
+                    {"initial_eta_sigma": config.initial_eta_sigma * scale}
+                    if scale > 0
+                    else {"initial_eta_sigma": 1e-12, "sigma_eta": 0.0}
+                )
+            )
         beliefs[name] = (
             create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
             if model is None
@@ -239,7 +262,7 @@ def make_default_tossing3d_belief(
                 engine=engine,
                 seed=seed + index,
                 num_particles=num_particles,
-                config=inference_config or InferenceConfig(),
+                config=config,
             )
         )
     return Tossing3DBeliefState(

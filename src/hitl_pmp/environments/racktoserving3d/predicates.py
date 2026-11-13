@@ -8,6 +8,11 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from .objects import RackServing3DObjects as Objects
 
 AbstractAtom = tuple[str, tuple[str, ...]]
+# `RackServingConfig.two_route_rewards`: what each outcome is worth, by the predicate
+# that holds in it. The two never hold together: which one a solved task holds is
+# decided by the bulk skill that solved it (`RackServing3DAtoms.served_verdict`).
+TWO_ROUTE_SWEEP_COUNT = 3
+TWO_ROUTE_REWARDS = {"ServedThree": 3.0, "ServedFive": 5.0}
 
 
 class RackServing3DAtoms:
@@ -27,6 +32,19 @@ class RackServing3DAtoms:
                 state=state, name=name, objects=objects
             ),
         )
+
+    @staticmethod
+    def served_verdict(*, skill: str, plate_count: int) -> frozenset[AbstractAtom]:
+        """The two-route outcome facts of a bulk skill that has just returned (Josh,
+        2026-11-12): a Sweep that left three or more on the plate is Served and
+        ServedThree, whatever more it landed; a GatherAndSweep that left all five is
+        Served and ServedFive; anything else, a GatherAndSweep that landed three or four
+        included, is neither."""
+        if skill == "Sweep" and plate_count >= TWO_ROUTE_SWEEP_COUNT:
+            return frozenset({("Served", ()), ("ServedThree", ())})
+        if skill == "GatherAndSweep" and plate_count == len(Objects.food):
+            return frozenset({("Served", ()), ("ServedFive", ())})
+        return frozenset()
 
     @staticmethod
     def with_summaries(
@@ -98,6 +116,11 @@ PICK_PLANNABLE = RackServing3DAtoms.predicate(
 )
 ANY_FOOD_ON_RACK = RackServing3DAtoms.predicate(name="AnyFoodOnRack", types=())
 ANY_FOOD_OFF_RACK = RackServing3DAtoms.predicate(name="AnyFoodOffRack", types=())
+# Two-route only: Served is the shared goal; the other two say how well it was met.
+SERVED = RackServing3DAtoms.predicate(name="Served", types=())
+SERVED_THREE = RackServing3DAtoms.predicate(name="ServedThree", types=())
+SERVED_FIVE = RackServing3DAtoms.predicate(name="ServedFive", types=())
+TWO_ROUTE_PREDICATES = (SERVED, SERVED_THREE, SERVED_FIVE)
 _FOOD_CHAIN = frozenset(
     (first.name, second.name) for first, second in itertools.pairwise(Objects.food)
 )
@@ -126,8 +149,8 @@ DYNAMIC_PREDICATES = (
 
 class RackServing3DPredicates:
     @staticmethod
-    def all() -> tuple[Predicate, ...]:
-        return (*DYNAMIC_PREDICATES, FOOD_ORDER)
+    def all(*, two_route: bool = False) -> tuple[Predicate, ...]:
+        return (*DYNAMIC_PREDICATES, FOOD_ORDER, *(TWO_ROUTE_PREDICATES if two_route else ()))
 
     @staticmethod
     def static_atoms() -> frozenset[GroundAtom]:
@@ -137,8 +160,10 @@ class RackServing3DPredicates:
         )
 
     @staticmethod
-    def goal_atoms() -> frozenset[GroundAtom]:
+    def goal_atoms(*, two_route: bool = False) -> frozenset[GroundAtom]:
         """Delivery is the goal, independently of how the robot accomplished it."""
+        if two_route:
+            return frozenset({GroundAtom(predicate=SERVED, objects=())})
         return frozenset(
             GroundAtom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food
         )

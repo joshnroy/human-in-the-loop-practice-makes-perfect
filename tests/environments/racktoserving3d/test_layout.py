@@ -191,3 +191,67 @@ def test_the_put_back_draws_from_the_layout_conditioned_on_the_others(*, layout_
         ((ex, ey, _),) = RackLayout.sample(rng=rng, rack=RACK, count=1, others=remaining)
         assert (x, y) == pytest.approx((ex, ey))
         assert all(math.hypot(x - ox, y - oy) >= 0.05 for ox, oy in remaining)
+
+
+def test_the_spaced_layout_is_one_evenly_spaced_row_centred_on_the_plate_line():
+    layout = RackLayout.spaced(
+        rng=np.random.default_rng(3), rack=RACK, center_y=0.01, pitch=0.05, long_axis="x"
+    )
+    assert len(layout) == 5
+    for index, (x, y, yaw) in enumerate(layout):
+        assert abs(x - (RACK.x_min + RACK.x_max) / 2) <= RackLayout.LINED_UP_JITTER
+        assert abs(y - (0.01 + 0.05 * (index - 2))) <= RackLayout.LINED_UP_JITTER
+        assert abs(yaw - math.pi / 2) <= RackLayout.LINED_UP_YAW_JITTER
+    other = RackLayout.spaced(
+        rng=np.random.default_rng(4), rack=RACK, center_y=0.01, pitch=0.05, long_axis="x"
+    )
+    assert layout != other
+
+
+def test_three_in_the_middle_and_one_out_on_each_side():
+    layout = RackLayout.middle_three(
+        rng=np.random.default_rng(3),
+        rack=RACK,
+        center_y=0.0,
+        pitch=0.04,
+        side_offset=0.13,
+        long_axis="x",
+    )
+    nominal_y = (-0.13, -0.04, 0.0, 0.04, 0.13)
+    assert len(layout) == 5
+    for (x, y, yaw), expected in zip(layout, nominal_y, strict=True):
+        assert abs(x - (RACK.x_min + RACK.x_max) / 2) <= RackLayout.LINED_UP_JITTER
+        assert abs(y - expected) <= RackLayout.LINED_UP_JITTER
+        assert abs(yaw - math.pi / 2) <= RackLayout.LINED_UP_YAW_JITTER
+    assert RackServingConfig(start_layout="middle_three").side_offset > 2 * 0.04
+
+
+def test_a_custom_layout_places_each_dumpling_at_its_own_offset():
+    offsets = ((-0.08, 0.03, 0.0), (-0.03, 0.0, 0.0), (0.0, -0.02, -math.pi / 2), (0.03, 0.0, 0.0),
+               (0.08, 0.03, 0.0))  # fmt: skip
+    layout = RackLayout.custom(
+        rng=np.random.default_rng(3), rack=RACK, center_y=0.01, offsets=offsets, long_axis="x"
+    )
+    assert len(layout) == 5
+    for (x, y, yaw), (along, back, turn) in zip(layout, offsets, strict=True):
+        assert abs(x - ((RACK.x_min + RACK.x_max) / 2 + back)) <= RackLayout.LINED_UP_JITTER
+        assert abs(y - (0.01 + along)) <= RackLayout.LINED_UP_JITTER
+        assert abs(yaw - (math.pi / 2 + turn)) <= RackLayout.LINED_UP_YAW_JITTER
+    evenly = tuple((0.04 * (index - 2), 0.0, 0.0) for index in range(5))
+    np.testing.assert_allclose(
+        RackLayout.custom(
+            rng=np.random.default_rng(3), rack=RACK, center_y=0.01, offsets=evenly, long_axis="x"
+        ),
+        RackLayout.spaced(
+            rng=np.random.default_rng(3), rack=RACK, center_y=0.01, pitch=0.04, long_axis="x"
+        ),
+    )
+
+
+def test_a_custom_layout_needs_exactly_five_offsets():
+    with pytest.raises(ValueError):
+        RackServingConfig(start_layout="custom")
+    with pytest.raises(ValueError):
+        RackServingConfig(custom_layout=((0.0, 0.0, 0.0),) * 5)
+    config = RackServingConfig(start_layout="custom", custom_layout=((0.0, 0.0, 0.0),) * 5)
+    assert len(config.custom_layout) == 5

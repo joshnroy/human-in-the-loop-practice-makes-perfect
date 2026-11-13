@@ -206,3 +206,46 @@ def test_cli_selects_the_serving_target(*, target):
 def test_cli_rejects_unknown_serving_target():
     with pytest.raises(SystemExit):
         _parse(argv=("--serving-target", "bowl"))
+
+
+def test_setup_a_flags_reach_both_modes_configs():
+    argv = (
+        "--start-layout", "middle_three", "--side-offset", "0.13", "--plate-tuck", "0.035",
+        "--bulk-transfer-only", "1", "--two-route-rewards", "1",
+    )  # fmt: skip
+    for mode in ("training", "deployment"):
+        config = RackServingCli.build_problem(args=_parse(argv=argv), mode=mode).env.config
+        assert (config.start_layout, config.side_offset, config.plate_tuck) == (
+            "middle_three",
+            0.13,
+            0.035,
+        )
+        # The plate's outer near edge sits 35 mm under the rack's front edge.
+        assert config.tray_back_x == pytest.approx(config.rack_front_x + 0.035)
+    plain = RackServingCli.build_problem(args=_parse(), mode="training").env.config
+    assert (plain.plate_tuck, plain.start_layout) == (0.0, "scattered")
+
+
+def test_cli_carries_the_opt_in_plate_tuck_sweep_speed_and_custom_layout(*, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingEnvironment",
+        lambda **kwargs: seen.append(kwargs["config"]) or Mock(),
+    )
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingTasks", lambda **kwargs: Mock()
+    )
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingProblem", lambda **kwargs: Mock()
+    )
+    offsets = [str(v) for v in (-0.08, 0, 0, -0.03, 0, 0, 0, 0, 0, 0.03, 0, 0, 0.08, 0.02, 0.1)]
+    args = _parse(
+        argv=["--plate-tuck", "0.035", "--final-sweep-speed", "0.1", "--start-layout", "custom"]
+        + ["--custom-layout", *offsets]
+    )
+    RackServingCli.build_problem(args=args, mode="training")
+    (config,) = seen
+    assert config.plate_tuck == 0.035
+    assert config.final_sweep_speed == 0.1
+    assert config.custom_layout[4] == (0.08, 0.02, 0.1)
+    assert len(config.custom_layout) == 5

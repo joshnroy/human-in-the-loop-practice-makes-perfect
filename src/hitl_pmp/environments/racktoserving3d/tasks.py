@@ -27,9 +27,10 @@ class RackServingTasks(Tasks):
         self._test_rng = np.random.default_rng(self.seed + self.test_env_seed_offset)
         self._reset_rng = np.random.default_rng(self.seed + self.reset_start_seed_offset)
 
-    @staticmethod
-    def goal() -> Goal:
-        return Goal(atoms=RackServing3DPredicates.goal_atoms())
+    def goal(self) -> Goal:
+        return Goal(
+            atoms=RackServing3DPredicates.goal_atoms(two_route=self.env.config.two_route_rewards)
+        )
 
     def sample_train_task(self) -> Task:
         return self.build_task(scene_seed=int(self._train_rng.integers(0, SCENE_SEED_LIMIT)))

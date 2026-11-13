@@ -15,7 +15,7 @@ from .config import RackServingConfig
 from .food import RackFoodController
 from .servo import SweepServo
 from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_BOUNDS, SWEEP_SPEED_M_S
-from .stroke import GatherAndSweepPlanner, Stroke
+from .stroke import BladeHeightFeedback, GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
 RELEASE_RETREAT = 0.03
@@ -288,8 +288,7 @@ class RackControllers:
         if not self.on_rack():
             raise SkillFailed("no food is physically on the rack")
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
-        if rack.top_z < tray.top_z or tray.x_max > rack.x_min:
-            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+        self.require_open_exit(rack=rack, tray=tray)
         geometry = self.stroke_geometry()
         squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
         self.metrics = {
@@ -299,7 +298,7 @@ class RackControllers:
             "s_m": s,
             "delta_m": delta,
             "d_m": d,
-            "speed_m_s": SWEEP_SPEED_M_S,
+            "speed_m_s": self.final_sweep_speed(),
             "max_rack_displacement_m": 0.0,
             "strokes": [],
         }
@@ -339,7 +338,12 @@ class RackControllers:
                     rack_pose=rack_pose,
                     label=f"gather_{'plus' if side > 0 else 'minus'}_y",
                 )
-            sweep = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
+            sweep = GatherAndSweepPlanner.sweep(
+                d=d,
+                plate_clear_z=self.plate_clear_z(),
+                plate_tuck=config.plate_tuck,
+                **geometry,
+            )
 
             self.push_stroke(
                 stroke=sweep,
@@ -358,20 +362,24 @@ class RackControllers:
         if not self.on_rack():
             raise SkillFailed("no food is physically on the rack")
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
-        if rack.top_z < tray.top_z or tray.x_max > rack.x_min:
-            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+        self.require_open_exit(rack=rack, tray=tray)
         geometry = self.stroke_geometry()
         self.metrics = {
             "measured_gap_m": rack.x_min - tray.x_max,
             "rack_top_m": rack.top_z,
             "tray_top_m": tray.top_z,
             "d_m": d,
-            "speed_m_s": SWEEP_SPEED_M_S,
+            "speed_m_s": self.final_sweep_speed(),
             "max_rack_displacement_m": 0.0,
             "strokes": [],
         }
         rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
-        stroke = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
+        stroke = GatherAndSweepPlanner.sweep(
+            d=d,
+            plate_clear_z=self.plate_clear_z(),
+            plate_tuck=backend.config.plate_tuck,
+            **geometry,
+        )
         with self.feedback():
             self.push_stroke(
                 stroke=stroke,
@@ -380,6 +388,17 @@ class RackControllers:
                 rack_pose=rack_pose,
                 label="sweep",
             )
+
+    def require_open_exit(self, *, rack: Any, tray: Any) -> None:
+        """The rack's front edge must drop onto the plate: the rack top at or above the
+        plate, and the scored region not past the rack's front edge unless the plate is
+        deliberately tucked under it (`RackServingConfig.plate_tuck`)."""
+        tucked = self.backend.config.plate_tuck > 0
+        if rack.top_z < tray.top_z or (tray.x_max > rack.x_min and not tucked):
+            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+
+    def final_sweep_speed(self) -> float:
+        return float(self.backend.config.final_sweep_speed or SWEEP_SPEED_M_S)
 
     def on_rack(self) -> list[str]:
         backend = self.backend
@@ -452,7 +471,8 @@ class RackControllers:
     ) -> None:
         """Raise, travel, approach, lower onto the stroke start, push at fixed speed, lift."""
         backend, shelf, tool = self.backend, self.shelf, self.tool
-        speed = SWEEP_SPEED_M_S
+        # Only the final sweep carries a floor; squeezes and gathers keep the constant.
+        speed = SWEEP_SPEED_M_S if stroke.floor_z is None else self.final_sweep_speed()
         rack = backend.support(name="rack_0")
         tool.require_held(label=f"{label}_start")
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ tool.wiper_pose()
@@ -503,6 +523,15 @@ class RackControllers:
                 distance = min(stroke.length, distance + speed * 0.1)
             desired_body = body.copy()
             desired_body[:3, 3] += stroke.point(distance=distance) - stroke.start
+            limit = backend.config.blade_height_feedback_limit
+            if limit > 0 and stroke.floor_z is not None:
+                # The final sweep only: the gathers and squeezes glide on the rack.
+                edge = tool.blade_edge().mean(axis=0)
+                desired_body[2, 3] -= BladeHeightFeedback.lowering(
+                    planned_z=float(stroke.point(distance=actual)[2]),
+                    actual_z=float(edge[2]),
+                    limit=limit,
+                )
             waypoint = self.hand_for_tool(body=desired_body)
             shelf.base_target = base.copy()
             arm = tool.ik(
