@@ -541,6 +541,14 @@ class RackServingBackend(SweepOffShelf3DBackend):
                     side_offset=self.config.side_offset,
                     long_axis=self.config.spaced_long_axis,
                 )
+            elif start_layout == "custom":
+                layout = RackLayout.custom(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    offsets=self.config.custom_layout,
+                    long_axis=self.config.spaced_long_axis,
+                )
             elif start_layout == "spaced":
                 layout = RackLayout.spaced(
                     rng=self._rng,

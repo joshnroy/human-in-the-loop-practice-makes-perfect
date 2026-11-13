@@ -151,6 +151,33 @@ class RackLayout:
         )
 
     @staticmethod
+    def custom(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        offsets: Sequence[Sequence[float]],
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres at explicit offsets (2026-11-12 measurement study).
+
+        Each offset is (along the row from y = center_y, up the rack away from the
+        plate from the rack's x centre line, yaw added to `long_axis`'s); jittered
+        as `lined_up` is, in the order given. The caller rejects colliding draws.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + back + dx, center_y + along + dy, yaw + turn + dyaw)
+            for (along, back, turn), (dx, dy, dyaw) in zip(offsets, jitter.tolist(), strict=True)
+        )
+
+    @staticmethod
     def _clear(*, points: list[tuple[float, float]], others: list[tuple[float, float]]) -> bool:
         pairs = itertools.chain(
             itertools.combinations(points, 2), itertools.product(points, others)

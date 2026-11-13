@@ -135,6 +135,8 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
             for key in RackServingConfig.model_fields
             if key.startswith("corelle_") and key != "corelle_mass"
         }
+        if config.plate_tuck > 0:
+            profile["plate_tuck"] = config.plate_tuck
     return {
         "description": (
             f"Cooling rack to {serving_noun}, both welded to the counter; rigid dumpling proxies. "

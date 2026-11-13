@@ -190,11 +190,14 @@ class GatherAndSweepPlanner:
         plate_center_y: float,
         plate_radius: float,
         blade_width: float,
+        plate_tuck: float = 0.0,
     ) -> Stroke:
         """Push along y = c from behind the rack to ``d`` before the plate's near edge.
 
         The blade glides at rack height, then descends past the rack's front edge to
         ``plate_clear_z`` (just above the plate's rim) over the gap and the plate.
+        ``plate_tuck`` is how far under the rack's front edge the plate's near edge
+        may sit (`RackServingConfig.plate_tuck`).
         """
         GatherAndSweepPlanner._check_rack(
             values=(d, plate_center_x, plate_radius, plate_clear_z),
@@ -209,7 +212,7 @@ class GatherAndSweepPlanner:
         near_edge = plate_center_x + plate_radius
         if (
             plate_radius <= 0
-            or near_edge > rack_front
+            or near_edge > rack_front + max(plate_tuck, 0.0) + 1e-6
             or not 0 <= d <= 2 * plate_radius
             or plate_clear_z > rack_top + EDGE_LIFT
         ):
