@@ -2055,7 +2055,8 @@ class StepPracticeRunner:
                         budget=clock.budget,
                     )
                     method.observe_practice_action_budget(
-                        remaining_actions=args.max_steps_per_interaction - action_index
+                        remaining_actions=args.max_steps_per_interaction - action_index,
+                        remaining_steps=clock.budget - clock.steps,
                     )
                     try:
                         action = policy(state)

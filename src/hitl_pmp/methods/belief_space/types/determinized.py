@@ -57,6 +57,8 @@ class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
     action_path: tuple[ActionT, ...] = ()
     observation_surprise: float = 0.0
     heuristic_cost: float = 0.0
+    # Forecast control steps the path spends; only read under a step budget.
+    steps: float = 0.0
 
 
 class DeterminizedSearchQueueEntry(
@@ -108,6 +110,7 @@ class DeterminizedSearchDiagnostics(BaseModel):
     max_frontier_size: int = 0
     max_depth_reached: int = 0
     action_horizon_terminal_nodes: int = 0
+    step_budget_terminal_nodes: int = 0
     reused_outcome_draws: int = 0
     termination_reason: str = "frontier_exhausted"
 

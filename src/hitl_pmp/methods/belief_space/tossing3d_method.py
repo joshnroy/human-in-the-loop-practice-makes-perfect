@@ -50,7 +50,7 @@ from .tossing3d_observation_model import (
     mean_learning_rate,
     refit_belief_state,
 )
-from .tossing3d_transition_model import make_tossing3d_search_state
+from .tossing3d_transition_model import GroundSkillText, make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.determinized import DeterminizedVariant, DrawScope
@@ -168,6 +168,13 @@ class Tossing3DPomdpMethod(EesMethod):
     _pending_start_reset: bool = PrivateAttr(default=False)
     _pending_reset_before_atoms: frozenset[GroundAtom] = PrivateAttr(default=frozenset())
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
+    # The practice steps left in the whole run, and what one action is forecast to
+    # take of them: the step count its planning price is made from.
+    _remaining_practice_steps: int | None = PrivateAttr(default=None)
+    _expected_execution_steps: dict[str, float] = PrivateAttr(default_factory=dict)
+    _human_execution_steps: dict[tuple[str, str | None], list[int]] = PrivateAttr(
+        default_factory=dict
+    )
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
 
     def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
@@ -216,11 +223,17 @@ class Tossing3DPomdpMethod(EesMethod):
         fixed = self.pomdp_skill_step_costs
         resets = self._human_resets()
         estimates = {}
+        steps: dict[str, float] = {}
         missing = set()
         for ground in self._pomdp_model.ground_skills:
             if self._human_reset(ground=ground, resets=resets) is not None:
-                observed = self._human_execution_costs.get(self._human_reset_key(ground=ground), [])
+                key = self._human_reset_key(ground=ground)
+                observed = self._human_execution_costs.get(key, [])
                 estimates[str(ground)] = sum(observed) / len(observed) if observed else prior
+                taken = self._human_execution_steps.get(key, [])
+                steps[str(ground)] = (
+                    sum(taken) / len(taken) if taken else self.skill_cost_prior_steps
+                )
                 continue
             durations = self._execution_durations.get(ground, [])
             if fixed is not None:
@@ -228,10 +241,14 @@ class Tossing3DPomdpMethod(EesMethod):
                 if math.isnan(duration):
                     missing.add(ground.skill.name)
                 estimates[str(ground)] = duration * price
+                steps[str(ground)] = duration
             elif durations:
                 estimates[str(ground)] = sum(durations) / len(durations) * price
+                steps[str(ground)] = sum(durations) / len(durations)
             else:
                 estimates[str(ground)] = prior
+                steps[str(ground)] = self.skill_cost_prior_steps
+        self._expected_execution_steps = steps
         if missing:
             raise ValueError(f"pomdp_skill_step_costs prices no step count for {sorted(missing)}")
         self._pomdp_state = self._pomdp_state.model_copy(
@@ -256,6 +273,9 @@ class Tossing3DPomdpMethod(EesMethod):
                 self._human_execution_costs.setdefault(
                     self._human_reset_key(ground=ground), []
                 ).append(cost)
+                self._human_execution_steps.setdefault(
+                    self._human_reset_key(ground=ground), []
+                ).append(steps)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"accumulated_cost": self._pomdp_state.accumulated_cost + cost}
         )
@@ -445,6 +465,7 @@ class Tossing3DPomdpMethod(EesMethod):
     def get_practice_policy(self, *, task: Task) -> Policy:
         """Start a practice session without resetting the learned skill state."""
         self._remaining_practice_actions = None
+        self._remaining_practice_steps = None
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
@@ -499,9 +520,29 @@ class Tossing3DPomdpMethod(EesMethod):
                 update={"starved_pools": (*self._pomdp_model.starved_pools, pair)}
             )
 
-    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+    def observe_practice_action_budget(
+        self, *, remaining_actions: int, remaining_steps: int | None = None
+    ) -> None:
         assert remaining_actions >= 0, "remaining_actions must be non-negative"
+        assert remaining_steps is None or remaining_steps >= 0, (
+            "remaining_steps must be non-negative"
+        )
         self._remaining_practice_actions = remaining_actions
+        self._remaining_practice_steps = remaining_steps
+
+    def forecast_action_steps(self, *, ground_skill: GroundSkill) -> float:
+        """The control steps the planner expects one try of `ground_skill` to take: the
+        count its planning price is made from (a fixed table, the mean of its observed
+        runs, or the prior step count until it has run), and for a human skill the mean
+        steps its observed asks were charged. The always-ask wrapper's forced reset is
+        not counted."""
+        key = GroundSkillText.of(ground_skill=ground_skill)
+        if key not in self._expected_execution_steps:
+            raise ValueError(
+                f"no step forecast for {ground_skill.skill.name}: a practice step budget "
+                "needs practice accounting configured before planning"
+            )
+        return self._expected_execution_steps[key]
 
     def record_practice_attempt(
         self, *, skill_name: str, success: bool, consultation: SamplerConsultation
@@ -787,6 +828,12 @@ class Tossing3DPomdpMethod(EesMethod):
                     trace=trace,
                     num_samples=self.pomdp_num_samples,
                     remaining_actions=self._remaining_practice_actions,
+                    remaining_steps=self._remaining_practice_steps,
+                    action_steps=(
+                        None
+                        if self._remaining_practice_steps is None
+                        else lambda action: self.forecast_action_steps(ground_skill=action)
+                    ),
                 )
             else:
                 assert horizon is not None
@@ -835,6 +882,7 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=horizon,
             remaining_practice_actions=self._remaining_practice_actions,
+            remaining_practice_steps=self._remaining_practice_steps,
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
