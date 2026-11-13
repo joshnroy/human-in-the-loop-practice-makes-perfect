@@ -415,6 +415,16 @@ class EesMethod(Method):
         self._pending_human_skill = None
         self._pending_human_before_atoms = frozenset()
 
+    def __setstate__(self, state: dict[Any, Any]) -> None:  # noqa: PLR0917 -- pickle's API
+        """Index the seen training tasks by where they live in this process.
+
+        `_seen_training_tasks` is keyed by `id`, and a task restored from a checkpoint
+        lives at a new address. A key carried over from the process that wrote the
+        checkpoint names nothing here, so a later task allocated at that address would
+        be taken for one already seen and never reach `_seen_tasks`."""
+        super().__setstate__(state)
+        self._seen_training_tasks = {id(task): task for task in self._seen_training_tasks.values()}
+
     # ------------------------------------------------------------------ domain
 
     def skills(self) -> tuple[Skill, ...]:
