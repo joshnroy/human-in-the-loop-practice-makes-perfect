@@ -68,8 +68,10 @@ class BladeHeightFeedback:
     below the blade edge's line; the edge meets its rounded top, the arm yields upward
     (10-13 mm measured, env seeds 10 and 18, 2026-11-12) and the blade rides over it.
     The correction lowers the commanded height by the measured lift, never by more
-    than ``limit`` and never when the blade is at or below its plan, so the command
-    stays above the rim by the plate clearance minus ``limit``.
+    than ``limit`` and never when the blade is at or below its plan: the command is
+    the plan mirrored about the measured blade, so it returns to the plan as the blade
+    does. A ``limit`` over the plate clearance puts the command below the rim top only
+    while the blade is held that far above its plan.
     """
 
     @staticmethod
