@@ -1508,7 +1508,7 @@ class EesMethod(Method):
                 ground_skill=ground_skill, explore=explore, diagnostics=diagnostics, choice=choice
             )
             self._note_parameter_choice(
-                sampler=sampler, sampler_inputs=sampler_inputs, choice=choice
+                sampler=sampler, num_candidates=len(candidates), choice=choice
             )
             params = choice.params
             record = _SkillAttempt(
@@ -1532,22 +1532,12 @@ class EesMethod(Method):
         ), record
 
     def _note_parameter_choice(
-        self,
-        *,
-        sampler: LearnedSkillSampler,
-        sampler_inputs: list[list[float]],
-        choice: SamplerChoice,
+        self, *, sampler: LearnedSkillSampler, num_candidates: int, choice: SamplerChoice
     ) -> None:
         """Keep how the last parameters were chosen, for an evaluation's action record.
 
-        Logging only. Scoring the batch again is a forward pass of the fitted
-        classifier: it draws nothing from any generator and changes no state the
-        choice or a later one depends on."""
-        scores = [
-            score
-            for score in sampler.score_inputs(sampler_inputs=sampler_inputs)
-            if np.isfinite(score)
-        ]
+        Logging only: every number is one `sample` already computed to rank the
+        batch, so nothing is scored again and no generator is drawn from."""
         consultation = choice.consultation
         if consultation is SamplerConsultation.EPSILON_RANDOM:
             selection = "random"
@@ -1562,9 +1552,9 @@ class EesMethod(Method):
             "sampler_fitted": sampler.is_fitted,
             "sampler_observations": sampler.num_observations,
             "score": choice.score,
-            "score_min": min(scores) if scores else None,
-            "score_max": max(scores) if scores else None,
-            "num_candidates": len(sampler_inputs),
+            "score_min": choice.score_min,
+            "score_max": choice.score_max,
+            "num_candidates": num_candidates,
         }
 
     def take_parameter_choice(self) -> dict[str, Any] | None:

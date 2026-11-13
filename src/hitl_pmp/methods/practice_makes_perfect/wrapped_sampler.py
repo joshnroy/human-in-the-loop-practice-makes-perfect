@@ -528,6 +528,7 @@ class LearnedSkillSampler(BaseModel):
                 was_random=False,
                 was_informed=False,
                 score=SamplerChoice.finite_score(score=scores[index]),
+                **SamplerChoice.score_range(scores=scores),
             )
         # Deviation 7: break the remaining ties uniformly rather than at the lowest
         # index, which would be the caller's draw order.
@@ -541,6 +542,7 @@ class LearnedSkillSampler(BaseModel):
             was_random=was_random,
             was_informed=not was_random,
             score=SamplerChoice.finite_score(score=scores[index]),
+            **SamplerChoice.score_range(scores=scores),
         )
 
 
@@ -578,6 +580,18 @@ class SamplerChoice(BaseModel):
     # The classifier's score for the chosen candidate, already computed to rank the
     # batch. A diagnostic only: nothing downstream of `sample` reads it.
     score: float | None = None
+    # The lowest and highest score over the batch, from the same scores. Diagnostics
+    # only, as `score` is: they say whether the batch was ranked at all.
+    score_min: float | None = None
+    score_max: float | None = None
+
+    @staticmethod
+    def score_range(*, scores: np.ndarray) -> dict[str, float | None]:
+        """`score_min`/`score_max` over the finite scores, None when there are none."""
+        finite = scores[np.isfinite(scores)]
+        if not len(finite):
+            return {"score_min": None, "score_max": None}
+        return {"score_min": float(finite.min()), "score_max": float(finite.max())}
 
     @staticmethod
     def finite_score(*, score: float) -> float | None:
