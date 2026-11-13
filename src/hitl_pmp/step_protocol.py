@@ -898,6 +898,19 @@ class StepEvaluation:
                 try:
                     while not clock.solved and clock.steps < args.evaluation_control_steps:
                         action = policy(state)
+                        # Logging only: the exact parameters and how they were chosen.
+                        take = getattr(method, "take_parameter_choice", None)
+                        chosen = take() if take is not None else None
+                        selection = (
+                            {}
+                            if chosen is None
+                            else {
+                                "params": chosen["params"],
+                                "parameter_selection": {
+                                    k: v for k, v in chosen.items() if k != "params"
+                                },
+                            }
+                        )
                         if np.array_equal(action.action, problem.env.noop_action()):
                             reason = "no_plan"
                             break
@@ -914,6 +927,7 @@ class StepEvaluation:
                                 success=False,
                                 outcome=clock.interruption(),
                                 goal_reached=clock.solved,
+                                **selection,
                             )
                             break
                         error = environment.last_skill_error(problem=problem)
@@ -932,6 +946,7 @@ class StepEvaluation:
                             end_step=clock.steps,
                             success=error is None,
                             outcome=error,
+                            **selection,
                         )
                         if clock.steps == previous:
                             reason = "zero_step_controller_failure"

@@ -138,7 +138,11 @@ class RunRecordWriter(SkillTickSink):
         cost: float | None = None,
         cycle: int | None = None,
         goal_reached: bool = False,
+        params: Sequence[float] | None = None,
+        parameter_selection: Mapping[str, Any] | None = None,
     ) -> None:
+        """`params` are the skill's exact parameters where the caller knows them (the
+        label rounds them), and `parameter_selection` how they were chosen."""
         if self.output_path is None:
             return
         objects = [
@@ -154,6 +158,8 @@ class RunRecordWriter(SkillTickSink):
             # by the label exactly as an unreported one is, so recording ticks never
             # changes the action line.
             pending.name, pending.objects = label.split("(", 1)[0], objects
+        if params is not None:
+            pending.params = [float(p) for p in params]
         self._pending = None
         if self.state_provider is not None:
             settled = self.state_provider()
@@ -171,6 +177,7 @@ class RunRecordWriter(SkillTickSink):
             cost=cost,
             cycle=cycle,
             goal_reached=goal_reached,
+            parameter_selection=parameter_selection,
         )
 
     def human_action(
@@ -269,6 +276,7 @@ class RunRecordWriter(SkillTickSink):
         cycle: int | None,
         moved_objects: PlainState | None = None,
         goal_reached: bool = False,
+        parameter_selection: Mapping[str, Any] | None = None,
     ) -> None:
         segment = self._segment or SegmentStart(phase=Phase.PRACTICE)
         seq = self._seq
@@ -294,6 +302,9 @@ class RunRecordWriter(SkillTickSink):
                 "cost": cost,
                 "moved_objects": moved_objects,
                 "num_ticks": len(pending.ticks),
+                "parameter_selection": (
+                    None if parameter_selection is None else dict(parameter_selection)
+                ),
             })
         )
         for tick in pending.ticks:
@@ -317,7 +328,10 @@ class RunRecordWriter(SkillTickSink):
                 })
             self._header_written = True
             self._emit(record=self.header.model_dump(mode="json"))
-        self._emit(record=entry.model_dump(mode="json"))
+        record = entry.model_dump(mode="json")
+        if record.get("parameter_selection", 0) is None:
+            del record["parameter_selection"]
+        self._emit(record=record)
 
     def _emit(self, *, record: dict[str, Any]) -> None:
         assert self._file is not None

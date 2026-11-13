@@ -105,6 +105,10 @@ class ActionEntry(BaseModel):
     cost: float | None = None
     moved_objects: PlainState | None = None
     num_ticks: int = 0
+    # Evaluation only, and only for a skill with parameters: how the learned sampler
+    # chose `params` (`EesMethod.take_parameter_choice`). Written only when set, so
+    # every other action line is what it was before the field existed.
+    parameter_selection: dict[str, Any] | None = None
 
 
 class TickEntry(BaseModel):
