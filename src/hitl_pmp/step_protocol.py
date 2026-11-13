@@ -647,6 +647,7 @@ class StepProtocolResume:
         "bulk_transfer_only": "False",
         "practice_episode_budget": "None",
         "measurement_interval_episodes": "None",
+        "pomdp_plan_beyond_session": "False",
     }
 
     @staticmethod

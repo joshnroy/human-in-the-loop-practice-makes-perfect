@@ -111,6 +111,15 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_log_full_search_tree: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
+    # determinized_astar only. A plan may run past the end of the practice session: it
+    # is bounded by the practice budget that is left (steps, tries) and by
+    # `pomdp_max_search_iterations`, not by the session's remaining actions. The search
+    # models no session boundary, so a plan that crosses one is valued as if the
+    # learning update at the boundary did not happen until the plan's end (J forecasts
+    # one refit, from the plan's last belief), and its cost keeps accumulating where
+    # the real session cost restarts at zero: exact under the linear cost objective,
+    # which is additive, and not under the hard cost budget.
+    pomdp_plan_beyond_session: bool = False
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_draw_scope: DrawScope = "node"
     pomdp_determinized_variant: DeterminizedVariant = "algorithm3"
@@ -844,7 +853,9 @@ class Tossing3DPomdpMethod(EesMethod):
                     model=model,
                     trace=trace,
                     num_samples=self.pomdp_num_samples,
-                    remaining_actions=self._remaining_practice_actions,
+                    remaining_actions=(
+                        None if self.pomdp_plan_beyond_session else self._remaining_practice_actions
+                    ),
                     remaining_steps=self._remaining_practice_steps,
                     action_steps=(
                         None
@@ -912,6 +923,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 if self._remaining_practice_episodes is None
                 else {"remaining_practice_episodes": self._remaining_practice_episodes}
             ),
+            **({"plan_beyond_session": True} if self.pomdp_plan_beyond_session else {}),
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
