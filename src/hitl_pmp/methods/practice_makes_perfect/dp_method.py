@@ -47,7 +47,12 @@ class DpMethod(EesMethod):
     DP_PRIOR_STRENGTH: ClassVar[float] = 2.0
 
     dp_budget: float = Field(gt=0.0, allow_inf_nan=False)
-    dp_budget_unit: Literal["cost", "episodes"] = "cost"
+    # `steps` (Josh, 2026-11-13) is the episode arm under a step-capped run: an episode
+    # still counts as one practice attempt for learning, but the allocation must fit the
+    # budget in practice steps, each skill's episode priced at its own measured length
+    # (dp_skill_cost_steps_for), and the budget is spent in the run's own practice steps.
+    # Our adaptation, like `cost`: the paper's DP counts every episode equally.
+    dp_budget_unit: Literal["cost", "episodes", "steps"] = "cost"
     dp_allocation_schedule: Literal["once", "period"] = "period"
     dp_solver: Literal["gurobi", "enumeration"] = "gurobi"
     dp_solver_time_limit: float = Field(default=60.0, gt=0.0, allow_inf_nan=False)
@@ -107,6 +112,13 @@ class DpMethod(EesMethod):
     def _budget_and_calibration_are_consistent(self) -> "DpMethod":
         if self.dp_budget_unit == "episodes" and not self.dp_budget.is_integer():
             raise ValueError("DP's episode budget must be an integer number of target rollouts")
+        if self.dp_budget_unit == "steps":
+            unpriced = {skill.name for skill in self.skills()} - set(self.dp_skill_cost_steps_for)
+            if unpriced:
+                raise ValueError(
+                    "DP's step budget prices an episode at its skill's measured length, and "
+                    f"dp_skill_cost_steps_for lacks one for {sorted(unpriced)}"
+                )
         if self.dp_prior_calibration is not None:
             calibration = DpPriorCalibration.load(path=self.dp_prior_calibration)
             calibration.verify_simulators()
@@ -206,9 +218,7 @@ class DpMethod(EesMethod):
         spent = (
             self._dp_episodes
             if self.dp_budget_unit == "episodes"
-            else (
-                self._practice_accounting.total_cost if self._practice_accounting is not None else 0
-            )
+            else (0 if self._practice_accounting is None else self._spent_from_accounting())
         )
         if spent >= self.dp_budget:
             return "budget_spent"
@@ -234,9 +244,31 @@ class DpMethod(EesMethod):
         return self._dp_solver_result
 
     def _remaining_budget(self) -> float:
-        accounting = self._require_accounting()
-        spent = self._dp_episodes if self.dp_budget_unit == "episodes" else accounting.total_cost
+        self._require_accounting()
+        spent = (
+            self._dp_episodes
+            if self.dp_budget_unit == "episodes"
+            else self._spent_from_accounting()
+        )
         return max(0.0, self.dp_budget - spent)
+
+    def _spent_from_accounting(self) -> float:
+        accounting = self._require_accounting()
+        return (
+            accounting.practice_steps if self.dp_budget_unit == "steps" else accounting.total_cost
+        )
+
+    def _attempt_price(self, *, ground_skill: GroundSkill) -> float:
+        """What one allocated attempt takes from the budget, in the budget's own unit."""
+        if self.dp_budget_unit == "episodes":
+            return 1.0
+        if self.dp_budget_unit == "steps":
+            # A human skill is no robot skill, so has no measured length; it is on no
+            # deployment transition and takes skill_cost_prior_steps, as under `cost`.
+            return self.dp_skill_cost_steps_for.get(
+                ground_skill.skill.name, self.skill_cost_prior_steps
+            )
+        return self.dp_expected_attempt_cost(ground_skill=ground_skill)
 
     def _needs_allocation(self) -> bool:
         return self._dp_solved_period is None or (
@@ -380,12 +412,7 @@ class DpMethod(EesMethod):
                 if self.dp_min_learning_rate is None
                 else max(model.learning_rate(), self.dp_min_learning_rate)
             )
-        costs = {
-            candidate: 1.0
-            if self.dp_budget_unit == "episodes"
-            else self.dp_expected_attempt_cost(ground_skill=candidate)
-            for candidate in candidates
-        }
+        costs = {candidate: self._attempt_price(ground_skill=candidate) for candidate in candidates}
         try:
             if self.dp_solver == "gurobi":
                 result = DpGurobiAllocator.allocate(
