@@ -229,8 +229,17 @@ def make_default_tossing3d_belief(
     seed_offsets = {
         name: index for index, name in enumerate(dict.fromkeys((*domain.prior_seed_order, *names)))
     }
+    overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
+        config = inference_config or InferenceConfig()
+        if name in overrides:
+            config = config.model_copy(
+                update={
+                    "initial_competence_alpha": overrides[name][0],
+                    "initial_competence_beta": overrides[name][1],
+                }
+            )
         beliefs[name] = (
             create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
             if model is None
@@ -239,7 +248,7 @@ def make_default_tossing3d_belief(
                 engine=engine,
                 seed=seed + index,
                 num_particles=num_particles,
-                config=inference_config or InferenceConfig(),
+                config=config,
             )
         )
     return Tossing3DBeliefState(

@@ -532,6 +532,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 layout = RackLayout.sample(
                     rng=self._rng, rack=rack, count=len(names), others=others
                 )
+            elif start_layout == "middle_three":
+                layout = RackLayout.middle_three(
+                    rng=self._rng,
+                    rack=rack,
+                    center_y=(tray.y_min + tray.y_max) / 2,
+                    pitch=self.config.spaced_pitch,
+                    side_offset=self.config.side_offset,
+                    long_axis=self.config.spaced_long_axis,
+                )
             elif start_layout == "spaced":
                 layout = RackLayout.spaced(
                     rng=self._rng,

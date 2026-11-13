@@ -75,6 +75,8 @@ class PracticeDomain(BaseModel, abc.ABC):
     # The Beta prior on an untrained skill's competence; None keeps InferenceConfig's.
     initial_competence_alpha: float | None = None
     initial_competence_beta: float | None = None
+    # (belief name, alpha, beta): a Beta prior for that one skill, over the above.
+    competence_prior_overrides: tuple[tuple[str, float, float], ...] = ()
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs

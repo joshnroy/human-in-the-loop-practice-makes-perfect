@@ -208,6 +208,7 @@ def main() -> None:
     parser.add_argument("--pitch", type=float, default=RackServingConfig().spaced_pitch)
     parser.add_argument("--long-axis", default=RackServingConfig().spaced_long_axis)
     parser.add_argument("--video", type=Path, default=None)
+    parser.add_argument("--side-offset", type=float, default=RackServingConfig().side_offset)
     parser.add_argument("--blade-height-feedback-limit", type=float, default=0.0)
     parser.add_argument(
         "--scraper-tilt-degrees", type=float, default=RackServingConfig().scraper_tilt_degrees
@@ -217,6 +218,7 @@ def main() -> None:
         start_layout=args.start_layout,
         spaced_pitch=args.pitch,
         spaced_long_axis=args.long_axis,
+        side_offset=args.side_offset,
         surface_kind="wire_solid",
         scraper_attachment="grasp_weld",
         bulk_transfer_only=True,

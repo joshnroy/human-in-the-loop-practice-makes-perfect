@@ -206,3 +206,21 @@ def test_the_spaced_layout_is_one_evenly_spaced_row_centred_on_the_plate_line():
         rng=np.random.default_rng(4), rack=RACK, center_y=0.01, pitch=0.05, long_axis="x"
     )
     assert layout != other
+
+
+def test_three_in_the_middle_and_one_out_on_each_side():
+    layout = RackLayout.middle_three(
+        rng=np.random.default_rng(3),
+        rack=RACK,
+        center_y=0.0,
+        pitch=0.04,
+        side_offset=0.13,
+        long_axis="x",
+    )
+    nominal_y = (-0.13, -0.04, 0.0, 0.04, 0.13)
+    assert len(layout) == 5
+    for (x, y, yaw), expected in zip(layout, nominal_y, strict=True):
+        assert abs(x - (RACK.x_min + RACK.x_max) / 2) <= RackLayout.LINED_UP_JITTER
+        assert abs(y - expected) <= RackLayout.LINED_UP_JITTER
+        assert abs(yaw - math.pi / 2) <= RackLayout.LINED_UP_YAW_JITTER
+    assert RackServingConfig(start_layout="middle_three").side_offset > 2 * 0.04

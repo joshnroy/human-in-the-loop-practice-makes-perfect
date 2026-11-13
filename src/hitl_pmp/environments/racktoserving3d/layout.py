@@ -120,6 +120,37 @@ class RackLayout:
         )
 
     @staticmethod
+    def middle_three(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        pitch: float,
+        side_offset: float,
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Three in the middle and one out on each side (Josh, 2026-11-12).
+
+        One row on the rack's x centre line: three `pitch` apart, centred on
+        y = center_y (the plate's centre line), and one more at `side_offset` on each
+        side of it; jittered as `lined_up` is, ordered by y. The middle three are the
+        ones a straight Sweep is meant to land; whether it does, and whether a
+        GatherAndSweep brings the outer two in, are measured facts.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        offsets = (-side_offset, -pitch, 0.0, pitch, side_offset)
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, center_y + offset + dy, yaw + dyaw)
+            for offset, (dx, dy, dyaw) in zip(offsets, jitter.tolist(), strict=True)
+        )
+
+    @staticmethod
     def _clear(*, points: list[tuple[float, float]], others: list[tuple[float, float]]) -> bool:
         pairs = itertools.chain(
             itertools.combinations(points, 2), itertools.product(points, others)

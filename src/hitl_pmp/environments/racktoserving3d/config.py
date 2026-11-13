@@ -66,8 +66,15 @@ class RackServingConfig(BaseModel):
     # bulk attempt per task is what makes each bulk skill a route.
     two_route_rewards: bool = False
     # "spaced" (Josh, 2026-11-12): the two-route start, `RackLayout.spaced`.
-    start_layout: Literal["scattered", "pile2col", "stack", "row", "spaced"] = "scattered"
-    spaced_pitch: Positive = Field(default=0.04, description="start_layout spaced only")
+    # "middle_three" (Josh, 2026-11-12): three `spaced_pitch` apart in the middle and
+    # one `side_offset` out on each side, `RackLayout.middle_three`.
+    start_layout: Literal["scattered", "pile2col", "stack", "row", "spaced", "middle_three"] = (
+        "scattered"
+    )
+    spaced_pitch: Positive = Field(
+        default=0.04, description="start_layout spaced and middle_three only"
+    )
+    side_offset: Positive = Field(default=0.13, description="start_layout middle_three only")
     spaced_long_axis: Literal["x", "y"] = "x"
     # scattered only: the probability an episode start or a human batch return places
     # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,

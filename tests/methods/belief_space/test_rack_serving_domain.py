@@ -573,3 +573,31 @@ def test_the_domains_deployment_plan_is_the_recursion_at_the_beliefs_mean_compet
     assert plan[(5, "empty", True), domain.deployment_horizon][0] == "PickScraper"
     # 3 * 0.8 beats 5 * 0.3, net of each skill's steps at the domain's weight.
     assert plan[held, domain.deployment_horizon - 1][0] == "Sweep"
+
+
+def test_a_named_skill_can_start_from_its_own_competence_prior():
+    domain = Tossing3DPomdpCli.with_prior_means(
+        domain=RACK_SERVING_DOMAIN, means={"PickScraper": 0.9, "ReturnScraper": 0.9}
+    )
+    assert dict((name, (a, b)) for name, a, b in domain.competence_prior_overrides) == {
+        "PickScraper": (pytest.approx(9.0), pytest.approx(1.0)),
+        "ReturnScraper": (pytest.approx(9.0), pytest.approx(1.0)),
+    }
+    belief = make_default_tossing3d_belief(
+        domain=domain,
+        model="local_trend",
+        engine="grid",
+        num_particles=32,
+        inference_config=InferenceConfig(competence_bins=41, learning_rate_bins=4),
+    )
+    means = {name: b.mean_competence() for name, b in belief.skill_beliefs.items()}
+    assert means["PickScraper"] == pytest.approx(0.9, abs=0.03)
+    assert means["ReturnScraper"] == pytest.approx(0.9, abs=0.03)
+    plain = _belief().skill_beliefs
+    assert means["Sweep"] == pytest.approx(0.25, abs=0.03)
+    assert set(means) == set(plain)
+    assert Tossing3DPomdpCli.with_prior_means(domain=RACK_SERVING_DOMAIN, means={}) is (
+        RACK_SERVING_DOMAIN
+    )
+    with pytest.raises(ValueError, match="NoSuchSkill"):
+        Tossing3DPomdpCli.with_prior_means(domain=RACK_SERVING_DOMAIN, means={"NoSuchSkill": 0.5})
