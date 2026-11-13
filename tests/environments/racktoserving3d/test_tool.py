@@ -832,3 +832,62 @@ def test_only_a_hand_held_just_above_its_target_is_excused(*, ends_at, rest_abov
             limit=3,
             rest_above=rest_above,
         )
+
+
+def _line_tool():
+    """A scraper at rest whose lines neither step physics nor wait for the hand."""
+    tool = RackScraper.__new__(RackScraper)
+    tool.shelf = SimpleNamespace(
+        site_pose=Mock(return_value=np.eye(4)),
+        data=SimpleNamespace(qpos=np.zeros(10)),
+        qa=np.arange(3, 10),
+        base_target=np.zeros(3),
+        in_hand=None,
+    )
+    tool.step = Mock()
+    tool.settle_hand = Mock()
+    return tool
+
+
+@pytest.mark.parametrize(("requested", "checked"), [({}, True), ({"axis_clipped": False}, False)])
+def test_a_line_passes_on_which_joint_paths_its_waypoints_are_checked_along(*, requested, checked):
+    """Session 10 learning curves, 29/531 Sweep tries: "sweep_level: Cartesian fraction
+    0.500: axis-clipped joint segment at 0.025 rad: Scraper blade or handle would collide
+    with fixture geometry". The servo follows the straight joint segment, which was clear;
+    the axis-clipped one put the blade 3.13 mm under the rack top against a 3 mm allowance."""
+    tool = _line_tool()
+    tool.check_arm_segment = Mock()
+    with patch.object(TableWiper, "ik", return_value=np.full(7, 0.01)):
+        tool.line(
+            position=np.array([0.02, 0.0, 0.0]),
+            rotation=np.eye(3),
+            label="sweep_level",
+            holding=False,
+            **requested,
+        )
+    calls = tool.check_arm_segment.call_args_list
+    assert len(calls) == 2
+    assert all(call.kwargs["axis_clipped"] is checked for call in calls)
+
+
+def test_a_line_checked_on_the_servo_path_alone_still_refuses_a_collision_on_it():
+    tool = _line_tool()
+    target = np.full(7, 0.05)
+
+    def check_configuration(*, base, arm, holding, inflate=0.0):
+        if np.allclose(arm, target / 2):
+            raise SkillFailed("Scraper blade or handle would collide with fixture geometry")
+
+    tool.check_configuration = Mock(side_effect=check_configuration)
+    with (
+        patch.object(TableWiper, "ik", return_value=target),
+        pytest.raises(SkillFailed, match=r"sweep_level: .*straight joint segment.*would collide"),
+    ):
+        tool.line(
+            position=np.array([0.005, 0.0, 0.0]),
+            rotation=np.eye(3),
+            label="sweep_level",
+            holding=False,
+            axis_clipped=False,
+        )
+    tool.step.assert_not_called()

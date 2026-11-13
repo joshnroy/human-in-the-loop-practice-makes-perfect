@@ -228,7 +228,12 @@ class RackControllers:
         return body @ np.linalg.inv(self.shelf.in_hand)
 
     def move_tool(
-        self, *, body: np.ndarray, label: str, may_rest_above: bool = False
+        self,
+        *,
+        body: np.ndarray,
+        label: str,
+        may_rest_above: bool = False,
+        axis_clipped: bool = True,
     ) -> np.ndarray:
         """Drive the measured scraper to ``body``; return the pose it reached.
 
@@ -236,6 +241,9 @@ class RackControllers:
         ``body``, on it horizontally and in rotation, counts as arrived: something
         under the blade is holding it up, and pressing down a sixth time would not
         change that. Only a move that is about to rise anyway may ask for this.
+
+        ``axis_clipped`` is `TableWiper.line`'s: which joint paths each waypoint's
+        segment is checked along.
         """
         for _ in range(5):
             target = self.hand_for_tool(body=body)
@@ -245,6 +253,7 @@ class RackControllers:
                 label=label,
                 holding=True,
                 rest_above=self.REST_ABOVE_LIMIT if may_rest_above else 0.0,
+                axis_clipped=axis_clipped,
             )
             actual = self.tool.wiper_pose()
             if (
@@ -737,8 +746,13 @@ class RackControllers:
             level[:3, 3] = edge - tool.blade_edge(pose=level).mean(axis=0)
             # A blade that ends its stroke on a food cannot come down to 2 mm; it is
             # about to rise, so it rises from where it rests. A blade that did level
-            # still rises from the level pose, as it always has.
-            reached = self.move_tool(body=level, label="sweep_level", may_rest_above=True)
+            # still rises from the level pose, as it always has. The move is checked
+            # along the straight joint path the servo follows, and no other: the blade
+            # starts at its working height, where the axis-clipped path of a clear
+            # 1 cm waypoint can dip a blade end past the rack's support allowance.
+            reached = self.move_tool(
+                body=level, label="sweep_level", may_rest_above=True, axis_clipped=False
+            )
             lifted_body = level.copy()
             if reached[2, 3] - level[2, 3] >= 0.003:
                 lifted_body[2, 3] = reached[2, 3]
