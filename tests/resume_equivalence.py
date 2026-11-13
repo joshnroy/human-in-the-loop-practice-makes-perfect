@@ -359,6 +359,29 @@ class ResumeEquivalence:
         ]
 
     @staticmethod
+    def practice_ticks(*, output: Path) -> list[tuple[int, dict[str, Any]]]:
+        """Every practice control step's recorded state, in order, with its cycle: the
+        run's recording, then each resumed process's own. A state is the robot's base,
+        arm and gripper positions and velocities, the cube's and bin's poses and
+        velocities, and the eight finger joints, at MuJoCo's float64."""
+        ticks: list[tuple[int, dict[str, Any]]] = []
+        for path in (
+            output / "recording.jsonl",
+            *sorted(output.glob("resume-*-recording.jsonl")),
+        ):
+            cycle, practising = None, False
+            for row in ResumeEquivalence.rows(path=path):
+                if row["kind"] == "segment":
+                    practising = row["phase"] == "practice"
+                elif row["kind"] == "segment_end":
+                    practising = False
+                elif row["kind"] == "cycle":
+                    cycle = row["cycle"]
+                elif row["kind"] == "tick" and practising and cycle is not None:
+                    ticks.append((cycle, row["state"]))
+        return ticks
+
+    @staticmethod
     def compare(*, resumed: Path, reference: Path, first_boundary: Path) -> dict[str, Any]:
         """Every comparison of the Della proof. `first_boundary` holds the paused run's
         checkpoint and recorder files as they stood after its first cycle."""
@@ -370,6 +393,16 @@ class ResumeEquivalence:
         pairs["events"] = (
             ResumeEquivalence.events(output=resumed),
             ResumeEquivalence.events(output=reference),
+        )
+        # Not in the proof: every control step of both cycles, so a run that drifts and
+        # then happens to land on the same final checkpoint fields still fails, and the
+        # first step that differs is named.
+        ticks_a = ResumeEquivalence.practice_ticks(output=resumed)
+        ticks_b = ResumeEquivalence.practice_ticks(output=reference)
+        pairs["practice_ticks"] = (ticks_a, ticks_b)
+        first_tick = next(
+            (i for i, (x, y) in enumerate(zip(ticks_a, ticks_b, strict=False)) if x != y),
+            None if len(ticks_a) == len(ticks_b) else min(len(ticks_a), len(ticks_b)),
         )
         rows_a = json.loads((resumed / "step_evaluations.json").read_text())
         rows_b = json.loads((reference / "step_evaluations.json").read_text())
@@ -429,6 +462,11 @@ class ResumeEquivalence:
             "insensitive": sorted(name for name, moved in sensitive.items() if not moved),
             "structural": structural,
             "deployment_kinds": kinds,
+            "practice_ticks_by_cycle": {
+                str(cycle): [sum(c == cycle for c, _ in t) for t in (ticks_a, ticks_b)]
+                for cycle in sorted({c for c, _ in ticks_a + ticks_b})
+            },
+            "first_differing_tick": first_tick,
             "mismatched": mismatched,
             "failed_structural": sorted(name for name, ok in structural.items() if not ok),
         }

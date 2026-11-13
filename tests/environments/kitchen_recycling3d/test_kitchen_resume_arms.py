@@ -206,7 +206,12 @@ def test_a_resumed_run_ends_where_an_uninterrupted_one_does(
     (tmp_path / "comparison.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     assert report["insensitive"] == []
     assert report["failed_structural"] == []
+    assert report["first_differing_tick"] is None, report["practice_ticks_by_cycle"]
     assert report["mismatched"] == []
+    if not name.startswith("no-human"):
+        # The robot moved after the resume, so the step-by-step comparison compared
+        # something. (Without a human reset both arms STOP in cycle 2.)
+        assert report["practice_ticks_by_cycle"]["1"][0] > 0, report["practice_ticks_by_cycle"]
     if name.startswith("always-ask"):
         # A reset count that carries over needs a reset on each side of the pause.
         resets = Stages.forced_resets(output=resumed)
