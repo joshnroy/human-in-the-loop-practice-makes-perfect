@@ -98,6 +98,18 @@ class RackServingConfig(BaseModel):
     # Opt-in (2026-11-12 measurement study): speed (m/s) of Sweep's stroke and of
     # GatherAndSweep's final stroke. None is the constant `SWEEP_SPEED_M_S`.
     final_sweep_speed: Positive | None = None
+    # What the learned sampler's classifier reads for Sweep and GatherAndSweep
+    # (Josh, 2026-11-13), `RackServingSkillProvider.hand_selected_feature_transform`.
+    # "parameters_and_layout": a bias, each dumpling's (x, y) from the rack's centre in
+    # slot order, then the skill's parameters. "parameters": the bias and the parameters.
+    # "full_state": the method's own row, every object's whole state, which is what
+    # every run before 2026-11-13 used. That row carries the robot's base and the
+    # scraper's pose: practice consults the sampler with the robot at the rack and an
+    # evaluation task consults it right after PickScraper, so a sampler fitted on it
+    # was scored on states it had not seen.
+    sampler_features: Literal["parameters_and_layout", "parameters", "full_state"] = (
+        "parameters_and_layout"
+    )
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375
