@@ -334,6 +334,7 @@ class EesMethod(Method):
     # its own random-excluding history in `_competence_models` instead.
     _all_attempt_outcomes: dict[GroundSkill, list[bool]] = PrivateAttr()
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
+    _last_parameter_choice: dict[str, Any] | None = PrivateAttr(default=None)
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     # `preview_test_goals` as seen tasks, once registered; never windowed.
@@ -1485,6 +1486,7 @@ class EesMethod(Method):
         if skill.param_dim == 0:
             params: np.ndarray = np.zeros(0)
             record = None
+            self._last_parameter_choice = None
         else:
             candidates, diagnostics = self._draw_parameter_candidates(
                 ground_skill=ground_skill, state=state
@@ -1504,6 +1506,9 @@ class EesMethod(Method):
             )
             self.record_parameter_sampling(
                 ground_skill=ground_skill, explore=explore, diagnostics=diagnostics, choice=choice
+            )
+            self._note_parameter_choice(
+                sampler=sampler, sampler_inputs=sampler_inputs, choice=choice
             )
             params = choice.params
             record = _SkillAttempt(
@@ -1525,6 +1530,52 @@ class EesMethod(Method):
         return self._labeled_action(
             ground_skill=ground_skill, params=params, state=state, record=record
         ), record
+
+    def _note_parameter_choice(
+        self,
+        *,
+        sampler: LearnedSkillSampler,
+        sampler_inputs: list[list[float]],
+        choice: SamplerChoice,
+    ) -> None:
+        """Keep how the last parameters were chosen, for an evaluation's action record.
+
+        Logging only. Scoring the batch again is a forward pass of the fitted
+        classifier: it draws nothing from any generator and changes no state the
+        choice or a later one depends on."""
+        scores = [
+            score
+            for score in sampler.score_inputs(sampler_inputs=sampler_inputs)
+            if np.isfinite(score)
+        ]
+        consultation = choice.consultation
+        if consultation is SamplerConsultation.EPSILON_RANDOM:
+            selection = "random"
+        elif consultation is SamplerConsultation.INFORMED:
+            selection = "informed"
+        else:
+            selection = "uninformative_tie" if sampler.is_fitted else "untrained"
+        self._last_parameter_choice = {
+            "params": [float(p) for p in choice.params],
+            "selection": selection,
+            "consultation": consultation.value,
+            "sampler_fitted": sampler.is_fitted,
+            "sampler_observations": sampler.num_observations,
+            "score": choice.score,
+            "score_min": min(scores) if scores else None,
+            "score_max": max(scores) if scores else None,
+            "num_candidates": len(sampler_inputs),
+        }
+
+    def take_parameter_choice(self) -> dict[str, Any] | None:
+        """How the parameters of the action just returned were chosen, once: the exact
+        parameters, the consultation, the chosen candidate's score and the lowest and
+        highest score over the candidates. None for a skill without parameters or one
+        the learned sampler did not pick for."""
+        # A method restored from a pickle older than this field has no slot for it.
+        choice = (self.__pydantic_private__ or {}).get("_last_parameter_choice")
+        self._last_parameter_choice = None
+        return choice
 
     def execute_random_ground_skill(
         self, *, ground_skill: GroundSkill, state: State
