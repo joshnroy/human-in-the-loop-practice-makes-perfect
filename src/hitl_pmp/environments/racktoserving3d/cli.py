@@ -26,7 +26,15 @@ class RackServingCli:
                 continue
             flag = "--" + name.replace("_", "-")
             choices = get_args(field.annotation) if get_origin(field.annotation) is Literal else ()
-            if choices:
+            if name == "custom_layout":
+                parser.add_argument(
+                    flag,
+                    nargs=15,
+                    type=float,
+                    default=(),
+                    help="start_layout custom: five (along row, up the rack, yaw) triples",
+                )
+            elif choices:
                 parser.add_argument(flag, choices=choices, default=field.default)
             elif isinstance(field.default, tuple):
                 parser.add_argument(flag, nargs=3, type=float, default=field.default)
@@ -52,10 +60,14 @@ class RackServingCli:
     def build_problem(
         *, args: argparse.Namespace, mode: Literal["training", "deployment"]
     ) -> RackServingProblem:
-        config = RackServingConfig.model_validate({
+        values = {
             name: mode if name == "mode" else getattr(args, name)
             for name in RackServingConfig.model_fields
-        })
+        }
+        flat = values["custom_layout"]
+        if len(flat) == 15:
+            values["custom_layout"] = tuple(tuple(flat[i : i + 3]) for i in range(0, 15, 3))
+        config = RackServingConfig.model_validate(values)
         practice, evaluation = SweepOffShelf3DCli.MOTION_SCOPES[
             getattr(args, "record_motion", "off")
         ]
