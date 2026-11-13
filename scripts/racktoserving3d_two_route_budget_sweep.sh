@@ -118,6 +118,11 @@
 #             N: `--dp-budget N --dp-budget-unit episodes --dp-allocation-schedule
 #             period`, so it re-fits and re-solves for the tries that are left at the
 #             start of every session, and no price table.
+#   ours      plans past the end of the 10-action session (`--pomdp-plan-beyond-
+#             session`; PLAN_BEYOND_SESSION=0 turns it off): its plan is bounded by the
+#             tries and backstop steps that are left and by the search's expansion cap,
+#             not by the actions left in the session. Off under BUDGET_UNIT=steps, as in
+#             every run before 2026-11-13, unless PLAN_BEYOND_SESSION=1.
 #   measured  after practice only, unless MEASUREMENT_INTERVAL_EPISODES=K adds a
 #             measurement after every K-th try.
 # Every Serving number before this was measured under a step budget.
@@ -140,6 +145,8 @@ case $BUDGET_UNIT in
 esac
 export BACKSTOP_STEPS_PER_EPISODE=${BACKSTOP_STEPS_PER_EPISODE:-12000}
 export MEASUREMENT_INTERVAL_EPISODES=${MEASUREMENT_INTERVAL_EPISODES:-}
+PLAN_BEYOND_SESSION=${PLAN_BEYOND_SESSION:-$([ "$BUDGET_UNIT" = episodes ] && echo 1 || echo 0)}
+export PLAN_BEYOND_SESSION
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
 export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035"
 export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
@@ -197,7 +204,8 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
       flags="--pomdp-solver determinized_astar --pomdp-determinized-variant curtis \
 --pomdp-observation-probability-weight 0.01 --pomdp-linear-cost-lambda 0.0015 \
 --pomdp-competence-prior 1 3 --stop-on-no-practice-action \
---pomdp-learning-rate-by-parameters" ;;
+--pomdp-learning-rate-by-parameters"
+      [ "$PLAN_BEYOND_SESSION" = 1 ] && flags="$flags --pomdp-plan-beyond-session" ;;
     dp-episodes)
       method=dp
       flags="$dp --dp-budget $(( (steps + 937) / 1875 )) --dp-budget-unit episodes --dp-allocation-schedule once" ;;

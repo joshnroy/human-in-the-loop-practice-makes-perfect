@@ -682,6 +682,16 @@ class Tossing3DPomdpCli(EesCli):
             "(repeatable, one per skill); skills not named keep the shared prior.",
         )
         parser.add_argument(
+            "--pomdp-plan-beyond-session",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="determinized_astar only: a plan may run past the end of the practice "
+            "session. It is bounded by the practice budget that is left (steps, and "
+            "tries under --practice-episode-budget) and by --pomdp-max-search-iterations "
+            "instead of by the session's remaining actions. The search models no "
+            "learning update at the session boundary: an approximation.",
+        )
+        parser.add_argument(
             "--pomdp-learning-rate-by-parameters",
             action=argparse.BooleanOptionalAction,
             default=False,
@@ -727,6 +737,11 @@ class Tossing3DPomdpCli(EesCli):
                 "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
                 "determinized_astar is bounded by --pomdp-max-search-iterations and the "
                 "session's remaining actions, never a search depth"
+            )
+        if args.pomdp_plan_beyond_session and args.pomdp_solver != "determinized_astar":
+            raise ValueError(
+                "--pomdp-plan-beyond-session is a determinized_astar flag: expectimax is "
+                "bounded by its search depth"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:
@@ -829,6 +844,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
+                pomdp_plan_beyond_session=args.pomdp_plan_beyond_session,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_draw_scope=args.pomdp_draw_scope,

@@ -649,6 +649,7 @@ class StepProtocolResume:
         "robot_batch_return_yaw": "snap",
         "practice_episode_budget": "None",
         "measurement_interval_episodes": "None",
+        "pomdp_plan_beyond_session": "False",
     }
 
     @staticmethod
