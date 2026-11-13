@@ -935,3 +935,144 @@ def test_a_step_budget_needs_step_forecasts() -> None:
             num_samples=1,
             remaining_steps=50,
         )
+
+
+SLOW = Action(name="slow")
+QUICK = Action(name="quick")
+MID = EnvironmentState(name="mid")
+DIAMOND_STEPS = {SLOW: 60.0, QUICK: 10.0, FINISH: 50.0}
+
+
+def _diamond_model() -> BeliefKeyedModel:
+    """Two routes to one state at one cost and one belief, 60 and 10 steps long, and a
+    50-step skill from there that is worth far more than either. The slow route is
+    generated first, so a merged node keeps the slow route's steps."""
+    return BeliefKeyedModel(
+        transitions={
+            (ROOT, SLOW): [(MID, 0.0, 1.0)],
+            (ROOT, QUICK): [(MID, 0.0, 1.0)],
+            (MID, FINISH): [(HIGH, 0.0, 1.0)],
+        },
+        beliefs={MID: BeliefState(value=0.3), HIGH: BeliefState(value=0.9)},
+    )
+
+
+def _solve_diamond(
+    *, variant: str, remaining_steps: float | None
+) -> tuple[float, object, list[dict], BeliefKeyedModel]:
+    trace = SearchTrace()
+    model = _diamond_model()
+    value, action = DeterminizedAStarPlanner(
+        max_iterations=100,
+        seed=0,
+        observation_probability_weight=0.0,
+        variant=variant,
+        log_full_search_tree=True,
+    ).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=model,
+        num_samples=1,
+        trace=trace,
+        remaining_steps=remaining_steps,
+        action_steps=None if remaining_steps is None else DIAMOND_STEPS.__getitem__,
+    )
+    return value, action, trace.events, model
+
+
+def _summary(*, events: list[dict]) -> dict:
+    return next(e for e in events if e["event"] == "search_summary")
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_paths_of_equal_belief_and_cost_but_different_steps_are_separate_nodes_under_a_step_budget(
+    *, variant: str
+) -> None:
+    _, _, events, model = _solve_diamond(variant=variant, remaining_steps=1_000)
+    summary = _summary(events=events)
+    # Root, the shared state once per route, and the goal once per route.
+    assert summary["unique_nodes"] == 5
+    assert summary["merged_nodes"] == 0
+    # One state is still valued once: J reads the belief and the cost, not the steps.
+    assert summary["stop_value_evaluations"] == 3
+    assert model.evaluations == 3
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_the_step_budget_cut_reads_the_steps_of_the_node_it_cuts(*, variant: str) -> None:
+    # 100 steps: slow + finish (110) overshoots, quick + finish (60) fits. Merged, the
+    # shared state kept the slow route's 60 steps and the finish was cut for both.
+    value, action, events, _ = _solve_diamond(variant=variant, remaining_steps=100)
+    assert (value, action) == (pytest.approx(0.9), QUICK)
+    assert _summary(events=events)["selected_path_steps"] == 60.0
+    # 60 steps: the slow route has spent them all on arrival and is not expanded; the
+    # quick route's finish lands exactly on the budget.
+    value, action, events, _ = _solve_diamond(variant=variant, remaining_steps=60)
+    assert (value, action) == (pytest.approx(0.9), QUICK)
+    assert _summary(events=events)["step_budget_terminal_nodes"] == 2  # slow's, and the goal.
+    # 59 steps: the slow route does not fit at all and the quick one cannot finish.
+    value, action, _, _ = _solve_diamond(variant=variant, remaining_steps=59)
+    assert (value, action) == (pytest.approx(0.3), QUICK)
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_without_a_step_budget_the_search_tree_and_its_node_keys_are_what_they_were(
+    *, variant: str
+) -> None:
+    value, action, events, model = _solve_diamond(variant=variant, remaining_steps=None)
+    assert (value, action) == (pytest.approx(0.9), SLOW)
+    summary = _summary(events=events)
+    assert summary["unique_nodes"] == 3
+    assert summary["merged_nodes"] == 1
+    assert summary["stop_value_evaluations"] == 3
+    assert "remaining_steps" not in summary
+    tree = [
+        (e["event"], e["node"], e.get("child_node"), e.get("disposition"))
+        for e in events
+        if e["event"] in ("tree_node", "tree_edge")
+    ]
+    assert tree == [
+        ("tree_node", 0, None, None),
+        ("tree_node", 1, None, None),
+        ("tree_edge", 0, 1, "enqueued"),
+        ("tree_edge", 0, 1, "dominated"),
+        ("tree_node", 2, None, None),
+        ("tree_edge", 1, 2, "enqueued"),
+    ]
+    # The key itself is the model's, untouched: no step count rides along.
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0, variant=variant)
+    belief = BeliefState(value=0.3)
+    key = planner.node_key(
+        model=model, environment_state=MID, summed_cost=0.0, belief_state=belief, horizon=None
+    )
+    assert key == (
+        model.belief_cache_key(environment_state=MID, belief_state=belief, horizon=None)
+        if variant == "curtis"
+        else model.search_cache_key(
+            environment_state=MID, summed_cost=0.0, belief_state=belief, horizon=None
+        )
+    )
+
+
+def test_step_counts_that_differ_only_by_summation_order_share_a_node() -> None:
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0)
+    model = _diamond_model()
+    belief = BeliefState(value=0.3)
+
+    def key(*, steps: float) -> object:
+        return planner.node_key(
+            model=model,
+            environment_state=MID,
+            summed_cost=0.0,
+            belief_state=belief,
+            horizon=None,
+            steps=steps,
+        )
+
+    assert 0.1 + 0.2 + 0.3 != 0.3 + 0.2 + 0.1
+    assert key(steps=0.1 + 0.2 + 0.3) == key(steps=0.3 + 0.2 + 0.1)
+    assert key(steps=3381.5) != key(steps=3382.5)
+    assert key(steps=0.0) != planner.node_key(
+        model=model, environment_state=MID, summed_cost=0.0, belief_state=belief, horizon=None
+    )
