@@ -54,6 +54,37 @@ class RackServingSkillProvider(SkillProvider):
         del state
         return RackServingActions.encode(ground_skill=ground_skill, params=params)
 
+    def hand_selected_feature_transform(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """The learned sampler's row for Sweep and GatherAndSweep, as
+        `RackServingConfig.sampler_features` selects: `[1, layout, parameters]`,
+        `[1, parameters]`, or None for the method's own full-state row. The layout is
+        each of the grounding's dumplings' (x, y) from the rack's centre, in the
+        grounding's order. That order is slot order: the skills' FoodOrder chain admits
+        one grounding, and a lined-up start and the person's batch return place
+        `cube_0`..`cube_4` across the rack in that order. Nothing of the robot or the
+        scraper enters, so the row is the same wherever the robot stands."""
+        selection = self.env.config.sampler_features
+        # By name: the two-route variants are the same skills with success restated.
+        if selection == "full_state" or ground_skill.skill.name not in ("GatherAndSweep", "Sweep"):
+            return None
+        layout: list[float] = []
+        if selection == "parameters_and_layout":
+            x_min, y_min, x_max, y_max = (
+                float(value)
+                for obj in ground_skill.objects
+                if obj.type == Objects.rack_type
+                for value in state[obj][:4]
+            )
+            for obj in ground_skill.objects:
+                if obj.type == Objects.food_type:
+                    layout += [
+                        float(state[obj][0]) - (x_min + x_max) / 2,
+                        float(state[obj][1]) - (y_min + y_max) / 2,
+                    ]
+        return [1.0, *layout, *(float(value) for value in params)]
+
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         if not self.offer_human_reset or self.env.config.mode == "deployment":
             return ()

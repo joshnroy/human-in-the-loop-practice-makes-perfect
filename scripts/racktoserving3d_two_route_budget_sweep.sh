@@ -10,7 +10,14 @@
 # evaluation after practice, math threads pinned to one per process. The evaluation
 # before practice does not depend on the practice budget, so only the smallest-budget
 # cell of each arm and seed runs it (`--no-initial-measurement` elsewhere): read the
-# untrained policy's result from that cell.
+# untrained policy's result from that cell. INITIAL_MEASUREMENT=0 (default 1) skips it in
+# every cell, for a sweep whose before-practice results already exist elsewhere.
+#
+# Sampler features. SAMPLER_FEATURES (default parameters_and_layout) is passed to every
+# cell as `--sampler-features`: what the learned sampler's classifier reads for Sweep
+# and GatherAndSweep (`RackServingConfig.sampler_features`). Every run of this script
+# before 2026-11-13, the 125-cell sweep of 2026-11-12 included, had no such flag and
+# used what is now SAMPLER_FEATURES=full_state.
 #
 # Starting learning rates (Josh, 2026-11-12): DP's three arms and ours run with a
 # skill's starting learning rate set to a base rate over its number of continuous
@@ -92,6 +99,8 @@ SEEDS=${SEEDS:-"0 1 2 3 4"}
 export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"}
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
 export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035"
+export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
+export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters_and_layout}
 # DP's per-skill prices, in control steps: the mean of each skill's uninterrupted
 # executions in the setup-A smoke runs of 2026-11-12 (seed 0, 40000 steps). Small
 # samples: PickScraper 424 (n=9) and GatherAndSweep 3362, rounded to 3400 (n=8), from
@@ -103,7 +112,8 @@ export PRICES="PickScraper=424 GatherAndSweep=3400 ReturnScraper=488 PickFood=72
 
 cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" then "<method args>"
   local steps=$1 arm=$2 method flags table="" flag pair
-  local shared="--two-route-rewards 1 $LAYOUT --evaluation-policy method --bulk-transfer-only 1 \
+  local shared="--two-route-rewards 1 $LAYOUT --sampler-features $SAMPLER_FEATURES \
+--evaluation-policy method --bulk-transfer-only 1 \
 --surface-kind wire_solid --scraper-attachment grasp_weld --practice-step-budget $steps \
 --measurement-interval-steps $steps --num-test-tasks $TASKS --evaluation-control-steps 10000 \
 --evaluation-workers 1 --evaluation-task-rng per-task --practice-reset-policy never \
@@ -112,7 +122,7 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
 --practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json \
 --max-steps-per-interaction $SESSION_ACTIONS"
   # The untrained policy is measured once per arm and seed, in the smallest budget's cell.
-  [ "$steps" = "${BUDGETS%% *}" ] || shared="$shared --no-initial-measurement"
+  [ "$steps" = "${BUDGETS%% *}" ] && [ "$INITIAL_MEASUREMENT" = 1 ] || shared="$shared --no-initial-measurement"
   local dp="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi \
 --dp-learning-rate-by-parameters"
   case $arm in
