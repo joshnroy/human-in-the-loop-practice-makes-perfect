@@ -769,7 +769,9 @@ class TableWiper:
         holding: bool,
         seed: np.ndarray | None = None,
         tolerance: float = 0.008,
+        axis_clipped: bool = True,
     ) -> np.ndarray:
+        """``axis_clipped`` is for a subclass that checks the joint path to the waypoint."""
         shelf = self.shelf
         arm, penetration = shelf.ik(
             position=position,
@@ -799,8 +801,13 @@ class TableWiper:
         steps_per: int = 3,
         settle: int = 40,
         rest_above: float = 0.0,
+        axis_clipped: bool = True,
     ) -> None:
-        """Interpolate Cartesian position and rotation on one guarded IK branch."""
+        """Interpolate Cartesian position and rotation on one guarded IK branch.
+
+        ``axis_clipped=False`` checks each waypoint's joint segment along the straight
+        path the servo follows and no other (`RackScraper.check_arm_segment`).
+        """
         shelf = self.shelf
         start = shelf.site_pose()
         distance = float(np.linalg.norm(position - start[:3, 3]))
@@ -817,6 +824,7 @@ class TableWiper:
                     rotation=slerp(fraction).as_matrix(),
                     holding=holding,
                     seed=previous,
+                    axis_clipped=axis_clipped,
                 )
             except SkillFailed as exc:
                 raise SkillFailed(f"{label}: Cartesian fraction {fraction:.3f}: {exc}") from exc
@@ -1199,6 +1207,12 @@ class RackScraper(TableWiper):
         ``axis_clipped=False``: the arm starts up to 0.02 rad off the planned waypoint,
         and from there the path it will not take can graze what the planned one
         cleared (a Sweep refused 30 steps in, one blade corner 0.07 mm into the rack).
+
+        So does the levelling move that ends a stroke: the blade is still at its
+        working height over the rack, and in the arm posture a short previous stroke
+        hands on, the path it will not take dipped one blade end 3.13 mm under the
+        rack top, 0.13 mm past the support allowance (29/125 short Sweeps after a
+        short Sweep refused at "sweep_level", none of them touching the rack).
         """
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
@@ -1229,13 +1243,18 @@ class RackScraper(TableWiper):
         holding: bool,
         seed: np.ndarray | None = None,
         tolerance: float = 0.008,
+        axis_clipped: bool = True,
     ) -> np.ndarray:
         arm = super().ik(
             position=position, rotation=rotation, holding=holding, seed=seed, tolerance=tolerance
         )
         start = self.shelf.data.qpos[self.shelf.qa].copy() if seed is None else seed
         self.check_arm_segment(
-            start=start, target=arm, base=self.shelf.base_target, holding=holding
+            start=start,
+            target=arm,
+            base=self.shelf.base_target,
+            holding=holding,
+            axis_clipped=axis_clipped,
         )
         return arm
 
