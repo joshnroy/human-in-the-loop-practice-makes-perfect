@@ -97,6 +97,30 @@
 #
 # DP's cost-unit budget and its price tables are this project's adaptation; the paper's
 # DP counts episodes.
+#
+# Episode budgets (Josh, 2026-11-13). BUDGET_UNIT=episodes (default steps) makes BUDGETS
+# a list of practice-try counts (default "5 10 20") and every cell gets
+# `--practice-episode-budget N`: practice ends once N tries have completed, a try being
+# one completed execution of Sweep or GatherAndSweep (the skills with learnable
+# parameters). Nobody is handed a skill's duration, which is the point: under a step
+# budget DP had to be given each skill's length while ours pays to learn it. Results go
+# under <results-root>/episodes-<N>/<arm>/<method>/<seed>/.
+#   backstop  the step budget stays as a backstop, BACKSTOP_STEPS_PER_EPISODE (default
+#             12000) control steps per try, because EES practises skills that are not
+#             tries and could otherwise never finish. In the 2026-11-12 sweep EES
+#             reached its 5th try after 13934 to 42717 steps, its 10th after 22622 to
+#             69000 and its 20th after 37473 to 92052 (5 seeds, 160000-step cells), so
+#             6000 a try would have ended 2/5 seeds on the backstop at N=5. A run the
+#             backstop ends says so in status.json: practice_endpoint is
+#             practice_step_budget and practice_episode_budget_reached is false.
+#   arms      ees, ours and dp-episodes-period only; the other DP arms price a step
+#             budget and are refused. dp-episodes-period is the paper's DP on the same
+#             N: `--dp-budget N --dp-budget-unit episodes --dp-allocation-schedule
+#             period`, so it re-fits and re-solves for the tries that are left at the
+#             start of every session, and no price table.
+#   measured  after practice only, unless MEASUREMENT_INTERVAL_EPISODES=K adds a
+#             measurement after every K-th try.
+# Every Serving number before this was measured under a step budget.
 set -euo pipefail
 
 ROOT=${1:?usage: [DRY_CHECK=1] [MAX_RUNS=14] $0 <results-root>}
@@ -108,7 +132,14 @@ export GUROBI=${GUROBI_HOME:-/home/josh/Documents/repos/research/hitl-pmp-result
 export TASKS=${TEST_TASKS:-10}
 export SESSION_ACTIONS=${SESSION_ACTIONS:-10}
 SEEDS=${SEEDS:-"0 1 2 3 4"}
-export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"}
+export BUDGET_UNIT=${BUDGET_UNIT:-steps}
+case $BUDGET_UNIT in
+  steps) export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"} ;;
+  episodes) export BUDGETS=${BUDGETS:-"5 10 20"} ;;
+  *) echo "BUDGET_UNIT must be steps or episodes, not $BUDGET_UNIT" >&2; exit 2 ;;
+esac
+export BACKSTOP_STEPS_PER_EPISODE=${BACKSTOP_STEPS_PER_EPISODE:-12000}
+export MEASUREMENT_INTERVAL_EPISODES=${MEASUREMENT_INTERVAL_EPISODES:-}
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
 export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035"
 export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
@@ -126,7 +157,9 @@ export STEP_LENGTHS="Sweep=347 GatherAndSweep=3284 PickScraper=431 ReturnScraper
 export PRICES="PickScraper=424 GatherAndSweep=3400 ReturnScraper=488 PickFood=728 ReturnFoodToRack=466 Sweep=737"
 
 cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" then "<method args>"
-  local steps=$1 arm=$2 method flags table="" flag pair
+  local budget=$1 steps=$1 arm=$2 method flags table="" flag pair
+  # Under an episode budget the step budget is the backstop, sized from the tries.
+  [ "$BUDGET_UNIT" = episodes ] && steps=$(( budget * BACKSTOP_STEPS_PER_EPISODE ))
   local shared="--two-route-rewards 1 $LAYOUT --sampler-features $SAMPLER_FEATURES \
 --evaluation-policy method --bulk-transfer-only 1 \
 --surface-kind wire_solid --scraper-attachment grasp_weld --practice-step-budget $steps \
@@ -137,8 +170,17 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
 --practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json \
 --max-steps-per-interaction $SESSION_ACTIONS"
   [ "$SAMPLER_TIES" = all ] || shared="$shared --sampler-break-ties-among-best"
+  if [ "$BUDGET_UNIT" = episodes ]; then
+    shared="$shared --practice-episode-budget $budget"
+    [ -z "$MEASUREMENT_INTERVAL_EPISODES" ] \
+      || shared="$shared --measurement-interval-episodes $MEASUREMENT_INTERVAL_EPISODES"
+    case $arm in
+      ees | ours | dp-episodes-period) ;;
+      *) echo "arm $arm prices a step budget: not run under BUDGET_UNIT=episodes" >&2; return 2 ;;
+    esac
+  fi
   # The untrained policy is measured once per arm and seed, in the smallest budget's cell.
-  [ "$steps" = "${BUDGETS%% *}" ] && [ "$INITIAL_MEASUREMENT" = 1 ] || shared="$shared --no-initial-measurement"
+  [ "$budget" = "${BUDGETS%% *}" ] && [ "$INITIAL_MEASUREMENT" = 1 ] || shared="$shared --no-initial-measurement"
   local dp="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi \
 --dp-learning-rate-by-parameters"
   case $arm in
@@ -159,6 +201,11 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
     dp-episodes)
       method=dp
       flags="$dp --dp-budget $(( (steps + 937) / 1875 )) --dp-budget-unit episodes --dp-allocation-schedule once" ;;
+    dp-episodes-period)
+      method=dp
+      [ "$BUDGET_UNIT" = episodes ] \
+        || { echo "arm dp-episodes-period needs BUDGET_UNIT=episodes" >&2; return 2; }
+      flags="$dp --dp-budget $budget --dp-budget-unit episodes --dp-allocation-schedule period" ;;
     dp-steps)
       method=dp
       for pair in $STEP_LENGTHS; do table="$table --dp-skill-cost-steps-for $pair"; done
@@ -175,20 +222,22 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
 }
 
 run_cell() {  # <seed> <budget> <arm>
-  local seed=$1 steps=$2 arm=$3 method shared flags
+  local seed=$1 steps=$2 arm=$3 method shared flags cell="budget-$2"
+  [ "$BUDGET_UNIT" = episodes ] && cell="episodes-$2"
   { read -r method; read -r shared; read -r flags; } < <(cell_arguments "$steps" "$arm")
-  local root="$ROOT/budget-$steps/$arm" run="$ROOT/budget-$steps/$arm/$method/$seed"
+  [ -n "$method" ] || { echo "[FAILED] seed $seed $cell $arm: no such cell"; return 2; }
+  local root="$ROOT/$cell/$arm" run="$ROOT/$cell/$arm/$method/$seed"
   if [ -n "${DRY_CHECK:-}" ]; then
     printf '%s\n' "--env racktoserving3d --method $method --seed $seed --output-dir $run $shared $flags"
     return 0
   fi
   if [ -f "$run/stats.json" ] && grep -q '"succeeded": true' "$run/timing.json" 2>/dev/null; then
-    echo "[skip] seed $seed budget $steps $arm: finished"
+    echo "[skip] seed $seed $cell $arm: finished"
     return 0
   fi
   # hitl_pmp.cli carries its run directory on its command line.
   if pgrep -f -- "--output-dir $run( |\$)" > /dev/null; then
-    echo "[skip] seed $seed budget $steps $arm: a run is still writing $run"
+    echo "[skip] seed $seed $cell $arm: a run is still writing $run"
     return 0
   fi
   [ -e "$run" ] && mv "$run" "$run.partial-$(date +%s)"
@@ -201,9 +250,9 @@ run_cell() {  # <seed> <budget> <arm>
     run-heavy scripts/with_env.sh python -m scripts.run_sweep --env racktoserving3d \
     --skip-skill-benchmark-gate --methods "$method" --seeds "$seed" --max-workers 1 \
     --results-root "$root" --shared-args "$shared" --method-args "$method=$flags" \
-    > "$ROOT/logs/seed$seed-budget$steps-$arm.log" 2>&1 \
-    && echo "[ok] seed $seed budget $steps $arm" \
-    || echo "[FAILED] seed $seed budget $steps $arm: see $ROOT/logs/seed$seed-budget$steps-$arm.log"
+    > "$ROOT/logs/seed$seed-$cell-$arm.log" 2>&1 \
+    && echo "[ok] seed $seed $cell $arm" \
+    || echo "[FAILED] seed $seed $cell $arm: see $ROOT/logs/seed$seed-$cell-$arm.log"
 }
 export -f cell_arguments run_cell
 
