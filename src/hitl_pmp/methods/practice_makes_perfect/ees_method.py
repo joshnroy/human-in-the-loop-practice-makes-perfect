@@ -98,9 +98,13 @@ class EesMethod(Method):
        `reproduce_predicators_practice_target_history=False` instead reads
        competence observations. `reproduce_predicators_skip_perfect` restores
        the reference's perfect-history gate; it remains off by default here.
-    2. Outcomes are observed on the next policy call or when the harness flushes
-       the pending outcome before a reset. A final outcome without either
-       notification cannot be observed by this method.
+    2. Outcomes are observed on the next policy call, or when the harness hands
+       over the state a try produced: before a reset (`observe_environment_reset`)
+       and, since 2026-11-13, when a practice session ends on a completed action
+       (`observe_session_end`). Before that date a session's last try was never
+       observed, so every session lost one observation; runs from before it are
+       not reproducible on this code. A try cut part-way by the step budget is
+       still not observed.
     3. The references disagree on competence observations. Vendor 5bd3f5bd
        observes non-exploration attempts once, random attempts never. The
        audited release observes every attempt once PLUS non-exploration attempts
@@ -1447,19 +1451,28 @@ class EesMethod(Method):
         """Score the in-flight skill against the state the harness is about to
         discard, instead of against the initial state it is about to be reset to.
 
-        Only reachable with practice_reset_interval set (practice_loop.py never
-        calls this otherwise), and it is what keeps that knob from confounding
-        itself: an outcome is normally read on the *next* step, so a reset in
-        between would check add_effects against a freshly reset environment --
-        where InBin/RobotInRoom-style effects essentially never hold -- and record
-        a spurious failure into both the competence model and the sampler's
-        training data, once per reset. That mislabelling would scale exactly with
-        reset frequency.
+        Called before a mid-period reset (`practice_reset_interval`) and before
+        every human reset the step protocol grants. An outcome is normally read on
+        the *next* step, so a reset in between would check add_effects against a
+        freshly reset environment -- where InBin/RobotInRoom-style effects
+        essentially never hold -- and record a spurious failure into both the
+        competence model and the sampler's training data, once per reset. That
+        mislabelling would scale exactly with reset frequency.
 
-        Flushing here rather than at the period boundary is deliberate: the last
-        skill of a period still goes unobserved (this class's deviation 2), so
-        every interaction period loses exactly one observation no matter how often
-        the harness resets inside it."""
+        The period's own boundary is `observe_session_end`'s (this class's
+        deviation 2), so a period's observations number its completed actions
+        however often the harness resets inside it."""
+        if self._practice_episode is None:
+            return
+        self._practice_episode.observe_pending(
+            true_atoms=self.abstract_state(state=state), state=state
+        )
+
+    def observe_session_end(self, *, state: State) -> None:
+        """Score the session's last try against the state it produced, before the
+        refit and the competence cycle that `end_cycle` runs. Nothing in flight (the
+        session ended on a STOP or a human reset, which already settled it) is a
+        no-op."""
         if self._practice_episode is None:
             return
         self._practice_episode.observe_pending(

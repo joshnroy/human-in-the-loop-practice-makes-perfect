@@ -174,10 +174,9 @@ class RandomSkillsMethod(Method):
         del task  # as in get_task_policy: never consulted
         # Nothing is in flight at a period boundary. Carrying a pending skill across
         # would score it against the next period's initial state -- a different task's
-        # state entirely -- so the last skill of a period goes unobserved instead.
-        # EesMethod drops it the same way (its fresh per-period _EesEpisode starts with
-        # _pending = None), and matching that exactly is what keeps the two arms
-        # comparable: every period loses exactly one observation, in both.
+        # state entirely. The harness settles a period's last completed skill at the
+        # period's end (`observe_session_end`), as it does for EesMethod, so the two
+        # arms count the same actions; one it did not settle is dropped here.
         self._pending_practice_skill = None
         return lambda state: self.practice_step(state=state)
 
@@ -207,6 +206,10 @@ class RandomSkillsMethod(Method):
         mislabelling that scales exactly with reset frequency, which is the confound
         that knob exists to isolate. EesMethod overrides this for the same reason; this
         baseline needs it the moment its outcomes are recorded at all."""
+        self.settle_pending_practice_skill(state=state)
+
+    def observe_session_end(self, *, state: State) -> None:
+        """Tally the period's last skill against the state it produced."""
         self.settle_pending_practice_skill(state=state)
 
     def settle_pending_practice_skill(self, *, state: State) -> None:
