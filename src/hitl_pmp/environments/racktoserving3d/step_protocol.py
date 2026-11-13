@@ -28,6 +28,18 @@ from .skills import SKILL_IDS
 class RackServingStepProtocol(SimulatedStepProtocolHooks):
     """A spawn-importable adapter; all dynamics remain in the rack environment."""
 
+    simulation_checkpoints = True
+
+    @staticmethod
+    def checkpoint_practice_environment(*, problem: Problem) -> Any:
+        return RackServingStepProtocol.env(problem=problem).simulation_checkpoint()
+
+    @staticmethod
+    def restore_checkpoint_environment(*, problem: Problem, checkpoint: Any) -> None:
+        RackServingStepProtocol.env(problem=problem).restore_simulation_checkpoint(
+            checkpoint=checkpoint
+        )
+
     @staticmethod
     def env(*, problem: Problem) -> RackServingEnvironment:
         assert isinstance(problem.env, RackServingEnvironment)
