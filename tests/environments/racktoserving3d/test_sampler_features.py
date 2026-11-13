@@ -78,21 +78,21 @@ def test_the_row_is_bias_then_each_dumplings_offset_from_the_rack_then_the_param
     params = _PARAMS[skill]
     # The rack's centre is (1.5, 0.0).
     layout = [value for y, (dx, dy) in zip(_SLOT_Y, jitter, strict=True) for value in (dx, y + dy)]
-    default = _row(provider=_provider(), skill=skill, params=params, state=state)
-    assert len(default) == 1 + 10 + len(params)
-    np.testing.assert_allclose(default, [1.0, *layout, *params], atol=1e-12)
-    assert (
-        _row(
-            provider=_provider(features="parameters_and_layout"),
-            skill=skill,
-            params=params,
-            state=state,
-        )
-        == default
+    with_layout = _row(
+        provider=_provider(features="parameters_and_layout"),
+        skill=skill,
+        params=params,
+        state=state,
     )
-    assert _row(
-        provider=_provider(features="parameters"), skill=skill, params=params, state=state
-    ) == [1.0, *params]
+    assert len(with_layout) == 1 + 10 + len(params)
+    np.testing.assert_allclose(with_layout, [1.0, *layout, *params], atol=1e-12)
+    parameters = [1.0, *params]
+    assert (
+        _row(provider=_provider(features="parameters"), skill=skill, params=params, state=state)
+        == parameters
+    )
+    # The default (Josh, 2026-11-13): the parameters alone.
+    assert _row(provider=_provider(), skill=skill, params=params, state=state) == parameters
 
 
 @pytest.mark.parametrize("skill", list(_PARAMS), ids=lambda skill: skill.name)
@@ -118,7 +118,7 @@ def test_the_row_ignores_where_the_robot_and_the_scraper_are(*, skill, features)
 
 
 def test_the_layout_is_measured_from_the_rack_not_the_world():
-    provider = _provider()
+    provider = _provider(features="parameters_and_layout")
     state = _state()
     moved = State(data={obj: np.array(state[obj], dtype=float) for obj in _BULK_OBJECTS})
     for obj in (Objects.rack, *Objects.food):
@@ -181,15 +181,15 @@ def test_a_sampler_trained_at_the_rack_ranks_the_same_just_after_pick_scraper(*,
     assert min(after_pick[17:]) > max(after_pick[:16])
 
 
-def test_the_flag_selects_the_sampler_features_and_defaults_to_parameters_and_layout():
+def test_the_flag_selects_the_sampler_features_and_defaults_to_the_parameters_alone():
     def parse(*argv):
         parser = argparse.ArgumentParser()
         parser.add_argument("--seed", type=int, default=0)
         RackServingCli.add_arguments(parser=parser)
         return parser.parse_args(list(argv))
 
-    assert RackServingConfig().sampler_features == "parameters_and_layout"
-    assert parse().sampler_features == "parameters_and_layout"
+    assert RackServingConfig().sampler_features == "parameters"
+    assert parse().sampler_features == "parameters"
     for value in ("parameters", "parameters_and_layout", "full_state"):
         args = parse("--sampler-features", value)
         for mode in ("training", "deployment"):

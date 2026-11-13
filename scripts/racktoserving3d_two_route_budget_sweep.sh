@@ -13,7 +13,7 @@
 # untrained policy's result from that cell. INITIAL_MEASUREMENT=0 (default 1) skips it in
 # every cell, for a sweep whose before-practice results already exist elsewhere.
 #
-# Sampler features. SAMPLER_FEATURES (default parameters_and_layout) is passed to every
+# Sampler features. SAMPLER_FEATURES (default parameters) is passed to every
 # cell as `--sampler-features`: what the learned sampler's classifier reads for Sweep
 # and GatherAndSweep (`RackServingConfig.sampler_features`). Every run of this script
 # before 2026-11-13, the 125-cell sweep of 2026-11-12 included, had no such flag and
@@ -100,7 +100,7 @@ export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"}
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
 export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035"
 export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
-export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters_and_layout}
+export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters}
 # DP's per-skill prices, in control steps: the mean of each skill's uninterrupted
 # executions in the setup-A smoke runs of 2026-11-12 (seed 0, 40000 steps). Small
 # samples: PickScraper 424 (n=9) and GatherAndSweep 3362, rounded to 3400 (n=8), from
