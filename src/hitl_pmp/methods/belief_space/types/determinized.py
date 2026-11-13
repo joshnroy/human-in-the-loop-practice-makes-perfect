@@ -59,6 +59,8 @@ class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
     heuristic_cost: float = 0.0
     # Forecast control steps the path spends; only read under a step budget.
     steps: float = 0.0
+    # Practice tries the path spends; only read under an episode budget.
+    episodes: float = 0.0
 
 
 class DeterminizedSearchQueueEntry(
@@ -111,6 +113,7 @@ class DeterminizedSearchDiagnostics(BaseModel):
     max_depth_reached: int = 0
     action_horizon_terminal_nodes: int = 0
     step_budget_terminal_nodes: int = 0
+    episode_budget_terminal_nodes: int = 0
     reused_outcome_draws: int = 0
     termination_reason: str = "frontier_exhausted"
 
