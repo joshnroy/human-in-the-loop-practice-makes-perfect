@@ -100,11 +100,103 @@ def test_what_the_last_step_left_in_the_data_travels_with_the_checkpoint():
     rebuilt_data = mujoco.MjData(rebuilt)
     restore_engine(model=rebuilt, data=rebuilt_data, checkpoint=engine)
     assert not np.array_equal(rebuilt_data.xpos, stale["xpos"])
-    DerivedData.restore(data=rebuilt_data, saved=pickle.loads(pickle.dumps(derived)))
+    DerivedData.restore(
+        model=rebuilt,
+        data=rebuilt_data,
+        saved=pickle.loads(pickle.dumps(derived)),
+        state=engine["integration"],
+    )
     for name, value in stale.items():
         np.testing.assert_array_equal(getattr(rebuilt_data, name), value, err_msg=name)
     assert rebuilt_data.ncon == data.ncon
     np.testing.assert_array_equal(rebuilt_data.contact.pos, data.contact.pos)
+    np.testing.assert_array_equal(
+        capture_engine(model=rebuilt, data=rebuilt_data)["integration"], engine["integration"]
+    )
+
+
+FALLING = """<mujoco><option timestep="0.002"/><worldbody>
+<geom type="plane" size="1 1 .1"/>
+<body pos="0 0 .0512"><freejoint/><geom type="box" size=".05 .05 .05" mass="1"/></body>
+</worldbody></mujoco>"""
+
+
+def test_a_contact_the_recomputed_scene_does_not_have_is_replayed_not_guessed():
+    """The step that brings a box onto the floor leaves the data with the contact list
+    it computed on the way in (none yet), while the state already touches. Recomputing
+    gives contacts; the list's size cannot be written back. With the state from before
+    that last step, the step is run again and leaves exactly what it left the first
+    time (the DP arm's resume, 2026-11-13: 17 contacts saved, 18 recomputed)."""
+    import mujoco
+
+    spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    model = mujoco.MjModel.from_xml_string(FALLING)
+    data, scratch = mujoco.MjData(model), mujoco.MjData(model)
+    before = np.empty(mujoco.mj_stateSize(model, spec))
+    for _ in range(200):
+        mujoco.mj_getState(model, data, before, spec)
+        mujoco.mj_step(model, data)
+        now = capture_engine(model=model, data=data)["integration"]
+        mujoco.mj_setState(model, scratch, now, spec)
+        mujoco.mj_forward(model, scratch)
+        if scratch.ncon != data.ncon:
+            break
+    assert scratch.ncon != data.ncon, "the fixture never leaves a stale contact list"
+    engine = capture_engine(model=model, data=data)
+    derived = DerivedData.capture(data=data, before_last_step=before)
+    expected = []
+    for _ in range(20):
+        mujoco.mj_step(model, data)
+        expected.append(capture_engine(model=model, data=data)["integration"])
+
+    rebuilt = mujoco.MjModel.from_xml_string(FALLING)
+    rebuilt_data = mujoco.MjData(rebuilt)
+    restore_engine(model=rebuilt, data=rebuilt_data, checkpoint=engine)
+    with pytest.raises(ValueError, match="contacts differ"):
+        DerivedData.restore(
+            model=rebuilt,
+            data=rebuilt_data,
+            saved={**derived, "before_last_step": None},
+            state=engine["integration"],
+        )
+    DerivedData.restore(
+        model=rebuilt, data=rebuilt_data, saved=derived, state=engine["integration"]
+    )
+    assert rebuilt_data.ncon == derived["ncon"]
+    np.testing.assert_array_equal(
+        capture_engine(model=rebuilt, data=rebuilt_data)["integration"], engine["integration"]
+    )
+    for state in expected:
+        mujoco.mj_step(rebuilt, rebuilt_data)
+        np.testing.assert_array_equal(
+            capture_engine(model=rebuilt, data=rebuilt_data)["integration"], state
+        )
+
+
+def test_a_replayed_step_that_does_not_land_on_the_checkpoint_is_not_used():
+    """Something moved the scene after its last step (a person's reset writes poses and
+    recomputes): running that step again ends elsewhere, so the recomputed data stand."""
+    import mujoco
+
+    spec = mujoco.mjtState.mjSTATE_INTEGRATION
+    model = mujoco.MjModel.from_xml_string(WELDED)
+    data = mujoco.MjData(model)
+    before = np.empty(mujoco.mj_stateSize(model, spec))
+    for _ in range(25):
+        mujoco.mj_getState(model, data, before, spec)
+        mujoco.mj_step(model, data)
+    data.qpos[0] += 0.01
+    mujoco.mj_forward(model, data)
+    engine = capture_engine(model=model, data=data)
+    derived = DerivedData.capture(data=data, before_last_step=before)
+
+    rebuilt = mujoco.MjModel.from_xml_string(WELDED)
+    rebuilt_data = mujoco.MjData(rebuilt)
+    restore_engine(model=rebuilt, data=rebuilt_data, checkpoint=engine)
+    DerivedData.restore(
+        model=rebuilt, data=rebuilt_data, saved=derived, state=engine["integration"]
+    )
+    np.testing.assert_array_equal(rebuilt_data.xpos, data.xpos)
     np.testing.assert_array_equal(
         capture_engine(model=rebuilt, data=rebuilt_data)["integration"], engine["integration"]
     )

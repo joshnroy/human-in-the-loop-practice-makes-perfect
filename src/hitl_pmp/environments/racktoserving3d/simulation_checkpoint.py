@@ -119,7 +119,9 @@ class DerivedData:
         return found
 
     @staticmethod
-    def capture(*, data: Any) -> dict[str, Any]:
+    def capture(*, data: Any, before_last_step: np.ndarray | None = None) -> dict[str, Any]:
+        """`before_last_step` is the integration state the most recent step started
+        from, when the caller tracks it (`RackServingBackend` does)."""
         contact = {}
         for name in DerivedData.CONTACT_FIELDS:
             value = getattr(data.contact, name, None)
@@ -130,20 +132,41 @@ class DerivedData:
             "nefc": int(data.nefc),
             "arrays": {name: value.copy() for name, value in DerivedData.arrays(data=data).items()},
             "contact": contact,
+            "before_last_step": None if before_last_step is None else before_last_step.copy(),
         }
 
     @staticmethod
-    def restore(*, data: Any, saved: dict[str, Any]) -> None:
-        """Onto data whose integration state is already the checkpoint's and has been
-        recomputed once, so its contact and constraint lists have their sizes. A list
-        of another size cannot be written back: the checkpointed scene would then have
-        had a contact the recomputed one lacks, and the restore says so instead of
-        carrying on from a different scene."""
-        if (int(data.ncon), int(data.nefc)) != (saved["ncon"], saved["nefc"]):
+    def restore(*, model: Any, data: Any, saved: dict[str, Any], state: np.ndarray) -> None:
+        """Onto data already holding the checkpoint's integration `state`, recomputed.
+
+        The arrays are written back over the recomputed ones. The contact and
+        constraint lists can only be written back at their saved sizes, and a list one
+        step behind can differ in size from a recomputed one (a contact made by the
+        last step is in the state and not yet in the list). Then the last step is run
+        again from the state it started from: it leaves exactly what it left the first
+        time. That replay is used only if it lands on the checkpoint's state bit for
+        bit; if something moved the scene after its last step, it does not, and the
+        recomputed data are what the original had. A restore that can do neither
+        raises instead of carrying on from a different scene."""
+        import mujoco
+
+        spec = mujoco.mjtState.mjSTATE_INTEGRATION
+        sizes = (saved["ncon"], saved["nefc"])
+        before = saved["before_last_step"]
+        if (int(data.ncon), int(data.nefc)) != sizes and before is not None:
+            mujoco.mj_setState(model, data, before, spec)
+            mujoco.mj_step(model, data)
+            replayed = np.empty_like(state)
+            mujoco.mj_getState(model, data, replayed, spec)
+            if not np.array_equal(replayed, state):
+                mujoco.mj_setState(model, data, state, spec)
+                mujoco.mj_forward(model, data)
+                mujoco.mj_setState(model, data, state, spec)
+        if (int(data.ncon), int(data.nefc)) != sizes:
             raise ValueError(
                 "simulation checkpoint contacts differ from the rebuilt scene's: "
-                f"{saved['ncon']} contacts and {saved['nefc']} constraint rows saved, "
-                f"{int(data.ncon)} and {int(data.nefc)} recomputed"
+                f"{sizes[0]} contacts and {sizes[1]} constraint rows saved, "
+                f"{int(data.ncon)} and {int(data.nefc)} in the rebuilt scene"
             )
         live = DerivedData.arrays(data=data)
         unfit = sorted(

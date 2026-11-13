@@ -59,6 +59,9 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _rng: Any = PrivateAttr(default=None)
     _start_kind: str = PrivateAttr(default="scattered")
     _scene_seed: int | None = PrivateAttr(default=None)
+    # The integration state the most recent MuJoCo step started from, for a
+    # checkpoint (`DerivedData`); None until this scene has stepped.
+    _step_start: np.ndarray | None = PrivateAttr(default=None)
 
     def start_kind(self) -> str:
         """This episode's start layout, after any `gathered_fraction` draw."""
@@ -107,6 +110,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def reset(self, *, seed: int) -> None:
         super().reset(seed=seed)
         self._scene_seed = seed
+        self._track_step_starts()
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
         if self.config.food_handling == "welded":
@@ -147,6 +151,24 @@ class RackServingBackend(SweepOffShelf3DBackend):
         else:
             self._commit(placements=self.food_placements(names=names, start_layout=kind))
 
+    def _track_step_starts(self) -> None:
+        """Note the state each MuJoCo step starts from: a read, ahead of KINDER's own
+        `sim.step`, on the simulator this reset built."""
+        import mujoco
+
+        sim, model, data = self.sim(), self.model(), self.data()
+        spec = mujoco.mjtState.mjSTATE_INTEGRATION
+        start = np.empty(mujoco.mj_stateSize(model, spec), dtype=np.float64)
+        self._step_start = None
+        step = sim.step
+
+        def tracked() -> None:
+            mujoco.mj_getState(model, data, start, spec)
+            self._step_start = start
+            step()
+
+        sim.step = tracked
+
     def _checkpoint_owners(self) -> list[Any]:
         """The Gym wrapper chain, then KINDER's scene and robot runtime (as Tossing's)."""
         owners = []
@@ -169,7 +191,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
             "seed": self._scene_seed,
             "model": ModelArrays.capture(model=self.model()),
             "engine": capture_engine(model=self.model(), data=self.data()),
-            "derived": DerivedData.capture(data=self.data()),
+            "derived": DerivedData.capture(data=self.data(), before_last_step=self._step_start),
             "runtime": [
                 (type(owner).__module__, type(owner).__qualname__, capture_runtime(owner=owner))
                 for owner in self._checkpoint_owners()
@@ -200,7 +222,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
             raise ValueError("simulation checkpoint Gym/KINDER runtime topology differs")
         ModelArrays.restore(model=self.model(), arrays=checkpoint["model"])
         restore_engine(model=self.model(), data=self.data(), checkpoint=checkpoint["engine"])
-        DerivedData.restore(data=self.data(), saved=checkpoint["derived"])
+        DerivedData.restore(
+            model=self.model(),
+            data=self.data(),
+            saved=checkpoint["derived"],
+            state=checkpoint["engine"]["integration"],
+        )
+        # A checkpoint taken before this process steps must still know that state.
+        before = checkpoint["derived"]["before_last_step"]
+        self._step_start = None if before is None else before.copy()
         for owner, (_, _, state) in zip(owners, runtime, strict=True):
             restore_runtime(owner=owner, checkpoint=state)
         if checkpoint["scene_state"] is not None:
