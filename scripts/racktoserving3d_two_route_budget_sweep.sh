@@ -47,7 +47,12 @@
 #
 # Order and resuming. Cells run seed-major (every cell of seed 0 is queued before any of
 # seed 1), each through scripts/run_sweep.py under run-heavy. MAX_RUNS (default 14) caps
-# concurrent runs: it is both the size of this script's pool and run-heavy's slot count.
+# concurrent runs: it is the size of this script's pool. The pool can be resized while
+# it runs: its process id is in <results-root>/pool.pid, and `kill -USR1 <pid>` adds one
+# concurrent run, `kill -USR2 <pid>` removes one (GNU xargs). run-heavy's slot count is
+# set well above the pool (HEAVY_SLOTS, default 40) so other sessions' jobs holding
+# slots do not block these; run-heavy's own memory check before each run still applies,
+# but several runs can pass it at once, so size the pool to the memory that is free.
 # A cell whose run finished successfully is skipped; an unfinished one's directory is
 # moved aside (`<seed>.partial-<time>`, never deleted) and the cell is run again.
 #
@@ -143,7 +148,7 @@ run_cell() {  # <seed> <budget> <arm>
   cd "$REPO"
   env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
     PYTHONPATH="$GUROBI/site:$KINDER/reference/kindergarden/src:$KINDER/reference/kinder-baselines/kinder-models/src" \
-    GRB_LICENSE_FILE="$GUROBI/gurobi.lic" HEAVY_SLOTS="$MAX_RUNS" \
+    GRB_LICENSE_FILE="$GUROBI/gurobi.lic" HEAVY_SLOTS="${HEAVY_SLOTS:-40}" \
     HEAVY_MIN_FREE_GB="${HEAVY_MIN_FREE_GB:-14}" \
     run-heavy scripts/with_env.sh python -m scripts.run_sweep --env racktoserving3d \
     --skip-skill-benchmark-gate --methods "$method" --seeds "$seed" --max-workers 1 \
@@ -178,4 +183,6 @@ print(f"dry check: {count} cells parsed")
 fi
 
 mkdir -p "$ROOT"
-cells | xargs -P "$MAX_RUNS" -L 1 bash -c 'run_cell "$@"' _
+xargs -P "$MAX_RUNS" -L 1 bash -c 'run_cell "$@"' _ < <(cells) &
+echo $! > "$ROOT/pool.pid"
+wait
