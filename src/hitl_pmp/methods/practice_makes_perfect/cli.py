@@ -153,6 +153,13 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
+        parser.add_argument(
+            "--sampler-break-ties-among-best",
+            action="store_true",
+            help="When more than half the candidates tie at the top score but not all of "
+            "them do, draw among the tied-best instead of over all candidates. Off "
+            "reproduces every earlier run.",
+        )
         # Each default is the EesMethod field's; see that field for why it is what it
         # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
@@ -404,6 +411,7 @@ class EesCli:
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
+            sampler_break_ties_among_best=args.sampler_break_ties_among_best,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
             goal_pursuit_interval=args.goal_pursuit_interval,
@@ -798,6 +806,7 @@ class Tossing3DPomdpCli(EesCli):
                 draw_recorder=draw_recorder,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                sampler_break_ties_among_best=args.sampler_break_ties_among_best,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 goal_pursuit_interval=args.goal_pursuit_interval,

@@ -19,6 +19,11 @@
 # before 2026-11-13, the 125-cell sweep of 2026-11-12 included, had no such flag and
 # used what is now SAMPLER_FEATURES=full_state.
 #
+# Sampler ties. Every arm passes `--sampler-break-ties-among-best` (Josh, 2026-11-13,
+# Serving only): when more than half of a skill's candidates tie at the top score but
+# not all of them, the pick is drawn among the tied-best rather than over all
+# candidates. SAMPLER_TIES=all restores the rule every run before that date used.
+#
 # Starting learning rates (Josh, 2026-11-12): DP's three arms and ours run with a
 # skill's starting learning rate set to a base rate over its number of continuous
 # parameters, and to zero for a skill with none (`--dp-learning-rate-by-parameters`,
@@ -100,6 +105,7 @@ export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"}
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
 export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035"
 export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
+export SAMPLER_TIES=${SAMPLER_TIES:-best}
 export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters}
 # DP's per-skill prices, in control steps: the mean of each skill's uninterrupted
 # executions in the setup-A smoke runs of 2026-11-12 (seed 0, 40000 steps). Small
@@ -121,6 +127,7 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
 --record-sampler-draws --human-interruption-cost 5 \
 --practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json \
 --max-steps-per-interaction $SESSION_ACTIONS"
+  [ "$SAMPLER_TIES" = all ] || shared="$shared --sampler-break-ties-among-best"
   # The untrained policy is measured once per arm and seed, in the smallest budget's cell.
   [ "$steps" = "${BUDGETS%% *}" ] && [ "$INITIAL_MEASUREMENT" = 1 ] || shared="$shared --no-initial-measurement"
   local dp="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi \
