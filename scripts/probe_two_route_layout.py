@@ -143,6 +143,23 @@ class TwoRouteProbeFoods:
     """Where each dumpling ended: pose, every body it touches, and the surface under it."""
 
     @staticmethod
+    def poses(*, backend: Any) -> list[list[float]]:
+        """Each dumpling's body (x, y, yaw about world z of its long axis) now."""
+        model, data = backend.model(), backend.data()
+        rows = []
+        for name in backend.cube_names:
+            body = model.body(name).id
+            rotation = data.xmat[body].reshape(3, 3)
+            # The potsticker's long axis is its body y axis.
+            yaw = float(np.arctan2(rotation[1, 1], rotation[0, 1]))
+            rows.append([
+                round(float(data.xpos[body][0]), 4),
+                round(float(data.xpos[body][1]), 4),
+                round(yaw, 4),
+            ])
+        return rows
+
+    @staticmethod
     def describe(*, backend: Any) -> list[dict[str, Any]]:
         model, data = backend.model(), backend.data()
         well = backend.corelle_support()
@@ -208,6 +225,25 @@ def main() -> None:
     parser.add_argument("--pitch", type=float, default=RackServingConfig().spaced_pitch)
     parser.add_argument("--long-axis", default=RackServingConfig().spaced_long_axis)
     parser.add_argument("--video", type=Path, default=None)
+    parser.add_argument(
+        "--jitter-scale",
+        type=float,
+        nargs=2,
+        default=None,
+        metavar=("POSITION", "YAW"),
+        help="Scale the start layout's per-dumpling position and yaw jitter, in this "
+        "process only (0 0 removes both), to isolate what a seed changes.",
+    )
+    parser.add_argument(
+        "--probe-bounds",
+        type=float,
+        nargs=6,
+        default=None,
+        metavar=("S_LOW", "S_HIGH", "DELTA_LOW", "DELTA_HIGH", "D_LOW", "D_HIGH"),
+        help="Measure GatherAndSweep outside its declared (s, delta, d) bounds: replace the "
+        "bounds the controller checks, in this process only. Every geometric and collision "
+        "guard stays on.",
+    )
     parser.add_argument("--side-offset", type=float, default=RackServingConfig().side_offset)
     parser.add_argument("--blade-height-feedback-limit", type=float, default=0.0)
     parser.add_argument(
@@ -225,6 +261,21 @@ def main() -> None:
         blade_height_feedback_limit=args.blade_height_feedback_limit,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
     )
+    if args.probe_bounds is not None:
+        from hitl_pmp.environments.racktoserving3d import controllers
+
+        low_high = args.probe_bounds
+        controllers.GATHER_AND_SWEEP_BOUNDS = (
+            (low_high[0], low_high[1]),
+            (low_high[2], low_high[3]),
+            (low_high[4], low_high[5]),
+        )
+        controllers.SWEEP_BOUNDS = ((low_high[4], low_high[5]),)
+    if args.jitter_scale is not None:
+        from hitl_pmp.environments.racktoserving3d.layout import RackLayout
+
+        RackLayout.LINED_UP_JITTER *= args.jitter_scale[0]
+        RackLayout.LINED_UP_YAW_JITTER *= args.jitter_scale[1]
     env = RackServingEnvironment(
         config=config, scene_bg=args.video is not None, skill_step_limit=12000
     )
@@ -239,6 +290,7 @@ def main() -> None:
                 "params": list(args.params),
                 "start_kind": backend.start_kind(),
                 "start_y": [round(y, 4) for _, y in start],
+                "start_pose": TwoRouteProbeFoods.poses(backend=backend),
             }
             video = None
             if args.video is not None:
