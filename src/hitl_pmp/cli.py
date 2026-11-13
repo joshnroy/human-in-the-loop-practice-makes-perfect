@@ -145,6 +145,29 @@ class Cli:
             default=None,
         )
         parser.add_argument(
+            "--practice-episode-budget",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            metavar="N",
+            help="Step protocol: end practice once N practice tries have completed, a try "
+            "being one execution of a skill with learnable parameters that ran to its "
+            "end (failed and refused tries included; setup skills, STOPs, human resets "
+            "and a try the step budget cut are not tries). Practice ends right after the "
+            "N-th try is observed and learned from. Requires --practice-step-budget, "
+            "which stays in force as the backstop: a run it ends first says so in "
+            "status.json (practice_endpoint, practice_episode_budget_reached).",
+        )
+        parser.add_argument(
+            "--measurement-interval-episodes",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            metavar="K",
+            help="With --practice-episode-budget: also measure the policy right after "
+            "every K-th completed try (beside --measurement-interval-steps' thresholds), "
+            "as it stands inside the session. The last try is covered by the final "
+            "measurement.",
+        )
+        parser.add_argument(
             "--evaluate-only",
             action="store_true",
             help="Step protocol: build the run exactly as a fresh one (same seed, preset "
@@ -526,6 +549,13 @@ class Cli:
         if args.evaluate_only and args.resume is not None:
             parser.error("--evaluate-only measures a fresh run's policy; it cannot --resume")
         step_protocol = args.practice_step_budget is not None or args.evaluate_only
+        if args.practice_episode_budget is not None and args.practice_step_budget is None:
+            parser.error(
+                "--practice-episode-budget needs --practice-step-budget as its backstop: "
+                "a method can spend a whole run on skills that are not episodes"
+            )
+        if args.measurement_interval_episodes is not None and args.practice_episode_budget is None:
+            parser.error("--measurement-interval-episodes requires --practice-episode-budget")
         if args.preset is not None and not step_protocol:
             # A preset prices practice with its cost file, which only the step protocol
             # reads: in cycle mode the run would silently not be the preset's arm.
