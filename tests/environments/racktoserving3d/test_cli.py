@@ -206,3 +206,21 @@ def test_cli_selects_the_serving_target(*, target):
 def test_cli_rejects_unknown_serving_target():
     with pytest.raises(SystemExit):
         _parse(argv=("--serving-target", "bowl"))
+
+
+def test_setup_a_flags_reach_both_modes_configs():
+    argv = (
+        "--start-layout", "middle_three", "--side-offset", "0.13", "--plate-tuck", "0.035",
+        "--bulk-transfer-only", "1", "--two-route-rewards", "1",
+    )  # fmt: skip
+    for mode in ("training", "deployment"):
+        config = RackServingCli.build_problem(args=_parse(argv=argv), mode=mode).env.config
+        assert (config.start_layout, config.side_offset, config.plate_tuck) == (
+            "middle_three",
+            0.13,
+            0.035,
+        )
+        # The plate's outer near edge sits 35 mm under the rack's front edge.
+        assert config.tray_back_x == pytest.approx(config.rack_front_x + 0.035)
+    plain = RackServingCli.build_problem(args=_parse(), mode="training").env.config
+    assert (plain.plate_tuck, plain.start_layout) == (0.0, "scattered")
