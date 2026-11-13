@@ -340,11 +340,18 @@ class EesCli:
         )
 
     @staticmethod
-    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        # Resolved in place, so the config snapshot records what the run used: EES
-        # always scores human skills.
+    def resolve_arguments(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        """Settle in place the flags this method decides for itself, so that
+        config_snapshot.json records what the run used. Pure and repeatable: the step
+        protocol calls it before it checks a resume against that snapshot, which
+        would otherwise refuse the run's own command for a flag nobody typed."""
+        # EES always scores human skills.
         if args.ees_score_human_skills is None:
             args.ees_score_human_skills = True
+
+    @staticmethod
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        EesCli.resolve_arguments(args=args, env_cli=env_cli)
         if getattr(args, "skill_cost_prior_steps", None) is not None:
             raise ValueError(
                 "--skill-cost-prior-steps: EES prices a skill by -log(competence) alone and "
@@ -605,35 +612,10 @@ class Tossing3DPomdpCli(EesCli):
         )
 
     @staticmethod
-    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
-        if args.record_ees_decisions:
-            raise ValueError(
-                "--record-ees-decisions is an EES flag; pomdp has its own decision log"
-            )
-        if args.ees_score_human_skills is not None:
-            raise ValueError(
-                "--ees-score-human-skills is an EES flag: --method pomdp already scores "
-                "every human skill its practice domain does not treat as deterministic"
-            )
-        if args.practice_groundings != "observed":
-            raise ValueError("--practice-groundings applies only to --method ees or dp")
-        if getattr(args, "ees_preview_test_goals", False):
-            raise ValueError("--ees-preview-test-goals applies only to --method ees")
-        defaults = (
-            EesMethod.model_fields["prior_alpha"].default,
-            EesMethod.model_fields["prior_beta"].default,
-        )
-        if (args.ees_prior_alpha, args.ees_prior_beta) != defaults:
-            raise ValueError(
-                "--ees-prior-alpha/--ees-prior-beta are EES flags: --method pomdp takes its "
-                "competence priors from its practice domain or --competence-prior-mean/-strength"
-            )
-        if args.pomdp_solver == "determinized_astar" and args.pomdp_search_depth is not None:
-            raise ValueError(
-                "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
-                "determinized_astar is bounded by --pomdp-max-search-iterations and the "
-                "session's remaining actions, never a search depth"
-            )
+    def practice_domain(
+        *, args: argparse.Namespace, env_cli: type[EnvironmentCli]
+    ) -> PracticeDomain | Callable[[SkillProvider], PracticeDomain]:
+        """The practice domain of the selected environment. Pure: reads flags only."""
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:
             kitchen = env_cli.__name__ == "KitchenCli"
@@ -673,10 +655,18 @@ class Tossing3DPomdpCli(EesCli):
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
                 "pouring3d_kitchen, kitchen_recycling3d and racktoserving3d"
             )
-        competence_prior = EesCli.competence_prior(args=args)
+        return domain
+
+    @staticmethod
+    def resolve_arguments(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        """Settle in place the flags this method decides for itself, so that
+        config_snapshot.json records what the run used. Pure and repeatable: the step
+        protocol calls it before it checks a resume against that snapshot, which
+        would otherwise refuse the run's own command for a flag nobody typed."""
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
-            # Resolved here so config_snapshot.json records the depth actually searched.
-            # Determinized A* searches no depth, so its snapshot records None.
+            # The depth actually searched. Determinized A* searches no depth, so its
+            # snapshot records None.
+            domain = Tossing3DPomdpCli.practice_domain(args=args, env_cli=env_cli)
             args.pomdp_search_depth = (
                 domain.default_search_depth if isinstance(domain, PracticeDomain) else 3
             )
@@ -684,6 +674,40 @@ class Tossing3DPomdpCli(EesCli):
         # the training process. POMDP runs reconstruct their diagnostic videos from
         # the state and decision logs after the experiment finishes.
         args.defer_rendering = True
+
+    @staticmethod
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if args.record_ees_decisions:
+            raise ValueError(
+                "--record-ees-decisions is an EES flag; pomdp has its own decision log"
+            )
+        if args.ees_score_human_skills is not None:
+            raise ValueError(
+                "--ees-score-human-skills is an EES flag: --method pomdp already scores "
+                "every human skill its practice domain does not treat as deterministic"
+            )
+        if args.practice_groundings != "observed":
+            raise ValueError("--practice-groundings applies only to --method ees or dp")
+        if getattr(args, "ees_preview_test_goals", False):
+            raise ValueError("--ees-preview-test-goals applies only to --method ees")
+        defaults = (
+            EesMethod.model_fields["prior_alpha"].default,
+            EesMethod.model_fields["prior_beta"].default,
+        )
+        if (args.ees_prior_alpha, args.ees_prior_beta) != defaults:
+            raise ValueError(
+                "--ees-prior-alpha/--ees-prior-beta are EES flags: --method pomdp takes its "
+                "competence priors from its practice domain or --competence-prior-mean/-strength"
+            )
+        if args.pomdp_solver == "determinized_astar" and args.pomdp_search_depth is not None:
+            raise ValueError(
+                "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
+                "determinized_astar is bounded by --pomdp-max-search-iterations and the "
+                "session's remaining actions, never a search depth"
+            )
+        domain = Tossing3DPomdpCli.practice_domain(args=args, env_cli=env_cli)
+        competence_prior = EesCli.competence_prior(args=args)
+        Tossing3DPomdpCli.resolve_arguments(args=args, env_cli=env_cli)
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
         if args.pomdp_solver == "expectimax":
             sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
@@ -929,6 +953,11 @@ class DpCli(EesCli):
                 "--dp-initial-competence / --dp-initial-learning-rate-for exclude "
                 "--dp-prior-calibration"
             )
+
+    @staticmethod
+    def resolve_arguments(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        """Nothing: DP settles no flag of its own, and its snapshot records
+        `ees_score_human_skills` as typed, not as EES settles it."""
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:

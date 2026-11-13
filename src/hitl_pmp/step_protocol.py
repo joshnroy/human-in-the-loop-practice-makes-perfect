@@ -1144,6 +1144,13 @@ class StepProtocolEntry:
             resolve_configuration(args=args)
         resuming = getattr(args, "resume", None) is not None
         if resuming:
+            # The method settles some flags itself and the snapshot records them
+            # settled: do the same before comparing, or the run's own command is
+            # refused for a flag nobody typed. A fresh run is settled by the method's
+            # `run`, after validation, as it always was.
+            resolve_arguments = getattr(method_cli, "resolve_arguments", None)
+            if resolve_arguments is not None:
+                resolve_arguments(args=args, env_cli=env_cli)
             StepProtocolResume.prepare(args=args)
         StepProtocolValidation.check(args=args)
         if getattr(args, "evaluation_workers", 1) > 1 and environment.evaluation_pool() is not None:

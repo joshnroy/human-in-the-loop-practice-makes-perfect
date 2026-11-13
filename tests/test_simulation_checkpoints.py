@@ -249,3 +249,35 @@ def test_unsupported_simulation_refuses_checkpoint_before_building(*, tmp_path):
             env_cli=None,
             environment=FakeStepProtocol,
         )
+
+
+def test_a_restored_method_indexes_its_seen_tasks_by_where_they_live_now(*, tmp_path):
+    """EES counts a training task once by keeping it alive under its `id`. A restored
+    task lives at a new address, so a key carried over from the process that wrote the
+    checkpoint names nothing: a later task allocated at that address would be taken
+    for one already seen and left out of the task distribution EES scores against."""
+    from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = LightSwitchEnvironment(grid_size=4)
+    provider = LightSwitchSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    tasks = LightSwitchTasks(env=env, seed=0)
+    for _ in range(3):
+        method._record_training_task(task=tasks.sample_train_task())
+    live = {
+        "env": env,
+        **{PracticeCheckpoint.predicate_key(name=p.name): p for p in provider.predicates()},
+    }
+    PracticeCheckpoint.save(output=tmp_path, live=live, header={}, payload={"method": method})
+    # `method` stays alive, so no restored task can land where an original still is.
+    restored = PracticeCheckpoint.load(path=tmp_path / CHECKPOINT_FILENAME, live=live)["method"]
+
+    seen = restored._seen_training_tasks
+    assert len(seen) == 3
+    assert [id(task) for task in seen.values()] == list(seen)
+    assert restored._seen_tasks == method._seen_tasks
+    restored._record_training_task(task=next(iter(seen.values())))
+    assert len(restored._seen_tasks) == 3
