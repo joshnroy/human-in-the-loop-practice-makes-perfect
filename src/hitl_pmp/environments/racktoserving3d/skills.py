@@ -250,10 +250,21 @@ class RackServing3DSkills:
     )
 
     # `RackServingConfig.two_route_rewards`: the same two bulk skills and batch return,
-    # with success restated. Sweep promises three on the plate (Served, ServedThree)
-    # and no longer every OnTray; GatherAndSweep promises all five as before, and so
-    # Served and ServedFive. Both still clear the rack symbolically, so a practice try
-    # of either is followed by the person's batch return, which withdraws the outcome.
+    # with success restated. GatherAndSweep promises all five as before, and so Served
+    # and ServedFive. Sweep promises Served, ServedThree and the middle three slots on
+    # the plate, and nothing about the outer two (Josh, 2026-11-12): spilled or still on
+    # the rack, either is the declared outcome. So OnRack and AnyFoodOnRack are forgotten
+    # (`ignore_effects`) rather than deleted: the model takes the rack as cleared, as it
+    # did, and a measured outer piece still on it contradicts nothing. An ignore effect
+    # is predicate-wide; that names exactly the outer two here because every OnRack atom
+    # is one of the five the skill requires and the middle three are deleted anyway.
+    # Either bulk try is still followed by the person's batch return, which withdraws
+    # the outcome.
+    # Known limit: the middle three slots are the middle three pieces only where the
+    # start lines the pieces up in slot order (`start_layout` spaced, middle_three). On
+    # a scattered start, or once a PickFood/ReturnFoodToRack has moved a piece, the model
+    # still names slots 1-3, so a Sweep that lands a different three is Served for the
+    # environment and a failed try for a method scoring by these effects.
     TWO_ROUTE_GATHER_AND_SWEEP: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(
         update={
             "add_effects": GATHER_AND_SWEEP.add_effects
@@ -262,7 +273,13 @@ class RackServing3DSkills:
     )
     TWO_ROUTE_SWEEP: ClassVar[Skill] = SWEEP.model_copy(
         update={
-            "add_effects": SWEEP.add_effects | {_atom(predicate=p) for p in (SERVED, SERVED_THREE)},
+            "add_effects": SWEEP.add_effects
+            | {_atom(predicate=p) for p in (SERVED, SERVED_THREE)}
+            | {_atom(predicate=ON_TRAY, variables=(food, _TRAY)) for food in _SLOTS[1:4]},
+            "delete_effects": frozenset(
+                _atom(predicate=ON_RACK, variables=(food, _RACK)) for food in _SLOTS[1:4]
+            ),
+            "ignore_effects": frozenset({ON_RACK, ANY_FOOD_ON_RACK}),
             "conditional_add_effects": frozenset(),
         }
     )

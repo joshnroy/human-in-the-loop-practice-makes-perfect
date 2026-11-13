@@ -25,7 +25,7 @@ FOOD = tuple(food.name for food in Objects.food)
 ALL_ON_RACK = dict.fromkeys(FOOD, "OnRack")
 
 
-def _measured(*, locations, scraper="home"):
+def _measured(*, locations, scraper="home", served=()):
     """The atoms the backend reports for these food locations and this scraper."""
     robot, rack, tray = Objects.robot.name, Objects.rack.name, Objects.tray.name
     names = {("PickPlannable", (robot, food)) for food in FOOD}
@@ -42,11 +42,16 @@ def _measured(*, locations, scraper="home"):
         names.add(("ScraperHome", (Objects.scraper.name,)))
         if "HoldingFood" not in locations.values():
             names.add(("HandEmpty", (robot,)))
-    predicates = {predicate.name: predicate for predicate in RackServing3DPredicates.all()}
+    predicates = {
+        predicate.name: predicate for predicate in RackServing3DPredicates.all(two_route=True)
+    }
     objects = {obj.name: obj for obj in Objects.all_objects()}
     return RackServing3DPredicates.static_atoms() | frozenset(
         GroundAtom(predicate=predicates[name], objects=tuple(objects[key] for key in keys))
-        for name, keys in RackServing3DAtoms.with_summaries(atoms=frozenset(names))
+        for name, keys in (
+            *RackServing3DAtoms.with_summaries(atoms=frozenset(names)),
+            *((name, ()) for name in served),
+        )
     )
 
 
@@ -230,3 +235,106 @@ def test_the_batch_return_declares_what_it_changes(*, locations, scraper):
         before=_measured(locations=locations, scraper=scraper),
         after=_measured(locations=ALL_ON_RACK, scraper=scraper),
     )
+
+
+# Two-route Sweep on a lined-up start: the middle three are promised on the plate and
+# nothing is promised about the outer two (Josh, 2026-11-12).
+MIDDLE, OUTER = FOOD[1:4], (FOOD[0], FOOD[4])
+SERVED_THREE = ("Served", "ServedThree")
+TWO_ROUTE_SWEEP = GroundSkill(
+    skill=Skills.TWO_ROUTE_SWEEP,
+    objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
+)
+BEFORE_SWEEP = _measured(locations=ALL_ON_RACK, scraper="held")
+ACCEPTED = {
+    "both on the counter": ("SpilledCounter", "SpilledCounter"),
+    "both still on the rack": ("OnRack", "OnRack"),
+    "one each": ("SpilledCounter", "OnRack"),
+    "both on the floor": ("SpilledFloor", "SpilledFloor"),
+    "floor and rack": ("OnRack", "SpilledFloor"),
+}
+
+
+def _after_sweep(*, outer, middle=("OnTray", "OnTray", "OnTray"), served=SERVED_THREE):
+    locations = {**dict(zip(MIDDLE, middle, strict=True)), **dict(zip(OUTER, outer, strict=True))}
+    return _measured(locations=locations, scraper="held", served=served)
+
+
+def _ees_counts_success(*, ground, before, after):
+    return ground.expected_add_effects(before_atoms=before) <= after
+
+
+def _dp_deployment_accepts(*, ground, before, after):
+    """`DeploymentPolicy`'s `required` and `forbidden` for a DP plan step."""
+    ignored = ground.expected_ignore_effects(before_atoms=before)
+    added = ground.expected_add_effects(before_atoms=before)
+    required = frozenset(a for a in before if a.predicate not in ignored) - ground.delete_effects
+    return required | added <= after and not (ground.delete_effects - added) & after
+
+
+@pytest.mark.parametrize("outer", ACCEPTED.values(), ids=ACCEPTED.keys())
+def test_a_two_route_sweep_holds_wherever_the_outer_two_end_up(*, outer):
+    after = _after_sweep(outer=outer)
+    assert _ees_counts_success(ground=TWO_ROUTE_SWEEP, before=BEFORE_SWEEP, after=after)
+    assert _dp_deployment_accepts(ground=TWO_ROUTE_SWEEP, before=BEFORE_SWEEP, after=after)
+    batch = GroundSkill(
+        skill=Skills.TWO_ROUTE_HUMAN_BATCH_RETURN,
+        objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food),
+    )
+    assert batch.preconditions <= after
+    assert batch.preconditions <= DpTaskModel.successor(atoms=BEFORE_SWEEP, ground=TWO_ROUTE_SWEEP)
+
+
+@pytest.mark.parametrize(
+    ("middle", "outer", "served"),
+    [
+        (("OnTray", "SpilledCounter", "OnTray"), ("SpilledCounter", "SpilledCounter"), ()),
+        (("OnTray", "OnRack", "OnTray"), ("OnRack", "OnRack"), ()),
+        # Three on the plate, so the environment says Served, but not the middle three.
+        (("OnTray", "OnTray", "SpilledCounter"), ("OnTray", "SpilledCounter"), SERVED_THREE),
+    ],
+)
+def test_a_two_route_sweep_does_not_hold_without_the_middle_three_on_the_tray(
+    *, middle, outer, served
+):
+    after = _after_sweep(outer=outer, middle=middle, served=served)
+    assert not _ees_counts_success(ground=TWO_ROUTE_SWEEP, before=BEFORE_SWEEP, after=after)
+    assert not _dp_deployment_accepts(ground=TWO_ROUTE_SWEEP, before=BEFORE_SWEEP, after=after)
+
+
+def test_a_two_route_sweep_declares_the_middle_three_and_forgets_the_rest_of_the_rack():
+    after = DpTaskModel.successor(atoms=BEFORE_SWEEP, ground=TWO_ROUTE_SWEEP)
+    changed = {str(atom) for atom in after ^ BEFORE_SWEEP}
+    expected = _after_sweep(outer=("OnRack", "OnRack"))
+    outer_on_rack = {
+        atom for atom in expected if atom.predicate.name in {"OnRack", "AnyFoodOnRack"}
+    }
+    assert after == expected - outer_on_rack
+    assert len(changed) == 12
+
+
+def test_fast_downward_plans_a_two_route_sweep_and_the_return_after_it():
+    predicates = {p.name: p for p in RackServing3DPredicates.all(two_route=True)}
+    kwargs = {
+        "skills": (*Skills.robot_skills(two_route=True), *Skills.human_skills(two_route=True)),
+        "predicates": tuple(predicates.values()),
+        "types": tuple({obj.type for obj in Objects.all_objects()}),
+        "objects": Objects.all_objects(),
+    }
+    plan = FastDownwardPlanner.plan(
+        **kwargs,
+        init_atoms=BEFORE_SWEEP,
+        goal=frozenset({
+            GroundAtom(predicate=predicates["ServedThree"], objects=()),
+            GroundAtom(predicate=predicates["OnTray"], objects=(Objects.food[2], Objects.tray)),
+        }),
+    )
+    assert plan == [TWO_ROUTE_SWEEP]
+    back = FastDownwardPlanner.plan(
+        **kwargs,
+        init_atoms=DpTaskModel.successor(atoms=BEFORE_SWEEP, ground=TWO_ROUTE_SWEEP),
+        goal=frozenset(
+            GroundAtom(predicate=ON_RACK, objects=(food, Objects.rack)) for food in Objects.food
+        ),
+    )
+    assert [ground.skill.name for ground in back] == ["human_batch_return"]

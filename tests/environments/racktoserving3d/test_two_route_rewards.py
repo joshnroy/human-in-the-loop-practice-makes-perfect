@@ -143,7 +143,13 @@ def test_each_bulk_skill_promises_its_own_outcome_and_the_goal_is_shared():
         return {a.predicate.name for a in ground.expected_add_effects(before_atoms=held)}
 
     assert {"Served", "ServedThree"} <= names(ground=sweep)
-    assert not {"ServedFive", "OnTray"} & names(ground=sweep)
+    assert "ServedFive" not in names(ground=sweep)
+    # Sweep promises the middle three on the plate and nothing about the outer two.
+    assert {
+        atom.objects[0]
+        for atom in sweep.expected_add_effects(before_atoms=held)
+        if atom.predicate.name == "OnTray"
+    } == set(Objects.food[1:4])
     assert {"Served", "ServedFive", "OnTray"} <= names(ground=gather)
     assert "ServedThree" not in names(ground=gather)
     goal = RackServingTasks(env=provider.env).goal().atoms
