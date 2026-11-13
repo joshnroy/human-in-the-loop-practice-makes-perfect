@@ -686,3 +686,38 @@ def test_fixed_prices_must_name_robot_skills_be_positive_and_not_also_be_startin
             dp_solver="enumeration",
             **fields,
         )
+
+
+def _rack_dp(**fields):
+    from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+    from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
+
+    env = RackServingEnvironment(
+        config=RackServingConfig(bulk_transfer_only=True, two_route_rewards=True)
+    )
+    return DpMethod(
+        env=env,
+        skill_provider=RackServingSkillProvider(env=env),
+        dp_budget=10.0,
+        dp_solver="enumeration",
+        **fields,
+    )
+
+
+def test_a_starting_learning_rate_is_the_base_rate_over_the_skills_parameter_count():
+    method = _rack_dp(dp_learning_rate_by_parameters=True)
+    # Sweep(d): one parameter. GatherAndSweep(s, delta, d): three. PickScraper: none.
+    assert method.initial_learning_rate(skill_name="Sweep") == pytest.approx(0.1)
+    assert method.initial_learning_rate(skill_name="GatherAndSweep") == pytest.approx(0.1 / 3)
+    assert method.initial_learning_rate(skill_name="PickScraper") == 0.0
+    # An explicit per-skill rate still wins.
+    explicit = _rack_dp(
+        dp_learning_rate_by_parameters=True, dp_initial_learning_rate_for={"PickScraper": 0.2}
+    )
+    assert explicit.initial_learning_rate(skill_name="PickScraper") == 0.2
+    assert explicit.initial_learning_rate(skill_name="Sweep") == pytest.approx(0.1)
+    # Off by default: every skill keeps the one base rate.
+    plain = _rack_dp()
+    for name in ("Sweep", "GatherAndSweep", "PickScraper"):
+        assert plain.initial_learning_rate(skill_name=name) == 0.1

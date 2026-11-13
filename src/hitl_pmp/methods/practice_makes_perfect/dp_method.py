@@ -59,6 +59,11 @@ class DpMethod(EesMethod):
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
+    # Opt-in (Josh, 2026-11-12): a skill's Delta prior is dp_initial_learning_rate over
+    # its number of continuous parameters, and 0 for a skill with none (nothing to tune,
+    # so practice is not expected to improve it). A skill named in
+    # dp_initial_learning_rate_for keeps that. Not from the paper.
+    dp_learning_rate_by_parameters: bool = False
     dp_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
     # How competence and its learning rate are read off the outcomes: see
     # LinearSkillCompetenceModel. `cumulative` reproduces results from before 2026-11-12.
@@ -171,7 +176,12 @@ class DpMethod(EesMethod):
         """A skill's Delta prior: its own override, else the global one."""
         if skill_name is None:
             return self.dp_initial_learning_rate
-        return self.dp_initial_learning_rate_for.get(skill_name, self.dp_initial_learning_rate)
+        if skill_name in self.dp_initial_learning_rate_for:
+            return self.dp_initial_learning_rate_for[skill_name]
+        if self.dp_learning_rate_by_parameters:
+            parameters = {skill.name: skill.param_dim for skill in self.skills()}.get(skill_name, 0)
+            return self.dp_initial_learning_rate / parameters if parameters else 0.0
+        return self.dp_initial_learning_rate
 
     def competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
         prior = self._dp_skill_priors.get(ground_skill.skill.name)

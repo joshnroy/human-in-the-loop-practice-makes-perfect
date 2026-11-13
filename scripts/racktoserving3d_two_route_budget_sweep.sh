@@ -12,6 +12,18 @@
 # cell of each arm and seed runs it (`--no-initial-measurement` elsewhere): read the
 # untrained policy's result from that cell.
 #
+# Starting learning rates (Josh, 2026-11-12): DP's three arms and ours run with a
+# skill's starting learning rate set to a base rate over its number of continuous
+# parameters, and to zero for a skill with none (`--dp-learning-rate-by-parameters`,
+# `--pomdp-learning-rate-by-parameters`): Sweep has 1 parameter, GatherAndSweep 3,
+# PickScraper and the other skills 0. This is our addition to both planners, the
+# episode arm included; EES has no learning-rate prior and is unchanged.
+#
+# Practice sessions are SESSION_ACTIONS (default 10) actions long, robot skills and
+# human resets alike, instead of the usual 150: a skill's sampler is refitted, and DP
+# re-plans, only when a session ends. A refit took about 5 seconds in the
+# forced-target learning-curve runs of 2026-11-12.
+#
 # Arms (results under <results-root>/budget-<steps>/<arm>/<method>/<seed>/):
 #   ees                     EES, `--practice-groundings all`; reward-blind, no cost estimate.
 #   ours                    the belief-space method (Curtis determinized planner,
@@ -62,6 +74,7 @@ export MAX_RUNS=${MAX_RUNS:-14}
 export KINDER=${KINDER_CHECKOUT:-/home/josh/.codex/worktrees/serving-scraper-welds/human-in-the-loop-practice-makes-perfect}
 export GUROBI=${GUROBI_HOME:-/home/josh/Documents/repos/research/hitl-pmp-results/gurobi-13.0.0}
 export TASKS=${TEST_TASKS:-10}
+export SESSION_ACTIONS=${SESSION_ACTIONS:-10}
 SEEDS=${SEEDS:-"0 1 2 3 4"}
 export BUDGETS=${BUDGETS:-"10000 20000 40000 80000 160000"}
 ARMS=${ARMS:-"ees ours dp-episodes dp-cost-fixed-prices dp-cost-learned-prices"}
@@ -83,10 +96,12 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
 --evaluation-workers 1 --evaluation-task-rng per-task --practice-reset-policy never \
 --skill-step-limit 12000 --defer-rendering --record-motion all --record-skill-competence \
 --record-sampler-draws --human-interruption-cost 5 \
---practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json"
+--practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json \
+--max-steps-per-interaction $SESSION_ACTIONS"
   # The untrained policy is measured once per arm and seed, in the smallest budget's cell.
   [ "$steps" = "${BUDGETS%% *}" ] || shared="$shared --no-initial-measurement"
-  local dp="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi"
+  local dp="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi \
+--dp-learning-rate-by-parameters"
   case $arm in
     ees)
       method=ees
@@ -95,7 +110,8 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
       method=pomdp
       flags="--pomdp-solver determinized_astar --pomdp-determinized-variant curtis \
 --pomdp-observation-probability-weight 0.01 --pomdp-linear-cost-lambda 0.0015 \
---pomdp-competence-prior 1 3 --stop-on-no-practice-action" ;;
+--pomdp-competence-prior 1 3 --stop-on-no-practice-action \
+--pomdp-learning-rate-by-parameters" ;;
     dp-episodes)
       method=dp
       flags="$dp --dp-budget $(( (steps + 937) / 1875 )) --dp-budget-unit episodes --dp-allocation-schedule once" ;;

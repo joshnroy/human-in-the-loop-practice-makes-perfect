@@ -601,3 +601,47 @@ def test_a_named_skill_can_start_from_its_own_competence_prior():
     )
     with pytest.raises(ValueError, match="NoSuchSkill"):
         Tossing3DPomdpCli.with_prior_means(domain=RACK_SERVING_DOMAIN, means={"NoSuchSkill": 0.5})
+
+
+def test_ours_starting_learning_rate_prior_scales_with_the_skills_parameter_count():
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    domain = Tossing3DPomdpCli.with_learning_rates_by_parameters(
+        domain=RACK_SERVING_DOMAIN, provider=provider, enabled=True
+    )
+    scales = dict(domain.learning_rate_prior_scales)
+    assert scales["Sweep"] == 1.0
+    assert scales["GatherAndSweep"] == pytest.approx(1 / 3)
+    assert scales["PickScraper"] == 0.0
+    # The person's skills are not the robot's to tune and keep the shared prior.
+    assert not set(scales) & set(RACK_HUMAN_SKILLS)
+
+    def beliefs(*, domain, engine):
+        return make_default_tossing3d_belief(
+            domain=domain,
+            model="local_trend",
+            engine=engine,
+            num_particles=2000,
+            inference_config=InferenceConfig(competence_bins=9, learning_rate_bins=31),
+        ).skill_beliefs
+
+    for engine in ("grid", "particle"):
+        scaled = beliefs(domain=domain, engine=engine)
+        plain = beliefs(domain=RACK_SERVING_DOMAIN, engine=engine)
+        base = plain["Sweep"].mean_learning_rate()
+        assert scaled["Sweep"].mean_learning_rate() == pytest.approx(base)
+        assert scaled["GatherAndSweep"].mean_learning_rate() == pytest.approx(base / 3, rel=0.15)
+        assert scaled["PickScraper"].mean_learning_rate() == pytest.approx(0.0, abs=1e-9)
+        # Competence priors are untouched.
+        assert scaled["PickScraper"].mean_competence() == pytest.approx(
+            plain["PickScraper"].mean_competence()
+        )
+        assert scaled["human_batch_return"].mean_learning_rate() == pytest.approx(
+            plain["human_batch_return"].mean_learning_rate()
+        )
+    # Off: the very same domain object, so beliefs are built exactly as today.
+    assert (
+        Tossing3DPomdpCli.with_learning_rates_by_parameters(
+            domain=RACK_SERVING_DOMAIN, provider=provider, enabled=False
+        )
+        is RACK_SERVING_DOMAIN
+    )

@@ -478,6 +478,27 @@ class Tossing3DPomdpCli(EesCli):
         )
 
     @staticmethod
+    def with_learning_rates_by_parameters(
+        *, domain: PracticeDomain, provider: SkillProvider, enabled: bool
+    ) -> PracticeDomain:
+        """The domain with each robot skill's starting learning-rate prior scaled by one
+        over its number of continuous parameters, and by zero for a skill with none
+        (Josh, 2026-11-12); the domain itself when not enabled. The person's skills keep
+        the shared prior."""
+        if not enabled:
+            return domain
+        believed = {name for name, _ in domain.belief_sources}
+        return domain.model_copy(
+            update={
+                "learning_rate_prior_scales": tuple(
+                    (skill.name, 1.0 / skill.param_dim if skill.param_dim else 0.0)
+                    for skill in provider.skills()
+                    if skill.name in believed
+                )
+            }
+        )
+
+    @staticmethod
     def with_competence_prior(
         *, domain: PracticeDomain, prior: tuple[float, float] | None
     ) -> PracticeDomain:
@@ -653,6 +674,14 @@ class Tossing3DPomdpCli(EesCli):
             "(repeatable, one per skill); skills not named keep the shared prior.",
         )
         parser.add_argument(
+            "--pomdp-learning-rate-by-parameters",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Scale each robot skill's starting learning-rate prior by one over its "
+            "number of continuous parameters, and put a parameterless skill's at zero. "
+            "The person's skills keep the shared prior.",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -815,17 +844,21 @@ class Tossing3DPomdpCli(EesCli):
                     if args.skill_cost_prior_steps is None
                     else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
                 ),
-                pomdp_domain=Tossing3DPomdpCli.with_prior_means(
-                    means=args.pomdp_competence_prior_for,
-                    domain=Tossing3DPomdpCli.with_competence_prior(
-                        prior=competence_prior,
-                        domain=Tossing3DPomdpCli.with_goal_rewards(
-                            domain=(
-                                domain
-                                if isinstance(domain, PracticeDomain)
-                                else domain(ctx.skill_provider)
+                pomdp_domain=Tossing3DPomdpCli.with_learning_rates_by_parameters(
+                    provider=ctx.skill_provider,
+                    enabled=args.pomdp_learning_rate_by_parameters,
+                    domain=Tossing3DPomdpCli.with_prior_means(
+                        means=args.pomdp_competence_prior_for,
+                        domain=Tossing3DPomdpCli.with_competence_prior(
+                            prior=competence_prior,
+                            domain=Tossing3DPomdpCli.with_goal_rewards(
+                                domain=(
+                                    domain
+                                    if isinstance(domain, PracticeDomain)
+                                    else domain(ctx.skill_provider)
+                                ),
+                                provider=ctx.skill_provider,
                             ),
-                            provider=ctx.skill_provider,
                         ),
                     ),
                 ),
@@ -977,6 +1010,14 @@ class DpCli(EesCli):
             "experimental one).",
         )
         parser.add_argument(
+            "--dp-learning-rate-by-parameters",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Each skill's prior Delta is --dp-initial-learning-rate divided by its number "
+            "of continuous parameters, and 0 for a skill with none; a skill named with "
+            "--dp-initial-learning-rate-for keeps that value. Not from the paper.",
+        )
+        parser.add_argument(
             "--dp-competence-estimator",
             choices=["recent_rounds", "cumulative"],
             default=fields["dp_competence_estimator"].default,
@@ -1065,6 +1106,7 @@ class DpCli(EesCli):
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
+                dp_learning_rate_by_parameters=args.dp_learning_rate_by_parameters,
                 dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,
                 dp_skill_cost_steps_for=args.dp_skill_cost_steps_for,
                 dp_solver_log=(

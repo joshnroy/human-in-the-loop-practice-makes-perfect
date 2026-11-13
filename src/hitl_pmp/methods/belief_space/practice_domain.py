@@ -77,6 +77,9 @@ class PracticeDomain(BaseModel, abc.ABC):
     initial_competence_beta: float | None = None
     # (belief name, alpha, beta): a Beta prior for that one skill, over the above.
     competence_prior_overrides: tuple[tuple[str, float, float], ...] = ()
+    # (belief name, scale): that skill's starting learning-rate prior is the shared one
+    # with its scale multiplied by this; 0 puts all of it at a rate of zero.
+    learning_rate_prior_scales: tuple[tuple[str, float], ...] = ()
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs
