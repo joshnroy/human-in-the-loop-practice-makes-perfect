@@ -765,3 +765,8 @@ class RackControllers:
 
     def place_food(self, *, name: str, destination: str) -> None:
         RackFoodController(controllers=self).place(name=name, destination=destination)
+
+    def robot_batch_return(self) -> None:
+        from .robot_batch_return import RackRobotBatchReturn
+
+        RackRobotBatchReturn(controllers=self).run()

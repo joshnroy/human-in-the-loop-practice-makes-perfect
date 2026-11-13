@@ -112,13 +112,19 @@ class WeldedFood:
         GraspWeld.attach(model=model, data=data, hand=HAND, name=name)
 
     @staticmethod
-    def set_down(*, backend: Any, name: str, xy: np.ndarray, top_z: float) -> None:
+    def set_down(
+        *, backend: Any, name: str, xy: np.ndarray, top_z: float, yaw: float | None = None
+    ) -> None:
         """Release `name`'s weld and place it upright and at rest on a support whose top
-        is `top_z`, centred at `xy`, keeping its yaw."""
+        is `top_z`, centred at `xy`, keeping its yaw unless `yaw` names one (a rack
+        slot's, for the robot's batch return)."""
         model, data = backend.model(), backend.data()
         GraspWeld.release(model=model, data=data, names=(name,))
         rotation = data.xmat[model.body(name).id].reshape(3, 3)
-        yaw = float(np.arctan2(rotation[1, 0] - rotation[0, 1], rotation[0, 0] + rotation[1, 1]))
+        if yaw is None:
+            yaw = float(
+                np.arctan2(rotation[1, 0] - rotation[0, 1], rotation[0, 0] + rotation[1, 1])
+            )
         upright = WeldedFood.yawed(yaw=yaw)
         centre = np.array([float(xy[0]), float(xy[1]), top_z + 0.05])
         WeldedFood._set_pose(backend=backend, name=name, position=centre, rotation=upright)

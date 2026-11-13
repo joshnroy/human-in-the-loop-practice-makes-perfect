@@ -226,6 +226,35 @@ def test_setup_a_flags_reach_both_modes_configs():
     assert (plain.plate_tuck, plain.start_layout) == (0.0, "scattered")
 
 
+def test_the_robot_batch_return_flag_is_off_by_default_and_recorded_with_the_run():
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    plain = _parse()
+    assert plain.robot_batch_return is False
+    argv = (
+        "--start-layout", "middle_three", "--bulk-transfer-only", "1",
+        "--two-route-rewards", "1", "--robot-batch-return", "1",
+    )  # fmt: skip
+    args = _parse(argv=argv)
+    for mode in ("training", "deployment"):
+        config = RackServingCli.build_problem(args=args, mode=mode).env.config
+        assert config.robot_batch_return is True
+    # The config snapshot is the parsed namespace, so the flag is in it; a run recorded
+    # before the flag existed resumes as one that never offered the skill.
+    recorded = {key: str(value) for key, value in vars(plain).items()}
+    older = {
+        key: value for key, value in recorded.items() if not key.startswith("robot_batch_return")
+    }
+    assert len(recorded) - len(older) == 2
+    assert recorded["robot_batch_return"] == "False"
+    assert StepProtocolResume.comparable(arguments=older) == StepProtocolResume.comparable(
+        arguments=recorded
+    )
+    assert StepProtocolResume.comparable(arguments=older) != StepProtocolResume.comparable(
+        arguments={key: str(value) for key, value in vars(args).items()}
+    )
+
+
 def test_cli_carries_the_opt_in_plate_tuck_sweep_speed_and_custom_layout(*, monkeypatch):
     seen = []
     monkeypatch.setattr(

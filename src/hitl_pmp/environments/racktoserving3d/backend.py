@@ -40,6 +40,14 @@ FOOTPRINT_SAMPLES = 64
 MAX_RETURN_LAYOUTS = 300
 
 
+class NoJitter:
+    """In place of a generator, so a lined-up layout reads out its unjittered centres."""
+
+    def uniform(self, low: float, high: float, size: Any) -> np.ndarray:  # noqa: PLR0917 -- numpy's signature
+        del low, high
+        return np.zeros(size)
+
+
 class RackServingBackend(SweepOffShelf3DBackend):
     config: RackServingConfig = Field(default_factory=RackServingConfig)
     ledger: RackServingLedger = Field(default_factory=RackServingLedger)
@@ -526,44 +534,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
         support = self.body_geoms(name="rack_0")
         others = [self.food_centre(name=other) for other in self.cube_names if other not in names]
         height = rack.top_z + self.config.dumpling_height / 2 + 0.002
-        tray = self.support(name="box_0")
         for _ in range(MAX_RETURN_LAYOUTS):
-            if start_layout == "scattered":
-                layout = RackLayout.sample(
-                    rng=self._rng, rack=rack, count=len(names), others=others
-                )
-            elif start_layout == "middle_three":
-                layout = RackLayout.middle_three(
-                    rng=self._rng,
-                    rack=rack,
-                    center_y=(tray.y_min + tray.y_max) / 2,
-                    pitch=self.config.spaced_pitch,
-                    side_offset=self.config.side_offset,
-                    long_axis=self.config.spaced_long_axis,
-                )
-            elif start_layout == "custom":
-                layout = RackLayout.custom(
-                    rng=self._rng,
-                    rack=rack,
-                    center_y=(tray.y_min + tray.y_max) / 2,
-                    offsets=self.config.custom_layout,
-                    long_axis=self.config.spaced_long_axis,
-                )
-            elif start_layout == "spaced":
-                layout = RackLayout.spaced(
-                    rng=self._rng,
-                    rack=rack,
-                    center_y=(tray.y_min + tray.y_max) / 2,
-                    pitch=self.config.spaced_pitch,
-                    long_axis=self.config.spaced_long_axis,
-                )
-            else:
-                layout = RackLayout.lined_up(
-                    rng=self._rng,
-                    rack=rack,
-                    center_y=(tray.y_min + tray.y_max) / 2,
-                    kind=start_layout,
-                )
+            layout = self._layout(start_layout=start_layout, count=len(names), others=others)
             placed = {
                 name: (np.array([x, y, height]), RackLayout.quaternion(yaw=yaw))
                 for name, (x, y, yaw) in zip(names, layout, strict=True)
@@ -577,6 +549,87 @@ class RackServingBackend(SweepOffShelf3DBackend):
             ):
                 return placed
         return None
+
+    def _layout(
+        self,
+        *,
+        start_layout: str,
+        count: int,
+        others: list[tuple[float, float]],
+        rng: Any = None,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """One draw of `start_layout`'s (x, y, yaw) centres, from this episode's
+        generator unless `rng` is given."""
+        rng = self._rng if rng is None else rng
+        rack, tray = self.support(name="rack_0"), self.support(name="box_0")
+        center_y = (tray.y_min + tray.y_max) / 2
+        if start_layout == "scattered":
+            return RackLayout.sample(rng=rng, rack=rack, count=count, others=others)
+        if start_layout == "middle_three":
+            return RackLayout.middle_three(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                pitch=self.config.spaced_pitch,
+                side_offset=self.config.side_offset,
+                long_axis=self.config.spaced_long_axis,
+            )
+        if start_layout == "custom":
+            return RackLayout.custom(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                offsets=self.config.custom_layout,
+                long_axis=self.config.spaced_long_axis,
+            )
+        if start_layout == "spaced":
+            return RackLayout.spaced(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                pitch=self.config.spaced_pitch,
+                long_axis=self.config.spaced_long_axis,
+            )
+        return RackLayout.lined_up(rng=rng, rack=rack, center_y=center_y, kind=start_layout)
+
+    def rack_slots(self, *, jitter: bool = True) -> dict[str, tuple[float, float, float]]:
+        """Each dumpling's (x, y, yaw) in one draw of the configured start layout: where
+        the robot's batch return puts it. The person's return is the same draw, placed
+        whole; nothing here checks the draw against the scene. Without `jitter`, the
+        centres every draw is jittered about, and no draw is consumed."""
+        layout = self._layout(
+            start_layout=self.config.start_layout,
+            count=len(self.cube_names),
+            others=[],
+            rng=None if jitter else NoJitter(),
+        )
+        return dict(zip(self.cube_names, layout, strict=True))
+
+    def slots_clear(self, *, slots: dict[str, tuple[float, float, float]]) -> bool:
+        """Whether the dumplings named in `slots`, each set down on its slot, would
+        touch no dumpling: neither one another nor any other where it lies now. The
+        person's return applies the same 2 mm to a whole layout."""
+        import mujoco
+
+        model, scratch, addresses, _ = self._scratch(names=list(slots))
+        height = self.support(name="rack_0").top_z + self.config.dumpling_height / 2 + 0.002
+        for name, (x, y, yaw) in slots.items():
+            scratch.qpos[addresses[name] : addresses[name] + 7] = np.r_[
+                x, y, height, RackLayout.quaternion(yaw=yaw)
+            ]
+        mujoco.mj_forward(model, scratch)
+        placed = {model.body(name).id for name in slots}
+        food = {model.body(name).id for name in self.cube_names}
+        for contact in scratch.contact[: scratch.ncon]:
+            pair = {int(model.geom_bodyid[geom]) for geom in (contact.geom1, contact.geom2)}
+            if len(pair) == 2 and pair <= food and pair & placed and contact.dist < 0.002:
+                return False
+        return True
+
+    def food_yaw(self, *, name: str) -> float:
+        """`name`'s rotation about world z, as `RackLayout.quaternion` writes it."""
+        rotation = self.data().xmat[self.model().body(name).id].reshape(3, 3)
+        return float(np.arctan2(rotation[1, 0] - rotation[0, 1], rotation[0, 0] + rotation[1, 1]))
 
     def rack_put_back_draws(self, *, name: str, count: int) -> list[tuple[float, float]]:
         """`count` independent draws of where the robot puts `name` back: the shared

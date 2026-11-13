@@ -1477,21 +1477,60 @@ class WeldedFoodSkills:
         finally:
             self.food.carried = None
 
-    def _plan_place(self, *, name: str, destination: str) -> tuple[Any, dict[str, Any]]:
+    def _slot_spot(
+        self, *, name: str, slot: tuple[float, float, float], rotation: np.ndarray
+    ) -> list[tuple[np.ndarray, list[np.ndarray]]]:
+        """`slot`'s (x, y) as the one spot for the held food's centre, with the hand yaws
+        to try there: every one, as `_placements` gives the rack's drawn spots, when the
+        set-down writes the slot's yaw (`snaps_slot_yaw`); otherwise the single turn
+        that brings the held dumpling itself to the slot's yaw."""
+        food = self.food
+        low = float(
+            (self.backend.corners(name=name) - food._pose(name=name)[:3, 3])[:, 2].min()  # noqa: SLF001
+        )
+        release = food._release_height(name=name)  # noqa: SLF001
+        top = self.backend.support(name="rack_0").top_z
+        spot = np.array([slot[0], slot[1], top - low + release])
+        if self.snaps_slot_yaw():
+            return [(spot, food._placement_turns(rotation=rotation, centre=spot))]  # noqa: SLF001
+        held_yaw = self.backend.food_yaw(name=name)
+        return [(spot, [Rotation.from_euler("z", slot[2] - held_yaw).as_matrix()])]
+
+    def snaps_slot_yaw(self) -> bool:
+        """`RackServingConfig.robot_batch_return_yaw`: whether a slot set-down writes the
+        slot's yaw (`WeldedFood.set_down`'s `yaw`) or keeps the yaw the hand gave."""
+        return bool(self.backend.config.robot_batch_return_yaw == "snap")
+
+    def _plan_place(
+        self, *, name: str, destination: str, slot: tuple[float, float, float] | None = None
+    ) -> tuple[Any, dict[str, Any]]:
         food, shelf = self.food, self.shelf
         here = shelf.site_pose()
         offset = here[:3, 3] - food._pose(name=name)[:3, 3]  # noqa: SLF001
-        targets = []
-        for spot, turns in food._placements(  # noqa: SLF001
-            name=name, destination=destination, rotation=here[:3, :3]
+        targets: list[tuple[np.ndarray, np.ndarray, np.ndarray, Any]] = []
+        for spot, turns in (
+            food._placements(  # noqa: SLF001
+                name=name, destination=destination, rotation=here[:3, :3]
+            )
+            if slot is None
+            else self._slot_spot(name=name, slot=slot, rotation=here[:3, :3])
         ):
             base = shelf.data.qpos[shelf.ba]
             toward = np.r_[spot[:2] - base[:2], 0.0]
             for turn in turns:
                 down = Frames.pose(rotation=turn @ here[:3, :3], position=spot + turn @ offset)
                 approach = np.r_[down[:2, 2], 0.0]
-                forward = approach if np.linalg.norm(approach) > 1e-6 else turn @ toward
-                targets.append((spot, down, forward, spot))
+                if np.linalg.norm(approach) > 1e-6:
+                    forwards = [approach]
+                elif slot is not None and not self.snaps_slot_yaw():
+                    # A vertical hand's one turn does not say where the base stands.
+                    forwards = [
+                        np.array([np.cos(heading), np.sin(heading), 0.0])
+                        for heading in self._headings(centre=spot)
+                    ]
+                else:
+                    forwards = [turn @ toward]
+                targets.extend((spot, down, forward, spot) for forward in forwards)
         return self._plan(
             targets=targets,
             held_name=name,
@@ -1500,18 +1539,35 @@ class WeldedFoodSkills:
             refusal="No safe food placement",
         )
 
-    def place(self, *, name: str, destination: str) -> None:
+    def place(
+        self, *, name: str, destination: str, slot: tuple[float, float, float] | None = None
+    ) -> None:
+        """`slot` (rack only) is the (x, y, yaw) to set the dumpling down at, in place
+        of a draw of the shared layout: the robot's batch return's own target.
+
+        By default (`robot_batch_return_yaw` "snap") the hand reaches the slot as it
+        reaches any rack spot and the set-down writes the slot's yaw, as it already
+        writes the spot: an abstraction of welded handling, made in one place
+        (`WeldedFood.set_down`'s `yaw`). A welded pick has already turned the dumpling
+        to the hand, long axis along the hand's lean, so its yaw in the hand says
+        nothing about how it lay, and bringing it to the slot's yaw by the hand alone
+        ("hand") puts the base of every leaned grasp on the plate's side of the
+        counter, out of reach of the rack."""
         food, backend, shelf, motion = self.food, self.backend, self.shelf, self.motion
         food._validate_name(name=name)  # noqa: SLF001
         if destination not in ("rack_0", "box_0"):
             raise SkillFailed(f"Unknown food destination: {destination}")
+        if slot is not None and destination != "rack_0":
+            raise SkillFailed("Only the rack has slots")
         food._require_held(name=name)  # noqa: SLF001
         food.carried = name
         with food.controllers.feedback():
             with motion.departing_from_contacts():
                 plan, payload = BlockedStart.plan(
                     tool=motion,
-                    make_plan=lambda: self._plan_place(name=name, destination=destination),
+                    make_plan=lambda: self._plan_place(
+                        name=name, destination=destination, slot=slot
+                    ),
                     held_name=name,
                     holding=False,
                     label="food_place_escape",
@@ -1533,6 +1589,7 @@ class WeldedFoodSkills:
                 name=name,
                 xy=spot[:2],
                 top_z=backend.support(name=destination).top_z,
+                yaw=slot[2] if slot is not None and self.snaps_slot_yaw() else None,
             )
             food.carried = None
             food.controllers.held_food = shelf.held_cube = None

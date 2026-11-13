@@ -338,3 +338,108 @@ def test_fast_downward_plans_a_two_route_sweep_and_the_return_after_it():
         ),
     )
     assert [ground.skill.name for ground in back] == ["human_batch_return"]
+
+
+# RobotBatchReturn (`RackServingConfig.robot_batch_return`): the robot's own batch
+# return. Its declaration is the person's, so what follows it is what follows theirs.
+ROBOT_RETURN = GroundSkill(
+    skill=Skills.ROBOT_BATCH_RETURN,
+    objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food),
+)
+TWO_ROUTE_ROBOT_RETURN = GroundSkill(
+    skill=Skills.TWO_ROUTE_ROBOT_BATCH_RETURN, objects=ROBOT_RETURN.objects
+)
+AFTER_A_BULK_TRY = {
+    "a Sweep's three": dict(
+        zip(FOOD, ("OnRack", "OnTray", "OnTray", "OnTray", "OnRack"), strict=True)
+    ),
+    "all five": dict.fromkeys(FOOD, "OnTray"),
+    "the rack emptied onto the counter and the floor": dict(
+        zip(
+            FOOD,
+            ("SpilledCounter", "OnTray", "SpilledFloor", "OnTray", "SpilledCounter"),
+            strict=True,
+        )
+    ),
+}
+
+
+@pytest.mark.parametrize("scraper", ["home", "held"])
+@pytest.mark.parametrize("locations", AFTER_A_BULK_TRY.values(), ids=AFTER_A_BULK_TRY.keys())
+def test_the_robot_batch_return_declares_what_it_changes(*, locations, scraper):
+    """The last case starts with nothing on the rack: PickFood's AnyFoodOnRack defect
+    (the strict xfail above) is not on this skill's declared path."""
+    _assert_declared_equals_measured(
+        ground=ROBOT_RETURN,
+        before=_measured(locations=locations, scraper=scraper),
+        after=_measured(locations=ALL_ON_RACK, scraper=scraper),
+    )
+
+
+def test_the_robot_batch_return_sets_a_held_dumpling_down_too():
+    _assert_declared_equals_measured(
+        ground=ROBOT_RETURN,
+        before=_measured(locations={**ALL_ON_RACK, FOOD[2]: "HoldingFood"}),
+        after=_measured(locations=ALL_ON_RACK),
+    )
+
+
+def test_the_robot_batch_return_is_declared_as_the_persons_is():
+    for robot, human in (
+        (Skills.ROBOT_BATCH_RETURN, Skills.HUMAN_BATCH_RETURN),
+        (Skills.TWO_ROUTE_ROBOT_BATCH_RETURN, Skills.TWO_ROUTE_HUMAN_BATCH_RETURN),
+    ):
+        assert robot.name == "RobotBatchReturn"
+        assert robot == human.model_copy(update={"name": robot.name})
+
+
+@pytest.mark.parametrize("outer", ACCEPTED.values(), ids=ACCEPTED.keys())
+def test_both_bulk_skills_are_applicable_again_after_a_two_route_robot_return(*, outer):
+    after_sweep = _after_sweep(outer=outer)
+    assert TWO_ROUTE_ROBOT_RETURN.preconditions <= after_sweep
+    restored = DpTaskModel.successor(atoms=after_sweep, ground=TWO_ROUTE_ROBOT_RETURN)
+    assert restored == BEFORE_SWEEP
+    for skill in (Skills.TWO_ROUTE_SWEEP, Skills.TWO_ROUTE_GATHER_AND_SWEEP):
+        assert GroundSkill(skill=skill, objects=TWO_ROUTE_SWEEP.objects).preconditions <= restored
+
+
+def test_a_partial_robot_return_leaves_both_returns_applicable_and_no_bulk_skill():
+    """Three of five returned, as measured: the skill failed and declared nothing."""
+    partial = _measured(
+        locations=dict(zip(FOOD, ("OnRack", "OnRack", "OnRack", "OnTray", "OnTray"), strict=True))
+    )
+    human = GroundSkill(skill=Skills.TWO_ROUTE_HUMAN_BATCH_RETURN, objects=ROBOT_RETURN.objects)
+    assert TWO_ROUTE_ROBOT_RETURN.preconditions <= partial
+    assert human.preconditions <= partial
+    assert not _ees_counts_success(
+        ground=TWO_ROUTE_ROBOT_RETURN,
+        before=_after_sweep(outer=("OnRack", "OnRack")),
+        after=partial,
+    )
+    for skill in (Skills.TWO_ROUTE_SWEEP, Skills.TWO_ROUTE_GATHER_AND_SWEEP):
+        ground = GroundSkill(skill=skill, objects=TWO_ROUTE_SWEEP.objects)
+        assert not ground.preconditions <= partial
+
+
+def test_the_robot_batch_return_is_offered_only_when_asked_for():
+    names = [skill.name for skill in Skills.robot_skills(two_route=True)]
+    assert "RobotBatchReturn" not in names
+    offered = Skills.robot_skills(two_route=True, include_robot_batch_return=True)
+    assert [skill.name for skill in offered] == [*names, "RobotBatchReturn"]
+    assert offered[-1] == Skills.TWO_ROUTE_ROBOT_BATCH_RETURN
+    assert Skills.robot_skills(include_robot_batch_return=True)[-1] == Skills.ROBOT_BATCH_RETURN
+
+
+def test_fast_downward_plans_the_robot_return_when_no_person_is_offered():
+    predicates = {p.name: p for p in RackServing3DPredicates.all(two_route=True)}
+    back = FastDownwardPlanner.plan(
+        skills=Skills.robot_skills(two_route=True, include_robot_batch_return=True),
+        predicates=tuple(predicates.values()),
+        types=tuple({obj.type for obj in Objects.all_objects()}),
+        objects=Objects.all_objects(),
+        init_atoms=DpTaskModel.successor(atoms=BEFORE_SWEEP, ground=TWO_ROUTE_SWEEP),
+        goal=frozenset(
+            GroundAtom(predicate=ON_RACK, objects=(food, Objects.rack)) for food in Objects.food
+        ),
+    )
+    assert back == [TWO_ROUTE_ROBOT_RETURN]
