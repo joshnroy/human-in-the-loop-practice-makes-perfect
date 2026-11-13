@@ -56,6 +56,13 @@ where Tossing does not:
   pose into `model.eq_data`, which no MuJoCo state vector holds, so a scene rebuilt
   from its seed would otherwise carry the weld's compiled pose. The tables go back
   before the engine state, and the fingerprint check then covers everything else;
+- what the last step left in `MjData`. MuJoCo computes positions, bias forces and
+  contacts on the way into a step, so after it they are one step behind the state,
+  and Serving's controllers read them before their next step. Recomputing them is
+  not the same thing while the scene is moving, as it is right after a scene reset
+  (Tossing's skills end with a recompute, so Tossing is unaffected). The arrays and
+  the contact list are written back; when the contact list's size differs, the
+  last step is run again from the state it started from;
 - what the scripted controllers keep between skills: arm and base targets, the
   scraper's pose in the hand, the grip, contact counters, and the IK scratch data;
 - the backend's ledger (elapsed seconds, human cost and interventions), control-step
@@ -64,5 +71,9 @@ where Tossing does not:
 
 A resumed run's practice recording continues in `resume-NN-recording.jsonl`; the
 scene rebuild's own settling steps are recorded nowhere and charged to nobody.
+A paused process exits 0 and writes `stats.json`: read `status.json`'s `phase`
+(`paused` or `complete`) to tell a finished run from a paused one. A killed run
+resumes from its last checkpoint the same way; `dp_allocations.jsonl` and the
+`pomdp` decision log then hold the killed session's rows twice.
 `--method ees` needs `--ees-score-human-skills` typed on the resume command: the
 first process records the resolved value, and the resume check compares against it.
