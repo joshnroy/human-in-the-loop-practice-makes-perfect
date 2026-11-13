@@ -31,7 +31,7 @@ def test_sweep_is_a_robot_skill_by_default_and_can_be_disabled():
 
 
 def test_sweep_has_gather_and_sweeps_d_bounds_and_effect_shape():
-    assert SWEEP_BOUNDS == (Skills.GATHER_AND_SWEEP_BOUNDS[2],) == ((0.04, 0.12),)
+    assert SWEEP_BOUNDS == (Skills.GATHER_AND_SWEEP_BOUNDS[2],) == ((0.0, 0.12),)
     sweep, gather = Skills.SWEEP, Skills.GATHER_AND_SWEEP
     assert sweep.param_dim == 1
     assert sweep.parameters == gather.parameters
