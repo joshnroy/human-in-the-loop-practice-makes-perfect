@@ -47,3 +47,22 @@ pauses after one additional cycle, yielding practice2 and eval2. Removing that
 operational stop flag continues normally. Completed evaluations and learning
 updates are not repeated; an interruption inside a later cycle restarts from
 the last complete checkpoint. Unsupported simulation backends reject resume.
+
+Serving (`--env racktoserving3d`) resumes the same way, with the same three flags.
+Its checkpoint carries more than the engine state, because Serving keeps state
+where Tossing does not:
+
+- the compiled model's parameter tables. A grasp or home weld writes its relative
+  pose into `model.eq_data`, which no MuJoCo state vector holds, so a scene rebuilt
+  from its seed would otherwise carry the weld's compiled pose. The tables go back
+  before the engine state, and the fingerprint check then covers everything else;
+- what the scripted controllers keep between skills: arm and base targets, the
+  scraper's pose in the hand, the grip, contact counters, and the IK scratch data;
+- the backend's ledger (elapsed seconds, human cost and interventions), control-step
+  count, layout and human RNGs, and the environment's memory of its last action
+  (pick refusals, the two-route verdict, the atoms before it).
+
+A resumed run's practice recording continues in `resume-NN-recording.jsonl`; the
+scene rebuild's own settling steps are recorded nowhere and charged to nobody.
+`--method ees` needs `--ees-score-human-skills` typed on the resume command: the
+first process records the resolved value, and the resume check compares against it.

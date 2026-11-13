@@ -185,6 +185,8 @@ def _observed(*, env) -> dict[str, object]:
         "grip": (shelf.grip, backend.grip),
         "human_events": env.human_events(),
         "bulk_verdict": env.bulk_verdict(),
+        "layout_rng": str(backend._rng.bit_generator.state),
+        "human_rng": str(backend._human_rng.bit_generator.state),
     }
 
 
@@ -258,7 +260,10 @@ def test_a_restored_serving_simulation_steps_exactly_as_the_one_it_was_saved_fro
             _skill(env=original, name=name, d=d)
             assert original.last_skill_error() is None, name
         assert original.backend().held(name="wiper_0")
+        before = _observed(env=original)
         saved = pickle.dumps(original.simulation_checkpoint())
+        # Saving only reads: a run that checkpoints steps as one that does not.
+        _assert_identical(left=before, right=_observed(env=original), at="after saving")
         restored.restore_simulation_checkpoint(checkpoint=pickle.loads(saved))
         _assert_identical(left=_observed(env=original), right=_observed(env=restored), at="restore")
         _assert_same(
