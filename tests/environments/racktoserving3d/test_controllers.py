@@ -512,3 +512,40 @@ def test_a_move_that_may_rest_above_lets_the_hand_rest_as_high_as_the_blade(
     controller.tool.rotation_error = Mock(return_value=0.0)
     controller.move_tool(body=np.eye(4), label="sweep_level", may_rest_above=may_rest_above)
     assert controller.tool.line.call_args.kwargs["rest_above"] == rest_above
+
+
+def test_the_release_levels_along_the_servo_path_and_lifts_as_it_always_has():
+    """The levelling move is 2 mm up and 3 cm back over what the stroke just swept, in
+    1 cm waypoints. After a short stroke the arm's posture makes one of them ask more
+    than 0.025 rad of some joints, and the axis-clipped path, which the servo does not
+    follow, dipped the blade 0.13 mm past the rack's support allowance (session 10
+    learning curves: 29/125 short Sweeps after a short Sweep refused)."""
+    controller = RackControllers.__new__(RackControllers)
+    level = RackControllers.push_rotation(phi=0)
+    edge = np.array([[1.375, -0.04, 0.926], [1.625, -0.04, 0.926]])
+    start = np.eye(4)
+    start[:3, 3] = [1.50, -0.04, 0.926]
+    controller.tool = SimpleNamespace(
+        wiper_pose=Mock(return_value=start),
+        blade_edge=Mock(
+            side_effect=lambda pose=None: (
+                edge if pose is None else edge - start[:3, 3] + pose[:3, 3]
+            )
+        ),
+    )
+    controller.move_tool = Mock(side_effect=lambda **kwargs: kwargs["body"].copy())
+    controller.shelf = SimpleNamespace(hold=Mock())
+    controller.release_swept_food(rotation=level, retreat=np.array([0.0, -0.03, 0.0]))
+    level_move, lift = (call.kwargs for call in controller.move_tool.call_args_list)
+    assert level_move["label"] == "sweep_level"
+    assert level_move["axis_clipped"] is False
+    assert lift["label"] == "sweep_lift"
+    assert "axis_clipped" not in lift
+
+
+@pytest.mark.parametrize(("requested", "checked"), [({}, True), ({"axis_clipped": False}, False)])
+def test_a_tool_move_passes_on_which_joint_paths_its_lines_are_checked_along(*, requested, checked):
+    controller = move_tool_controller(ends_at=np.zeros(3))
+    controller.tool.rotation_error = Mock(return_value=0.0)
+    controller.move_tool(body=np.eye(4), label="sweep_level", **requested)
+    assert controller.tool.line.call_args.kwargs["axis_clipped"] is checked
