@@ -1,5 +1,6 @@
 """Opt-in kitchen variant. Episode initialization is never a practice action."""
 
+import copy
 from typing import Any, ClassVar, Literal
 
 import numpy as np
@@ -110,6 +111,55 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.last_info = {}
         self.current_state = self.observe()
         return self.current_state
+
+    # What this instance keeps between skills, beside the scene under its controller.
+    CHECKPOINT_FIELDS: ClassVar[tuple[str, ...]] = (
+        "_steps",
+        "_skill_start",
+        "_started",
+        "last_info",
+        "current_state",
+        "human_interventions",
+        "interruption_cost_total",
+        "episode_boundaries",
+        "_pick_refusals",
+        "_pick_failures",
+    )
+
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        """Exact continuation of the practice scene at a skill boundary, for a new
+        process. Taking it puts the live scene through the same restore a resumed one
+        gets (`KitchenSimulationCheckpoint.capture`), so it is not free of effect."""
+        from .simulation_checkpoint import KitchenSimulationCheckpoint
+
+        if self._pick_watch is not None:
+            raise RuntimeError("simulation checkpoint requires a skill boundary")
+        return {
+            "seed": self._seed,
+            "requested": self.requested_count,
+            "scene": KitchenSimulationCheckpoint.capture(controller=self.controller()),
+            "fields": {name: copy.deepcopy(getattr(self, name)) for name in self.CHECKPOINT_FIELDS},
+            "human_rng": None
+            if self._human_rng is None
+            else copy.deepcopy(self._human_rng.bit_generator.state),
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        """Rebuild the same seeded scene, then restore the engine and all bookkeeping."""
+        from .simulation_checkpoint import KitchenSimulationCheckpoint
+
+        self._started = False
+        self.reset_to_seed(seed=checkpoint["seed"], requested=checkpoint["requested"])
+        KitchenSimulationCheckpoint.restore(
+            controller=self._controller, checkpoint=checkpoint["scene"]
+        )
+        for name, value in checkpoint["fields"].items():
+            setattr(self, name, copy.deepcopy(value))
+        self._human_rng = None
+        if checkpoint["human_rng"] is not None:
+            # Created on the first attempt; one that had drawn carries on from its state.
+            self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
+            self._human_rng.bit_generator.state = checkpoint["human_rng"]
 
     def initialize_harness_episode(self, *, seed: int, requested: int) -> FrozenPourState:
         """Privileged test-harness boundary, never exposed as a skill/reset option."""
