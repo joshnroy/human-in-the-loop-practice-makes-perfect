@@ -113,6 +113,11 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
       flags="--ees-prior-alpha 1 --ees-prior-beta 3 --practice-groundings all --goal-pursuit-horizon 0" ;;
     ours)
       method=pomdp
+      # The belief-space method takes its cost weight from the cost file, not from
+      # --pomdp-linear-cost-lambda (configure_practice_accounting overwrites the flag),
+      # so this arm gets a copy of the cost file whose only difference is the weight
+      # 0.0015. Runs before 2026-11-12 23:10 ET used the shared file's 0.0003.
+      shared="${shared/racktoserving3d_tick_priced_costs.json/racktoserving3d_two_route_ours_costs.json}"
       flags="--pomdp-solver determinized_astar --pomdp-determinized-variant curtis \
 --pomdp-observation-probability-weight 0.01 --pomdp-linear-cost-lambda 0.0015 \
 --pomdp-competence-prior 1 3 --stop-on-no-practice-action \

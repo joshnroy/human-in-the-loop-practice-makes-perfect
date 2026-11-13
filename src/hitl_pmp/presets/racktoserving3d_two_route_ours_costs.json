@@ -1,0 +1,9 @@
+{
+  "robot_step": {"value": 0.01},
+  "human_skills": {
+    "human_batch_return": {"cost": {"value": 5}, "duration": {"value": 1}},
+    "human_tool_recovery": {"cost": {"value": 5}, "duration": {"value": 1}}
+  },
+  "human_weight": 1,
+  "objective_lambda": 0.0015
+}
