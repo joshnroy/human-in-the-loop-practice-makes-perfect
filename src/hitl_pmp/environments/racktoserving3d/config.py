@@ -176,6 +176,10 @@ class RackServingConfig(BaseModel):
     scraper_handle_height: Positive = 0.020
     scraper_mass: Positive = 0.275
     scraper_tilt_degrees: float = Field(default=45, ge=-45, le=45)
+    # Opt-in (2026-11-12 prototype): how far below its plan the final sweep's blade may
+    # be commanded while food under it holds it up (`BladeHeightFeedback`). 0 is off.
+    # Kept under the 8 mm plate clearance, so the command itself never reaches the rim.
+    blade_height_feedback_limit: float = Field(default=0.0, ge=0.0, le=0.006)
     scraper_friction: Friction = (0.4, 0.005, 0.0001)
     scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
 

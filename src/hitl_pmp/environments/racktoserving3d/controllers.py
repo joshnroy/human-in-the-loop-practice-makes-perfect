@@ -15,7 +15,7 @@ from .config import RackServingConfig
 from .food import RackFoodController
 from .servo import SweepServo
 from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_BOUNDS, SWEEP_SPEED_M_S
-from .stroke import GatherAndSweepPlanner, Stroke
+from .stroke import BladeHeightFeedback, GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
 RELEASE_RETREAT = 0.03
@@ -503,6 +503,15 @@ class RackControllers:
                 distance = min(stroke.length, distance + speed * 0.1)
             desired_body = body.copy()
             desired_body[:3, 3] += stroke.point(distance=distance) - stroke.start
+            limit = backend.config.blade_height_feedback_limit
+            if limit > 0 and stroke.floor_z is not None:
+                # The final sweep only: the gathers and squeezes glide on the rack.
+                edge = tool.blade_edge().mean(axis=0)
+                desired_body[2, 3] -= BladeHeightFeedback.lowering(
+                    planned_z=float(stroke.point(distance=actual)[2]),
+                    actual_z=float(edge[2]),
+                    limit=limit,
+                )
             waypoint = self.hand_for_tool(body=desired_body)
             shelf.base_target = base.copy()
             arm = tool.ik(

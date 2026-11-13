@@ -61,6 +61,22 @@ class Stroke(BaseModel):
         return point
 
 
+class BladeHeightFeedback:
+    """Hold the sweep's blade at its planned height when food under it lifts it.
+
+    Past the rack's front edge a dumpling that has dropped onto the plate's rim sits
+    below the blade edge's line; the edge meets its rounded top, the arm yields upward
+    (10-13 mm measured, env seeds 10 and 18, 2026-11-12) and the blade rides over it.
+    The correction lowers the commanded height by the measured lift, never by more
+    than ``limit`` and never when the blade is at or below its plan, so the command
+    stays above the rim by the plate clearance minus ``limit``.
+    """
+
+    @staticmethod
+    def lowering(*, planned_z: float, actual_z: float, limit: float) -> float:
+        return float(min(max(actual_z - planned_z, 0.0), max(limit, 0.0)))
+
+
 class GatherAndSweepPlanner:
     @staticmethod
     def squeeze(

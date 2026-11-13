@@ -196,3 +196,25 @@ def test_invalid_sweep_geometry_rejected(*, overrides):
 def test_food_corners_must_be_grouped_per_food(*, corners):
     with pytest.raises(ValueError):
         _gather(food_corners=corners)
+
+
+@pytest.mark.parametrize(
+    ("actual", "limit", "expected"),
+    [
+        # At or below the planned height nothing is added: the blade is never driven down.
+        (0.9271, 0.005, 0.0),
+        (0.9250, 0.005, 0.0),
+        # Lifted off its planned height, the command drops by the lift, up to the limit.
+        (0.9301, 0.005, 0.003),
+        (0.9401, 0.005, 0.005),
+        # Off by default.
+        (0.9401, 0.0, 0.0),
+    ],
+)
+def test_a_lifted_blade_is_commanded_back_down_by_no_more_than_the_limit(
+    *, actual, limit, expected
+):
+    from hitl_pmp.environments.racktoserving3d.stroke import BladeHeightFeedback
+
+    lowered = BladeHeightFeedback.lowering(planned_z=0.9271, actual_z=actual, limit=limit)
+    assert lowered == pytest.approx(expected)

@@ -97,6 +97,48 @@ class TwoRouteProbeVideo:
         self.renderer.close()
 
 
+class TwoRouteProbeSafety:
+    """Whether the blade stayed clear of the plate: its lowest point while over the
+    plate's footprint, and every tick the scraper touched the plate."""
+
+    def __init__(self, *, backend: Any, tool: Any, also: Any = None) -> None:
+        self.backend, self.tool, self.also = backend, tool, also
+        self.model, self.data = backend.model(), backend.data()
+        self.scraper = self.model.body("wiper_0").id
+        self.plate = self.model.body("box_0").id
+        self.near_x = backend.serving_near_edge_x()
+        self.lowest = float("inf")
+        self.contact_ticks = 0
+        self.deepest = 0.0
+
+    def tick(self) -> None:
+        ends = self.tool.blade_edge()
+        if float(ends[:, 0].mean()) <= self.near_x:
+            self.lowest = min(self.lowest, float(ends[:, 2].min()))
+        touched = False
+        for contact in self.data.contact[: self.data.ncon]:
+            bodies = {
+                int(self.model.geom_bodyid[contact.geom1]),
+                int(self.model.geom_bodyid[contact.geom2]),
+            }
+            if bodies == {self.scraper, self.plate} and contact.dist <= 0:
+                touched = True
+                self.deepest = max(self.deepest, float(-contact.dist))
+        self.contact_ticks += touched
+        if self.also is not None:
+            self.also()
+
+    def report(self) -> dict[str, Any]:
+        return {
+            "blade_lowest_z_over_plate": None
+            if self.lowest == float("inf")
+            else round(self.lowest, 4),
+            "rim_top_z": round(float(self.backend.config.corelle_rim_top_z), 4),
+            "scraper_plate_contact_ticks": self.contact_ticks,
+            "deepest_scraper_plate_penetration_m": round(self.deepest, 5),
+        }
+
+
 class TwoRouteProbeFoods:
     """Where each dumpling ended: pose, every body it touches, and the surface under it."""
 
@@ -166,6 +208,10 @@ def main() -> None:
     parser.add_argument("--pitch", type=float, default=RackServingConfig().spaced_pitch)
     parser.add_argument("--long-axis", default=RackServingConfig().spaced_long_axis)
     parser.add_argument("--video", type=Path, default=None)
+    parser.add_argument("--blade-height-feedback-limit", type=float, default=0.0)
+    parser.add_argument(
+        "--scraper-tilt-degrees", type=float, default=RackServingConfig().scraper_tilt_degrees
+    )
     args = parser.parse_args()
     config = RackServingConfig(
         start_layout=args.start_layout,
@@ -174,6 +220,8 @@ def main() -> None:
         surface_kind="wire_solid",
         scraper_attachment="grasp_weld",
         bulk_transfer_only=True,
+        blade_height_feedback_limit=args.blade_height_feedback_limit,
+        scraper_tilt_degrees=args.scraper_tilt_degrees,
     )
     env = RackServingEnvironment(
         config=config, scene_bg=args.video is not None, skill_step_limit=12000
@@ -226,10 +274,19 @@ def main() -> None:
                         video.mark(label="done")
                         video.frame(repeat=45, force=True)
                         row["clip_marks"] = video.marks
+                    print(json.dumps(row), flush=True)
                     continue
                 if video is not None:
                     video.mark(label=args.skill)
+                safety = TwoRouteProbeSafety(
+                    backend=backend,
+                    tool=env.rack_controllers().tool,
+                    also=video.frame if video is not None else None,
+                )
+                backend.set_tick_observer(observer=safety.tick)
                 env.take_action(action=np.array([SKILL_IDS[args.skill], 0, *args.params]))
+                backend.set_tick_observer(observer=video.frame if video is not None else None)
+                row["blade_safety"] = safety.report()
                 row["steps"] = backend.control_steps() - before
                 row["skill_error"] = env.last_skill_error()
                 served = [name for name in backend.cube_names if backend.settled_on_tray(name=name)]
