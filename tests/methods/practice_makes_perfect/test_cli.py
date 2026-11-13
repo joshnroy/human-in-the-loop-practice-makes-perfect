@@ -862,3 +862,61 @@ def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
     argv = ["--dp-budget", "1", flag, value]
     with pytest.raises(SystemExit):
         _build_dp_parser().parse_args(argv)
+
+
+def test_pomdp_learning_rate_prior_base_needs_learning_rates_by_parameters() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    assert parser.parse_args([]).pomdp_learning_rate_prior_base is None
+    args = parser.parse_args(["--pomdp-learning-rate-prior-base", "0.1"])
+    assert args.pomdp_learning_rate_prior_base == pytest.approx(0.1)
+    with pytest.raises(ValueError, match="--pomdp-learning-rate-by-parameters"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--pomdp-inference-engine", "grid"],
+        ["--pomdp-competence-model", "global_curve"],
+        ["--pomdp-learning-rate-prior-base", "0"],
+    ],
+)
+def test_pomdp_learning_rate_prior_base_is_refused_where_it_cannot_be_the_mean(
+    *, extra: list[str]
+) -> None:
+    """The grid engine discretizes the prior on [0, eta_max], which truncates it, and
+    the global curve has no learning-rate prior: either way the base would not be the
+    starting mean."""
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([
+        "--pomdp-learning-rate-by-parameters",
+        "--pomdp-learning-rate-prior-base",
+        "0.1",
+        *extra,
+    ])
+    with pytest.raises(ValueError, match="--pomdp-learning-rate-prior-base"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
+
+
+def test_pomdp_learning_rate_prior_base_is_recorded_and_older_runs_still_resume() -> None:
+    from hitl_pmp.config_snapshot import ConfigSnapshot
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([
+        "--pomdp-learning-rate-by-parameters",
+        "--pomdp-learning-rate-prior-base",
+        "0.1",
+    ])
+    snapshot = ConfigSnapshot.collect(args=args, fd_exec_path=None)
+    assert snapshot.args["pomdp_learning_rate_prior_base"] == "0.1"
+    before = {"seed": "0"}
+    assert StepProtocolResume.comparable(arguments=before) == StepProtocolResume.comparable(
+        arguments={**before, "pomdp_learning_rate_prior_base": "None"}
+    )
+    assert StepProtocolResume.comparable(arguments=before) != StepProtocolResume.comparable(
+        arguments={**before, "pomdp_learning_rate_prior_base": "0.1"}
+    )

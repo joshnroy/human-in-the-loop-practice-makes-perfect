@@ -487,12 +487,17 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def with_learning_rates_by_parameters(
-        *, domain: PracticeDomain, provider: SkillProvider, enabled: bool
+        *,
+        domain: PracticeDomain,
+        provider: SkillProvider,
+        enabled: bool,
+        base: float | None = None,
     ) -> PracticeDomain:
         """The domain with each robot skill's starting learning-rate prior scaled by one
         over its number of continuous parameters, and by zero for a skill with none
         (Josh, 2026-11-12); the domain itself when not enabled. The person's skills keep
-        the shared prior."""
+        the shared prior. With a base, a scaled skill's prior has mean base / param_dim,
+        DP's starting rate under `--dp-learning-rate-by-parameters` (Josh, 2026-11-13)."""
         if not enabled:
             return domain
         believed = {name for name, _ in domain.belief_sources}
@@ -502,7 +507,8 @@ class Tossing3DPomdpCli(EesCli):
                     (skill.name, 1.0 / skill.param_dim if skill.param_dim else 0.0)
                     for skill in provider.skills()
                     if skill.name in believed
-                )
+                ),
+                **({} if base is None else {"learning_rate_prior_mean": base}),
             }
         )
 
@@ -690,6 +696,16 @@ class Tossing3DPomdpCli(EesCli):
             "The person's skills keep the shared prior.",
         )
         parser.add_argument(
+            "--pomdp-learning-rate-prior-base",
+            type=float,
+            default=None,
+            metavar="B",
+            help="With --pomdp-learning-rate-by-parameters, start each robot skill's "
+            "learning-rate belief at mean B over its number of continuous parameters "
+            "(the half-normal of that mean), as DP's --dp-initial-learning-rate does. "
+            "Omit to keep the shared prior's width. Particle engine, local_trend only.",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -711,6 +727,24 @@ class Tossing3DPomdpCli(EesCli):
             )
         if args.practice_groundings != "observed":
             raise ValueError("--practice-groundings applies only to --method ees or dp")
+        if args.pomdp_learning_rate_prior_base is not None:
+            if not args.pomdp_learning_rate_by_parameters:
+                raise ValueError(
+                    "--pomdp-learning-rate-prior-base needs "
+                    "--pomdp-learning-rate-by-parameters: it is the base that divides"
+                )
+            if not args.pomdp_learning_rate_prior_base > 0:
+                raise ValueError("--pomdp-learning-rate-prior-base must be positive")
+            if (args.pomdp_inference_engine, args.pomdp_competence_model) != (
+                "particle",
+                "local_trend",
+            ):
+                # The grid discretizes the prior on [0, eta_max], truncating it, and
+                # the global curve has no learning-rate prior: B would not be the mean.
+                raise ValueError(
+                    "--pomdp-learning-rate-prior-base sets the mean of the particle "
+                    "engine's local_trend learning-rate prior only"
+                )
         if getattr(args, "ees_preview_test_goals", False):
             raise ValueError("--ees-preview-test-goals applies only to --method ees")
         defaults = (
@@ -856,6 +890,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_domain=Tossing3DPomdpCli.with_learning_rates_by_parameters(
                     provider=ctx.skill_provider,
                     enabled=args.pomdp_learning_rate_by_parameters,
+                    base=args.pomdp_learning_rate_prior_base,
                     domain=Tossing3DPomdpCli.with_prior_means(
                         means=args.pomdp_competence_prior_for,
                         domain=Tossing3DPomdpCli.with_competence_prior(

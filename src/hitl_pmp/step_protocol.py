@@ -607,6 +607,7 @@ class StepProtocolResume:
         "evaluation_policy": "None",
         "repeated_zero_step_call_limit": "20",
         "bulk_transfer_only": "False",
+        "pomdp_learning_rate_prior_base": "None",
     }
 
     @staticmethod
