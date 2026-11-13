@@ -47,6 +47,19 @@ def test_dp_cli_wires_budget_schedule_and_practice_groundings(*, unit, schedule,
     assert not method.pursues_goal_in_period(period=0)
 
 
+def test_dp_cli_accepts_a_budget_in_practice_steps():
+    args = CostFixtures.parse(
+        argv=[
+            *("--env", "tossing3d", "--method", "dp", "--dp-budget", "10000"),
+            *("--dp-budget-unit", "steps"),
+            *("--dp-skill-cost-steps-for", "PickCube=700"),
+        ]
+    )
+    assert args.dp_budget_unit == "steps"
+    assert args.dp_budget == 10000.0
+    assert args.dp_skill_cost_steps_for == {"PickCube": 700.0}
+
+
 def test_dp_cli_parses_repeatable_initial_competences():
     base = ["--env", "tossing3d", "--method", "dp", "--dp-budget", "188"]
     args = CostFixtures.parse(

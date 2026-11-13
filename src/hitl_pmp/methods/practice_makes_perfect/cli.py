@@ -928,14 +928,20 @@ class DpCli(EesCli):
             "--dp-budget",
             type=lambda value: EesCli.positive_float(value=value),
             required=True,
-            help="DP budget B in the explicit --dp-budget-unit: cost or target-skill episodes.",
+            help="DP budget B in the explicit --dp-budget-unit: cost, target-skill episodes, "
+            "or practice steps.",
         )
         parser.add_argument(
             "--dp-budget-unit",
-            choices=["cost", "episodes"],
+            choices=["cost", "episodes", "steps"],
             default=fields["dp_budget_unit"].default,
             help="Cost includes robot steps and human resets; episodes count completed target "
-            "rollouts, successful or failed, excluding setup executions and human resets.",
+            "rollouts, successful or failed, excluding setup executions and human resets. "
+            "Steps keeps the episode as the unit of practice but fits the allocation to a "
+            "budget in practice steps: an episode of a skill takes that skill's measured "
+            "length, --dp-skill-cost-steps-for (required for every robot skill), and the "
+            "budget is spent in the run's practice steps, robot and human. Cost and steps are "
+            "this project's adaptations: the paper's DP counts every episode equally.",
         )
         parser.add_argument(
             "--dp-allocation-schedule",
@@ -991,7 +997,9 @@ class DpCli(EesCli):
             help="Control steps one robot skill's attempt is priced at for the whole run "
             "(repeatable, one per skill): a known input, never replaced by DP's own "
             "observation. A skill takes this or --dp-skill-cost-prior-steps-for, not both. "
-            "Only the cost-unit budget reads it; this project's adaptation, like that budget.",
+            "The cost-unit budget reads it as a price; the steps-unit budget reads it as the "
+            "skill's measured episode length, setup and reset included. This project's "
+            "adaptation, like both budgets.",
         )
         parser.add_argument(
             "--dp-initial-learning-rate-for",
